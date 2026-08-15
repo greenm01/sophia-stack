@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::{
-    DeterministicFrameClock, DrmKmsOutputRegistry, FrameClock, FrameClockTick, PerOutputFrameClock,
+    DeterministicFrameClock, EngineHeadRegistry, FrameClock, FrameClockTick, PerOutputFrameClock,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,15 +56,15 @@ pub struct OutputPresentationRegistry {
 }
 
 impl OutputPresentationRegistry {
-    pub fn from_outputs(outputs: &DrmKmsOutputRegistry) -> Self {
+    pub fn from_outputs(outputs: &EngineHeadRegistry) -> Self {
         let states = outputs
             .outputs()
             .map(|output| {
                 (
-                    output.output,
+                    output,
                     OutputPresentationState {
-                        output: output.output,
-                        refresh_millihz: output.mode.refresh_millihz,
+                        output,
+                        refresh_millihz: outputs.logical_refresh_millihz(output),
                         damage_pending: false,
                         in_flight_frame: None,
                         last_retired_frame: None,

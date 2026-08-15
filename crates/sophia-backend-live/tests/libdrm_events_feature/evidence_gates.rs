@@ -164,14 +164,14 @@ fn runtime_page_flip_observation_prefers_accepted_callback_over_later_stale_reje
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 62,
         })
         .expect("test channel should accept first callback");
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 61,
         })
         .expect("test channel should accept stale callback");
@@ -294,7 +294,12 @@ fn real_atomic_scanout_card_selection_fails_closed_without_device_identity() {
     let slot = LibdrmNativeOutputSlot::new(1).expect("slot one should be valid");
     let authority =
         LibdrmBackendFdAuthority::new(31).expect("nonzero authority generation should mint");
-    let missing_session = missing.into_page_flip_session(slot, OutputId::from_raw(1), authority);
+    let missing_session = missing.into_page_flip_session(
+        slot,
+        OutputId::from_raw(1),
+        sophia_engine::RenderHeadId::from_raw(1),
+        authority,
+    );
     assert_eq!(
         missing_session.status,
         RealAtomicScanoutPageFlipSessionStatus::CardSelectionFailed

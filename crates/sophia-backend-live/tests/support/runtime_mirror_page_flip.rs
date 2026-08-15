@@ -25,7 +25,7 @@ fn mirror_shutdown_drain_accepts_callback_without_running_invalid_surface_projec
     sender
         .try_send(LivePageFlipCallback {
             output: output.id,
-            connector_id: 11,
+            head: sophia_engine::RenderHeadId::from_raw(11),
             frame_serial: 18,
         })
         .expect("test channel should accept the pending physical callback");
@@ -58,7 +58,10 @@ fn mirror_shutdown_drain_accepts_callback_without_running_invalid_surface_projec
     let drained = runtime.drain_mirror_page_flip_callback_queue();
 
     assert_eq!(drained.accepted, 1);
-    assert_eq!(drained.accepted_callbacks[0].connector_id, 11);
+    assert_eq!(
+        drained.accepted_callbacks[0].head,
+        sophia_engine::RenderHeadId::from_raw(11)
+    );
     assert_eq!(drained.accepted_callbacks[0].frame_serial, 18);
     // A physical mirror-head callback is not a logical-output presentation
     // until the native group coordinator has joined every required head.

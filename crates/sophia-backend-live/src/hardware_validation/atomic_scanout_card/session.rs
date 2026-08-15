@@ -10,6 +10,7 @@ pub struct RealAtomicScanoutPageFlipSession {
     pub(super) card: RealAtomicScanoutCard,
     selections: Vec<LibdrmNativePrimaryPlaneSelection>,
     outputs: Vec<OutputId>,
+    heads: Vec<sophia_engine::RenderHeadId>,
     pub(super) reader: NativeLibdrmPageFlipEventReader<RealAtomicScanoutCard>,
     pub(super) poller: NativeLibdrmPageFlipEventPoller,
     #[cfg(feature = "gbm-probe")]
@@ -286,6 +287,10 @@ impl RealAtomicScanoutPageFlipSession {
         &self.selections
     }
 
+    pub fn heads(&self) -> &[sophia_engine::RenderHeadId] {
+        &self.heads
+    }
+
     pub fn outputs(&self) -> &[OutputId] {
         &self.outputs
     }
@@ -511,6 +516,7 @@ impl RealAtomicScanoutCardSelection {
         mut self,
         slot: LibdrmNativeOutputSlot,
         output: OutputId,
+        head: sophia_engine::RenderHeadId,
         authority: LibdrmBackendFdAuthority,
     ) -> RealAtomicScanoutPageFlipSessionResult {
         let Some(card) = self.card.take() else {
@@ -547,11 +553,7 @@ impl RealAtomicScanoutCardSelection {
         let poller = NativeLibdrmPageFlipEventPoller::new(
             LibdrmNativePageFlipSource::from_authority(authority),
         )
-        .with_routes([LibdrmNativeOutputRoute {
-            slot,
-            output,
-            connector_id: selection.connector_id(),
-        }]);
+        .with_routes([LibdrmNativeOutputRoute { slot, output, head }]);
 
         RealAtomicScanoutPageFlipSessionResult {
             status: RealAtomicScanoutPageFlipSessionStatus::Ready,
@@ -560,6 +562,7 @@ impl RealAtomicScanoutCardSelection {
                 card,
                 selections: vec![selection],
                 outputs: vec![output],
+                heads: vec![head],
                 reader,
                 poller,
                 #[cfg(feature = "gbm-probe")]
@@ -582,6 +585,10 @@ pub struct RealAtomicScanoutPageFlipSessionSetResult {
     pub status: RealAtomicScanoutPageFlipSessionSetStatus,
     pub sessions: Vec<RealAtomicScanoutPageFlipSession>,
     pub output_count: usize,
+    /// The backend head table for the built sessions: which card, connector,
+    /// and CRTC each minted head names. Physical identity stays here; the
+    /// sessions and routes above carry only the opaque head.
+    pub head_records: Vec<crate::LiveNativeHeadRecord>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -618,9 +625,12 @@ impl RealAtomicScanoutSelectionSet {
                 status: RealAtomicScanoutPageFlipSessionSetStatus::SelectionFailed,
                 sessions: Vec::new(),
                 output_count: 0,
+                head_records: Vec::new(),
             };
         }
         let mut sessions = Vec::new();
+        let mut head_records = Vec::new();
+        let mut allocator = sophia_engine::RenderHeadAllocator::new();
         let mut next_output = 1u64;
         let mut next_slot = 1u16;
         // Logical outputs already handed to a mirror group, so its later members
@@ -632,17 +642,20 @@ impl RealAtomicScanoutSelectionSet {
                     status: RealAtomicScanoutPageFlipSessionSetStatus::CardCloneFailed,
                     sessions: Vec::new(),
                     output_count: 0,
+                    head_records: Vec::new(),
                 };
             };
             let mut crtc_routes = Vec::new();
             let mut output_routes = Vec::new();
             let mut outputs = Vec::new();
+            let mut heads = Vec::new();
             for selection in target_set.selections.iter().copied() {
                 let Some(slot) = LibdrmNativeOutputSlot::new(next_slot) else {
                     return RealAtomicScanoutPageFlipSessionSetResult {
                         status: RealAtomicScanoutPageFlipSessionSetStatus::CapacityExceeded,
                         sessions: Vec::new(),
                         output_count: 0,
+                        head_records: Vec::new(),
                     };
                 };
                 // The card answers the connector's name directly, which is what
@@ -664,6 +677,7 @@ impl RealAtomicScanoutSelectionSet {
                                     RealAtomicScanoutPageFlipSessionSetStatus::MirrorGroupSpansDevices,
                                 sessions: Vec::new(),
                                 output_count: 0,
+                                head_records: Vec::new(),
                             };
                         }
                         output
@@ -677,13 +691,19 @@ impl RealAtomicScanoutSelectionSet {
                         output
                     }
                 };
+                let head = allocator.mint();
                 crtc_routes.push(selection.crtc_route(slot));
-                output_routes.push(LibdrmNativeOutputRoute {
-                    slot,
-                    output,
-                    connector_id: selection.connector_id(),
-                });
+                output_routes.push(LibdrmNativeOutputRoute { slot, output, head });
                 outputs.push(output);
+                heads.push(head);
+                head_records.push(crate::LiveNativeHeadRecord {
+                    head,
+                    output,
+                    card_index,
+                    connector_id: selection.connector_id(),
+                    crtc_id: selection.crtc_id(),
+                    connector_name,
+                });
                 next_slot = next_slot.saturating_add(1);
             }
             let reader =
@@ -696,6 +716,7 @@ impl RealAtomicScanoutSelectionSet {
                 card: target_set.card,
                 selections: target_set.selections,
                 outputs,
+                heads,
                 reader,
                 poller,
                 #[cfg(feature = "gbm-probe")]
@@ -715,6 +736,7 @@ impl RealAtomicScanoutSelectionSet {
             status: RealAtomicScanoutPageFlipSessionSetStatus::Ready,
             sessions,
             output_count,
+            head_records,
         }
     }
 }

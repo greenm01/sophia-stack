@@ -214,7 +214,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         let config = sophia_backend_live::RealAtomicScanoutSmokeConfig::default_primary_output()
             .ok_or("default VRR inspection config is invalid")?;
         let mut session_result = sophia_backend_live::select_real_atomic_scanout_card()
-            .into_page_flip_session(config.slot, config.output, config.authority);
+            .into_page_flip_session(config.slot, config.output, config.head, config.authority);
         let session = session_result.session.take().ok_or_else(|| {
             format!(
                 "VRR inspection selection failed: {:?}",

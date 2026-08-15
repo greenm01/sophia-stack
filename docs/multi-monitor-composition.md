@@ -113,11 +113,11 @@ resource retirement. It projects those facts upward through an opaque head
 identity and reduced target capabilities. It does not choose scene content,
 variant policy, layout, or logical retirement requirements.
 
-The current Engine registry predates this boundary and still carries raw
-connector and CRTC integers. Introducing `RenderHeadId`, moving that mapping
-behind the backend boundary, and removing raw physical identities from Engine
-records are explicit migration work. No such identity enters `sophia-protocol`
-or the WM wire today.
+This boundary is implemented for head identity: the backend mints
+`RenderHeadId` when it builds page-flip sessions, retains the
+card/connector/CRTC/name mapping privately, and Engine records carry only
+reduced `HeadRenderTarget` facts. No physical identity enters
+`sophia-protocol` or the WM wire.
 
 ## Passive Target Records
 
@@ -559,7 +559,7 @@ parallel multi-monitor subsystem.
 | Architecture term | Current implementation seed | Target owner |
 | --- | --- | --- |
 | logical output | `OutputId`, policy-facing `SnapshotOutput` | Engine |
-| physical render head | connector ID plus `LibdrmNativeOutputSlot` | opaque `RenderHeadId`; backend maps native identity |
+| physical render head | opaque `RenderHeadId` (implemented); backend head table maps native identity | opaque `RenderHeadId`; backend maps native identity |
 | head target | native selection/exporter state | `HeadRenderTarget`; Engine sees reduced capability only |
 | presentation cohort | `LiveProductionMirrorGroupLifecycle` plus `NativeMirrorGrouping` | `OutputPresentationCohort` in Engine |
 | fit policy | `DesktopMirrorFit` mapped to `NativeMirrorFit` | configuration choice normalized by Engine |
@@ -579,6 +579,11 @@ parallel multi-monitor subsystem.
   coordinates, and damage snapshots fan out to the heads.
 - The current renderer can apply exact, downsampled, and upsampled sampling and
   reports requested/effective paths and fallback outcomes.
+- Head identity is opaque end to end: the backend mints session-scoped
+  `RenderHeadId`s, Engine's `EngineHeadRegistry` holds generation-stamped
+  `HeadRenderTarget` records grouped by logical output, and mirror
+  lifecycles, callback routing, and per-head evidence are head-keyed while
+  connector/CRTC integers stay in the backend's private head table.
 
 ### Transitional Limitation
 
@@ -588,15 +593,12 @@ each head. That preserves native scanout ownership and logical retirement but
 does not provide per-head scene lowering or native client-content selection.
 The distinguished primary output also remains embedded in composition and
 retained-scene paths. Configuration currently maps `DesktopMirrorFit` manually
-to backend-owned `NativeMirrorFit`, and Engine's DRM registry still carries raw
-connector/CRTC integers. Sampling improvements can reduce artifacts, but they
-do not satisfy this target architecture.
+to backend-owned `NativeMirrorFit`. Sampling improvements can reduce
+artifacts, but they do not satisfy this target architecture.
 
 ### Target
 
 - Split logical scene snapshots from physical render targets.
-- Replace raw Engine connector/CRTC fields with opaque `RenderHeadId` records and
-  keep the native mapping in the backend.
 - Carry bounded surface content variants through the authority transaction and
   committed-state lifecycle.
 - Derive per-head plans, damage ledgers, native targets, and compositor raster

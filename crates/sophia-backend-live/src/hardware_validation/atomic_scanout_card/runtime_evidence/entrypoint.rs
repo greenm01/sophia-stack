@@ -7,6 +7,7 @@ pub fn run_real_atomic_runtime_rendered_scanout_evidence_with(
     let mut session_result = select_real_atomic_scanout_card().into_page_flip_session(
         config.slot,
         config.output,
+        config.head,
         config.authority,
     );
     let Some(mut session) = session_result.session.take() else {
@@ -77,6 +78,7 @@ pub fn run_real_atomic_runtime_rendered_scanout_evidence_with_cpu_frame(
     let mut session_result = select_real_atomic_scanout_card().into_page_flip_session(
         config.slot,
         config.output,
+        config.head,
         config.authority,
     );
     let Some(mut session) = session_result.session.take() else {

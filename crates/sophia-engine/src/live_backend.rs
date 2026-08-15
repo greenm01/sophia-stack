@@ -1,12 +1,12 @@
 use crate::prelude::*;
 use crate::{
-    DeterministicFrameClock, DrmKmsOutputRegistry, DrmKmsSysfsDiscovery,
-    HeadlessCompositorBackendAssembly, HeadlessOutput, LibinputDeviceDescriptor,
-    LibinputEventSource, LibinputPhysicalInputAdapter, NonBlockingInputPoller, RendererSelection,
+    DeterministicFrameClock, EngineHeadRegistry, HeadlessCompositorBackendAssembly, HeadlessOutput,
+    LibinputDeviceDescriptor, LibinputEventSource, LibinputPhysicalInputAdapter,
+    NonBlockingInputPoller, RendererSelection,
 };
 
 pub trait OutputDiscoveryBackend {
-    fn discover_outputs(&self) -> io::Result<DrmKmsOutputRegistry>;
+    fn discover_outputs(&self) -> io::Result<EngineHeadRegistry>;
 }
 
 pub trait InputDiscoveryBackend {
@@ -24,7 +24,7 @@ pub enum LiveCompositorBackendDiscoveryStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveCompositorBackendDiscoveryReport {
     pub status: LiveCompositorBackendDiscoveryStatus,
-    pub outputs: DrmKmsOutputRegistry,
+    pub outputs: EngineHeadRegistry,
     pub selected_output: Option<HeadlessOutput>,
     pub input_source: LibinputEventSource,
 }
@@ -54,34 +54,6 @@ impl LiveCompositorBackendDiscoveryReport {
             LibinputPhysicalInputAdapter::new(poller, self.input_source),
             renderer,
         ))
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SysfsDrmKmsOutputBackend {
-    root: PathBuf,
-    discovery: DrmKmsSysfsDiscovery,
-}
-
-impl SysfsDrmKmsOutputBackend {
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-            discovery: DrmKmsSysfsDiscovery::default(),
-        }
-    }
-
-    pub fn with_discovery(root: impl Into<PathBuf>, discovery: DrmKmsSysfsDiscovery) -> Self {
-        Self {
-            root: root.into(),
-            discovery,
-        }
-    }
-}
-
-impl OutputDiscoveryBackend for SysfsDrmKmsOutputBackend {
-    fn discover_outputs(&self) -> io::Result<DrmKmsOutputRegistry> {
-        self.discovery.discover_outputs(&self.root)
     }
 }
 
@@ -117,7 +89,7 @@ pub fn discover_live_compositor_backend(
                 status: LiveCompositorBackendDiscoveryStatus::OutputDiscoveryFailed {
                     message: error.to_string(),
                 },
-                outputs: DrmKmsOutputRegistry::new(),
+                outputs: EngineHeadRegistry::new(),
                 selected_output: None,
                 input_source: LibinputEventSource::new(),
             };

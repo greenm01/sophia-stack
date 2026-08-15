@@ -37,7 +37,7 @@ fn live_session_loop_tick_observes_readiness_then_retire_and_submit() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut session_loop = LiveBackendSessionLoop::new(
         page_flip_poller,
@@ -133,7 +133,7 @@ fn live_session_loop_tick_drains_pending_page_flip_callbacks_without_new_readine
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut session_loop = LiveBackendSessionLoop::new(
         page_flip_poller,

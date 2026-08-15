@@ -65,7 +65,7 @@ reject_mutation '/sophia_mirror_group_visual/d' 'missing readable-text confirmat
 reject_mutation 's/ scaled_text=sharp_not_blocky//' 'missing sharp scaled-text confirmation'
 reject_mutation '/sophia_live_session_cleanup/d' 'missing clean frontend/session teardown'
 reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
-reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct-CPU mirror bootstrap'
+reject_mutation '/status=direct_cpu output=1 head=2/d' 'missing direct-CPU mirror bootstrap'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
 reject_mutation '/requested=exact_nearest/d' 'missing exact primary sampling evidence'
 reject_mutation '/requested=sharp_downscale/d' 'missing sharp secondary sampling evidence'
@@ -77,21 +77,21 @@ reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=0/' 'a secondary f
 reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=1000/' 'catastrophic secondary text-coverage loss'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=1 release_barrier_pending=0/' 'a pressed key left at shutdown'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier_pending=1/' 'an unacknowledged synthetic key release'
-reject_mutation 's/connector_id=102 scene_generation=7/connector_id=102 scene_generation=8/' 'divergent mirror generations'
-reject_mutation 's/connector_id=102 scene_generation=7 logical_content_checksum=111/connector_id=102 scene_generation=7 logical_content_checksum=222/' 'divergent logical-content checksums'
+reject_mutation 's/head=2 scene_generation=7/head=2 scene_generation=8/' 'divergent mirror generations'
+reject_mutation 's/head=2 scene_generation=7 logical_content_checksum=111/head=2 scene_generation=7 logical_content_checksum=222/' 'divergent logical-content checksums'
 reject_mutation 's/cpu_checksum=111/cpu_checksum=222/' 'native heads stale behind the final CPU scene'
 reject_mutation 's/source=cpu logical_content_checksum=111/source=retained_mixed logical_content_checksum=111/' 'focus-only retained content as terminal evidence'
 reject_mutation '/sophia_live_mirror_generation schema=2 status=presented/d' 'missing logical CPU-generation presentation'
-reject_mutation '/sophia_live_mirror_head_damage.*connector_id=102/d' 'missing secondary projected damage'
-reject_mutation 's/connector_id=102 frame=7 width=1920/connector_id=102 frame=8 width=1920/' 'damage from a different logical generation'
-reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080/connector_id=102 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
-reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
+reject_mutation '/sophia_live_mirror_head_damage.*head=2/d' 'missing secondary projected damage'
+reject_mutation 's/head=2 frame=7 width=1920/head=2 frame=8 width=1920/' 'damage from a different logical generation'
+reject_mutation 's/head=2 frame=7 width=1920 height=1080/head=2 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
+reject_mutation 's/head=2 frame=7 width=1920 height=1080 mode=full rects=1/head=2 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
 # Both heads moved together, so the cheaper agreement checks stay satisfied and
 # only the causal binding is left to notice that the completion records name a
 # generation nothing was ever proven to have presented.
 reject_mutation 's/ scene_generation=7 logical_content_checksum=111 head_pixel_checksum/ scene_generation=9 logical_content_checksum=111 head_pixel_checksum/' 'completion records agreeing on an unproven generation'
 
-sed 's/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=123/; s/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=456/' \
+sed 's/head=1 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/head=1 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=123/; s/head=2 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/head=2 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=456/' \
     "$fixture" >"$work/distinct-head-pixels.log"
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/distinct-head-pixels.log" >/dev/null
 
@@ -147,8 +147,8 @@ if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/duplicate-startup-ou
 fi
 
 awk '
-    /status=submitted output=1 connector_id=94 / { submitted = $0; next }
-    /status=callback_accepted output=1 connector_id=94 / { print $0; print submitted; next }
+    /status=submitted output=1 head=1 / { submitted = $0; next }
+    /status=callback_accepted output=1 head=1 / { print $0; print submitted; next }
     { print }
 ' "$fixture" >"$work/reordered.log"
 if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/reordered.log" >/dev/null 2>&1; then
@@ -157,15 +157,15 @@ if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/reordered.log" >/dev
 fi
 
 awk '
-    !inserted && /status=submitted output=1 connector_id=94 .* frame=7$/ {
-        print "sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=94 submission=2 content=Cpu frame=6"
-        print "sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=102 submission=2 content=Cpu frame=6"
-        print "sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=94 callbacks=1 kernel_sequence=70 frame=6"
-        print "sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=94 submission=2 frame=6"
-        print "sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=94 frame=6 width=2560 height=1440 mode=skip rects=0 pixels=0"
-        print "sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=102 callbacks=1 kernel_sequence=71 frame=6"
-        print "sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=102 submission=2 frame=6"
-        print "sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=102 frame=6 width=1920 height=1080 mode=skip rects=0 pixels=0"
+    !inserted && /status=submitted output=1 head=1 .* frame=7$/ {
+        print "sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=2 content=Cpu frame=6"
+        print "sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=2 submission=2 content=Cpu frame=6"
+        print "sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=1 callbacks=1 kernel_sequence=70 frame=6"
+        print "sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=6"
+        print "sophia_live_mirror_head_damage schema=2 status=presented output=1 head=1 frame=6 width=2560 height=1440 mode=skip rects=0 pixels=0"
+        print "sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=2 callbacks=1 kernel_sequence=71 frame=6"
+        print "sophia_live_native_head_page_flip schema=2 status=retired output=1 head=2 submission=2 frame=6"
+        print "sophia_live_mirror_head_damage schema=2 status=presented output=1 head=2 frame=6 width=1920 height=1080 mode=skip rects=0 pixels=0"
         inserted = 1
     }
     { print }
@@ -292,7 +292,7 @@ fi
 : >"$work/kernel-unavailable.log"
 cat >"$work/controlled-runtime-diagnostic.log" <<EOF
 sophia_mirror_group_gate schema=1 status=starting source_commit=$commit sophia_sha256=$sophia_sha256 profile_sha256=$profile_sha256
-sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=94 workers=1
+sophia_live_mirror_bootstrap schema=2 status=worker_ready output=1 head=1 workers=1
 sophia_live_session_runtime_fatal schema=1 status=detected source=owner_loop action=bounded_cleanup error="synthetic runtime failure"
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_runtime_fatal schema=1 status=cleaned source=owner_loop frontend_intake_stopped=true native_heads_in_flight_before=1 native_cleanup_required=true native_suspend_attempted=true native_suspend_reported=true native_drained=true abandoned_scanouts=0 renderer_images_cleared=true presentations_shutdown=true cleanup_errors=0

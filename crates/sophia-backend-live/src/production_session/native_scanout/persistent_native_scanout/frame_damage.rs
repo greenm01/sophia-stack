@@ -101,14 +101,14 @@ pub(super) fn trace_presented_output_damage(
 
 pub(super) fn trace_presented_mirror_head_damage(
     output: OutputId,
-    connector_id: u32,
+    head: sophia_engine::RenderHeadId,
     frame: LiveProductionNativeFrameId,
     presented: &sophia_engine::OutputFramePresentation,
 ) {
     tracing::info!(
-        "sophia_live_mirror_head_damage schema=1 status=presented output={} connector_id={} frame={} width={} height={} mode={} rects={} pixels={}",
+        "sophia_live_mirror_head_damage schema=2 status=presented output={} head={} frame={} width={} height={} mode={} rects={} pixels={}",
         output.raw(),
-        connector_id,
+        head.raw(),
         frame.raw(),
         presented.snapshot.output.size.width,
         presented.snapshot.output.size.height,

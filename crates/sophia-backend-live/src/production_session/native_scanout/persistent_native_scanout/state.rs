@@ -1,3 +1,4 @@
+use sophia_engine::RenderHeadId;
 use sophia_protocol::{OutputId, TransactionId};
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -87,29 +88,29 @@ pub fn reduce_live_production_mirror_generation_queue_target(
 
 /// Joins independently serviced physical heads back into one logical frame.
 ///
-/// Rendering and KMS ownership remain per connector. The Engine-facing frame is
-/// complete only after every connector that began the generation has submitted
-/// and flipped it. A second generation cannot enter this coordinator while the
+/// Rendering and KMS ownership remain per physical head. The Engine-facing
+/// frame is complete only after every head that began the generation has
+/// submitted and flipped it. A second generation cannot enter this coordinator while the
 /// first is active, so a fast head cannot race ahead and display a newer logical
 /// frame than a slower sibling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveProductionMirrorGroupLifecycle {
     output: OutputId,
-    required: BTreeSet<u32>,
-    initialized: BTreeSet<u32>,
+    required: BTreeSet<RenderHeadId>,
+    initialized: BTreeSet<RenderHeadId>,
     active: Option<LiveProductionNativeFrameId>,
     active_progress_at: Option<std::time::Instant>,
-    submitted: BTreeSet<u32>,
-    flipped: BTreeSet<u32>,
+    submitted: BTreeSet<RenderHeadId>,
+    flipped: BTreeSet<RenderHeadId>,
     max_flip_ust_usec: Option<u64>,
     failed: bool,
     completed: Option<LiveProductionNativeFrameId>,
 }
 
 impl LiveProductionMirrorGroupLifecycle {
-    pub fn new(output: OutputId, connectors: impl IntoIterator<Item = u32>) -> Option<Self> {
-        let required = connectors.into_iter().collect::<BTreeSet<_>>();
-        (!required.is_empty() && !required.contains(&0)).then_some(Self {
+    pub fn new(output: OutputId, heads: impl IntoIterator<Item = RenderHeadId>) -> Option<Self> {
+        let required = heads.into_iter().collect::<BTreeSet<_>>();
+        (!required.is_empty() && required.iter().all(|head| head.is_valid())).then_some(Self {
             output,
             required,
             initialized: BTreeSet::new(),
@@ -127,7 +128,7 @@ impl LiveProductionMirrorGroupLifecycle {
         self.output
     }
 
-    pub fn connectors(&self) -> impl Iterator<Item = u32> + '_ {
+    pub fn heads(&self) -> impl Iterator<Item = RenderHeadId> + '_ {
         self.required.iter().copied()
     }
 
@@ -135,11 +136,11 @@ impl LiveProductionMirrorGroupLifecycle {
         self.initialized == self.required
     }
 
-    pub fn mark_initialized(&mut self, connector: u32) -> LiveProductionMirrorHeadTransition {
-        if !self.required.contains(&connector) {
+    pub fn mark_initialized(&mut self, head: RenderHeadId) -> LiveProductionMirrorHeadTransition {
+        if !self.required.contains(&head) {
             return LiveProductionMirrorHeadTransition::UnknownHead;
         }
-        if !self.initialized.insert(connector) {
+        if !self.initialized.insert(head) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
         if self.initialized() {
@@ -203,27 +204,26 @@ impl LiveProductionMirrorGroupLifecycle {
         self.awaiting_flips().then_some(self.active).flatten()
     }
 
-    /// Whether this connector may consume renderer work for the current turn.
+    /// Whether this head may consume renderer work for the current turn.
     ///
     /// A physical callback clears the head's KMS submission before its siblings
     /// necessarily finish the logical generation. Membership in `submitted`
     /// therefore remains the generation fence even after that early callback.
-    pub fn connector_may_submit(&self, connector: u32) -> bool {
-        self.required.contains(&connector)
-            && (self.active.is_none() || !self.submitted.contains(&connector))
+    pub fn head_may_submit(&self, head: RenderHeadId) -> bool {
+        self.required.contains(&head) && (self.active.is_none() || !self.submitted.contains(&head))
     }
 
-    /// Whether this connector may submit this exact logical generation.
+    /// Whether this head may submit this exact logical generation.
     ///
-    /// The connector fence prevents a fast head from submitting twice, while
-    /// the frame fence prevents renderer work queued for the successor from
-    /// being relabeled as the still-active generation.
-    pub fn connector_may_submit_frame(
+    /// The head fence prevents a fast head from submitting twice, while the
+    /// frame fence prevents renderer work queued for the successor from being
+    /// relabeled as the still-active generation.
+    pub fn head_may_submit_frame(
         &self,
-        connector: u32,
+        head: RenderHeadId,
         frame: LiveProductionNativeFrameId,
     ) -> bool {
-        self.connector_may_submit(connector) && self.active.is_none_or(|active| active == frame)
+        self.head_may_submit(head) && self.active.is_none_or(|active| active == frame)
     }
 
     /// Poisons a partially submitted generation.
@@ -241,16 +241,16 @@ impl LiveProductionMirrorGroupLifecycle {
 
     pub fn mark_submitted(
         &mut self,
-        connector: u32,
+        head: RenderHeadId,
         frame: LiveProductionNativeFrameId,
     ) -> LiveProductionMirrorHeadTransition {
-        if !self.required.contains(&connector) {
+        if !self.required.contains(&head) {
             return LiveProductionMirrorHeadTransition::UnknownHead;
         }
         if self.active != Some(frame) {
             return LiveProductionMirrorHeadTransition::WrongGeneration;
         }
-        if !self.submitted.insert(connector) {
+        if !self.submitted.insert(head) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
         self.active_progress_at = Some(std::time::Instant::now());
@@ -263,19 +263,19 @@ impl LiveProductionMirrorGroupLifecycle {
 
     pub fn mark_flipped(
         &mut self,
-        connector: u32,
+        head: RenderHeadId,
         frame: LiveProductionNativeFrameId,
     ) -> LiveProductionMirrorHeadTransition {
-        if !self.required.contains(&connector) {
+        if !self.required.contains(&head) {
             return LiveProductionMirrorHeadTransition::UnknownHead;
         }
         if self.active != Some(frame) {
             return LiveProductionMirrorHeadTransition::WrongGeneration;
         }
-        if !self.submitted.contains(&connector) {
+        if !self.submitted.contains(&head) {
             return LiveProductionMirrorHeadTransition::NotSubmitted;
         }
-        if !self.flipped.insert(connector) {
+        if !self.flipped.insert(head) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
         self.active_progress_at = Some(std::time::Instant::now());

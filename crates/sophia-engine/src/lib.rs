@@ -1,11 +1,9 @@
 mod prelude {
     pub(crate) use core::fmt;
     pub(crate) use std::collections::{BTreeMap, BTreeSet};
-    pub(crate) use std::fs;
     pub(crate) use std::io::{self, Read, Write};
     #[cfg(unix)]
     pub(crate) use std::os::unix::net::UnixStream;
-    pub(crate) use std::path::{Path, PathBuf};
     pub(crate) use std::sync::mpsc::{Receiver, TryRecvError};
     pub(crate) use std::time::Duration;
 
@@ -41,6 +39,7 @@ mod drm;
 mod engine;
 mod error;
 mod frame;
+mod head;
 mod input;
 mod layout_epoch;
 mod live_backend;
@@ -64,6 +63,7 @@ pub use drm::*;
 pub use engine::*;
 pub use error::*;
 pub use frame::*;
+pub use head::*;
 pub use input::*;
 pub use layout_epoch::*;
 pub use live_backend::*;

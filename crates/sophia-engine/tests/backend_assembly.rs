@@ -21,18 +21,19 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
         QueuedInputPoller::new(vec![motion_event(1, 10.0, 20.0)]),
         source,
     );
-    let mut outputs = DrmKmsOutputRegistry::new();
-    let descriptor = DrmKmsOutputDescriptor {
-        output: output.id,
-        connector_id: 11,
-        crtc_id: 0,
-        mode: DrmKmsMode {
-            size: output.size,
-            refresh_millihz: 60_000,
-        },
-        scale: output.scale,
-    };
-    outputs.upsert(descriptor);
+    let mut outputs = EngineHeadRegistry::new();
+    assert!(
+        outputs
+            .admit(HeadRenderTarget {
+                head: RenderHeadId::from_raw(1),
+                output: output.id,
+                target_generation: 1,
+                native_size: output.size,
+                scale: output.scale,
+                refresh_millihz: 60_000,
+            })
+            .is_admitted()
+    );
     let mut assembly = HeadlessCompositorBackendAssembly::from_parts(
         output,
         outputs,
@@ -170,7 +171,7 @@ fn headless_backend_tick_keeps_physical_input_separate_from_routed_input() {
     let input = LibinputPhysicalInputAdapter::new(QueuedInputPoller::new(vec![event]), source);
     let mut assembly = HeadlessCompositorBackendAssembly::from_parts(
         output,
-        DrmKmsOutputRegistry::new(),
+        EngineHeadRegistry::new(),
         DeterministicFrameClock::default(),
         input,
         RendererSelection::CpuFallback,
@@ -213,7 +214,7 @@ fn renderer_selection_uses_xpixmap_imports_and_falls_back_for_unsupported_paths(
     let output = HeadlessOutput::deterministic();
     let mut assembly = HeadlessCompositorBackendAssembly::from_parts(
         output,
-        DrmKmsOutputRegistry::new(),
+        EngineHeadRegistry::new(),
         DeterministicFrameClock::default(),
         LibinputPhysicalInputAdapter::new(QueuedInputPoller::default(), LibinputEventSource::new()),
         RendererSelection::ImportCapable {

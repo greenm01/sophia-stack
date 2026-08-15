@@ -458,19 +458,25 @@ fn successful_primary_exit_keeps_requested_input_proof_alive() {
 fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
     let original = "session client exited during live session with status exit status: 83";
     let frame = LiveProductionNativeFrameId::from_raw(10);
-    let mut group =
-        LiveProductionMirrorGroupLifecycle::new(OutputId::from_raw(7), [94, 104]).unwrap();
+    let mut group = LiveProductionMirrorGroupLifecycle::new(
+        OutputId::from_raw(7),
+        [
+            sophia_engine::RenderHeadId::from_raw(94),
+            sophia_engine::RenderHeadId::from_raw(104),
+        ],
+    )
+    .unwrap();
     assert_eq!(group.begin(frame), LiveProductionMirrorGroupBegin::Started);
     assert_eq!(
-        group.mark_submitted(94, frame),
+        group.mark_submitted(sophia_engine::RenderHeadId::from_raw(94), frame),
         LiveProductionMirrorHeadTransition::Accepted
     );
     assert_eq!(
-        group.mark_flipped(94, frame),
+        group.mark_flipped(sophia_engine::RenderHeadId::from_raw(94), frame),
         LiveProductionMirrorHeadTransition::Accepted
     );
     assert_eq!(
-        group.mark_submitted(104, frame),
+        group.mark_submitted(sophia_engine::RenderHeadId::from_raw(104), frame),
         LiveProductionMirrorHeadTransition::GroupReady
     );
     assert!(group.awaiting_flips());
@@ -478,7 +484,7 @@ fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
     // Fatal intake stops here. The bounded drain must retain the sibling owner
     // until its callback joins the logical generation.
     assert_eq!(
-        group.mark_flipped(104, frame),
+        group.mark_flipped(sophia_engine::RenderHeadId::from_raw(104), frame),
         LiveProductionMirrorHeadTransition::GroupReady
     );
     assert_eq!(group.take_completed_frame(), Some(frame));

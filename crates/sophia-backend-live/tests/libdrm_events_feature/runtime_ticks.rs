@@ -296,7 +296,7 @@ fn live_runtime_tick_submits_rendered_scanout_when_runtime_requests_scanout() {
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 99,
         })
         .expect("test channel should accept page-flip callback");
@@ -416,7 +416,7 @@ fn live_runtime_tick_reads_native_page_flip_events_before_rendered_scanout() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut reader =
         FakeLibdrmNativePageFlipReader::new([LibdrmNativePageFlipCallback::new(slot, 99)]);
@@ -516,7 +516,7 @@ fn live_runtime_tick_polls_libinput_shaped_input_while_retiring_and_submitting_s
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut reader =
         FakeLibdrmNativePageFlipReader::new([LibdrmNativePageFlipCallback::new(slot, 101)]);
@@ -598,7 +598,7 @@ fn live_session_loop_tick_leaves_input_idle_until_reduced_readiness() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut session_loop = LiveBackendSessionLoop::new(
         page_flip_poller,
@@ -713,7 +713,7 @@ fn live_session_loop_tick_skips_page_flip_read_until_reduced_ready() {
         NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
             slot,
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
         }]);
     let mut session_loop = LiveBackendSessionLoop::new(
         page_flip_poller,

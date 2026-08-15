@@ -1,5 +1,5 @@
 use sophia_engine::{
-    DrmKmsOutputRegistry, OutputPresentationFeedback, OutputPresentationRegistry,
+    EngineHeadRegistry, OutputPresentationFeedback, OutputPresentationRegistry,
     OutputPresentationRetire, OutputPresentationSchedule, ProductionOutputRuntimeAdapter,
     ProductionPresentationAdapter, ProductionRetirement,
 };
@@ -133,7 +133,7 @@ pub struct LiveProductionPageFlipTracker {
 }
 
 impl LiveProductionPageFlipTracker {
-    pub fn from_outputs(outputs: &DrmKmsOutputRegistry) -> Self {
+    pub fn from_outputs(outputs: &EngineHeadRegistry) -> Self {
         Self {
             presentation: OutputPresentationRegistry::from_outputs(outputs),
             pending: BTreeMap::new(),
@@ -449,6 +449,9 @@ impl LiveProductionPresentFeedbackCoordinator {
         }
     }
 }
+
+mod head_table;
+pub use head_table::*;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod native_scanout;

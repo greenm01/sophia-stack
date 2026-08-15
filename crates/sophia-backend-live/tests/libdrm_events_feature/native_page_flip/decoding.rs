@@ -12,9 +12,10 @@ fn native_libdrm_poller_constructs_routes_from_discovered_outputs_without_kms_id
     assert_eq!(routes[0].output, OutputId::from_raw(1));
     assert_eq!(routes[1].slot.raw(), 2);
     assert_eq!(routes[1].output, OutputId::from_raw(2));
-    // The route carries the connector discovery found, which is what tells two
-    // heads of one logical output apart once mirroring puts them there.
-    assert_eq!(routes[1].connector_id, 9876);
+    // The route carries the minted opaque head, which is what tells two heads
+    // of one logical output apart once mirroring puts them there; the
+    // connector integer stays behind the backend's head table.
+    assert_eq!(routes[1].head, sophia_engine::RenderHeadId::from_raw(2));
     assert_eq!(
         report.native_libdrm_poller_startup_report(),
         LiveLibdrmPollerStartupReport {
@@ -34,7 +35,7 @@ fn native_libdrm_poller_constructs_routes_from_discovered_outputs_without_kms_id
         receiver.try_recv().expect("callback should map"),
         LivePageFlipCallback {
             output: OutputId::from_raw(2),
-            connector_id: 9876,
+            head: sophia_engine::RenderHeadId::from_raw(2),
             frame_serial: 90,
         }
     );
@@ -73,7 +74,7 @@ fn native_libdrm_page_flip_callback_decodes_without_native_resource_identity() {
     let routes = [LibdrmNativeOutputRoute {
         slot,
         output: OutputId::from_raw(7),
-        connector_id: 1,
+        head: sophia_engine::RenderHeadId::from_raw(1),
     }];
     assert_eq!(
         LibdrmNativePageFlipCallback::new(slot, 81).decode(&routes),
@@ -81,7 +82,7 @@ fn native_libdrm_page_flip_callback_decodes_without_native_resource_identity() {
             status: LibdrmNativePageFlipDecodeStatus::Decoded,
             callback: Some(LivePageFlipCallback {
                 output: OutputId::from_raw(7),
-                connector_id: 1,
+                head: sophia_engine::RenderHeadId::from_raw(1),
                 frame_serial: 81,
             }),
         }
@@ -110,7 +111,7 @@ fn native_libdrm_page_flip_decode_batch_is_bounded_and_reduced() {
     let routes = [LibdrmNativeOutputRoute {
         slot,
         output: OutputId::from_raw(7),
-        connector_id: 1,
+        head: sophia_engine::RenderHeadId::from_raw(1),
     }];
     let callbacks = [
         LibdrmNativePageFlipCallback::new(slot, 81),
@@ -133,7 +134,7 @@ fn native_libdrm_page_flip_decode_batch_is_bounded_and_reduced() {
             receiver.try_recv().expect("callback should be queued"),
             LivePageFlipCallback {
                 output: OutputId::from_raw(7),
-                connector_id: 1,
+                head: sophia_engine::RenderHeadId::from_raw(1),
                 frame_serial,
             }
         );
@@ -153,7 +154,7 @@ fn native_libdrm_page_flip_decode_batch_reports_backpressure_without_native_iden
     let routes = [LibdrmNativeOutputRoute {
         slot,
         output: OutputId::from_raw(7),
-        connector_id: 1,
+        head: sophia_engine::RenderHeadId::from_raw(1),
     }];
     let callbacks = [
         LibdrmNativePageFlipCallback::new(slot, 81),
@@ -220,12 +221,12 @@ fn fake_libdrm_page_flip_poller_feeds_runtime_queue() {
     let mut poller = FakeLibdrmPageFlipEventPoller::new([
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 61,
         },
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 62,
         },
     ]);

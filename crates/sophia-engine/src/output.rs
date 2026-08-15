@@ -1,4 +1,4 @@
-use crate::DrmKmsOutputRegistry;
+use crate::EngineHeadRegistry;
 use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,16 +73,20 @@ pub struct ExtendedDesktopTopology {
 }
 
 impl ExtendedDesktopTopology {
-    pub fn from_drm_outputs(outputs: &DrmKmsOutputRegistry) -> Self {
+    pub fn from_head_registry(outputs: &EngineHeadRegistry) -> Self {
         let mut logical_x = 0i32;
         let mut logical_height = 0i32;
         let mut geometries = BTreeMap::new();
-        for output in outputs.outputs() {
+        // Mirroring is several heads behind one logical output, so the
+        // topology iterates logical views, never heads; an output whose heads
+        // disagree on shape has no logical view yet and is skipped rather
+        // than represented by an elected head.
+        for output in outputs.logical_outputs() {
             let scale = output.scale.max(1);
             let scale_i32 = i32::try_from(scale).unwrap_or(i32::MAX);
             let logical_size = Size {
-                width: output.mode.size.width.saturating_div(scale_i32).max(1),
-                height: output.mode.size.height.saturating_div(scale_i32).max(1),
+                width: output.size.width.saturating_div(scale_i32).max(1),
+                height: output.size.height.saturating_div(scale_i32).max(1),
             };
             let logical = Rect {
                 x: logical_x,
@@ -91,11 +95,11 @@ impl ExtendedDesktopTopology {
                 height: logical_size.height,
             };
             geometries.insert(
-                output.output,
+                output.id,
                 OutputLogicalGeometry {
-                    output: output.output,
+                    output: output.id,
                     logical,
-                    pixel_size: output.mode.size,
+                    pixel_size: output.size,
                     scale,
                 },
             );

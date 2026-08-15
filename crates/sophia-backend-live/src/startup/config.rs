@@ -1,9 +1,8 @@
 use crate::prelude::*;
 use std::path::PathBuf;
 
-use sophia_engine::{
-    StaticInputDiscoveryBackend, SysfsDrmKmsOutputBackend, discover_live_compositor_backend,
-};
+use crate::SysfsDrmKmsOutputBackend;
+use sophia_engine::{StaticInputDiscoveryBackend, discover_live_compositor_backend};
 
 pub fn discover_live_backend(config: &LiveBackendConfig) -> LiveBackendStartupReport {
     let output_backend = SysfsDrmKmsOutputBackend::new(&config.drm_sysfs_root);

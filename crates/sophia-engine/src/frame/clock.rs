@@ -1,4 +1,4 @@
-use crate::DrmKmsOutputRegistry;
+use crate::EngineHeadRegistry;
 use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -67,17 +67,20 @@ pub struct PerOutputFrameClock {
 }
 
 impl PerOutputFrameClock {
-    pub fn from_outputs(outputs: &DrmKmsOutputRegistry, fallback: DeterministicFrameClock) -> Self {
+    pub fn from_outputs(outputs: &EngineHeadRegistry, fallback: DeterministicFrameClock) -> Self {
         let clocks = outputs
             .outputs()
             .map(|output| {
-                let interval_msec = if output.mode.refresh_millihz == 0 {
+                // A mirror group paces at its slowest head, which is what the
+                // registry's logical refresh reports.
+                let refresh_millihz = outputs.logical_refresh_millihz(output);
+                let interval_msec = if refresh_millihz == 0 {
                     fallback.frame_interval_msec()
                 } else {
-                    (1_000_000u64 / u64::from(output.mode.refresh_millihz)).max(1)
+                    (1_000_000u64 / u64::from(refresh_millihz)).max(1)
                 };
                 (
-                    output.output,
+                    output,
                     DeterministicFrameClock::new(fallback.next_serial(), interval_msec),
                 )
             })

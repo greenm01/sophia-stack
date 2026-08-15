@@ -37,6 +37,10 @@ mod session_loop;
 mod startup;
 
 pub use api::*;
+pub use drm::{
+    LiveDrmSysfsDiscovery, LiveDrmSysfsDiscoveryConfig, LiveSysfsConnectorRecord,
+    SysfsDrmKmsOutputBackend, discover_native_connector_records,
+};
 #[cfg(feature = "drm-hotplug")]
 pub use drm::{LiveDrmTopologyMonitor, LiveDrmTopologyMonitorStats, LiveDrmTopologyRescanNotice};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

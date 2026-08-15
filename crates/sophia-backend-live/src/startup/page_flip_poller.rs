@@ -4,16 +4,16 @@ impl LiveBackendStartupReport {
     pub fn native_libdrm_output_routes(&self) -> Vec<LibdrmNativeOutputRoute> {
         self.discovery
             .outputs
-            .outputs()
+            .heads()
             .enumerate()
-            .filter_map(|(index, output)| {
+            .filter_map(|(index, target)| {
                 LibdrmNativeOutputSlot::new(
                     u16::try_from(index.saturating_add(1)).unwrap_or(u16::MAX),
                 )
                 .map(|slot| LibdrmNativeOutputRoute {
                     slot,
-                    output: output.output,
-                    connector_id: output.connector_id,
+                    output: target.output,
+                    head: target.head,
                 })
             })
             .collect()

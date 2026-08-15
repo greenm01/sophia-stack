@@ -18,76 +18,175 @@ fn headless_engine_exposes_deterministic_output() {
 }
 
 #[test]
-fn drm_kms_output_registry_tracks_connector_mode_and_scale() {
-    let descriptor = DrmKmsOutputDescriptor {
-        output: OutputId::from_raw(7),
-        connector_id: 42,
-        crtc_id: 99,
-        mode: DrmKmsMode::new(1920, 1080, 60_000),
-        scale: 2,
-    };
-    let mut registry = DrmKmsOutputRegistry::new();
-
-    registry.upsert(descriptor);
-
-    assert_eq!(registry.get(OutputId::from_raw(7)), Some(&descriptor));
-    assert_eq!(registry.outputs().count(), 1);
-    assert_eq!(
-        registry.primary_engine_output(),
-        Some(descriptor.as_engine_output())
-    );
-    assert_eq!(
-        descriptor.as_engine_output().size,
-        sophia_protocol::Size {
+fn engine_head_registry_tracks_heads_and_logical_views() {
+    let output = OutputId::from_raw(7);
+    let first = HeadRenderTarget {
+        head: RenderHeadId::from_raw(1),
+        output,
+        target_generation: 1,
+        native_size: Size {
             width: 1920,
             height: 1080,
-        }
+        },
+        scale: 2,
+        refresh_millihz: 60_000,
+    };
+    let sibling = HeadRenderTarget {
+        head: RenderHeadId::from_raw(2),
+        refresh_millihz: 59_000,
+        ..first
+    };
+    let mut registry = EngineHeadRegistry::new();
+
+    assert_eq!(registry.admit(first), EngineHeadRegistryUpdate::Inserted);
+    assert_eq!(registry.admit(sibling), EngineHeadRegistryUpdate::Inserted);
+
+    assert_eq!(registry.output_count(), 1);
+    assert_eq!(registry.head_count(), 2);
+    assert_eq!(registry.head(RenderHeadId::from_raw(2)), Some(&sibling));
+    assert_eq!(
+        registry.logical_output(output),
+        Some(HeadlessOutput {
+            id: output,
+            size: first.native_size,
+            scale: 2,
+        })
     );
-    assert_eq!(descriptor.as_engine_output().scale, 2);
-    assert_eq!(registry.remove(OutputId::from_raw(7)), Some(descriptor));
+    // A mirror group paces at its slowest head.
+    assert_eq!(registry.logical_refresh_millihz(output), 59_000);
+    assert_eq!(
+        registry.remove_head(RenderHeadId::from_raw(2)),
+        Some(sibling)
+    );
+    assert_eq!(registry.head_count(), 1);
+    assert_eq!(registry.remove_output(output), 1);
     assert!(registry.primary_engine_output().is_none());
 }
 
 #[test]
-fn drm_kms_output_registry_rejects_unbounded_output_growth() {
-    let mut registry = DrmKmsOutputRegistry::new();
+fn engine_head_registry_rejects_unbounded_growth() {
+    let mut registry = EngineHeadRegistry::new();
+    let mut next_head = 1u64;
     for index in 0..sophia_engine::MAX_DRM_KMS_OUTPUTS {
         let raw = u64::try_from(index + 1).unwrap();
         assert_eq!(
-            registry.upsert(DrmKmsOutputDescriptor {
-                output: OutputId::from_raw(raw),
-                connector_id: u32::try_from(raw).unwrap(),
-                crtc_id: u32::try_from(raw + 100).unwrap(),
-                mode: DrmKmsMode::new(1920, 1080, 60_000),
-                scale: 1,
-            }),
-            DrmKmsOutputRegistryUpdate::Inserted
+            registry.admit(head_target(next_head, raw)),
+            EngineHeadRegistryUpdate::Inserted
+        );
+        next_head += 1;
+    }
+    assert_eq!(
+        registry.admit(head_target(next_head, 99)),
+        EngineHeadRegistryUpdate::OutputCapacityExceeded
+    );
+
+    for _ in 1..sophia_engine::MAX_HEADS_PER_OUTPUT {
+        next_head += 1;
+        assert_eq!(
+            registry.admit(head_target(next_head, 1)),
+            EngineHeadRegistryUpdate::Inserted
         );
     }
-
-    assert_eq!(registry.len(), sophia_engine::MAX_DRM_KMS_OUTPUTS);
+    next_head += 1;
     assert_eq!(
-        registry.upsert(DrmKmsOutputDescriptor {
-            output: OutputId::from_raw(99),
-            connector_id: 99,
-            crtc_id: 199,
-            mode: DrmKmsMode::new(1920, 1080, 60_000),
-            scale: 1,
-        }),
-        DrmKmsOutputRegistryUpdate::CapacityExceeded
+        registry.admit(head_target(next_head, 1)),
+        EngineHeadRegistryUpdate::HeadCapacityExceeded
     );
 }
 
 #[test]
-fn drm_kms_descriptor_can_seed_engine_output() {
-    let descriptor = DrmKmsOutputDescriptor {
-        output: OutputId::from_raw(8),
-        connector_id: 43,
-        crtc_id: 100,
-        mode: DrmKmsMode::new(2560, 1440, 144_000),
-        scale: 1,
+fn engine_head_registry_rejects_stale_target_generations() {
+    let mut registry = EngineHeadRegistry::new();
+    let target = head_target(1, 1);
+    assert_eq!(registry.admit(target), EngineHeadRegistryUpdate::Inserted);
+
+    // A shape change must advance the target generation; silently mutating a
+    // target under an unchanged generation would relabel stale prepared work.
+    let reshaped_same_generation = HeadRenderTarget {
+        native_size: Size {
+            width: 2560,
+            height: 1440,
+        },
+        ..target
     };
-    let engine = HeadlessEngine::new(descriptor.as_engine_output());
+    assert_eq!(
+        registry.admit(reshaped_same_generation),
+        EngineHeadRegistryUpdate::StaleTargetGeneration
+    );
+    let reshaped = HeadRenderTarget {
+        target_generation: 2,
+        ..reshaped_same_generation
+    };
+    assert_eq!(registry.admit(reshaped), EngineHeadRegistryUpdate::Replaced);
+    assert_eq!(
+        registry.admit(target),
+        EngineHeadRegistryUpdate::StaleTargetGeneration
+    );
+    assert_eq!(registry.head(RenderHeadId::from_raw(1)), Some(&reshaped));
+}
+
+#[test]
+fn engine_head_registry_denies_head_reassignment_across_outputs() {
+    let mut registry = EngineHeadRegistry::new();
+    assert_eq!(
+        registry.admit(head_target(1, 1)),
+        EngineHeadRegistryUpdate::Inserted
+    );
+    assert_eq!(
+        registry.admit(head_target(1, 2)),
+        EngineHeadRegistryUpdate::HeadOwnedByOtherOutput
+    );
+    assert_eq!(
+        registry.admit(HeadRenderTarget {
+            head: RenderHeadId::INVALID,
+            ..head_target(1, 1)
+        }),
+        EngineHeadRegistryUpdate::InvalidHead
+    );
+}
+
+#[test]
+fn engine_head_registry_withholds_logical_view_for_disagreeing_heads() {
+    let output = OutputId::from_raw(1);
+    let mut registry = EngineHeadRegistry::new();
+    assert_eq!(
+        registry.admit(head_target(1, 1)),
+        EngineHeadRegistryUpdate::Inserted
+    );
+    assert_eq!(
+        registry.admit(HeadRenderTarget {
+            head: RenderHeadId::from_raw(2),
+            native_size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            ..head_target(2, 1)
+        }),
+        EngineHeadRegistryUpdate::Inserted
+    );
+
+    // Heads that disagree on shape yield no logical view rather than electing
+    // one head as authoritative.
+    assert_eq!(registry.logical_output(output), None);
+    assert!(registry.logical_outputs().next().is_none());
+}
+
+#[test]
+fn head_target_can_seed_engine_output() {
+    let target = HeadRenderTarget {
+        head: RenderHeadId::from_raw(1),
+        output: OutputId::from_raw(8),
+        target_generation: 1,
+        native_size: Size {
+            width: 2560,
+            height: 1440,
+        },
+        scale: 1,
+        refresh_millihz: 144_000,
+    };
+    let mut registry = EngineHeadRegistry::new();
+    assert!(registry.admit(target).is_admitted());
+    let engine = HeadlessEngine::new(registry.logical_output(target.output).unwrap());
     let frame = engine
         .plan_frame(
             FramePlanRequest {
@@ -98,63 +197,22 @@ fn drm_kms_descriptor_can_seed_engine_output() {
         )
         .unwrap();
 
-    assert_eq!(frame.output_size, descriptor.mode.size);
-    assert_eq!(frame.output_scale, descriptor.scale);
+    assert_eq!(frame.output_size, target.native_size);
+    assert_eq!(frame.output_scale, target.scale);
 }
 
-#[test]
-fn drm_kms_sysfs_discovery_finds_connected_outputs() {
-    let root = drm_sysfs_fixture("connected");
-    let connector = root.join("card0-HDMI-A-1");
-    fs::create_dir_all(&connector).unwrap();
-    write_fixture_file(&connector, "status", "connected\n");
-    write_fixture_file(&connector, "modes", "1920x1080\n1280x720\n");
-    write_fixture_file(&connector, "connector_id", "42\n");
-    write_fixture_file(&connector, "crtc_id", "99\n");
-    write_fixture_file(&connector, "scale", "2\n");
-
-    let registry = discover_drm_kms_outputs_from_sysfs(&root).unwrap();
-    let output = registry.get(OutputId::from_raw(1)).unwrap();
-
-    assert_eq!(registry.outputs().count(), 1);
-    assert_eq!(output.connector_id, 42);
-    assert_eq!(output.crtc_id, 99);
-    assert_eq!(output.mode, DrmKmsMode::new(1920, 1080, 60_000));
-    assert_eq!(output.scale, 2);
-    assert_eq!(
-        registry.primary_engine_output(),
-        Some(output.as_engine_output())
-    );
-
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn drm_kms_sysfs_discovery_ignores_disconnected_or_modeless_outputs() {
-    let root = drm_sysfs_fixture("filtered");
-    let disconnected = root.join("card0-DP-1");
-    let modeless = root.join("card0-HDMI-A-1");
-    let connected = root.join("card0-eDP-1");
-    fs::create_dir_all(&disconnected).unwrap();
-    fs::create_dir_all(&modeless).unwrap();
-    fs::create_dir_all(&connected).unwrap();
-    write_fixture_file(&disconnected, "status", "disconnected\n");
-    write_fixture_file(&disconnected, "modes", "3840x2160\n");
-    write_fixture_file(&modeless, "status", "connected\n");
-    write_fixture_file(&modeless, "modes", "\n");
-    write_fixture_file(&connected, "status", "connected\n");
-    write_fixture_file(&connected, "modes", "2560x1440\n");
-
-    let registry = discover_drm_kms_outputs_from_sysfs(&root).unwrap();
-    let output = registry.get(OutputId::from_raw(3)).unwrap();
-
-    assert_eq!(registry.outputs().count(), 1);
-    assert_eq!(output.connector_id, 3);
-    assert_eq!(output.crtc_id, 0);
-    assert_eq!(output.mode, DrmKmsMode::new(2560, 1440, 60_000));
-    assert_eq!(output.scale, 1);
-
-    fs::remove_dir_all(root).unwrap();
+fn head_target(head: u64, output: u64) -> HeadRenderTarget {
+    HeadRenderTarget {
+        head: RenderHeadId::from_raw(head),
+        output: OutputId::from_raw(output),
+        target_generation: 1,
+        native_size: Size {
+            width: 1920,
+            height: 1080,
+        },
+        scale: 1,
+        refresh_millihz: 60_000,
+    }
 }
 
 #[test]
@@ -267,16 +325,26 @@ fn libinput_physical_input_adapter_reports_rejected_events() {
     assert_eq!(adapter.source().pending_len(), 0);
 }
 
+#[derive(Clone, Debug)]
+struct StaticHeadRegistryBackend {
+    heads: Vec<HeadRenderTarget>,
+}
+
+impl OutputDiscoveryBackend for StaticHeadRegistryBackend {
+    fn discover_outputs(&self) -> IoResult<EngineHeadRegistry> {
+        let mut registry = EngineHeadRegistry::new();
+        for target in &self.heads {
+            assert!(registry.admit(*target).is_admitted());
+        }
+        Ok(registry)
+    }
+}
+
 #[test]
 fn live_backend_discovery_can_seed_headless_assembly_without_policy_changes() {
-    let root = drm_sysfs_fixture("live-ready");
-    let connector = root.join("card0-HDMI-A-1");
-    fs::create_dir_all(&connector).unwrap();
-    write_fixture_file(&connector, "status", "connected\n");
-    write_fixture_file(&connector, "modes", "1920x1080\n");
-    write_fixture_file(&connector, "connector_id", "42\n");
-    write_fixture_file(&connector, "crtc_id", "99\n");
-    let output_backend = SysfsDrmKmsOutputBackend::new(&root);
+    let output_backend = StaticHeadRegistryBackend {
+        heads: vec![head_target(1, 1)],
+    };
     let input_backend = StaticInputDiscoveryBackend::new(vec![LibinputDeviceDescriptor {
         seat: SeatId::from_raw(1),
         device: DeviceId::from_raw(2),
@@ -314,14 +382,11 @@ fn live_backend_discovery_can_seed_headless_assembly_without_policy_changes() {
             scale: 1,
         })
     );
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn live_backend_discovery_fails_closed_when_no_outputs_exist() {
-    let root = drm_sysfs_fixture("live-no-outputs");
-    let output_backend = SysfsDrmKmsOutputBackend::new(&root);
+    let output_backend = StaticHeadRegistryBackend { heads: Vec::new() };
     let input_backend = StaticInputDiscoveryBackend::new(vec![LibinputDeviceDescriptor {
         seat: SeatId::from_raw(1),
         device: DeviceId::from_raw(2),
@@ -342,15 +407,13 @@ fn live_backend_discovery_fails_closed_when_no_outputs_exist() {
             .into_headless_assembly(QueuedInputPoller::default(), RendererSelection::CpuFallback)
             .is_none()
     );
-
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[derive(Clone, Debug)]
 struct FailingOutputBackend;
 
 impl OutputDiscoveryBackend for FailingOutputBackend {
-    fn discover_outputs(&self) -> IoResult<DrmKmsOutputRegistry> {
+    fn discover_outputs(&self) -> IoResult<EngineHeadRegistry> {
         Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             "denied",

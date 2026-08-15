@@ -996,6 +996,29 @@ is excluded; retained product behavior is not.
   2. Split logical output-scene records from opaque physical-head targets.
      Normalize current `BufferSource` transactions into singleton bounded
      `SurfaceContentSet` records without exposing head identity to WM policy.
+     **The identity half is done.** The backend mints session-scoped
+     `RenderHeadId`s while building page-flip sessions and keeps the
+     card/connector/CRTC/name mapping in a private
+     `LiveProductionNativeHeadTable`; Engine's raw-integer DRM registry is
+     replaced by `EngineHeadRegistry` holding generation-stamped
+     `HeadRenderTarget` records grouped by logical output (`MAX_HEADS_PER_OUTPUT`
+     is its own named capacity). A reshaped head must advance its target
+     generation or admission fails as stale. The logical view of an output is
+     the shape all heads agree on, fail closed; refresh is excluded from that
+     agreement because mirror heads legitimately run near-but-not-equal rates,
+     and logical pacing reduces to the slowest head. Sysfs discovery moved to
+     `sophia-backend-live` with the physical identity it reads. Mirror
+     lifecycles, page-flip routes/callbacks/kernel timestamps, and per-head
+     evidence are head-keyed (`sophia_live_native_head_page_flip schema=2`,
+     `sophia_live_mirror_bootstrap schema=2`, `sophia_live_mirror_head_damage
+     schema=2`, completion `schema=3`); the readiness line
+     (`sophia_live_native_head schema=2 status=ready`) is the one record that
+     prints a head id beside its connector name, and the physical verifiers
+     correlate through it. A callback whose CRTC resolves to no admitted head
+     fails closed with a named unknown-head error. The physical verifier,
+     meta-check, and fixture log are updated and green offline; the
+     `SurfaceContentSet` content half of this step remains open, and the next
+     tty4 mirror run re-proves the rekeyed path on hardware.
   3. Add the pure per-head planner and per-head damage/presentation ledgers.
      Use one rational transform for layers, clips, damage, cursor projection,
      and input inversion; remove visual dependence on a primary output.

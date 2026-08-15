@@ -31,6 +31,7 @@ fn run_real_atomic_scanout_smoke_phases_with_policy(
     let mut session_result = select_real_atomic_scanout_card().into_page_flip_session(
         config.slot,
         config.output,
+        config.head,
         config.authority,
     );
     let Some(mut session) = session_result.session.take() else {

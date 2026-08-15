@@ -66,12 +66,14 @@ mod persistent_native_scanout {
         output_callbacks: BTreeMap<OutputId, Receiver<crate::LivePageFlipCallback>>,
         /// Physical-head joins for logical mirror generations.
         output_lifecycles: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
+        /// The only place a head's card, connector, and CRTC identity lives.
+        pub head_table: crate::LiveProductionNativeHeadTable,
         next_frame_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
         pub presentation_started: Instant,
         pub kernel_page_flip_timestamps: usize,
         pub kernel_page_flip_timestamp_missing: usize,
-        kernel_page_flip_ust: BTreeMap<(OutputId, u32, u64), u64>,
+        kernel_page_flip_ust: BTreeMap<(OutputId, sophia_engine::RenderHeadId, u64), u64>,
         pub vsync_overlap_rejections: usize,
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
@@ -97,6 +99,7 @@ mod persistent_native_scanout {
     }
 
     pub struct LiveProductionNativeHead {
+        pub head: sophia_engine::RenderHeadId,
         pub group: usize,
         pub selection: crate::LibdrmNativePrimaryPlaneSelection,
         /// Feeds this head's logical output. Every head of a mirror group holds a
@@ -241,7 +244,7 @@ mod persistent_native_scanout {
                 )
                 .into());
             }
-            let outputs = sophia_engine::discover_drm_kms_outputs_from_sysfs("/sys/class/drm")?;
+            let connector_records = crate::discover_native_connector_records("/sys/class/drm")?;
             // Ownership is complete when every discovered connector has a head, not
             // when the logical-output count matches. A mirror group is several heads
             // behind one logical output, so comparing logical outputs to connectors
@@ -251,26 +254,28 @@ mod persistent_native_scanout {
                 .iter()
                 .map(|session| session.selections().len())
                 .sum();
-            if head_count != outputs.len() {
+            if head_count != connector_records.len() {
                 return Err(format!(
                     "persistent native ownership is partial: discovered={} heads={}",
-                    outputs.len(),
+                    connector_records.len(),
                     head_count
                 )
                 .into());
             }
-            let mut presentation_outputs = sophia_engine::DrmKmsOutputRegistry::new();
+            let head_table =
+                crate::LiveProductionNativeHeadTable::from_records(sessions.head_records.clone())?;
+            let mut presentation_outputs = sophia_engine::EngineHeadRegistry::new();
             for session in &sessions.sessions {
-                for (selection, output_id) in session
+                for ((selection, output_id), head_id) in session
                     .selections()
                     .iter()
                     .copied()
                     .zip(session.outputs().iter().copied())
+                    .zip(session.heads().iter().copied())
                 {
-                    let Some(descriptor) = outputs
-                        .outputs()
-                        .find(|descriptor| descriptor.connector_id == selection.connector_id())
-                        .copied()
+                    let Some(record) = connector_records
+                        .iter()
+                        .find(|record| record.connector_id == selection.connector_id())
                     else {
                         return Err(format!(
                             "persistent native output has no Engine connector match: connector={}",
@@ -278,28 +283,33 @@ mod persistent_native_scanout {
                         )
                         .into());
                     };
-                    let descriptor = sophia_engine::DrmKmsOutputDescriptor {
+                    let target = sophia_engine::HeadRenderTarget {
+                        head: head_id,
                         output: output_id,
-                        ..descriptor
+                        target_generation: 1,
+                        native_size: selection.size(),
+                        scale: record.scale,
+                        refresh_millihz: record.mode.refresh_millihz,
                     };
-                    if presentation_outputs.upsert(descriptor)
-                        == sophia_engine::DrmKmsOutputRegistryUpdate::CapacityExceeded
-                    {
-                        return Err(
-                            "persistent native presentation output capacity exceeded".into()
-                        );
+                    if !presentation_outputs.admit(target).is_admitted() {
+                        return Err(format!(
+                            "persistent native head admission failed: head={} output={}",
+                            head_id.raw(),
+                            output_id.raw(),
+                        )
+                        .into());
                     }
                 }
             }
-            if presentation_outputs.len() != sessions.output_count {
+            if presentation_outputs.output_count() != sessions.output_count {
                 return Err(format!(
                     "persistent native connector mapping is incomplete: mapped={} native={}",
-                    presentation_outputs.len(),
+                    presentation_outputs.output_count(),
                     sessions.output_count,
                 )
                 .into());
             }
-            let presentation_output_count = presentation_outputs.len();
+            let presentation_output_count = presentation_outputs.output_count();
             let production_page_flips =
                 crate::LiveProductionPageFlipTracker::from_outputs(&presentation_outputs);
             let mut groups = Vec::new();
@@ -310,11 +320,12 @@ mod persistent_native_scanout {
             let mut exporters = Vec::new();
             for session in sessions.sessions.drain(..) {
                 let group = groups.len();
-                for (selection, output_id) in session
+                for ((selection, output_id), head_id) in session
                     .selections()
                     .iter()
                     .copied()
                     .zip(session.outputs().iter().copied())
+                    .zip(session.heads().to_vec())
                 {
                     let size = selection.size();
                     // This head's own exporter, against this head's own plane
@@ -338,6 +349,7 @@ mod persistent_native_scanout {
                         })
                         .clone();
                     heads.push(LiveProductionNativeHead {
+                        head: head_id,
                         group,
                         selection,
                         sender,
@@ -414,18 +426,18 @@ mod persistent_native_scanout {
                 .map(|head| head.output.id)
                 .collect::<BTreeSet<_>>()
             {
-                let connectors = heads
+                let members = heads
                     .iter()
                     .filter(|head| head.output.id == output)
-                    .map(|head| head.selection.connector_id());
-                let lifecycle = LiveProductionMirrorGroupLifecycle::new(output, connectors)
+                    .map(|head| head.head);
+                let lifecycle = LiveProductionMirrorGroupLifecycle::new(output, members)
                     .expect("a native logical output has at least one physical head");
                 output_lifecycles.insert(output, lifecycle);
             }
             Ok(Self {
                 groups,
                 heads,
-                discovered_outputs: outputs.len(),
+                discovered_outputs: connector_records.len(),
                 presentation_outputs: presentation_output_count,
                 submissions: 0,
                 submit_deferred: 0,
@@ -443,6 +455,7 @@ mod persistent_native_scanout {
                 queued_mirror_successors: BTreeMap::new(),
                 output_callbacks,
                 output_lifecycles,
+                head_table,
                 next_frame_id: 1,
                 production_page_flips,
                 presentation_started: Instant::now(),
@@ -504,14 +517,14 @@ mod persistent_native_scanout {
         /// The one lookup that is exact for a mirror group: every head has its own
         /// connector even when several share a logical output, so a caller that must
         /// address one specific head asks by connector rather than by output.
-        pub fn head_index_for_output_connector_id(
+        pub fn head_index_for_output_head(
             &self,
             output: OutputId,
-            connector_id: u32,
+            head_id: sophia_engine::RenderHeadId,
         ) -> Option<usize> {
-            self.heads.iter().position(|head| {
-                head.output.id == output && head.selection.connector_id() == connector_id
-            })
+            self.heads
+                .iter()
+                .position(|head| head.output.id == output && head.head == head_id)
         }
 
         /// Resolves a connector id when the caller has already established that
@@ -521,10 +534,20 @@ mod persistent_native_scanout {
         /// must use the output-qualified lookup above. Startup topology mapping
         /// retains this facade because its named capability set is validated
         /// before it reaches this point.
-        pub fn head_index_for_connector_id(&self, connector_id: u32) -> Option<usize> {
-            self.heads
+        pub fn head_index_for_head(&self, head_id: sophia_engine::RenderHeadId) -> Option<usize> {
+            self.heads.iter().position(|head| head.head == head_id)
+        }
+
+        /// Resolves a native connector id through the head table. This is the
+        /// backend-boundary translation for callers that hold configuration or
+        /// capability facts (connector names and ids) rather than heads.
+        pub fn head_index_for_native_connector(&self, connector_id: u32) -> Option<usize> {
+            let record = self
+                .head_table
+                .records()
                 .iter()
-                .position(|head| head.selection.connector_id() == connector_id)
+                .find(|record| record.connector_id == connector_id)?;
+            self.head_index_for_head(record.head)
         }
 
         /// Every head driving a logical output, in head order.
@@ -818,9 +841,9 @@ mod persistent_native_scanout {
                             frame,
                         );
                         tracing::info!(
-                            "sophia_live_native_head_page_flip schema=1 status=submitted output={} connector_id={} submission={} content={:?} frame={}",
+                            "sophia_live_native_head_page_flip schema=2 status=submitted output={} head={} submission={} content={:?} frame={}",
                             output.raw(),
-                            self.heads[index].selection.connector_id(),
+                            self.heads[index].head.raw(),
                             cycle,
                             content,
                             frame,
@@ -912,20 +935,19 @@ mod persistent_native_scanout {
             let mut completed_retire = None;
             let mut completed_serial = None;
             for callback in page_flip_callbacks.accepted_callbacks.iter().copied() {
-                let Some(head_index) =
-                    self.head_index_for_output_connector_id(output, callback.connector_id)
+                let Some(head_index) = self.head_index_for_output_head(output, callback.head)
                 else {
                     self.callback_rejected = self.callback_rejected.saturating_add(1);
                     errors.push(format!(
-                        "mirror callback referenced unknown connector {}",
-                        callback.connector_id
+                        "mirror callback referenced unknown head {}",
+                        callback.head.raw()
                     ));
                     continue;
                 };
                 let Some(submission) = self.heads[head_index].scanout_submission.take() else {
                     errors.push(format!(
-                        "mirror connector {} callback has no physical submission",
-                        callback.connector_id
+                        "mirror head {} callback has no physical submission",
+                        callback.head.raw()
                     ));
                     continue;
                 };
@@ -940,7 +962,7 @@ mod persistent_native_scanout {
                 self.heads[head_index].last_callback_serial = Some(callback.frame_serial);
                 let callback_ust = if let Some(ust) = self.kernel_page_flip_ust.remove(&(
                     output,
-                    callback.connector_id,
+                    callback.head,
                     callback.frame_serial,
                 )) {
                     self.kernel_page_flip_timestamps =
@@ -1003,22 +1025,22 @@ mod persistent_native_scanout {
                 }
                 let Some(frame) = frame else {
                     errors.push(format!(
-                        "mirror connector {} callback has no logical generation",
-                        callback.connector_id
+                        "mirror head {} callback has no logical generation",
+                        callback.head.raw()
                     ));
                     continue;
                 };
                 tracing::info!(
-                    "sophia_live_native_head_page_flip schema=1 status=callback_accepted output={} connector_id={} callbacks=1 kernel_sequence={} frame={}",
+                    "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks=1 kernel_sequence={} frame={}",
                     output.raw(),
-                    callback.connector_id,
+                    callback.head.raw(),
                     callback.frame_serial,
                     frame.raw(),
                 );
                 tracing::info!(
-                    "sophia_live_native_head_page_flip schema=1 status=retired output={} connector_id={} submission={} frame={}",
+                    "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
                     output.raw(),
-                    callback.connector_id,
+                    callback.head.raw(),
                     self.heads[head_index].presented_submissions,
                     frame.raw(),
                 );
@@ -1035,12 +1057,12 @@ mod persistent_native_scanout {
                     .expect("mirror output has a lifecycle");
                 if !lifecycle.observe_flip_timing(frame, callback.frame_serial, callback_ust) {
                     errors.push(format!(
-                        "mirror connector {} callback timing named the wrong generation",
-                        callback.connector_id
+                        "mirror head {} callback timing named the wrong generation",
+                        callback.head.raw()
                     ));
                     continue;
                 }
-                let transition = lifecycle.mark_flipped(callback.connector_id, frame);
+                let transition = lifecycle.mark_flipped(callback.head, frame);
                 match transition {
                     LiveProductionMirrorHeadTransition::GroupReady => {
                         let Some((logical_serial, logical_ust)) = self
@@ -1082,7 +1104,7 @@ mod persistent_native_scanout {
                                     );
                                     trace_presented_mirror_head_damage(
                                         output,
-                                        self.heads[joined_index].selection.connector_id(),
+                                        self.heads[joined_index].head,
                                         frame,
                                         &presented,
                                     );
@@ -1148,7 +1170,7 @@ mod persistent_native_scanout {
                     LiveProductionMirrorHeadTransition::Accepted => {}
                     invalid => errors.push(format!(
                         "mirror-head {} entered invalid flipped transition {invalid:?}",
-                        callback.connector_id,
+                        callback.head.raw(),
                     )),
                 }
             }
@@ -1264,7 +1286,7 @@ mod persistent_native_scanout {
                 {
                     break;
                 }
-                let connector_id = self.heads[head_index].selection.connector_id();
+                let head_id = self.heads[head_index].head;
                 if self.heads[head_index].scanout_submission.is_some() {
                     self.heads[head_index].scanout_in_flight_ticks = self.heads[head_index]
                         .scanout_in_flight_ticks
@@ -1274,7 +1296,7 @@ mod persistent_native_scanout {
                 if !self
                     .output_lifecycles
                     .get(&output)
-                    .is_some_and(|lifecycle| lifecycle.connector_may_submit(connector_id))
+                    .is_some_and(|lifecycle| lifecycle.head_may_submit(head_id))
                 {
                     // A fast head may already have flipped while a sibling is
                     // still rendering this generation. Keep its successor queued
@@ -1298,9 +1320,7 @@ mod persistent_native_scanout {
                 if !self
                     .output_lifecycles
                     .get(&output)
-                    .is_some_and(|lifecycle| {
-                        lifecycle.connector_may_submit_frame(connector_id, work_frame)
-                    })
+                    .is_some_and(|lifecycle| lifecycle.head_may_submit_frame(head_id, work_frame))
                 {
                     // Polling here would consume a successor renderer result and
                     // relabel it as the active generation. The sibling that still
@@ -1419,9 +1439,9 @@ mod persistent_native_scanout {
                             self.heads[head_index].pending_nonzero_pixel_bytes = 0;
                         }
                         tracing::info!(
-                            "sophia_live_native_head_page_flip schema=1 status=submitted output={} connector_id={} submission={} content={:?} frame={}",
+                            "sophia_live_native_head_page_flip schema=2 status=submitted output={} head={} submission={} content={:?} frame={}",
                             output.raw(),
-                            selection.connector_id(),
+                            head_id.raw(),
                             self.heads[head_index].submissions,
                             content,
                             logical_frame.raw(),
@@ -1430,7 +1450,7 @@ mod persistent_native_scanout {
                             .output_lifecycles
                             .get_mut(&output)
                             .expect("mirror output has a lifecycle")
-                            .mark_submitted(selection.connector_id(), logical_frame);
+                            .mark_submitted(head_id, logical_frame);
                         match transition {
                             LiveProductionMirrorHeadTransition::GroupReady => {
                                 let cycle = logical_frame.raw();
@@ -1449,7 +1469,7 @@ mod persistent_native_scanout {
                             invalid => {
                                 return Err(format!(
                                     "mirror-head {} entered invalid submitted transition {invalid:?}",
-                                    selection.connector_id(),
+                                    head_id.raw(),
                                 )
                                 .into());
                             }
@@ -1499,9 +1519,9 @@ mod persistent_native_scanout {
                         self.submit_failures = self.submit_failures.saturating_add(1);
                         self.queued_mirror_successors.remove(&output);
                         tracing::error!(
-                            "sophia_live_native_head_page_flip schema=1 status=submit_failed output={} connector_id={} submit_status={:?} action=terminate_session",
+                            "sophia_live_native_head_page_flip schema=2 status=submit_failed output={} head={} submit_status={:?} action=terminate_session",
                             output.raw(),
-                            selection.connector_id(),
+                            head_id.raw(),
                             submit.status,
                         );
                         let aborted = self
@@ -1530,8 +1550,8 @@ mod persistent_native_scanout {
                     .map(|index| {
                         let head = &self.heads[*index];
                         format!(
-                            "connector={} kms={} cleanup={} worker={} pending={:?} rendering={:?} successor={:?}",
-                            head.selection.connector_id(),
+                            "head={} kms={} cleanup={} worker={} pending={:?} rendering={:?} successor={:?}",
+                            head.head.raw(),
                             head.scanout_submission.is_some(),
                             head.scanout_cleanup.is_some(),
                             self.exporters[*index].worker_in_flight(),
@@ -1734,9 +1754,9 @@ mod persistent_native_scanout {
                         frame,
                     );
                     tracing::info!(
-                        "sophia_live_native_head_page_flip schema=1 status=retired output={} connector_id={} submission={} frame={}",
+                        "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
                         self.heads[index].output.id.raw(),
-                        self.heads[index].selection.connector_id(),
+                        self.heads[index].head.raw(),
                         self.heads[index]
                             .submitted_sequence
                             .unwrap_or(self.heads[index].submissions),
@@ -1780,9 +1800,9 @@ mod persistent_native_scanout {
                         .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
                 );
                 tracing::info!(
-                    "sophia_live_native_head_page_flip schema=1 status=callback_accepted output={} connector_id={} callbacks={} kernel_sequence={}",
+                    "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks={} kernel_sequence={}",
                     self.heads[index].output.id.raw(),
-                    self.heads[index].selection.connector_id(),
+                    self.heads[index].head.raw(),
                     report.accepted,
                     report
                         .last_accepted
@@ -1812,12 +1832,10 @@ mod persistent_native_scanout {
                     .last_accepted
                     .and_then(|accepted| accepted.event.frame_serial)
                 {
-                    let (presentation_msec, ust) = if let Some(ust) =
-                        self.kernel_page_flip_ust.remove(&(
-                            output,
-                            self.heads[index].selection.connector_id(),
-                            kernel_sequence,
-                        )) {
+                    let (presentation_msec, ust) = if let Some(ust) = self
+                        .kernel_page_flip_ust
+                        .remove(&(output, self.heads[index].head, kernel_sequence))
+                    {
                         self.kernel_page_flip_timestamps =
                             self.kernel_page_flip_timestamps.saturating_add(1);
                         (ust / 1_000, ust)
@@ -1950,9 +1968,9 @@ mod persistent_native_scanout {
                         return Err("mirror bootstrap did not export through direct CPU GBM".into());
                     }
                     tracing::info!(
-                        "sophia_live_mirror_bootstrap schema=1 status=direct_cpu output={} connector_id={} exports=1",
+                        "sophia_live_mirror_bootstrap schema=2 status=direct_cpu output={} head={} exports=1",
                         output.raw(),
-                        selection.connector_id(),
+                        self.heads[head_index].head.raw(),
                     );
                 }
                 self.exporters[head_index].enable_worker()?;
@@ -1961,9 +1979,9 @@ mod persistent_native_scanout {
                         return Err("mirror renderer worker was not established".into());
                     }
                     tracing::info!(
-                        "sophia_live_mirror_bootstrap schema=1 status=worker_ready output={} connector_id={} workers=1",
+                        "sophia_live_mirror_bootstrap schema=2 status=worker_ready output={} head={} workers=1",
                         output.raw(),
-                        selection.connector_id(),
+                        self.heads[head_index].head.raw(),
                     );
                 }
                 let head = &mut self.heads[head_index];
@@ -1998,11 +2016,12 @@ mod persistent_native_scanout {
                     trace_presented_output_damage("initial_presented", head.output.id, &presented);
                 }
                 head.initial_modeset_submission = Some(head.submissions);
+                let head_id = self.heads[head_index].head;
                 let transition = self
                     .output_lifecycles
                     .get_mut(&output)
                     .expect("a registered output has a head lifecycle")
-                    .mark_initialized(selection.connector_id());
+                    .mark_initialized(head_id);
                 debug_assert!(matches!(
                     transition,
                     LiveProductionMirrorHeadTransition::Accepted
@@ -2305,24 +2324,25 @@ mod persistent_native_scanout {
             };
             for timestamp in timestamps {
                 self.kernel_page_flip_ust.insert(
-                    (
-                        timestamp.output,
-                        timestamp.connector_id,
-                        timestamp.frame_serial,
-                    ),
+                    (timestamp.output, timestamp.head, timestamp.frame_serial),
                     timestamp.ust_usec,
                 );
             }
             for callback in callbacks {
-                // By connector, not by output. Two heads of a mirror group share an
+                // By head, not by output. Two heads of a mirror group share an
                 // output, so matching on it delivered both flips to whichever head
                 // came first and left the sibling looking like it never flipped.
                 let Some(head) = self.heads.iter().find(|head| {
                     head.group == group
-                        && head.selection.connector_id() == callback.connector_id
+                        && head.head == callback.head
                         && head.output.id == callback.output
                 }) else {
-                    return Err("native callback referenced an unknown connector".into());
+                    return Err(format!(
+                        "native callback referenced an unknown head: head={} output={}",
+                        callback.head.raw(),
+                        callback.output.raw(),
+                    )
+                    .into());
                 };
                 head.sender
                     .try_send(callback)

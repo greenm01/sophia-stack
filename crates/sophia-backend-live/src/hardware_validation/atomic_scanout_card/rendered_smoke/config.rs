@@ -5,6 +5,7 @@ use crate::prelude::*;
 pub struct RealAtomicScanoutSmokeConfig {
     pub slot: LibdrmNativeOutputSlot,
     pub output: OutputId,
+    pub head: sophia_engine::RenderHeadId,
     pub authority: LibdrmBackendFdAuthority,
     pub wait_policy: RealAtomicScanoutPageFlipWaitPolicy,
 }
@@ -19,6 +20,9 @@ impl RealAtomicScanoutSmokeConfig {
         Some(Self {
             slot: LibdrmNativeOutputSlot::new(slot)?,
             output: OutputId::from_raw(output),
+            // A single-head smoke session is its own backend: the one head it
+            // drives shares the output's raw identity.
+            head: sophia_engine::RenderHeadId::from_raw(output),
             authority: LibdrmBackendFdAuthority::new(authority_generation)?,
             wait_policy,
         })

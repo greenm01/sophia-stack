@@ -84,7 +84,7 @@ grep -Eq '^sophia_live_session_native_suspend schema=2 outcome=drained drained=t
     "$evidence" || fail "native ownership did not suspend through a clean drain"
 
 mapfile -t ready_heads < <(
-    grep -E '^sophia_live_native_head schema=1 status=ready output=[0-9]+ connector=DP-[12] connector_id=[0-9]+ mode=[0-9]+x[0-9]+ refresh_millihz=[0-9]+ mirrored=true$' \
+    grep -E '^sophia_live_native_head schema=2 status=ready output=[0-9]+ head=[0-9]+ connector=DP-[12] connector_id=[0-9]+ mode=[0-9]+x[0-9]+ refresh_millihz=[0-9]+ mirrored=true$' \
         "$evidence"
 )
 (( ${#ready_heads[@]} == 2 )) || fail "expected exactly two mirrored ready heads"
@@ -105,11 +105,16 @@ require_field "${startup_outputs[0]}" output "$dp1_output"
 dp1_connector="$(field "$dp1" connector_id)" || fail "DP-1 omitted connector identity"
 dp2_connector="$(field "$dp2" connector_id)" || fail "DP-2 omitted connector identity"
 [[ "$dp1_connector" != "$dp2_connector" ]] || fail "the heads share one connector identity"
-for connector in "$dp1_connector" "$dp2_connector"; do
-    grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=$dp1_output connector_id=$connector exports=1" \
-        "$evidence" || fail "connector $connector did not use direct-CPU bootstrap"
-    grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=worker_ready output=$dp1_output connector_id=$connector workers=1" \
-        "$evidence" || fail "connector $connector did not establish its renderer worker"
+# Per-head evidence below carries only the opaque head id; the ready mapping
+# lines above are where those ids meet connector names.
+dp1_head="$(field "$dp1" head)" || fail "DP-1 omitted head identity"
+dp2_head="$(field "$dp2" head)" || fail "DP-2 omitted head identity"
+[[ "$dp1_head" != "$dp2_head" ]] || fail "the heads share one head identity"
+for head in "$dp1_head" "$dp2_head"; do
+    grep -Fxq "sophia_live_mirror_bootstrap schema=2 status=direct_cpu output=$dp1_output head=$head exports=1" \
+        "$evidence" || fail "head $head did not use direct-CPU bootstrap"
+    grep -Fxq "sophia_live_mirror_bootstrap schema=2 status=worker_ready output=$dp1_output head=$head workers=1" \
+        "$evidence" || fail "head $head did not establish its renderer worker"
 done
 grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440' \
     "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
@@ -137,13 +142,13 @@ dp2_gray_pixels="$(max_final_cpu_gray_pixels '1920x1080_0_0')"
     fail "DP-2 retained too little terminal text coverage after downsampling"
 
 mapfile -t complete_heads < <(
-    grep -E '^sophia_live_native_head schema=2 status=complete output=[0-9]+ connector_id=[0-9]+ scene_generation=[0-9]+ logical_content_checksum=[0-9]+ head_pixel_checksum=(unavailable|[0-9]+) submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
+    grep -E '^sophia_live_native_head schema=3 status=complete output=[0-9]+ head=[0-9]+ scene_generation=[0-9]+ logical_content_checksum=[0-9]+ head_pixel_checksum=(unavailable|[0-9]+) submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
         "$evidence"
 )
 (( ${#complete_heads[@]} == 2 )) || fail "expected exactly two completed heads"
-for connector in "$dp1_connector" "$dp2_connector"; do
-    head_line="$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$connector ")"
-    [[ -n "$head_line" ]] || fail "connector $connector has no completion record"
+for head in "$dp1_head" "$dp2_head"; do
+    head_line="$(printf '%s\n' "${complete_heads[@]}" | grep " head=$head ")"
+    [[ -n "$head_line" ]] || fail "head $head has no completion record"
     require_field "$head_line" output "$dp1_output"
     # Real native frame ids start at 1; zero is the placeholder the software
     # Present path carries, so a head reporting generation 0 presented nothing
@@ -155,15 +160,15 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     require_positive_field "$head_line" callbacks
     require_positive_field "$head_line" nonzero_exports
 done
-dp1_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" scene_generation)" ||
+dp1_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " head=$dp1_head ")" scene_generation)" ||
     fail "DP-1 completion omitted its scene generation"
-dp2_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" scene_generation)" ||
+dp2_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " head=$dp2_head ")" scene_generation)" ||
     fail "DP-2 completion omitted its scene generation"
 [[ "$dp1_scene_generation" == "$dp2_scene_generation" ]] ||
     fail "mirrored heads did not retire one logical scene generation"
-dp1_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" logical_content_checksum)" ||
+dp1_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " head=$dp1_head ")" logical_content_checksum)" ||
     fail "DP-1 completion omitted its logical checksum"
-dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" logical_content_checksum)" ||
+dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " head=$dp2_head ")" logical_content_checksum)" ||
     fail "DP-2 completion omitted its logical checksum"
 [[ "$dp1_checksum" == "$dp2_checksum" ]] ||
     fail "mirrored heads did not retain one logical frame checksum"
@@ -172,17 +177,17 @@ dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector
 # logical frame that crossed submit, callback, and retire on both heads *and*
 # carried positive projected damage in each head's native coordinate space.
 mirror_frame_has_positive_head_damage() {
-    local frame="$1" connector_and_mode connector size width height rects pixels
+    local frame="$1" head_and_mode head size width height rects pixels
     local -a records
-    for connector_and_mode in \
-        "$dp1_connector:2560:1440" \
-        "$dp2_connector:1920:1080"; do
-        connector="${connector_and_mode%%:*}"
-        size="${connector_and_mode#*:}"
+    for head_and_mode in \
+        "$dp1_head:2560:1440" \
+        "$dp2_head:1920:1080"; do
+        head="${head_and_mode%%:*}"
+        size="${head_and_mode#*:}"
         width="${size%%:*}"
         height="${size#*:}"
         mapfile -t records < <(
-            grep -E "^sophia_live_mirror_head_damage schema=1 status=presented output=$dp1_output connector_id=$connector frame=$frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
+            grep -E "^sophia_live_mirror_head_damage schema=2 status=presented output=$dp1_output head=$head frame=$frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
                 "$evidence"
         )
         (( ${#records[@]} == 1 )) || return 1
@@ -197,10 +202,10 @@ common_frame=
 while read -r frame; do
     [[ -n "$frame" ]] || continue
     causal=true
-    for connector in "$dp1_connector" "$dp2_connector"; do
-        submit_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=submitted output=$dp1_output connector_id=$connector .* frame=$frame$" "$evidence" | cut -d: -f1 || true)"
-        callback_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=callback_accepted output=$dp1_output connector_id=$connector callbacks=1 kernel_sequence=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
-        retire_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=retired output=$dp1_output connector_id=$connector submission=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+    for head in "$dp1_head" "$dp2_head"; do
+        submit_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=2 status=submitted output=$dp1_output head=$head .* frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        callback_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=2 status=callback_accepted output=$dp1_output head=$head callbacks=1 kernel_sequence=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        retire_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=2 status=retired output=$dp1_output head=$head submission=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
         if [[ -z "$submit_line" || -z "$callback_line" || -z "$retire_line" ]] \
             || (( submit_line >= callback_line || callback_line >= retire_line )); then
             causal=false
@@ -221,19 +226,19 @@ done < <(
 # A shared logical snapshot is not valid evidence for different physical modes:
 # each head must accept and present its own projected geometry for the exact
 # generation proven above.
-for connector_and_mode in \
-    "$dp1_connector:2560:1440" \
-    "$dp2_connector:1920:1080"; do
-    connector="${connector_and_mode%%:*}"
-    size="${connector_and_mode#*:}"
+for head_and_mode in \
+    "$dp1_head:2560:1440" \
+    "$dp2_head:1920:1080"; do
+    head="${head_and_mode%%:*}"
+    size="${head_and_mode#*:}"
     width="${size%%:*}"
     height="${size#*:}"
     mapfile -t damage_records < <(
-        grep -E "^sophia_live_mirror_head_damage schema=1 status=presented output=$dp1_output connector_id=$connector frame=$common_frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
+        grep -E "^sophia_live_mirror_head_damage schema=2 status=presented output=$dp1_output head=$head frame=$common_frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
             "$evidence"
     )
     (( ${#damage_records[@]} == 1 )) ||
-        fail "connector $connector needs exactly one projected-damage record for frame $common_frame"
+        fail "head $head needs exactly one projected-damage record for frame $common_frame"
     require_positive_field "${damage_records[0]}" rects
     require_positive_field "${damage_records[0]}" pixels
 done
@@ -279,7 +284,7 @@ require_field "$keys" pending 0
 require_field "$keys" release_barrier_pending 0
 require_field "$keys" repeat_active_seats 0
 session_line="$(grep -nEm1 '^sophia_live_session schema=16 status=bounded_complete ' "$evidence" | cut -d: -f1)"
-last_retire_line="$(grep -nE '^sophia_live_native_head_page_flip schema=1 status=retired ' "$evidence" | tail -n1 | cut -d: -f1)"
+last_retire_line="$(grep -nE '^sophia_live_native_head_page_flip schema=2 status=retired ' "$evidence" | tail -n1 | cut -d: -f1)"
 (( last_retire_line < session_line )) || fail "bounded completion preceded physical retirement"
 grep -Eq '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' \
     "$evidence" || fail "session health was not clean"

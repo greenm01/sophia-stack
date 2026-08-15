@@ -304,9 +304,22 @@ pub(crate) fn run_persistent_xterm_session(
         let capabilities = native.output_capabilities()?;
         for capability in &capabilities {
             let mode = capability.selected_mode();
+            // The one place the opaque head id is printed beside its connector
+            // name: later per-head evidence carries only `head=`, and physical
+            // verifiers correlate through this mapping line.
+            let head = native
+                .head_index_for_native_connector(capability.connector_id())
+                .map(|index| native.heads[index].head.raw())
+                .ok_or_else(|| {
+                    format!(
+                        "native readiness found no head for connector {}",
+                        capability.connector_name()
+                    )
+                })?;
             println!(
-                "sophia_live_native_head schema=1 status=ready output={} connector={} connector_id={} mode={}x{} refresh_millihz={} mirrored={}",
+                "sophia_live_native_head schema=2 status=ready output={} head={} connector={} connector_id={} mode={}x{} refresh_millihz={} mirrored={}",
                 capability.output().raw(),
+                head,
                 capability.connector_name(),
                 capability.connector_id(),
                 mode.width,

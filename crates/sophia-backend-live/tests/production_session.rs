@@ -4,9 +4,8 @@ use sophia_backend_live::{
     LiveProductionPresentationAdapter,
 };
 use sophia_engine::{
-    DrmKmsMode, DrmKmsOutputDescriptor, DrmKmsOutputRegistry, OutputPresentationFeedback,
-    OutputPresentationSchedule, ProductionOutputRuntimeAdapter, ProductionPresentationAdapter,
-    ProductionRetirement,
+    EngineHeadRegistry, HeadRenderTarget, OutputPresentationFeedback, OutputPresentationSchedule,
+    ProductionOutputRuntimeAdapter, ProductionPresentationAdapter, ProductionRetirement,
 };
 use sophia_protocol::{CommittedSurfaceState, OutputId, Size, TransactionCommit};
 use std::cell::RefCell;
@@ -85,21 +84,23 @@ fn live_adapter_keeps_frame_and_retirement_inside_ordered_callbacks() {
     );
 }
 
-fn production_outputs() -> DrmKmsOutputRegistry {
-    let mut outputs = DrmKmsOutputRegistry::new();
-    let _ = outputs.upsert(DrmKmsOutputDescriptor {
-        output: OutputId::from_raw(7),
-        connector_id: 7,
-        crtc_id: 8,
-        mode: DrmKmsMode {
-            size: Size {
-                width: 1920,
-                height: 1080,
-            },
-            refresh_millihz: 60_000,
-        },
-        scale: 1,
-    });
+fn production_outputs() -> EngineHeadRegistry {
+    let mut outputs = EngineHeadRegistry::new();
+    assert!(
+        outputs
+            .admit(HeadRenderTarget {
+                head: sophia_engine::RenderHeadId::from_raw(1),
+                output: OutputId::from_raw(7),
+                target_generation: 1,
+                native_size: Size {
+                    width: 1920,
+                    height: 1080,
+                },
+                scale: 1,
+                refresh_millihz: 60_000,
+            })
+            .is_admitted()
+    );
     outputs
 }
 

@@ -284,7 +284,7 @@ fn losing_a_head_ends_the_wait_and_fails_the_candidate() {
     // candidate cannot retire as displayed.
     let first = assembly.observe_page_flip_callback(LivePageFlipCallback {
         output,
-        connector_id: 21,
+        head: sophia_engine::RenderHeadId::from_raw(21),
         frame_serial: 80,
     });
     assert_eq!(first.decision, LivePageFlipCallbackDecision::Accepted);
@@ -323,7 +323,7 @@ fn live_runtime_assembly_rejects_page_flip_replay_at_submission_baseline() {
 
     let baseline = assembly.observe_page_flip_callback(LivePageFlipCallback {
         output: OutputId::from_raw(1),
-        connector_id: 1,
+        head: sophia_engine::RenderHeadId::from_raw(1),
         frame_serial: 55,
     });
     assert_eq!(baseline.decision, LivePageFlipCallbackDecision::Accepted);

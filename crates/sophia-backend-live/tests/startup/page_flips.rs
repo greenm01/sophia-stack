@@ -33,7 +33,7 @@ fn page_flip_callback_intake_accepts_only_matching_monotonic_callbacks() {
     assert_eq!(
         intake.observe(LivePageFlipCallback {
             output: OutputId::from_raw(8),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 41,
         }),
         LivePageFlipCallbackReport {
@@ -49,7 +49,7 @@ fn page_flip_callback_intake_accepts_only_matching_monotonic_callbacks() {
     assert_eq!(
         intake.observe(LivePageFlipCallback {
             output: OutputId::from_raw(7),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 41,
         }),
         LivePageFlipCallbackReport {
@@ -65,7 +65,7 @@ fn page_flip_callback_intake_accepts_only_matching_monotonic_callbacks() {
     assert_eq!(
         intake.observe(LivePageFlipCallback {
             output: OutputId::from_raw(7),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 41,
         }),
         LivePageFlipCallbackReport {
@@ -81,19 +81,19 @@ fn page_flip_callback_intake_accepts_only_matching_monotonic_callbacks() {
 
 #[test]
 fn page_flip_callback_intake_admits_every_head_of_a_mirror_group() {
-    // The reason the guard is per connector. Both heads of a group flip the same
+    // The reason the guard is per head. Both heads of a group flip the same
     // submission and can report the same kernel sequence; a guard shared across
     // the output would take the first and call the second a stale repeat, so the
     // group would look presented with one screen still showing the old frame.
     let output = OutputId::from_raw(7);
     let mut intake = LivePageFlipCallbackIntake::new(output);
 
-    for connector_id in [11, 12] {
+    for head in [11, 12] {
         assert_eq!(
             intake
                 .observe(LivePageFlipCallback {
                     output,
-                    connector_id,
+                    head: sophia_engine::RenderHeadId::from_raw(head),
                     frame_serial: 41,
                 })
                 .decision,
@@ -101,8 +101,14 @@ fn page_flip_callback_intake_admits_every_head_of_a_mirror_group() {
         );
     }
     assert_eq!(intake.observed_heads(), 2);
-    assert_eq!(intake.head_frame_serial(11), Some(41));
-    assert_eq!(intake.head_frame_serial(12), Some(41));
+    assert_eq!(
+        intake.head_frame_serial(sophia_engine::RenderHeadId::from_raw(11)),
+        Some(41)
+    );
+    assert_eq!(
+        intake.head_frame_serial(sophia_engine::RenderHeadId::from_raw(12)),
+        Some(41)
+    );
 
     // Staleness is still per head: the same head repeating is the stale case the
     // guard exists for, and it is unaffected by the sibling.
@@ -110,7 +116,7 @@ fn page_flip_callback_intake_admits_every_head_of_a_mirror_group() {
         intake
             .observe(LivePageFlipCallback {
                 output,
-                connector_id: 11,
+                head: sophia_engine::RenderHeadId::from_raw(11),
                 frame_serial: 41,
             })
             .decision,
@@ -123,7 +129,7 @@ fn page_flip_callback_intake_admits_every_head_of_a_mirror_group() {
         intake
             .observe(LivePageFlipCallback {
                 output,
-                connector_id: 12,
+                head: sophia_engine::RenderHeadId::from_raw(12),
                 frame_serial: 55,
             })
             .decision,
@@ -143,7 +149,7 @@ fn live_runtime_assembly_observes_reduced_page_flip_callbacks() {
     assert_eq!(
         assembly.observe_page_flip_callback(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 17,
         }),
         LivePageFlipCallbackReport {
@@ -183,7 +189,7 @@ fn live_runtime_assembly_commits_atomic_scanout_after_accepted_page_flip() {
         &mut committer,
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 31,
         },
         &PageFlipCommitOutcome::Committed {
@@ -231,7 +237,7 @@ fn live_runtime_assembly_preserves_timed_out_atomic_scanout_status() {
         &mut committer,
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 32,
         },
         &PageFlipCommitOutcome::Rejected {
@@ -277,14 +283,14 @@ fn live_runtime_assembly_rejects_stale_page_flip_before_atomic_scanout_commit() 
 
     assembly.observe_page_flip_callback(LivePageFlipCallback {
         output: OutputId::from_raw(1),
-        connector_id: 1,
+        head: sophia_engine::RenderHeadId::from_raw(1),
         frame_serial: 41,
     });
     let report = assembly.commit_atomic_scanout_after_page_flip_with(
         &mut committer,
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 41,
         },
         &PageFlipCommitOutcome::Committed {
@@ -320,14 +326,14 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 22,
         })
         .expect("test channel should accept first callback");
     sender
         .try_send(LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 23,
         })
         .expect("test channel should accept second callback");
@@ -355,7 +361,7 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
             }),
             accepted_callbacks: vec![LivePageFlipCallback {
                 output: OutputId::from_raw(1),
-                connector_id: 1,
+                head: sophia_engine::RenderHeadId::from_raw(1),
                 frame_serial: 22,
             }],
             disconnected: false,
@@ -390,7 +396,7 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
             }),
             accepted_callbacks: vec![LivePageFlipCallback {
                 output: OutputId::from_raw(1),
-                connector_id: 1,
+                head: sophia_engine::RenderHeadId::from_raw(1),
                 frame_serial: 23,
             }],
             disconnected: false,
@@ -433,12 +439,12 @@ fn fake_page_flip_callback_source_feeds_bounded_runtime_queue() {
     let mut source = FakePageFlipCallbackSource::new([
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 31,
         },
         LivePageFlipCallback {
             output: OutputId::from_raw(1),
-            connector_id: 1,
+            head: sophia_engine::RenderHeadId::from_raw(1),
             frame_serial: 32,
         },
     ]);

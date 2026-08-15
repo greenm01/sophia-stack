@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use crate::{
-    AuthorityTransactionIntake, CpuFallbackRenderer, DeterministicFrameClock, DrmKmsMode,
-    DrmKmsOutputDescriptor, DrmKmsOutputRegistry, EngineError, FrameClock, FrameClockTick,
-    HeadlessEngine, HeadlessOutput, HeadlessSessionDriver, HeadlessSessionDriverReport,
-    ImportCapableRenderer, LibinputEventSource, LibinputPhysicalInputAdapter, LibinputPollReport,
+    AuthorityTransactionIntake, CpuFallbackRenderer, DeterministicFrameClock, EngineError,
+    EngineHeadRegistry, FrameClock, FrameClockTick, HeadRenderTarget, HeadlessEngine,
+    HeadlessOutput, HeadlessSessionDriver, HeadlessSessionDriverReport, ImportCapableRenderer,
+    LibinputEventSource, LibinputPhysicalInputAdapter, LibinputPollReport,
     LiveRuntimeDriverAdapter, LiveRuntimeDriverIntake, NonBlockingInputPoller, PerOutputFrameClock,
     PreparedSurfaceCommit, ProductionSessionCoordinator, QueuedInputPoller, RenderFrameReport,
     RuntimeDriverAdapter, WmTransactionUpdate,
@@ -168,7 +168,7 @@ pub struct HeadlessCompositorBackendAssembly<P = QueuedInputPoller> {
     production: ProductionSessionCoordinator,
     driver: HeadlessSessionDriver,
     clock: PerOutputFrameClock,
-    outputs: DrmKmsOutputRegistry,
+    outputs: EngineHeadRegistry,
     input: LibinputPhysicalInputAdapter<P>,
     authority_inbox: Option<AuthorityTransactionInbox>,
     renderer: RendererSelection,
@@ -176,8 +176,8 @@ pub struct HeadlessCompositorBackendAssembly<P = QueuedInputPoller> {
 
 impl HeadlessCompositorBackendAssembly<QueuedInputPoller> {
     pub fn new(output: HeadlessOutput) -> Self {
-        let mut outputs = DrmKmsOutputRegistry::new();
-        outputs.upsert(output_descriptor_from_headless_output(output));
+        let mut outputs = EngineHeadRegistry::new();
+        let _ = outputs.admit(head_target_from_headless_output(output));
 
         Self::from_parts(
             output,
@@ -198,7 +198,7 @@ where
 {
     pub fn from_parts(
         output: HeadlessOutput,
-        outputs: DrmKmsOutputRegistry,
+        outputs: EngineHeadRegistry,
         clock: DeterministicFrameClock,
         input: LibinputPhysicalInputAdapter<P>,
         renderer: RendererSelection,
@@ -240,7 +240,7 @@ where
         &self.driver
     }
 
-    pub fn outputs(&self) -> &DrmKmsOutputRegistry {
+    pub fn outputs(&self) -> &EngineHeadRegistry {
         &self.outputs
     }
 
@@ -369,15 +369,16 @@ where
     }
 }
 
-fn output_descriptor_from_headless_output(output: HeadlessOutput) -> DrmKmsOutputDescriptor {
-    DrmKmsOutputDescriptor {
+/// The headless assembly is its own backend stand-in, so it may synthesize a
+/// head; the head identity is derived from the output so repeated assembly of
+/// the same output stays deterministic.
+fn head_target_from_headless_output(output: HeadlessOutput) -> HeadRenderTarget {
+    HeadRenderTarget {
+        head: crate::RenderHeadId::from_raw(output.id.raw()),
         output: output.id,
-        connector_id: u32::try_from(output.id.raw()).unwrap_or(u32::MAX),
-        crtc_id: 0,
-        mode: DrmKmsMode {
-            size: output.size,
-            refresh_millihz: 60_000,
-        },
+        target_generation: 1,
+        native_size: output.size,
         scale: output.scale,
+        refresh_millihz: 60_000,
     }
 }

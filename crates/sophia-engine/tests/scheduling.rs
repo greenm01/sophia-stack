@@ -23,21 +23,17 @@ fn deterministic_frame_clock_advances_serials_predictably() {
 fn per_output_frame_clocks_advance_independently_at_each_refresh_rate() {
     let output_60 = OutputId::from_raw(1);
     let output_120 = OutputId::from_raw(2);
-    let mut outputs = DrmKmsOutputRegistry::new();
-    outputs.upsert(DrmKmsOutputDescriptor {
-        output: output_60,
-        connector_id: 11,
-        crtc_id: 21,
-        mode: DrmKmsMode::new(1920, 1080, 60_000),
-        scale: 1,
-    });
-    outputs.upsert(DrmKmsOutputDescriptor {
-        output: output_120,
-        connector_id: 12,
-        crtc_id: 22,
-        mode: DrmKmsMode::new(1920, 1080, 120_000),
-        scale: 1,
-    });
+    let mut outputs = EngineHeadRegistry::new();
+    assert!(
+        outputs
+            .admit(head_target(1, output_60, 1920, 1080, 60_000))
+            .is_admitted()
+    );
+    assert!(
+        outputs
+            .admit(head_target(2, output_120, 1920, 1080, 120_000))
+            .is_admitted()
+    );
     let mut clocks =
         PerOutputFrameClock::from_outputs(&outputs, DeterministicFrameClock::default());
 
@@ -56,15 +52,13 @@ fn per_output_frame_clocks_advance_independently_at_each_refresh_rate() {
 fn per_output_presentation_keeps_damage_and_retirement_independent() {
     let output_a = OutputId::from_raw(1);
     let output_b = OutputId::from_raw(2);
-    let mut outputs = DrmKmsOutputRegistry::new();
-    for (output, connector, crtc) in [(output_a, 11, 21), (output_b, 12, 22)] {
-        outputs.upsert(DrmKmsOutputDescriptor {
-            output,
-            connector_id: connector,
-            crtc_id: crtc,
-            mode: DrmKmsMode::new(1280, 720, 60_000),
-            scale: 1,
-        });
+    let mut outputs = EngineHeadRegistry::new();
+    for (head, output) in [(1, output_a), (2, output_b)] {
+        assert!(
+            outputs
+                .admit(head_target(head, output, 1280, 720, 60_000))
+                .is_admitted()
+        );
     }
     let mut presentation = OutputPresentationRegistry::from_outputs(&outputs);
 
@@ -101,17 +95,15 @@ fn per_output_presentation_keeps_damage_and_retirement_independent() {
 fn extended_desktop_projects_damage_into_output_local_coordinates() {
     let output_a = OutputId::from_raw(1);
     let output_b = OutputId::from_raw(2);
-    let mut outputs = DrmKmsOutputRegistry::new();
-    for (output, connector, crtc) in [(output_a, 11, 21), (output_b, 12, 22)] {
-        outputs.upsert(DrmKmsOutputDescriptor {
-            output,
-            connector_id: connector,
-            crtc_id: crtc,
-            mode: DrmKmsMode::new(100, 80, 60_000),
-            scale: 1,
-        });
+    let mut outputs = EngineHeadRegistry::new();
+    for (head, output) in [(1, output_a), (2, output_b)] {
+        assert!(
+            outputs
+                .admit(head_target(head, output, 100, 80, 60_000))
+                .is_admitted()
+        );
     }
-    let topology = ExtendedDesktopTopology::from_drm_outputs(&outputs);
+    let topology = ExtendedDesktopTopology::from_head_registry(&outputs);
     assert_eq!(
         topology.logical_size(),
         Size {
@@ -150,15 +142,16 @@ fn extended_desktop_projects_damage_into_output_local_coordinates() {
 #[test]
 fn extended_desktop_projects_scaled_damage_into_output_pixels() {
     let output = OutputId::from_raw(1);
-    let mut outputs = DrmKmsOutputRegistry::new();
-    outputs.upsert(DrmKmsOutputDescriptor {
-        output,
-        connector_id: 11,
-        crtc_id: 21,
-        mode: DrmKmsMode::new(200, 160, 60_000),
-        scale: 2,
-    });
-    let topology = ExtendedDesktopTopology::from_drm_outputs(&outputs);
+    let mut outputs = EngineHeadRegistry::new();
+    assert!(
+        outputs
+            .admit(HeadRenderTarget {
+                scale: 2,
+                ..head_target(1, output, 200, 160, 60_000)
+            })
+            .is_admitted()
+    );
+    let topology = ExtendedDesktopTopology::from_head_registry(&outputs);
     assert_eq!(
         topology
             .get(output)
@@ -181,14 +174,12 @@ fn extended_desktop_projects_scaled_damage_into_output_pixels() {
 #[test]
 fn page_flip_feedback_phases_the_next_fixed_refresh_frame() {
     let output = OutputId::from_raw(1);
-    let mut outputs = DrmKmsOutputRegistry::new();
-    outputs.upsert(DrmKmsOutputDescriptor {
-        output,
-        connector_id: 11,
-        crtc_id: 21,
-        mode: DrmKmsMode::new(1920, 1080, 60_000),
-        scale: 1,
-    });
+    let mut outputs = EngineHeadRegistry::new();
+    assert!(
+        outputs
+            .admit(head_target(1, output, 1920, 1080, 60_000))
+            .is_admitted()
+    );
     let mut presentation = OutputPresentationRegistry::from_outputs(&outputs);
     assert_eq!(
         presentation.observe_page_flip(output, 7, 1_000),
@@ -591,4 +582,21 @@ fn resize_behavior_sample_reports_slow_non_cooperative_epoch_timeout() {
     assert!(!sample.completed);
     assert!(sample.timed_out);
     assert_eq!(sample.pending_surfaces, vec![surface]);
+}
+
+fn head_target(
+    head: u64,
+    output: OutputId,
+    width: i32,
+    height: i32,
+    refresh: u32,
+) -> HeadRenderTarget {
+    HeadRenderTarget {
+        head: RenderHeadId::from_raw(head),
+        output,
+        target_generation: 1,
+        native_size: Size { width, height },
+        scale: 1,
+        refresh_millihz: refresh,
+    }
 }

@@ -419,7 +419,7 @@ impl<'a> LiveNativeOutputTopologyHardware<'a> {
             .iter()
             .find(|capability| capability.connector_name() == connector)?;
         self.scanout
-            .head_index_for_connector_id(capability.connector_id())
+            .head_index_for_native_connector(capability.connector_id())
     }
 }
 

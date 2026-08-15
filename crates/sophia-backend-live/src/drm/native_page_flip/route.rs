@@ -26,15 +26,16 @@ impl LibdrmNativeOutputSlot {
 
 #[cfg(feature = "libdrm-events")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-/// Which logical output a CRTC's flip belongs to, and which connector it is.
+/// Which logical output a CRTC's flip belongs to, and which head it is.
 ///
 /// The slot already distinguishes heads -- it is assigned per selection, and a
-/// selection is one connector. What was missing is that the decode threw that
-/// away, so a mirror group's two flips arrived indistinguishable.
+/// selection is one connector. The route translates that private slot into the
+/// opaque head identity Engine records may carry; the connector integer stays
+/// behind the backend's head table.
 pub struct LibdrmNativeOutputRoute {
     pub slot: LibdrmNativeOutputSlot,
     pub output: OutputId,
-    pub connector_id: u32,
+    pub head: sophia_engine::RenderHeadId,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -125,7 +126,7 @@ impl LibdrmNativePageFlipCallback {
             status: LibdrmNativePageFlipDecodeStatus::Decoded,
             callback: Some(LivePageFlipCallback {
                 output: route.output,
-                connector_id: route.connector_id,
+                head: route.head,
                 frame_serial: self.frame_serial,
             }),
         }
@@ -153,7 +154,7 @@ pub struct LibdrmKernelPageFlipTimestamp {
     pub output: OutputId,
     /// Physical head identity. Logical output and sequence are insufficient for
     /// a mirror group because two CRTCs may report the same kernel sequence.
-    pub connector_id: u32,
+    pub head: sophia_engine::RenderHeadId,
     pub frame_serial: u64,
     pub ust_usec: u64,
 }

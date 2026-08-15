@@ -1,16 +1,17 @@
 use crate::prelude::*;
+use sophia_engine::RenderHeadId;
 use std::collections::BTreeMap;
 
 /// One CRTC completed a flip.
 ///
-/// The connector is carried beside the output because a mirror group is several
-/// connectors behind one logical output: two flips arrive naming the same output,
-/// and only the connector says which head each one is. Dropping it here is what
-/// made a sibling's flip look like a stale repeat of the first.
+/// The head is carried beside the output because a mirror group is several
+/// heads behind one logical output: two flips arrive naming the same output,
+/// and only the head says which one each is. Dropping it here is what made a
+/// sibling's flip look like a stale repeat of the first.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LivePageFlipCallback {
     pub output: OutputId,
-    pub connector_id: u32,
+    pub head: RenderHeadId,
     pub frame_serial: u64,
 }
 
@@ -29,7 +30,7 @@ pub enum LivePageFlipCallbackDecision {
 
 /// Admits page flips for one logical output, one head at a time.
 ///
-/// The monotonic frame-serial guard is per connector, not per output. A mirror
+/// The monotonic frame-serial guard is per head, not per output. A mirror
 /// group's heads flip independently and carry independent kernel sequences, so a
 /// single serial shared across the group would admit whichever head reported
 /// first and reject its siblings as stale repeats -- the group would then look
@@ -41,7 +42,7 @@ pub enum LivePageFlipCallbackDecision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LivePageFlipCallbackIntake {
     expected_output: OutputId,
-    heads: BTreeMap<u32, u64>,
+    heads: BTreeMap<RenderHeadId, u64>,
 }
 
 impl LivePageFlipCallbackIntake {
@@ -63,8 +64,8 @@ impl LivePageFlipCallbackIntake {
     }
 
     /// The newest frame serial admitted for one head.
-    pub fn head_frame_serial(&self, connector_id: u32) -> Option<u64> {
-        self.heads.get(&connector_id).copied()
+    pub fn head_frame_serial(&self, head: RenderHeadId) -> Option<u64> {
+        self.heads.get(&head).copied()
     }
 
     /// How many heads of this output have reported a flip.
@@ -85,7 +86,7 @@ impl LivePageFlipCallbackIntake {
 
         if self
             .heads
-            .get(&callback.connector_id)
+            .get(&callback.head)
             .is_some_and(|last_frame_serial| callback.frame_serial <= *last_frame_serial)
         {
             return LivePageFlipCallbackReport {
@@ -97,8 +98,7 @@ impl LivePageFlipCallbackIntake {
             };
         }
 
-        self.heads
-            .insert(callback.connector_id, callback.frame_serial);
+        self.heads.insert(callback.head, callback.frame_serial);
         LivePageFlipCallbackReport {
             decision: LivePageFlipCallbackDecision::Accepted,
             event: LivePageFlipEvent {
