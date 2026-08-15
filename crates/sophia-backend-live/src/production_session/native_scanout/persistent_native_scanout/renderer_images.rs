@@ -1,17 +1,42 @@
 use super::*;
 
-pub(super) enum LiveProductionDeferredMirrorHeadFrame {
-    Mixed {
-        content: LiveProductionScanoutContent,
-        frame: crate::LiveOwnedMixedCompositionFrame,
-        output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
-    },
+pub(super) struct LiveProductionQueuedMirrorGeneration {
+    output: OutputId,
+    pub(super) frame: LiveProductionNativeFrameId,
+    heads: Vec<LiveProductionQueuedMirrorHeadFrame>,
 }
 
-impl LiveProductionDeferredMirrorHeadFrame {
-    pub(super) fn frame(&self) -> LiveProductionNativeFrameId {
-        match self {
-            Self::Mixed { content, .. } => content.frame(),
+struct LiveProductionQueuedMirrorHeadFrame {
+    head_index: usize,
+    content: LiveProductionScanoutContent,
+    frame: crate::LiveOwnedMixedCompositionFrame,
+    output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+    cpu_nonzero_pixel_bytes: usize,
+}
+
+impl LiveProductionQueuedMirrorGeneration {
+    fn source(&self) -> &'static str {
+        match self.heads.first().map(|head| head.content) {
+            Some(LiveProductionScanoutContent::Cpu { .. }) => "cpu",
+            Some(LiveProductionScanoutContent::MixedPresent { .. }) => "mixed_present",
+            Some(LiveProductionScanoutContent::RetainedMixed { .. }) => "retained_mixed",
+            None => "empty",
+        }
+    }
+
+    pub(super) fn cpu_checksum(&self) -> Option<u64> {
+        match self.heads.first().map(|head| head.content) {
+            Some(LiveProductionScanoutContent::Cpu { checksum, .. }) => Some(checksum),
+            _ => None,
+        }
+    }
+
+    fn mixed_transaction(&self) -> Option<TransactionId> {
+        match self.heads.first().map(|head| head.content) {
+            Some(LiveProductionScanoutContent::MixedPresent { transaction, .. }) => {
+                Some(transaction)
+            }
+            _ => None,
         }
     }
 }
@@ -106,79 +131,154 @@ fn project_owned_mixed_frame(
 }
 
 impl LiveProductionNativeScanout {
-    fn reserve_mirror_generation(&mut self, output: OutputId, frame: LiveProductionNativeFrameId) {
-        let Some(lifecycle) = self.output_lifecycles.get_mut(&output) else {
-            return;
-        };
-        if lifecycle.initialized() && lifecycle.active_frame().is_none() {
-            debug_assert_eq!(
-                lifecycle.begin(frame),
-                LiveProductionMirrorGroupBegin::Started
-            );
-        }
-    }
-
-    fn mirror_head_queue_target(
+    fn mirror_mixed_transaction_frame(
         &self,
         output: OutputId,
-        head_index: usize,
-    ) -> LiveProductionMirrorHeadQueueTarget {
-        reduce_live_production_mirror_head_queue_target(
-            self.output_lifecycles
-                .get(&output)
-                .and_then(LiveProductionMirrorGroupLifecycle::active_frame),
-            self.exporters[head_index].worker_in_flight(),
-            self.heads[head_index].pending_content,
-        )
-    }
-
-    fn queue_mirror_mixed_head(
-        &mut self,
-        output: OutputId,
-        head_index: usize,
-        content: LiveProductionScanoutContent,
-        frame: crate::LiveOwnedMixedCompositionFrame,
-        output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
-    ) {
-        if self.mirror_head_queue_target(output, head_index)
-            == LiveProductionMirrorHeadQueueTarget::Deferred
+        transaction: TransactionId,
+    ) -> Option<LiveProductionNativeFrameId> {
+        if let Some(frame) = self
+            .queued_mirror_successors
+            .get(&output)
+            .filter(|generation| generation.mixed_transaction() == Some(transaction))
+            .map(|generation| generation.frame)
         {
-            self.deferred_mirror_frames[head_index] =
-                Some(LiveProductionDeferredMirrorHeadFrame::Mixed {
-                    content,
-                    frame,
-                    output_damage_snapshot,
-                });
-            return;
+            return Some(frame);
         }
-        self.deferred_mirror_frames[head_index] = None;
-        let (head, exporter) = self.head_and_exporter(head_index, output);
-        head.pending_content = Some(content);
-        head.queue_output_damage_snapshot(output_damage_snapshot);
-        exporter.set_pending_mixed_frame(frame);
+        self.head_indices(output)
+            .into_iter()
+            .find_map(|head_index| {
+                let head = &self.heads[head_index];
+                [
+                    head.pending_content,
+                    head.rendering_content,
+                    head.submitted_content,
+                ]
+                .into_iter()
+                .flatten()
+                .find_map(|content| match content {
+                    LiveProductionScanoutContent::MixedPresent {
+                        frame,
+                        transaction: owned,
+                        ..
+                    } if owned == transaction => Some(frame),
+                    _ => None,
+                })
+            })
     }
 
-    pub(super) fn promote_deferred_mirror_head_frame(
+    fn install_mirror_generation(
+        &mut self,
+        generation: LiveProductionQueuedMirrorGeneration,
+        status: &'static str,
+    ) -> Result<(), &'static str> {
+        if generation.heads.is_empty()
+            || generation
+                .heads
+                .iter()
+                .any(|head| head.content.frame() != generation.frame)
+        {
+            return Err("mirror generation has invalid or mismatched frame identity");
+        }
+        let expected = self.head_indices(generation.output);
+        let actual = generation
+            .heads
+            .iter()
+            .map(|head| head.head_index)
+            .collect::<Vec<_>>();
+        if expected != actual {
+            return Err("mirror generation does not cover every physical head exactly once");
+        }
+        if generation.heads.iter().any(|queued| {
+            self.heads[queued.head_index].pending_content.is_some()
+                || self.heads[queued.head_index].rendering_content.is_some()
+                || self.exporters[queued.head_index].pending_frame()
+        }) {
+            return Err("mirror generation promotion found occupied head work");
+        }
+        let lifecycle = self
+            .output_lifecycles
+            .get_mut(&generation.output)
+            .ok_or("mirror generation targets an unregistered output")?;
+        if lifecycle.active_frame().is_some() {
+            return Err("mirror successor promoted before the active generation retired");
+        }
+        if lifecycle.initialized()
+            && lifecycle.begin(generation.frame) != LiveProductionMirrorGroupBegin::Started
+        {
+            return Err("mirror generation could not reserve its lifecycle");
+        }
+        let source = generation.source();
+        let checksum = generation.cpu_checksum();
+        for queued in generation.heads {
+            let (head, exporter) = self.head_and_exporter(queued.head_index, generation.output);
+            if let Some(checksum) = checksum {
+                head.last_checksum = checksum;
+                head.pending_nonzero_pixel_bytes = queued.cpu_nonzero_pixel_bytes;
+            }
+            head.pending_content = Some(queued.content);
+            head.queue_output_damage_snapshot(queued.output_damage_snapshot);
+            exporter.set_pending_mixed_frame(queued.frame);
+        }
+        tracing::info!(
+            "sophia_live_mirror_generation schema=1 status={} output={} frame={} source={} checksum={}",
+            status,
+            generation.output.raw(),
+            generation.frame.raw(),
+            source,
+            checksum.map_or_else(|| "none".to_owned(), |checksum| checksum.to_string()),
+        );
+        Ok(())
+    }
+
+    fn queue_mirror_generation(
+        &mut self,
+        generation: LiveProductionQueuedMirrorGeneration,
+    ) -> Result<(), &'static str> {
+        let output = generation.output;
+        let frame = generation.frame;
+        let source = generation.source();
+        let checksum = generation.cpu_checksum();
+        let active = self
+            .output_lifecycles
+            .get(&output)
+            .and_then(LiveProductionMirrorGroupLifecycle::active_frame);
+        let successor = self
+            .queued_mirror_successors
+            .get(&output)
+            .map(|generation| generation.frame);
+        let target = reduce_live_production_mirror_generation_queue_target(active, successor);
+        if target == LiveProductionMirrorGenerationQueueTarget::Active {
+            return self.install_mirror_generation(generation, "installed");
+        }
+        self.queued_mirror_successors.insert(output, generation);
+        tracing::info!(
+            "sophia_live_mirror_generation schema=1 status={} output={} frame={} source={} checksum={} active={}",
+            if matches!(
+                target,
+                LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(_)
+            ) {
+                "coalesced"
+            } else {
+                "queued"
+            },
+            output.raw(),
+            frame.raw(),
+            source,
+            checksum.map_or_else(|| "none".to_owned(), |checksum| checksum.to_string()),
+            active.expect("checked above").raw(),
+        );
+        Ok(())
+    }
+
+    pub(super) fn promote_queued_mirror_generation(
         &mut self,
         output: OutputId,
-        head_index: usize,
-    ) {
-        let Some(deferred) = self.deferred_mirror_frames[head_index].take() else {
-            return;
+    ) -> Result<bool, &'static str> {
+        let Some(generation) = self.queued_mirror_successors.remove(&output) else {
+            return Ok(false);
         };
-        match deferred {
-            LiveProductionDeferredMirrorHeadFrame::Mixed {
-                content,
-                frame,
-                output_damage_snapshot,
-            } => self.queue_mirror_mixed_head(
-                output,
-                head_index,
-                content,
-                frame,
-                output_damage_snapshot,
-            ),
-        }
+        self.install_mirror_generation(generation, "promoted")?;
+        Ok(true)
     }
 
     pub fn queue_present_cpu_frame(
@@ -252,6 +352,9 @@ impl LiveProductionNativeScanout {
             );
             return Ok(frame_id);
         }
+        if let Some(existing) = self.mirror_mixed_transaction_frame(output, transaction) {
+            return Ok(existing);
+        }
         let source = self.heads[index].output.size;
         let projected = indices
             .iter()
@@ -265,39 +368,26 @@ impl LiveProductionNativeScanout {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let frame_id = self.allocate_frame_id();
-        self.reserve_mirror_generation(output, frame_id);
-        for (head_index, frame) in indices.into_iter().zip(projected) {
-            let output_damage_snapshot = frame.output_damage_snapshot.clone();
-            let pending_before = self.exporters[head_index].pending_frame();
-            let worker_in_flight = self.exporters[head_index].worker_in_flight();
-            if let Some(superseded) = self.heads[head_index].pending_content {
-                tracing::warn!(
-                    "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=Mixed({})",
-                    self.heads[head_index].output.id.raw(),
-                    self.heads[head_index].selection.connector_id(),
-                    transaction.raw(),
-                );
-            }
-            self.queue_mirror_mixed_head(
-                output,
+        let heads = indices
+            .into_iter()
+            .zip(projected)
+            .map(|(head_index, frame)| LiveProductionQueuedMirrorHeadFrame {
                 head_index,
-                LiveProductionScanoutContent::MixedPresent {
+                output_damage_snapshot: frame.output_damage_snapshot.clone(),
+                content: LiveProductionScanoutContent::MixedPresent {
                     frame: frame_id,
                     transaction,
                     nonzero_rgb_pixels: 0,
                 },
                 frame,
-                output_damage_snapshot,
-            );
-            tracing::debug!(
-                "sophia_live_retained_projection schema=1 status=native_queued output={} connector_id={} frame={} pending_before={} worker_in_flight={}",
-                self.heads[head_index].output.id.raw(),
-                self.heads[head_index].selection.connector_id(),
-                frame_id.raw(),
-                pending_before,
-                worker_in_flight,
-            );
-        }
+                cpu_nonzero_pixel_bytes: 0,
+            })
+            .collect();
+        self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
+            output,
+            frame: frame_id,
+            heads,
+        })?;
         Ok(frame_id)
     }
 
@@ -322,16 +412,12 @@ impl LiveProductionNativeScanout {
         frame: &LiveProductionComposedFrame,
         fit: crate::NativeMirrorFit,
     ) -> Option<LiveProductionNativeFrameId> {
-        let heads = self.head_indices(output);
-        if heads.iter().copied().any(|head_index| {
-            self.mirror_head_queue_target(output, head_index)
-                == LiveProductionMirrorHeadQueueTarget::Deferred
-        }) {
-            // This entry point has no owned successor slot. Its ordinary caller
-            // retries from the retained CPU scene, so preserve the active work
-            // on every head and report that nothing new was queued.
-            return None;
+        if let Some(existing) = self.queued_mirror_successors.get(&output)
+            && existing.cpu_checksum() == Some(frame.checksum)
+        {
+            return Some(existing.frame);
         }
+        let heads = self.head_indices(output);
         let targets = heads
             .iter()
             .map(|head_index| {
@@ -369,7 +455,6 @@ impl LiveProductionNativeScanout {
             .collect::<Result<Vec<_>, _>>()
             .ok()?;
         let frame_id = self.allocate_frame_id();
-        self.reserve_mirror_generation(output, frame_id);
         let source = sophia_renderer_live::LiveSharedCpuBufferSource {
             handle: 0,
             size: frame.frame.size,
@@ -378,33 +463,41 @@ impl LiveProductionNativeScanout {
             generation: frame_id.raw(),
             bytes: std::sync::Arc::clone(&frame.frame.bytes),
         };
-        for ((head_index, target), output_damage_snapshot) in
-            heads.into_iter().zip(targets).zip(projected_damage)
-        {
-            let layer = sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu {
-                buffer: source.clone(),
-                placement: sophia_renderer_live::LiveCompositionPlacement {
-                    target,
-                    clip: None,
-                    transform: sophia_protocol::Transform::IDENTITY,
-                    alpha: 1.0,
-                },
-            };
-            let (head, exporter) = self.head_and_exporter(head_index, output);
-            head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
-            head.last_checksum = frame.checksum;
-            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
-            head.pending_content = Some(LiveProductionScanoutContent::Cpu {
-                frame: frame_id,
-                checksum: frame.checksum,
-            });
-            exporter.set_pending_mixed_frame(
-                sophia_renderer_live::LiveOwnedMixedCompositionFrame {
-                    layers: vec![layer],
+        let heads = heads
+            .into_iter()
+            .zip(targets)
+            .zip(projected_damage)
+            .map(|((head_index, target), output_damage_snapshot)| {
+                let layer = sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu {
+                    buffer: source.clone(),
+                    placement: sophia_renderer_live::LiveCompositionPlacement {
+                        target,
+                        clip: None,
+                        transform: sophia_protocol::Transform::IDENTITY,
+                        alpha: 1.0,
+                    },
+                };
+                LiveProductionQueuedMirrorHeadFrame {
+                    head_index,
+                    content: LiveProductionScanoutContent::Cpu {
+                        frame: frame_id,
+                        checksum: frame.checksum,
+                    },
+                    frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+                        layers: vec![layer],
+                        output_damage_snapshot: output_damage_snapshot.clone(),
+                    },
                     output_damage_snapshot,
-                },
-            );
-        }
+                    cpu_nonzero_pixel_bytes: frame.nonzero_pixel_bytes,
+                }
+            })
+            .collect();
+        self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
+            output,
+            frame: frame_id,
+            heads,
+        })
+        .ok()?;
         Some(frame_id)
     }
 
@@ -521,27 +614,25 @@ impl LiveProductionNativeScanout {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let frame_id = self.allocate_frame_id();
-        self.reserve_mirror_generation(output, frame_id);
-        for (head_index, frame) in indices.into_iter().zip(projected) {
-            let output_damage_snapshot = frame.output_damage_snapshot.clone();
-            if let Some(superseded) = self.heads[head_index].pending_content {
-                tracing::warn!(
-                    "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=RetainedMixed",
-                    self.heads[head_index].output.id.raw(),
-                    self.heads[head_index].selection.connector_id(),
-                );
-            }
-            self.queue_mirror_mixed_head(
-                output,
+        let heads = indices
+            .into_iter()
+            .zip(projected)
+            .map(|(head_index, frame)| LiveProductionQueuedMirrorHeadFrame {
                 head_index,
-                LiveProductionScanoutContent::RetainedMixed {
+                output_damage_snapshot: frame.output_damage_snapshot.clone(),
+                content: LiveProductionScanoutContent::RetainedMixed {
                     frame: frame_id,
                     nonzero_rgb_pixels: 0,
                 },
                 frame,
-                output_damage_snapshot,
-            );
-        }
+                cpu_nonzero_pixel_bytes: 0,
+            })
+            .collect();
+        self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
+            output,
+            frame: frame_id,
+            heads,
+        })?;
         Ok(frame_id)
     }
 

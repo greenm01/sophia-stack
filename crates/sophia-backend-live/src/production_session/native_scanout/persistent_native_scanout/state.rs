@@ -62,24 +62,26 @@ pub enum LiveProductionMirrorHeadTransition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LiveProductionMirrorHeadQueueTarget {
-    Pending,
-    Deferred,
+pub enum LiveProductionMirrorGenerationQueueTarget {
+    Active,
+    Successor,
+    ReplaceSuccessor(LiveProductionNativeFrameId),
 }
 
-/// Chooses where a newly queued mirror generation can be stored without
-/// destroying work needed by the active group join.
-pub fn reduce_live_production_mirror_head_queue_target(
+/// Admits one logical generation without exposing per-head queue state.
+///
+/// An active generation is immutable. While it joins, the group owns one
+/// latest-wins successor that replaces an older successor atomically.
+pub fn reduce_live_production_mirror_generation_queue_target(
     active: Option<LiveProductionNativeFrameId>,
-    worker_in_flight: bool,
-    pending: Option<LiveProductionScanoutContent>,
-) -> LiveProductionMirrorHeadQueueTarget {
-    if active.is_some_and(|active| {
-        !worker_in_flight && pending.is_some_and(|pending| pending.frame() == active)
-    }) {
-        LiveProductionMirrorHeadQueueTarget::Deferred
-    } else {
-        LiveProductionMirrorHeadQueueTarget::Pending
+    successor: Option<LiveProductionNativeFrameId>,
+) -> LiveProductionMirrorGenerationQueueTarget {
+    match (active, successor) {
+        (None, _) => LiveProductionMirrorGenerationQueueTarget::Active,
+        (Some(_), None) => LiveProductionMirrorGenerationQueueTarget::Successor,
+        (Some(_), Some(successor)) => {
+            LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(successor)
+        }
     }
 }
 
@@ -389,6 +391,50 @@ impl LiveProductionScanoutContent {
                 nonzero_rgb_pixels,
             },
             cpu @ Self::Cpu { .. } => cpu,
+        }
+    }
+
+    pub const fn cpu_checksum(self) -> Option<u64> {
+        match self {
+            Self::Cpu { checksum, .. } => Some(checksum),
+            Self::MixedPresent { .. } | Self::RetainedMixed { .. } => None,
+        }
+    }
+
+    pub const fn source_label(self) -> &'static str {
+        match self {
+            Self::Cpu { .. } => "cpu",
+            Self::MixedPresent { .. } => "mixed_present",
+            Self::RetainedMixed { .. } => "retained_mixed",
+        }
+    }
+
+    pub fn same_logical_identity(self, other: Self) -> bool {
+        match (self, other) {
+            (
+                Self::Cpu { frame, checksum },
+                Self::Cpu {
+                    frame: other_frame,
+                    checksum: other_checksum,
+                },
+            ) => frame == other_frame && checksum == other_checksum,
+            (
+                Self::MixedPresent {
+                    frame, transaction, ..
+                },
+                Self::MixedPresent {
+                    frame: other_frame,
+                    transaction: other_transaction,
+                    ..
+                },
+            ) => frame == other_frame && transaction == other_transaction,
+            (
+                Self::RetainedMixed { frame, .. },
+                Self::RetainedMixed {
+                    frame: other_frame, ..
+                },
+            ) => frame == other_frame,
+            _ => false,
         }
     }
 }

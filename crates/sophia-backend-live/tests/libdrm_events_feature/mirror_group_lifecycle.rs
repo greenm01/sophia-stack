@@ -190,68 +190,36 @@ fn fast_mirror_head_cannot_advance_until_slow_head_submits_and_flips() {
 }
 
 #[test]
-fn cleanup_blocked_mirror_head_preserves_reserved_generation_before_worker_start() {
+fn mirror_group_keeps_one_output_scoped_latest_successor() {
     let output = OutputId::from_raw(7);
     let current = LiveProductionNativeFrameId::from_raw(41);
     let next = LiveProductionNativeFrameId::from_raw(42);
     let latest = LiveProductionNativeFrameId::from_raw(43);
-    let current_content = LiveProductionScanoutContent::RetainedMixed {
-        frame: current,
-        nonzero_rgb_pixels: 10,
-    };
-    let next_content = LiveProductionScanoutContent::RetainedMixed {
-        frame: next,
-        nonzero_rgb_pixels: 11,
-    };
     let mut group = LiveProductionMirrorGroupLifecycle::new(output, [11, 12]).unwrap();
 
-    // Queue reservation happens before either exporter is polled. Head 11 has
-    // captured generation 41; head 12 is cleanup-blocked with 41 still pending.
+    assert_eq!(
+        reduce_live_production_mirror_generation_queue_target(None, None),
+        LiveProductionMirrorGenerationQueueTarget::Active
+    );
     assert_eq!(group.begin(current), LiveProductionMirrorGroupBegin::Started);
     assert_eq!(
-        reduce_live_production_mirror_head_queue_target(
-            group.active_frame(),
-            false,
-            Some(current_content),
-        ),
-        LiveProductionMirrorHeadQueueTarget::Deferred
+        reduce_live_production_mirror_generation_queue_target(group.active_frame(), None),
+        LiveProductionMirrorGenerationQueueTarget::Successor
     );
     assert_eq!(
-        reduce_live_production_mirror_head_queue_target(
-            group.active_frame(),
-            true,
-            Some(next_content),
-        ),
-        LiveProductionMirrorHeadQueueTarget::Pending
+        reduce_live_production_mirror_generation_queue_target(group.active_frame(), Some(next)),
+        LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(next)
     );
 
-    // Staging generation 42 in the deferred slot leaves the slow head's real
-    // exporter identity at 41, so it remains eligible after cleanup succeeds.
-    let pending = Some(current_content);
-    let deferred = Some(next_content);
-    let slow_work = live_production_mirror_head_work_frame(false, None, pending).unwrap();
-    assert_eq!(slow_work, current);
-    assert_eq!(deferred.unwrap().frame(), next);
-    let latest_content = LiveProductionScanoutContent::RetainedMixed {
-        frame: latest,
-        nonzero_rgb_pixels: 12,
-    };
+    // Replacing the one logical successor cannot mutate either physical head's
+    // ownership of the active generation.
     assert_eq!(
-        reduce_live_production_mirror_head_queue_target(
-            group.active_frame(),
-            false,
-            Some(current_content),
-        ),
-        LiveProductionMirrorHeadQueueTarget::Deferred
+        reduce_live_production_mirror_generation_queue_target(group.active_frame(), Some(latest)),
+        LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(latest)
     );
-    // The production slot is one-deep/latest-wins: replacing its deferred value
-    // never touches the still-pending active content.
-    let deferred = Some(latest_content);
-    assert_eq!(pending.unwrap().frame(), current);
-    assert_eq!(deferred.unwrap().frame(), latest);
-    assert!(group.connector_may_submit_frame(12, slow_work));
+    assert!(group.connector_may_submit_frame(12, current));
     assert_eq!(
-        group.mark_submitted(12, slow_work),
+        group.mark_submitted(12, current),
         LiveProductionMirrorHeadTransition::Accepted
     );
 }

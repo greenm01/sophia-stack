@@ -290,11 +290,24 @@ impl LiveProductionVisualRuntime {
         let chrome_surfaces_changed = self.set_chrome_surfaces(chrome_surfaces);
         let visual_projection_changed =
             presentation_order_changed || chrome_surfaces_changed || focus_changed;
+        let committed_projection_requires_gpu =
+            live_production_committed_projection_requires_gpu_scanout(
+                self.production.committed_surfaces(),
+                &self.presentation_order,
+            );
         let retained_cpu_layers = scene.presentation_layers(
             self.production.committed_surfaces(),
             &self.presentation_order,
         );
-        let retained_projection_queued = if visual_projection_changed {
+        // A retained CPU layer is a snapshot from before this authority batch is
+        // committed. Let a CPU-only scene compose the current updates instead of
+        // placing new chrome around stale client pixels. GPU-owned projections
+        // still need the retained mixed path to preserve their image ownership.
+        let retained_projection_queued = if live_production_retained_projection_admitted(
+            visual_projection_changed,
+            !updates.is_empty(),
+            committed_projection_requires_gpu,
+        ) {
             match (
                 native_scanout.as_deref_mut(),
                 self.retained_mixed_frame(&retained_cpu_layers)?,
@@ -340,10 +353,7 @@ impl LiveProductionVisualRuntime {
             self.present_scheduler.has_in_flight(),
             retained_projection_queued,
             presentation_order_changed,
-            live_production_committed_projection_requires_gpu_scanout(
-                self.production.committed_surfaces(),
-                &self.presentation_order,
-            ),
+            committed_projection_requires_gpu,
         );
         let defer_frame = if software_present_frame_required {
             false
@@ -1000,6 +1010,14 @@ pub const fn reduce_live_production_frame_defer(
     preserved_gpu_projection: bool,
 ) -> bool {
     preserved_gpu_projection || (requested_defer && !presentation_order_changed)
+}
+
+pub const fn live_production_retained_projection_admitted(
+    visual_projection_changed: bool,
+    current_cpu_updates: bool,
+    committed_projection_requires_gpu: bool,
+) -> bool {
+    visual_projection_changed && (!current_cpu_updates || committed_projection_requires_gpu)
 }
 
 pub const fn live_production_should_preserve_gpu_output(

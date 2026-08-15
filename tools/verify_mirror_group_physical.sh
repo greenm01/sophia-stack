@@ -18,6 +18,15 @@ fail() {
 }
 
 [[ -s "$evidence" ]] || fail "missing or empty evidence: $evidence"
+raw_evidence="$evidence"
+normalized_evidence="$(mktemp)"
+trap 'rm -f -- "$normalized_evidence"' EXIT
+# Production tracing prefixes schema payloads with timestamp, target, and ANSI
+# state. Normalize only stable Sophia schema records; ordinary client output is
+# intentionally left untouched.
+sed -E 's/^.*(sophia_(live_[^ ]+|mirror_group[^ ]*|session_[^ ]+|x11_[^ ]+) schema=)/\1/' \
+    "$raw_evidence" >"$normalized_evidence"
+evidence="$normalized_evidence"
 
 count() {
     grep -Ec "$1" "$evidence" || true
@@ -164,10 +173,10 @@ while read -r frame; do
         break
     fi
 done < <(
-    sed -n "s/^sophia_live_native_head_page_flip schema=1 status=retired output=$dp1_output connector_id=$dp1_connector submission=[0-9][0-9]* frame=\([0-9][0-9]*\)$/\1/p" "$evidence"
+    sed -n "s/^sophia_live_mirror_generation schema=1 status=presented output=$dp1_output frame=\([0-9][0-9]*\) source=cpu checksum=$dp1_checksum$/\1/p" "$evidence"
 )
 [[ -n "$common_frame" ]] ||
-    fail "no logical frame completed causally with positive projected damage on both heads"
+    fail "no final-checksum CPU frame completed causally with positive projected damage on both heads"
 
 # A shared logical snapshot is not valid evidence for different physical modes:
 # each head must accept and present its own projected geometry for the exact
@@ -207,6 +216,11 @@ require_positive_field "$session" native_submissions
 require_positive_field "$session" native_retirements
 require_positive_field "$session" native_callback_accepted
 require_positive_field "$session" native_nonzero_exports
+cpu_checksum="$(field "$session" cpu_checksum)" || fail "bounded completion omitted cpu_checksum"
+[[ "$cpu_checksum" =~ ^[0-9]+$ ]] || fail "cpu_checksum is not an integer: $cpu_checksum"
+(( cpu_checksum > 0 )) || fail "cpu_checksum must be positive"
+[[ "$dp1_checksum" == "$cpu_checksum" && "$dp2_checksum" == "$cpu_checksum" ]] ||
+    fail "mirrored heads did not present the final CPU scene checksum"
 resources="$(grep -E '^sophia_live_native_resources schema=5 status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
@@ -238,4 +252,4 @@ else
         fail "gate did not record exactly one valid passing exit"
 fi
 
-echo "mirror-group physical evidence passed: $evidence"
+echo "mirror-group physical evidence passed: $raw_evidence"

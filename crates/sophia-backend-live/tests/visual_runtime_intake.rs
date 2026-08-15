@@ -7,7 +7,8 @@ use sophia_backend_live::{
     LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
     LiveProductionVisualRuntime, finish_live_production_native_suspend,
     live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
+    live_production_retained_projection_admitted, live_production_should_preserve_gpu_output,
+    live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
 };
@@ -286,6 +287,38 @@ fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
 }
 
 #[test]
+fn mirror_content_identity_tracks_logical_pixels_not_head_local_metrics() {
+    let frame = sophia_backend_live::LiveProductionNativeFrameId::from_raw(7);
+    let cpu = LiveProductionScanoutContent::Cpu {
+        frame,
+        checksum: 99,
+    };
+    assert_eq!(cpu.cpu_checksum(), Some(99));
+    assert_eq!(cpu.source_label(), "cpu");
+    assert!(cpu.same_logical_identity(cpu));
+    assert!(
+        !cpu.same_logical_identity(LiveProductionScanoutContent::Cpu {
+            frame,
+            checksum: 100,
+        })
+    );
+
+    let retained = LiveProductionScanoutContent::RetainedMixed {
+        frame,
+        nonzero_rgb_pixels: 10,
+    };
+    assert!(
+        retained.same_logical_identity(LiveProductionScanoutContent::RetainedMixed {
+            frame,
+            nonzero_rgb_pixels: 20,
+        })
+    );
+    assert_eq!(retained.cpu_checksum(), None);
+    assert_eq!(retained.source_label(), "retained_mixed");
+    assert!(!retained.same_logical_identity(cpu));
+}
+
+#[test]
 fn unchanged_initial_modeset_frame_requires_one_event_bearing_submission() {
     let checksum = 42;
     let cpu = Some(LiveProductionScanoutContent::Cpu {
@@ -352,6 +385,22 @@ fn visibility_change_forces_a_frame_unless_a_retained_gpu_projection_is_queued()
     assert!(reduce_live_production_frame_defer(true, true, true));
     assert!(reduce_live_production_frame_defer(true, false, false));
     assert!(!reduce_live_production_frame_defer(false, false, false));
+}
+
+#[test]
+fn current_cpu_pixels_bypass_the_stale_retained_projection_shortcut() {
+    assert!(live_production_retained_projection_admitted(
+        true, false, false
+    ));
+    assert!(!live_production_retained_projection_admitted(
+        true, true, false
+    ));
+    assert!(live_production_retained_projection_admitted(
+        true, true, true
+    ));
+    assert!(!live_production_retained_projection_admitted(
+        false, false, true
+    ));
 }
 
 #[test]
