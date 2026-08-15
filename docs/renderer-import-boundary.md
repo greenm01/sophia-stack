@@ -10,6 +10,11 @@ devices without owning GBM, EGL, DMA-BUF import, or MIT-SHM mapping. The rendere
 boundary is admitted only after the engine has a ready `SurfaceTransaction` with
 matching geometry and buffer identity.
 
+[Multi-Monitor Per-Head Composition](multi-monitor-composition.md) extends this
+rule to bounded `SurfaceContentSet` values. Each selected variant still enters
+through this import boundary; per-head composition does not move raw handles or
+import authority into Engine.
+
 ## Ownership
 
 The engine owns:
@@ -42,6 +47,17 @@ sources are reduced records at the Engine boundary; their raw handles never
 leave the native renderer boundary. Live backend startup therefore defaults to
 the CPU path. Native import-capable rendering must be selected through startup
 configuration; it is not implied by discovering a DRM/KMS output.
+
+The target multi-monitor adapter treats an existing `BufferSource` as a
+singleton surface-content set. When an authority supplies several immutable
+variants for one committed content generation, Engine selects a variant in the
+head plan and this boundary imports only that selection. Import caches may
+share an immutable source across heads on a compatible render device, while
+native render targets and KMS leases remain per head. Import-path fallback and
+sampling quality are orthogonal: CPU fallback for the same exact variant does
+not make its density inexact, while selecting a different variant requires a
+new or updated head plan and the matching sampling classification. An import
+failure cannot silently bind another content generation.
 
 Startup reports expose only reduced renderer import health: CPU fallback, native
 import capable, or degraded. Per-path status is reduced to disabled, enabled, or

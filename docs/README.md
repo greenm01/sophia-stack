@@ -19,6 +19,10 @@ wins when prose disagrees.
 - [Compositor Graphics](compositor-graphics.md) defines the renderer-neutral
   display list, native primitive lowering, cached text strategy, damage rules,
   and Niri architectural reference for compositor-owned content.
+- [Multi-Monitor Per-Head Composition](multi-monitor-composition.md) defines
+  how one logical Engine scene becomes distinct native compositions for
+  mirrored and extended display heads, including content variants, head-local
+  damage, scheduling, and joined retirement.
 - [Namespaces and Portals](namespaces-and-portals.md) defines session identity,
   admission, isolation profiles, capabilities, portal lifecycle, and
   cross-namespace failure behavior.

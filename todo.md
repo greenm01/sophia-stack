@@ -982,6 +982,31 @@ is excluded; retained product behavior is not.
   open until the diagnostic-capable tty4 run
   visibly passes and its archive verifies; no userspace test is a substitute for
   that AMDGPU evidence.
+- [ ] Replace primary-sized and flat-output multi-monitor rendering with the
+  normative per-head composition path in
+  `docs/multi-monitor-composition.md`. Preserve one logical scene generation and
+  the existing joint mirror retirement, but fan out before rasterization so
+  every physical head owns a native plan, damage ledger, target slot,
+  framebuffer, and KMS lifetime. Implement in this order:
+  1. Extend `VisualRetirement.tla` with per-head preparation and distinct target
+     leases. Require every mirror head prepared before the first submit, retain
+     joint retirement, and add negative controls for early submit and release.
+  2. Split logical output-scene records from opaque physical-head targets.
+     Normalize current `BufferSource` transactions into singleton bounded
+     `SurfaceContentSet` records without exposing head identity to WM policy.
+  3. Add the pure per-head planner and per-head damage/presentation ledgers.
+     Use one rational transform for layers, clips, damage, cursor projection,
+     and input inversion; remove visual dependence on a primary output.
+  4. Lower CPU, DMA-BUF, renderer-image, compositor-display-list, and cursor
+     content separately into each native target. Share immutable sources and
+     renderer caches, never final head framebuffers or scanout leases.
+  5. Add authority-owned variants for server-rendered X11 core content. Select
+     exact density first and report downsample/upscale fallbacks explicitly;
+     arbitrary singleton client rasters remain supported without claiming
+     native rerasterization.
+  6. Gate unequal-size mirroring and differently scaled extended outputs with
+     per-head plan/render/submit/callback/retire evidence, spanning-surface
+     coverage, failure injection, topology replacement, and clean teardown.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

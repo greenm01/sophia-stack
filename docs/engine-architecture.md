@@ -7,7 +7,9 @@ flow, and the precise scope of the compositor role. [Architecture](architecture.
 defines system-wide process ownership. [Data-Oriented Design](dod.md) defines
 the records and state discipline used across these domains. [Compositor
 Graphics](compositor-graphics.md) defines the graphics pipeline for
-Engine-owned visual content.
+Engine-owned visual content. [Multi-Monitor Per-Head
+Composition](multi-monitor-composition.md) defines the target split between a
+logical output scene and its physical-head render plans.
 
 The domain boundaries in this document are normative. The Rust module map
 describes the current implementation and may evolve without changing those
@@ -160,6 +162,12 @@ record per output and emits named retirement or submission effects. The live
 backend executes those effects and reobserves native state; it does not infer
 scheduling policy from aggregate readiness booleans.
 
+The target multi-monitor frame domain derives a target-independent logical
+output scene and then one immutable plan and damage ledger for each physical
+head. A logical-output cohort joins those ledgers for mirroring. Physical head
+identity remains private to Engine and backend coordination and never becomes a
+WM policy fact.
+
 The presentation queue, prepared Engine candidate, and submitted output frame
 are separate lifetimes. A matching page-flip retirement is the only observation
 that can satisfy presentation for its output. Engine promotes visual and input
@@ -169,10 +177,14 @@ output-retirement requirements are complete.
 ### Render Planning
 
 Render planning lowers one immutable visual snapshot -- either the committed
-baseline or a validated prepared candidate -- into renderer-neutral
-composition work: client-buffer placements, Engine-owned display-list
-primitives, clips, opacity, and damage. It never observes a partially updated
-scene and does not perform protocol requests, layout policy, or kernel I/O.
+baseline or a validated prepared candidate -- into a target-independent
+logical output scene, then lowers that scene into renderer-neutral work for
+each required physical head: selected client-content variants, placements,
+Engine-owned display-list primitives, clips, opacity, and head-local damage.
+It never observes a partially updated scene and does not perform protocol
+requests, layout policy, or kernel I/O. It must not flatten a logical output
+before the head split or derive another head's work from a distinguished
+primary render target.
 
 ### Live Backend Boundary
 
@@ -195,7 +207,7 @@ observations/proposals
  accepted state / prepared visual candidate
         │
         ▼
- frame decision -> render plan -> backend execution
+ frame decision -> output scene -> per-head plans -> backend execution
         │
         ▼
  tagged presentation observation
@@ -220,13 +232,16 @@ forbidden.
 
 A logical output may be backed by more than one head, which is what output
 mirroring is. Retirement is therefore **joint within a mirror group and
-independent between groups**: one framebuffer is scanned out by every head in
-the group, so the logical output retires only when its last head flips, and the
-buffer stays leased until then. This narrows the output-scoped rule rather than
-replacing it — the unit of retirement is still one logical output, and distinct
+independent between groups**: every head owns a native candidate for the same
+logical scene generation, the logical output retires only when its last head
+flips, and each head's target stays leased through its own retirement. This
+rule is deliberately independent of whether native source resources can be
+shared. The unit of retirement is still one logical output, and distinct
 logical outputs still retire independently on their own page-flip timelines.
 Sophia continues to claim no globally simultaneous multi-output retirement
-instant.
+instant. The scene-to-head fan-out and client-content quality contract are
+defined in [Multi-Monitor Per-Head
+Composition](multi-monitor-composition.md).
 
 A head that disappears mid-flight drops its lease without counting as a flip,
 and the candidate fails closed instead of committing a partial group; a

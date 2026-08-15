@@ -286,7 +286,8 @@ Fields should describe:
 - authority kind and surface ID
 - namespace ID
 - target geometry
-- target buffer source
+- target content set, normalized from a single buffer source when no additional
+  raster variant exists
 - damage region
 - readiness state
 - deadline or timeout policy
@@ -306,12 +307,63 @@ Fields should describe:
 - surface ID
 - committed generation
 - committed geometry
-- committed buffer source
+- committed immutable content set
 - output assignment
 - visible state
 - damage carried into the next frame
 
 Slow-client fallback presents this state, not partially updated pending state.
+
+The current Rust records still carry one `BufferSource`. The target
+multi-monitor contract lifts it into a singleton `SurfaceContentSet`; changing
+that representation does not change which authority owns the pixels or when a
+candidate becomes committed.
+
+### SurfaceContentSet And SurfaceContentVariant
+
+A surface content set is the bounded protocol-neutral raster content admitted
+for one surface generation. It allows a protocol authority to provide several
+pixel-density realizations without moving protocol rendering semantics into
+Engine.
+
+Fields should describe:
+
+- surface, namespace, transaction, and content generation
+- logical content extent
+- bounded ordered content variants
+- authority-owned readiness and damage identity
+
+Each variant should describe:
+
+- stable variant identity
+- protocol-neutral buffer source
+- pixel size, logical extent, density, and source transform
+- readiness or synchronization state
+- variant damage
+
+The set is immutable after admission. Existing single-buffer authorities emit a
+singleton set. Additional or replacement variants enter through a new authority
+transaction rather than mutating submitted work. Engine validates identity,
+bounds, and readiness; the owning authority remains responsible for the claim
+that opaque variants contain the same logical content.
+
+### SurfaceRasterRequirements
+
+Raster requirements are an advisory Engine-to-authority record. They describe
+which raster classes would avoid sampling for one surface without disclosing
+physical output topology.
+
+Fields should describe:
+
+- surface and committed-content generation
+- requirement/topology generation
+- logical content extent
+- bounded ordered density and transform classes
+
+The record contains no output, head, connector, mode-object, or framebuffer
+identity. An authority may answer through a later surface transaction, and the
+current best ready variant remains renderable in the meantime. Stale responses
+cannot mutate the committed content set.
 
 ### DamageFrame
 
@@ -329,6 +381,74 @@ Fields should describe:
 
 Picom's buffer-age damage math is the reference idea. Sophia should keep the
 calculation over layer snapshots, not live windows.
+
+### RenderHeadId And HeadRenderTarget
+
+`RenderHeadId` is a session-scoped opaque typed ID for one physical
+presentation target. The backend retains connector, CRTC, card, and plane
+identity; WM and protocol-facing records never receive it.
+
+A head render target should describe:
+
+- opaque head ID and owning logical output
+- topology/target generation
+- native pixel size and transform
+- refresh and reduced presentation capabilities
+- reduced renderer/KMS transport and format capability identity
+
+A mode, transform, device, or capability change creates a new generation.
+Prepared work cannot be rebound to a replacement target.
+
+### OutputSceneSnapshot
+
+An output scene snapshot is the immutable, target-independent visual intent for
+one logical output generation. It is the point at which a scene fans out into
+physical-head work.
+
+Fields should describe:
+
+- logical output and scene generation
+- viewport and logical transform policy
+- ordered committed surface/content generations and geometry
+- compositor display-list and cursor state
+- logical damage
+
+It must not contain a connector, CRTC, native target size, selected raster
+variant, framebuffer, or renderer handle.
+
+### HeadCompositionPlan
+
+A head composition plan lowers one output scene snapshot for one opaque,
+generation-checked native target.
+
+Fields should describe:
+
+- logical output, scene generation, opaque render-head ID, and target generation
+- native target shape and exact logical-to-head transform
+- ordered surface-to-content-variant bindings with sampling classification
+- native placements, clips, compositor primitives, cursor state, and damage
+
+The plan is immutable and renderer-neutral. The renderer executes it without
+consulting current scene state or a distinguished primary output.
+
+### OutputPresentationCohort
+
+An output presentation cohort joins the physical candidates that realize one
+logical output generation.
+
+Fields should describe:
+
+- output and scene generation
+- fixed required-head set
+- prepared, submitted, flipped, lost, and cleanup sets
+- terminal outcome and reduced logical timing
+
+A `HeadFrameCandidate` binds a reduced target descriptor and affine lease token
+to the exact head-plan identity it realizes. Renderer/backend-private state
+behind that token retains the native resources; neither the candidate nor the
+cohort exposes native handles. The cohort owns only the transition that decides
+when the shared logical generation is presented. Retirement is joint across
+heads of one mirrored output and independent between logical outputs.
 
 ### FrameClockTick
 

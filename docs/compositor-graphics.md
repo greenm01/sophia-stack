@@ -8,9 +8,12 @@ ownership. [Engine Architecture](engine-architecture.md) places this graphics
 pipeline inside the complete Engine domain flow. [Data-Oriented Design](dod.md)
 defines the records that cross those boundaries. [Renderer Import
 Boundary](renderer-import-boundary.md) defines how client buffers enter the
-renderer. Compositor graphics share the final composition and presentation path
-with those buffers, but they are not client surfaces and do not weaken the
-authority boundaries around them.
+renderer. [Multi-Monitor Per-Head
+Composition](multi-monitor-composition.md) defines how the display list and
+client layers are lowered separately for each physical head. Compositor
+graphics share the final composition and presentation path with those buffers,
+but they are not client surfaces and do not weaken the authority boundaries
+around them.
 
 ## Design Direction
 
@@ -140,6 +143,14 @@ purpose-built shader programs:
 - clips use geometry or scissor state appropriate to the primitive;
 - opacity uses Sophia's premultiplied-alpha composition convention.
 
+On a multi-head desktop, these primitives remain semantic until the logical
+scene has fanned out into head plans. Every head lowers them at its native
+target size and density. Repositioning or filtering primitives from a flattened
+primary-output image is not per-head composition. Imported client content may
+still require a selected raster variant or an explicit sampling fallback, as
+defined by [Multi-Monitor Per-Head
+Composition](multi-monitor-composition.md).
+
 Text-heavy or layout-heavy panels should be rasterized outside the frame hot
 path and uploaded as cached premultiplied-alpha textures. Text shaping and
 rasterization are separate from GPU composition. Cache keys must include every
@@ -172,14 +183,17 @@ is attached to a client surface, its geometry must be derived from the same
 committed surface state used for that frame. Pending client geometry must not
 move committed chrome ahead of matching client pixels.
 
-Each composed frame carries the immutable display list used to produce its
-pixels. Engine owns a bounded per-output `pending → submitted → presented`
-ledger for those lists. New damage is computed against an in-flight submitted
-list when one exists, otherwise against the last presented list. A superseded
-or failed pending frame cannot advance the baseline; an accepted KMS submit
-moves the list to submitted, and only its page-flip callback makes it
-presented. This keeps compositor damage synchronized with the pixels and
-retirement event it describes.
+In the target multi-monitor path, each head composition carries the immutable
+display list used to produce its pixels. Engine owns a bounded per-head
+`pending → rendering → submitted → presented` ledger for those lists and a
+logical-output cohort that joins required heads. New damage is computed against
+that head's in-flight submitted list when one exists, otherwise against its
+last presented list. A superseded or failed pending frame cannot advance the
+baseline; an accepted KMS submit moves the list to submitted, and only its
+page-flip callback makes it presented. A mirror output publishes logical
+presentation only after every required head reaches that state. This keeps
+compositor damage synchronized with the pixels and retirement event it
+describes even when head sizes differ.
 
 Every CPU or mixed frame also carries an immutable output-damage snapshot. It
 combines ordered opaque surface IDs, committed client generations, geometry,
