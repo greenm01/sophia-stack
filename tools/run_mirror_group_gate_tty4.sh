@@ -25,6 +25,15 @@ DISPLAY_NAME="${SOPHIA_MIRROR_DISPLAY:-:191}"
 EVIDENCE="${SOPHIA_MIRROR_EVIDENCE:-/tmp/sophia-mirror-group.log}"
 TTY_REQUIRED="${SOPHIA_MIRROR_TTY:-/dev/tty4}"
 KERNEL_MAX_LINES="${SOPHIA_MIRROR_KERNEL_MAX_LINES:-256}"
+XTERM_BIN="${SOPHIA_MIRROR_XTERM:-}"
+
+if [[ -z "$XTERM_BIN" ]]; then
+    XTERM_BIN="$(command -v xterm || true)"
+fi
+if [[ "$XTERM_BIN" != /* || ! -x "$XTERM_BIN" ]]; then
+    echo "Set SOPHIA_MIRROR_XTERM to an absolute executable xterm path." >&2
+    exit 2
+fi
 
 echo "=== Sophia mirror-group proof ==="
 echo
@@ -160,9 +169,15 @@ set +e
     # session that drives real KMS is a different act from one that does not.
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         ./target/release/sophia sophia-live-session \
+        --no-config \
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --desktop-profile="$PROFILE" \
+        --session-mode=normal \
+        --session-app=terminal="$XTERM_BIN" \
+        --session-start=terminal \
+        --session-app-arg=terminal=-cm \
+        --session-app-arg=terminal=-dc \
         --session-app-arg=terminal=-fn \
         --session-app-arg=terminal=6x13 \
         --session-app-arg=terminal=-fg \

@@ -882,3 +882,7 @@ include!("live_session/output_topology_owner.rs");
 include!("live_session/owner_loop.rs");
 
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/mirror_gate_session_config.rs"]
+mod mirror_gate_session_config;

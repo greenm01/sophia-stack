@@ -11214,3 +11214,16 @@ acknowledgement ordering.
   defense. Request-specific failures report BadPixmap, BadGC,
   BadDrawable, or BadValue instead of collapsing into BadWindow. Regressions
   prove collisions preserve the original window, GC, or font.
+
+## 2026-08-15: mirror attempt 0007 stopped before KMS on an undeclared proof app
+
+- The first physical run of signed commit `23880077` produced no native or
+  renderer evidence. Argument extensions named application `terminal`, but the
+  gate had not declared that application in the normal-session registry, so
+  configuration failed immediately with `UnknownApplication("terminal")`.
+- The gate now resolves an absolute executable xterm path, explicitly selects
+  normal-session mode, declares and starts `terminal`, then applies its bounded
+  6x13/white-on-black/scroll arguments. It also uses `--no-config`, keeping proof
+  startup independent of installed session applications. Parser and shell
+  regressions prevent terminal arguments from becoming detached from their
+  application declaration again.

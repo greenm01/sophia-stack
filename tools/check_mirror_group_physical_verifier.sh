@@ -31,6 +31,12 @@ grep -Fq 'while [ "$i" -le 40 ]' "$runner" \
     echo "mirror-group runner omitted the deterministic scrolling text workload" >&2
     exit 1
 }
+grep -Fq -- '--session-mode=normal' "$runner" \
+    && grep -Fq -- '--session-app=terminal="$XTERM_BIN"' "$runner" \
+    && grep -Fq -- '--session-start=terminal' "$runner" || {
+    echo "mirror-group runner passes terminal arguments without declaring its startup application" >&2
+    exit 1
+}
 
 reject_mutation() {
     local expression="$1" description="$2"
