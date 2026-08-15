@@ -61,6 +61,28 @@ pub enum LiveProductionMirrorHeadTransition {
     NotSubmitted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionMirrorHeadQueueTarget {
+    Pending,
+    Deferred,
+}
+
+/// Chooses where a newly queued mirror generation can be stored without
+/// destroying work needed by the active group join.
+pub fn reduce_live_production_mirror_head_queue_target(
+    active: Option<LiveProductionNativeFrameId>,
+    worker_in_flight: bool,
+    pending: Option<LiveProductionScanoutContent>,
+) -> LiveProductionMirrorHeadQueueTarget {
+    if active.is_some_and(|active| {
+        !worker_in_flight && pending.is_some_and(|pending| pending.frame() == active)
+    }) {
+        LiveProductionMirrorHeadQueueTarget::Deferred
+    } else {
+        LiveProductionMirrorHeadQueueTarget::Pending
+    }
+}
+
 /// Joins independently serviced physical heads back into one logical frame.
 ///
 /// Rendering and KMS ownership remain per connector. The Engine-facing frame is
@@ -74,6 +96,7 @@ pub struct LiveProductionMirrorGroupLifecycle {
     required: BTreeSet<u32>,
     initialized: BTreeSet<u32>,
     active: Option<LiveProductionNativeFrameId>,
+    active_progress_at: Option<std::time::Instant>,
     submitted: BTreeSet<u32>,
     flipped: BTreeSet<u32>,
     max_flip_ust_usec: Option<u64>,
@@ -89,6 +112,7 @@ impl LiveProductionMirrorGroupLifecycle {
             required,
             initialized: BTreeSet::new(),
             active: None,
+            active_progress_at: None,
             submitted: BTreeSet::new(),
             flipped: BTreeSet::new(),
             max_flip_ust_usec: None,
@@ -131,6 +155,7 @@ impl LiveProductionMirrorGroupLifecycle {
             return LiveProductionMirrorGroupBegin::GenerationInFlight;
         }
         self.active = Some(frame);
+        self.active_progress_at = Some(std::time::Instant::now());
         self.submitted.clear();
         self.flipped.clear();
         self.max_flip_ust_usec = None;
@@ -142,12 +167,55 @@ impl LiveProductionMirrorGroupLifecycle {
         self.active
     }
 
+    /// Age since the reserved generation last made physical progress.
+    /// This starts at queue reservation and resets when a renderer worker starts,
+    /// a head submits, or a head flips, so a head that never reaches
+    /// `submitted_at` cannot evade the group watchdog.
+    pub fn active_age(&self) -> Option<Duration> {
+        self.active_progress_at.map(|progress| progress.elapsed())
+    }
+
+    pub fn active_generation_hard_stalled(&self, hard_stall: Duration) -> bool {
+        self.active_age().is_some_and(|age| age >= hard_stall)
+    }
+
+    pub fn observe_physical_progress(&mut self, frame: LiveProductionNativeFrameId) -> bool {
+        if self.active != Some(frame) {
+            return false;
+        }
+        self.active_progress_at = Some(std::time::Instant::now());
+        true
+    }
+
     pub const fn failed(&self) -> bool {
         self.failed
     }
 
     pub fn awaiting_flips(&self) -> bool {
         self.active.is_some() && self.submitted == self.required
+    }
+
+    /// Whether this connector may consume renderer work for the current turn.
+    ///
+    /// A physical callback clears the head's KMS submission before its siblings
+    /// necessarily finish the logical generation. Membership in `submitted`
+    /// therefore remains the generation fence even after that early callback.
+    pub fn connector_may_submit(&self, connector: u32) -> bool {
+        self.required.contains(&connector)
+            && (self.active.is_none() || !self.submitted.contains(&connector))
+    }
+
+    /// Whether this connector may submit this exact logical generation.
+    ///
+    /// The connector fence prevents a fast head from submitting twice, while
+    /// the frame fence prevents renderer work queued for the successor from
+    /// being relabeled as the still-active generation.
+    pub fn connector_may_submit_frame(
+        &self,
+        connector: u32,
+        frame: LiveProductionNativeFrameId,
+    ) -> bool {
+        self.connector_may_submit(connector) && self.active.is_none_or(|active| active == frame)
     }
 
     /// Poisons a partially submitted generation.
@@ -177,6 +245,7 @@ impl LiveProductionMirrorGroupLifecycle {
         if !self.submitted.insert(connector) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
+        self.active_progress_at = Some(std::time::Instant::now());
         if self.submitted == self.required {
             LiveProductionMirrorHeadTransition::GroupReady
         } else {
@@ -201,8 +270,10 @@ impl LiveProductionMirrorGroupLifecycle {
         if !self.flipped.insert(connector) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
+        self.active_progress_at = Some(std::time::Instant::now());
         if self.flipped == self.required {
             self.active = None;
+            self.active_progress_at = None;
             self.completed = Some(frame);
             LiveProductionMirrorHeadTransition::GroupReady
         } else {
@@ -314,6 +385,23 @@ impl LiveProductionScanoutContent {
             cpu @ Self::Cpu { .. } => cpu,
         }
     }
+}
+
+/// Identifies the renderer work that the next exporter poll will complete.
+///
+/// An in-flight worker owns `rendering_content`; `pending_content` can already
+/// contain the next generation and must not be used to identify that result.
+pub fn live_production_mirror_head_work_frame(
+    worker_in_flight: bool,
+    rendering_content: Option<LiveProductionScanoutContent>,
+    pending_content: Option<LiveProductionScanoutContent>,
+) -> Option<LiveProductionNativeFrameId> {
+    if worker_in_flight {
+        rendering_content
+    } else {
+        pending_content
+    }
+    .map(LiveProductionScanoutContent::frame)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

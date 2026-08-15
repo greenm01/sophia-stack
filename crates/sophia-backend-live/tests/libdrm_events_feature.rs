@@ -100,11 +100,12 @@ use sophia_backend_live::{
 use sophia_backend_live::{
     LiveCpuComposedFrame, LiveGbmEglFrameTargetStatus, LiveProductionCursorPresentation,
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
-    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
-    LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
+    LiveProductionMirrorHeadQueueTarget, LiveProductionMirrorHeadTransition,
+    LiveProductionNativeFrameId, LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
     NativeGbmRenderedScanoutBufferDiscoveryExporter, NativeGbmRenderedScanoutContextStatus,
     RealAtomicScanoutSmokeConfig, RenderDeviceDiscoveryBackend,
-    finish_live_production_native_initialization, live_production_scanout_is_stable_present,
+    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
+    live_production_scanout_is_stable_present, reduce_live_production_mirror_head_queue_target,
     reduce_output_native_frame_phase,
 };
 #[cfg(feature = "gbm-probe")]

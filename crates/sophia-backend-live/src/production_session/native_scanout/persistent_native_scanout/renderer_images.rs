@@ -1,5 +1,21 @@
 use super::*;
 
+pub(super) enum LiveProductionDeferredMirrorHeadFrame {
+    Mixed {
+        content: LiveProductionScanoutContent,
+        frame: crate::LiveOwnedMixedCompositionFrame,
+        output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+    },
+}
+
+impl LiveProductionDeferredMirrorHeadFrame {
+    pub(super) fn frame(&self) -> LiveProductionNativeFrameId {
+        match self {
+            Self::Mixed { content, .. } => content.frame(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LiveProductionRendererImageHandoff {
     output: OutputId,
@@ -89,6 +105,81 @@ fn project_owned_mixed_frame(
 }
 
 impl LiveProductionNativeScanout {
+    fn reserve_mirror_generation(&mut self, output: OutputId, frame: LiveProductionNativeFrameId) {
+        let Some(lifecycle) = self.output_lifecycles.get_mut(&output) else {
+            return;
+        };
+        if lifecycle.initialized() && lifecycle.active_frame().is_none() {
+            debug_assert_eq!(
+                lifecycle.begin(frame),
+                LiveProductionMirrorGroupBegin::Started
+            );
+        }
+    }
+
+    fn mirror_head_queue_target(
+        &self,
+        output: OutputId,
+        head_index: usize,
+    ) -> LiveProductionMirrorHeadQueueTarget {
+        reduce_live_production_mirror_head_queue_target(
+            self.output_lifecycles
+                .get(&output)
+                .and_then(LiveProductionMirrorGroupLifecycle::active_frame),
+            self.exporters[head_index].worker_in_flight(),
+            self.heads[head_index].pending_content,
+        )
+    }
+
+    fn queue_mirror_mixed_head(
+        &mut self,
+        output: OutputId,
+        head_index: usize,
+        content: LiveProductionScanoutContent,
+        frame: crate::LiveOwnedMixedCompositionFrame,
+        output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+    ) {
+        if self.mirror_head_queue_target(output, head_index)
+            == LiveProductionMirrorHeadQueueTarget::Deferred
+        {
+            self.deferred_mirror_frames[head_index] =
+                Some(LiveProductionDeferredMirrorHeadFrame::Mixed {
+                    content,
+                    frame,
+                    output_damage_snapshot,
+                });
+            return;
+        }
+        self.deferred_mirror_frames[head_index] = None;
+        let (head, exporter) = self.head_and_exporter(head_index, output);
+        head.pending_content = Some(content);
+        head.queue_output_damage_snapshot(output_damage_snapshot);
+        exporter.set_pending_mixed_frame(frame);
+    }
+
+    pub(super) fn promote_deferred_mirror_head_frame(
+        &mut self,
+        output: OutputId,
+        head_index: usize,
+    ) {
+        let Some(deferred) = self.deferred_mirror_frames[head_index].take() else {
+            return;
+        };
+        match deferred {
+            LiveProductionDeferredMirrorHeadFrame::Mixed {
+                content,
+                frame,
+                output_damage_snapshot,
+            } => self.queue_mirror_mixed_head(
+                output,
+                head_index,
+                content,
+                frame,
+                output_damage_snapshot,
+            ),
+        }
+    }
+
     pub fn queue_present_cpu_frame(
         &mut self,
         output: OutputId,
@@ -174,29 +265,33 @@ impl LiveProductionNativeScanout {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let frame_id = self.allocate_frame_id();
+        self.reserve_mirror_generation(output, frame_id);
         for (head_index, frame) in indices.into_iter().zip(projected) {
-            let (head, exporter) = self.head_and_exporter(head_index, output);
-            let pending_before = exporter.pending_frame();
-            let worker_in_flight = exporter.worker_in_flight();
-            if let Some(superseded) = head.pending_content {
+            let pending_before = self.exporters[head_index].pending_frame();
+            let worker_in_flight = self.exporters[head_index].worker_in_flight();
+            if let Some(superseded) = self.heads[head_index].pending_content {
                 tracing::warn!(
                     "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=Mixed({})",
-                    head.output.id.raw(),
-                    head.selection.connector_id(),
+                    self.heads[head_index].output.id.raw(),
+                    self.heads[head_index].selection.connector_id(),
                     transaction.raw(),
                 );
             }
-            head.pending_content = Some(LiveProductionScanoutContent::MixedPresent {
-                frame: frame_id,
-                transaction,
-                nonzero_rgb_pixels: 0,
-            });
-            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(frame);
+            self.queue_mirror_mixed_head(
+                output,
+                head_index,
+                LiveProductionScanoutContent::MixedPresent {
+                    frame: frame_id,
+                    transaction,
+                    nonzero_rgb_pixels: 0,
+                },
+                frame,
+                output_damage_snapshot.clone(),
+            );
             tracing::debug!(
                 "sophia_live_retained_projection schema=1 status=native_queued output={} connector_id={} frame={} pending_before={} worker_in_flight={}",
-                head.output.id.raw(),
-                head.selection.connector_id(),
+                self.heads[head_index].output.id.raw(),
+                self.heads[head_index].selection.connector_id(),
                 frame_id.raw(),
                 pending_before,
                 worker_in_flight,
@@ -227,6 +322,15 @@ impl LiveProductionNativeScanout {
         fit: crate::NativeMirrorFit,
     ) -> Option<LiveProductionNativeFrameId> {
         let heads = self.head_indices(output);
+        if heads.iter().copied().any(|head_index| {
+            self.mirror_head_queue_target(output, head_index)
+                == LiveProductionMirrorHeadQueueTarget::Deferred
+        }) {
+            // This entry point has no owned successor slot. Its ordinary caller
+            // retries from the retained CPU scene, so preserve the active work
+            // on every head and report that nothing new was queued.
+            return None;
+        }
         let targets = heads
             .iter()
             .map(|head_index| {
@@ -245,6 +349,7 @@ impl LiveProductionNativeScanout {
             return None;
         }
         let frame_id = self.allocate_frame_id();
+        self.reserve_mirror_generation(output, frame_id);
         let source = sophia_renderer_live::LiveSharedCpuBufferSource {
             handle: 0,
             size: frame.frame.size,
@@ -372,21 +477,25 @@ impl LiveProductionNativeScanout {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let frame_id = self.allocate_frame_id();
+        self.reserve_mirror_generation(output, frame_id);
         for (head_index, frame) in indices.into_iter().zip(projected) {
-            let (head, exporter) = self.head_and_exporter(head_index, output);
-            if let Some(superseded) = head.pending_content {
+            if let Some(superseded) = self.heads[head_index].pending_content {
                 tracing::warn!(
                     "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=RetainedMixed",
-                    head.output.id.raw(),
-                    head.selection.connector_id(),
+                    self.heads[head_index].output.id.raw(),
+                    self.heads[head_index].selection.connector_id(),
                 );
             }
-            head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
-                frame: frame_id,
-                nonzero_rgb_pixels: 0,
-            });
-            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(frame);
+            self.queue_mirror_mixed_head(
+                output,
+                head_index,
+                LiveProductionScanoutContent::RetainedMixed {
+                    frame: frame_id,
+                    nonzero_rgb_pixels: 0,
+                },
+                frame,
+                output_damage_snapshot.clone(),
+            );
         }
         Ok(frame_id)
     }

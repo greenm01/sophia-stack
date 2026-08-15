@@ -929,7 +929,13 @@ is excluded; retained product behavior is not.
   CPU buffers so startup does not migrate an inline EGL target into a worker.
   Failed gates now archive a bounded kernel delta separately from promotion proof,
   and the physical verifier requires causal per-head submit/callback/retire records
-  for one common frame. Offline and fake-device coverage is green. This item remains
+  for one common frame. The next physical attempt reached both worker-backed heads
+  without an AMDGPU rejection, then exposed a fast-head scheduling race: DP-2
+  flipped generation 2 and tried to submit generation 3 while DP-1 was still
+  rendering generation 2. Generation reservation, connector/frame fences,
+  cleanup-safe successor deferral, and a pre-submit progress watchdog now cover
+  that trace and its adjacent blocked-head case. Offline and fake-device coverage
+  is green. This item remains
   open until the diagnostic-capable tty4 run visibly passes and its archive verifies;
   no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
