@@ -388,7 +388,6 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         selected_output: OutputId,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
-        let layer_templates = self.compositor_layer_templates();
         let index = self
             .outputs
             .output_index(selected_output)
@@ -396,6 +395,12 @@ impl LiveProductionVisualRuntime {
         if !native_scanout.pending_frame(selected_output) {
             self.stage_software_present_frame(native_scanout, selected_output)?;
         }
+        // Both views of the scene are taken after staging, from the same moment.
+        // Reading the templates first let staging change the committed set
+        // underneath them, and a template whose surface no longer matches its
+        // committed state is rejected as an invalid surface -- which is what this
+        // tick did the first time a mirror group ever reached it.
+        let layer_templates = self.compositor_layer_templates();
         let committed = self.production.committed_surfaces().to_vec();
         let output = self
             .outputs
