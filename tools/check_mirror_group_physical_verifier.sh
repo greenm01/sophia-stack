@@ -86,6 +86,10 @@ reject_mutation '/sophia_live_mirror_head_damage.*connector_id=102/d' 'missing s
 reject_mutation 's/connector_id=102 frame=7 width=1920/connector_id=102 frame=8 width=1920/' 'damage from a different logical generation'
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080/connector_id=102 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
+# Both heads moved together, so the cheaper agreement checks stay satisfied and
+# only the causal binding is left to notice that the completion records name a
+# generation nothing was ever proven to have presented.
+reject_mutation 's/ scene_generation=7 logical_content_checksum=111 head_pixel_checksum/ scene_generation=9 logical_content_checksum=111 head_pixel_checksum/' 'completion records agreeing on an unproven generation'
 
 sed 's/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=123/; s/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=456/' \
     "$fixture" >"$work/distinct-head-pixels.log"

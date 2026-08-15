@@ -599,7 +599,10 @@ extended horizontal desktop. The verifier requires per-output nonzero
 submissions, callbacks, retirements, exports, logical-content checksums, and a
 page-flip-paced vsync record with zero overlap or phase rejection. Checksums are
 diagnostic content evidence, not output identity: unrelated outputs may show
-identical content. Physical heads in one mirror group carry the same scene
+identical content. Two distinct output identities are what the gate counts,
+because the per-output completion record is emitted once per head -- a mirror
+group would otherwise satisfy a two-output claim with one output. Physical
+heads in one mirror group carry the same scene
 generation and logical-content checksum; optional native head-pixel checksums
 may differ. Connector-qualified lifecycle records prove that both scanout chains
 presented the cohort.

@@ -952,11 +952,14 @@
                 head.nonzero_exports,
             );
             println!(
-                "sophia_live_native_head schema=2 status=complete output={} connector_id={} scene_generation={} logical_content_checksum={} head_pixel_checksum=unavailable submissions={} retirements={} callbacks={} nonzero_exports={}",
+                "sophia_live_native_head schema=2 status=complete output={} connector_id={} scene_generation={} logical_content_checksum={} head_pixel_checksum={} submissions={} retirements={} callbacks={} nonzero_exports={}",
                 head.output.id.raw(),
                 head.selection.connector_id(),
                 evidence.scene_generation,
                 evidence.logical_content_checksum,
+                sophia_cli::native_output_completion::head_pixel_checksum_field(
+                    evidence.head_pixel_checksum
+                ),
                 head.submissions,
                 head.retirements,
                 head.callback_accepted,

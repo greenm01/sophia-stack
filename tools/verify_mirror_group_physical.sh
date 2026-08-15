@@ -145,6 +145,9 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     head_line="$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$connector ")"
     [[ -n "$head_line" ]] || fail "connector $connector has no completion record"
     require_field "$head_line" output "$dp1_output"
+    # Real native frame ids start at 1; zero is the placeholder the software
+    # Present path carries, so a head reporting generation 0 presented nothing
+    # this gate can speak for.
     require_positive_field "$head_line" scene_generation
     require_positive_field "$head_line" logical_content_checksum
     require_positive_field "$head_line" submissions

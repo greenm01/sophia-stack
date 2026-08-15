@@ -29,6 +29,16 @@ pub enum NativeOutputContentEvidenceError {
     },
 }
 
+/// Renders a head's optional native pixel checksum for an evidence record.
+///
+/// No renderer supplies one yet, so today this always reads `unavailable`. It
+/// is a function rather than a literal in the format string because the day one
+/// does, a hardcoded `unavailable` would keep reporting absence while the value
+/// sat in the struct, and the verifiers already accept the number.
+pub fn head_pixel_checksum_field(head_pixel_checksum: Option<u64>) -> String {
+    head_pixel_checksum.map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
+}
+
 /// Validates logical cohort identity without conflating it with head pixels.
 ///
 /// Heads behind one `OutputId` must report one scene generation and logical

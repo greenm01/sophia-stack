@@ -343,9 +343,8 @@ existing content/style key.
 
 Mandatory compositor content cannot disappear on one head. A supported reduced
 fallback is allowed only under the degradation contract in
-[Compositor Graphics](compositor-graphics.md). As an additional per-head
-composition rule, failure to produce mandatory content for any required head
-fails the complete candidate before submission.
+[Compositor Graphics](compositor-graphics.md). Failure to produce mandatory
+content for any required head fails the complete candidate before submission.
 
 ### Client content selection
 
@@ -386,10 +385,11 @@ differ, so one head's damage snapshot cannot be cloned into another's ledger.
 Incomplete damage proof becomes a full head repaint, never stale pixels.
 
 Logical content identity is the scene generation plus its ordered committed
-surface/content generations. A diagnostic logical-content checksum may be equal
-across the cohort. Optional native head-pixel checksums, damaged-pixel counts,
-and framebuffer bytes are expected to differ and must not be used as the mirror
-join identity.
+surface/content generations. A diagnostic logical-content checksum is equal
+across the cohort, and the join refuses heads that disagree on it: one scene
+composed once cannot yield two logical checksums. Optional native head-pixel
+checksums, damaged-pixel counts, and framebuffer bytes are expected to differ
+and must not be used as the mirror join identity.
 
 ## Scheduling and Retirement
 
@@ -411,7 +411,7 @@ progress. Preparation includes rendering/export, framebuffer creation, lease
 acquisition, and every validation possible without accepting the real page flip.
 It does not pretend the later kernel commit cannot fail. Submission remains per
 head, matching the per-output KMS/worker ownership established in
-[Architecture](architecture.md). Once any
+[Engine Architecture](engine-architecture.md). Once any
 submission is accepted, a later failure poisons the cohort: already accepted
 work drains, no successor can be relabelled into the failed generation, and the
 logical candidate does not commit.
@@ -537,13 +537,19 @@ record lands with a named producer and consumer on the running session path, a
 test that exercises that path, and a negative test that fails when either end is
 unwired. A type or isolated reducer with no production caller is incomplete.
 
-Before production scheduling changes, the bounded visual-retirement model must
-include per-head preparation, output-scoped committed generations, and exclusive
-head ownership across generations. Distinct head leases and last-head retirement
-already exist in the model. Negative controls must show that submitting before
-all required heads prepare, retiring after one head, overlapping one head across
-generations or splitting one output cohort across generations, or releasing one
-head's target while it remains in flight violates the model.
+The bounded visual-retirement model in
+[`validation/tla/VisualRetirement.tla`](../validation/tla/VisualRetirement.tla)
+carries this contract: per-head preparation, output-scoped committed
+generations, exclusive head ownership across generations, distinct head leases,
+and last-head retirement. Supersession is output-scoped and happens before the
+kernel, matching the latest-wins successor above -- a candidate loses an output
+a newer generation already committed, and only an output with no submitted head
+can be lost. Negative controls show that submitting before all required heads
+prepare, retiring after one head, overlapping one head across generations or
+splitting one output cohort across generations, submitting a generation the
+output has already passed, relabelling a submitted cohort, or releasing one
+head's target while it remains in flight each violates the model. Scheduling
+changes extend that model before they reach production.
 
 ## Current-To-Target Terminology
 

@@ -658,6 +658,14 @@ Fields should describe:
 The descriptor is not authority to scan out by itself. It is the data contract
 between future device discovery and existing frame planning.
 
+Its connector and CRTC IDs are backend-facing here and stay that way. The
+per-head composition target in
+[Multi-Monitor Composition](multi-monitor-composition.md) replaces them at the
+Engine boundary with an opaque `RenderHeadId`, leaving the backend to map native
+identity. Read the fields above as what discovery reads from the device, not as
+a licence to carry connector or CRTC identity into Engine, WM, or
+protocol-facing records.
+
 `DrmKmsSysfsDiscovery` is the first real discovery adapter. It reads connected
 connector directories, mode lists, optional connector/CRTC IDs, and optional
 scale values from a sysfs-style tree. Missing CRTC IDs must remain explicit as
