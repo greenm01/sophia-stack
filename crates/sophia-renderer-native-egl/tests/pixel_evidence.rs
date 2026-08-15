@@ -97,5 +97,9 @@ fn argb_composition_uses_premultiplied_source_over_without_double_alpha() {
 
     assert!(source.contains(".blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA)"));
     assert!(!source.contains(".blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA)"));
+    assert!(source.contains("get_uniform_location(program, \"source_is_opaque\")"));
+    assert!(shaders.contains("if (source_is_opaque > 0.5)"));
+    assert!(shaders.contains("color.a = 1.0"));
+    assert!(shaders.contains("color.rgb = min(color.rgb, vec3(color.a))"));
     assert!(shaders.contains("vec4(color.rgb * opacity, color.a * opacity)"));
 }

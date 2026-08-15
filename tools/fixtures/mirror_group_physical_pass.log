@@ -6,8 +6,10 @@ sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=1 connector_id=94
 sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=94 workers=1
 sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=1 connector_id=102 exports=1
 sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=102 workers=1
-sophia_native_composition_sampling schema=1 status=active requested=exact_nearest effective=exact_nearest source=2560x1440 target=2560x1440 output=2560x1440
-sophia_native_composition_sampling schema=1 status=active requested=sharp_downscale effective=sharp_downscale source=2560x1440 target=1920x1080 output=1920x1080
+sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440
+sophia_native_composition_sampling schema=2 status=active requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 output=1920x1080
+sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=0 target=2560x1440_0_0 region_pixels=3686400 region_nonzero_rgb_pixels=16000 region_red_pixels=0 region_green_pixels=0 region_blue_pixels=4000 region_yellow_pixels=0 region_cyan_pixels=0 region_magenta_pixels=0 region_gray_pixels=7200 region_other_pixels=4800 region_checksum=31
+sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=0 target=1920x1080_0_0 region_pixels=2073600 region_nonzero_rgb_pixels=9000 region_red_pixels=0 region_green_pixels=0 region_blue_pixels=2200 region_yellow_pixels=0 region_cyan_pixels=0 region_magenta_pixels=0 region_gray_pixels=4200 region_other_pixels=2600 region_checksum=32
 sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=1/1
 sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=94 submission=2 content=Cpu frame=7

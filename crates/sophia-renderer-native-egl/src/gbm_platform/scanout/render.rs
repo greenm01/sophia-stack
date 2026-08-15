@@ -472,7 +472,11 @@ fn render_native_target_composition(
                             stride: layer.stride,
                             pixels: layer.pixels,
                             alpha: layer.alpha,
-                            has_alpha: layer.format == 0x3432_5241,
+                            alpha_mode: if layer.format == 0x3432_5241 {
+                                crate::NativeCompositionAlphaMode::Premultiplied
+                            } else {
+                                crate::NativeCompositionAlphaMode::Opaque
+                            },
                         },
                         layer.target.into(),
                         layer.clip.map(Into::into),
@@ -507,7 +511,11 @@ fn render_native_target_composition(
                                 layer.target.into(),
                                 layer.clip.map(Into::into),
                                 layer.alpha,
-                                layer.frame.format == 0x3432_5241,
+                                if layer.frame.format == 0x3432_5241 {
+                                    crate::NativeCompositionAlphaMode::Premultiplied
+                                } else {
+                                    crate::NativeCompositionAlphaMode::Opaque
+                                },
                             )
                             .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
                     });
@@ -567,7 +575,11 @@ fn render_native_target_composition(
                             layer.target.into(),
                             layer.clip.map(Into::into),
                             layer.alpha,
-                            image.buffer.format() == 0x3432_5241,
+                            if image.buffer.format() == 0x3432_5241 {
+                                crate::NativeCompositionAlphaMode::Premultiplied
+                            } else {
+                                crate::NativeCompositionAlphaMode::Opaque
+                            },
                         )
                         .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
                 })();

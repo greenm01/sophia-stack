@@ -973,7 +973,13 @@ is excluded; retained product behavior is not.
   path with fail-closed physical evidence, and enlargements remain linear. Runtime
   deadline completion now suppresses new physical input, synthesizes all held-key
   releases, and waits on the ordered delivery/release barrier before native
-  teardown. This item remains open until the diagnostic-capable tty4 run
+  teardown. The next run exposed a separate XRGB contract bug: the sharp shader
+  interpreted XRGB's zero padding byte as transparent alpha and blackened DP-2's
+  terminal layer while separately rendered chrome and the hardware cursor stayed
+  visible. Texture draws now distinguish opaque XRGB from premultiplied ARGB,
+  and the gate requires native-size final-region text pixels on both heads rather
+  than inferring raster content from shared frame identity. This item remains
+  open until the diagnostic-capable tty4 run
   visibly passes and its archive verifies; no userspace test is a substitute for
   that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an

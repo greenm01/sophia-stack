@@ -31,6 +31,10 @@ grep -Fq 'while [ "$i" -le 40 ]' "$runner" \
     echo "mirror-group runner omitted the deterministic scrolling text workload" >&2
     exit 1
 }
+grep -Fq 'SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions' "$runner" || {
+    echo "mirror-group runner omitted final per-head composition pixel evidence" >&2
+    exit 1
+}
 grep -Fq -- '--session-mode=normal' "$runner" \
     && grep -Fq -- '--session-app=terminal="$XTERM_BIN"' "$runner" \
     && grep -Fq -- '--session-start=terminal' "$runner" || {
@@ -65,8 +69,12 @@ reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
 reject_mutation '/requested=exact_nearest/d' 'missing exact primary sampling evidence'
 reject_mutation '/requested=sharp_downscale/d' 'missing sharp secondary sampling evidence'
+reject_mutation 's/alpha_mode=opaque source=2560x1440 target=1920x1080/alpha_mode=premultiplied source=2560x1440 target=1920x1080/' 'wrong secondary alpha semantics'
 reject_mutation 's/status=active requested=sharp_downscale/status=fallback requested=sharp_downscale/' 'a sharp-downscale fallback'
 reject_mutation 's/sharp_downscale_fallbacks=0/sharp_downscale_fallbacks=1/' 'a counted sharp-downscale fallback'
+reject_mutation '/target=1920x1080_0_0/d' 'missing secondary terminal pixel evidence'
+reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=0/' 'a secondary frame with no terminal text pixels'
+reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=1000/' 'catastrophic secondary text-coverage loss'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=1 release_barrier_pending=0/' 'a pressed key left at shutdown'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier_pending=1/' 'an unacknowledged synthetic key release'
 reject_mutation 's/connector_id=102 checksum=111/connector_id=102 checksum=222/' 'divergent mirror checksums'

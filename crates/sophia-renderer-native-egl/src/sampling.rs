@@ -9,6 +9,27 @@ pub enum NativeCompositionSampling {
     LinearUpscale,
 }
 
+#[cfg(feature = "gbm-platform")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NativeCompositionAlphaMode {
+    Opaque,
+    Premultiplied,
+}
+
+#[cfg(feature = "gbm-platform")]
+impl NativeCompositionAlphaMode {
+    pub(crate) const fn is_premultiplied(self) -> bool {
+        matches!(self, Self::Premultiplied)
+    }
+
+    pub(crate) const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::Opaque => "opaque",
+            Self::Premultiplied => "premultiplied",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NativeCompositionSamplingStats {
     pub exact_nearest_draws: usize,
@@ -17,6 +38,7 @@ pub struct NativeCompositionSamplingStats {
     pub sharp_downscale_fallbacks: usize,
 }
 
+#[cfg(feature = "gbm-platform")]
 impl NativeCompositionSamplingStats {
     pub(crate) fn saturating_add(self, other: Self) -> Self {
         Self {

@@ -169,6 +169,7 @@ set +e
     # Native scanout is armed separately from the session itself, because a
     # session that drives real KMS is a different act from one that does not.
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions \
         ./target/release/sophia sophia-live-session \
         --display="$DISPLAY_NAME" \
         --native-scanout \

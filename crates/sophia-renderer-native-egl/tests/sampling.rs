@@ -67,10 +67,64 @@ fn sharp_reconstruction_preserves_mixed_case_bitmap_strokes_at_three_quarters_sc
         );
     }
 
+    let opaque_xrgb = sharp
+        .iter()
+        .map(|value| finish_sample([*value, *value, *value, 0.0], AlphaMode::Opaque, 1.0))
+        .collect::<Vec<_>>();
+    assert!(opaque_xrgb.iter().any(|pixel| pixel[0] > 0.85));
+    assert!(opaque_xrgb.iter().all(|pixel| pixel[3] == 1.0));
+
     let shader = include_str!("../src/gl/shaders.rs");
+    let renderer = include_str!("../src/gl.rs");
     assert!(shader.contains("SHARP_DOWNSCALE_FRAGMENT_SHADER"));
     assert!(shader.contains("for (int row = -1; row <= 2; row++)"));
     assert!(shader.contains("for (int column = -1; column <= 2; column++)"));
+    assert_eq!(shader.matches("uniform float source_is_opaque;").count(), 2);
+    assert_eq!(shader.matches("if (source_is_opaque > 0.5)").count(), 2);
+    assert!(renderer.contains("get_uniform_location(program, \"source_is_opaque\")"));
+}
+
+#[test]
+fn opaque_xrgb_ignores_the_unused_alpha_byte_before_applying_opacity() {
+    assert_eq!(
+        finish_sample([1.0, 0.5, 0.25, 0.0], AlphaMode::Opaque, 1.0),
+        [1.0, 0.5, 0.25, 1.0],
+    );
+    assert_eq!(
+        finish_sample([1.0, 0.5, 0.25, 0.0], AlphaMode::Opaque, 0.5),
+        [0.5, 0.25, 0.125, 0.5],
+    );
+}
+
+#[test]
+fn premultiplied_argb_clamps_reconstruction_ringing_to_alpha() {
+    assert_eq!(
+        finish_sample([0.8, 0.4, 0.2, 0.5], AlphaMode::Premultiplied, 0.5,),
+        [0.25, 0.2, 0.1, 0.25],
+    );
+    assert_eq!(
+        finish_sample([0.7, 0.2, 0.1, 0.0], AlphaMode::Premultiplied, 1.0,),
+        [0.0, 0.0, 0.0, 0.0],
+    );
+}
+
+#[derive(Clone, Copy)]
+enum AlphaMode {
+    Opaque,
+    Premultiplied,
+}
+
+fn finish_sample(mut color: [f32; 4], alpha_mode: AlphaMode, opacity: f32) -> [f32; 4] {
+    match alpha_mode {
+        AlphaMode::Opaque => color[3] = 1.0,
+        AlphaMode::Premultiplied => {
+            let alpha = color[3];
+            for channel in &mut color[..3] {
+                *channel = channel.min(alpha);
+            }
+        }
+    }
+    color.map(|channel| channel * opacity)
 }
 
 #[derive(Clone, Copy)]

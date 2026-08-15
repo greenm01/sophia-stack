@@ -68,7 +68,7 @@ if grep -Eq '^sophia_live_output_damage schema=1 status=queue_rejected .*reason=
     "$evidence"; then
     fail "a head rejected damage for a different output shape"
 fi
-if grep -Eq '^sophia_native_composition_sampling schema=1 status=(fallback|unavailable)([[:space:]]|$)' \
+if grep -Eq '^sophia_native_composition_sampling schema=2 status=(fallback|unavailable)([[:space:]]|$)' \
     "$evidence"; then
     fail "sharp mirror downsampling was unavailable or fell back"
 fi
@@ -111,10 +111,30 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=worker_ready output=$dp1_output connector_id=$connector workers=1" \
         "$evidence" || fail "connector $connector did not establish its renderer worker"
 done
-grep -Fxq 'sophia_native_composition_sampling schema=1 status=active requested=exact_nearest effective=exact_nearest source=2560x1440 target=2560x1440 output=2560x1440' \
+grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440' \
     "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
-grep -Fxq 'sophia_native_composition_sampling schema=1 status=active requested=sharp_downscale effective=sharp_downscale source=2560x1440 target=1920x1080 output=1920x1080' \
+grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 output=1920x1080' \
     "$evidence" || fail "DP-2 did not use sharp 0.75x downsampling"
+
+max_final_cpu_gray_pixels() {
+    local target="$1" line gray max=0
+    while IFS= read -r line; do
+        gray="$(field "$line" region_gray_pixels)" || continue
+        [[ "$gray" =~ ^[0-9]+$ ]] || continue
+        (( gray > max )) && max="$gray"
+    done < <(
+        grep -E "^sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=[0-9]+ target=$target region_pixels=[0-9]+ .*region_gray_pixels=[0-9]+([[:space:]]|$)" \
+            "$evidence" || true
+    )
+    printf '%s\n' "$max"
+}
+
+dp1_gray_pixels="$(max_final_cpu_gray_pixels '2560x1440_0_0')"
+dp2_gray_pixels="$(max_final_cpu_gray_pixels '1920x1080_0_0')"
+(( dp1_gray_pixels > 500 )) || fail "DP-1 final composition did not contain substantial terminal text pixels"
+(( dp2_gray_pixels > 500 )) || fail "DP-2 final composition did not contain substantial terminal text pixels"
+(( dp2_gray_pixels * 4 >= dp1_gray_pixels )) ||
+    fail "DP-2 retained too little terminal text coverage after downsampling"
 
 mapfile -t complete_heads < <(
     grep -E '^sophia_live_native_head schema=1 status=complete output=[0-9]+ connector_id=[0-9]+ checksum=[0-9]+ submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
