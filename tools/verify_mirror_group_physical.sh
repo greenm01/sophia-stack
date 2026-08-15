@@ -66,6 +66,12 @@ require_field "$dp2" mode 1920x1080
 dp1_output="$(field "$dp1" output)" || fail "DP-1 omitted output identity"
 dp2_output="$(field "$dp2" output)" || fail "DP-2 omitted output identity"
 [[ "$dp1_output" == "$dp2_output" ]] || fail "the heads do not share one logical output"
+mapfile -t startup_outputs < <(
+    grep -E '^sophia_live_native_startup_output schema=1 status=presented output=[0-9]+ proof=synchronous_modeset submission=[0-9]+$' \
+        "$evidence"
+)
+(( ${#startup_outputs[@]} == 1 )) || fail "expected one logical startup-output record"
+require_field "${startup_outputs[0]}" output "$dp1_output"
 dp1_connector="$(field "$dp1" connector_id)" || fail "DP-1 omitted connector identity"
 dp2_connector="$(field "$dp2" connector_id)" || fail "DP-2 omitted connector identity"
 [[ "$dp1_connector" != "$dp2_connector" ]] || fail "the heads share one connector identity"

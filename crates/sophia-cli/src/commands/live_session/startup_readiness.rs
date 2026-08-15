@@ -1,5 +1,4 @@
-use sophia_protocol::Rect;
-use sophia_protocol::SurfaceId;
+use sophia_protocol::{OutputId, Rect, SurfaceId};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -105,12 +104,54 @@ pub(super) fn all_startup_outputs_presented(outputs: &[StartupOutputEvidence]) -
         })
 }
 
+/// Reduces physical-head readiness to the logical outputs exposed to Engine.
+///
+/// Every head of a mirror group must be ready before its shared output is ready,
+/// but the group contributes only one output to startup progress.
+pub(super) fn logical_startup_output_progress(
+    heads: impl IntoIterator<Item = (OutputId, bool)>,
+) -> (usize, usize) {
+    let mut outputs = BTreeMap::<OutputId, bool>::new();
+    for (output, ready) in heads {
+        outputs
+            .entry(output)
+            .and_modify(|group_ready| *group_ready &= ready)
+            .or_insert(ready);
+    }
+    let ready = outputs.values().filter(|ready| **ready).count();
+    (ready, outputs.len())
+}
+
 pub(super) fn synchronous_modeset_record(output: u64, submission: Option<usize>) -> Option<String> {
     submission.map(|submission| {
         format!(
             "sophia_live_native_startup_output schema=1 status=presented output={output} proof=synchronous_modeset submission={submission}"
         )
     })
+}
+
+/// Emits one synchronous startup record per logical output.
+///
+/// A mirror group has synchronous proof only when every physical head has it.
+pub(super) fn logical_synchronous_modeset_records(
+    heads: impl IntoIterator<Item = (OutputId, Option<usize>)>,
+) -> Vec<String> {
+    let mut outputs = BTreeMap::<OutputId, (bool, usize)>::new();
+    for (output, submission) in heads {
+        let state = outputs.entry(output).or_insert((true, 0));
+        state.0 &= submission.is_some();
+        if let Some(submission) = submission {
+            state.1 = state.1.max(submission);
+        }
+    }
+    outputs
+        .into_iter()
+        .filter_map(|(output, (synchronous, submission))| {
+            synchronous
+                .then(|| synchronous_modeset_record(output.raw(), Some(submission)))
+                .flatten()
+        })
+        .collect()
 }
 
 pub(super) const fn independent_native_output_presented(

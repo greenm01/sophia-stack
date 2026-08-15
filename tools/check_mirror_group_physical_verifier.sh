@@ -23,8 +23,15 @@ reject_mutation 's/mode=1920x1080/mode=2560x1440/' 'a downgraded secondary mode'
 reject_mutation 's/native_cleanup_pending=false/native_cleanup_pending=true/' 'undrained native ownership'
 reject_mutation 's/outcome=drained drained=true abandoned_scanouts=0/outcome=forced_detach_timeout drained=false abandoned_scanouts=1/' 'forced native detach'
 reject_mutation '/status=visual_confirmed/d' 'missing visible-pixel confirmation'
+reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
 reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct-CPU mirror bootstrap'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
+
+sed '/sophia_live_native_startup_output/p' "$fixture" >"$work/duplicate-startup-output.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/duplicate-startup-output.log" >/dev/null 2>&1; then
+    echo "mirror-group verifier accepted duplicate logical startup-output proof" >&2
+    exit 1
+fi
 
 awk '
     /status=submitted output=1 connector_id=94 / { submitted = $0; next }

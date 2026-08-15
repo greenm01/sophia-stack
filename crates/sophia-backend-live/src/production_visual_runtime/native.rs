@@ -363,9 +363,9 @@ impl LiveProductionVisualRuntime {
                         .mark_submitted(transaction)?;
                 }
                 let submitted = native_scanout
-                    .submitted_content(selected_output)
+                    .submitted_frame(selected_output)
                     .ok_or("native submit did not retain its frame identity")?;
-                self.observe_software_present_frame_submitted(submitted.frame())?;
+                self.observe_software_present_frame_submitted(submitted)?;
             }
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
@@ -436,8 +436,8 @@ impl LiveProductionVisualRuntime {
         // Authority and repaint cycles may submit a staged frame between
         // frame-service passes. The scanout owner retains that exact identity
         // until retirement, so observe it before consuming the callback.
-        if let Some(submitted) = native_scanout.submitted_content(selected_output) {
-            self.observe_software_present_frame_submitted(submitted.frame())?;
+        if let Some(submitted) = native_scanout.submitted_frame(selected_output) {
+            self.observe_software_present_frame_submitted(submitted)?;
         }
         let committed = self.production.committed_surfaces().to_vec();
         let output = self

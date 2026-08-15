@@ -195,6 +195,12 @@ impl LiveProductionMirrorGroupLifecycle {
         self.active.is_some() && self.submitted == self.required
     }
 
+    /// Logical identity retained after every required head has submitted and
+    /// until the final physical callback completes the group join.
+    pub fn logically_submitted_frame(&self) -> Option<LiveProductionNativeFrameId> {
+        self.awaiting_flips().then_some(self.active).flatten()
+    }
+
     /// Whether this connector may consume renderer work for the current turn.
     ///
     /// A physical callback clears the head's KMS submission before its siblings

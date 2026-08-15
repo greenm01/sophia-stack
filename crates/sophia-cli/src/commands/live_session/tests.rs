@@ -2,6 +2,7 @@
 use super::startup_readiness::{
     StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,
     all_startup_outputs_presented, startup_native_recovery_reason, startup_surface_visual_detail,
+    synchronous_modeset_record,
 };
 use super::{
     BufferSource, CommittedSurfaceState, FirefoxM8StageProof, FirefoxM10DialogProof,
@@ -21,6 +22,7 @@ use super::{
     flush_all_client_pressed_keys, global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_observed_size, live_transaction_visual_evidence,
+    logical_startup_output_progress, logical_synchronous_modeset_records,
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
     native_frame_service_should_preempt_authority, observe_floating_pointer_gesture,
     observe_public_output_generations, observe_public_output_topology,
@@ -32,8 +34,7 @@ use super::{
     rects_intersect, resolve_public_shortcuts, route_input_events,
     session_protocol_errors_are_fatal, stable_gpu_frame_proves_post_input_pixels,
     startup_submission_requirement, successful_primary_exit_ends_session,
-    synchronize_runtime_surface_chrome_style, synchronous_modeset_record,
-    take_settled_input_delivery_wait,
+    synchronize_runtime_surface_chrome_style, take_settled_input_delivery_wait,
 };
 use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, SessionClientKeyState, SessionClientPressedKey,
@@ -249,6 +250,36 @@ fn synchronous_modeset_record_requires_the_initialized_submission() {
         )
     );
     assert_eq!(synchronous_modeset_record(2, None), None);
+}
+
+#[test]
+fn mirror_startup_readiness_is_one_logical_output() {
+    let mirrored = OutputId::from_raw(7);
+    let independent = OutputId::from_raw(8);
+
+    assert_eq!(
+        logical_startup_output_progress([(mirrored, true), (mirrored, true), (independent, true),]),
+        (2, 2)
+    );
+    assert_eq!(
+        logical_startup_output_progress([(mirrored, true), (mirrored, false)]),
+        (0, 1),
+        "one ready mirror head must not publish its logical output"
+    );
+}
+
+#[test]
+fn mirror_synchronous_modeset_record_is_deduplicated_and_requires_every_head() {
+    let mirrored = OutputId::from_raw(7);
+    assert_eq!(
+        logical_synchronous_modeset_records([(mirrored, Some(1)), (mirrored, Some(1))]),
+        [
+            "sophia_live_native_startup_output schema=1 status=presented output=7 proof=synchronous_modeset submission=1"
+        ]
+    );
+    assert!(
+        logical_synchronous_modeset_records([(mirrored, Some(1)), (mirrored, None)]).is_empty()
+    );
 }
 
 #[test]

@@ -775,22 +775,27 @@
                 .is_some_and(|outputs| all_startup_outputs_presented(&outputs))
         {
             startup_outputs_ready_reported = true;
-            for head in &native.heads {
-                if let Some(record) = synchronous_modeset_record(
-                    head.output.id.raw(),
-                    head.initial_modeset_submission,
-                ) {
-                    println!("{record}");
-                }
+            for record in logical_synchronous_modeset_records(native.heads.iter().map(|head| {
+                (head.output.id, head.initial_modeset_submission)
+            })) {
+                println!("{record}");
             }
             let _ = reduce_session_startup(
                 &mut startup_readiness,
                 SessionStartupEvent::OutputsPresented,
             );
+            let (ready_outputs, output_count) = logical_startup_output_progress(
+                native.heads.iter().map(|head| {
+                    (
+                        head.output.id,
+                        head.callback_accepted > 0 || head.initial_modeset_submission.is_some(),
+                    )
+                }),
+            );
             println!(
                 "sophia_live_session_startup schema=2 status=output_baseline_ready outputs={}/{}",
-                native.heads.len(),
-                native.heads.len(),
+                ready_outputs,
+                output_count,
             );
             std::io::stdout().flush()?;
         }
@@ -847,20 +852,19 @@
         if !startup_ready_reported && startup_readiness.ready {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
+            let logical_output_progress = native_scanout.as_ref().map(|native| {
+                logical_startup_output_progress(native.heads.iter().map(|head| {
+                    (
+                        head.output.id,
+                        head.callback_accepted > 0 || head.initial_modeset_submission.is_some(),
+                    )
+                }))
+            });
             println!(
                 "sophia_live_session_startup schema=2 status=ready elapsed_msec={} surface=true visual_detail=true presented=true outputs_ready={}/{} recovery_attempts={}",
                 started.elapsed().as_millis(),
-                native_scanout.as_ref().map_or(1, |native| {
-                    native
-                        .heads
-                        .iter()
-                        .filter(|head| {
-                            head.callback_accepted > 0
-                                || head.initial_modeset_submission.is_some()
-                        })
-                        .count()
-                }),
-                native_scanout.as_ref().map_or(1, |native| native.heads.len()),
+                logical_output_progress.map_or(1, |progress| progress.0),
+                logical_output_progress.map_or(1, |progress| progress.1),
                 usize::from(startup_native_recovery_attempted),
             );
             std::io::stdout().flush()?;

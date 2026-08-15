@@ -2020,15 +2020,29 @@ mod persistent_native_scanout {
         }
 
         pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
-            if self.head_indices(output).len() > 1
-                && !self
+            let frame = self.submitted_frame(output)?;
+            self.head_indices(output).into_iter().find_map(|index| {
+                self.heads[index]
+                    .submitted_content
+                    .filter(|content| content.frame() == frame)
+            })
+        }
+
+        /// Returns the logical submitted generation independently of which
+        /// physical head still owns `submitted_content`.
+        ///
+        /// During an asymmetric mirror flip the primary may already have moved
+        /// its content to `presented_content` while a sibling remains in flight.
+        pub fn submitted_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
+            if self.head_indices(output).len() > 1 {
+                return self
                     .output_lifecycles
                     .get(&output)
-                    .is_some_and(LiveProductionMirrorGroupLifecycle::awaiting_flips)
-            {
-                return None;
+                    .and_then(LiveProductionMirrorGroupLifecycle::logically_submitted_frame);
             }
-            self.heads[self.primary_head_index(output)?].submitted_content
+            self.heads[self.primary_head_index(output)?]
+                .submitted_content
+                .map(LiveProductionScanoutContent::frame)
         }
 
         /// Returns the immutable scene snapshot retired by the latest accepted

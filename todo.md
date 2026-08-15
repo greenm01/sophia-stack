@@ -935,7 +935,11 @@ is excluded; retained product behavior is not.
   rendering generation 2. Generation reservation, connector/frame fences,
   cleanup-safe successor deferral, and a pre-submit progress watchdog now cover
   that trace and its adjacent blocked-head case. Offline and fake-device coverage
-  is green. This item remains
+  is green. The following run completed joined frames 2 through 11, then exposed
+  a shutdown-only primary-head identity lookup after the primary flipped frame 12
+  before its sibling submitted. Logical submitted identity now lives in the group
+  lifecycle through the final callback, and startup readiness is deduplicated to
+  the one logical output required by the verifier. This item remains
   open until the diagnostic-capable tty4 run visibly passes and its archive verifies;
   no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an

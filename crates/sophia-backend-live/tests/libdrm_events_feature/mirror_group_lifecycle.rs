@@ -255,3 +255,34 @@ fn cleanup_blocked_mirror_head_preserves_reserved_generation_before_worker_start
         LiveProductionMirrorHeadTransition::Accepted
     );
 }
+
+#[test]
+fn shutdown_drain_keeps_logical_frame_after_primary_flips_before_sibling() {
+    let output = OutputId::from_raw(7);
+    let frame = LiveProductionNativeFrameId::from_raw(12);
+    let mut group = LiveProductionMirrorGroupLifecycle::new(output, [94, 104]).unwrap();
+
+    assert_eq!(group.begin(frame), LiveProductionMirrorGroupBegin::Started);
+    assert_eq!(
+        group.mark_submitted(94, frame),
+        LiveProductionMirrorHeadTransition::Accepted
+    );
+    assert_eq!(
+        group.mark_flipped(94, frame),
+        LiveProductionMirrorHeadTransition::Accepted
+    );
+    // The primary's per-head submitted_content has now moved to presented, but
+    // the sibling's submit completes the logical submission join.
+    assert_eq!(
+        group.mark_submitted(104, frame),
+        LiveProductionMirrorHeadTransition::GroupReady
+    );
+    assert!(group.awaiting_flips());
+    assert_eq!(group.logically_submitted_frame(), Some(frame));
+
+    assert_eq!(
+        group.mark_flipped(104, frame),
+        LiveProductionMirrorHeadTransition::GroupReady
+    );
+    assert_eq!(group.logically_submitted_frame(), None);
+}

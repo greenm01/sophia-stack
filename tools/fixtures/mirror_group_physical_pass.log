@@ -6,6 +6,7 @@ sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=1 connector_id=94
 sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=94 workers=1
 sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=1 connector_id=102 exports=1
 sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=102 workers=1
+sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=1/1
 sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=94 submission=2 content=Cpu frame=7
 sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=102 submission=2 content=Cpu frame=7
