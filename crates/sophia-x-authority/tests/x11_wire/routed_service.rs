@@ -256,3 +256,521 @@ fn routed_service_retains_revocation_requested_before_admission_attaches() {
     assert_eq!(revoked[0].client_id, ClientAdmissionId::from_raw(1));
     std::fs::remove_file(&socket_path).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn routed_service_backpressure_blocks_without_disconnect_and_drains_in_order() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-bp-order-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceId::from_raw(856);
+    let config = XServerFrontendConfig::new(&socket_path, namespace)
+        .unwrap()
+        .with_max_concurrent_clients(NonZeroUsize::new(1).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(2);
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut client = connect_x_socket(&socket_path);
+    client
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    client
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut client, XByteOrder::LittleEndian);
+    let windows = [0x0020_0a01, 0x0020_0a02, 0x0020_0a03];
+    for (index, window) in windows.into_iter().enumerate() {
+        client
+            .write_all(&create_window_request(
+                XByteOrder::LittleEndian,
+                window,
+                i16::try_from(index + 1).unwrap(),
+                i16::try_from(index + 2).unwrap(),
+                u16::try_from(300 + index).unwrap(),
+                u16::try_from(200 + index).unwrap(),
+            ))
+            .unwrap();
+    }
+    client
+        .write_all(&resource_request(
+            XByteOrder::LittleEndian,
+            14,
+            windows[2],
+        ))
+        .unwrap();
+
+    // The blocked worker must not retain the authority runtime lock. A topology
+    // update crosses that lock in the service thread and must still settle.
+    let snapshot = OutputTopologySnapshot {
+        generation: 2,
+        primary: OutputId::from_raw(9),
+        outputs: vec![OutputTopologyEntry {
+            output: OutputId::from_raw(9),
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: 1600,
+                height: 900,
+            },
+            pixel_size: Size {
+                width: 1600,
+                height: 900,
+            },
+            scale: 1,
+            refresh_millihz: 60_000,
+        }],
+    };
+    let (ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(1);
+    service_sender
+        .send(XServerFrontendServiceCommand::UpdateOutputTopology {
+            snapshot,
+            acknowledgement: ack_sender,
+        })
+        .unwrap();
+    assert_eq!(
+        ack_receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+        XAuthorityOutputUpdateOutcome::Applied {
+            generation: 2,
+            notifications: 0,
+        }
+    );
+
+    let first = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    let second = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    let third = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(
+        first.surface_presentations[0].surface,
+        SurfaceId::new(windows[0], 1)
+    );
+    assert_eq!(
+        second.surface_presentations[0].surface,
+        SurfaceId::new(windows[1], 1)
+    );
+    assert_eq!(
+        third.surface_presentations[0].surface,
+        SurfaceId::new(windows[2], 1)
+    );
+    assert_eq!(first.surface_presentations[0].geometry.x, 1);
+    assert_eq!(first.surface_presentations[0].geometry.y, 2);
+    assert_eq!(second.surface_presentations[0].geometry.x, 2);
+    assert_eq!(second.surface_presentations[0].geometry.y, 3);
+    assert_eq!(third.surface_presentations[0].geometry.width, 302);
+    assert_eq!(third.surface_presentations[0].geometry.height, 202);
+    assert!(first.transaction.raw() < second.transaction.raw());
+    assert!(second.transaction.raw() < third.transaction.raw());
+
+    expect_x_reply(
+        &read_x_reply(&mut client, XByteOrder::LittleEndian),
+        XByteOrder::LittleEndian,
+    );
+    drop(client);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn routed_service_cancellation_releases_authority_backpressured_worker() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-bp-cancel-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceContext::new(
+        NamespaceId::from_raw(857),
+        NamespaceProfile::ClassicShared,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(TestXAdmissionPolicy::new(namespace, false));
+    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, namespace)
+        .unwrap()
+        .with_admission_policy(policy.clone())
+        .with_max_concurrent_clients(NonZeroUsize::new(1).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(0);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(1);
+    let (done_sender, done_receiver) = std::sync::mpsc::sync_channel(1);
+    let (telemetry_sender, telemetry_receiver) = std::sync::mpsc::channel();
+    let server = thread::spawn(move || {
+        let result = run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+            Arc::new(move |event| telemetry_sender.send(event).unwrap()),
+        );
+        done_sender.send(result).unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut client = connect_x_socket(&socket_path);
+    client
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut client, XByteOrder::LittleEndian);
+    let window = 0x0020_0a11;
+    client
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            window,
+            1,
+            2,
+            300,
+            200,
+        ))
+        .unwrap();
+    let waiting = loop {
+        let event = telemetry_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("client worker never reported authority backpressure");
+        if event.kind == XAuthorityBackpressureTelemetryKind::Wait {
+            break event;
+        }
+    };
+    assert_eq!(waiting.client, Some(XServerFrontendClientId::from_raw(1)));
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAndDisconnect)
+        .unwrap();
+    done_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("service cancellation left the authority observer blocked")
+        .unwrap();
+    server.join().unwrap();
+    let terminal = telemetry_receiver.try_iter().collect::<Vec<_>>();
+    assert!(terminal.iter().any(|event| {
+        event.client == waiting.client
+            && event.transaction == waiting.transaction
+            && event.kind == XAuthorityBackpressureTelemetryKind::Shutdown
+            && event.failure == Some(XAuthorityBackpressureFailure::Cancelled)
+    }));
+    assert!(!terminal.iter().any(|event| {
+        event.client == waiting.client
+            && event.transaction == waiting.transaction
+            && event.kind == XAuthorityBackpressureTelemetryKind::Resume
+    }));
+    assert_eq!(policy.revoked.lock().unwrap().len(), 1);
+    // Keep the owner receiver alive until after the worker exits: this proves
+    // service cancellation, rather than channel disconnection, released it.
+    drop(transaction_receiver);
+    drop(client);
+    drop(service_sender);
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn routed_service_disconnect_cleanup_follows_backpressured_requests() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-bp-disconnect-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceContext::new(
+        NamespaceId::from_raw(858),
+        NamespaceProfile::ClassicShared,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(TestXAdmissionPolicy::new(namespace, false));
+    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, namespace)
+        .unwrap()
+        .with_admission_policy(policy.clone())
+        .with_max_concurrent_clients(NonZeroUsize::new(1).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(1);
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+    });
+
+    wait_for_socket(&socket_path);
+    let mut client = connect_x_socket(&socket_path);
+    client
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    client
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut client, XByteOrder::LittleEndian);
+    let windows = [0x0020_0a21, 0x0020_0a22];
+    for (index, window) in windows.into_iter().enumerate() {
+        client
+            .write_all(&create_window_request(
+                XByteOrder::LittleEndian,
+                window,
+                i16::try_from(index + 1).unwrap(),
+                i16::try_from(index + 2).unwrap(),
+                300,
+                200,
+            ))
+            .unwrap();
+    }
+    client
+        .write_all(&resource_request(
+            XByteOrder::LittleEndian,
+            14,
+            windows[1],
+        ))
+        .unwrap();
+    drop(client);
+
+    let created = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    let configured = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    let cleanup = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(
+        created.surface_presentations[0].surface,
+        SurfaceId::new(windows[0], 1)
+    );
+    assert_eq!(
+        configured.surface_presentations[0].surface,
+        SurfaceId::new(windows[1], 1)
+    );
+    assert!(created.removed_surfaces.is_empty());
+    assert!(configured.removed_surfaces.is_empty());
+    assert_eq!(
+        cleanup.removed_surfaces,
+        vec![SurfaceId::new(windows[0], 1), SurfaceId::new(windows[1], 1)]
+    );
+    assert!(created.transaction.raw() < configured.transaction.raw());
+    assert!(configured.transaction.raw() < cleanup.transaction.raw());
+
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap().unwrap();
+    assert_eq!(policy.revoked.lock().unwrap().len(), 1);
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn routed_service_authority_disconnect_releases_backpressured_worker() {
+    use std::collections::BTreeSet;
+    use std::io::{Read, Write};
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-bp-owner-gone-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceContext::new(
+        NamespaceId::from_raw(859),
+        NamespaceProfile::ClassicShared,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(TestXAdmissionPolicy::new(namespace, false));
+    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, namespace)
+        .unwrap()
+        .with_admission_policy(policy.clone())
+        .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(0);
+    let (ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(4);
+    let broker = XServerFrontendRouteBroker::with_control_ack_sender(
+        NonZeroUsize::new(2).unwrap(),
+        ack_sender,
+    );
+    let control_router = broker.control_router();
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(1);
+    let (done_sender, done_receiver) = std::sync::mpsc::sync_channel(1);
+    let (telemetry_sender, telemetry_receiver) = std::sync::mpsc::channel();
+    let server = thread::spawn(move || {
+        let result = run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+            Arc::new(move |event| telemetry_sender.send(event).unwrap()),
+        );
+        done_sender.send(result).unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let windows = [0x0020_0a31, 0x0040_0a32];
+    let mut clients = Vec::new();
+    for window in windows {
+        let mut client = connect_x_socket(&socket_path);
+        client
+            .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+            .unwrap();
+        read_setup_success(&mut client, XByteOrder::LittleEndian);
+        client
+            .write_all(&create_window_request(
+                XByteOrder::LittleEndian,
+                window,
+                1,
+                2,
+                300,
+                200,
+            ))
+            .unwrap();
+        clients.push(client);
+    }
+
+    let mut waiting_clients = BTreeSet::new();
+    let mut telemetry = Vec::new();
+    while waiting_clients.len() != 2 {
+        let event = telemetry_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("both client workers did not reach authority backpressure");
+        if event.kind == XAuthorityBackpressureTelemetryKind::Wait {
+            waiting_clients.insert(event.client.expect("routed Wait must identify its client"));
+        }
+        telemetry.push(event);
+    }
+    assert_eq!(policy.requests.lock().unwrap().len(), 2);
+
+    // The Engine owner disappearing must release a worker even when no channel
+    // slot ever existed. StopAccepting intentionally does not set cancellation,
+    // so this path can succeed only by observing sender disconnection.
+    drop(transaction_receiver);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    let error = done_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("authority receiver disconnect left the client worker blocked")
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("observed transaction channel is disconnected")
+    );
+    server.join().unwrap();
+    telemetry.extend(telemetry_receiver.try_iter());
+    assert!(telemetry.iter().any(|event| {
+        event.kind == XAuthorityBackpressureTelemetryKind::TransportFailure
+            && event.failure == Some(XAuthorityBackpressureFailure::Disconnected)
+    }));
+    for client in &waiting_clients {
+        assert!(telemetry.iter().any(|event| {
+            event.client == Some(*client)
+                && matches!(
+                    (event.kind, event.failure),
+                    (
+                        XAuthorityBackpressureTelemetryKind::TransportFailure,
+                        Some(XAuthorityBackpressureFailure::Disconnected)
+                    ) | (
+                        XAuthorityBackpressureTelemetryKind::Shutdown,
+                        Some(XAuthorityBackpressureFailure::Cancelled)
+                    )
+                )
+        }));
+    }
+    let revoked = policy.revoked.lock().unwrap();
+    assert_eq!(revoked.len(), 2);
+    assert_eq!(
+        revoked
+            .iter()
+            .map(|context| context.client_id.raw())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([1, 2])
+    );
+    drop(revoked);
+
+    // Service return is after wait_for_clients: both sockets are closed and
+    // retained route handles can report only ClientGone for the old clients.
+    for client in &mut clients {
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut byte = [0_u8; 1];
+        match client.read(&mut byte) {
+            Ok(0) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::BrokenPipe
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::UnexpectedEof
+                ) => {}
+            outcome => panic!("fatal authority disconnect retained a live client: {outcome:?}"),
+        }
+    }
+    for (index, client) in waiting_clients.iter().copied().enumerate() {
+        control_router
+            .route_control(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::FocusSurface {
+                    transaction: TransactionId::from_raw(900 + u64::try_from(index).unwrap()),
+                    surface: SurfaceId::new(windows[index], 1),
+                },
+            })
+            .unwrap();
+        let ack = ack_receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(ack.client, client);
+        assert_eq!(ack.acknowledgement.outcome, XAuthorityControlOutcome::ClientGone);
+    }
+    drop(clients);
+    drop(service_sender);
+    std::fs::remove_file(&socket_path).unwrap();
+}

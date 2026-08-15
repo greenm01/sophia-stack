@@ -943,9 +943,13 @@ is excluded; retained product behavior is not.
   joined presentation but typing `ll` exposed missing X11 `PolyRectangle` support
   in the xterm proof client; opcode 67 now has bounded outline rendering and full
   drawable/GC error semantics. Fatal client exits also enter bounded native and
-  Present cleanup instead of bypassing drain evidence. This item remains
-  open until the diagnostic-capable tty4 run visibly passes and its archive verifies;
-  no userspace test is a substitute for that AMDGPU evidence.
+  Present cleanup instead of bypassing drain evidence. The following signed run
+  proved those fixes and joined frames on both heads, but `ll` plus Return filled
+  the 256-batch authority queue and the old fail-fast transport disconnected
+  xterm with status 84. Production authority intake now applies bounded,
+  lossless client backpressure; fail-fast emission remains probe-only. This item
+  remains open until the diagnostic-capable tty4 run visibly passes and its
+  archive verifies; no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

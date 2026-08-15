@@ -256,8 +256,30 @@ pub fn run_x11_core_socket_server_once_routed(
 pub fn run_x_server_frontend_routed_until_stopped(
     config: XServerFrontendConfig,
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
+    broker: XServerFrontendRouteBroker,
+    service_commands: Receiver<XServerFrontendServiceCommand>,
+) -> Result<(), X11SetupSocketError> {
+    run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
+        config,
+        transaction_sender,
+        broker,
+        service_commands,
+        Arc::new(trace_x_authority_backpressure),
+    )
+}
+
+/// Runs the routed frontend with an additional value-free backpressure observer.
+///
+/// Production uses this seam for stable tracing. Tests may wait for an exact
+/// transition before exercising shutdown without inferring worker state from
+/// socket timing.
+#[cfg(unix)]
+pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
+    config: XServerFrontendConfig,
+    transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
     mut broker: XServerFrontendRouteBroker,
     service_commands: Receiver<XServerFrontendServiceCommand>,
+    backpressure_observer: Arc<XAuthorityBackpressureObserver>,
 ) -> Result<(), X11SetupSocketError> {
     let mut frontend = XServerFrontend::bind(config)?;
     frontend
@@ -266,86 +288,167 @@ pub fn run_x_server_frontend_routed_until_stopped(
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .set_input_authority(broker.registry.input_authority.clone());
+    let observation_cancellation = Arc::new(AtomicBool::new(false));
+    let worker_observation_cancellation = observation_cancellation.clone();
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-        try_emit_x_authority_observation(&transaction_sender, &trace)
-            .map(|_| ())
-            .map_err(x_authority_observation_client_error)
+        let backpressure_observer = backpressure_observer.clone();
+        emit_x_authority_observation_with_backpressure(
+            &transaction_sender,
+            &trace,
+            &worker_observation_cancellation,
+            move |event| backpressure_observer(event),
+        )
+        .map_err(x_authority_observation_client_error)
     });
     let mut accepting = true;
-    loop {
-        let mut progressed = false;
-        match service_commands.try_recv() {
-            Ok(XServerFrontendServiceCommand::StopAccepting) | Err(TryRecvError::Disconnected) => {
-                accepting = false
-            }
-            Ok(XServerFrontendServiceCommand::StopAndDisconnect) => {
-                accepting = false;
-                frontend.shutdown_all_client_workers()?;
-                progressed = true;
-            }
-            Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
-                progressed |= frontend.revoke_admission(admission)?;
-            }
-            Ok(XServerFrontendServiceCommand::UpdateOutputTopology {
-                snapshot,
-                acknowledgement,
-            }) => {
-                let mut outcome = frontend.update_output_topology(snapshot.clone())?;
-                if matches!(outcome, XAuthorityOutputUpdateOutcome::Applied { .. }) {
-                    let notifications = broker
-                        .registry
-                        .broadcast_randr_update(&snapshot)
-                        .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-                    if let XAuthorityOutputUpdateOutcome::Applied {
-                        notifications: delivered,
-                        ..
-                    } = &mut outcome
-                    {
-                        *delivered = notifications;
+    let service_result: Result<(), X11SetupSocketError> = (|| {
+        loop {
+            let mut progressed = false;
+            match service_commands.try_recv() {
+                Ok(XServerFrontendServiceCommand::StopAccepting)
+                | Err(TryRecvError::Disconnected) => accepting = false,
+                Ok(XServerFrontendServiceCommand::StopAndDisconnect) => {
+                    accepting = false;
+                    observation_cancellation.store(true, Ordering::Release);
+                    frontend.shutdown_all_client_workers()?;
+                    progressed = true;
+                }
+                Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
+                    progressed |= frontend.revoke_admission(admission)?;
+                }
+                Ok(XServerFrontendServiceCommand::UpdateOutputTopology {
+                    snapshot,
+                    acknowledgement,
+                }) => {
+                    let mut outcome = frontend.update_output_topology(snapshot.clone())?;
+                    if matches!(outcome, XAuthorityOutputUpdateOutcome::Applied { .. }) {
+                        let notifications = broker
+                            .registry
+                            .broadcast_randr_update(&snapshot)
+                            .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+                        if let XAuthorityOutputUpdateOutcome::Applied {
+                            notifications: delivered,
+                            ..
+                        } = &mut outcome
+                        {
+                            *delivered = notifications;
+                        }
                     }
+                    acknowledgement.try_send(outcome).map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to return Engine output topology acknowledgement: {error}"
+                        ))
+                    })?;
+                    progressed = true;
                 }
-                acknowledgement.try_send(outcome).map_err(|error| {
-                    X11SetupSocketError::new(format!(
-                        "failed to return Engine output topology acknowledgement: {error}"
-                    ))
-                })?;
-                progressed = true;
+                Err(TryRecvError::Empty) => {}
             }
-            Err(TryRecvError::Empty) => {}
-        }
 
-        if accepting {
-            while frontend.active_client_worker_count()
-                < frontend.config().max_concurrent_clients().get()
-            {
-                if !frontend.try_serve_next_concurrently_routed_traced(&broker, observer.clone())? {
-                    break;
+            if accepting {
+                while frontend.active_client_worker_count()
+                    < frontend.config().max_concurrent_clients().get()
+                {
+                    if !frontend
+                        .try_serve_next_concurrently_routed_traced(&broker, observer.clone())?
+                    {
+                        break;
+                    }
+                    progressed = true;
                 }
-                progressed = true;
+                let routed = broker
+                    .route_pending()
+                    .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+                progressed |= routed != 0;
             }
-            let routed = broker
-                .route_pending()
-                .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-            progressed |= routed != 0;
-        }
-        let workers_before_reap = frontend.active_client_worker_count();
-        frontend.poll_client_workers()?;
-        progressed |= workers_before_reap != frontend.active_client_worker_count();
+            let workers_before_reap = frontend.active_client_worker_count();
+            frontend.poll_client_workers()?;
+            progressed |= workers_before_reap != frontend.active_client_worker_count();
 
-        if !accepting && frontend.active_client_worker_count() == 0 {
-            return Ok(());
+            if !accepting && frontend.active_client_worker_count() == 0 {
+                return Ok(());
+            }
+            if !progressed {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
-        if !progressed {
-            std::thread::sleep(Duration::from_millis(1));
-        }
+    })();
+    let Err(original) = service_result else {
+        return Ok(());
+    };
+
+    observation_cancellation.store(true, Ordering::Release);
+    let mut cleanup_failures = Vec::new();
+    if let Err(error) = frontend.shutdown_all_client_workers() {
+        cleanup_failures.push(format!("worker shutdown failed: {error}"));
     }
+    if let Err(error) = frontend.wait_for_clients() {
+        cleanup_failures.push(format!("worker reap failed: {error}"));
+    }
+    Err(original.with_cleanup_failures(cleanup_failures))
 }
 
 #[cfg(unix)]
 fn x_authority_observation_client_error(
     error: crate::XAuthorityTransportError,
 ) -> X11SetupSocketError {
-    X11SetupSocketError::client_failure(error.to_string())
+    match error {
+        crate::XAuthorityTransportError::Cancelled { .. } => {
+            X11SetupSocketError::service_shutdown(error.to_string())
+        }
+        crate::XAuthorityTransportError::Disconnected { .. } => {
+            X11SetupSocketError::new(error.to_string())
+        }
+        crate::XAuthorityTransportError::Backpressure { .. } => {
+            X11SetupSocketError::client_failure(error.to_string())
+        }
+    }
+}
+
+#[cfg(unix)]
+fn trace_x_authority_backpressure(event: XAuthorityBackpressureTelemetry) {
+    let client = event.client.map(XServerFrontendClientId::raw);
+    let client_id = client.unwrap_or(0);
+    let client_known = client.is_some();
+    let waited_msec = u64::try_from(event.waited.as_millis()).unwrap_or(u64::MAX);
+    let failure = match event.failure {
+        None => "none",
+        Some(crate::XAuthorityBackpressureFailure::Cancelled) => "cancelled",
+        Some(crate::XAuthorityBackpressureFailure::Disconnected) => "disconnected",
+    };
+    match event.kind {
+        XAuthorityBackpressureTelemetryKind::Wait => tracing::warn!(
+            "sophia_x11_authority_backpressure schema=1 status=waiting client={} client_known={} transaction={} waited_msec={} failure={}",
+            client_id,
+            client_known,
+            event.transaction.raw(),
+            waited_msec,
+            failure,
+        ),
+        XAuthorityBackpressureTelemetryKind::Resume => tracing::info!(
+            "sophia_x11_authority_backpressure schema=1 status=resumed client={} client_known={} transaction={} waited_msec={} failure={}",
+            client_id,
+            client_known,
+            event.transaction.raw(),
+            waited_msec,
+            failure,
+        ),
+        XAuthorityBackpressureTelemetryKind::Shutdown => tracing::info!(
+            "sophia_x11_authority_backpressure schema=1 status=shutdown client={} client_known={} transaction={} waited_msec={} failure={}",
+            client_id,
+            client_known,
+            event.transaction.raw(),
+            waited_msec,
+            failure,
+        ),
+        XAuthorityBackpressureTelemetryKind::TransportFailure => tracing::warn!(
+            "sophia_x11_authority_backpressure schema=1 status=transport_failure client={} client_known={} transaction={} waited_msec={} failure={}",
+            client_id,
+            client_known,
+            event.transaction.raw(),
+            waited_msec,
+            failure,
+        ),
+    }
 }
 
 /// Convenience form of [`run_x_server_frontend_routed_until_stopped`] for an

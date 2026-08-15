@@ -107,10 +107,17 @@ impl XServerFrontend {
     /// Shuts down every accepted client stream while leaving worker threads
     /// responsible for their normal route and resource cleanup.
     pub fn shutdown_all_client_workers(&self) -> Result<(), X11SetupSocketError> {
+        let mut failures = Vec::new();
         for worker_id in self.workers.keys().copied() {
-            self.shutdown_worker(worker_id)?;
+            if let Err(error) = self.shutdown_worker(worker_id) {
+                failures.push(error.to_string());
+            }
         }
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(X11SetupSocketError::new(failures.join("; ")))
+        }
     }
 
     /// Disconnects the worker holding one session-issued admission.
@@ -256,13 +263,22 @@ impl XServerFrontend {
     pub fn wait_for_clients(&mut self) -> Result<(), X11SetupSocketError> {
         let mut first_error = self.reap_finished_client_workers().err();
         while !self.workers.is_empty() {
-            self.observe_worker_admissions()?;
+            if let Err(error) = self.observe_worker_admissions()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
             let completion = if self.pending_admission_revocations.is_empty() {
-                self.worker_completions.recv().map_err(|_| {
-                    X11SetupSocketError::new(
-                        "Sophia X Server Frontend concurrent worker supervisor disconnected",
-                    )
-                })?
+                match self.worker_completions.recv() {
+                    Ok(completion) => completion,
+                    Err(_) => {
+                        return Err(first_error.unwrap_or_else(|| {
+                            X11SetupSocketError::new(
+                                "Sophia X Server Frontend concurrent worker supervisor disconnected",
+                            )
+                        }));
+                    }
+                }
             } else {
                 match self
                     .worker_completions
@@ -271,9 +287,11 @@ impl XServerFrontend {
                     Ok(completion) => completion,
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => {
-                        return Err(X11SetupSocketError::new(
-                            "Sophia X Server Frontend concurrent worker supervisor disconnected",
-                        ));
+                        return Err(first_error.unwrap_or_else(|| {
+                            X11SetupSocketError::new(
+                                "Sophia X Server Frontend concurrent worker supervisor disconnected",
+                            )
+                        }));
                     }
                 }
             };
@@ -422,10 +440,14 @@ impl XServerFrontend {
             X11SetupSocketError::new("Sophia X Server Frontend client worker panicked")
         })?;
         match completion.result {
-            Err(error) if error.client_failure || error.client_disconnect => {
+            Err(error)
+                if error.client_failure || error.client_disconnect || error.service_shutdown =>
+            {
                 tracing::debug!(
                     client_failure = error.client_failure,
                     client_disconnect = error.client_disconnect,
+                    service_shutdown = error.service_shutdown,
+                    reason = %error,
                     "Sophia X Server Frontend disconnected one client"
                 );
                 Ok(())

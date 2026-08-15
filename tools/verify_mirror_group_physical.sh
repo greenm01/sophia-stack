@@ -42,6 +42,10 @@ if grep -Eqi '(^Error:|panicked at|status=(failed|degraded)([[:space:]]|$)|statu
     "$evidence"; then
     fail "evidence contains an error, panic, failed/degraded status, stall, or head loss"
 fi
+if grep -Eq '(sophia_live_session_client_fatal|sophia_x11_authority_backpressure schema=1 status=(shutdown|transport_failure)|X authority observed transaction channel is full|xterm: fatal IO error)' \
+    "$evidence"; then
+    fail "evidence contains an X11 client failure or abandoned authority observation"
+fi
 
 [[ "$(count '^sophia_mirror_group_gate schema=1 status=starting source_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} profile_sha256=[0-9a-f]{64}$')" == 1 ]] ||
     fail "expected one exact source/binary/profile identity record"
@@ -156,6 +160,8 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pe
     "$evidence" || fail "session health was not clean"
 grep -Fxq 'sophia_live_output_topology_health schema=1 status=clean quarantined=false' \
     "$evidence" || fail "output topology remained quarantined"
+grep -Fxq 'sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed' \
+    "$evidence" || fail "frontend workers or session authority resources did not cleanly stop"
 grep -Fxq 'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' \
     "$evidence" || fail "operator did not confirm the visible mirror"
 grep -Fxq 'sophia_mirror_group_gate schema=1 status=passed exit=0' "$evidence" ||

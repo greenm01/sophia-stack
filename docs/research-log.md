@@ -11113,3 +11113,23 @@ acknowledgement ordering.
   mirror callbacks drain, renderer-image and Present ownership shut down, and
   explicit cleanup evidence is emitted before the original client error is
   returned. Cleanup failures are aggregated without masking that original error.
+
+## 2026-08-14: ordinary terminal output requires lossless authority backpressure
+
+- Diagnostic mirror attempt `0004` on signed source `d8b5e861` proved the
+  PolyRectangle and fatal-cleanup changes: both heads bootstrapped, joined and
+  retired repeated generations, and native suspend drained with zero abandoned
+  scanouts. The remaining failure was xterm status 84, reported as a fatal X
+  connection I/O error after `ll` produced a burst of terminal drawing updates.
+- The production frontend still used the fail-fast observation emitter. Filling
+  its 256-batch queue converted a temporary Engine scheduling delay into a
+  client-local failure and closed the X connection. This is the same bounded
+  transport overload previously exposed by the terminal benchmark, but normal
+  interactive shell output cannot be made safe by pacing a proof workload or
+  enlarging an eventually finite queue.
+- Production now preserves bounded memory and each client's ordered visual facts
+  by retaining one current observation per blocked worker and pausing that
+  connection's X11 request dispatch until Engine drains capacity. Concurrent
+  clients may interleave, as they could before this change. Shutdown explicitly cancels that wait. The
+  nonblocking emitter remains available for probes that intentionally require a
+  fail-fast `Backpressure` result.

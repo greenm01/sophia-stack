@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 use std::os::fd::OwnedFd;
-use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::{Duration, Instant};
 
 use sophia_protocol::{
     LayoutNodeKind, Rect, SurfaceConstraints, SurfaceId, SurfaceOutputReservations,
@@ -15,6 +19,7 @@ use crate::{
 };
 
 pub const X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY: usize = 256;
+const X_AUTHORITY_BACKPRESSURE_RETRY_INTERVAL: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XAuthorityProtocolErrorObservation {
@@ -431,6 +436,7 @@ impl XAuthorityClientSurfaceRoutes {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XAuthorityTransportError {
     Backpressure { transaction: TransactionId },
+    Cancelled { transaction: TransactionId },
     Disconnected { transaction: TransactionId },
 }
 
@@ -440,6 +446,11 @@ impl core::fmt::Display for XAuthorityTransportError {
             Self::Backpressure { transaction } => write!(
                 formatter,
                 "X authority observed transaction channel is full for transaction {}",
+                transaction.raw()
+            ),
+            Self::Cancelled { transaction } => write!(
+                formatter,
+                "X authority observation wait was cancelled for transaction {}",
                 transaction.raw()
             ),
             Self::Disconnected { transaction } => write!(
@@ -452,6 +463,123 @@ impl core::fmt::Display for XAuthorityTransportError {
 }
 
 impl std::error::Error for XAuthorityTransportError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityBackpressureTelemetryKind {
+    Wait,
+    Resume,
+    Shutdown,
+    TransportFailure,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityBackpressureFailure {
+    Cancelled,
+    Disconnected,
+}
+
+/// Value-free flow-control evidence for the Engine observation boundary.
+///
+/// A full bounded channel retains its batch while the worker waits. Telemetry
+/// identifies only the client and logical transaction; protocol payloads stay
+/// inside the authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthorityBackpressureTelemetry {
+    pub kind: XAuthorityBackpressureTelemetryKind,
+    pub client: Option<XServerFrontendClientId>,
+    pub transaction: TransactionId,
+    pub waited: Duration,
+    pub failure: Option<XAuthorityBackpressureFailure>,
+}
+
+/// Emits one observation without dropping it when the bounded Engine channel
+/// is temporarily full.
+///
+/// The caller owns cancellation. A routed service sets it when supervision
+/// explicitly disconnects clients; ordinary StopAccepting continues to drain
+/// already accepted clients and their observations. The fail-fast
+/// [`try_emit_x_authority_observation`] API remains available to probes and
+/// callers that cannot wait.
+pub fn emit_x_authority_observation_with_backpressure(
+    sender: &SyncSender<XAuthorityObservedTransactionBatch>,
+    trace: &X11DispatchObservation,
+    cancellation: &AtomicBool,
+    mut telemetry: impl FnMut(XAuthorityBackpressureTelemetry),
+) -> Result<(), XAuthorityTransportError> {
+    let Some(batch) = XAuthorityObservedTransactionBatch::from_dispatch_observation(trace) else {
+        return Ok(());
+    };
+    emit_x_authority_batch_with_backpressure(sender, batch, cancellation, &mut telemetry)
+}
+
+fn emit_x_authority_batch_with_backpressure(
+    sender: &SyncSender<XAuthorityObservedTransactionBatch>,
+    mut batch: XAuthorityObservedTransactionBatch,
+    cancellation: &AtomicBool,
+    telemetry: &mut impl FnMut(XAuthorityBackpressureTelemetry),
+) -> Result<(), XAuthorityTransportError> {
+    let transaction = batch.transaction;
+    let client = batch.client;
+    match sender.try_send(batch) {
+        Ok(()) => return Ok(()),
+        Err(TrySendError::Disconnected(_)) => {
+            telemetry(XAuthorityBackpressureTelemetry {
+                kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
+                client,
+                transaction,
+                waited: Duration::ZERO,
+                failure: Some(XAuthorityBackpressureFailure::Disconnected),
+            });
+            return Err(XAuthorityTransportError::Disconnected { transaction });
+        }
+        Err(TrySendError::Full(pending)) => batch = pending,
+    }
+
+    let started = Instant::now();
+    telemetry(XAuthorityBackpressureTelemetry {
+        kind: XAuthorityBackpressureTelemetryKind::Wait,
+        client,
+        transaction,
+        waited: Duration::ZERO,
+        failure: None,
+    });
+    loop {
+        if cancellation.load(Ordering::Acquire) {
+            telemetry(XAuthorityBackpressureTelemetry {
+                kind: XAuthorityBackpressureTelemetryKind::Shutdown,
+                client,
+                transaction,
+                waited: started.elapsed(),
+                failure: Some(XAuthorityBackpressureFailure::Cancelled),
+            });
+            return Err(XAuthorityTransportError::Cancelled { transaction });
+        }
+        std::thread::sleep(X_AUTHORITY_BACKPRESSURE_RETRY_INTERVAL);
+        match sender.try_send(batch) {
+            Ok(()) => {
+                telemetry(XAuthorityBackpressureTelemetry {
+                    kind: XAuthorityBackpressureTelemetryKind::Resume,
+                    client,
+                    transaction,
+                    waited: started.elapsed(),
+                    failure: None,
+                });
+                return Ok(());
+            }
+            Err(TrySendError::Full(pending)) => batch = pending,
+            Err(TrySendError::Disconnected(_)) => {
+                telemetry(XAuthorityBackpressureTelemetry {
+                    kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
+                    client,
+                    transaction,
+                    waited: started.elapsed(),
+                    failure: Some(XAuthorityBackpressureFailure::Disconnected),
+                });
+                return Err(XAuthorityTransportError::Disconnected { transaction });
+            }
+        }
+    }
+}
 
 pub fn try_emit_x_authority_transactions(
     sender: &SyncSender<XAuthorityObservedTransactionBatch>,

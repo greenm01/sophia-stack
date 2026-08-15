@@ -129,6 +129,7 @@ echo "What success looks like, and only you can judge it:"
 echo "  - BOTH monitors showing the same thing for ~$((RUNTIME_MSEC / 1000))s"
 echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
 echo "  - DP-2 may show black bars if the aspects differ; that is 'fit' working"
+echo "  - In xterm, run 'll' once; the output burst must remain responsive on both monitors"
 echo
 echo "Evidence: $EVIDENCE"
 echo "Running now."
@@ -167,8 +168,16 @@ if ! read -r visual_confirmation </dev/tty || [[ "$visual_confirmation" != "yes"
     exit 1
 fi
 printf '%s\n' \
-    'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' \
-    'sophia_mirror_group_gate schema=1 status=passed exit=0' | tee -a "$EVIDENCE"
+    'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' | tee -a "$EVIDENCE"
+candidate_evidence="$diagnostic_tmp/candidate.log"
+cp "$EVIDENCE" "$candidate_evidence"
+printf '%s\n' 'sophia_mirror_group_gate schema=1 status=passed exit=0' >>"$candidate_evidence"
+if ! "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$candidate_evidence"; then
+    finish_failed_run verification 1
+    echo "Mirror verification failed; diagnostic evidence remains at $EVIDENCE." >&2
+    exit 1
+fi
+printf '%s\n' 'sophia_mirror_group_gate schema=1 status=passed exit=0' | tee -a "$EVIDENCE"
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$EVIDENCE"
 "$ROOT_DIR/tools/archive_mirror_group_physical_run.sh" "$EVIDENCE"
 echo "Full verified log at $EVIDENCE."

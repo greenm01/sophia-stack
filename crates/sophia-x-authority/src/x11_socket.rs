@@ -31,7 +31,8 @@ use crate::{
     X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_DELETE_WINDOW,
     X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK,
     X_SETUP_DEFAULT_ROOT, X11DispatchObservation, X11ObservedDispatchFailure,
-    X11ObservedRequestStage, XAtomTable, XAuthorityClientControlAck,
+    X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureTelemetry,
+    XAuthorityBackpressureTelemetryKind, XAuthorityClientControlAck,
     XAuthorityClientControlCommand, XAuthorityClientInputDelivery, XAuthorityClientInputEvent,
     XAuthorityControlAck, XAuthorityControlCommand, XAuthorityControlOutcome,
     XAuthorityDri3FenceImport, XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId,
@@ -47,9 +48,10 @@ use crate::{
     XServerFrontendRouteError, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
     XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
     apply_engine_presentation_state, decode_x11_core_request, dispatch_x11_parse_error,
-    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
-    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
-    x_output_reservations_for_window, x11_setup_request_total_len,
+    dispatch_x11_wire_request, emit_x_authority_observation_with_backpressure,
+    encode_x_client_event, encode_x11_setup_failure, encode_x11_setup_success,
+    parse_x11_setup_request, try_emit_x_authority_observation, x_output_reservations_for_window,
+    x11_setup_request_total_len,
 };
 #[cfg(all(unix, test))]
 use sophia_protocol::RoutedInputRequest;
@@ -134,6 +136,7 @@ pub struct X11SetupSocketError {
     message: String,
     client_disconnect: bool,
     client_failure: bool,
+    service_shutdown: bool,
 }
 
 impl X11SetupSocketError {
@@ -142,6 +145,7 @@ impl X11SetupSocketError {
             message: message.into(),
             client_disconnect: false,
             client_failure: false,
+            service_shutdown: false,
         }
     }
 
@@ -150,6 +154,7 @@ impl X11SetupSocketError {
             message: message.into(),
             client_disconnect: true,
             client_failure: false,
+            service_shutdown: false,
         }
     }
 
@@ -158,7 +163,25 @@ impl X11SetupSocketError {
             message: message.into(),
             client_disconnect: false,
             client_failure: true,
+            service_shutdown: false,
         }
+    }
+
+    fn service_shutdown(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            client_disconnect: false,
+            client_failure: false,
+            service_shutdown: true,
+        }
+    }
+
+    fn with_cleanup_failures(mut self, failures: Vec<String>) -> Self {
+        if !failures.is_empty() {
+            self.message.push_str("; frontend cleanup failures: ");
+            self.message.push_str(&failures.join("; "));
+        }
+        self
     }
 }
 
@@ -249,6 +272,11 @@ impl Drop for XServerFrontendAdmissionLease {
 #[cfg(unix)]
 pub type X11CoreTraceObserver =
     dyn Fn(X11DispatchObservation) -> Result<(), X11SetupSocketError> + Send + Sync + 'static;
+
+/// Receives value-free production backpressure transitions from routed workers.
+#[cfg(unix)]
+pub type XAuthorityBackpressureObserver =
+    dyn Fn(XAuthorityBackpressureTelemetry) + Send + Sync + 'static;
 
 #[cfg(unix)]
 struct X11CoreClientWorkerCompletion {

@@ -22,5 +22,6 @@ sophia_live_native_resources schema=5 status=complete target_creations=2 pipelin
 sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced
 sophia_live_native_head schema=1 status=complete output=1 connector_id=94 checksum=111 submissions=2 retirements=2 callbacks=2 nonzero_exports=2
 sophia_live_native_head schema=1 status=complete output=1 connector_id=102 checksum=222 submissions=2 retirements=2 callbacks=2 nonzero_exports=2
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
 sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080
 sophia_mirror_group_gate schema=1 status=passed exit=0

@@ -59,7 +59,7 @@ Sophia Engine:
 | Direction | Contract | Owner and rule |
 | --- | --- | --- |
 | X11 client → frontend | local Unix connection, setup authentication, X11 requests, and X resource lifetime | The frontend owns parsing, client identity, XIDs, atoms, windows, properties, selections, grabs, and client-visible replies/events. Production setup authentication must be explicit; an owner-only socket is a transport guard, not a replacement for X11 authorization. |
-| Frontend → Engine/live-presentation intake | `XAuthorityObservedTransactionBatch` containing the originating frontend client when available, `SurfaceTransaction` values, surface removals, complete `SurfaceOutputReservations` replacements, CPU buffer updates, DMA-BUF registrations, fence registrations, and Present submissions | This is the only visual ingress. The batch is bounded; backpressure is an error rather than an unbounded queue. A live consumer must transfer native FDs immediately into renderer-private ownership; Engine scene records receive Sophia surface, output-reservation, and buffer facts, never raw X11 parsing, XID ownership, or native renderer objects. |
+| Frontend → Engine/live-presentation intake | `XAuthorityObservedTransactionBatch` containing the originating frontend client when available, `SurfaceTransaction` values, surface removals, complete `SurfaceOutputReservations` replacements, CPU buffer updates, DMA-BUF registrations, fence registrations, and Present submissions | This is the only visual ingress. The queue is bounded and lossless: production backpressures one connection's X11 request dispatch until Engine accepts its next ordered batch. Concurrent clients may interleave, but each client retains request order. A live consumer must transfer native FDs immediately into renderer-private ownership; Engine scene records receive Sophia surface, output-reservation, and buffer facts, never raw X11 parsing, XID ownership, or native renderer objects. |
 | Engine → frontend | `RoutedInputRequest` plus `XAuthorityClientControlCommand` | Engine selects the physical-input surface and owns global/local coordinates. The frontend resolves the surface to its connection, applies authority-local XKB/pointer state, and requests X-visible focus or configure results. It returns client-labeled delivery/control acknowledgements. |
 | Engine → frontend | bounded `OutputTopologySnapshot` | Engine remains the source of physical output facts. Setup and populated RandR resources derive from the current validated generation; accepted live updates produce mask-selected screen, CRTC, output, and resource notifications. |
 | Engine/backend → frontend | `XServerFrontendProtocolRouter` presentation feedback | The cloneable protocol-only router emits Present Complete and Idle by exact `TransactionId`. It cannot route input, mutate scene state, import buffers, or submit scanout. Feedback phases are independently ordered: compositor Copy releases and idles its captured source before Complete, while a future direct Flip may complete before Idle. The route remains live until both phases arrive once. |
@@ -731,7 +731,7 @@ present requests still write no client-visible success reply when the X11
 protocol does not require one. Instead the authority packages ready
 `SurfaceTransaction` values, CPU updates, DMA-BUF/fence registrations, Present
 submissions, and removals into `XAuthorityObservedTransactionBatch` records and
-attempts a nonblocking send to the runtime-owned queue.
+sends them through the runtime-owned bounded queue.
 
 The live backend converts each observation into a bounded production envelope
 whose ordered atomic groups preserve their originating `TransactionId`.
@@ -741,12 +741,16 @@ envelope-scoped because import can precede consumption; transactions,
 removals, and Present submissions stay group-scoped and fail validation if
 their IDs disagree.
 
-Backpressure is explicit. If the queue is full, the authority reports
-`Backpressure` and stops the socket helper rather than allocating an unbounded
-buffer or silently dropping visual facts. If the receiver has gone away, the
-authority reports `Disconnected`; supervision can then restart the authority
-process. This keeps the X11 client stream separate from Sophia Runtime's
-transaction intake while preserving the fail-closed rule.
+Backpressure is explicit and lossless. If the production queue is full, the
+authority retains exactly the current bounded batch and pauses that client's X11
+request dispatch until Runtime accepts it. It neither allocates an unbounded
+spill queue nor disconnects an ordinary client for producing a finite burst.
+Each connection preserves its own request order; the concurrent frontend does
+not impose a second global order on batches from independent clients.
+Shutdown cancellation releases a paused worker, while an unexpectedly missing
+receiver remains a `Disconnected` transport failure. The nonblocking
+`try_emit_x_authority_observation` helper retains its fail-fast `Backpressure`
+result for bounded probes and callers that deliberately select that policy.
 
 The reciprocal routed-worker transport is also bounded.
 `XServerFrontendRouteBroker` owns input and control ingress plus a registration
