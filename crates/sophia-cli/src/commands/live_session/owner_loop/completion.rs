@@ -918,15 +918,32 @@
                 "one or more native outputs did not present and retire independently".into(),
             );
         }
-        let mut checksums = native_scanout
-            .heads
-            .iter()
-            .map(|head| head.last_checksum)
-            .collect::<Vec<_>>();
-        checksums.sort_unstable();
-        checksums.dedup();
-        if checksums.len() != native_scanout.heads.len() {
-            return Err("native output frames are not independently distinguishable".into());
+        if let Err(error) = validate_native_output_checksums(
+            native_scanout
+                .heads
+                .iter()
+                .map(|head| (head.output.id, head.last_checksum)),
+        ) {
+            return Err(match error {
+                NativeOutputChecksumError::MirrorMismatch {
+                    output,
+                    expected,
+                    actual,
+                } => format!(
+                    "mirrored native heads disagree for logical output {}: expected checksum {expected}, observed {actual}",
+                    output.raw(),
+                ),
+                NativeOutputChecksumError::LogicalOutputCollision {
+                    first,
+                    second,
+                    checksum,
+                } => format!(
+                    "logical native outputs {} and {} are not independently distinguishable: checksum {checksum}",
+                    first.raw(),
+                    second.raw(),
+                ),
+            }
+            .into());
         }
     }
     if let Some(client) = config.client.as_deref() {

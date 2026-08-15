@@ -596,8 +596,11 @@ and the verifier requires nonzero routed pointer events plus a second xterm
 pixel change. The guest requires two connected virtual KMS outputs. Engine
 discovers both, owns both connector/CRTC/primary-plane chains, and presents an
 extended horizontal desktop. The verifier requires per-output nonzero
-submissions, callbacks, retirements, exports, distinct checksums, and a
-page-flip-paced vsync record with zero overlap or phase rejection.
+submissions, callbacks, retirements, exports, distinct logical-output
+checksums, and a page-flip-paced vsync record with zero overlap or phase
+rejection. Physical heads in one mirror group instead carry the same logical
+checksum; their connector-qualified lifecycle records prove that both scanout
+chains presented it.
 It boots an isolated direct-kernel initramfs with virtio-gpu and verifies
 exactly 300 session ticks without host DRM, input-device, VT, disk, or guest
 network access. The QEMU evidence verifier also rejects native submit/retire

@@ -947,9 +947,14 @@ is excluded; retained product behavior is not.
   proved those fixes and joined frames on both heads, but `ll` plus Return filled
   the 256-batch authority queue and the old fail-fast transport disconnected
   xterm with status 84. Production authority intake now applies bounded,
-  lossless client backpressure; fail-fast emission remains probe-only. This item
-  remains open until the diagnostic-capable tty4 run visibly passes and its
-  archive verifies; no userspace test is a substitute for that AMDGPU evidence.
+  lossless client backpressure; fail-fast emission remains probe-only. The next
+  `ll` burst remained responsive: 891 authority batches drained with zero drops
+  and both connectors joined through frame 8. That run exposed one stale
+  completion check that demanded distinct checksums from two heads sharing one
+  logical output; completion and physical verification now require mirror-group
+  equality and distinctness only between logical outputs. This item remains open
+  until the diagnostic-capable tty4 run visibly passes and its archive verifies;
+  no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

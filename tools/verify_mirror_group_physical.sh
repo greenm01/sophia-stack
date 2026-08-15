@@ -101,6 +101,12 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     require_positive_field "$head_line" callbacks
     require_positive_field "$head_line" nonzero_exports
 done
+dp1_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" checksum)" ||
+    fail "DP-1 completion omitted its logical checksum"
+dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" checksum)" ||
+    fail "DP-2 completion omitted its logical checksum"
+[[ "$dp1_checksum" == "$dp2_checksum" ]] ||
+    fail "mirrored heads did not retain one logical frame checksum"
 
 # Completion counters can be positive for unrelated generations. Require one
 # exact logical frame to have crossed submit, callback, and retire on both heads.

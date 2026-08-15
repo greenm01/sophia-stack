@@ -27,6 +27,7 @@ reject_mutation '/sophia_live_session_cleanup/d' 'missing clean frontend/session
 reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
 reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct-CPU mirror bootstrap'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
+reject_mutation 's/connector_id=102 checksum=111/connector_id=102 checksum=222/' 'divergent mirror checksums'
 
 for failure in \
     'sophia_live_session_client_fatal schema=1 status=detected source=primary' \
