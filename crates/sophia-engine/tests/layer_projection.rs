@@ -1,6 +1,6 @@
 use sophia_engine::layer_templates_from_surface_transactions;
 use sophia_protocol::{
-    AuthorityKind, BufferSource, NamespaceId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
+    AuthorityKind, BufferSource, NamespaceId, Rect, Region, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId,
 };
 

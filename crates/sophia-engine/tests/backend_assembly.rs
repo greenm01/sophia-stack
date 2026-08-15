@@ -31,6 +31,8 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
                 native_size: output.size,
                 scale: output.scale,
                 refresh_millihz: 60_000,
+                transform: OutputTransform::Normal,
+                mapping: OutputHeadMapping::Fit,
             })
             .is_admitted()
     );

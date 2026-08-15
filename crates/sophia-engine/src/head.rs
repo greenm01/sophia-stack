@@ -76,13 +76,18 @@ pub struct HeadRenderTarget {
     pub native_size: Size,
     pub scale: u32,
     pub refresh_millihz: u32,
+    pub transform: OutputTransform,
+    pub mapping: OutputHeadMapping,
 }
 
 impl HeadRenderTarget {
     /// Shape equality that ignores the generation stamp: two targets with the
     /// same shape may differ only in generation (device or capability churn).
-    const fn same_shape(&self, other: &Self) -> bool {
-        self.same_logical_shape(other) && self.refresh_millihz == other.refresh_millihz
+    fn same_shape(&self, other: &Self) -> bool {
+        self.same_logical_shape(other)
+            && self.refresh_millihz == other.refresh_millihz
+            && self.transform == other.transform
+            && self.mapping == other.mapping
     }
 
     /// The part of the shape a logical view depends on. Refresh is excluded:
@@ -107,6 +112,13 @@ pub enum EngineHeadRegistryUpdate {
     OutputCapacityExceeded,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EngineLogicalOutputUpdate {
+    Updated,
+    UnknownOutput,
+    InvalidOutput,
+}
+
 impl EngineHeadRegistryUpdate {
     pub const fn is_admitted(self) -> bool {
         matches!(self, Self::Inserted | Self::Replaced)
@@ -121,6 +133,7 @@ impl EngineHeadRegistryUpdate {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EngineHeadRegistry {
     heads: BTreeMap<OutputId, Vec<HeadRenderTarget>>,
+    logical_outputs: BTreeMap<OutputId, HeadlessOutput>,
 }
 
 impl EngineHeadRegistry {
@@ -174,6 +187,13 @@ impl EngineHeadRegistry {
             return EngineHeadRegistryUpdate::HeadCapacityExceeded;
         }
         heads.push(target);
+        self.logical_outputs
+            .entry(target.output)
+            .or_insert(HeadlessOutput {
+                id: target.output,
+                size: target.native_size,
+                scale: target.scale,
+            });
         EngineHeadRegistryUpdate::Inserted
     }
 
@@ -185,10 +205,16 @@ impl EngineHeadRegistry {
             }
             !heads.is_empty()
         });
+        if let Some(target) = removed
+            && !self.heads.contains_key(&target.output)
+        {
+            self.logical_outputs.remove(&target.output);
+        }
         removed
     }
 
     pub fn remove_output(&mut self, output: OutputId) -> usize {
+        self.logical_outputs.remove(&output);
         self.heads
             .remove(&output)
             .map(|heads| heads.len())
@@ -229,24 +255,28 @@ impl EngineHeadRegistry {
         self.heads.is_empty()
     }
 
-    /// Transitional logical view of one output.
-    ///
-    /// Until per-head composition plans land, the logical output shape is the
-    /// shape every admitted head agrees on — the same-mode mirroring contract.
-    /// Heads that disagree yield no logical view rather than electing one head
-    /// as authoritative; the future logical viewport is an Engine policy fact,
-    /// not a head fact.
+    /// Replaces the Engine-owned logical viewport without changing a physical
+    /// target. Mode and scale changes on individual heads are deliberately
+    /// independent of this fact.
+    pub fn set_logical_output(&mut self, output: HeadlessOutput) -> EngineLogicalOutputUpdate {
+        if !output.id.is_valid()
+            || output.size.width <= 0
+            || output.size.height <= 0
+            || output.scale == 0
+        {
+            return EngineLogicalOutputUpdate::InvalidOutput;
+        }
+        if !self.heads.contains_key(&output.id) {
+            return EngineLogicalOutputUpdate::UnknownOutput;
+        }
+        self.logical_outputs.insert(output.id, output);
+        EngineLogicalOutputUpdate::Updated
+    }
+
+    /// Logical policy/scene view. It is stored independently from every native
+    /// head shape, so a 2560x1440 and 1920x1080 mirror remains one output.
     pub fn logical_output(&self, output: OutputId) -> Option<HeadlessOutput> {
-        let heads = self.heads.get(&output)?;
-        let first = heads.first()?;
-        heads
-            .iter()
-            .all(|head| head.same_logical_shape(first))
-            .then_some(HeadlessOutput {
-                id: output,
-                size: first.native_size,
-                scale: first.scale,
-            })
+        self.logical_outputs.get(&output).copied()
     }
 
     /// Refresh pacing for one logical output: the slowest head's rate. A
@@ -263,17 +293,12 @@ impl EngineHeadRegistry {
     }
 
     pub fn logical_outputs(&self) -> impl Iterator<Item = HeadlessOutput> + '_ {
-        self.heads
-            .keys()
-            .filter_map(|output| self.logical_output(*output))
+        self.logical_outputs.values().copied()
     }
 
     /// Transitional single-output selection: the lowest logical output. The
     /// distinguished primary disappears with per-head composition planning.
     pub fn primary_engine_output(&self) -> Option<HeadlessOutput> {
-        self.heads
-            .keys()
-            .next()
-            .and_then(|output| self.logical_output(*output))
+        self.logical_outputs.values().next().copied()
     }
 }

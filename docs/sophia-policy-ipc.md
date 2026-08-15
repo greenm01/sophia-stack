@@ -361,6 +361,39 @@ request identity, and executes the corresponding session-owned operation
 only after the projection transaction commits. API-v7 tokens do not claim this
 encoding.
 
+## Output Authority Interface
+
+`sophia_output_v1` is a separate exclusive role socket. Session supervision may
+grant it to the supervised WM or shell process, but possession never widens
+`sophia_wm_v1` or `sophia_shell_v1`: the peer negotiates the output role on
+`SOPHIA_OUTPUT_SOCKET`, and exactly one authenticated supervised PID owns it at
+a time.
+
+The session sends a bounded complete capability snapshot. Head and mode IDs are
+opaque session identities; labels are bounded connector-neutral display labels.
+The snapshot contains current and preferred modes, transform and VRR capability,
+current logical groups, and a topology epoch. It contains no DRM card, CRTC,
+plane, framebuffer, render target, connector name, or native resource handle.
+
+The authority replies with one complete candidate, not incremental connector
+commands. Every enabled head independently names its mode, transform, and VRR
+policy. Every logical group completely names its members: one member is an
+extended output and several members are a mirror group. Groups name logical
+rectangles, so one proposal can mirror selected monitors while extending others.
+Omitted connected heads are disabled. Current logical IDs may be preserved; an
+invalid output ID asks Engine to mint a new one.
+
+Engine validates the candidate against the exact capability and topology epoch
+and settles one active proposal plus one latest complete successor. The physical
+owner prepares every target and first frame before apply. A partial apply enters
+rollback, never a degraded commit. The old policy-visible topology remains
+published until every new logical output has presented once. Outcomes are
+explicitly validated, committed, stale, rejected, rolled back, or failed.
+
+The Rust codec and authenticated transport are implemented. Live-session role
+assignment, native apply/rebuild, and generated C/golden conformance remain
+required before the interface revision can be called stable.
+
 ## Shell Interfaces
 
 The protocol family reserves a distinct shell role and endpoint, not placeholder

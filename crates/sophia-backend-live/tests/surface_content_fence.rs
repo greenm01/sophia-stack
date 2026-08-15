@@ -7,7 +7,7 @@ use sophia_engine::{
     SurfaceContentAdmission, SurfaceContentStream,
 };
 use sophia_protocol::{
-    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, Size, SurfaceId,
+    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, SurfaceId,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 

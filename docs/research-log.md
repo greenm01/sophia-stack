@@ -11459,3 +11459,57 @@ acknowledgement ordering.
   DP-2-to-DP-1 coverage ratio. Sampling evidence records the alpha mode, and
   mutation tests reject a blue-frame-only secondary head. A new clean signed
   physical run remains required.
+
+## 2026-08-15: per-head planning and output control need two distinct barriers
+
+- The multi-monitor target is now represented by production types rather than
+  only prose. `SurfaceContentSet` carries bounded ready raster variants with
+  density, transform, fidelity, and damage. Engine captures one immutable
+  `OutputSceneSnapshot` and derives one native-size `HeadCompositionPlan` per
+  opaque target. Logical viewports are stored independently from native head
+  shapes, so unequal-mode mirror members no longer erase the logical output.
+- The production CPU transaction constructs these plans from its exact committed
+  slice before queueing the existing flattened compatibility frame. This is a
+  deliberate shadow cutover: it proves the running caller and rejects invalid
+  plans, while the native renderer still has to consume each plan directly.
+  Claiming native per-head rasterization before that lowering replaces the flat
+  queue would repeat the evidence mistake this architecture exists to prevent.
+- Two Engine reducers keep resource and policy settlement separate.
+  `OutputPresentationCohort` requires every head candidate to prepare and agree
+  on logical identity before the first KMS submit, then joins flips and cleanup.
+  `OutputTopologyTransaction` keeps the old topology published through prepare
+  and physical apply, forces partial apply into rollback, and commits only after
+  every new logical output presents once.
+- The first `sophia_output_v1` Rust contract is implemented as its own exclusive
+  authenticated role. A complete candidate independently selects each head's
+  mode, transform, and VRR policy and groups arbitrary heads into mirrored
+  logical outputs while leaving other groups extended. Backend projection
+  exposes opaque head and bounded mode identities without leaking card, CRTC, or
+  plane objects. Live supervision, renderer-target preparation, KMS
+  apply/rebuild, and generated C conformance remain open and are not implied by
+  the new transport tests.
+
+## 2026-08-15: CPU composition crosses the per-head lowering seam
+
+- The production CPU adapter now carries every resident CPU content variant
+  from its one committed scene read into submission. Engine selects a variant
+  separately for each `HeadRenderTarget`; `sophia-renderer-live` lowers that
+  exact `HeadCompositionPlan` into native placements, clips, opacity, bars,
+  borders, cursor state, and a head-local damage snapshot.
+- `LiveProductionNativeScanout::queue_head_composition_frames` admits the set
+  transactionally by opaque head. It rejects partial or duplicate coverage,
+  logical checksum disagreement, missing damage, and native target mismatch,
+  then queues one `HeadComposition` frame per physical owner without applying
+  the old whole-output projection. The flat CPU result is retained only for the
+  synchronous first modeset; the immediately following cohort uses the new
+  path.
+- Variant selection and transformation now fail closed: a plan does not fall
+  back from an unavailable compatible raster to an arbitrary transformed
+  canonical buffer, and non-normal output transforms remain rejected until
+  their geometry/raster lowering is implemented. Off-viewport surfaces are
+  filtered from extended-output snapshots rather than invalidating the frame.
+- This is not the final prepare-all cutover. Renderer export and KMS commit are
+  still one operation in the live mirror scheduler, so the Engine cohort
+  reducer is not yet its production owner. DMA-BUF and retained renderer-image
+  sources also remain on their existing projected mixed path until a per-head
+  affine lease resolver can prepare every required target before submission.

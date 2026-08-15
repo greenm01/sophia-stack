@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 pub const SOPHIA_WM_SOCKET_ENV: &str = "SOPHIA_WM_SOCKET";
 pub const SOPHIA_SHELL_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
 pub const SOPHIA_BROKER_SOCKET_ENV: &str = "SOPHIA_BROKER_SOCKET";
+pub const SOPHIA_OUTPUT_SOCKET_ENV: &str = "SOPHIA_OUTPUT_SOCKET";
 
 /// One exclusive policy role, and therefore one interface family.
 ///
@@ -29,6 +30,10 @@ pub enum PolicyRole {
     /// spatial policy. Sharing the WM socket would also give a broker peer the WM's
     /// admission, which is exactly the conflation the role split exists to prevent.
     Broker,
+    /// `sophia_output_v1`, the exclusive physical-output authority. Session
+    /// supervision may grant it to a WM or shell process without widening that
+    /// process's WM/shell interface.
+    Output,
 }
 
 impl PolicyRole {
@@ -38,6 +43,7 @@ impl PolicyRole {
             Self::Wm => "wm.sock",
             Self::Shell => "shell.sock",
             Self::Broker => "broker.sock",
+            Self::Output => "output.sock",
         }
     }
 
@@ -47,6 +53,7 @@ impl PolicyRole {
             Self::Wm => SOPHIA_WM_SOCKET_ENV,
             Self::Shell => SOPHIA_SHELL_SOCKET_ENV,
             Self::Broker => SOPHIA_BROKER_SOCKET_ENV,
+            Self::Output => SOPHIA_OUTPUT_SOCKET_ENV,
         }
     }
 }
@@ -144,11 +151,19 @@ impl PolicyRoleEndpoint {
         directory: impl AsRef<Path>,
         expected_uid: u32,
     ) -> Result<Self, PolicyRoleEndpointError> {
+        Self::bind_role_for_supervised_uid(directory, PolicyRole::Wm, expected_uid)
+    }
+
+    pub fn bind_role_for_supervised_uid(
+        directory: impl AsRef<Path>,
+        role: PolicyRole,
+        expected_uid: u32,
+    ) -> Result<Self, PolicyRoleEndpointError> {
         let placeholder = PolicyPeerIdentity {
             uid: expected_uid,
             pid: u32::MAX,
         };
-        let mut endpoint = Self::bind(directory, placeholder)?;
+        let mut endpoint = Self::bind_role(directory, role, placeholder)?;
         endpoint.expected_pid = None;
         Ok(endpoint)
     }

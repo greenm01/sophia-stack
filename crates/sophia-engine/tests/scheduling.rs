@@ -598,5 +598,7 @@ fn head_target(
         native_size: Size { width, height },
         scale: 1,
         refresh_millihz: refresh,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
     }
 }

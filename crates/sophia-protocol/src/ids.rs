@@ -1,7 +1,8 @@
 use core::marker::PhantomData;
 
 macro_rules! simple_id {
-    ($name:ident) => {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name(u64);
 
@@ -37,6 +38,18 @@ simple_id!(FenceHandle);
 simple_id!(WmActionId);
 simple_id!(SessionApplicationId);
 simple_id!(ApplicationRouteLeaseId);
+simple_id!(
+    /// Session-scoped identity exposed only to the output-authority interface.
+    ///
+    /// This is deliberately distinct from Engine's `RenderHeadId`: output clients
+    /// may select a connector and one of its advertised modes, but they never learn
+    /// the backend's card, connector-object, CRTC, plane, or render-target identity.
+    DisplayHeadId
+);
+simple_id!(
+    /// Mode identity scoped to one `DisplayHeadId` generation.
+    DisplayModeId
+);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SurfaceId {
@@ -143,3 +156,5 @@ allocator_next!(BufferHandle);
 allocator_next!(FenceHandle);
 allocator_next!(WmActionId);
 allocator_next!(SessionApplicationId);
+allocator_next!(DisplayHeadId);
+allocator_next!(DisplayModeId);

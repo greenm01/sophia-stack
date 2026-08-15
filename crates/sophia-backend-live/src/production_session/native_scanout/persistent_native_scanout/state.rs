@@ -366,6 +366,11 @@ pub enum LiveProductionScanoutContent {
         frame: LiveProductionNativeFrameId,
         nonzero_rgb_pixels: usize,
     },
+    HeadComposition {
+        frame: LiveProductionNativeFrameId,
+        logical_content_checksum: u64,
+        nonzero_rgb_pixels: usize,
+    },
 }
 
 impl LiveProductionScanoutContent {
@@ -373,7 +378,8 @@ impl LiveProductionScanoutContent {
         match self {
             Self::Cpu { frame, .. }
             | Self::MixedPresent { frame, .. }
-            | Self::RetainedMixed { frame, .. } => frame,
+            | Self::RetainedMixed { frame, .. }
+            | Self::HeadComposition { frame, .. } => frame,
         }
     }
 
@@ -390,6 +396,15 @@ impl LiveProductionScanoutContent {
                 frame,
                 nonzero_rgb_pixels,
             },
+            Self::HeadComposition {
+                frame,
+                logical_content_checksum,
+                ..
+            } => Self::HeadComposition {
+                frame,
+                logical_content_checksum,
+                nonzero_rgb_pixels,
+            },
             cpu @ Self::Cpu { .. } => cpu,
         }
     }
@@ -397,6 +412,10 @@ impl LiveProductionScanoutContent {
     pub const fn cpu_checksum(self) -> Option<u64> {
         match self {
             Self::Cpu { checksum, .. } => Some(checksum),
+            Self::HeadComposition {
+                logical_content_checksum,
+                ..
+            } => Some(logical_content_checksum),
             Self::MixedPresent { .. } | Self::RetainedMixed { .. } => None,
         }
     }
@@ -406,6 +425,7 @@ impl LiveProductionScanoutContent {
             Self::Cpu { .. } => "cpu",
             Self::MixedPresent { .. } => "mixed_present",
             Self::RetainedMixed { .. } => "retained_mixed",
+            Self::HeadComposition { .. } => "head_composition",
         }
     }
 
@@ -434,6 +454,18 @@ impl LiveProductionScanoutContent {
                     frame: other_frame, ..
                 },
             ) => frame == other_frame,
+            (
+                Self::HeadComposition {
+                    frame,
+                    logical_content_checksum,
+                    ..
+                },
+                Self::HeadComposition {
+                    frame: other_frame,
+                    logical_content_checksum: other_checksum,
+                    ..
+                },
+            ) => frame == other_frame && logical_content_checksum == other_checksum,
             _ => false,
         }
     }
@@ -494,6 +526,7 @@ pub fn reduce_live_production_cpu_frame_queue(
             Some(
                 LiveProductionScanoutContent::MixedPresent { .. }
                     | LiveProductionScanoutContent::RetainedMixed { .. }
+                    | LiveProductionScanoutContent::HeadComposition { .. }
             )
         )
         || matches!(
@@ -501,6 +534,7 @@ pub fn reduce_live_production_cpu_frame_queue(
             Some(
                 LiveProductionScanoutContent::MixedPresent { .. }
                     | LiveProductionScanoutContent::RetainedMixed { .. }
+                    | LiveProductionScanoutContent::HeadComposition { .. }
             )
         )
     {

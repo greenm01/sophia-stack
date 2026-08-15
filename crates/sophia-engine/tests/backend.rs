@@ -30,6 +30,8 @@ fn engine_head_registry_tracks_heads_and_logical_views() {
         },
         scale: 2,
         refresh_millihz: 60_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
     };
     let sibling = HeadRenderTarget {
         head: RenderHeadId::from_raw(2),
@@ -146,7 +148,7 @@ fn engine_head_registry_denies_head_reassignment_across_outputs() {
 }
 
 #[test]
-fn engine_head_registry_withholds_logical_view_for_disagreeing_heads() {
+fn engine_head_registry_keeps_logical_view_independent_of_unequal_heads() {
     let output = OutputId::from_raw(1);
     let mut registry = EngineHeadRegistry::new();
     assert_eq!(
@@ -165,10 +167,28 @@ fn engine_head_registry_withholds_logical_view_for_disagreeing_heads() {
         EngineHeadRegistryUpdate::Inserted
     );
 
-    // Heads that disagree on shape yield no logical view rather than electing
-    // one head as authoritative.
-    assert_eq!(registry.logical_output(output), None);
-    assert!(registry.logical_outputs().next().is_none());
+    assert_eq!(
+        registry.set_logical_output(HeadlessOutput {
+            id: output,
+            size: Size {
+                width: 2048,
+                height: 1152,
+            },
+            scale: 1,
+        }),
+        EngineLogicalOutputUpdate::Updated
+    );
+    assert_eq!(
+        registry.logical_output(output),
+        Some(HeadlessOutput {
+            id: output,
+            size: Size {
+                width: 2048,
+                height: 1152,
+            },
+            scale: 1,
+        })
+    );
 }
 
 #[test]
@@ -183,6 +203,8 @@ fn head_target_can_seed_engine_output() {
         },
         scale: 1,
         refresh_millihz: 144_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
     };
     let mut registry = EngineHeadRegistry::new();
     assert!(registry.admit(target).is_admitted());
@@ -212,6 +234,8 @@ fn head_target(head: u64, output: u64) -> HeadRenderTarget {
         },
         scale: 1,
         refresh_millihz: 60_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
     }
 }
 

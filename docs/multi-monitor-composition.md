@@ -154,7 +154,7 @@ generation:
 - surface and committed content generation;
 - logical content extent;
 - one or more `SurfaceContentVariant` records; and
-- authority-owned readiness and damage identity.
+- authority-owned ready variant and damage identity.
 
 The set is immutable after admission. Supplying a replacement or additional
 variant creates a new authority transaction and generation; it cannot mutate a
@@ -169,7 +169,8 @@ Describes one authority-asserted realization of the content:
 - stable variant identity within the content generation;
 - protocol-neutral `BufferSource`;
 - pixel size, logical extent, scale/density, and source transform;
-- readiness/synchronization state; and
+- ready-only publication plus synchronization identity inherited from the
+  committing authority transaction; and
 - variant damage.
 
 All variants in a set belong to the same surface, namespace, transaction, and
@@ -582,24 +583,47 @@ parallel multi-monitor subsystem.
 - Content crosses the authority boundary as a bounded `SurfaceContentSet` of
   density-deduplicated `SurfaceContentVariant` records with a dedicated named
   capacity; every current producer normalizes into a one-variant set and the
-  committed state retains the whole set. Per-variant damage, readiness, and
-  transform class join with their consumers.
+  committed state retains the whole set. Sets contain ready-only variants;
+  per-variant damage, fidelity, and transform class are validated and consumed.
 - Head identity is opaque end to end: the backend mints session-scoped
   `RenderHeadId`s, Engine's `EngineHeadRegistry` holds generation-stamped
   `HeadRenderTarget` records grouped by logical output, and mirror
   lifecycles, callback routing, and per-head evidence are head-keyed while
   connector/CRTC integers stay in the backend's private head table.
+- `OutputSceneSnapshot`, `HeadCompositionPlan`, and the pure fit/cover/exact
+  planner are implemented in Engine. The production CPU transaction builds
+  every head plan from the exact committed slice, resolves the selected CPU
+  variant, and lowers each plan into its own native-size mixed frame. The
+  backend queues those frames by opaque head and rejects incomplete coverage,
+  duplicate heads, checksum disagreement, or head-local damage with the wrong
+  native extent.
+- `OutputPresentationCohort` and `OutputTopologyTransaction` are implemented as
+  Engine reducers. They enforce prepare-before-submit, joint flip/cleanup,
+  fail-closed head loss, partial-apply rollback, and a first-presentation barrier
+  before topology publication. The current native mirror owners have not yet
+  migrated onto the preparation barrier.
+- The exclusive `sophia_output_v1` Rust wire and authenticated transport exist
+  with bounded capability snapshots and complete topology proposals. Backend
+  projection binds capabilities to opaque heads and resolves independently
+  selected modes into mixed mirror and extended groups. Live-session supervision
+  and generated language-neutral conformance remain cutover work.
 
 ### Transitional Limitation
 
-The production CPU scene is still composed at one output size. Mirror queueing
-then projects that flat frame, or projects already assembled mixed layers, into
-each head. That preserves native scanout ownership and logical retirement but
-does not provide per-head scene lowering or native client-content selection.
-The distinguished primary output also remains embedded in composition and
-retained-scene paths. Configuration currently maps `DesktopMirrorFit` manually
-to backend-owned `NativeMirrorFit`. Sampling improvements can reduce
-artifacts, but they do not satisfy this target architecture.
+CPU-authority frames now consume per-head plans in production. The old flat CPU
+frame remains only as the synchronous startup modeset baseline; the following
+cohort is independently composed. DMA-BUF Present and retained renderer-image
+paths still assemble a primary-oriented mixed frame and project it per head,
+because their affine image leases do not yet have the per-head source resolver
+needed by the common lowerer. They fail closed if routed through the CPU-only
+lowerer rather than disappearing or being reported as native.
+
+The native scheduler also still combines export/framebuffer preparation with
+each per-head KMS submit. `OutputPresentationCohort` models the required
+prepare-all barrier, but the live owner has not yet split export from commit and
+migrated to that reducer. The distinguished primary output remains in retained
+scene and Present paths. Configuration currently maps `DesktopMirrorFit`
+manually to backend-owned `NativeMirrorFit`.
 
 ### Target
 

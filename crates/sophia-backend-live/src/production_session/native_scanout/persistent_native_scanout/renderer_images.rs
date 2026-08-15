@@ -3,7 +3,15 @@ use super::*;
 pub(super) struct LiveProductionQueuedMirrorGeneration {
     output: OutputId,
     pub(super) frame: LiveProductionNativeFrameId,
+    logical_content_checksum: Option<u64>,
     heads: Vec<LiveProductionQueuedMirrorHeadFrame>,
+}
+
+#[derive(Debug)]
+pub struct LiveProductionHeadCompositionFrame {
+    pub head: sophia_engine::RenderHeadId,
+    pub logical_content_checksum: u64,
+    pub frame: crate::LiveOwnedMixedCompositionFrame,
 }
 
 struct LiveProductionQueuedMirrorHeadFrame {
@@ -20,6 +28,7 @@ impl LiveProductionQueuedMirrorGeneration {
             Some(LiveProductionScanoutContent::Cpu { .. }) => "cpu",
             Some(LiveProductionScanoutContent::MixedPresent { .. }) => "mixed_present",
             Some(LiveProductionScanoutContent::RetainedMixed { .. }) => "retained_mixed",
+            Some(LiveProductionScanoutContent::HeadComposition { .. }) => "head_composition",
             None => "empty",
         }
     }
@@ -29,6 +38,11 @@ impl LiveProductionQueuedMirrorGeneration {
             Some(LiveProductionScanoutContent::Cpu { checksum, .. }) => Some(checksum),
             _ => None,
         }
+    }
+
+    fn logical_checksum(&self) -> Option<u64> {
+        self.logical_content_checksum
+            .or_else(|| self.cpu_checksum())
     }
 
     fn mixed_transaction(&self) -> Option<TransactionId> {
@@ -208,7 +222,7 @@ impl LiveProductionNativeScanout {
             return Err("mirror generation could not reserve its lifecycle");
         }
         let source = generation.source();
-        let checksum = generation.cpu_checksum();
+        let checksum = generation.logical_checksum();
         for queued in generation.heads {
             let (head, exporter) = self.head_and_exporter(queued.head_index, generation.output);
             if let Some(checksum) = checksum {
@@ -237,7 +251,7 @@ impl LiveProductionNativeScanout {
         let output = generation.output;
         let frame = generation.frame;
         let source = generation.source();
-        let checksum = generation.cpu_checksum();
+        let checksum = generation.logical_checksum();
         let active = self
             .output_lifecycles
             .get(&output)
@@ -386,6 +400,7 @@ impl LiveProductionNativeScanout {
         self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
             output,
             frame: frame_id,
+            logical_content_checksum: None,
             heads,
         })?;
         Ok(frame_id)
@@ -495,6 +510,7 @@ impl LiveProductionNativeScanout {
         self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
             output,
             frame: frame_id,
+            logical_content_checksum: Some(frame.checksum),
             heads,
         })
         .ok()?;
@@ -631,6 +647,117 @@ impl LiveProductionNativeScanout {
         self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
             output,
             frame: frame_id,
+            logical_content_checksum: None,
+            heads,
+        })?;
+        Ok(frame_id)
+    }
+
+    /// Queues already-lowered, native-size frames without projecting any head
+    /// from another head's pixels. Every physical head must appear exactly
+    /// once and must carry the same logical scene checksum.
+    pub fn queue_head_composition_frames(
+        &mut self,
+        output: OutputId,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        if indices.is_empty() || indices.len() != frames.len() {
+            return Err("head composition does not cover the output's physical heads".into());
+        }
+        let expected = indices
+            .iter()
+            .map(|index| self.heads[*index].head)
+            .collect::<BTreeSet<_>>();
+        let actual = frames
+            .iter()
+            .map(|frame| frame.head)
+            .collect::<BTreeSet<_>>();
+        if expected != actual || actual.len() != frames.len() {
+            return Err("head composition repeats or targets an unknown physical head".into());
+        }
+        let checksum = frames
+            .first()
+            .map(|frame| frame.logical_content_checksum)
+            .ok_or("head composition is empty")?;
+        if frames
+            .iter()
+            .any(|frame| frame.logical_content_checksum != checksum)
+        {
+            return Err("head composition frames disagree on logical content".into());
+        }
+        for frame in &frames {
+            let index = indices
+                .iter()
+                .copied()
+                .find(|index| self.heads[*index].head == frame.head)
+                .expect("head coverage checked above");
+            let Some(damage) = frame.frame.output_damage_snapshot.as_ref() else {
+                return Err("head composition frame has no native damage snapshot".into());
+            };
+            if damage.output.id != output || damage.output.size != self.heads[index].output.size {
+                return Err("head composition damage does not match its native target".into());
+            }
+        }
+        let frame_id = self.allocate_frame_id();
+        for prepared in &frames {
+            let damage = prepared
+                .frame
+                .output_damage_snapshot
+                .as_ref()
+                .expect("head damage validated above");
+            tracing::info!(
+                output = output.raw(),
+                head = prepared.head.raw(),
+                frame = frame_id.raw(),
+                width = damage.output.size.width,
+                height = damage.output.size.height,
+                logical_content_checksum = checksum,
+                source = "head_plan",
+                "sophia_live_head_composition_queue"
+            );
+        }
+        if indices.len() == 1 {
+            let index = indices[0];
+            let prepared = frames.into_iter().next().expect("one frame checked above");
+            let (head, exporter) = self.head_and_exporter(index, output);
+            head.last_checksum = checksum;
+            head.pending_content = Some(LiveProductionScanoutContent::HeadComposition {
+                frame: frame_id,
+                logical_content_checksum: checksum,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(prepared.frame.output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(prepared.frame);
+            return Ok(frame_id);
+        }
+        let mut by_head = frames
+            .into_iter()
+            .map(|frame| (frame.head, frame))
+            .collect::<BTreeMap<_, _>>();
+        let heads = indices
+            .into_iter()
+            .map(|head_index| {
+                let prepared = by_head
+                    .remove(&self.heads[head_index].head)
+                    .expect("head coverage checked above");
+                LiveProductionQueuedMirrorHeadFrame {
+                    head_index,
+                    output_damage_snapshot: prepared.frame.output_damage_snapshot.clone(),
+                    content: LiveProductionScanoutContent::HeadComposition {
+                        frame: frame_id,
+                        logical_content_checksum: checksum,
+                        nonzero_rgb_pixels: 0,
+                    },
+                    frame: prepared.frame,
+                    cpu_nonzero_pixel_bytes: 0,
+                }
+            })
+            .collect();
+        self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
+            output,
+            frame: frame_id,
+            logical_content_checksum: Some(checksum),
             heads,
         })?;
         Ok(frame_id)

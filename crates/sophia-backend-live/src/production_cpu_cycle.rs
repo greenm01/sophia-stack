@@ -4,7 +4,7 @@ use sophia_engine::{
     surface_chrome_display_list,
 };
 use sophia_protocol::{CommittedSurfaceState, Point, SurfaceId, TransactionCommit};
-use sophia_renderer_live::LiveProductionCpuScene;
+use sophia_renderer_live::{LiveCpuPresentationLayer, LiveProductionCpuScene};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,7 @@ pub struct LiveProductionCpuCycleFrame {
     authority_commits: Vec<TransactionCommit>,
     composition: LiveCpuCompositionReport,
     native_frames: Option<Vec<LiveProductionComposedFrame>>,
+    cpu_layers: Vec<LiveCpuPresentationLayer>,
     composed: bool,
     compose_elapsed: Duration,
 }
@@ -82,6 +83,7 @@ where
         &[CommittedSurfaceState],
         &[TransactionCommit],
         Option<Vec<LiveProductionComposedFrame>>,
+        Vec<LiveCpuPresentationLayer>,
     ) -> Result<Tick, LiveProductionCycleError>,
 {
     type Frame = LiveProductionCpuCycleFrame;
@@ -108,14 +110,14 @@ where
             .into());
         }
         let compose_started = Instant::now();
+        let presentation_order =
+            raised_presentation_order(self.presentation_order, self.raised_surface);
         let composition = if self.defer_frame {
             self.scene
                 .last_report()
                 .cloned()
                 .ok_or("software redraw coalescing has no prior composed frame")?
         } else {
-            let presentation_order =
-                raised_presentation_order(self.presentation_order, self.raised_surface);
             let output = self
                 .output_descriptors
                 .first()
@@ -136,11 +138,15 @@ where
         } else {
             Some(self.scene.frames_for_outputs(self.output_descriptors)?)
         };
+        let cpu_layers = self
+            .scene
+            .presentation_variant_layers(committed, &presentation_order);
         Ok(LiveProductionCpuCycleFrame {
             committed_surfaces: committed.to_vec(),
             authority_commits: authority_commits.to_vec(),
             composition,
             native_frames,
+            cpu_layers,
             composed: !self.defer_frame,
             compose_elapsed: if self.defer_frame {
                 Duration::ZERO
@@ -160,6 +166,7 @@ where
             &frame.committed_surfaces,
             &frame.authority_commits,
             frame.native_frames,
+            frame.cpu_layers,
         )?;
         Ok(LiveProductionCpuCycleSubmission {
             tick,

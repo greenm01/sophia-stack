@@ -1025,20 +1025,32 @@ is excluded; retained product behavior is not.
      unrepresentable-by-construction (private fields, fail-closed
      constructor), envelope identity is structural, DMA-BUF Present pairing
      ranges over every variant, and the authority wire format is unchanged
-     (canonical extent and source encode as before). Per-variant damage,
-     readiness, and transform class join with their consumers in later steps;
+     (canonical extent and source encode as before). Published sets contain
+     ready-only variants; per-variant damage, fidelity, and transform class
+     join with their consumers in later steps;
      head identity still never reaches WM policy. Diagnostic
      run `0017` proved the rekeyed path on hardware end to end and failed only
      at visual confirmation; the ratified bar for that confirmation is
      sharp-not-blocky (native client-text sharpness on a fractional-density
      head is an explicit non-goal of unequal-mode mirroring), so a re-run with
      that reading banks the physical baseline.
-  3. Add the pure per-head planner and per-head damage/presentation ledgers.
-     Use one rational transform for layers, clips, damage, cursor projection,
-     and input inversion; remove visual dependence on a primary output.
-  4. Lower CPU, DMA-BUF, renderer-image, compositor-display-list, and cursor
-     content separately into each native target. Share immutable sources and
-     renderer caches, never final head framebuffers or scanout leases.
+  3. **Planner and CPU lowering done; ownership cutover open.** Engine now captures
+     one immutable `OutputSceneSnapshot`, derives fit/cover/exact
+     `HeadCompositionPlan`s with variant selection and head-local damage, and
+     stores logical output viewports independently from unequal native head
+     modes. The production CPU transaction invokes this planner from its exact
+     committed slice. CPU variants, native compositor solids, placement, clips,
+     and head-local damage are lowered into one independently queued native-size
+     frame per head; the flat frame remains only for the synchronous bootstrap.
+     `OutputPresentationCohort` enforces all-prepared before
+     first submit and joint flip/cleanup; `OutputTopologyTransaction` enforces
+     prepare/apply/first-presentation publication and rollback after partial
+     apply. Split renderer export/framebuffer preparation from KMS commit and
+     migrate native owners to these reducers.
+  4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
+     renderer-image affine leases. Share immutable sources and renderer caches,
+     never final head framebuffers or scanout leases; remove the remaining
+     primary-derived mixed-frame projection paths after all source kinds resolve.
   5. Add authority-owned variants for server-rendered X11 core content. Select
      exact density first and report downsample/upscale fallbacks explicitly;
      arbitrary singleton client rasters remain supported without claiming
@@ -1078,6 +1090,14 @@ is excluded; retained product behavior is not.
   gap was misdiagnosed as mirroring's blocker when the real one was that the
   standalone apply command composes nothing and can only re-apply what is already
   on screen.
+  The protocol-neutral front half now exists: `sophia_output_v1` has a bounded
+  authenticated role transport, complete snapshots/proposals/outcomes, one active
+  plus one complete latest successor, and candidate validation. Production DRM
+  capabilities bind to opaque heads and resolve independently selected per-head
+  modes into mixed mirror/extended groups. The remaining critical path is to
+  grant the role from supervision, prepare renderer targets and first cohorts,
+  apply through the live DRM owner, rebuild Engine/runtime state, cross the
+  first-presentation barrier, and publish the new logical topology.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

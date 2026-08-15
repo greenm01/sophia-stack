@@ -380,5 +380,7 @@ fn head_target_from_headless_output(output: HeadlessOutput) -> HeadRenderTarget 
         native_size: output.size,
         scale: output.scale,
         refresh_millihz: 60_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
     }
 }

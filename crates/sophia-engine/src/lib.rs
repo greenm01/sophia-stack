@@ -16,13 +16,13 @@ mod prelude {
         ChromeDescriptor, CommittedSurfaceState, DamageFrame, DeviceId, DisplayLabel,
         FrameSnapshot, InputEventKind, InputEventPacket, InputRoute, InputRouteOutcome,
         IpcCodecError, LayerSnapshot, LayoutNodeSnapshot, LayoutTransaction, MAX_CHROME_LABEL_LEN,
-        OutputEdge, OutputId, OutputReservation, Point, PortalTransferId, Rect, Region,
-        RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
-        SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SanitizedChromeMetadata, SeatId, Size,
-        SurfaceContentSet, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole,
-        SurfaceTransaction, SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit,
-        TransactionId, TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket,
-        WorkspaceId,
+        OutputEdge, OutputHeadMapping, OutputId, OutputReservation, OutputTransform, Point,
+        PortalTransferId, Rect, Region, RenderCommand, RenderCommandKind, ResizeSyncCapability,
+        RoutedInputRequest, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN,
+        SanitizedChromeMetadata, SeatId, Size, SurfaceContentSet, SurfaceId,
+        SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
+        SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
+        TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
     };
     pub(crate) use sophia_runtime::{
         RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,
@@ -35,6 +35,8 @@ mod prelude {
 
 mod backend_assembly;
 mod chrome;
+mod composition_cohort;
+mod composition_plan;
 mod compositor_graphics;
 mod drm;
 mod engine;
@@ -46,6 +48,7 @@ mod layout_epoch;
 mod live_backend;
 mod output;
 mod output_power;
+mod output_topology_transaction;
 mod policy_projection;
 mod render;
 mod runtime_driver;
@@ -59,6 +62,8 @@ mod wm;
 mod wm_policy;
 pub use backend_assembly::*;
 pub use chrome::*;
+pub use composition_cohort::*;
+pub use composition_plan::*;
 pub use compositor_graphics::*;
 pub use drm::*;
 pub use engine::*;
@@ -70,6 +75,7 @@ pub use layout_epoch::*;
 pub use live_backend::*;
 pub use output::*;
 pub use output_power::*;
+pub use output_topology_transaction::*;
 pub use policy_projection::*;
 pub use render::*;
 pub use runtime_driver::*;

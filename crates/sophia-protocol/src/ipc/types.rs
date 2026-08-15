@@ -41,6 +41,11 @@ pub enum IpcMessageKind {
     WmV1ProfileActive = 50,
     WmV1ProfileRollback = 51,
     WmV1ProfileRolledBack = 52,
+    OutputV1ClientHello = 64,
+    OutputV1ServerWelcome = 65,
+    OutputV1Snapshot = 66,
+    OutputV1Proposal = 67,
+    OutputV1Outcome = 68,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

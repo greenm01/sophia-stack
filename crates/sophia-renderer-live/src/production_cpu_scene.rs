@@ -138,7 +138,8 @@ impl LiveProductionCpuScene {
     ) -> usize {
         committed_surfaces
             .iter()
-            .filter_map(|surface| match surface.buffer() {
+            .flat_map(|surface| surface.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })
@@ -188,6 +189,36 @@ impl LiveProductionCpuScene {
                     surface: *surface,
                     geometry: committed.geometry,
                     buffer: self.buffers.get(handle)?.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// Resolves every resident CPU variant carried by committed surface
+    /// content. Multiple entries may name one surface; a head-plan consumer
+    /// selects the exact entry by its chosen protocol-neutral buffer handle.
+    pub fn presentation_variant_layers(
+        &self,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: &[SurfaceId],
+    ) -> Vec<LiveCpuPresentationLayer> {
+        presentation_order
+            .iter()
+            .filter_map(|surface| {
+                committed_surfaces
+                    .iter()
+                    .find(|committed| committed.surface == *surface)
+            })
+            .flat_map(|committed| {
+                committed.content.variants().iter().filter_map(|variant| {
+                    let BufferSource::CpuBuffer { handle } = variant.source else {
+                        return None;
+                    };
+                    Some(LiveCpuPresentationLayer {
+                        surface: committed.surface,
+                        geometry: committed.geometry,
+                        buffer: self.buffers.get(handle)?.clone(),
+                    })
                 })
             })
             .collect()

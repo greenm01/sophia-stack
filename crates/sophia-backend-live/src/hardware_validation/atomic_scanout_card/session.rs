@@ -597,9 +597,6 @@ pub enum RealAtomicScanoutPageFlipSessionSetStatus {
     SelectionFailed,
     CardCloneFailed,
     CapacityExceeded,
-    /// A mirror group named connectors on different cards. One atomic request
-    /// reaches one device, so such a group could never be committed as a unit.
-    MirrorGroupSpansDevices,
 }
 
 impl RealAtomicScanoutSelectionSet {
@@ -635,7 +632,7 @@ impl RealAtomicScanoutSelectionSet {
         let mut next_slot = 1u16;
         // Logical outputs already handed to a mirror group, so its later members
         // join it instead of taking a fresh identity.
-        let mut group_outputs: BTreeMap<usize, (OutputId, usize)> = BTreeMap::new();
+        let mut group_outputs: BTreeMap<usize, OutputId> = BTreeMap::new();
         for (card_index, target_set) in self.cards.into_iter().enumerate() {
             let Ok(reader_card) = target_set.card.try_clone() else {
                 return RealAtomicScanoutPageFlipSessionSetResult {
@@ -670,23 +667,12 @@ impl RealAtomicScanoutSelectionSet {
                 .unwrap_or_default();
                 let group = grouping.group_of(&connector_name);
                 let output = match group.and_then(|group| group_outputs.get(&group).copied()) {
-                    Some((output, owning_card)) => {
-                        if owning_card != card_index {
-                            return RealAtomicScanoutPageFlipSessionSetResult {
-                                status:
-                                    RealAtomicScanoutPageFlipSessionSetStatus::MirrorGroupSpansDevices,
-                                sessions: Vec::new(),
-                                output_count: 0,
-                                head_records: Vec::new(),
-                            };
-                        }
-                        output
-                    }
+                    Some(output) => output,
                     None => {
                         let output = OutputId::from_raw(next_output);
                         next_output = next_output.saturating_add(1);
                         if let Some(group) = group {
-                            group_outputs.insert(group, (output, card_index));
+                            group_outputs.insert(group, output);
                         }
                         output
                     }

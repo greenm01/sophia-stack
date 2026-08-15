@@ -144,7 +144,12 @@ fn every_role_has_its_own_socket_and_environment_variable() {
     // sharing a socket would let one authority's peer connect where another's was
     // authorized, which is the conflation the split exists to prevent -- and a
     // shared env var would send it there by accident rather than by attack.
-    let roles = [PolicyRole::Wm, PolicyRole::Shell, PolicyRole::Broker];
+    let roles = [
+        PolicyRole::Wm,
+        PolicyRole::Shell,
+        PolicyRole::Broker,
+        PolicyRole::Output,
+    ];
 
     let mut names = roles.map(PolicyRole::socket_file_name).to_vec();
     names.sort_unstable();
@@ -162,4 +167,6 @@ fn every_role_has_its_own_socket_and_environment_variable() {
 
     assert_eq!(PolicyRole::Broker.socket_file_name(), "broker.sock");
     assert_eq!(PolicyRole::Broker.socket_env(), "SOPHIA_BROKER_SOCKET");
+    assert_eq!(PolicyRole::Output.socket_file_name(), "output.sock");
+    assert_eq!(PolicyRole::Output.socket_env(), "SOPHIA_OUTPUT_SOCKET");
 }

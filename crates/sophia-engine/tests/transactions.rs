@@ -799,6 +799,14 @@ fn committed_state_retains_the_whole_content_set() {
                 source: BufferSource::CpuBuffer { handle: 90 },
                 pixel_size: extent,
                 density_millis: 1_000,
+                transform: sophia_protocol::SurfaceRasterTransform::Normal,
+                fidelity: sophia_protocol::SurfaceContentFidelity::AuthorityRaster,
+                damage: Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                }),
             },
             sophia_protocol::SurfaceContentVariant {
                 variant: 2,
@@ -808,6 +816,14 @@ fn committed_state_retains_the_whole_content_set() {
                     height: 200,
                 },
                 density_millis: 2_000,
+                transform: sophia_protocol::SurfaceRasterTransform::Normal,
+                fidelity: sophia_protocol::SurfaceContentFidelity::AuthorityRaster,
+                damage: Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 200,
+                }),
             },
         ],
     )

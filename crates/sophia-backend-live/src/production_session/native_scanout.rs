@@ -15,7 +15,9 @@ mod persistent_native_scanout {
     pub use frame_damage::project_mirror_output_damage_snapshot;
     use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
     use renderer_images::LiveProductionQueuedMirrorGeneration;
-    pub use renderer_images::LiveProductionRendererImageHandoff;
+    pub use renderer_images::{
+        LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
+    };
     pub use state::*;
 
     pub struct LiveProductionNativeScanout {
@@ -290,6 +292,8 @@ mod persistent_native_scanout {
                         native_size: selection.size(),
                         scale: record.scale,
                         refresh_millihz: record.mode.refresh_millihz,
+                        transform: sophia_protocol::OutputTransform::Normal,
+                        mapping: sophia_protocol::OutputHeadMapping::Fit,
                     };
                     if !presentation_outputs.admit(target).is_admitted() {
                         return Err(format!(
@@ -820,6 +824,9 @@ mod persistent_native_scanout {
                                     nonzero_rgb_pixels: 1..,
                                     ..
                                 } | LiveProductionScanoutContent::RetainedMixed {
+                                    nonzero_rgb_pixels: 1..,
+                                    ..
+                                } | LiveProductionScanoutContent::HeadComposition {
                                     nonzero_rgb_pixels: 1..,
                                     ..
                                 }
@@ -1425,6 +1432,9 @@ mod persistent_native_scanout {
                                             nonzero_rgb_pixels: 1..,
                                             ..
                                         } | LiveProductionScanoutContent::RetainedMixed {
+                                            nonzero_rgb_pixels: 1..,
+                                            ..
+                                        } | LiveProductionScanoutContent::HeadComposition {
                                             nonzero_rgb_pixels: 1..,
                                             ..
                                         }
@@ -2367,15 +2377,15 @@ mod persistent_native_scanout {
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
-    LiveProductionCpuFrameQueueStatus, LiveProductionMirrorGenerationQueueTarget,
-    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
-    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
-    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
-    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
-    LiveProductionScanoutContent, finish_live_production_native_initialization,
-    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
-    project_mirror_output_damage_snapshot, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_mirror_generation_queue_target,
+    LiveProductionCpuFrameQueueStatus, LiveProductionHeadCompositionFrame,
+    LiveProductionMirrorGenerationQueueTarget, LiveProductionMirrorGroupBegin,
+    LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
+    LiveProductionNativeFrameId, LiveProductionNativeFrameRetirement, LiveProductionNativeHead,
+    LiveProductionNativeScanout, LiveProductionPageFlipWatchdogStatus,
+    LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
+    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
+    live_production_scanout_is_stable_present, project_mirror_output_damage_snapshot,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_mirror_generation_queue_target,
     reduce_live_production_page_flip_watchdog,
 };
 

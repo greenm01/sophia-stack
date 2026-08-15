@@ -83,6 +83,7 @@ pub fn resolve_native_output_mode_index(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibdrmNativeOutputCapability {
+    head: sophia_engine::RenderHeadId,
     output: OutputId,
     connector_id: u32,
     connector_name: String,
@@ -103,6 +104,7 @@ impl LibdrmNativeOutputCapability {
         vrr_status: LibdrmNativeVrrPropertyDiscoveryStatus,
     ) -> io::Result<Self> {
         let capability = Self {
+            head: sophia_engine::RenderHeadId::INVALID,
             output,
             connector_id,
             connector_name: connector_name.into(),
@@ -137,6 +139,27 @@ impl LibdrmNativeOutputCapability {
 
     pub const fn output(&self) -> OutputId {
         self.output
+    }
+
+    /// Opaque Engine/backend identity when this capability came from an active
+    /// production head. Standalone discovery and test fixtures may not yet have
+    /// admitted a head, in which case this is `None`.
+    pub const fn head(&self) -> Option<sophia_engine::RenderHeadId> {
+        if self.head.is_valid() {
+            Some(self.head)
+        } else {
+            None
+        }
+    }
+
+    pub fn bind_head(mut self, head: sophia_engine::RenderHeadId) -> io::Result<Self> {
+        if !head.is_valid() {
+            return Err(io::Error::other(
+                "DRM capability cannot bind an invalid head",
+            ));
+        }
+        self.head = head;
+        Ok(self)
     }
 
     pub const fn connector_id(&self) -> u32 {

@@ -139,6 +139,8 @@ impl OutputDiscoveryBackend for SysfsDrmKmsOutputBackend {
                 native_size: record.mode.size,
                 scale: record.scale,
                 refresh_millihz: record.mode.refresh_millihz,
+                transform: sophia_protocol::OutputTransform::Normal,
+                mapping: sophia_protocol::OutputHeadMapping::Fit,
             };
             if !registry.admit(target).is_admitted() {
                 return Err(io::Error::other(format!(

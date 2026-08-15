@@ -98,6 +98,8 @@ fn production_outputs() -> EngineHeadRegistry {
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                transform: sophia_protocol::OutputTransform::Normal,
+                mapping: sophia_protocol::OutputHeadMapping::Fit,
             })
             .is_admitted()
     );

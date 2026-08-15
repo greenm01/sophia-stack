@@ -14,7 +14,37 @@ pub const SURFACE_CONTENT_DENSITY_1X_MILLIS: u32 = 1_000;
 /// The authority alone asserts that variants of one set are semantically
 /// equal pixels at different densities; Engine can validate identity and
 /// bounds but cannot prove opaque pixels equal.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SurfaceRasterTransform {
+    Normal,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    Flipped,
+    Flipped90,
+    Flipped180,
+    Flipped270,
+}
+
+impl SurfaceRasterTransform {
+    pub const fn swaps_axes(self) -> bool {
+        matches!(
+            self,
+            Self::Rotate90 | Self::Rotate270 | Self::Flipped90 | Self::Flipped270
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SurfaceContentFidelity {
+    /// The authority produced this raster directly for the declared class.
+    AuthorityRaster,
+    /// The authority retained a sampled compatibility realization. It remains
+    /// usable, but Engine must not report it as native content.
+    SampledFallback,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SurfaceContentVariant {
     /// Stable identity within one content generation; nonzero.
     pub variant: u32,
@@ -22,22 +52,49 @@ pub struct SurfaceContentVariant {
     pub pixel_size: Size,
     /// Raster density relative to the logical extent, in thousandths.
     pub density_millis: u32,
+    pub transform: SurfaceRasterTransform,
+    pub fidelity: SurfaceContentFidelity,
+    /// Damage in this variant's pixel coordinates. Published variants are
+    /// ready; pending authority work is never placed in a committed set.
+    pub damage: Region,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SurfaceContentSetError {
     EmptyVariantSet,
-    VariantCapacityExceeded { count: usize },
+    InvalidLogicalExtent,
+    VariantCapacityExceeded {
+        count: usize,
+    },
     InvalidVariantIdentity,
-    DuplicateVariantIdentity { variant: u32 },
-    InvalidDensity { variant: u32 },
-    DuplicateDensityClass { density_millis: u32 },
+    DuplicateVariantIdentity {
+        variant: u32,
+    },
+    InvalidDensity {
+        variant: u32,
+    },
+    InvalidPixelSize {
+        variant: u32,
+    },
+    InvalidDamage {
+        variant: u32,
+    },
+    DuplicateRasterClass {
+        density_millis: u32,
+        transform: SurfaceRasterTransform,
+    },
 }
 
 impl core::fmt::Display for SurfaceContentSetError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::EmptyVariantSet => write!(formatter, "surface content set has no variants"),
+            Self::InvalidLogicalExtent => {
+                write!(
+                    formatter,
+                    "surface content set has an invalid logical extent"
+                )
+            }
             Self::VariantCapacityExceeded { count } => write!(
                 formatter,
                 "surface content set holds {count} variants, more than {MAX_SURFACE_CONTENT_VARIANTS}"
@@ -54,9 +111,24 @@ impl core::fmt::Display for SurfaceContentSetError {
                     "surface content variant {variant} has zero density"
                 )
             }
-            Self::DuplicateDensityClass { density_millis } => write!(
+            Self::InvalidPixelSize { variant } => {
+                write!(
+                    formatter,
+                    "surface content variant {variant} has an invalid pixel size"
+                )
+            }
+            Self::InvalidDamage { variant } => {
+                write!(
+                    formatter,
+                    "surface content variant {variant} has invalid damage"
+                )
+            }
+            Self::DuplicateRasterClass {
+                density_millis,
+                transform,
+            } => write!(
                 formatter,
-                "surface content set repeats density class {density_millis}"
+                "surface content set repeats raster class {density_millis}/{transform:?}"
             ),
         }
     }
@@ -84,6 +156,9 @@ impl SurfaceContentSet {
         logical_extent: Size,
         variants: Vec<SurfaceContentVariant>,
     ) -> Result<Self, SurfaceContentSetError> {
+        if logical_extent.width <= 0 || logical_extent.height <= 0 {
+            return Err(SurfaceContentSetError::InvalidLogicalExtent);
+        }
         if variants.is_empty() {
             return Err(SurfaceContentSetError::EmptyVariantSet);
         }
@@ -101,15 +176,42 @@ impl SurfaceContentSet {
                     variant: variant.variant,
                 });
             }
+            if expected_pixel_size(logical_extent, variant.density_millis, variant.transform)
+                != Some(variant.pixel_size)
+            {
+                return Err(SurfaceContentSetError::InvalidPixelSize {
+                    variant: variant.variant,
+                });
+            }
+            if variant.damage.rects.iter().any(|rect| {
+                rect.is_empty()
+                    || rect.x < 0
+                    || rect.y < 0
+                    || rect
+                        .x
+                        .checked_add(rect.width)
+                        .is_none_or(|right| right > variant.pixel_size.width)
+                    || rect
+                        .y
+                        .checked_add(rect.height)
+                        .is_none_or(|bottom| bottom > variant.pixel_size.height)
+            }) {
+                return Err(SurfaceContentSetError::InvalidDamage {
+                    variant: variant.variant,
+                });
+            }
             for earlier in &variants[..index] {
                 if earlier.variant == variant.variant {
                     return Err(SurfaceContentSetError::DuplicateVariantIdentity {
                         variant: variant.variant,
                     });
                 }
-                if earlier.density_millis == variant.density_millis {
-                    return Err(SurfaceContentSetError::DuplicateDensityClass {
+                if earlier.density_millis == variant.density_millis
+                    && earlier.transform == variant.transform
+                {
+                    return Err(SurfaceContentSetError::DuplicateRasterClass {
                         density_millis: variant.density_millis,
+                        transform: variant.transform,
                     });
                 }
             }
@@ -130,6 +232,14 @@ impl SurfaceContentSet {
                 source,
                 pixel_size: logical_extent,
                 density_millis: SURFACE_CONTENT_DENSITY_1X_MILLIS,
+                transform: SurfaceRasterTransform::Normal,
+                fidelity: SurfaceContentFidelity::AuthorityRaster,
+                damage: Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: logical_extent.width,
+                    height: logical_extent.height,
+                }),
             }],
         }
     }
@@ -153,6 +263,7 @@ impl SurfaceContentSet {
                     variant
                         .density_millis
                         .abs_diff(SURFACE_CONTENT_DENSITY_1X_MILLIS),
+                    variant.transform != SurfaceRasterTransform::Normal,
                     variant.variant,
                 )
             })
@@ -162,4 +273,84 @@ impl SurfaceContentSet {
     pub fn canonical_source(&self) -> BufferSource {
         self.canonical_variant().source
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SurfaceRasterClass {
+    pub density_millis: u32,
+    pub transform: SurfaceRasterTransform,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SurfaceRasterRequirements {
+    pub surface: SurfaceId,
+    pub committed_content_generation: u64,
+    pub requirement_generation: u64,
+    pub logical_extent: Size,
+    pub classes: Vec<SurfaceRasterClass>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SurfaceRasterRequirementsError {
+    InvalidIdentity,
+    InvalidLogicalExtent,
+    Empty,
+    CapacityExceeded,
+    InvalidDensity,
+    DuplicateClass,
+}
+
+impl SurfaceRasterRequirements {
+    pub fn validate(&self) -> Result<(), SurfaceRasterRequirementsError> {
+        if !self.surface.is_valid()
+            || self.committed_content_generation == 0
+            || self.requirement_generation == 0
+        {
+            return Err(SurfaceRasterRequirementsError::InvalidIdentity);
+        }
+        if self.logical_extent.width <= 0 || self.logical_extent.height <= 0 {
+            return Err(SurfaceRasterRequirementsError::InvalidLogicalExtent);
+        }
+        if self.classes.is_empty() {
+            return Err(SurfaceRasterRequirementsError::Empty);
+        }
+        if self.classes.len() > MAX_SURFACE_CONTENT_VARIANTS {
+            return Err(SurfaceRasterRequirementsError::CapacityExceeded);
+        }
+        let mut classes = std::collections::BTreeSet::new();
+        for class in &self.classes {
+            if class.density_millis == 0 {
+                return Err(SurfaceRasterRequirementsError::InvalidDensity);
+            }
+            if !classes.insert(*class) {
+                return Err(SurfaceRasterRequirementsError::DuplicateClass);
+            }
+        }
+        Ok(())
+    }
+}
+
+fn expected_pixel_size(
+    logical: Size,
+    density_millis: u32,
+    transform: SurfaceRasterTransform,
+) -> Option<Size> {
+    let project = |extent: i32| {
+        u64::try_from(extent)
+            .ok()?
+            .checked_mul(u64::from(density_millis))?
+            .checked_add(999)?
+            .checked_div(1_000)
+            .and_then(|extent| i32::try_from(extent).ok())
+    };
+    let width = project(logical.width)?;
+    let height = project(logical.height)?;
+    Some(if transform.swaps_axes() {
+        Size {
+            width: height,
+            height: width,
+        }
+    } else {
+        Size { width, height }
+    })
 }

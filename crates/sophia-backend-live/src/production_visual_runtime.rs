@@ -381,6 +381,11 @@ impl LiveProductionVisualRuntime {
         let output_count = outputs.output_count();
         let event_count = authority_transaction_count_for_groups(&rebased_groups);
         let surface_metadata = self.surface_metadata.clone();
+        let head_plan_order = self.presentation_order.clone();
+        let head_plan_chrome = self.chrome_surfaces.clone();
+        let head_plan_focus = self.focused_surface;
+        let head_plan_style = self.surface_chrome_style;
+        let head_plan_outline = self.floating_outline;
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
         let mut adapter = LiveProductionCpuCycleAdapter::new(
@@ -395,10 +400,11 @@ impl LiveProductionVisualRuntime {
             create_native_frames,
             &self.cpu_buffer_residency,
             output_descriptors,
-            move |_cycle,
+            move |cycle: u64,
                   committed: &[CommittedSurfaceState],
                   authority_commits: &[TransactionCommit],
-                  native_frames: Option<Vec<LiveProductionComposedFrame>>| {
+                  native_frames: Option<Vec<LiveProductionComposedFrame>>,
+                  cpu_layers: Vec<LiveCpuPresentationLayer>| {
                 // A deferred cycle may service retained native work without
                 // producing a new CPU frame; only an actual frame set initializes outputs.
                 let initialize_native = native_frames.is_some();
@@ -406,7 +412,6 @@ impl LiveProductionVisualRuntime {
                 if initialize_native && let Some(native_scanout) = native_scanout.as_deref_mut() {
                     outputs.initialize_native_scanout(native_scanout, &native_frames)?;
                 }
-                let mut native_frames = native_frames.into_iter();
                 let mut output_adapter = crate::LiveProductionOutputRuntimeAdapter::new(
                     output_count,
                     |index,
@@ -415,6 +420,9 @@ impl LiveProductionVisualRuntime {
                         let output_id = outputs
                             .output_id(index)
                             .ok_or("production output index was not registered")?;
+                        let output_descriptor = outputs
+                            .output_descriptor(index)
+                            .ok_or("production output descriptor was not registered")?;
                         outputs.run_output(index, snapshot, |runtime| {
                             let input = compositor_tick_input_for_committed(
                                 snapshot,
@@ -425,8 +433,121 @@ impl LiveProductionVisualRuntime {
                             );
                             Ok(match native_scanout.as_deref_mut() {
                                 Some(native_scanout) => {
-                                    if let Some(next_frame) = native_frames.next() {
-                                        native_scanout.queue_frame(output_id, next_frame);
+                                    let mut display_list =
+                                        sophia_engine::surface_chrome_display_list_for_surfaces(
+                                            output_id,
+                                            &head_plan_order,
+                                            &head_plan_chrome,
+                                            snapshot,
+                                            head_plan_focus,
+                                            head_plan_style,
+                                        )?;
+                                    if let Some(outline) = head_plan_outline {
+                                        if display_list.commands.len()
+                                            >= sophia_engine::MAX_COMPOSITOR_DISPLAY_COMMANDS
+                                        {
+                                            return Err(
+                                                "native head plan display-list capacity exceeded"
+                                                    .into(),
+                                            );
+                                        }
+                                        let border = sophia_engine::compositor_floating_outline(
+                                            outline.surface,
+                                            outline.geometry,
+                                            head_plan_style.focus_ring.width.max(2),
+                                            head_plan_style.focus_ring.color,
+                                        )
+                                        .ok_or("native head plan rejected the floating outline")?;
+                                        display_list.commands.push(
+                                            sophia_engine::CompositorDisplayCommand::Border(border),
+                                        );
+                                    }
+                                    let scene = sophia_engine::output_scene_snapshot_from_committed(
+                                        output_descriptor,
+                                        cycle.max(1),
+                                        snapshot,
+                                        display_list,
+                                        None,
+                                    )?;
+                                    let targets = native_scanout
+                                        .head_render_targets(output_id, 1);
+                                    let plans = sophia_engine::build_output_head_plans(
+                                        &scene,
+                                        &targets,
+                                    )?;
+                                    if plans.len() != targets.len() {
+                                        return Err(
+                                            "native head planner returned partial target coverage"
+                                                .into(),
+                                        );
+                                    }
+                                    for plan in &plans {
+                                        let exact = plan
+                                            .layers
+                                            .iter()
+                                            .filter(|layer| {
+                                                layer.requested_sampling
+                                                    == sophia_engine::HeadSamplingClass::Exact
+                                            })
+                                            .count();
+                                        let downsampled = plan
+                                            .layers
+                                            .iter()
+                                            .filter(|layer| {
+                                                layer.requested_sampling
+                                                    == sophia_engine::HeadSamplingClass::Downsampled
+                                            })
+                                            .count();
+                                        let upsampled = plan.layers.len()
+                                            .saturating_sub(exact)
+                                            .saturating_sub(downsampled);
+                                        let active = plan
+                                            .layers
+                                            .iter()
+                                            .filter(|layer| {
+                                                layer.outcome
+                                                    == sophia_engine::HeadBindingOutcome::Active
+                                            })
+                                            .count();
+                                        let fallback = plan.layers.len().saturating_sub(active);
+                                        tracing::info!(
+                                            output = plan.output.raw(),
+                                            head = plan.head.raw(),
+                                            scene_generation = plan.scene_generation,
+                                            target_generation = plan.target_generation,
+                                            width = plan.native_size.width,
+                                            height = plan.native_size.height,
+                                            mapping = ?plan.mapping,
+                                            exact,
+                                            downsampled,
+                                            upsampled,
+                                            active,
+                                            fallback,
+                                            unavailable = 0,
+                                            compositor_primitives = plan.compositor.len(),
+                                            damage_rects = plan.repaint.rects.len(),
+                                            logical_content_checksum = plan.logical_content_checksum,
+                                            "sophia_live_head_composition_plan"
+                                        );
+                                    }
+                                    if initialize_native {
+                                        let prepared = plans
+                                            .iter()
+                                            .map(|plan| {
+                                                Ok(crate::LiveProductionHeadCompositionFrame {
+                                                    head: plan.head,
+                                                    logical_content_checksum: plan
+                                                        .logical_content_checksum,
+                                                    frame: sophia_renderer_live::lower_cpu_head_composition_plan(
+                                                        plan,
+                                                        &cpu_layers,
+                                                    )?,
+                                                })
+                                            })
+                                            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>(
+                                            )?;
+                                        native_scanout
+                                            .queue_head_composition_frames(output_id, prepared)?;
                                     }
                                     if runtime.rendered_primary_plane_scanout_in_flight() {
                                         runtime.run_tick(input)?
@@ -880,7 +1001,8 @@ fn write_cpu_buffer_residency<'a>(
     handles.extend(
         committed
             .iter()
-            .filter_map(|surface| match surface.buffer() {
+            .flat_map(|surface| surface.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             }),
@@ -890,7 +1012,8 @@ fn write_cpu_buffer_residency<'a>(
             .groups
             .iter()
             .flat_map(|group| group.transactions.iter())
-            .filter_map(|transaction| match transaction.target_buffer() {
+            .flat_map(|transaction| transaction.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             }),
@@ -898,7 +1021,8 @@ fn write_cpu_buffer_residency<'a>(
     handles.extend(
         pending_groups
             .flat_map(|group| group.transactions.iter())
-            .filter_map(|transaction| match transaction.target_buffer() {
+            .flat_map(|transaction| transaction.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             }),

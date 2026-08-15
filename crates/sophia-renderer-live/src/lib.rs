@@ -22,6 +22,8 @@ mod egl_probe;
 #[cfg(feature = "gbm-probe")]
 mod gbm_probe;
 #[cfg(feature = "gbm-probe")]
+mod head_composition;
+#[cfg(feature = "gbm-probe")]
 mod native_scanout;
 
 pub use buffer_registry::*;
@@ -50,6 +52,8 @@ pub use gbm_probe::{
     FakeGbmCapabilityProbe, GbmCapabilityProbeReport, GbmCapabilityProbeStatus,
     GbmRenderDeviceToken, NativeGbmCapabilityProbe,
 };
+#[cfg(feature = "gbm-probe")]
+pub use head_composition::*;
 #[cfg(feature = "gbm-probe")]
 pub use native_scanout::*;
 

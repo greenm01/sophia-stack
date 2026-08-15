@@ -4,6 +4,9 @@
 //! when and how to install a subscriber.
 
 mod error;
+mod output_ipc;
+#[cfg(target_os = "linux")]
+mod output_transport;
 mod policy_ipc;
 mod policy_profile_handoff;
 #[cfg(target_os = "linux")]
@@ -30,6 +33,9 @@ mod prelude {
 }
 
 pub use error::*;
+pub use output_ipc::*;
+#[cfg(target_os = "linux")]
+pub use output_transport::*;
 pub use policy_ipc::*;
 pub use policy_profile_handoff::*;
 #[cfg(target_os = "linux")]

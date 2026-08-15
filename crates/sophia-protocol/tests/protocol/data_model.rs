@@ -525,16 +525,23 @@ fn one_label_bound_is_shared_by_every_hop() {
 }
 
 fn content_variant(variant: u32, density_millis: u32) -> SurfaceContentVariant {
+    let width = i32::try_from((640_u64 * u64::from(density_millis) + 999) / 1_000).unwrap_or(0);
+    let height = i32::try_from((480_u64 * u64::from(density_millis) + 999) / 1_000).unwrap_or(0);
     SurfaceContentVariant {
         variant,
         source: BufferSource::CpuBuffer {
             handle: u64::from(variant),
         },
-        pixel_size: Size {
-            width: 640,
-            height: 480,
-        },
+        pixel_size: Size { width, height },
         density_millis,
+        transform: SurfaceRasterTransform::Normal,
+        fidelity: SurfaceContentFidelity::AuthorityRaster,
+        damage: Region::single(Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }),
     }
 }
 
@@ -580,8 +587,9 @@ fn surface_content_set_construction_enforces_its_bounds() {
             extent,
             vec![content_variant(1, 1_000), content_variant(2, 1_000)],
         ),
-        Err(SurfaceContentSetError::DuplicateDensityClass {
-            density_millis: 1_000
+        Err(SurfaceContentSetError::DuplicateRasterClass {
+            density_millis: 1_000,
+            transform: SurfaceRasterTransform::Normal,
         })
     );
 }
@@ -662,8 +670,19 @@ fn dma_buf_pairing_covers_every_variant_of_a_content_set() {
                 SurfaceContentVariant {
                     variant: 2,
                     source: BufferSource::DmaBuf { handle: 44 },
-                    pixel_size: extent,
+                    pixel_size: Size {
+                        width: 1_280,
+                        height: 960,
+                    },
                     density_millis: 2_000,
+                    transform: SurfaceRasterTransform::Normal,
+                    fidelity: SurfaceContentFidelity::AuthorityRaster,
+                    damage: Region::single(Rect {
+                        x: 0,
+                        y: 0,
+                        width: 1_280,
+                        height: 960,
+                    }),
                 },
             ],
         )
@@ -695,4 +714,35 @@ fn dma_buf_pairing_covers_every_variant_of_a_content_set() {
         std::slice::from_ref(&transaction),
         std::slice::from_ref(&present)
     ));
+}
+
+#[test]
+fn surface_raster_requirements_are_bounded_protocol_neutral_classes() {
+    let requirements = SurfaceRasterRequirements {
+        surface: SurfaceId::new(4, 1),
+        committed_content_generation: 7,
+        requirement_generation: 9,
+        logical_extent: Size {
+            width: 640,
+            height: 480,
+        },
+        classes: vec![
+            SurfaceRasterClass {
+                density_millis: 750,
+                transform: SurfaceRasterTransform::Normal,
+            },
+            SurfaceRasterClass {
+                density_millis: 1_000,
+                transform: SurfaceRasterTransform::Normal,
+            },
+        ],
+    };
+    assert_eq!(requirements.validate(), Ok(()));
+
+    let mut duplicate = requirements.clone();
+    duplicate.classes.push(duplicate.classes[0]);
+    assert_eq!(
+        duplicate.validate(),
+        Err(SurfaceRasterRequirementsError::DuplicateClass)
+    );
 }
