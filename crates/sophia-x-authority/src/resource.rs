@@ -87,6 +87,9 @@ impl XResourceTable {
         if !owner_namespace.is_valid() {
             return Err(XAuthorityAccessError::InvalidNamespace);
         }
+        if self.records.contains_key(&id) {
+            return Err(XAuthorityAccessError::InvalidResource);
+        }
 
         self.records.insert(
             id,

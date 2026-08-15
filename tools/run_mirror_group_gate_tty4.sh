@@ -61,16 +61,31 @@ if [[ "$(tty)" != "$TTY_REQUIRED" ]]; then
     exit 2
 fi
 
+if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
+    echo "The Sophia worktree must be clean so the binary has one exact source identity." >&2
+    exit 2
+fi
+source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if ! git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1; then
+    echo "Sophia HEAD must have a valid cryptographic signature before a physical gate." >&2
+    exit 2
+fi
+
 echo "Building..."
 (cd "$ROOT_DIR" && cargo build --quiet --release --offline -p sophia-cli \
     --features "atomic-scanout-live" --bin sophia)
 echo
 
-if [[ -n "$(git -C "$ROOT_DIR" status --porcelain)" ]]; then
-    echo "The Sophia worktree must be clean so the binary has one exact source identity." >&2
+if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]] \
+    || [[ "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" ]]; then
+    echo "Sophia source identity changed during the physical-gate build." >&2
     exit 2
 fi
-source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if ! git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1; then
+    echo "Sophia HEAD signature no longer verifies after the physical-gate build." >&2
+    exit 2
+fi
+
 sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
 profile_sha256="$(sha256sum "$PROFILE" | awk '{ print $1 }')"
 : >"$EVIDENCE"
@@ -129,7 +144,10 @@ echo "What success looks like, and only you can judge it:"
 echo "  - BOTH monitors showing the same thing for ~$((RUNTIME_MSEC / 1000))s"
 echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
 echo "  - DP-2 may show black bars if the aspects differ; that is 'fit' working"
-echo "  - In xterm, run 'll' once; the output burst must remain responsive on both monitors"
+echo "  - xterm will scroll 40 numbered mixed-case rows, then print the exact marker"
+echo "    'Sophia Mirror AaZz 0123456789' and leave an interactive shell"
+echo "  - Wait for the scene to settle, then verify identical logical content and"
+echo "    letter case, stable legibility, and white-on-black presentation on both"
 echo
 echo "Evidence: $EVIDENCE"
 echo "Running now."
@@ -145,6 +163,20 @@ set +e
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --desktop-profile="$PROFILE" \
+        --session-app-arg=terminal=-fn \
+        --session-app-arg=terminal=6x13 \
+        --session-app-arg=terminal=-fg \
+        --session-app-arg=terminal=#ffffff \
+        --session-app-arg=terminal=-bg \
+        --session-app-arg=terminal=#000000 \
+        --session-app-arg=terminal=-cr \
+        --session-app-arg=terminal=#ffffff \
+        --session-app-arg=terminal=-xrm \
+        --session-app-arg=terminal='*cursorBlink:false' \
+        --session-app-arg=terminal=-e \
+        --session-app-arg=terminal=sh \
+        --session-app-arg=terminal=-c \
+        --session-app-arg=terminal='i=1; while [ "$i" -le 40 ]; do printf "SophiaScroll%02d AaZz\n" "$i"; i=$((i+1)); done; printf "Sophia Mirror AaZz 0123456789\n"; exec sh -i' \
         --max-runtime-ms="$RUNTIME_MSEC"
 ) 2>&1 | tee -a "$EVIDENCE"
 status="${PIPESTATUS[0]}"
@@ -159,7 +191,8 @@ fi
 grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE" \
     | tail -20 || true
 echo
-echo "Did both monitors show the same scene, with DP-1 at 2560x1440 and DP-2 at 1920x1080?"
+echo "Did both monitors show the same scene at their native modes, including stable,"
+echo "legible white-on-black text with identical logical content and letter case?"
 echo "Type yes to record visible-pixel acceptance."
 visual_confirmation=
 if ! read -r visual_confirmation </dev/tty || [[ "$visual_confirmation" != "yes" ]]; then
@@ -169,10 +202,9 @@ if ! read -r visual_confirmation </dev/tty || [[ "$visual_confirmation" != "yes"
 fi
 printf '%s\n' \
     'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' | tee -a "$EVIDENCE"
-candidate_evidence="$diagnostic_tmp/candidate.log"
-cp "$EVIDENCE" "$candidate_evidence"
-printf '%s\n' 'sophia_mirror_group_gate schema=1 status=passed exit=0' >>"$candidate_evidence"
-if ! "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$candidate_evidence"; then
+printf '%s\n' \
+    'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both foreground=white background=black' | tee -a "$EVIDENCE"
+if ! "$ROOT_DIR/tools/verify_mirror_group_physical.sh" --candidate "$EVIDENCE"; then
     finish_failed_run verification 1
     echo "Mirror verification failed; diagnostic evidence remains at $EVIDENCE." >&2
     exit 1

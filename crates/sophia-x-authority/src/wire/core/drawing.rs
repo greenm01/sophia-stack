@@ -57,40 +57,37 @@ fn decode_poly_text8(
     }
 
     let mut offset = 0usize;
-    let mut text = Vec::new();
+    let mut items = Vec::new();
     while offset < item_bytes.len() {
-        let len = item_bytes[offset];
-        offset += 1;
-        if len == 0 && item_bytes[offset..].iter().all(|byte| *byte == 0) {
+        let remaining = item_bytes.len().saturating_sub(offset);
+        if remaining <= 3 && item_bytes[offset..].iter().all(|byte| *byte == 0) {
             break;
         }
+        let len = item_bytes[offset];
         if len == u8::MAX {
-            if item_bytes.len().saturating_sub(offset) < 4 {
+            if remaining < 5 {
                 return Err(XWireParseError::InvalidLength {
                     opcode: X_POLY_TEXT8,
-                    expected_at_least: X_POLY_TEXT8_REQ_LEN + offset + 4,
+                    expected_at_least: X_POLY_TEXT8_REQ_LEN + offset + 5,
                     actual: bytes.len(),
                 });
             }
-            offset += 4;
+            items.push(XPolyText8Item::Font {
+                font: XResourceId::new(
+                    u64::from(u32::from_be_bytes(
+                        item_bytes[offset + 1..offset + 5]
+                            .try_into()
+                            .expect("validated PolyText8 font item width"),
+                    )),
+                    1,
+                ),
+            });
+            offset += 5;
             continue;
         }
 
-        let remaining = item_bytes.len().saturating_sub(offset);
         let glyph_len = usize::from(len);
-        if remaining > glyph_len {
-            offset += 1;
-            text.extend_from_slice(&item_bytes[offset..offset + glyph_len]);
-            offset += glyph_len;
-            continue;
-        }
-        if remaining == glyph_len && glyph_len > 0 {
-            offset += 1;
-            text.extend_from_slice(&item_bytes[offset..offset + glyph_len - 1]);
-            offset += glyph_len - 1;
-            continue;
-        }
-        let item_len = 1usize + glyph_len;
+        let item_len = 2usize.saturating_add(glyph_len);
         if remaining < item_len {
             return Err(XWireParseError::InvalidLength {
                 opcode: X_POLY_TEXT8,
@@ -98,6 +95,11 @@ fn decode_poly_text8(
                 actual: bytes.len(),
             });
         }
+        items.push(XPolyText8Item::Text {
+            delta: item_bytes[offset + 1] as i8,
+            bytes: item_bytes[offset + 2..offset + item_len].to_vec(),
+        });
+        offset += item_len;
     }
 
     Ok(XWireRequest::PolyText8 {
@@ -105,7 +107,7 @@ fn decode_poly_text8(
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
-        text,
+        items,
     })
 }
 

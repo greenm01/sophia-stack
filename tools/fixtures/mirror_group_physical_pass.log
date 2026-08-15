@@ -12,8 +12,10 @@ sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_i
 sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=102 submission=2 content=Cpu frame=7
 sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=94 callbacks=1 kernel_sequence=80 frame=7
 sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=94 submission=2 frame=7
+sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=94 frame=7 width=2560 height=1440 mode=full rects=1 pixels=3686400
 sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=102 callbacks=1 kernel_sequence=81 frame=7
 sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=102 submission=2 frame=7
+sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1 pixels=2073600
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_output_topology_health schema=1 status=clean quarantined=false
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
@@ -24,4 +26,5 @@ sophia_live_native_head schema=1 status=complete output=1 connector_id=94 checks
 sophia_live_native_head schema=1 status=complete output=1 connector_id=102 checksum=111 submissions=2 retirements=2 callbacks=2 nonzero_exports=2
 sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
 sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080
+sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both foreground=white background=black
 sophia_mirror_group_gate schema=1 status=passed exit=0

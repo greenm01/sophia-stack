@@ -39,6 +39,10 @@ source_commit="$(sed -n 's/^source_commit=//p' "$run/manifest")"
     echo "mirror-group archive has an invalid source commit: $run" >&2
     exit 1
 }
+git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
+    echo "mirror-group archive source commit does not have a valid signature: $run" >&2
+    exit 1
+}
 evidence_sha256="$(sha256sum "$run/session.log" | awk '{ print $1 }')"
 profile_sha256="$(sha256sum "$run/profile.kdl" | awk '{ print $1 }')"
 [[ "$(sed -n 's/^evidence_sha256=//p' "$run/manifest")" == "$evidence_sha256" ]] || {

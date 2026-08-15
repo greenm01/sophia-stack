@@ -129,3 +129,7 @@ where
         report
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/runtime_mirror_page_flip.rs"]
+mod tests;

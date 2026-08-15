@@ -622,14 +622,7 @@ fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
     let wide_gc = 0x220145;
     let create_wide_window = decode_x11_core_request(
         context(namespace, 624, XByteOrder::LittleEndian),
-        &create_window_request(
-            XByteOrder::LittleEndian,
-            wide_window,
-            0,
-            0,
-            32,
-            24,
-        ),
+        &create_window_request(XByteOrder::LittleEndian, wide_window, 0, 0, 32, 24),
     )
     .unwrap();
     dispatch_x11_wire_request(
@@ -715,15 +708,28 @@ fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
         &mut atoms,
         &mut properties,
     );
-    assert_eq!(empty.response.unwrap().outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(
+        empty.response.unwrap().outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
     assert!(runtime.take_cpu_buffer_update().is_none());
 
     for (sequence, drawable, gc, code, resource_id) in [
-        (5, window, 0x2201ff, XErrorCode::BadGraphicsContext, 0x2201ff),
+        (
+            5,
+            window,
+            0x2201ff,
+            XErrorCode::BadGraphicsContext,
+            0x2201ff,
+        ),
         (6, 0x2201fe, gc, XErrorCode::BadDrawable, 0x2201fe),
     ] {
         let request = decode_x11_core_request(
-            context(namespace, 624 + u64::from(sequence), XByteOrder::LittleEndian),
+            context(
+                namespace,
+                624 + u64::from(sequence),
+                XByteOrder::LittleEndian,
+            ),
             &poly_rectangle_request(XByteOrder::LittleEndian, drawable, gc, &[]),
         )
         .unwrap();
@@ -787,17 +793,16 @@ fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
         ),
     ] {
         let request = decode_x11_core_request(
-            context(namespace, 630 + u64::from(sequence), XByteOrder::LittleEndian),
+            context(
+                namespace,
+                630 + u64::from(sequence),
+                XByteOrder::LittleEndian,
+            ),
             &request,
         )
         .unwrap();
         dispatch_x11_wire_request(
-            dispatch_context(
-                namespace,
-                sequence,
-                XByteOrder::LittleEndian,
-                major_opcode,
-            ),
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, major_opcode),
             request,
             &mut runtime,
             &mut atoms,
@@ -831,14 +836,7 @@ fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
         (
             10,
             53,
-            create_pixmap_request(
-                XByteOrder::LittleEndian,
-                24,
-                source_pixmap,
-                window,
-                8,
-                8,
-            ),
+            create_pixmap_request(XByteOrder::LittleEndian, 24, source_pixmap, window, 8, 8),
         ),
         (
             11,
@@ -852,17 +850,16 @@ fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
         ),
     ] {
         let request = decode_x11_core_request(
-            context(namespace, 640 + u64::from(sequence), XByteOrder::LittleEndian),
+            context(
+                namespace,
+                640 + u64::from(sequence),
+                XByteOrder::LittleEndian,
+            ),
             &request,
         )
         .unwrap();
         let result = dispatch_x11_wire_request(
-            dispatch_context(
-                namespace,
-                sequence,
-                XByteOrder::LittleEndian,
-                major_opcode,
-            ),
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, major_opcode),
             request,
             &mut runtime,
             &mut atoms,
@@ -903,6 +900,18 @@ fn x11_dispatch_put_image_emits_software_surface_transaction() {
     dispatch_x11_wire_request(
         dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
         create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let gc = decode_x11_core_request(
+        context(namespace, 612, XByteOrder::LittleEndian),
+        &create_gc_request(XByteOrder::LittleEndian, 0x220112, 0x220111),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 55),
+        gc,
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -1001,14 +1010,7 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
 
     let invalid_depth = decode_x11_core_request(
         context(namespace, 622, XByteOrder::LittleEndian),
-        &create_pixmap_request(
-            XByteOrder::LittleEndian,
-            2,
-            0x220124,
-            0x220121,
-            64,
-            32,
-        ),
+        &create_pixmap_request(XByteOrder::LittleEndian, 2, 0x220124, 0x220121, 64, 32),
     )
     .unwrap();
     let invalid_depth = dispatch_x11_wire_request(
@@ -1111,6 +1113,19 @@ fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
         &mut atoms,
         &mut properties,
     );
+    let gc = 0x220132;
+    let create_gc = decode_x11_core_request(
+        context(namespace, 632, XByteOrder::LittleEndian),
+        &create_gc_request(XByteOrder::LittleEndian, gc, window),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 55),
+        create_gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
 
     // ZPixmap bytes follow the setup image order: blue, green, red, padding.
     let palette = [
@@ -1126,7 +1141,7 @@ fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
         &put_image_request(
             XByteOrder::LittleEndian,
             window,
-            XResourceId::NONE.local.raw() as u32,
+            gc,
             PutImageGeometry {
                 width: 6,
                 height: 1,
@@ -1144,7 +1159,10 @@ fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
         &mut atoms,
         &mut properties,
     );
-    assert_eq!(put.response.unwrap().outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(
+        put.response.unwrap().outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
     let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime.take_cpu_buffer_update().unwrap()
     else {
         panic!("the first palette upload must publish a replacement buffer");

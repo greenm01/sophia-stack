@@ -43,8 +43,10 @@
         client_fatal_cleanup.native_suspend_attempted = true;
         client_fatal_cleanup.native_heads_in_flight_before =
             native_scanout.head_scanout_in_flight_count();
+        let mut detach_established = false;
         match runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2)) {
             Ok(report) => {
+                detach_established = true;
                 client_fatal_cleanup.native_suspend_reported = true;
                 client_fatal_cleanup.native_drained = report.outcome.drained();
                 client_fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
@@ -66,23 +68,52 @@
                 }
             }
             Err(error) => {
-                println!(
-                    "sophia_live_session_native_suspend schema=2 outcome=error drained=false abandoned_scanouts=unknown skipped_present=unknown error={error}"
-                );
+                if let Some(suspend_error) = error
+                    .downcast_ref::<LiveProductionNativeSuspendError>()
+                    && let Some(report) = suspend_error.detach_report
+                {
+                    detach_established = true;
+                    client_fatal_cleanup.native_suspend_reported = true;
+                    client_fatal_cleanup.native_drained = report.outcome.drained();
+                    client_fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
+                    println!(
+                        "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={} error={error}",
+                        report.outcome.reduced_name(),
+                        report.outcome.drained(),
+                        report.abandoned_scanouts,
+                        report.skipped_present.map_or_else(
+                            || "none".to_owned(),
+                            |transaction| transaction.raw().to_string()
+                        ),
+                    );
+                } else {
+                    println!(
+                        "sophia_live_session_native_suspend schema=2 outcome=error drained=false abandoned_scanouts=unknown skipped_present=unknown detach_established=false error={error}"
+                    );
+                }
                 cleanup_failures.push(format!("native completion drain failed: {error}"));
             }
         }
-        match native_scanout.clear_renderer_images() {
-            Ok(evicted_renderer_images) => {
-                client_fatal_cleanup.renderer_images_cleared = true;
-                println!(
-                    "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
-                );
+        if detach_established {
+            match native_scanout.clear_renderer_images() {
+                Ok(evicted_renderer_images) => {
+                    client_fatal_cleanup.renderer_images_cleared = true;
+                    println!(
+                        "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
+                    );
+                }
+                Err(error) => {
+                    println!("sophia_live_renderer_images schema=1 status=error error={error}");
+                    cleanup_failures.push(format!("renderer-image cleanup failed: {error}"));
+                }
             }
-            Err(error) => {
-                println!("sophia_live_renderer_images schema=1 status=error error={error}");
-                cleanup_failures.push(format!("renderer-image cleanup failed: {error}"));
-            }
+        } else {
+            println!(
+                "sophia_live_renderer_images schema=1 status=retained reason=native_detach_not_established"
+            );
+            cleanup_failures.push(
+                "renderer images retained because native detach was not established".to_owned(),
+            );
         }
     }
     if let Some(runtime) = runtime.as_mut() {

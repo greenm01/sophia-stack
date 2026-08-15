@@ -68,12 +68,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         );
     }
 
-    let mut malformed = poly_rectangle_request(
-        XByteOrder::LittleEndian,
-        0x220010,
-        0x220011,
-        &[],
-    );
+    let mut malformed = poly_rectangle_request(XByteOrder::LittleEndian, 0x220010, 0x220011, &[]);
     malformed[2..4].copy_from_slice(&4u16.to_le_bytes());
     malformed.extend_from_slice(&[0; 4]);
     assert_eq!(
@@ -208,7 +203,10 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             gc: XResourceId::new(0x220011, 1),
             x: 5,
             y: 16,
-            text: b"Hi".to_vec(),
+            items: vec![XPolyText8Item::Text {
+                delta: 0,
+                bytes: b"Hi".to_vec(),
+            }],
         }
     );
 
@@ -225,7 +223,10 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             gc: XResourceId::new(0x220011, 1),
             x: 5,
             y: 16,
-            text: b"=".to_vec(),
+            items: vec![XPolyText8Item::Text {
+                delta: 0,
+                bytes: b"=".to_vec(),
+            }],
         }
     );
 
@@ -240,18 +241,11 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             b"Hi",
         ),
     )
-    .unwrap();
-
-    assert_eq!(
+    .unwrap_err();
+    assert!(matches!(
         compact_text,
-        XWireRequest::PolyText8 {
-            drawable: XResourceId::new(0x220010, 1),
-            gc: XResourceId::new(0x220011, 1),
-            x: 5,
-            y: 16,
-            text: b"Hi".to_vec(),
-        }
-    );
+        XWireParseError::InvalidLength { .. }
+    ));
 
     let image_text = decode_x11_core_request(
         context(namespace, 515, XByteOrder::LittleEndian),
@@ -269,6 +263,37 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             text: b"Hi".to_vec(),
         }
     );
+}
+
+#[test]
+fn x11_poly_text8_font_shift_is_msb_first_for_both_client_orders() {
+    let namespace = NamespaceId::from_raw(45);
+    let items = [255, 0x01, 0x23, 0x45, 0x67, 1, 0xff, b'x'];
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let request = decode_x11_core_request(
+            context(namespace, 515, byte_order),
+            &poly_text8_items_request(byte_order, 0x220010, 0x220011, 5, 16, &items),
+        )
+        .unwrap();
+        assert_eq!(
+            request,
+            XWireRequest::PolyText8 {
+                drawable: XResourceId::new(0x220010, 1),
+                gc: XResourceId::new(0x220011, 1),
+                x: 5,
+                y: 16,
+                items: vec![
+                    XPolyText8Item::Font {
+                        font: XResourceId::new(0x0123_4567, 1),
+                    },
+                    XPolyText8Item::Text {
+                        delta: -1,
+                        bytes: b"x".to_vec(),
+                    },
+                ],
+            }
+        );
+    }
 }
 
 #[test]
@@ -679,12 +704,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
 
     let get = decode_x11_core_request(
         context(namespace, 531, XByteOrder::LittleEndian),
-        &mit_shm_get_image_request(
-            XByteOrder::LittleEndian,
-            0x220701,
-            0x440001,
-            128,
-        ),
+        &mit_shm_get_image_request(XByteOrder::LittleEndian, 0x220701, 0x440001, 128),
     )
     .unwrap();
     assert_eq!(

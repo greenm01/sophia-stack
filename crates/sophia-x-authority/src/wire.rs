@@ -76,6 +76,12 @@ pub enum XGlxContextConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum XPolyText8Item {
+    Text { delta: i8, bytes: Vec<u8> },
+    Font { font: XResourceId },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XWireRequest {
     Authority(XAuthorityRequestPacket),
     CreateWindow {
@@ -259,7 +265,7 @@ pub enum XWireRequest {
         gc: XResourceId,
         x: i16,
         y: i16,
-        text: Vec<u8>,
+        items: Vec<XPolyText8Item>,
     },
     ImageText8 {
         drawable: XResourceId,

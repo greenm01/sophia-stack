@@ -952,9 +952,23 @@ is excluded; retained product behavior is not.
   and both connectors joined through frame 8. That run exposed one stale
   completion check that demanded distinct checksums from two heads sharing one
   logical output; completion and physical verification now require mirror-group
-  equality and distinctness only between logical outputs. This item remains open
-  until the diagnostic-capable tty4 run visibly passes and its archive verifies;
-  no userspace test is a substitute for that AMDGPU evidence.
+  equality and distinctness only between logical outputs. Diagnostic attempt
+  `0006` then reached joined frame 18 but exposed two independent correctness
+  gaps: shutdown re-entered scene projection with an empty tick and DP-2 received
+  source-sized damage metadata. Mirror drain is now callback/retirement/cleanup
+  only, with typed forced-detach evidence, and all CPU/mixed/retained queue paths
+  project destination-native damage before reserving a generation. The same
+  run's malformed terminal pixels led to replacing the synthetic uppercase text
+  with the public-domain X.Org 6x13 face, exact ImageText/PolyText semantics,
+  backed pixmap text, and overlap-safe clipped CopyArea. The local real-xterm
+  proof now passes white-on-black mixed-case scrolling with opcodes 76 and 62
+  and no X error. The proof is bound to a current per-surface buffer, four
+  adjacent post-scroll rows, and accepted same-surface CPU updates in causal
+  ImageText8→CopyArea→ImageText8 order; core XID collision checks also prevent
+  font/pixmap/GC creation from orphaning a live
+  window. This item remains open until the diagnostic-capable tty4 run
+  visibly passes and its archive verifies; no userspace test is a substitute for
+  that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

@@ -8,6 +8,30 @@ trap 'rm -rf -- "$work"' EXIT
 
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$fixture" >/dev/null
 
+runner="$ROOT_DIR/tools/run_mirror_group_gate_tty4.sh"
+mapfile -t clean_lines < <(
+    grep -nF 'status --porcelain --untracked-files=all' "$runner" | cut -d: -f1
+)
+mapfile -t signature_lines < <(
+    grep -nF 'verify-commit "$source_commit"' "$runner" | cut -d: -f1
+)
+build_line="$(grep -nFm1 'echo "Building..."' "$runner" | cut -d: -f1)"
+(( ${#clean_lines[@]} >= 2 && ${#signature_lines[@]} >= 2 )) \
+    && [[ -n "$build_line" ]] \
+    && (( clean_lines[0] < build_line \
+        && signature_lines[0] < build_line \
+        && clean_lines[${#clean_lines[@]} - 1] > build_line \
+        && signature_lines[${#signature_lines[@]} - 1] > build_line )) \
+    && grep -Fq 'rev-parse HEAD)" != "$source_commit"' "$runner" || {
+    echo "mirror-group runner does not preserve clean, signed source identity across the build" >&2
+    exit 1
+}
+grep -Fq 'while [ "$i" -le 40 ]' "$runner" \
+    && grep -Fq 'printf "Sophia Mirror AaZz 0123456789\n"; exec sh -i' "$runner" || {
+    echo "mirror-group runner omitted the deterministic scrolling text workload" >&2
+    exit 1
+}
+
 reject_mutation() {
     local expression="$1" description="$2"
     cp "$fixture" "$work/rejected.log"
@@ -23,11 +47,43 @@ reject_mutation 's/mode=1920x1080/mode=2560x1440/' 'a downgraded secondary mode'
 reject_mutation 's/native_cleanup_pending=false/native_cleanup_pending=true/' 'undrained native ownership'
 reject_mutation 's/outcome=drained drained=true abandoned_scanouts=0/outcome=forced_detach_timeout drained=false abandoned_scanouts=1/' 'forced native detach'
 reject_mutation '/status=visual_confirmed/d' 'missing visible-pixel confirmation'
+reject_mutation '/sophia_mirror_group_visual/d' 'missing readable-text confirmation'
 reject_mutation '/sophia_live_session_cleanup/d' 'missing clean frontend/session teardown'
 reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
 reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct-CPU mirror bootstrap'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
 reject_mutation 's/connector_id=102 checksum=111/connector_id=102 checksum=222/' 'divergent mirror checksums'
+reject_mutation '/sophia_live_mirror_head_damage.*connector_id=102/d' 'missing secondary projected damage'
+reject_mutation 's/connector_id=102 frame=7 width=1920/connector_id=102 frame=8 width=1920/' 'damage from a different logical generation'
+reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080/connector_id=102 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
+reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
+
+cp "$fixture" "$work/rejected.log"
+printf '%s\n' \
+    'sophia_live_output_damage schema=1 status=queue_rejected output=1 reason=OutputMismatch' \
+    >>"$work/rejected.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/rejected.log" >/dev/null 2>&1; then
+    echo "mirror-group verifier accepted OutputMismatch damage" >&2
+    exit 1
+fi
+
+sed '/sophia_mirror_group_gate schema=1 status=passed exit=0/d' \
+    "$fixture" >"$work/candidate.log"
+"$ROOT_DIR/tools/verify_mirror_group_physical.sh" --candidate "$work/candidate.log" >/dev/null
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/candidate.log" >/dev/null 2>&1; then
+    echo "mirror-group promotion verifier accepted an unpassed candidate" >&2
+    exit 1
+fi
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" --candidate "$fixture" >/dev/null 2>&1; then
+    echo "mirror-group candidate verifier accepted pre-recorded promotion evidence" >&2
+    exit 1
+fi
+cp "$work/candidate.log" "$work/rejected.log"
+printf '%s\n' 'sophia_mirror_group_gate schema=1 status=passed exit=1' >>"$work/rejected.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" --candidate "$work/rejected.log" >/dev/null 2>&1; then
+    echo "mirror-group candidate verifier accepted a malformed early pass marker" >&2
+    exit 1
+fi
 
 for failure in \
     'sophia_live_session_client_fatal schema=1 status=detected source=primary' \
@@ -59,6 +115,25 @@ if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/reordered.log" >/dev
     exit 1
 fi
 
+awk '
+    !inserted && /status=submitted output=1 connector_id=94 .* frame=7$/ {
+        print "sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=94 submission=2 content=Cpu frame=6"
+        print "sophia_live_native_head_page_flip schema=1 status=submitted output=1 connector_id=102 submission=2 content=Cpu frame=6"
+        print "sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=94 callbacks=1 kernel_sequence=70 frame=6"
+        print "sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=94 submission=2 frame=6"
+        print "sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=94 frame=6 width=2560 height=1440 mode=skip rects=0 pixels=0"
+        print "sophia_live_native_head_page_flip schema=1 status=callback_accepted output=1 connector_id=102 callbacks=1 kernel_sequence=71 frame=6"
+        print "sophia_live_native_head_page_flip schema=1 status=retired output=1 connector_id=102 submission=2 frame=6"
+        print "sophia_live_mirror_head_damage schema=1 status=presented output=1 connector_id=102 frame=6 width=1920 height=1080 mode=skip rects=0 pixels=0"
+        inserted = 1
+    }
+    { print }
+' "$fixture" >"$work/earlier-skip.log"
+"$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/earlier-skip.log" >/dev/null || {
+    echo "mirror-group verifier stopped at an earlier causal skip frame" >&2
+    exit 1
+}
+
 printf '#!/usr/bin/env bash\nexit 0\n' >"$work/sophia"
 printf 'schema 1\n' >"$work/profile.kdl"
 chmod 755 "$work/sophia"
@@ -85,6 +160,30 @@ run_dir="${archive##*: }"
     exit 1
 }
 "$ROOT_DIR/tools/verify_mirror_group_physical_archive.sh" "$run_dir" >/dev/null
+real_git="$(command -v git)"
+mkdir "$work/fake-bin"
+cat >"$work/fake-bin/git" <<EOF
+#!/usr/bin/env bash
+if [[ " \$* " == *" verify-commit "* ]]; then
+    exit 1
+fi
+exec "$real_git" "\$@"
+EOF
+chmod 755 "$work/fake-bin/git"
+if env PATH="$work/fake-bin:$PATH" \
+    "$ROOT_DIR/tools/verify_mirror_group_physical_archive.sh" "$run_dir" >/dev/null 2>&1; then
+    echo "mirror-group archive verifier accepted an unverifiable commit signature" >&2
+    exit 1
+fi
+if env \
+    PATH="$work/fake-bin:$PATH" \
+    XDG_STATE_HOME="$work/unsigned-state" \
+    SOPHIA_MIRROR_SOPHIA_BIN="$work/sophia" \
+    SOPHIA_MIRROR_PROFILE="$work/profile.kdl" \
+    "$ROOT_DIR/tools/archive_mirror_group_physical_run.sh" "$work/archive.log" >/dev/null 2>&1; then
+    echo "mirror-group promotion archive accepted an unverifiable commit signature" >&2
+    exit 1
+fi
 printf '\n' >>"$run_dir/session.log"
 if "$ROOT_DIR/tools/verify_mirror_group_physical_archive.sh" "$run_dir" >/dev/null 2>&1; then
     echo "mirror-group archive accepted tampered evidence" >&2
@@ -156,5 +255,26 @@ sed \
     "$work/diagnostic.log" >"$work/unavailable-diagnostic.log"
 "$ROOT_DIR/tools/verify_mirror_group_diagnostic.sh" \
     "$work/unavailable-diagnostic.log" "$work/kernel-unavailable.log" >/dev/null
+
+sed '/sophia_mirror_group_gate schema=1 status=passed exit=0/d' \
+    "$work/archive.log" >"$work/verification-diagnostic.log"
+cat >>"$work/verification-diagnostic.log" <<EOF
+sophia_mirror_group_kernel schema=1 status=captured availability=unavailable continuity=unknown lines=0 total_lines=0 truncated=false
+sophia_mirror_group_gate schema=1 status=failed stage=verification exit=1 signal=0 kernel_capture=unavailable
+EOF
+"$ROOT_DIR/tools/verify_mirror_group_diagnostic.sh" \
+    "$work/verification-diagnostic.log" "$work/kernel-unavailable.log" >/dev/null
+verification_archive="$(env \
+    XDG_STATE_HOME="$work/verification-state" \
+    SOPHIA_MIRROR_SOPHIA_BIN="$work/sophia" \
+    SOPHIA_MIRROR_PROFILE="$work/profile.kdl" \
+    "$ROOT_DIR/tools/archive_mirror_group_diagnostic_run.sh" \
+    "$work/verification-diagnostic.log" "$work/kernel-unavailable.log")"
+verification_dir="${verification_archive##*: }"
+[[ "$verification_dir" == "$work/verification-state/sophia/diagnostics/mirror-group-runs/"* ]] || {
+    echo "verification failure did not enter the diagnostic archive" >&2
+    exit 1
+}
+"$ROOT_DIR/tools/verify_mirror_group_diagnostic_archive.sh" "$verification_dir" >/dev/null
 
 echo "mirror-group physical verifier checks passed"

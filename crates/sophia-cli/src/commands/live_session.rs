@@ -3,8 +3,8 @@ use super::prelude::*;
 use sophia_backend_live::{
     ClassicHardwareCursorUpdate, LiveProductionAuthorityBatch, LiveProductionCpuScene,
     LiveProductionCursorPresentation, LiveProductionCycleRequest, LiveProductionDmaBufRegistration,
-    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionRetiredPresent,
-    LiveProductionVisualRuntime,
+    LiveProductionFenceRegistration, LiveProductionNativeScanout, LiveProductionNativeSuspendError,
+    LiveProductionRetiredPresent, LiveProductionVisualRuntime,
 };
 use sophia_cli::desktop_output_activation::{
     NativeOutputActivationFailure, NativeOutputActivationSettlement,

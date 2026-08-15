@@ -129,7 +129,10 @@ facts. Each accepted client now gets
 a disjoint X11 setup resource-ID range. Every currently supported XID-creating
 wire path—window, pixmap, GC, font, colormap, glyph cursor, and reduced
 MIT-SHM segment—rejects an XID outside that range with X11 `BadIDChoice` before
-it reaches runtime state. Every successful setup also receives a monotonic
+it reaches runtime state. Core window, font, pixmap, GC, and cursor creation
+also shares one resource namespace: one kind cannot replace a different live
+core resource with the same XID. Collisions return `BadIDChoice` without
+mutating the original resource. Every successful setup also receives a monotonic
 frontend client identity and retains an XID-range lease until its connection
 ends. The lease is the cleanup ledger key; it does not restrict ordinary
 same-namespace references in the classic shared-X profile. Resource cleanup
@@ -294,9 +297,12 @@ remain bounded and narrow: for example, xcalc admitted `AllocNamedColor`,
 teardown without turning the frontend into a broad X11 conformance
 project. xterm admitted `ConfigureWindow` and the bounded setup/drawing paths
 needed to reach committed `ImageText8` transactions. Core drawing now applies
-GC colors and raster operations to bounded XRGB8888 software buffers, including
-a printable-ASCII fixed-cell raster. The real xterm proof locates the expected
-glyph sequence in materialized replacement/patch pixels. A separate key-channel smoke
+GC colors and raster operations to bounded XRGB8888 software buffers. Text uses
+the vendored public-domain X.Org 6x13 ISO-8859-1 bitmap with its exact 6-pixel
+advance, 11-pixel ascent, and 2-pixel descent. The real xterm proof pins that
+font and white-on-black colors, locates a mixed-case glyph sequence in
+materialized replacement/patch pixels, and requires both `ImageText8` and
+`CopyArea` scrolling. A separate key-channel smoke
 injects `sophia` plus Return and proves later xterm buffer generations change.
 The two-client xterm smoke repeats that proof for two separate client IDs with
 distinct `alpha` and `bravo` input sequences, proving the broker does not
@@ -885,12 +891,30 @@ the request surface xmessage actually exercised after xlogo: bounded
 Cursor support is currently resource lifecycle only. The frontend accepts
 the font-backed cursor resource so legacy clients can proceed, but compositor
 cursor presentation remains future Engine/session policy work. `PolyText8`
-parses the text item stream and emits conservative core-draw damage for the
-drawn glyph bounds; it does not implement full X font rasterization.
+retains text items, signed deltas, and request-scoped font shifts, rasterizes
+the canonical 6x13 glyphs into both window and pixmap backing, and reports
+`BadFont` for invalid shifts after preserving any valid prefix work.
+
+`ImageText8` uses the GC's retained font face but forces the core protocol's
+GXcopy/Solid foreground-and-background semantics. A GC remains usable after
+its source font XID closes, and `QueryFont` accepts either a font or GC
+FONTABLE. `CopyArea` snapshots overlapping source pixels, clips source and
+destination in one request-coordinate space, and supports pixmap/window
+combinations. GraphicsExpose/NoExpose delivery remains outside this bounded
+text-and-scroll slice.
+
+The admitted core-font names are the fixed face aliases (`fixed`, `6x13`, and
+its canonical XLFD) plus the lifecycle-only `cursor` and `nil2` compatibility
+names opened by real xterm. They resolve to immutable in-process face data;
+Sophia does not consult host font paths or silently accept arbitrary names.
 
 The external real-client harness now treats any observed X protocol error as a
 smoke failure even if the client already produced authority transactions. This
-keeps `first_error=none` as an enforced compatibility invariant.
+keeps `first_error=none` as an enforced compatibility invariant. Its fixed-text
+scroll proof folds the latest live transaction independently for each surface,
+requires four adjacent final rows, and joins accepted same-surface CPU updates
+in ImageText8→CopyArea→ImageText8 order. A stale/offscreen snapshot, no-op copy,
+auxiliary window, or unordered opcode presence cannot pass.
 
 ## External xrandr Probe
 

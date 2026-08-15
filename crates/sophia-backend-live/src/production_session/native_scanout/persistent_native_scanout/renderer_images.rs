@@ -67,13 +67,13 @@ fn validate_renderer_image_handoff_ids(
 fn project_owned_mixed_frame(
     frame: &crate::LiveOwnedMixedCompositionFrame,
     source: sophia_protocol::Size,
-    destination: sophia_protocol::Size,
+    destination: sophia_engine::HeadlessOutput,
     fit: crate::NativeMirrorFit,
 ) -> Result<crate::LiveOwnedMixedCompositionFrame, Box<dyn std::error::Error>> {
     if source.width <= 0 || source.height <= 0 {
         return Err("mirror mixed-frame source size is invalid".into());
     }
-    let target = crate::project_mirror_rect(source, destination, fit);
+    let target = crate::project_mirror_rect(source, destination.size, fit);
     if target.width <= 0 || target.height <= 0 {
         return Err("mirror mixed-frame projection is empty".into());
     }
@@ -97,10 +97,11 @@ fn project_owned_mixed_frame(
             }
         }
     }
-    // Damage is expressed in the logical source's coordinate space. Until a
-    // projected damage record carries the destination size, repaint the bounded
-    // head rather than attaching geometrically false damage evidence.
-    projected.output_damage_snapshot = None;
+    projected.output_damage_snapshot = frame
+        .output_damage_snapshot
+        .as_ref()
+        .map(|snapshot| project_mirror_output_damage_snapshot(snapshot, source, destination, fit))
+        .transpose()?;
     Ok(projected)
 }
 
@@ -252,14 +253,13 @@ impl LiveProductionNativeScanout {
             return Ok(frame_id);
         }
         let source = self.heads[index].output.size;
-        let output_damage_snapshot = frame.output_damage_snapshot.clone();
         let projected = indices
             .iter()
             .map(|head_index| {
                 project_owned_mixed_frame(
                     &frame,
                     source,
-                    self.heads[*head_index].output.size,
+                    self.heads[*head_index].output,
                     self.mirror_fit,
                 )
             })
@@ -267,6 +267,7 @@ impl LiveProductionNativeScanout {
         let frame_id = self.allocate_frame_id();
         self.reserve_mirror_generation(output, frame_id);
         for (head_index, frame) in indices.into_iter().zip(projected) {
+            let output_damage_snapshot = frame.output_damage_snapshot.clone();
             let pending_before = self.exporters[head_index].pending_frame();
             let worker_in_flight = self.exporters[head_index].worker_in_flight();
             if let Some(superseded) = self.heads[head_index].pending_content {
@@ -286,7 +287,7 @@ impl LiveProductionNativeScanout {
                     nonzero_rgb_pixels: 0,
                 },
                 frame,
-                output_damage_snapshot.clone(),
+                output_damage_snapshot,
             );
             tracing::debug!(
                 "sophia_live_retained_projection schema=1 status=native_queued output={} connector_id={} frame={} pending_before={} worker_in_flight={}",
@@ -348,6 +349,25 @@ impl LiveProductionNativeScanout {
         {
             return None;
         }
+        let projected_damage = heads
+            .iter()
+            .zip(&targets)
+            .map(|(head_index, _)| {
+                frame
+                    .output_damage_snapshot
+                    .as_ref()
+                    .map(|snapshot| {
+                        project_mirror_output_damage_snapshot(
+                            snapshot,
+                            frame.frame.size,
+                            self.heads[*head_index].output,
+                            fit,
+                        )
+                    })
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
         let frame_id = self.allocate_frame_id();
         self.reserve_mirror_generation(output, frame_id);
         let source = sophia_renderer_live::LiveSharedCpuBufferSource {
@@ -358,7 +378,9 @@ impl LiveProductionNativeScanout {
             generation: frame_id.raw(),
             bytes: std::sync::Arc::clone(&frame.frame.bytes),
         };
-        for (head_index, target) in heads.into_iter().zip(targets) {
+        for ((head_index, target), output_damage_snapshot) in
+            heads.into_iter().zip(targets).zip(projected_damage)
+        {
             let layer = sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu {
                 buffer: source.clone(),
                 placement: sophia_renderer_live::LiveCompositionPlacement {
@@ -371,7 +393,7 @@ impl LiveProductionNativeScanout {
             let (head, exporter) = self.head_and_exporter(head_index, output);
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
-            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
                 frame: frame_id,
                 checksum: frame.checksum,
@@ -379,7 +401,7 @@ impl LiveProductionNativeScanout {
             exporter.set_pending_mixed_frame(
                 sophia_renderer_live::LiveOwnedMixedCompositionFrame {
                     layers: vec![layer],
-                    output_damage_snapshot: None,
+                    output_damage_snapshot,
                 },
             );
         }
@@ -422,17 +444,40 @@ impl LiveProductionNativeScanout {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let projected_damage = heads
+            .iter()
+            .map(|head_index| {
+                frame
+                    .output_damage_snapshot
+                    .as_ref()
+                    .map(|snapshot| {
+                        project_mirror_output_damage_snapshot(
+                            snapshot,
+                            frame.frame.size,
+                            self.heads[*head_index].output,
+                            fit,
+                        )
+                    })
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let frame_id = self.allocate_frame_id();
-        for (head_index, projected) in heads.into_iter().zip(projected) {
+        for ((head_index, projected), output_damage_snapshot) in
+            heads.into_iter().zip(projected).zip(projected_damage)
+        {
             let (head, exporter) = self.head_and_exporter(head_index, output);
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
-            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
                 frame: frame_id,
                 checksum: frame.checksum,
             });
-            exporter.set_pending_cpu_frame_with_damage(projected, frame.checksum, None);
+            exporter.set_pending_cpu_frame_with_damage(
+                projected,
+                frame.checksum,
+                output_damage_snapshot,
+            );
         }
         Ok(frame_id)
     }
@@ -464,14 +509,13 @@ impl LiveProductionNativeScanout {
             return Ok(frame_id);
         }
         let source = self.heads[index].output.size;
-        let output_damage_snapshot = frame.output_damage_snapshot.clone();
         let projected = indices
             .iter()
             .map(|head_index| {
                 project_owned_mixed_frame(
                     &frame,
                     source,
-                    self.heads[*head_index].output.size,
+                    self.heads[*head_index].output,
                     self.mirror_fit,
                 )
             })
@@ -479,6 +523,7 @@ impl LiveProductionNativeScanout {
         let frame_id = self.allocate_frame_id();
         self.reserve_mirror_generation(output, frame_id);
         for (head_index, frame) in indices.into_iter().zip(projected) {
+            let output_damage_snapshot = frame.output_damage_snapshot.clone();
             if let Some(superseded) = self.heads[head_index].pending_content {
                 tracing::warn!(
                     "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=RetainedMixed",
@@ -494,7 +539,7 @@ impl LiveProductionNativeScanout {
                     nonzero_rgb_pixels: 0,
                 },
                 frame,
-                output_damage_snapshot.clone(),
+                output_damage_snapshot,
             );
         }
         Ok(frame_id)

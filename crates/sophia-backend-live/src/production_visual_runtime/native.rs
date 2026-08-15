@@ -5,6 +5,7 @@ pub enum LiveProductionNativeSuspendOutcome {
     #[default]
     Drained,
     ForcedDetachTimeout,
+    ForcedDetachDrainError,
     ForcedDetachRevoked,
 }
 
@@ -13,6 +14,7 @@ impl LiveProductionNativeSuspendOutcome {
         match self {
             Self::Drained => "drained",
             Self::ForcedDetachTimeout => "forced_detach_timeout",
+            Self::ForcedDetachDrainError => "forced_detach_drain_error",
             Self::ForcedDetachRevoked => "forced_detach_revoked",
         }
     }
@@ -27,6 +29,82 @@ pub struct LiveProductionNativeSuspendReport {
     pub outcome: LiveProductionNativeSuspendOutcome,
     pub abandoned_scanouts: usize,
     pub skipped_present: Option<TransactionId>,
+}
+
+#[derive(Debug)]
+pub struct LiveProductionNativeSuspendError {
+    pub drain_error: Box<dyn std::error::Error>,
+    pub detach_report: Option<LiveProductionNativeSuspendReport>,
+    pub detach_error: Option<Box<dyn std::error::Error>>,
+}
+
+impl LiveProductionNativeSuspendError {
+    pub const fn forced_detach_established(&self) -> bool {
+        self.detach_report.is_some()
+    }
+}
+
+impl std::fmt::Display for LiveProductionNativeSuspendError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "native scanout drain failed: {}",
+            self.drain_error
+        )?;
+        if let Some(report) = self.detach_report {
+            write!(
+                formatter,
+                "; forced detach completed: outcome={} abandoned_scanouts={} skipped_present={}",
+                report.outcome.reduced_name(),
+                report.abandoned_scanouts,
+                report.skipped_present.map_or_else(
+                    || "none".to_owned(),
+                    |transaction| transaction.raw().to_string()
+                )
+            )
+        } else if let Some(error) = self.detach_error.as_deref() {
+            write!(formatter, "; forced detach failed: {error}")
+        } else {
+            write!(formatter, "; forced detach outcome is unknown")
+        }
+    }
+}
+
+impl std::error::Error for LiveProductionNativeSuspendError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.drain_error.as_ref())
+    }
+}
+
+/// Complete a native suspension after its bounded drain attempt.
+///
+/// This seam keeps forced-detach ordering testable without constructing real
+/// DRM resources: every drain failure invokes `detach` before the original
+/// error is returned.
+pub fn finish_live_production_native_suspend(
+    drain: Result<bool, Box<dyn std::error::Error>>,
+    detach: impl FnOnce(
+        LiveProductionNativeSuspendOutcome,
+    ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>>,
+) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
+    match drain {
+        Ok(true) => detach(LiveProductionNativeSuspendOutcome::Drained),
+        Ok(false) => detach(LiveProductionNativeSuspendOutcome::ForcedDetachTimeout),
+        Err(drain_error) => {
+            match detach(LiveProductionNativeSuspendOutcome::ForcedDetachDrainError) {
+                Ok(detach_report) => Err(Box::new(LiveProductionNativeSuspendError {
+                    drain_error,
+                    detach_report: Some(detach_report),
+                    detach_error: None,
+                })),
+                Err(detach_error) => Err(Box::new(LiveProductionNativeSuspendError {
+                    drain_error,
+                    detach_report: None,
+                    detach_error: Some(detach_error),
+                })),
+            }
+        }
+    }
 }
 
 fn validate_renderer_image_resume_admission(
@@ -122,19 +200,10 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         timeout: Duration,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
-        if self.drain_native_scanout_until(native_scanout, timeout)? {
-            self.detach_native_scanout(
-                Some(native_scanout),
-                outputs,
-                LiveProductionNativeSuspendOutcome::Drained,
-            )
-        } else {
-            self.detach_native_scanout(
-                Some(native_scanout),
-                outputs,
-                LiveProductionNativeSuspendOutcome::ForcedDetachTimeout,
-            )
-        }
+        let drain = self.drain_native_scanout_until(native_scanout, timeout);
+        finish_live_production_native_suspend(drain, |outcome| {
+            self.detach_native_scanout(Some(native_scanout), outputs, outcome)
+        })
     }
 
     pub fn suspend_revoked_native_scanout(

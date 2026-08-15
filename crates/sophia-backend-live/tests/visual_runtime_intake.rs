@@ -2,11 +2,12 @@
 
 use sophia_backend_live::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveProductionCpuFrameQueueStatus,
-    LiveProductionMixedLayerSource, LiveProductionNativeSuspendOutcome,
+    LiveProductionMixedLayerSource, LiveProductionNativeSuspendError,
+    LiveProductionNativeSuspendOutcome, LiveProductionNativeSuspendReport,
     LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
-    LiveProductionVisualRuntime, live_production_mixed_layer_order,
-    live_production_projection_requires_gpu_scanout, live_production_should_preserve_gpu_output,
-    live_production_transactions_require_gpu_scanout,
+    LiveProductionVisualRuntime, finish_live_production_native_suspend,
+    live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
+    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
 };
@@ -15,7 +16,7 @@ use sophia_protocol::{
     AuthorityKind, BufferSource, OutputId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
-use std::time::Duration;
+use std::{cell::Cell, io, time::Duration};
 
 fn output() -> HeadlessOutput {
     HeadlessOutput {
@@ -160,6 +161,81 @@ fn forced_detach_counts_logical_and_physical_head_owners() {
         reduce_live_production_abandoned_scanout_count(usize::MAX, 1),
         usize::MAX
     );
+}
+
+fn native_drain_failure() -> Result<bool, Box<dyn std::error::Error>> {
+    Err(io::Error::other("original callback drain failure").into())
+}
+
+#[test]
+fn drain_failure_forces_detach_before_returning_original_error() {
+    let detached = Cell::new(None);
+
+    let error = finish_live_production_native_suspend(native_drain_failure(), |outcome| {
+        detached.set(Some(outcome));
+        Ok(LiveProductionNativeSuspendReport {
+            outcome,
+            abandoned_scanouts: 2,
+            skipped_present: None,
+        })
+    })
+    .expect_err("drain failure must remain fatal");
+
+    assert_eq!(
+        detached.get(),
+        Some(LiveProductionNativeSuspendOutcome::ForcedDetachDrainError)
+    );
+    let structured = error
+        .downcast_ref::<LiveProductionNativeSuspendError>()
+        .expect("drain failure should retain structured detach evidence");
+    assert!(structured.forced_detach_established());
+    assert_eq!(structured.detach_report.unwrap().abandoned_scanouts, 2);
+    assert_eq!(
+        structured
+            .drain_error
+            .downcast_ref::<io::Error>()
+            .expect("original drain error type must be retained")
+            .kind(),
+        io::ErrorKind::Other
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("original callback drain failure")
+    );
+    assert!(error.to_string().contains("abandoned_scanouts=2"));
+}
+
+#[test]
+fn drain_and_detach_failures_are_aggregated_without_losing_original_error() {
+    let detached = Cell::new(false);
+
+    let error = finish_live_production_native_suspend(native_drain_failure(), |_| {
+        detached.set(true);
+        Err(io::Error::other("physical owner detach failure").into())
+    })
+    .expect_err("both failures must remain fatal");
+
+    assert!(detached.get());
+    let structured = error
+        .downcast_ref::<LiveProductionNativeSuspendError>()
+        .expect("drain failure should retain structured detach evidence");
+    assert!(!structured.forced_detach_established());
+    assert_eq!(structured.detach_report, None);
+    assert!(
+        structured
+            .detach_error
+            .as_deref()
+            .and_then(|error| error.downcast_ref::<io::Error>())
+            .is_some(),
+        "detach failure type must be retained"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("original callback drain failure")
+    );
+    assert!(error.to_string().contains("physical owner detach failure"));
 }
 
 #[test]

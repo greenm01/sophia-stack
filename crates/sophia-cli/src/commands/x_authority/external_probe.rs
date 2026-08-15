@@ -68,8 +68,7 @@ fn run_x_authority_external_probe_smoke(
     let (sender, receiver) = sync_channel(4_096);
     let mut server_config = XServerFrontendConfig::new(&server_path, namespace)?;
     if label == "kitty" {
-        server_config =
-            server_config.with_output_topology(two_output_external_probe_topology())?;
+        server_config = server_config.with_output_topology(two_output_external_probe_topology())?;
     }
     if let Some(provider) = render_device_provider {
         server_config = server_config.with_render_device_provider(provider);
@@ -107,15 +106,34 @@ fn run_x_authority_external_probe_smoke(
                     }
                 }
                 if let Some(response) = &trace.result.response
-                    && !response.transactions.is_empty() {
-                        let _ = sender.try_send(ExternalProbeObservation::Transactions(
-                            response.transactions.clone(),
-                        ));
-                    }
-                if let Some(buffer) = trace.cpu_buffer_update {
+                    && !response.transactions.is_empty()
+                {
+                    let _ = sender.try_send(ExternalProbeObservation::Transactions(
+                        response.transactions.clone(),
+                    ));
+                }
+                if let Some(buffer) = &trace.cpu_buffer_update {
                     let _ =
                         sender.try_send(ExternalProbeObservation::CpuBufferUpdate(buffer.clone()));
                 }
+                let _ = sender.try_send(ExternalProbeObservation::RequestProof(
+                    ExternalProbeRequestProof {
+                        opcode: trace.major_opcode,
+                        transactions: trace
+                            .result
+                            .response
+                            .as_ref()
+                            .map(|response| response.transactions.clone())
+                            .unwrap_or_default(),
+                        removed_surfaces: trace
+                            .result
+                            .response
+                            .as_ref()
+                            .map(|response| response.removed_surfaces.clone())
+                            .unwrap_or_default(),
+                        cpu_buffer_handle: trace.cpu_buffer_update.as_ref().map(|update| update.handle()),
+                    },
+                ));
                 Ok(())
             },
         )
@@ -167,6 +185,8 @@ fn run_x_authority_external_probe_smoke(
     let mut cpu_buffer_updates = 0usize;
     let mut first_error = None;
     let mut opcodes = std::collections::BTreeSet::new();
+    let mut request_proofs = Vec::new();
+    let mut fixed_text_scroll_proved = false;
     let mut details = std::collections::BTreeSet::new();
     let mut requests = 0usize;
     let minimum_transactions = if label == "xmobar" { 6 } else { 1 };
@@ -189,6 +209,7 @@ fn run_x_authority_external_probe_smoke(
                 ExternalProbeObservation::Error(error) => {
                     first_error.get_or_insert(error);
                 }
+                ExternalProbeObservation::RequestProof(proof) => request_proofs.push(proof),
             }
         }
         let pixel_proof_ready = match pixel_proof {
@@ -200,11 +221,17 @@ fn run_x_authority_external_probe_smoke(
             ExternalProbePixelProof::Nonzero => cpu_buffers
                 .values()
                 .any(|buffer| buffer.bytes.iter().any(|byte| *byte != 0)),
-            ExternalProbePixelProof::Ascii(marker) => {
-                cpu_buffers_contain_fixed_text(&cpu_buffers, marker)
+            ExternalProbePixelProof::Fixed6x13WhiteOnBlack(marker) => {
+                latest_transaction_cpu_buffer(&transactions, &cpu_buffers).is_some_and(|buffer| {
+                    cpu_buffer_contains_fixed_text(buffer, marker, Some((0x00ff_ffff, 0)))
+                })
             }
         };
-        if transactions.len() >= minimum_transactions && pixel_proof_ready {
+        fixed_text_scroll_proved |=
+            label == "xterm_render" && fixed_text_scroll_proof(&request_proofs, &cpu_buffers);
+        let required_opcodes_ready = label != "xterm_render" || fixed_text_scroll_proved;
+        if transactions.len() >= minimum_transactions && pixel_proof_ready && required_opcodes_ready
+        {
             break;
         }
         if child.try_wait()?.is_some() {
@@ -255,9 +282,12 @@ fn run_x_authority_external_probe_smoke(
             ExternalProbeObservation::Error(error) => {
                 first_error.get_or_insert(error);
             }
+            ExternalProbeObservation::RequestProof(proof) => request_proofs.push(proof),
         }
     }
 
+    fixed_text_scroll_proved |=
+        label == "xterm_render" && fixed_text_scroll_proof(&request_proofs, &cpu_buffers);
     let opcode_count = opcodes.len();
     let opcodes = opcodes
         .iter()
@@ -341,7 +371,8 @@ fn run_x_authority_external_probe_smoke(
         .flat_map(|buffer| buffer.bytes.iter())
         .filter(|byte| **byte != 0)
         .count();
-    let ascii_marker_match = cpu_buffers_contain_fixed_text(&cpu_buffers, b"Sophia");
+    let ascii_marker_match = latest_transaction_cpu_buffer(&transactions, &cpu_buffers)
+        .is_some_and(|buffer| cpu_buffer_contains_fixed_text(buffer, b"Sophia", None));
     let pixel_proof_passed = match pixel_proof {
         ExternalProbePixelProof::None => true,
         ExternalProbePixelProof::Nonzero if label == "xmobar" => {
@@ -349,13 +380,21 @@ fn run_x_authority_external_probe_smoke(
                 .is_some_and(|buffer| buffer.bytes.iter().any(|byte| *byte != 0))
         }
         ExternalProbePixelProof::Nonzero => nonzero_pixel_bytes != 0,
-        ExternalProbePixelProof::Ascii(marker) => {
-            cpu_buffers_contain_fixed_text(&cpu_buffers, marker)
+        ExternalProbePixelProof::Fixed6x13WhiteOnBlack(marker) => {
+            latest_transaction_cpu_buffer(&transactions, &cpu_buffers).is_some_and(|buffer| {
+                cpu_buffer_contains_fixed_text(buffer, marker, Some((0x00ff_ffff, 0)))
+            })
         }
     };
     if !pixel_proof_passed {
         return Err(format!(
             "{label} did not satisfy its pixel proof for {display}: requests={requests} opcodes={opcodes} details={details}"
+        )
+        .into());
+    }
+    if label == "xterm_render" && !fixed_text_scroll_proved {
+        return Err(format!(
+            "{label} did not prove current-surface fixed-text scrolling for {display}: required=ImageText8->CopyArea->ImageText8+rows09-12 observed={opcodes}"
         )
         .into());
     }
@@ -455,26 +494,147 @@ fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapsh
     }
 }
 
-fn cpu_buffers_contain_fixed_text(
+fn fixed_text_scroll_proof(
+    requests: &[ExternalProbeRequestProof],
     buffers: &std::collections::BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
-    text: &[u8],
 ) -> bool {
-    buffers.values().any(|buffer| {
-        let Ok(width) = usize::try_from(buffer.size.width) else {
-            return false;
-        };
-        let Ok(height) = usize::try_from(buffer.size.height) else {
-            return false;
-        };
-        let Some(text_width) = text.len().checked_mul(8) else {
-            return false;
-        };
-        if width < text_width || height < 12 {
+    let rows = [
+        b"SophiaMirror09".as_slice(),
+        b"SophiaMirror10".as_slice(),
+        b"SophiaMirror11".as_slice(),
+        b"SophiaMirror12".as_slice(),
+    ];
+    let mut current = std::collections::BTreeMap::new();
+    for request in requests {
+        for surface in &request.removed_surfaces {
+            current.remove(surface);
+        }
+        for transaction in &request.transactions {
+            current.insert(transaction.surface, transaction);
+        }
+    }
+    current.into_iter().any(|(surface, transaction)| {
+        if transaction.target_geometry.width <= 0 || transaction.target_geometry.height <= 0 {
             return false;
         }
-        (0..=height - 12).any(|top| {
-            (0..=width - text_width).any(|left| fixed_text_matches_at(buffer, left, top, text))
+        let BufferSource::CpuBuffer { handle } = transaction.target_buffer else {
+            return false;
+        };
+        buffers.get(&handle).is_some_and(|buffer| {
+            let rows_match =
+                fixed_text_rows_match_adjacent(buffer, &rows, Some((0x00ff_ffff, 0)));
+            let causal_requests = request_proves_scrolling_surface(requests, surface);
+            tracing::debug!(
+                target: "sophia_xterm_render_proof",
+                surface = ?surface,
+                handle,
+                rows_match,
+                causal_requests,
+                "evaluated current fixed-text scroll candidate"
+            );
+            rows_match && causal_requests
         })
+    })
+}
+
+fn request_proves_scrolling_surface(
+    requests: &[ExternalProbeRequestProof],
+    surface: sophia_protocol::SurfaceId,
+) -> bool {
+    let mut stage = 0u8;
+    for request in requests {
+        let updates_surface = request.cpu_buffer_handle.is_some_and(|handle| {
+            request.transactions.iter().any(|transaction| {
+                transaction.surface == surface
+                    && transaction.target_buffer == BufferSource::CpuBuffer { handle }
+            })
+        });
+        if !updates_surface {
+            continue;
+        }
+        tracing::debug!(
+            target: "sophia_xterm_render_proof",
+            surface = ?surface,
+            opcode = request.opcode,
+            stage,
+            handle = ?request.cpu_buffer_handle,
+            "accepted same-surface CPU drawing request"
+        );
+        stage = match (stage, request.opcode) {
+            (0, 76) => 1,
+            (1, 62) => 2,
+            (2, 76) => 3,
+            (current, _) => current,
+        };
+    }
+    stage == 3
+}
+
+fn fixed_text_rows_match_adjacent(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    rows: &[&[u8]],
+    expected_colors: Option<(u32, u32)>,
+) -> bool {
+    if rows.is_empty() || rows.iter().any(|row| row.is_empty()) {
+        return false;
+    }
+    let Ok(width) = usize::try_from(buffer.size.width) else {
+        return false;
+    };
+    let Ok(height) = usize::try_from(buffer.size.height) else {
+        return false;
+    };
+    let Some(max_text_width) = rows
+        .iter()
+        .filter_map(|row| row.len().checked_mul(6))
+        .max()
+    else {
+        return false;
+    };
+    let Some(rows_height) = rows.len().checked_mul(13) else {
+        return false;
+    };
+    if width < max_text_width || height < rows_height {
+        return false;
+    }
+    (0..=height - rows_height).any(|top| {
+        (0..=width - max_text_width).any(|left| {
+            rows.iter().enumerate().all(|(index, row)| {
+                fixed_text_matches_at(
+                    buffer,
+                    left,
+                    top + index * 13,
+                    row,
+                    expected_colors,
+                )
+            })
+        })
+    })
+}
+
+fn cpu_buffer_contains_fixed_text(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    text: &[u8],
+    expected_colors: Option<(u32, u32)>,
+) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    let Ok(width) = usize::try_from(buffer.size.width) else {
+        return false;
+    };
+    let Ok(height) = usize::try_from(buffer.size.height) else {
+        return false;
+    };
+    let Some(text_width) = text.len().checked_mul(6) else {
+        return false;
+    };
+    if width < text_width || height < 13 {
+        return false;
+    }
+    (0..=height - 13).any(|top| {
+        (0..=width - text_width)
+            .any(|left| fixed_text_matches_at(buffer, left, top, text, expected_colors))
     })
 }
 
@@ -483,42 +643,48 @@ fn fixed_text_matches_at(
     left: usize,
     top: usize,
     text: &[u8],
+    expected_colors: Option<(u32, u32)>,
 ) -> bool {
     let Some(background) = xrgb_pixel(buffer, left, top) else {
         return false;
     };
     let first_rows = x_fixed_glyph_rows(text[0]);
     let Some((first_row, first_column)) = first_rows.iter().enumerate().find_map(|(row, bits)| {
-        (0..5)
-            .find(|column| bits & (1 << (4 - column)) != 0)
+        (0..6)
+            .find(|column| bits & (1 << (5 - column)) != 0)
             .map(|column| (row, column))
     }) else {
         return false;
     };
     let Some(foreground) = xrgb_pixel(
         buffer,
-        left.saturating_add(first_column + 1),
-        top.saturating_add(first_row + 2),
+        left.saturating_add(first_column),
+        top.saturating_add(first_row),
     ) else {
         return false;
     };
     if foreground == background {
         return false;
     }
+    if let Some((expected_foreground, expected_background)) = expected_colors
+        && (foreground != expected_foreground || background != expected_background)
+    {
+        return false;
+    }
     for (index, byte) in text.iter().copied().enumerate() {
         let rows = x_fixed_glyph_rows(byte);
-        let cell_left = left.saturating_add(index.saturating_mul(8));
+        let cell_left = left.saturating_add(index.saturating_mul(6));
         for (row, bits) in rows.into_iter().enumerate() {
-            for column in 0..5 {
-                let expected = if bits & (1 << (4 - column)) != 0 {
+            for column in 0..6 {
+                let expected = if bits & (1 << (5 - column)) != 0 {
                     foreground
                 } else {
                     background
                 };
                 if xrgb_pixel(
                     buffer,
-                    cell_left.saturating_add(column + 1),
-                    top.saturating_add(row + 2),
+                    cell_left.saturating_add(column),
+                    top.saturating_add(row),
                 ) != Some(expected)
                 {
                     return false;
@@ -548,4 +714,17 @@ enum ExternalProbeObservation {
     CpuBufferUpdate(XAuthorityCpuBufferUpdate),
     Detail(String),
     Error(String),
+    RequestProof(ExternalProbeRequestProof),
 }
+
+#[derive(Clone, Debug)]
+struct ExternalProbeRequestProof {
+    opcode: u8,
+    transactions: Vec<SurfaceTransaction>,
+    removed_surfaces: Vec<sophia_protocol::SurfaceId>,
+    cpu_buffer_handle: Option<u64>,
+}
+
+#[cfg(test)]
+#[path = "../../../tests/support/external_probe_fixed_text.rs"]
+mod external_probe_fixed_text_tests;

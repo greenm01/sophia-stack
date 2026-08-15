@@ -285,4 +285,7 @@ fn shutdown_drain_keeps_logical_frame_after_primary_flips_before_sibling() {
         LiveProductionMirrorHeadTransition::GroupReady
     );
     assert_eq!(group.logically_submitted_frame(), None);
+    assert_eq!(group.active_frame(), None);
+    assert_eq!(group.completed_frame(), Some(frame));
+    assert!(!group.failed());
 }

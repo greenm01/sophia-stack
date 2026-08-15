@@ -14,7 +14,7 @@ use crate::{
     ClipboardSourcePayload, ClipboardTextProperty, PendingClipboardSelection, X_ATOM_ATOM,
     X_ATOM_NONE, XAtomTable, XAuthorityCpuBufferUpdate, XAuthorityPortalCommand,
     XAuthorityRequestKind, XAuthorityRequestPacket, XAuthorityResponsePacket,
-    XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder, XDrawingUpdate,
+    XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder, XDrawingUpdate, XFontFace,
     XGraphicsContextTable, XGraphicsContextValues, XPoint, XPropertyChange, XPropertyMode,
     XPropertyTable, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
     XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
@@ -64,6 +64,11 @@ struct XPixmapRecord {
     depth: u8,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct XFontRecord {
+    face: XFontFace,
+}
+
 #[derive(Debug)]
 pub struct XAuthorityRuntime {
     resources: XResourceTable,
@@ -76,6 +81,7 @@ pub struct XAuthorityRuntime {
     next_clipboard_proxy: u32,
     software_buffers: XSoftwareBufferStore,
     pixmaps: BTreeMap<crate::XResourceId, XPixmapRecord>,
+    fonts: BTreeMap<crate::XResourceId, XFontRecord>,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ReadOnlyMapping>>,
     dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
@@ -111,6 +117,7 @@ impl Default for XAuthorityRuntime {
             next_clipboard_proxy: 0,
             software_buffers: Default::default(),
             pixmaps: Default::default(),
+            fonts: Default::default(),
             shm_pixmaps: Default::default(),
             shm_mappings: Default::default(),
             dri3_pixmaps: Default::default(),

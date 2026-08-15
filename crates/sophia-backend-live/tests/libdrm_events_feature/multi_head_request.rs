@@ -33,6 +33,335 @@ fn scanout_size(width: i32, height: i32) -> Size {
 }
 
 #[test]
+fn mirror_damage_projection_preserves_identity_and_targets_each_head() {
+    use sophia_engine::{
+        CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
+        CompositorRgb8, HeadlessOutput, OutputFrameDamageSnapshot,
+        OutputFramePresentationState, OutputFrameSurfaceState, SurfaceChromeRole,
+    };
+
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(7, 3);
+    let source = scanout_size(2560, 1440);
+    let destination = HeadlessOutput {
+        id: output,
+        size: scanout_size(1920, 1200),
+        scale: 2,
+    };
+    let snapshot = OutputFrameDamageSnapshot {
+        output: HeadlessOutput {
+            id: output,
+            size: source,
+            scale: 1,
+        },
+        surfaces: vec![OutputFrameSurfaceState {
+            surface,
+            committed_generation: 11,
+            geometry: Rect {
+                x: 128,
+                y: 72,
+                width: 640,
+                height: 360,
+            },
+            buffer: BufferSource::CpuBuffer { handle: 0x77 },
+        }],
+        compositor_display_list: CompositorDisplayList {
+            output,
+            commands: vec![
+                CompositorDisplayCommand::Border(CompositorBorder {
+                    node: CompositorNodeId::SurfaceChrome {
+                        surface,
+                        role: SurfaceChromeRole::FocusRing,
+                    },
+                    generation: 13,
+                    outer: Rect {
+                        x: 120,
+                        y: 64,
+                        width: 656,
+                        height: 376,
+                    },
+                    inner: Rect {
+                        x: 128,
+                        y: 72,
+                        width: 640,
+                        height: 360,
+                    },
+                    color: CompositorRgb8 {
+                        red: 0x70,
+                        green: 0xb7,
+                        blue: 0xff,
+                    },
+                }),
+                CompositorDisplayCommand::Surface { surface },
+            ],
+        },
+        software_cursor: Some(Rect {
+            x: 2400,
+            y: 1280,
+            width: 32,
+            height: 32,
+        }),
+    };
+
+    let projected = project_mirror_output_damage_snapshot(
+        &snapshot,
+        source,
+        destination,
+        NativeMirrorFit::Fit,
+    )
+    .expect("valid per-head damage should project");
+
+    assert_eq!(projected.output, destination);
+    assert_eq!(projected.surfaces[0].surface, surface);
+    assert_eq!(projected.surfaces[0].committed_generation, 11);
+    assert_eq!(projected.surfaces[0].buffer, snapshot.surfaces[0].buffer);
+    assert_eq!(
+        projected.surfaces[0].geometry,
+        Rect {
+            x: 96,
+            y: 114,
+            width: 480,
+            height: 270,
+        }
+    );
+    let CompositorDisplayCommand::Border(border) = projected.compositor_display_list.commands[0]
+    else {
+        panic!("the projected display list should preserve command order");
+    };
+    assert_eq!(border.node, snapshot_border(&snapshot).node);
+    assert_eq!(border.generation, 13);
+    assert_eq!(
+        border.outer,
+        Rect {
+            x: 90,
+            y: 108,
+            width: 492,
+            height: 282,
+        }
+    );
+    assert_eq!(border.inner, projected.surfaces[0].geometry);
+    assert_eq!(
+        projected.software_cursor,
+        Some(Rect {
+            x: 1800,
+            y: 1020,
+            width: 24,
+            height: 24,
+        })
+    );
+
+    let mut presentation = OutputFramePresentationState::new(destination).unwrap();
+    let queued = presentation
+        .queue(projected)
+        .expect("the destination head must accept its projected snapshot");
+    assert_eq!(queued.snapshot.output, destination);
+}
+
+fn snapshot_border(
+    snapshot: &sophia_engine::OutputFrameDamageSnapshot,
+) -> sophia_engine::CompositorBorder {
+    let sophia_engine::CompositorDisplayCommand::Border(border) =
+        snapshot.compositor_display_list.commands[0]
+    else {
+        panic!("fixture should start with a border");
+    };
+    border
+}
+
+fn mirror_projection_snapshot(
+    source: Size,
+    geometry: Rect,
+) -> sophia_engine::OutputFrameDamageSnapshot {
+    use sophia_engine::{
+        CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
+        CompositorRgb8, HeadlessOutput, OutputFrameDamageSnapshot, OutputFrameSurfaceState,
+        SurfaceChromeRole,
+    };
+
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(9, 2);
+    OutputFrameDamageSnapshot {
+        output: HeadlessOutput {
+            id: output,
+            size: source,
+            scale: 1,
+        },
+        surfaces: vec![OutputFrameSurfaceState {
+            surface,
+            committed_generation: 5,
+            geometry,
+            buffer: BufferSource::CpuBuffer { handle: 0x99 },
+        }],
+        compositor_display_list: CompositorDisplayList {
+            output,
+            commands: vec![CompositorDisplayCommand::Border(CompositorBorder {
+                node: CompositorNodeId::SurfaceChrome {
+                    surface,
+                    role: SurfaceChromeRole::Frame,
+                },
+                generation: 6,
+                outer: geometry,
+                inner: geometry,
+                color: CompositorRgb8 {
+                    red: 255,
+                    green: 255,
+                    blue: 255,
+                },
+            })],
+        },
+        software_cursor: Some(geometry),
+    }
+}
+
+#[test]
+fn mirror_damage_cover_projection_preserves_the_negative_crop_origin() {
+    use sophia_engine::HeadlessOutput;
+
+    let source = scanout_size(4, 3);
+    let snapshot = mirror_projection_snapshot(
+        source,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 3,
+        },
+    );
+    let projected = project_mirror_output_damage_snapshot(
+        &snapshot,
+        source,
+        HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: scanout_size(16, 9),
+            scale: 1,
+        },
+        NativeMirrorFit::Cover,
+    )
+    .unwrap();
+    let crop = Rect {
+        x: 0,
+        y: -1,
+        width: 16,
+        height: 12,
+    };
+
+    assert_eq!(projected.surfaces[0].geometry, crop);
+    assert_eq!(projected.software_cursor, Some(crop));
+    assert_eq!(snapshot_border(&projected).outer, crop);
+    assert_eq!(snapshot_border(&projected).inner, crop);
+}
+
+#[test]
+fn mirror_damage_exact_projection_preserves_both_crop_origins() {
+    use sophia_engine::HeadlessOutput;
+
+    let source = scanout_size(20, 10);
+    let snapshot = mirror_projection_snapshot(
+        source,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 10,
+        },
+    );
+    let projected = project_mirror_output_damage_snapshot(
+        &snapshot,
+        source,
+        HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: scanout_size(8, 6),
+            scale: 1,
+        },
+        NativeMirrorFit::Exact,
+    )
+    .unwrap();
+
+    assert_eq!(
+        projected.surfaces[0].geometry,
+        Rect {
+            x: -6,
+            y: -2,
+            width: 20,
+            height: 10,
+        }
+    );
+}
+
+#[test]
+fn mirror_damage_projection_keeps_tiny_rectangles_that_round_to_zero() {
+    use sophia_engine::HeadlessOutput;
+
+    let source = scanout_size(100, 100);
+    let snapshot = mirror_projection_snapshot(
+        source,
+        Rect {
+            x: 1,
+            y: 1,
+            width: 1,
+            height: 1,
+        },
+    );
+    let projected = project_mirror_output_damage_snapshot(
+        &snapshot,
+        source,
+        HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: scanout_size(1, 1),
+            scale: 1,
+        },
+        NativeMirrorFit::Fit,
+    )
+    .unwrap();
+    let rounded = Rect {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+    };
+
+    assert_eq!(projected.surfaces[0].geometry, rounded);
+    assert_eq!(projected.software_cursor, Some(rounded));
+    assert_eq!(snapshot_border(&projected).outer, rounded);
+    assert_eq!(snapshot_border(&projected).inner, rounded);
+}
+
+#[test]
+fn invalid_mirror_damage_projection_fails_before_changing_the_snapshot() {
+    use sophia_engine::{CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot};
+
+    let output = OutputId::from_raw(1);
+    let source = scanout_size(2560, 1440);
+    let snapshot = OutputFrameDamageSnapshot {
+        output: HeadlessOutput {
+            id: output,
+            size: source,
+            scale: 1,
+        },
+        surfaces: Vec::new(),
+        compositor_display_list: CompositorDisplayList::empty(output),
+        software_cursor: None,
+    };
+    let original = snapshot.clone();
+    let wrong_source = scanout_size(1920, 1080);
+
+    assert!(
+        project_mirror_output_damage_snapshot(
+            &snapshot,
+            wrong_source,
+            HeadlessOutput {
+                id: output,
+                size: scanout_size(1920, 1080),
+                scale: 1,
+            },
+            NativeMirrorFit::Fit,
+        )
+        .is_err()
+    );
+    assert_eq!(snapshot, original);
+}
+
+#[test]
 fn independent_heads_combine_into_one_atomic_request() {
     let first = head(21, 41, 51, 61, scanout_size(1920, 1080));
     let second = head(22, 42, 52, 62, scanout_size(2560, 1440));

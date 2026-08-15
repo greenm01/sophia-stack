@@ -8,6 +8,7 @@ impl XAuthorityRuntime {
              u32::try_from(resource.local.raw()),
              Ok(crate::X_SETUP_DEFAULT_ROOT | crate::X_SETUP_DEFAULT_COLORMAP)
          ) || self.resources.get(resource).is_some()
+             || self.graphics_contexts.contains(resource)
      }
  
      pub fn window_count(&self) -> usize {

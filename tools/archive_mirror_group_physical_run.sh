@@ -17,6 +17,10 @@ recorded_profile_sha256="$(sed -n 's/.* profile_sha256=\([0-9a-f]\{64\}\)$/\1/p'
     echo "mirror-group evidence has an invalid source commit" >&2
     exit 1
 }
+git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
+    echo "mirror-group evidence source commit does not have a valid signature" >&2
+    exit 1
+}
 for file in "$sophia_bin" "$profile"; do
     [[ -r "$file" ]] || { echo "mirror-group archive input is unavailable: $file" >&2; exit 1; }
 done

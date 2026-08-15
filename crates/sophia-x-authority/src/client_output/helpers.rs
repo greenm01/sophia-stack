@@ -17,16 +17,16 @@ fn encode_font_info_reply(
     out[1] = u8::try_from(name.len()).unwrap_or(0);
     // min_bounds charinfo
     put_i16(byte_order, &mut out[8..10], 0);
-    put_i16(byte_order, &mut out[10..12], 8);
-    put_i16(byte_order, &mut out[12..14], 8);
-    put_i16(byte_order, &mut out[14..16], 8);
+    put_i16(byte_order, &mut out[10..12], 6);
+    put_i16(byte_order, &mut out[12..14], 6);
+    put_i16(byte_order, &mut out[14..16], 11);
     put_i16(byte_order, &mut out[16..18], 2);
     put_u16(byte_order, &mut out[18..20], 0);
     // max_bounds charinfo
     put_i16(byte_order, &mut out[24..26], 0);
-    put_i16(byte_order, &mut out[26..28], 8);
-    put_i16(byte_order, &mut out[28..30], 8);
-    put_i16(byte_order, &mut out[30..32], 8);
+    put_i16(byte_order, &mut out[26..28], 6);
+    put_i16(byte_order, &mut out[28..30], 6);
+    put_i16(byte_order, &mut out[30..32], 11);
     put_i16(byte_order, &mut out[32..34], 2);
     put_u16(byte_order, &mut out[34..36], 0);
     put_u16(byte_order, &mut out[40..42], 0);

@@ -1934,10 +1934,19 @@ The two-head mirror gate is a separate destructive TTY4 proof:
 tools/run_mirror_group_gate_tty4.sh
 ```
 
+The runner refuses a dirty worktree or a HEAD without a valid cryptographic
+commit signature before it builds. It pins xterm to the `6x13` face with white
+text on black, scrolls 40 deterministic mixed-case rows, and leaves the exact
+`Sophia Mirror AaZz 0123456789` marker visible for comparison on both heads.
+Acceptance means identical logical content and letter case with stable
+legibility on each native per-head projection; different physical modes do not
+and cannot produce pixel-identical glyph rasters. The runner rechecks the clean,
+signed source identity after compilation, and promotion archive verification
+revalidates the recorded commit signature.
 Only a status-zero session followed by the operator's exact `yes` pixel
-confirmation enters
+confirmation and successful candidate verification enters
 `$XDG_STATE_HOME/sophia/promotion/mirror-group-runs/`. A failed runtime or
-rejected visual confirmation instead enters
+rejected visual confirmation or evidence verification instead enters
 `$XDG_STATE_HOME/sophia/diagnostics/mirror-group-runs/`; it cannot satisfy the
 physical promotion verifier. The diagnostic record pins the source commit,
 binary, and profile, and records the failure stage, process exit, derived
@@ -1950,7 +1959,12 @@ bound only with `SOPHIA_MIRROR_KERNEL_MAX_LINES` between 1 and 4096.
 Passing evidence must also contain one common logical frame with connector-specific
 `submitted`, `callback_accepted`, and `retired` records for both DP-1 and DP-2.
 Positive aggregate counters alone are insufficient: they can describe unrelated
-head generations and therefore do not prove a mirror join.
+head generations and therefore do not prove a mirror join. That same frame must
+have exactly one positive `sophia_live_mirror_head_damage` record per connector
+in the connector's physical mode; any `OutputMismatch` damage rejection fails
+the proof. Causal no-op generations with `mode=skip` do not mask a later valid
+projected generation. The runner verifies this candidate before it appends the
+sole `status=passed` promotion result.
 
 Run the opt-in local hardware smoke only when you want real render-node
 coverage:

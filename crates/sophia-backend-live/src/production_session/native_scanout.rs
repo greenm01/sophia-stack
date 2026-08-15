@@ -12,7 +12,8 @@ mod persistent_native_scanout {
     mod output_capabilities;
     mod renderer_images;
     mod state;
-    use frame_damage::trace_presented_output_damage;
+    pub use frame_damage::project_mirror_output_damage_snapshot;
+    use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
     use renderer_images::LiveProductionDeferredMirrorHeadFrame;
     pub use renderer_images::LiveProductionRendererImageHandoff;
     pub use state::*;
@@ -87,6 +88,13 @@ mod persistent_native_scanout {
         pub session: crate::RealAtomicScanoutPageFlipSession,
         pub sender: SyncSender<crate::LivePageFlipCallback>,
         pub receiver: Receiver<crate::LivePageFlipCallback>,
+    }
+
+    struct LiveProductionMirrorRetirementReport {
+        page_flip_callbacks: crate::LivePageFlipCallbackQueueReport,
+        completed_retire: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireReport>,
+        completed_serial: Option<u64>,
+        errors: Vec<String>,
     }
 
     pub struct LiveProductionNativeHead {
@@ -864,45 +872,52 @@ mod persistent_native_scanout {
             Ok(report)
         }
 
-        fn run_mirror_group_tick(
+        fn service_mirror_group_retirement(
             &mut self,
             output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
-            input: CompositorBackendTickInput,
-        ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        ) -> LiveProductionMirrorRetirementReport {
             let indices = self.head_indices(output);
-            self.ensure_page_flip_progress()?;
-            if indices.is_empty() {
-                return Err("mirror group has no head".into());
-            }
+            let mut errors = Vec::new();
             let groups = indices
                 .iter()
                 .map(|index| self.heads[*index].group)
                 .collect::<BTreeSet<_>>();
             for group in groups {
-                self.poll_group_callbacks(group)?;
+                if let Err(error) = self.poll_group_callbacks(group) {
+                    errors.push(format!("mirror callback collection failed: {error}"));
+                }
             }
 
-            // Admit physical callbacks before the logical tick, but leave the
-            // logical page-flip event untouched until the group join below.
-            // `runtime.run_tick` then sees an empty queue and cannot expose a
-            // partially flipped mirror group to the Engine.
+            // Admit physical callbacks without publishing a per-head logical
+            // page flip. The group lifecycle below joins all required heads.
             let page_flip_callbacks = runtime.drain_mirror_page_flip_callback_queue();
-            // Advance the logical Engine exactly once. Physical render/export/KMS
-            // owners are serviced below without re-running authority or scene work.
-            let mut tick = runtime.run_tick(input)?;
-            tick.page_flip_callbacks = page_flip_callbacks;
-            let callbacks = tick.page_flip_callbacks.accepted_callbacks.clone();
+            self.callback_rejected = self.callback_rejected.saturating_add(
+                page_flip_callbacks.rejected_unexpected_output
+                    + page_flip_callbacks.rejected_stale_frame_serial,
+            );
+            self.callback_queue_saturated = self
+                .callback_queue_saturated
+                .saturating_add(usize::from(page_flip_callbacks.max_reached));
+
             let mut completed_retire = None;
             let mut completed_serial = None;
-            for callback in callbacks {
+            for callback in page_flip_callbacks.accepted_callbacks.iter().copied() {
                 let Some(head_index) =
                     self.head_index_for_output_connector_id(output, callback.connector_id)
                 else {
                     self.callback_rejected = self.callback_rejected.saturating_add(1);
+                    errors.push(format!(
+                        "mirror callback referenced unknown connector {}",
+                        callback.connector_id
+                    ));
                     continue;
                 };
                 let Some(submission) = self.heads[head_index].scanout_submission.take() else {
+                    errors.push(format!(
+                        "mirror connector {} callback has no physical submission",
+                        callback.connector_id
+                    ));
                     continue;
                 };
                 if self.heads[head_index]
@@ -959,10 +974,7 @@ mod persistent_native_scanout {
                             });
                     }
                 }
-                let frame = self.heads[head_index]
-                    .submitted_group_frame
-                    .take()
-                    .ok_or("mirror head callback has no logical generation")?;
+                let frame = self.heads[head_index].submitted_group_frame.take();
                 self.heads[head_index].submitted_at = None;
                 self.heads[head_index].scanout_in_flight_ticks = 0;
                 self.heads[head_index].retirements =
@@ -980,6 +992,13 @@ mod persistent_native_scanout {
                 if let Some(submission) = self.heads[head_index].submitted_sequence.take() {
                     self.heads[head_index].presented_submissions = submission;
                 }
+                let Some(frame) = frame else {
+                    errors.push(format!(
+                        "mirror connector {} callback has no logical generation",
+                        callback.connector_id
+                    ));
+                    continue;
+                };
                 tracing::info!(
                     "sophia_live_native_head_page_flip schema=1 status=callback_accepted output={} connector_id={} callbacks=1 kernel_sequence={} frame={}",
                     output.raw(),
@@ -1006,16 +1025,26 @@ mod persistent_native_scanout {
                     .get_mut(&output)
                     .expect("mirror output has a lifecycle");
                 if !lifecycle.observe_flip_timing(frame, callback.frame_serial, callback_ust) {
-                    return Err("mirror callback timing named the wrong generation".into());
+                    errors.push(format!(
+                        "mirror connector {} callback timing named the wrong generation",
+                        callback.connector_id
+                    ));
+                    continue;
                 }
                 let transition = lifecycle.mark_flipped(callback.connector_id, frame);
                 match transition {
                     LiveProductionMirrorHeadTransition::GroupReady => {
-                        let (logical_serial, logical_ust) = self
+                        let Some((logical_serial, logical_ust)) = self
                             .output_lifecycles
                             .get(&output)
                             .and_then(LiveProductionMirrorGroupLifecycle::flip_timing)
-                            .ok_or("completed mirror generation has no timing evidence")?;
+                        else {
+                            errors.push(
+                                "completed mirror generation has no timing evidence".to_owned(),
+                            );
+                            continue;
+                        };
+                        let mut joined = true;
                         if let Err(error) = self.production_page_flips.observe_page_flip(
                             output,
                             logical_serial,
@@ -1024,58 +1053,61 @@ mod persistent_native_scanout {
                         ) {
                             self.page_flip_phase_rejections =
                                 self.page_flip_phase_rejections.saturating_add(1);
-                            return Err(format!(
+                            errors.push(format!(
                                 "mirror logical page-flip retirement was rejected: {error:?}"
-                            )
-                            .into());
+                            ));
+                            joined = false;
                         }
                         // Physical heads may flip in either order, but the
                         // logical scene becomes presented only after the join.
                         for joined_index in self.head_indices(output) {
-                            if self.heads[joined_index].output_frames.submitted().is_some() {
-                                let presented = self.heads[joined_index]
-                                    .output_frames
-                                    .mark_presented()
-                                    .map_err(|error| {
-                                        format!(
-                                            "mirror display-list presentation transition failed: {error}"
-                                        )
-                                    })?;
-                                trace_presented_output_damage(
-                                    "presented",
-                                    self.heads[joined_index].output.id,
-                                    &presented,
-                                );
+                            if self.heads[joined_index].output_frames.submitted().is_none() {
+                                continue;
+                            }
+                            match self.heads[joined_index].output_frames.mark_presented() {
+                                Ok(presented) => {
+                                    trace_presented_output_damage(
+                                        "presented",
+                                        self.heads[joined_index].output.id,
+                                        &presented,
+                                    );
+                                    trace_presented_mirror_head_damage(
+                                        output,
+                                        self.heads[joined_index].selection.connector_id(),
+                                        frame,
+                                        &presented,
+                                    );
+                                }
+                                Err(error) => {
+                                    errors.push(format!(
+                                        "mirror display-list presentation transition failed: {error}"
+                                    ));
+                                    joined = false;
+                                }
                             }
                         }
-                        completed_retire = Some(crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-                            status: crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip,
-                            destroy: None,
-                            runtime_scanout_state: Some(crate::RuntimeScanoutState::Retired),
-                            in_flight: false,
-                            in_flight_ticks: 0,
-                            cleanup_pending: false,
-                        });
-                        completed_serial = Some(logical_serial);
+                        if joined {
+                            completed_retire = Some(crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
+                                status: crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip,
+                                destroy: None,
+                                runtime_scanout_state: Some(crate::RuntimeScanoutState::Retired),
+                                in_flight: false,
+                                in_flight_ticks: 0,
+                                cleanup_pending: false,
+                            });
+                            completed_serial = Some(logical_serial);
+                        }
                     }
                     LiveProductionMirrorHeadTransition::Accepted => {}
-                    invalid => {
-                        return Err(format!(
-                            "mirror-head {} entered invalid flipped transition {invalid:?}",
-                            callback.connector_id,
-                        )
-                        .into());
-                    }
+                    invalid => errors.push(format!(
+                        "mirror-head {} entered invalid flipped transition {invalid:?}",
+                        callback.connector_id,
+                    )),
                 }
             }
-            self.callback_rejected = self.callback_rejected.saturating_add(
-                tick.page_flip_callbacks.rejected_unexpected_output
-                    + tick.page_flip_callbacks.rejected_stale_frame_serial,
-            );
-            self.callback_queue_saturated = self
-                .callback_queue_saturated
-                .saturating_add(usize::from(tick.page_flip_callbacks.max_reached));
 
+            // Cleanup is ownership work, not scheduling. Always visit every
+            // head, even when callback processing above found an error.
             for head_index in indices.iter().copied() {
                 if let Some(cleanup) = self.heads[head_index].scanout_cleanup.take() {
                     let retried = crate::retry_rendered_primary_plane_scanout_cleanup(
@@ -1085,9 +1117,86 @@ mod persistent_native_scanout {
                     self.heads[head_index].scanout_cleanup = retried.cleanup;
                     if self.heads[head_index].scanout_cleanup.is_some() {
                         self.retire_failures = self.retire_failures.saturating_add(1);
-                        continue;
                     }
                 }
+            }
+
+            LiveProductionMirrorRetirementReport {
+                page_flip_callbacks,
+                completed_retire,
+                completed_serial,
+                errors,
+            }
+        }
+
+        fn publish_mirror_group_page_flip(
+            &self,
+            output: OutputId,
+            runtime: &mut crate::LiveBackendRuntimeAssembly,
+            completed_serial: Option<u64>,
+        ) -> Option<crate::LivePageFlipEvent> {
+            if completed_serial.is_none()
+                && self
+                    .output_lifecycles
+                    .get(&output)
+                    .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
+                    .is_none()
+            {
+                return None;
+            }
+            let event = crate::LivePageFlipEvent {
+                status: if completed_serial.is_some() {
+                    crate::LivePageFlipEventStatus::Presented
+                } else {
+                    crate::LivePageFlipEventStatus::WaitingForOutput
+                },
+                frame_serial: completed_serial,
+            };
+            runtime.set_page_flip_observation(event);
+            Some(event)
+        }
+
+        fn run_mirror_group_tick(
+            &mut self,
+            output: OutputId,
+            runtime: &mut crate::LiveBackendRuntimeAssembly,
+            input: CompositorBackendTickInput,
+        ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+            let indices = self.head_indices(output);
+            if indices.is_empty() {
+                return Err("mirror group has no head".into());
+            }
+            let retirement = self.service_mirror_group_retirement(output, runtime);
+            if !retirement.errors.is_empty() {
+                return Err(format!(
+                    "mirror retirement failed after servicing callbacks and cleanup: {}",
+                    retirement.errors.join("; ")
+                )
+                .into());
+            }
+            // Check stalls only after consuming callbacks that may have arrived
+            // at the deadline. Drain-only retirement deliberately omits this
+            // scheduler watchdog and relies on its outer bounded timeout.
+            self.ensure_page_flip_progress()?;
+            // Publish a completed join before the fallible Engine tick. A tick
+            // failure must not erase the already-retired callback evidence.
+            // Waiting is published later because this tick may start a new group.
+            let completed_page_flip = retirement.completed_serial.and_then(|serial| {
+                self.publish_mirror_group_page_flip(output, runtime, Some(serial))
+            });
+
+            // Advance the logical Engine exactly once. Physical callback owners
+            // were retired first, so an Engine failure cannot consume and lose
+            // their callback evidence.
+            let mut tick = runtime.run_tick(input)?;
+            tick.page_flip_callbacks = retirement.page_flip_callbacks;
+            if let Some(event) = completed_page_flip {
+                tick.page_flip = event;
+            }
+            let completed_retire = retirement.completed_retire;
+            let completed_serial = retirement.completed_serial;
+
+            for head_index in indices.iter().copied() {
                 if self
                     .output_lifecycles
                     .get(&output)
@@ -1391,22 +1500,10 @@ mod persistent_native_scanout {
                 .into());
             }
             tick.rendered_primary_plane_scanout_retire = completed_retire;
-            if completed_serial.is_some()
-                || self
-                    .output_lifecycles
-                    .get(&output)
-                    .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
-                    .is_some()
+            if completed_page_flip.is_none()
+                && let Some(logical_page_flip) =
+                    self.publish_mirror_group_page_flip(output, runtime, completed_serial)
             {
-                let logical_page_flip = crate::LivePageFlipEvent {
-                    status: if completed_serial.is_some() {
-                        crate::LivePageFlipEventStatus::Presented
-                    } else {
-                        crate::LivePageFlipEventStatus::WaitingForOutput
-                    },
-                    frame_serial: completed_serial,
-                };
-                runtime.set_page_flip_observation(logical_page_flip);
                 tick.page_flip = logical_page_flip;
             }
             tick.rendered_primary_plane_scanout_cleanup_pending = indices
@@ -1459,11 +1556,15 @@ mod persistent_native_scanout {
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
             if self.head_indices(output).len() > 1 {
-                let _ = self.run_mirror_group_tick(
-                    output,
-                    runtime,
-                    CompositorBackendTickInput::default(),
-                )?;
+                let retirement = self.service_mirror_group_retirement(output, runtime);
+                if !retirement.errors.is_empty() {
+                    return Err(format!(
+                        "mirror drain failed after servicing callbacks and cleanup: {}",
+                        retirement.errors.join("; ")
+                    )
+                    .into());
+                }
+                self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
                 return Ok(());
             }
             self.retire_ready(output, runtime)
@@ -2167,8 +2268,8 @@ pub use persistent_native_scanout::{
     LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
     LiveProductionScanoutContent, finish_live_production_native_initialization,
     live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_mirror_head_queue_target,
-    reduce_live_production_page_flip_watchdog,
+    project_mirror_output_damage_snapshot, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_mirror_head_queue_target, reduce_live_production_page_flip_watchdog,
 };
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use sophia_protocol::{Rect, Size};
 
-use crate::{XGraphicsContextValues, XPoint, XResourceId};
+use crate::{XFontFace, XGraphicsContextValues, XPoint, XResourceId};
 
 mod update;
 
@@ -191,47 +191,68 @@ impl XSoftwareBufferStore {
         &mut self,
         drawable: XResourceId,
         size: Size,
-        draw: XTextDraw<'_>,
+        draws: &[XTextDraw<'_>],
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuBufferUpdate> {
-        let XTextDraw {
-            x,
-            baseline,
-            text,
-            opaque,
-        } = draw;
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
-        let top = i32::from(baseline).saturating_sub(10);
-        for (index, byte) in text.iter().copied().enumerate() {
-            let cell_x = i32::from(x)
-                .saturating_add(i32::try_from(index.saturating_mul(8)).unwrap_or(i32::MAX));
-            if opaque {
+        let mut damage = Vec::with_capacity(draws.len());
+        for draw in draws {
+            if draw.text.is_empty() {
+                continue;
+            }
+            let top = draw.baseline.saturating_sub(draw.font.ascent());
+            let width = i32::try_from(draw.text.len())
+                .unwrap_or(i32::MAX)
+                .saturating_mul(draw.font.width());
+            let draw_gc;
+            let raster_gc = if draw.image {
+                draw_gc = XGraphicsContextValues {
+                    function: crate::X_GX_COPY,
+                    fill_style: 0,
+                    ..gc.clone()
+                };
+                &draw_gc
+            } else {
+                gc
+            };
+            if draw.image {
                 fill_rect(
                     buffer,
                     Rect {
-                        x: cell_x,
+                        x: draw.x,
                         y: top,
-                        width: 8,
-                        height: 12,
+                        width,
+                        height: draw.font.ascent().saturating_add(draw.font.descent()),
                     },
                     gc.background,
-                    gc,
+                    raster_gc,
                 );
             }
-            draw_fixed_glyph(buffer, cell_x, top, byte, gc.foreground, gc);
-        }
-        finish_immutable_update(
-            buffer,
-            handle,
-            replaced,
-            Some(Rect {
-                x: i32::from(x),
+            for (index, byte) in draw.text.iter().copied().enumerate() {
+                let cell_x = draw.x.saturating_add(
+                    i32::try_from(index)
+                        .unwrap_or(i32::MAX)
+                        .saturating_mul(draw.font.width()),
+                );
+                draw_fixed_glyph(
+                    buffer,
+                    cell_x,
+                    top,
+                    byte,
+                    gc.foreground,
+                    draw.font,
+                    raster_gc,
+                );
+            }
+            damage.push(Rect {
+                x: draw.x,
                 y: top,
-                width: i32::try_from(text.len().saturating_mul(8)).unwrap_or(i32::MAX),
-                height: 12,
-            }),
-        )
+                width,
+                height: draw.font.ascent().saturating_add(draw.font.descent()),
+            });
+        }
+        finish_immutable_update(buffer, handle, replaced, union_rects(&damage))
     }
 
     pub fn put_image(
@@ -365,14 +386,36 @@ impl XSoftwareBufferStore {
         dst_x: i16,
         dst_y: i16,
         gc: &XGraphicsContextValues,
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<(XAuthorityCpuBufferUpdate, Rect)> {
         let source = self.buffers.get(&source)?.clone();
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(destination, destination_size, handle)?;
-        let (left, top, right, bottom) = clipped_bounds(source.size, source_rect)?;
+        let source_width = source.size.width;
+        let source_height = source.size.height;
+        let destination_width = destination_size.width;
+        let destination_height = destination_size.height;
+        let requested_width = source_rect.width.max(0);
+        let requested_height = source_rect.height.max(0);
+        let offset_left = 0
+            .max(source_rect.x.saturating_neg())
+            .max(i32::from(dst_x).saturating_neg());
+        let offset_top = 0
+            .max(source_rect.y.saturating_neg())
+            .max(i32::from(dst_y).saturating_neg());
+        let offset_right = requested_width
+            .min(source_width.saturating_sub(source_rect.x))
+            .min(destination_width.saturating_sub(i32::from(dst_x)));
+        let offset_bottom = requested_height
+            .min(source_height.saturating_sub(source_rect.y))
+            .min(destination_height.saturating_sub(i32::from(dst_y)));
+        if offset_right <= offset_left || offset_bottom <= offset_top {
+            return None;
+        }
         let source_stride = usize::try_from(source.stride).ok()?;
-        for source_y in top..bottom {
-            for source_x in left..right {
+        for y_offset in offset_top..offset_bottom {
+            let source_y = usize::try_from(source_rect.y.saturating_add(y_offset)).ok()?;
+            for x_offset in offset_left..offset_right {
+                let source_x = usize::try_from(source_rect.x.saturating_add(x_offset)).ok()?;
                 let offset = source_y
                     .saturating_mul(source_stride)
                     .saturating_add(source_x.saturating_mul(4));
@@ -383,26 +426,19 @@ impl XSoftwareBufferStore {
                         .try_into()
                         .ok()?,
                 );
-                let x_offset = source_x.saturating_sub(left);
-                let y_offset = source_y.saturating_sub(top);
-                let target_x =
-                    i32::from(dst_x).saturating_add(i32::try_from(x_offset).unwrap_or(i32::MAX));
-                let target_y =
-                    i32::from(dst_y).saturating_add(i32::try_from(y_offset).unwrap_or(i32::MAX));
+                let target_x = i32::from(dst_x).saturating_add(x_offset);
+                let target_y = i32::from(dst_y).saturating_add(y_offset);
                 set_pixel(buffer, target_x, target_y, pixel, gc);
             }
         }
-        finish_immutable_update(
-            buffer,
-            handle,
-            replaced,
-            Some(Rect {
-                x: i32::from(dst_x),
-                y: i32::from(dst_y),
-                width: i32::try_from(right.saturating_sub(left)).ok()?,
-                height: i32::try_from(bottom.saturating_sub(top)).ok()?,
-            }),
-        )
+        let damage = Rect {
+            x: i32::from(dst_x).saturating_add(offset_left),
+            y: i32::from(dst_y).saturating_add(offset_top),
+            width: offset_right.saturating_sub(offset_left),
+            height: offset_bottom.saturating_sub(offset_top),
+        };
+        finish_immutable_update(buffer, handle, replaced, Some(damage))
+            .map(|update| (update, damage))
     }
 
     fn ensure(
@@ -791,19 +827,20 @@ fn draw_fixed_glyph(
     cell_y: i32,
     byte: u8,
     pixel: u32,
+    font: XFontFace,
     gc: &XGraphicsContextValues,
 ) {
-    let rows = x_fixed_glyph_rows(byte);
+    let rows = font.glyph_rows(byte);
     for (row, bits) in rows.into_iter().enumerate() {
-        for column in 0..5 {
-            if bits & (1 << (4 - column)) == 0 {
+        for column in 0..6 {
+            if bits & (1 << (5 - column)) == 0 {
                 continue;
             }
             fill_rect(
                 buffer,
                 Rect {
-                    x: cell_x.saturating_add(column + 1),
-                    y: cell_y.saturating_add(i32::try_from(row).unwrap_or(0) + 2),
+                    x: cell_x.saturating_add(column),
+                    y: cell_y.saturating_add(i32::try_from(row).unwrap_or(0)),
                     width: 1,
                     height: 1,
                 },
@@ -811,81 +848,6 @@ fn draw_fixed_glyph(
                 gc,
             );
         }
-    }
-}
-
-pub fn x_fixed_glyph_rows(byte: u8) -> [u8; 7] {
-    match byte.to_ascii_uppercase() {
-        b' ' => [0; 7],
-        b'A' => [14, 17, 17, 31, 17, 17, 17],
-        b'B' => [30, 17, 17, 30, 17, 17, 30],
-        b'C' => [14, 17, 16, 16, 16, 17, 14],
-        b'D' => [30, 17, 17, 17, 17, 17, 30],
-        b'E' => [31, 16, 16, 30, 16, 16, 31],
-        b'F' => [31, 16, 16, 30, 16, 16, 16],
-        b'G' => [14, 17, 16, 23, 17, 17, 15],
-        b'H' => [17, 17, 17, 31, 17, 17, 17],
-        b'I' => [14, 4, 4, 4, 4, 4, 14],
-        b'J' => [7, 2, 2, 2, 18, 18, 12],
-        b'K' => [17, 18, 20, 24, 20, 18, 17],
-        b'L' => [16, 16, 16, 16, 16, 16, 31],
-        b'M' => [17, 27, 21, 21, 17, 17, 17],
-        b'N' => [17, 25, 21, 19, 17, 17, 17],
-        b'O' => [14, 17, 17, 17, 17, 17, 14],
-        b'P' => [30, 17, 17, 30, 16, 16, 16],
-        b'Q' => [14, 17, 17, 17, 21, 18, 13],
-        b'R' => [30, 17, 17, 30, 20, 18, 17],
-        b'S' => [15, 16, 16, 14, 1, 1, 30],
-        b'T' => [31, 4, 4, 4, 4, 4, 4],
-        b'U' => [17, 17, 17, 17, 17, 17, 14],
-        b'V' => [17, 17, 17, 17, 17, 10, 4],
-        b'W' => [17, 17, 17, 21, 21, 21, 10],
-        b'X' => [17, 17, 10, 4, 10, 17, 17],
-        b'Y' => [17, 17, 10, 4, 4, 4, 4],
-        b'Z' => [31, 1, 2, 4, 8, 16, 31],
-        b'0' => [14, 17, 19, 21, 25, 17, 14],
-        b'1' => [4, 12, 4, 4, 4, 4, 14],
-        b'2' => [14, 17, 1, 2, 4, 8, 31],
-        b'3' => [30, 1, 1, 14, 1, 1, 30],
-        b'4' => [2, 6, 10, 18, 31, 2, 2],
-        b'5' => [31, 16, 16, 30, 1, 1, 30],
-        b'6' => [14, 16, 16, 30, 17, 17, 14],
-        b'7' => [31, 1, 2, 4, 8, 8, 8],
-        b'8' => [14, 17, 17, 14, 17, 17, 14],
-        b'9' => [14, 17, 17, 15, 1, 1, 14],
-        b'-' => [0, 0, 0, 31, 0, 0, 0],
-        b'_' => [0, 0, 0, 0, 0, 0, 31],
-        b'.' => [0, 0, 0, 0, 0, 12, 12],
-        b':' => [0, 12, 12, 0, 12, 12, 0],
-        b'/' => [1, 2, 2, 4, 8, 8, 16],
-        b'=' => [0, 31, 0, 31, 0, 0, 0],
-        b'!' => [4, 4, 4, 4, 4, 0, 4],
-        b'"' => [10, 10, 10, 0, 0, 0, 0],
-        b'#' => [10, 31, 10, 10, 31, 10, 0],
-        b'$' => [4, 15, 20, 14, 5, 30, 4],
-        b'%' => [24, 25, 2, 4, 8, 19, 3],
-        b'&' => [12, 18, 20, 8, 21, 18, 13],
-        b'\'' => [4, 4, 8, 0, 0, 0, 0],
-        b'(' => [2, 4, 8, 8, 8, 4, 2],
-        b')' => [8, 4, 2, 2, 2, 4, 8],
-        b'*' => [0, 21, 14, 31, 14, 21, 0],
-        b'+' => [0, 4, 4, 31, 4, 4, 0],
-        b',' => [0, 0, 0, 0, 4, 4, 8],
-        b';' => [0, 4, 4, 0, 4, 4, 8],
-        b'<' => [2, 4, 8, 16, 8, 4, 2],
-        b'>' => [8, 4, 2, 1, 2, 4, 8],
-        b'?' => [14, 17, 1, 2, 4, 0, 4],
-        b'@' => [14, 17, 23, 21, 23, 16, 14],
-        b'[' => [14, 8, 8, 8, 8, 8, 14],
-        b'\\' => [16, 8, 8, 4, 2, 2, 1],
-        b']' => [14, 2, 2, 2, 2, 2, 14],
-        b'^' => [4, 10, 17, 0, 0, 0, 0],
-        b'`' => [8, 4, 2, 0, 0, 0, 0],
-        b'{' => [3, 4, 4, 8, 4, 4, 3],
-        b'|' => [4, 4, 4, 4, 4, 4, 4],
-        b'}' => [24, 4, 4, 2, 4, 4, 24],
-        b'~' => [0, 0, 9, 22, 0, 0, 0],
-        _ => [31, 17, 1, 2, 4, 0, 4],
     }
 }
 
@@ -971,8 +933,9 @@ fn apply_raster_function(source: u32, destination: u32, gc: &XGraphicsContextVal
 }
 
 pub(crate) struct XTextDraw<'a> {
-    pub x: i16,
-    pub baseline: i16,
+    pub x: i32,
+    pub baseline: i32,
     pub text: &'a [u8],
-    pub opaque: bool,
+    pub image: bool,
+    pub font: XFontFace,
 }

@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-evidence="${1:?usage: verify_mirror_group_physical.sh EVIDENCE}"
+candidate=false
+if [[ "${1:-}" == --candidate ]]; then
+    candidate=true
+    shift
+fi
+evidence="${1:?usage: verify_mirror_group_physical.sh [--candidate] EVIDENCE}"
+(( $# == 1 )) || {
+    echo "usage: verify_mirror_group_physical.sh [--candidate] EVIDENCE" >&2
+    exit 2
+}
 
 fail() {
     echo "mirror-group physical verification failed: $*" >&2
@@ -45,6 +54,10 @@ fi
 if grep -Eq '(sophia_live_session_client_fatal|sophia_x11_authority_backpressure schema=1 status=(shutdown|transport_failure)|X authority observed transaction channel is full|xterm: fatal IO error)' \
     "$evidence"; then
     fail "evidence contains an X11 client failure or abandoned authority observation"
+fi
+if grep -Eq '^sophia_live_output_damage schema=1 status=queue_rejected .*reason=OutputMismatch([[:space:]]|$)' \
+    "$evidence"; then
+    fail "a head rejected damage for a different output shape"
 fi
 
 [[ "$(count '^sophia_mirror_group_gate schema=1 status=starting source_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} profile_sha256=[0-9a-f]{64}$')" == 1 ]] ||
@@ -108,8 +121,31 @@ dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector
 [[ "$dp1_checksum" == "$dp2_checksum" ]] ||
     fail "mirrored heads did not retain one logical frame checksum"
 
-# Completion counters can be positive for unrelated generations. Require one
-# exact logical frame to have crossed submit, callback, and retire on both heads.
+# Completion counters can be positive for unrelated generations. Find one exact
+# logical frame that crossed submit, callback, and retire on both heads *and*
+# carried positive projected damage in each head's native coordinate space.
+mirror_frame_has_positive_head_damage() {
+    local frame="$1" connector_and_mode connector size width height rects pixels
+    local -a records
+    for connector_and_mode in \
+        "$dp1_connector:2560:1440" \
+        "$dp2_connector:1920:1080"; do
+        connector="${connector_and_mode%%:*}"
+        size="${connector_and_mode#*:}"
+        width="${size%%:*}"
+        height="${size#*:}"
+        mapfile -t records < <(
+            grep -E "^sophia_live_mirror_head_damage schema=1 status=presented output=$dp1_output connector_id=$connector frame=$frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
+                "$evidence"
+        )
+        (( ${#records[@]} == 1 )) || return 1
+        rects="$(field "${records[0]}" rects)" || return 1
+        pixels="$(field "${records[0]}" pixels)" || return 1
+        [[ "$rects" =~ ^[0-9]+$ && "$pixels" =~ ^[0-9]+$ ]] || return 1
+        (( rects > 0 && pixels > 0 )) || return 1
+    done
+}
+
 common_frame=
 while read -r frame; do
     [[ -n "$frame" ]] || continue
@@ -123,14 +159,35 @@ while read -r frame; do
             causal=false
         fi
     done
-    if [[ "$causal" == true ]]; then
+    if [[ "$causal" == true ]] && mirror_frame_has_positive_head_damage "$frame"; then
         common_frame="$frame"
         break
     fi
 done < <(
     sed -n "s/^sophia_live_native_head_page_flip schema=1 status=retired output=$dp1_output connector_id=$dp1_connector submission=[0-9][0-9]* frame=\([0-9][0-9]*\)$/\1/p" "$evidence"
 )
-[[ -n "$common_frame" ]] || fail "no logical frame completed causally on both heads"
+[[ -n "$common_frame" ]] ||
+    fail "no logical frame completed causally with positive projected damage on both heads"
+
+# A shared logical snapshot is not valid evidence for different physical modes:
+# each head must accept and present its own projected geometry for the exact
+# generation proven above.
+for connector_and_mode in \
+    "$dp1_connector:2560:1440" \
+    "$dp2_connector:1920:1080"; do
+    connector="${connector_and_mode%%:*}"
+    size="${connector_and_mode#*:}"
+    width="${size%%:*}"
+    height="${size#*:}"
+    mapfile -t damage_records < <(
+        grep -E "^sophia_live_mirror_head_damage schema=1 status=presented output=$dp1_output connector_id=$connector frame=$common_frame width=$width height=$height mode=(partial|full) rects=[0-9]+ pixels=[0-9]+$" \
+            "$evidence"
+    )
+    (( ${#damage_records[@]} == 1 )) ||
+        fail "connector $connector needs exactly one projected-damage record for frame $common_frame"
+    require_positive_field "${damage_records[0]}" rects
+    require_positive_field "${damage_records[0]}" pixels
+done
 
 grep -Fxq 'sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced' \
     "$evidence" || fail "both heads did not complete without pacing rejection"
@@ -170,7 +227,15 @@ grep -Fxq 'sophia_live_session_cleanup schema=1 status=clean app_groups=0 fronte
     "$evidence" || fail "frontend workers or session authority resources did not cleanly stop"
 grep -Fxq 'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' \
     "$evidence" || fail "operator did not confirm the visible mirror"
-grep -Fxq 'sophia_mirror_group_gate schema=1 status=passed exit=0' "$evidence" ||
-    fail "gate did not record a passing exit"
+grep -Fxq 'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both foreground=white background=black' \
+    "$evidence" || fail "operator did not confirm identical mixed-case content with stable legibility"
+passed_count="$(count '^sophia_mirror_group_gate schema=1 status=passed( |$)')"
+exact_passed_count="$(count '^sophia_mirror_group_gate schema=1 status=passed exit=0$')"
+if [[ "$candidate" == true ]]; then
+    [[ "$passed_count" == 0 ]] || fail "candidate evidence was marked passed before verification"
+else
+    [[ "$passed_count" == 1 && "$exact_passed_count" == 1 ]] ||
+        fail "gate did not record exactly one valid passing exit"
+fi
 
 echo "mirror-group physical evidence passed: $evidence"

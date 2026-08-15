@@ -1,16 +1,17 @@
 use crate::{
-    X_ATOM_NONE, X_BIG_REQUESTS_EXTENSION_NAME, X_BIG_REQUESTS_MAJOR_OPCODE,
-    X_MIT_SHM_EXTENSION_NAME, X_MIT_SHM_MAJOR_OPCODE, X_RANDR_EXTENSION_NAME, X_RANDR_MAJOR_OPCODE,
-    X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_COLORMAP, X_SETUP_DEFAULT_ROOT, X_SETUP_DEFAULT_VISUAL,
-    X_SOPHIA_PRESENT_EXTENSION_NAME, X_SOPHIA_PRESENT_MAJOR_OPCODE, XAtomTable,
-    XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket, XAuthorityRuntime,
-    XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XColorRgb16,
-    XColormapError, XErrorCode, XGlxContextConfig, XMetadataPropertyCandidate, XPropertyError,
-    XPropertyTable, XRandrModeInfo, XRandrMonitorInfo, XResourceId, XTextDraw,
-    XWindowGeometryUpdate, XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo,
-    decode_x_size_hints, decode_x_transient_for, decode_x_window_type_facts,
-    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
-    x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
+    X_ATOM_NONE, X_BIG_REQUESTS_EXTENSION_NAME, X_BIG_REQUESTS_MAJOR_OPCODE, X_FIXED_6X13_ASCENT,
+    X_FIXED_6X13_DESCENT, X_MIT_SHM_EXTENSION_NAME, X_MIT_SHM_MAJOR_OPCODE, X_RANDR_EXTENSION_NAME,
+    X_RANDR_MAJOR_OPCODE, X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_COLORMAP, X_SETUP_DEFAULT_ROOT,
+    X_SETUP_DEFAULT_VISUAL, X_SOPHIA_PRESENT_EXTENSION_NAME, X_SOPHIA_PRESENT_MAJOR_OPCODE,
+    XAtomTable, XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket,
+    XAuthorityRuntime, XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput,
+    XClientReply, XColorRgb16, XColormapError, XErrorCode, XFontFace, XGlxContextConfig,
+    XMetadataPropertyCandidate, XPolyText8Item, XPropertyError, XPropertyTable, XRandrModeInfo,
+    XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError,
+    XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints, decode_x_transient_for,
+    decode_x_window_type_facts, encode_x_client_output, metadata_property_candidate,
+    x_error_from_runtime, x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event,
+    x_true_color_visual,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
@@ -269,37 +270,159 @@ fn dispatch_text_draw(
     runtime: &mut XAuthorityRuntime,
     drawable: XResourceId,
     gc: XResourceId,
-    draw: XTextDraw<'_>,
+    mut draw: XTextDraw<'_>,
 ) -> XDispatchResult {
     let transaction = TransactionId::from_raw(u64::from(context.sequence));
-    if runtime
-        .validate_pixmap_access(context.namespace, drawable)
-        .is_ok()
-    {
-        return XDispatchResult {
-            response: Some(XAuthorityResponsePacket::accepted(transaction)),
-            outputs: Vec::new(),
-            metadata_candidates: Vec::new(),
-        };
+    if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
+        return core_draw_validation_error(
+            context,
+            transaction,
+            error,
+            XErrorCode::BadDrawable,
+            drawable,
+        );
     }
-    let gc_values = match runtime.graphics_context_values(context.namespace, gc) {
-        Ok(values) => values,
-        Err(error) => {
-            return XDispatchResult {
-                response: None,
-                outputs: vec![XClientOutput::Error(x_error_from_runtime(
+    let (gc_depth, gc_values, font) =
+        match runtime.graphics_context_depth_values_and_font(context.namespace, gc) {
+            Ok(record) => record,
+            Err(error) => {
+                return core_draw_validation_error(
+                    context,
+                    transaction,
                     error,
-                    context.sequence,
-                    context.major_opcode,
-                    u32::try_from(gc.local.raw()).unwrap_or(0),
-                ))],
-                metadata_candidates: Vec::new(),
-            };
-        }
-    };
-    let response =
-        runtime.apply_text_draw(transaction, context.namespace, drawable, draw, &gc_values);
+                    XErrorCode::BadGraphicsContext,
+                    gc,
+                );
+            }
+        };
+    if runtime.drawable_depth(context.namespace, drawable) != Ok(gc_depth) {
+        return core_draw_validation_error(
+            context,
+            transaction,
+            XAuthorityRuntimeError::InvalidSurface,
+            XErrorCode::BadMatch,
+            drawable,
+        );
+    }
+    draw.font = font;
+    let response = runtime.apply_text_draw(
+        transaction,
+        context.namespace,
+        drawable,
+        &[draw],
+        &gc_values,
+    );
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+        vec![XClientOutput::Error(x_error_from_runtime(
+            error,
+            context.sequence,
+            context.major_opcode,
+            u32::try_from(drawable.local.raw()).unwrap_or(0),
+        ))]
+    } else {
+        Vec::new()
+    };
+    XDispatchResult {
+        response: Some(response),
+        outputs,
+        metadata_candidates: Vec::new(),
+    }
+}
+
+fn dispatch_poly_text8(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    drawable: XResourceId,
+    gc: XResourceId,
+    x: i16,
+    baseline: i16,
+    items: &[XPolyText8Item],
+) -> XDispatchResult {
+    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+    if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
+        return core_draw_validation_error(
+            context,
+            transaction,
+            error,
+            XErrorCode::BadDrawable,
+            drawable,
+        );
+    }
+    let (gc_depth, gc_values, mut font) =
+        match runtime.graphics_context_depth_values_and_font(context.namespace, gc) {
+            Ok(record) => record,
+            Err(error) => {
+                return core_draw_validation_error(
+                    context,
+                    transaction,
+                    error,
+                    XErrorCode::BadGraphicsContext,
+                    gc,
+                );
+            }
+        };
+    if runtime.drawable_depth(context.namespace, drawable) != Ok(gc_depth) {
+        return core_draw_validation_error(
+            context,
+            transaction,
+            XAuthorityRuntimeError::InvalidSurface,
+            XErrorCode::BadMatch,
+            drawable,
+        );
+    }
+
+    let mut current_x = i32::from(x);
+    let mut draws = Vec::new();
+    let mut font_error = None;
+    for item in items {
+        match item {
+            XPolyText8Item::Text { delta, bytes } => {
+                current_x = current_x.saturating_add(i32::from(*delta));
+                draws.push(XTextDraw {
+                    x: current_x,
+                    baseline: i32::from(baseline),
+                    text: bytes,
+                    image: false,
+                    font,
+                });
+                current_x = current_x.saturating_add(
+                    i32::try_from(bytes.len())
+                        .unwrap_or(i32::MAX)
+                        .saturating_mul(font.width()),
+                );
+            }
+            XPolyText8Item::Font { font: requested } => {
+                match runtime.font_face(context.namespace, *requested) {
+                    Ok(resolved) => font = resolved,
+                    Err(error) => {
+                        let code = if matches!(
+                            error,
+                            XAuthorityRuntimeError::InvalidNamespace
+                                | XAuthorityRuntimeError::CrossNamespaceDenied
+                        ) {
+                            XErrorCode::BadAccess
+                        } else {
+                            XErrorCode::BadFont
+                        };
+                        font_error = Some(XClientOutput::Error(crate::XClientError {
+                            code,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(requested.local.raw()).unwrap_or(0),
+                            minor_code: 0,
+                            major_code: context.major_opcode,
+                        }));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let response =
+        runtime.apply_text_draw(transaction, context.namespace, drawable, &draws, &gc_values);
+    let outputs = if let Some(error) = font_error {
+        vec![error]
+    } else if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
             error,
             context.sequence,

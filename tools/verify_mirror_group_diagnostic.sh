@@ -36,7 +36,7 @@ truncated="${BASH_REMATCH[5]}"
     exit 1
 }
 failure="$(grep -E '^sophia_mirror_group_gate schema=1 status=failed ' "$evidence")"
-[[ "$failure" =~ ^sophia_mirror_group_gate\ schema=1\ status=failed\ stage=(runtime|visual_confirmation)\ exit=([0-9]+)\ signal=([0-9]+)\ kernel_capture=(available|unavailable)$ ]] || {
+[[ "$failure" =~ ^sophia_mirror_group_gate\ schema=1\ status=failed\ stage=(runtime|visual_confirmation|verification)\ exit=([0-9]+)\ signal=([0-9]+)\ kernel_capture=(available|unavailable)$ ]] || {
     echo "mirror-group diagnostic has malformed final failure result" >&2
     exit 1
 }
@@ -56,8 +56,8 @@ fi
     echo "mirror-group diagnostic signal does not match its exit" >&2
     exit 1
 }
-if [[ "$stage" == visual_confirmation && "$exit_status" != 1 ]]; then
-    echo "mirror-group visual-confirmation diagnostic has an invalid exit" >&2
+if [[ ( "$stage" == visual_confirmation || "$stage" == verification ) && "$exit_status" != 1 ]]; then
+    echo "mirror-group operator/verifier diagnostic has an invalid exit" >&2
     exit 1
 fi
 [[ "$kernel_capture" == "$availability" ]] || {
@@ -91,8 +91,18 @@ fi
     echo "mirror-group diagnostic kernel delta length disagrees with its metadata" >&2
     exit 1
 }
-if grep -Eq '^sophia_mirror_group_gate schema=1 status=(passed|visual_confirmed)( |$)' "$evidence"; then
-    echo "mirror-group diagnostic contains promotion evidence" >&2
+if grep -Eq '^sophia_mirror_group_gate schema=1 status=passed( |$)' "$evidence"; then
+    echo "mirror-group diagnostic contains a promotion result" >&2
+    exit 1
+fi
+visual_count="$(grep -Ec '^sophia_mirror_group_gate schema=1 status=visual_confirmed( |$)' "$evidence" || true)"
+if [[ "$stage" == verification ]]; then
+    [[ "$visual_count" == 1 ]] || {
+        echo "mirror-group verifier diagnostic needs its operator confirmation" >&2
+        exit 1
+    }
+elif (( visual_count != 0 )); then
+    echo "mirror-group pre-verification diagnostic contains operator confirmation" >&2
     exit 1
 fi
 

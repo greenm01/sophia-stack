@@ -35,10 +35,16 @@ fn x11_dispatch_accepts_open_and_close_font_resources() {
     assert_eq!(encoded.len(), 1);
     assert_eq!(encoded[0][0], 1);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 7);
-    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][10..12]), 8);
-    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][12..14]), 8);
-    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][26..28]), 8);
-    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][28..30]), 8);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][10..12]), 6);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][12..14]), 6);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][14..16]), 11);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][16..18]), 2);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][26..28]), 6);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][28..30]), 6);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][30..32]), 11);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][32..34]), 2);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][52..54]), 11);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][54..56]), 2);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][56..60]), 0);
 
     let list = decode_x11_core_request(
@@ -168,7 +174,265 @@ fn x11_dispatch_accepts_glyph_cursor_lifecycle() {
 }
 
 #[test]
-fn x11_dispatch_poly_text8_emits_conservative_text_damage() {
+fn x11_dispatch_accepts_xterm_nil2_compatibility_font() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let open = decode_x11_core_request(
+        context(namespace, 646, XByteOrder::LittleEndian),
+        &open_font_request(XByteOrder::LittleEndian, 0x220149, "nil2"),
+    )
+    .unwrap();
+    let open = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 45),
+        open,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(open.outputs.is_empty());
+}
+
+#[test]
+fn x11_core_resource_ids_are_global_and_collisions_preserve_the_original() {
+    let namespace = NamespaceId::from_raw(46);
+    let window = 0x22014a;
+    let gc = 0x22014b;
+    let font = 0x22014c;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let create_window = decode_x11_core_request(
+        context(namespace, 647, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 3, 4, 64, 48),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create_window,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    for (sequence, opcode, request) in [
+        (
+            2,
+            45,
+            open_font_request(XByteOrder::LittleEndian, window, "fixed"),
+        ),
+        (
+            3,
+            53,
+            create_pixmap_request(
+                XByteOrder::LittleEndian,
+                24,
+                window,
+                window,
+                16,
+                16,
+            ),
+        ),
+        (
+            4,
+            55,
+            create_gc_request(XByteOrder::LittleEndian, window, window),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, 647 + u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Error(XClientError {
+                code: XErrorCode::BadIdChoice,
+                resource_id,
+                ..
+            })] if *resource_id == window
+        ));
+    }
+    assert_eq!(
+        runtime
+            .window_geometry(namespace, XResourceId::new(window.into(), 1))
+            .unwrap(),
+        Rect {
+            x: 3,
+            y: 4,
+            width: 64,
+            height: 48,
+        }
+    );
+
+    let create_gc = decode_x11_core_request(
+        context(namespace, 652, XByteOrder::LittleEndian),
+        &create_gc_request(XByteOrder::LittleEndian, gc, window),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 55),
+        create_gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let collide_gc = decode_x11_core_request(
+        context(namespace, 653, XByteOrder::LittleEndian),
+        &open_font_request(XByteOrder::LittleEndian, gc, "fixed"),
+    )
+    .unwrap();
+    let collide_gc = dispatch_x11_wire_request(
+        dispatch_context(namespace, 6, XByteOrder::LittleEndian, 45),
+        collide_gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        collide_gc.outputs.as_slice(),
+        [XClientOutput::Error(XClientError {
+            code: XErrorCode::BadIdChoice,
+            resource_id,
+            ..
+        })] if *resource_id == gc
+    ));
+    assert!(runtime.graphics_context_values(namespace, XResourceId::new(gc.into(), 1)).is_ok());
+
+    let open_font = decode_x11_core_request(
+        context(namespace, 654, XByteOrder::LittleEndian),
+        &open_font_request(XByteOrder::LittleEndian, font, "fixed"),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 7, XByteOrder::LittleEndian, 45),
+        open_font,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let collide_font = decode_x11_core_request(
+        context(namespace, 655, XByteOrder::LittleEndian),
+        &create_pixmap_request(XByteOrder::LittleEndian, 24, font, window, 8, 8),
+    )
+    .unwrap();
+    let collide_font = dispatch_x11_wire_request(
+        dispatch_context(namespace, 8, XByteOrder::LittleEndian, 53),
+        collide_font,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        collide_font.outputs.as_slice(),
+        [XClientOutput::Error(XClientError {
+            code: XErrorCode::BadIdChoice,
+            resource_id,
+            ..
+        })] if *resource_id == font
+    ));
+    assert!(runtime.validate_font_access(namespace, XResourceId::new(font.into(), 1)).is_ok());
+}
+
+#[test]
+fn x11_pixmap_and_graphics_context_requests_report_resource_specific_errors() {
+    let namespace = NamespaceId::from_raw(46);
+    let window = 0x22014d;
+    let missing = 0x22014e;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let create_window = decode_x11_core_request(
+        context(namespace, 656, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 64, 48),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create_window,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    for (sequence, opcode, request, expected_code) in [
+        (
+            2,
+            53,
+            create_pixmap_request(
+                XByteOrder::LittleEndian,
+                24,
+                0x22014f,
+                window,
+                0,
+                8,
+            ),
+            XErrorCode::BadValue,
+        ),
+        (
+            3,
+            54,
+            free_pixmap_request(XByteOrder::LittleEndian, missing),
+            XErrorCode::BadPixmap,
+        ),
+        (
+            4,
+            59,
+            set_clip_rectangles_request(XByteOrder::LittleEndian, missing, &[]),
+            XErrorCode::BadGraphicsContext,
+        ),
+        (
+            5,
+            60,
+            free_graphics_context_request(XByteOrder::LittleEndian, missing),
+            XErrorCode::BadGraphicsContext,
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, 656 + u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Error(XClientError { code, .. })] if *code == expected_code
+        ));
+    }
+
+    assert_eq!(
+        runtime
+            .window_geometry(namespace, XResourceId::new(window.into(), 1))
+            .unwrap(),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 48,
+        }
+    );
+}
+
+#[test]
+fn x11_dispatch_text8_emits_exact_fixed_6x13_damage() {
     let namespace = NamespaceId::from_raw(46);
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -219,9 +483,9 @@ fn x11_dispatch_poly_text8_emits_conservative_text_damage() {
         response.transactions[0].damage,
         Region::single(Rect {
             x: 5,
-            y: 6,
-            width: 16,
-            height: 12,
+            y: 5,
+            width: 12,
+            height: 13,
         })
     );
 
@@ -244,9 +508,9 @@ fn x11_dispatch_poly_text8_emits_conservative_text_damage() {
         response.transactions[0].damage,
         Region::single(Rect {
             x: 9,
-            y: 10,
-            width: 16,
-            height: 12,
+            y: 9,
+            width: 12,
+            height: 13,
         })
     );
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use sophia_protocol::{NamespaceId, Rect};
 
-use crate::{XAuthorityAccessError, XResourceId};
+use crate::{XAuthorityAccessError, XFontFace, XResourceId};
 
 pub const X_GX_COPY: u8 = 3;
 
@@ -50,6 +50,7 @@ pub struct XGraphicsContextRecord {
     pub depth: u8,
     pub namespace: NamespaceId,
     pub values: XGraphicsContextValues,
+    pub(crate) font_face: XFontFace,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -65,11 +66,15 @@ impl XGraphicsContextTable {
         drawable: XResourceId,
         depth: u8,
         values: XGraphicsContextValues,
+        font_face: XFontFace,
     ) -> Result<(), XAuthorityAccessError> {
         if !namespace.is_valid() {
             return Err(XAuthorityAccessError::InvalidNamespace);
         }
         if !id.is_valid() || !drawable.is_valid() {
+            return Err(XAuthorityAccessError::InvalidResource);
+        }
+        if self.records.contains_key(&id) {
             return Err(XAuthorityAccessError::InvalidResource);
         }
         self.records.insert(
@@ -80,9 +85,14 @@ impl XGraphicsContextTable {
                 depth,
                 namespace,
                 values,
+                font_face,
             },
         );
         Ok(())
+    }
+
+    pub(crate) fn contains(&self, id: XResourceId) -> bool {
+        self.records.contains_key(&id)
     }
 
     pub fn get(
@@ -106,6 +116,7 @@ impl XGraphicsContextTable {
         id: XResourceId,
         mask: u32,
         values: XGraphicsContextValues,
+        font_face: Option<XFontFace>,
     ) -> Result<(), XAuthorityAccessError> {
         let record = self
             .records
@@ -134,6 +145,7 @@ impl XGraphicsContextTable {
         }
         if mask & (1 << 14) != 0 {
             record.values.font = values.font;
+            record.font_face = font_face.expect("a validated GC font accompanies the font mask");
         }
         if mask & (1 << 17) != 0 {
             record.values.clip_x_origin = values.clip_x_origin;

@@ -107,9 +107,7 @@ fn create_window_request(
     width: u16,
     height: u16,
 ) -> Vec<u8> {
-    create_window_request_with_parent(
-        byte_order, window, 0x20, x, y, width, height,
-    )
+    create_window_request_with_parent(byte_order, window, 0x20, x, y, width, height)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -518,6 +516,20 @@ fn create_pixmap_request(
     out
 }
 
+fn free_pixmap_request(byte_order: XByteOrder, pixmap: u32) -> Vec<u8> {
+    let mut out = vec![54, 0];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, pixmap);
+    out
+}
+
+fn free_graphics_context_request(byte_order: XByteOrder, gc: u32) -> Vec<u8> {
+    let mut out = vec![60, 0];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, gc);
+    out
+}
+
 fn clear_area_request(
     byte_order: XByteOrder,
     exposures: bool,
@@ -678,16 +690,29 @@ fn poly_text8_request(
     y: i16,
     text: &[u8],
 ) -> Vec<u8> {
+    let mut items = Vec::with_capacity(2 + text.len());
+    items.push(u8::try_from(text.len()).unwrap());
+    items.push(0);
+    items.extend_from_slice(text);
+    poly_text8_items_request(byte_order, drawable, gc, x, y, &items)
+}
+
+fn poly_text8_items_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    x: i16,
+    y: i16,
+    items: &[u8],
+) -> Vec<u8> {
     let mut out = vec![74, 0];
-    let len_units = padded_len_for_test(18 + text.len()) / 4;
+    let len_units = padded_len_for_test(16 + items.len()) / 4;
     push_u16(&mut out, byte_order, len_units as u16);
     push_u32(&mut out, byte_order, drawable);
     push_u32(&mut out, byte_order, gc);
     push_i16(&mut out, byte_order, x);
     push_i16(&mut out, byte_order, y);
-    out.push(u8::try_from(text.len()).unwrap());
-    out.push(0);
-    out.extend_from_slice(text);
+    out.extend_from_slice(items);
     pad_to_four(&mut out);
     out
 }
