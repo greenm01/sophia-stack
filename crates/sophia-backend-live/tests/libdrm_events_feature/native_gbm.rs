@@ -332,6 +332,40 @@ fn native_gbm_renderer_image_owner_exists_only_after_renderer_initialization() {
 
 #[cfg(feature = "gbm-probe")]
 #[test]
+fn direct_cpu_bootstrap_failure_never_opens_an_inline_egl_context() {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_pending_cpu_frame(LiveCpuComposedFrame {
+        size: Size {
+            width: 64,
+            height: 48,
+        },
+        stride: 64 * 4,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        bytes: vec![0x33; 64 * 48 * 4].into(),
+    });
+    exporter
+        .arm_direct_cpu_bootstrap()
+        .expect("fresh exporter should admit one direct bootstrap");
+
+    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(Size {
+        width: 64,
+        height: 48,
+    }));
+
+    assert_eq!(
+        export.status,
+        LiveRendererScanoutBufferExportStatus::Unavailable
+    );
+    assert_eq!(exporter.direct_cpu_bootstrap_attempts(), 1);
+    assert_eq!(exporter.direct_cpu_bootstrap_exports(), 0);
+    assert_eq!(exporter.context_open_attempts(), 0);
+    assert_eq!(exporter.context_status(), None);
+    assert!(!exporter.context_ready());
+    assert!(!exporter.renderer_image_owner_initialized());
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
 fn native_gbm_rendered_scanout_exporter_rejects_forged_ready_target_before_device_open() {
     let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
     let target = LiveGbmEglFrameTargetRecord {

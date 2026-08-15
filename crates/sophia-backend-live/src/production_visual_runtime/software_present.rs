@@ -148,7 +148,7 @@ impl LiveProductionVisualRuntime {
                 native_scanout.queue_present_cpu_frame(output, frame)?
             }
             LiveProductionSoftwarePresentFramePayload::Mixed(frame) => {
-                native_scanout.queue_retained_mixed_frame(output, frame)
+                native_scanout.queue_retained_mixed_frame(output, frame)?
             }
         };
         if self

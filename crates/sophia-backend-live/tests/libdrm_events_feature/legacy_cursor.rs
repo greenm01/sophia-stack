@@ -157,6 +157,39 @@ mod legacy_cursor {
     }
 
     #[test]
+    fn mirrored_cursor_remains_active_on_every_target_crtc() {
+        let mut device = FakeCursorDevice::default();
+        let mut controller = LegacyHardwareCursorController::default();
+        controller.initialize(&mut device, &[7, 9]).unwrap();
+
+        assert_eq!(
+            controller
+                .update_many(&mut device, &[target(7, 10, 11), target(9, 8, 9)])
+                .unwrap(),
+            ClassicHardwareCursorUpdate::Visible
+        );
+        assert_eq!(controller.active_crtcs(), &[7, 9]);
+        assert_eq!(
+            controller
+                .update_many(&mut device, &[target(7, 12, 13), target(9, 10, 11)])
+                .unwrap(),
+            ClassicHardwareCursorUpdate::Visible
+        );
+        assert_eq!(controller.active_crtcs(), &[7, 9]);
+        assert_eq!(
+            &device.calls[2..],
+            &[
+                Call::Install(7),
+                Call::Move(7, 10, 11),
+                Call::Install(9),
+                Call::Move(9, 8, 9),
+                Call::Move(7, 12, 13),
+                Call::Move(9, 10, 11),
+            ]
+        );
+    }
+
+    #[test]
     fn failed_initialization_is_retryable_and_never_marks_ready() {
         let mut device = FakeCursorDevice {
             fail_at: Some(2),

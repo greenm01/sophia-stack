@@ -304,7 +304,7 @@ impl LiveProductionVisualRuntime {
                         .outputs
                         .primary_output()
                         .ok_or("persistent backend runtime has no primary output")?;
-                    native_scanout.queue_retained_mixed_frame(primary, frame);
+                    native_scanout.queue_retained_mixed_frame(primary, frame)?;
                     true
                 }
                 _ => false,

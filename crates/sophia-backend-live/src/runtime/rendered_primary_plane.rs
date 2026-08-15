@@ -79,6 +79,17 @@ where
         }
     }
 
+    /// Transfers a synchronously displayed baseline to a physical-head owner.
+    /// Mirror groups use this after startup so the logical runtime does not
+    /// masquerade as the owner of every connector's independent scanout buffer.
+    pub(crate) fn take_displayed_rendered_primary_plane_scanout(
+        &mut self,
+    ) -> Option<BoxedRenderedPrimaryPlaneScanoutSubmission> {
+        self.primary_output_state_mut()
+            .rendered_primary_plane_displayed_submission
+            .take()
+    }
+
     pub fn with_persistent_rendered_primary_plane_scanout(mut self) -> Self {
         self.primary_output_state_mut()
             .retain_rendered_primary_plane_displayed_submission = true;

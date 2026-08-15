@@ -82,6 +82,158 @@ fn persistent_rendered_scanout_retires_only_the_replaced_displayed_buffer() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn partial_initialization_failure_rolls_back_the_already_displayed_head() {
+    let root = ready_drm_sysfs_fixture("partial-initialization-rollback");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly")
+        .with_persistent_rendered_primary_plane_scanout();
+    let device = full_primary_plane_scanout_device().accepting_commits(1);
+    let size = Size {
+        width: 1280,
+        height: 720,
+    };
+
+    let first = assembly.submit_and_track_rendered_primary_plane_scanout_with(
+        &device,
+        &mut FakeRenderedScanoutExporter::exported(size),
+    );
+    assert_eq!(
+        first.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    let first_presented = assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(
+        &device,
+        &LivePageFlipCallbackReport {
+            decision: LivePageFlipCallbackDecision::Accepted,
+            event: LivePageFlipEvent {
+                status: LivePageFlipEventStatus::Presented,
+                frame_serial: Some(1),
+            },
+        },
+    );
+    assert_eq!(
+        first_presented.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
+    );
+    assert!(assembly.rendered_primary_plane_scanout_displayed());
+
+    let second = assembly.submit_and_track_rendered_primary_plane_scanout_with(
+        &device,
+        &mut FakeRenderedScanoutExporter::exported(size),
+    );
+    assert_eq!(device.commits(), 2);
+    assert_eq!(
+        second.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::PrimaryPlaneSubmitFailed
+    );
+    assert!(assembly.rendered_primary_plane_scanout_displayed());
+
+    let settled = finish_live_production_native_initialization(
+        Err("second mirror head refused its modeset".into()),
+        true,
+        || {
+            let rollback =
+                assembly.retire_displayed_rendered_primary_plane_scanout(&device);
+            if rollback.cleanup_pending {
+                Err("displayed head cleanup remained pending".into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert_eq!(
+        settled.expect_err("partial initialization must still fail").to_string(),
+        "second mirror head refused its modeset"
+    );
+    assert!(!assembly.rendered_primary_plane_scanout_displayed());
+    assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
+    assert_eq!(
+        device.destroyed_framebuffers(),
+        2,
+        "the rejected candidate and already displayed first head are both released"
+    );
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn partial_initialization_reports_and_retains_failed_rollback_cleanup() {
+    let root = ready_drm_sysfs_fixture("partial-initialization-cleanup-retry");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly")
+        .with_persistent_rendered_primary_plane_scanout();
+    let failing_device = FakeNativePrimaryPlaneScanoutDevice {
+        resources: FakeNativePrimaryPlaneResourceDevice {
+            destroy_framebuffer: Err(io::Error::other("synthetic rollback destroy failure")),
+            ..full_primary_plane_resource_device()
+        },
+        ..full_primary_plane_scanout_device()
+    };
+    let size = Size {
+        width: 1280,
+        height: 720,
+    };
+    let submitted = assembly.submit_and_track_rendered_primary_plane_scanout_with(
+        &failing_device,
+        &mut FakeRenderedScanoutExporter::exported(size),
+    );
+    assert_eq!(
+        submitted.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    let presented = assembly.retire_tracked_rendered_primary_plane_scanout_after_page_flip(
+        &failing_device,
+        &LivePageFlipCallbackReport {
+            decision: LivePageFlipCallbackDecision::Accepted,
+            event: LivePageFlipEvent {
+                status: LivePageFlipEventStatus::Presented,
+                frame_serial: Some(1),
+            },
+        },
+    );
+    assert_eq!(
+        presented.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
+    );
+
+    let settled = finish_live_production_native_initialization(
+        Err("later mirror head initialization failed".into()),
+        true,
+        || {
+            let rollback =
+                assembly.retire_displayed_rendered_primary_plane_scanout(&failing_device);
+            if rollback.cleanup_pending {
+                Err("displayed head cleanup remained pending".into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert_eq!(
+        settled.expect_err("rollback failure must be reported").to_string(),
+        "native output initialization failed: later mirror head initialization failed; rollback failed: displayed head cleanup remained pending"
+    );
+    assert!(!assembly.rendered_primary_plane_scanout_displayed());
+    assert!(assembly.rendered_primary_plane_scanout_cleanup_pending());
+
+    let retry = assembly
+        .retry_tracked_rendered_primary_plane_scanout_cleanup(&full_primary_plane_scanout_device());
+    assert_eq!(
+        retry.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
+    );
+    assert!(!assembly.rendered_primary_plane_scanout_cleanup_pending());
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn losing_a_head_ends_the_wait_and_fails_the_candidate() {
     // A group that lost a head never presented, whoever owns the buffers. Each
@@ -510,4 +662,3 @@ fn live_runtime_assembly_retains_failed_rendered_scanout_cleanup_for_retry() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
-

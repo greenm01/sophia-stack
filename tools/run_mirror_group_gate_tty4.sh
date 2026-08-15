@@ -24,6 +24,7 @@ RUNTIME_MSEC="${SOPHIA_MIRROR_RUNTIME_MSEC:-15000}"
 DISPLAY_NAME="${SOPHIA_MIRROR_DISPLAY:-:191}"
 EVIDENCE="${SOPHIA_MIRROR_EVIDENCE:-/tmp/sophia-mirror-group.log}"
 TTY_REQUIRED="${SOPHIA_MIRROR_TTY:-/dev/tty4}"
+KERNEL_MAX_LINES="${SOPHIA_MIRROR_KERNEL_MAX_LINES:-256}"
 
 echo "=== Sophia mirror-group proof ==="
 echo
@@ -76,6 +77,54 @@ profile_sha256="$(sha256sum "$PROFILE" | awk '{ print $1 }')"
 printf 'sophia_mirror_group_gate schema=1 status=starting source_commit=%s sophia_sha256=%s profile_sha256=%s\n' \
     "$source_commit" "$sophia_sha256" "$profile_sha256" | tee -a "$EVIDENCE"
 
+diagnostic_tmp="$(mktemp -d)"
+kernel_before="$diagnostic_tmp/kernel-before.log"
+kernel_after="$diagnostic_tmp/kernel-after.log"
+kernel_delta="$diagnostic_tmp/kernel-delta.log"
+trap 'rm -rf -- "$diagnostic_tmp"' EXIT
+
+capture_kernel_snapshot() {
+    local destination="$1"
+    if dmesg --ctime >"$destination" 2>/dev/null; then
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n dmesg --ctime >"$destination" 2>/dev/null; then
+        return 0
+    fi
+    : >"$destination"
+    return 1
+}
+
+kernel_before_available=false
+if capture_kernel_snapshot "$kernel_before"; then
+    kernel_before_available=true
+fi
+
+finish_failed_run() {
+    local failure_stage="$1" failure_exit="$2"
+    local failure_signal=0 kernel_capture=unavailable kernel_summary
+    if (( failure_exit >= 128 && failure_exit <= 255 )); then
+        failure_signal=$((failure_exit - 128))
+    fi
+    : >"$kernel_delta"
+    if [[ "$kernel_before_available" == true ]] && capture_kernel_snapshot "$kernel_after"; then
+        if kernel_summary="$("$ROOT_DIR/tools/collect_mirror_group_kernel_delta.sh" \
+            "$kernel_before" "$kernel_after" "$kernel_delta" "$KERNEL_MAX_LINES")"; then
+            kernel_capture=available
+        fi
+    fi
+    if [[ "$kernel_capture" == unavailable ]]; then
+        kernel_summary='availability=unavailable continuity=unknown lines=0 total_lines=0 truncated=false'
+        : >"$kernel_delta"
+    fi
+    printf 'sophia_mirror_group_kernel schema=1 status=captured %s\n' "$kernel_summary" | tee -a "$EVIDENCE"
+    printf 'sophia_mirror_group_gate schema=1 status=failed stage=%s exit=%s signal=%s kernel_capture=%s\n' \
+        "$failure_stage" "$failure_exit" "$failure_signal" "$kernel_capture" | tee -a "$EVIDENCE"
+    if ! "$ROOT_DIR/tools/archive_mirror_group_diagnostic_run.sh" "$EVIDENCE" "$kernel_delta"; then
+        echo "Failed to archive mirror-group diagnostic; raw evidence remains at $EVIDENCE." >&2
+    fi
+}
+
 echo "What success looks like, and only you can judge it:"
 echo "  - BOTH monitors showing the same thing for ~$((RUNTIME_MSEC / 1000))s"
 echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
@@ -103,7 +152,7 @@ set -e
 echo
 echo "=== exit=$status ==="
 if (( status != 0 )); then
-    printf 'sophia_mirror_group_gate schema=1 status=failed exit=%s\n' "$status" | tee -a "$EVIDENCE"
+    finish_failed_run runtime "$status"
     exit "$status"
 fi
 grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE" \
@@ -111,9 +160,9 @@ grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE
 echo
 echo "Did both monitors show the same scene, with DP-1 at 2560x1440 and DP-2 at 1920x1080?"
 echo "Type yes to record visible-pixel acceptance."
-read -r visual_confirmation </dev/tty
-if [[ "$visual_confirmation" != "yes" ]]; then
-    printf 'sophia_mirror_group_gate schema=1 status=failed reason=visual_confirmation\n' | tee -a "$EVIDENCE"
+visual_confirmation=
+if ! read -r visual_confirmation </dev/tty || [[ "$visual_confirmation" != "yes" ]]; then
+    finish_failed_run visual_confirmation 1
     echo "Visible mirroring was not confirmed; evidence remains at $EVIDENCE." >&2
     exit 1
 fi

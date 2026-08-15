@@ -918,6 +918,20 @@ is excluded; retained product behavior is not.
   an end-to-end mirror test reachable at all; until it lands, reconciliation
   refuses both the shared position and the `mirror` directive, so the
   head-composition test asserts the projection shape those changes must preserve.
+  The 2026-08-14 physical attempt reached both configured heads but failed with an
+  AMDGPU command-stream rejection before visual confirmation. That failure exposed
+  a later regression: frames were queued for every exporter, while initialization,
+  ticks, resource ownership, and retirement still selected the primary head.
+  The repair now gives every connector an explicit scanout lane, submits distinct
+  native-size buffers per head, and joins callbacks on one logical frame identity.
+  Retained mixed frames, renderer-image handoff, and hardware cursor updates fan out
+  across the group; CPU source pixels are shared, and initial projection uses direct
+  CPU buffers so startup does not migrate an inline EGL target into a worker.
+  Failed gates now archive a bounded kernel delta separately from promotion proof,
+  and the physical verifier requires causal per-head submit/callback/retire records
+  for one common frame. Offline and fake-device coverage is green. This item remains
+  open until the diagnostic-capable tty4 run visibly passes and its archive verifies;
+  no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

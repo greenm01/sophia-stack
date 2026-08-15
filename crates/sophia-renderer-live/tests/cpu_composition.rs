@@ -11,11 +11,69 @@ use sophia_renderer_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferSource,
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuCompositionElementRef,
     LiveCpuCompositionLayer, LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode,
-    LiveProductionCpuScene, compose_live_cpu_display_list_frame,
+    LiveProductionCpuScene, LiveSharedCpuBufferSource, compose_live_cpu_display_list_frame,
     compose_live_cpu_display_list_frame_with_metrics_reusing,
     compose_live_cpu_display_list_frame_with_metrics_reusing_damage, compose_live_cpu_frame,
     compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
+    project_live_cpu_composed_frame,
 };
+
+#[test]
+fn shared_cpu_source_moves_pixels_once_and_clones_the_arc() {
+    let bytes = vec![0x5a; 16];
+    let allocation = bytes.as_ptr();
+    let source: LiveSharedCpuBufferSource = LiveCpuBufferSource {
+        handle: 7,
+        size: Size {
+            width: 2,
+            height: 2,
+        },
+        stride: 8,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        generation: 11,
+        bytes,
+    }
+    .into();
+
+    assert_eq!(source.bytes.as_ptr(), allocation);
+    let cloned = source.clone();
+    assert!(Arc::ptr_eq(&source.bytes, &cloned.bytes));
+    assert_eq!(source.handle, cloned.handle);
+    assert_eq!(source.generation, cloned.generation);
+}
+
+#[test]
+fn cpu_mirror_projection_scales_pixels_and_leaves_bars_black() {
+    let source = sophia_renderer_live::LiveCpuComposedFrame {
+        size: Size {
+            width: 2,
+            height: 1,
+        },
+        stride: 8,
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        bytes: Arc::new(vec![1, 2, 3, 0xff, 4, 5, 6, 0xff]),
+    };
+    let projected = project_live_cpu_composed_frame(
+        &source,
+        Size {
+            width: 4,
+            height: 3,
+        },
+        Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 2,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(&projected.bytes[0..4], &[1, 2, 3, 0xff]);
+    assert_eq!(&projected.bytes[4..8], &[1, 2, 3, 0xff]);
+    assert_eq!(&projected.bytes[8..12], &[4, 5, 6, 0xff]);
+    assert_eq!(&projected.bytes[12..16], &[4, 5, 6, 0xff]);
+    assert!(projected.bytes[32..48].iter().all(|byte| *byte == 0));
+}
 
 #[test]
 fn production_scene_discards_late_patch_but_reports_missing_committed_base() {

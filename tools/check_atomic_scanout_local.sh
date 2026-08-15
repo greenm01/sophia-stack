@@ -63,6 +63,10 @@ bash -n tools/runtime_rendered_scanout_evidence.sh
 bash -n tools/atomic_scanout_hardware_proof.sh
 bash -n tools/atomic_scanout_hardware_status.sh
 bash -n tools/run_mirror_group_gate_tty4.sh \
+    tools/collect_mirror_group_kernel_delta.sh \
+    tools/verify_mirror_group_diagnostic.sh \
+    tools/verify_mirror_group_diagnostic_archive.sh \
+    tools/archive_mirror_group_diagnostic_run.sh \
     tools/verify_mirror_group_physical.sh \
     tools/verify_mirror_group_physical_archive.sh \
     tools/archive_mirror_group_physical_run.sh \

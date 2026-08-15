@@ -1,7 +1,35 @@
 use sophia_protocol::{OutputId, TransactionId};
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 pub const LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL: Duration = Duration::from_millis(500);
+
+/// Settles an initialization transaction after its fallible KMS work.
+///
+/// Once at least one physical head exists, a failed initialization may already
+/// have installed scanout resources on an earlier head. The caller must therefore
+/// run its ownership rollback before returning the initialization error. Keeping
+/// this decision in one helper also makes the error-preservation contract
+/// independently testable without opening real DRM devices.
+pub fn finish_live_production_native_initialization(
+    initialized: Result<(), Box<dyn std::error::Error>>,
+    rollback_required: bool,
+    rollback: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Err(error) = initialized else {
+        return Ok(());
+    };
+    if !rollback_required {
+        return Err(error);
+    }
+    match rollback() {
+        Ok(()) => Err(error),
+        Err(rollback) => Err(format!(
+            "native output initialization failed: {error}; rollback failed: {rollback}"
+        )
+        .into()),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LiveProductionNativeFrameId(u64);
@@ -13,6 +41,216 @@ impl LiveProductionNativeFrameId {
 
     pub const fn raw(self) -> u64 {
         self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionMirrorGroupBegin {
+    Started,
+    GenerationInFlight,
+    Poisoned,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionMirrorHeadTransition {
+    Accepted,
+    GroupReady,
+    Duplicate,
+    UnknownHead,
+    WrongGeneration,
+    NotSubmitted,
+}
+
+/// Joins independently serviced physical heads back into one logical frame.
+///
+/// Rendering and KMS ownership remain per connector. The Engine-facing frame is
+/// complete only after every connector that began the generation has submitted
+/// and flipped it. A second generation cannot enter this coordinator while the
+/// first is active, so a fast head cannot race ahead and display a newer logical
+/// frame than a slower sibling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveProductionMirrorGroupLifecycle {
+    output: OutputId,
+    required: BTreeSet<u32>,
+    initialized: BTreeSet<u32>,
+    active: Option<LiveProductionNativeFrameId>,
+    submitted: BTreeSet<u32>,
+    flipped: BTreeSet<u32>,
+    max_flip_ust_usec: Option<u64>,
+    failed: bool,
+    completed: Option<LiveProductionNativeFrameId>,
+}
+
+impl LiveProductionMirrorGroupLifecycle {
+    pub fn new(output: OutputId, connectors: impl IntoIterator<Item = u32>) -> Option<Self> {
+        let required = connectors.into_iter().collect::<BTreeSet<_>>();
+        (!required.is_empty() && !required.contains(&0)).then_some(Self {
+            output,
+            required,
+            initialized: BTreeSet::new(),
+            active: None,
+            submitted: BTreeSet::new(),
+            flipped: BTreeSet::new(),
+            max_flip_ust_usec: None,
+            failed: false,
+            completed: None,
+        })
+    }
+
+    pub const fn output(&self) -> OutputId {
+        self.output
+    }
+
+    pub fn connectors(&self) -> impl Iterator<Item = u32> + '_ {
+        self.required.iter().copied()
+    }
+
+    pub fn initialized(&self) -> bool {
+        self.initialized == self.required
+    }
+
+    pub fn mark_initialized(&mut self, connector: u32) -> LiveProductionMirrorHeadTransition {
+        if !self.required.contains(&connector) {
+            return LiveProductionMirrorHeadTransition::UnknownHead;
+        }
+        if !self.initialized.insert(connector) {
+            return LiveProductionMirrorHeadTransition::Duplicate;
+        }
+        if self.initialized() {
+            LiveProductionMirrorHeadTransition::GroupReady
+        } else {
+            LiveProductionMirrorHeadTransition::Accepted
+        }
+    }
+
+    pub fn begin(&mut self, frame: LiveProductionNativeFrameId) -> LiveProductionMirrorGroupBegin {
+        if self.failed {
+            return LiveProductionMirrorGroupBegin::Poisoned;
+        }
+        if self.active.is_some() {
+            return LiveProductionMirrorGroupBegin::GenerationInFlight;
+        }
+        self.active = Some(frame);
+        self.submitted.clear();
+        self.flipped.clear();
+        self.max_flip_ust_usec = None;
+        self.completed = None;
+        LiveProductionMirrorGroupBegin::Started
+    }
+
+    pub const fn active_frame(&self) -> Option<LiveProductionNativeFrameId> {
+        self.active
+    }
+
+    pub const fn failed(&self) -> bool {
+        self.failed
+    }
+
+    pub fn awaiting_flips(&self) -> bool {
+        self.active.is_some() && self.submitted == self.required
+    }
+
+    /// Poisons a partially submitted generation.
+    ///
+    /// Already accepted physical commits still own their resources and must
+    /// drain, but no later tick may submit another logical generation or publish
+    /// this one as presented.
+    pub fn abort(&mut self, frame: LiveProductionNativeFrameId) -> bool {
+        if self.active != Some(frame) {
+            return false;
+        }
+        self.failed = true;
+        true
+    }
+
+    pub fn mark_submitted(
+        &mut self,
+        connector: u32,
+        frame: LiveProductionNativeFrameId,
+    ) -> LiveProductionMirrorHeadTransition {
+        if !self.required.contains(&connector) {
+            return LiveProductionMirrorHeadTransition::UnknownHead;
+        }
+        if self.active != Some(frame) {
+            return LiveProductionMirrorHeadTransition::WrongGeneration;
+        }
+        if !self.submitted.insert(connector) {
+            return LiveProductionMirrorHeadTransition::Duplicate;
+        }
+        if self.submitted == self.required {
+            LiveProductionMirrorHeadTransition::GroupReady
+        } else {
+            LiveProductionMirrorHeadTransition::Accepted
+        }
+    }
+
+    pub fn mark_flipped(
+        &mut self,
+        connector: u32,
+        frame: LiveProductionNativeFrameId,
+    ) -> LiveProductionMirrorHeadTransition {
+        if !self.required.contains(&connector) {
+            return LiveProductionMirrorHeadTransition::UnknownHead;
+        }
+        if self.active != Some(frame) {
+            return LiveProductionMirrorHeadTransition::WrongGeneration;
+        }
+        if !self.submitted.contains(&connector) {
+            return LiveProductionMirrorHeadTransition::NotSubmitted;
+        }
+        if !self.flipped.insert(connector) {
+            return LiveProductionMirrorHeadTransition::Duplicate;
+        }
+        if self.flipped == self.required {
+            self.active = None;
+            self.completed = Some(frame);
+            LiveProductionMirrorHeadTransition::GroupReady
+        } else {
+            LiveProductionMirrorHeadTransition::Accepted
+        }
+    }
+
+    /// Records physical timing for the active generation.
+    ///
+    /// Logical feedback uses the latest physical UST and the logical generation
+    /// as MSC. Kernel sequences belong to individual CRTCs and cannot form one
+    /// coherent output-wide sequence.
+    pub fn observe_flip_timing(
+        &mut self,
+        frame: LiveProductionNativeFrameId,
+        _serial: u64,
+        ust_usec: u64,
+    ) -> bool {
+        if self.active != Some(frame) {
+            return false;
+        }
+        self.max_flip_ust_usec = Some(
+            self.max_flip_ust_usec
+                .map_or(ust_usec, |old| old.max(ust_usec)),
+        );
+        true
+    }
+
+    pub const fn flip_timing(&self) -> Option<(u64, u64)> {
+        let frame = match self.completed {
+            Some(frame) => frame,
+            None => match self.active {
+                Some(frame) => frame,
+                None => return None,
+            },
+        };
+        match self.max_flip_ust_usec {
+            Some(ust_usec) => Some((frame.raw(), ust_usec)),
+            None => None,
+        }
+    }
+
+    pub const fn completed_frame(&self) -> Option<LiveProductionNativeFrameId> {
+        self.completed
+    }
+
+    pub fn take_completed_frame(&mut self) -> Option<LiveProductionNativeFrameId> {
+        self.completed.take()
     }
 }
 

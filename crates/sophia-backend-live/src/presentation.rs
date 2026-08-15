@@ -10,11 +10,11 @@ use sophia_protocol::{
     BufferHandle, DmaBufDescriptor, FenceHandle, Rect, Size, TransactionId, Transform,
 };
 use sophia_renderer_live::{
-    LiveBufferRegistryError, LiveBufferState, LiveCompositionPlacement, LiveCpuBufferSource,
-    LiveCpuComposedFrame, LiveDmaBufPresentationRegistry, LiveOwnedDmaBufPlane,
-    LiveOwnedMixedCompositionFrame, LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
+    LiveBufferRegistryError, LiveBufferState, LiveCompositionPlacement, LiveCpuComposedFrame,
+    LiveDmaBufPresentationRegistry, LiveOwnedDmaBufPlane, LiveOwnedMixedCompositionFrame,
+    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
     LivePresentationDisconnectReport, LivePresentationRegistryLimits, LivePresentationRetirement,
-    LiveResourceReleaseStatus,
+    LiveResourceReleaseStatus, LiveSharedCpuBufferSource,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -272,14 +272,13 @@ impl LivePresentationResourceSession {
         if let Some(background) = cpu_background {
             let size = background.size;
             layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                buffer: LiveCpuBufferSource {
+                buffer: LiveSharedCpuBufferSource {
                     handle: 0,
                     size,
                     stride: background.stride,
                     format: background.format,
                     generation: 0,
-                    bytes: std::sync::Arc::try_unwrap(background.bytes)
-                        .unwrap_or_else(|bytes| bytes.as_ref().clone()),
+                    bytes: background.bytes,
                 },
                 placement: LiveCompositionPlacement {
                     target: Rect {

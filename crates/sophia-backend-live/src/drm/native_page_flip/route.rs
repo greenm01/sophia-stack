@@ -151,6 +151,9 @@ pub fn reduce_native_page_flip_event(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LibdrmKernelPageFlipTimestamp {
     pub output: OutputId,
+    /// Physical head identity. Logical output and sequence are insufficient for
+    /// a mirror group because two CRTCs may report the same kernel sequence.
+    pub connector_id: u32,
     pub frame_serial: u64,
     pub ust_usec: u64,
 }

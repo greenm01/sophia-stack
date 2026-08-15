@@ -90,6 +90,36 @@ impl RealAtomicScanoutPageFlipSession {
         Ok(())
     }
 
+    /// Modesets one physical head and returns its displayed resource owner.
+    ///
+    /// A mirror group has one such owner per connector even though it remains one
+    /// logical Engine output. The logical runtime adopts its primary head through
+    /// the wrapper above; sibling owners stay with the native-head lifecycle.
+    pub(crate) fn initialize_persistent_native_gbm_scanout_head<R>(
+        &mut self,
+        exporter: &mut NativeGbmRenderedScanoutBufferDiscoveryExporter<R>,
+        selection: LibdrmNativePrimaryPlaneSelection,
+    ) -> Result<
+        LiveRenderedPrimaryPlaneScanoutSubmission<NativeGbmRenderedScanoutOwner>,
+        LibdrmNativeAtomicScanoutSmokeEvidence,
+    >
+    where
+        R: RenderDeviceDiscoveryBackend,
+    {
+        let mut submitted = self.submit_native_gbm_rendered_primary_plane_smoke_phase_with_policy(
+            LibdrmNativeAtomicScanoutSmokePhase::InitialModeset,
+            exporter,
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::blocking_modeset(),
+            selection,
+        )?;
+        let Some(submission) = submitted.submission.take() else {
+            let mut evidence = submitted.evidence(None, None, None);
+            evidence.status = LibdrmNativeAtomicScanoutSmokeStatus::RetainedResourceMissing;
+            return Err(evidence);
+        };
+        Ok(submission)
+    }
+
     pub fn run_native_gbm_rendered_primary_plane_smoke_phase<R>(
         &mut self,
         phase: LibdrmNativeAtomicScanoutSmokePhase,

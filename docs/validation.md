@@ -1925,6 +1925,30 @@ It runs formatting, the GBM/EGL renderer checks, the backend-live
 libdrm/libinput scanout feature checks, and the reduced verifier fixture
 checks. It does not request DRM master or modeset hardware.
 
+The two-head mirror gate is a separate destructive TTY4 proof:
+
+```sh
+tools/run_mirror_group_gate_tty4.sh
+```
+
+Only a status-zero session followed by the operator's exact `yes` pixel
+confirmation enters
+`$XDG_STATE_HOME/sophia/promotion/mirror-group-runs/`. A failed runtime or
+rejected visual confirmation instead enters
+`$XDG_STATE_HOME/sophia/diagnostics/mirror-group-runs/`; it cannot satisfy the
+physical promotion verifier. The diagnostic record pins the source commit,
+binary, and profile, and records the failure stage, process exit, derived
+signal, and a checksum-protected kernel-log delta. The delta retains at most
+256 newest lines by default. The runner first tries unprivileged `dmesg`, then
+non-interactive `sudo -n dmesg`; if neither is already permitted, it records
+the capture as unavailable and never prompts for new privilege. Override the
+bound only with `SOPHIA_MIRROR_KERNEL_MAX_LINES` between 1 and 4096.
+
+Passing evidence must also contain one common logical frame with connector-specific
+`submitted`, `callback_accepted`, and `retired` records for both DP-1 and DP-2.
+Positive aggregate counters alone are insufficient: they can describe unrelated
+head generations and therefore do not prove a mirror join.
+
 Run the opt-in local hardware smoke only when you want real render-node
 coverage:
 

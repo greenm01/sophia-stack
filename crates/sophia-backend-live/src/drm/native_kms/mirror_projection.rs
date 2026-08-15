@@ -82,3 +82,84 @@ pub fn project_mirror_rect(source: Size, destination: Size, fit: NativeMirrorFit
         height,
     }
 }
+
+/// Projects a child rectangle from logical-scene coordinates into a head's
+/// already projected scene rectangle.
+///
+/// Mixed composition retains individual CPU, DMA-BUF, renderer-image, and solid
+/// layers rather than one flat source. Every layer and output-space clip must
+/// follow the same scale and offset as the full scene.
+pub fn project_mirror_child_rect(child: Rect, source: Size, projected_scene: Rect) -> Rect {
+    if source.width <= 0
+        || source.height <= 0
+        || projected_scene.width <= 0
+        || projected_scene.height <= 0
+    {
+        return Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        };
+    }
+    let project = |value: i32, source_extent: i32, origin: i32, extent: i32| {
+        let result =
+            i64::from(origin) + i64::from(value) * i64::from(extent) / i64::from(source_extent);
+        result.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    };
+    let left = project(
+        child.x,
+        source.width,
+        projected_scene.x,
+        projected_scene.width,
+    );
+    let top = project(
+        child.y,
+        source.height,
+        projected_scene.y,
+        projected_scene.height,
+    );
+    let right = project(
+        child.x.saturating_add(child.width),
+        source.width,
+        projected_scene.x,
+        projected_scene.width,
+    );
+    let bottom = project(
+        child.y.saturating_add(child.height),
+        source.height,
+        projected_scene.y,
+        projected_scene.height,
+    );
+    Rect {
+        x: left.min(right),
+        y: top.min(bottom),
+        width: right.saturating_sub(left).abs(),
+        height: bottom.saturating_sub(top).abs(),
+    }
+}
+
+/// Projects one logical-output pixel coordinate onto a physical mirror head.
+pub fn project_mirror_coordinates(
+    x: i32,
+    y: i32,
+    source: Size,
+    destination: Size,
+    fit: NativeMirrorFit,
+) -> Option<(i32, i32)> {
+    let scene = project_mirror_rect(source, destination, fit);
+    if scene.width <= 0 || scene.height <= 0 {
+        return None;
+    }
+    let point = project_mirror_child_rect(
+        Rect {
+            x,
+            y,
+            width: 0,
+            height: 0,
+        },
+        source,
+        scene,
+    );
+    Some((point.x, point.y))
+}

@@ -245,6 +245,35 @@ impl RealAtomicScanoutPageFlipSession {
         self.cursor_controller.update(&mut device, target)
     }
 
+    #[cfg(feature = "gbm-probe")]
+    pub fn update_classic_hardware_cursors(
+        &mut self,
+        targets: &[(LibdrmNativePrimaryPlaneSelection, i32, i32)],
+    ) -> io::Result<ClassicHardwareCursorUpdate> {
+        let targets = targets
+            .iter()
+            .filter(|(selection, _, _)| {
+                self.selections
+                    .iter()
+                    .any(|candidate| candidate.crtc == selection.crtc)
+            })
+            .map(|(selection, x, y)| LegacyHardwareCursorTarget {
+                crtc: selection.crtc,
+                x: *x,
+                y: *y,
+            })
+            .collect::<Vec<_>>();
+        let buffer = self
+            .cursor_buffer
+            .as_ref()
+            .ok_or_else(|| io::Error::other("legacy hardware cursor buffer is unavailable"))?;
+        let mut device = RealLegacyHardwareCursorDevice {
+            card: &self.card,
+            buffer,
+        };
+        self.cursor_controller.update_many(&mut device, &targets)
+    }
+
     pub fn card(&self) -> &RealAtomicScanoutCard {
         &self.card
     }

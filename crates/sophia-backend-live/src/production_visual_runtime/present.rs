@@ -168,7 +168,7 @@ impl LiveProductionVisualRuntime {
                         .find(|layer| layer.surface == surface)
                         .ok_or("ordered CPU layer disappeared from queued Present")?;
                     mixed.layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                        buffer: layer.buffer.clone(),
+                        buffer: layer.buffer.clone().into(),
                         placement: LiveCompositionPlacement {
                             target: layer.geometry,
                             clip: None,
@@ -243,7 +243,7 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
-        let frame = native_scanout.queue_mixed_frame(primary_output, transaction, mixed);
+        let frame = native_scanout.queue_mixed_frame(primary_output, transaction, mixed)?;
 
         let layer_templates = self.compositor_layer_templates();
         let production = &self.production;

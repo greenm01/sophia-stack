@@ -57,7 +57,7 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .primary_output()
                 .ok_or("persistent backend runtime has no primary output")?;
-            native_scanout.queue_retained_mixed_frame(primary, frame);
+            native_scanout.queue_retained_mixed_frame(primary, frame)?;
         }
         Ok(true)
     }
@@ -170,7 +170,7 @@ impl LiveProductionVisualRuntime {
                     {
                         retained_client_image = true;
                         layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                            buffer: layer.buffer.clone(),
+                            buffer: layer.buffer.clone().into(),
                             placement: LiveCompositionPlacement {
                                 target: layer.geometry,
                                 clip: None,

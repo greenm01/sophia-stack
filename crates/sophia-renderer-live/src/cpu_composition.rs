@@ -3,7 +3,7 @@ use std::sync::Arc;
 use sophia_engine::CompositorRgb8;
 use sophia_protocol::{Point, Rect, Region, Size};
 
-use crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888;
+use crate::{LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888, LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveCpuBufferSource {
@@ -13,6 +13,33 @@ pub struct LiveCpuBufferSource {
     pub format: u32,
     pub generation: u64,
     pub bytes: Vec<u8>,
+}
+
+/// Immutable CPU pixels retained by an owned renderer-composition frame.
+///
+/// Cloning this record preserves one pixel allocation so a frame can be
+/// projected onto multiple scanout heads without cloning its bytes per head.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveSharedCpuBufferSource {
+    pub handle: u64,
+    pub size: Size,
+    pub stride: u32,
+    pub format: u32,
+    pub generation: u64,
+    pub bytes: Arc<Vec<u8>>,
+}
+
+impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
+    fn from(buffer: LiveCpuBufferSource) -> Self {
+        Self {
+            handle: buffer.handle,
+            size: buffer.size,
+            stride: buffer.stride,
+            format: buffer.format,
+            generation: buffer.generation,
+            bytes: Arc::new(buffer.bytes),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +79,116 @@ pub struct LiveCpuComposedFrame {
     pub stride: u32,
     pub format: u32,
     pub bytes: Arc<Vec<u8>>,
+}
+
+/// Projects one flat CPU scene into a physical head-sized buffer.
+///
+/// This is the fail-safe mirror bootstrap: initial KMS ownership can be
+/// established through the direct CPU path before renderer workers start, so no
+/// inline EGL target survives the handoff to a worker context.
+pub fn project_live_cpu_composed_frame(
+    frame: &LiveCpuComposedFrame,
+    destination: Size,
+    target: Rect,
+) -> std::io::Result<LiveCpuComposedFrame> {
+    if frame.size.width <= 0
+        || frame.size.height <= 0
+        || destination.width <= 0
+        || destination.height <= 0
+        || target.width <= 0
+        || target.height <= 0
+        || !matches!(
+            frame.format,
+            LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 | LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
+        )
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "CPU mirror projection has invalid geometry or format",
+        ));
+    }
+    let source_stride = usize::try_from(frame.stride)
+        .map_err(|_| std::io::Error::other("CPU mirror source stride exceeds address space"))?;
+    let source_height = usize::try_from(frame.size.height)
+        .map_err(|_| std::io::Error::other("CPU mirror source height exceeds address space"))?;
+    let source_width = usize::try_from(frame.size.width)
+        .map_err(|_| std::io::Error::other("CPU mirror source width exceeds address space"))?;
+    if source_stride < source_width.saturating_mul(4) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "CPU mirror source stride is too small",
+        ));
+    }
+    let source_len = source_stride
+        .checked_mul(source_height)
+        .ok_or_else(|| std::io::Error::other("CPU mirror source size overflow"))?;
+    if frame.bytes.len() < source_len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "CPU mirror source pixels are truncated",
+        ));
+    }
+    if destination == frame.size
+        && target
+            == (Rect {
+                x: 0,
+                y: 0,
+                width: destination.width,
+                height: destination.height,
+            })
+    {
+        return Ok(frame.clone());
+    }
+    let width = usize::try_from(destination.width)
+        .map_err(|_| std::io::Error::other("CPU mirror width exceeds address space"))?;
+    let height = usize::try_from(destination.height)
+        .map_err(|_| std::io::Error::other("CPU mirror height exceeds address space"))?;
+    let stride = width
+        .checked_mul(4)
+        .ok_or_else(|| std::io::Error::other("CPU mirror stride overflow"))?;
+    let len = stride
+        .checked_mul(height)
+        .ok_or_else(|| std::io::Error::other("CPU mirror allocation overflow"))?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(len)
+        .map_err(|_| std::io::Error::other("CPU mirror allocation failed"))?;
+    bytes.resize(len, 0);
+
+    let left = target.x.max(0);
+    let top = target.y.max(0);
+    let right = target.x.saturating_add(target.width).min(destination.width);
+    let bottom = target
+        .y
+        .saturating_add(target.height)
+        .min(destination.height);
+    for y in top..bottom {
+        let source_y = i64::from(y.saturating_sub(target.y)) * i64::from(frame.size.height)
+            / i64::from(target.height);
+        let source_y = usize::try_from(source_y.clamp(0, i64::from(frame.size.height - 1)))
+            .map_err(|_| std::io::Error::other("CPU mirror source row is invalid"))?;
+        for x in left..right {
+            let source_x = i64::from(x.saturating_sub(target.x)) * i64::from(frame.size.width)
+                / i64::from(target.width);
+            let source_x = usize::try_from(source_x.clamp(0, i64::from(frame.size.width - 1)))
+                .map_err(|_| std::io::Error::other("CPU mirror source column is invalid"))?;
+            let source_offset = source_y * source_stride + source_x * 4;
+            let destination_y = usize::try_from(y)
+                .map_err(|_| std::io::Error::other("CPU mirror destination row is invalid"))?;
+            let destination_x = usize::try_from(x)
+                .map_err(|_| std::io::Error::other("CPU mirror destination column is invalid"))?;
+            let destination_offset = destination_y * stride + destination_x * 4;
+            bytes[destination_offset..destination_offset + 4]
+                .copy_from_slice(&frame.bytes[source_offset..source_offset + 4]);
+        }
+    }
+    Ok(LiveCpuComposedFrame {
+        size: destination,
+        stride: u32::try_from(stride)
+            .map_err(|_| std::io::Error::other("CPU mirror stride exceeds protocol range"))?,
+        format: frame.format,
+        bytes: Arc::new(bytes),
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

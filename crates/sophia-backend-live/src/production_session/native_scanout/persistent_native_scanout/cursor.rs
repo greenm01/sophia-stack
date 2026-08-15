@@ -41,14 +41,31 @@ impl LiveProductionNativeScanout {
 
         let update_started = Instant::now();
         let mut offset_x = 0_i32;
-        let mut target = None;
-        for head in &self.heads {
-            let width = head.output.size.width;
-            let height = head.output.size.height;
+        let mut targets =
+            BTreeMap::<usize, Vec<(crate::LibdrmNativePrimaryPlaneSelection, i32, i32)>>::new();
+        for logical_output in self.outputs() {
+            let width = logical_output.size.width;
+            let height = logical_output.size.height;
             let x = position.x.floor() as i32;
             let y = position.y.floor() as i32;
             if x >= offset_x && x < offset_x.saturating_add(width) && y >= 0 && y < height {
-                target = Some((head.group, head.selection, x.saturating_sub(offset_x), y));
+                let logical_x = x.saturating_sub(offset_x);
+                for head_index in self.head_indices(logical_output.id) {
+                    let head = &self.heads[head_index];
+                    let Some((head_x, head_y)) = crate::project_mirror_coordinates(
+                        logical_x,
+                        y,
+                        logical_output.size,
+                        head.output.size,
+                        self.mirror_fit,
+                    ) else {
+                        continue;
+                    };
+                    targets
+                        .entry(head.group)
+                        .or_default()
+                        .push((head.selection, head_x, head_y));
+                }
                 break;
             }
             offset_x = offset_x.saturating_add(width);
@@ -56,10 +73,8 @@ impl LiveProductionNativeScanout {
 
         let mut visible = false;
         for (group_index, group) in self.groups.iter_mut().enumerate() {
-            let group_target = target
-                .filter(|(target_group, _, _, _)| *target_group == group_index)
-                .map(|(_, selection, x, y)| (selection, x, y));
-            match group.session.update_classic_hardware_cursor(group_target) {
+            let group_targets = targets.get(&group_index).map_or(&[][..], Vec::as_slice);
+            match group.session.update_classic_hardware_cursors(group_targets) {
                 Ok(crate::ClassicHardwareCursorUpdate::Visible) => visible = true,
                 Ok(crate::ClassicHardwareCursorUpdate::Hidden) => {}
                 Ok(crate::ClassicHardwareCursorUpdate::Deferred) => {

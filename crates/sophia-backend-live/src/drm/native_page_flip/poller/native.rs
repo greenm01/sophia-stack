@@ -154,6 +154,7 @@ impl LibdrmPageFlipEventPoller for NativeLibdrmPageFlipEventPoller {
             self.emitted_kernel_timestamps
                 .push_back(LibdrmKernelPageFlipTimestamp {
                     output: callback.output,
+                    connector_id: callback.connector_id,
                     frame_serial: callback.frame_serial,
                     ust_usec,
                 });

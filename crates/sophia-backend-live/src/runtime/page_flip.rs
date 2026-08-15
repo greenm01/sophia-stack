@@ -13,6 +13,10 @@ where
         self.primary_output_state().page_flip_event
     }
 
+    pub(crate) fn set_page_flip_observation(&mut self, event: LivePageFlipEvent) {
+        self.primary_output_state_mut().page_flip_event = event;
+    }
+
     pub fn observe_page_flip_outcome(&mut self, outcome: &PageFlipCommitOutcome) {
         self.primary_output_state_mut().page_flip_event =
             LivePageFlipEvent::from_commit_outcome(outcome);
@@ -93,6 +97,34 @@ where
         {
             state.page_flip_event = accepted.event;
         }
+        self.page_flip_callback_queue = Some(queue);
+        report
+    }
+
+    /// Drain physical-head callbacks without publishing a logical-output flip.
+    ///
+    /// A mirror group has one logical output but several independently flipping
+    /// connectors. The group coordinator must join those callbacks before the
+    /// Engine can observe `Presented`; the ordinary queue drain publishes each
+    /// accepted callback immediately and is therefore only correct for one head.
+    pub(crate) fn drain_mirror_page_flip_callback_queue(
+        &mut self,
+    ) -> LivePageFlipCallbackQueueReport {
+        let Some(queue) = self.page_flip_callback_queue.take() else {
+            return LivePageFlipCallbackQueueReport::default();
+        };
+        let report = queue.drain_ready_with(|callback| {
+            let Some(state) = self.outputs.get_mut(callback.output) else {
+                return LivePageFlipCallbackReport {
+                    decision: LivePageFlipCallbackDecision::RejectedUnexpectedOutput,
+                    event: LivePageFlipEvent {
+                        status: LivePageFlipEventStatus::WaitingForOutput,
+                        frame_serial: None,
+                    },
+                };
+            };
+            state.page_flip_callback_intake.observe(callback)
+        });
         self.page_flip_callback_queue = Some(queue);
         report
     }

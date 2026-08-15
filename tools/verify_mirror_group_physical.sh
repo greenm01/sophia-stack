@@ -50,6 +50,8 @@ grep -Fxq \
     "$evidence" || fail "one logical output was not backed by two owned heads"
 grep -Fxq 'sophia_live_session_startup schema=2 status=output_baseline_ready outputs=1/1' \
     "$evidence" || fail "the logical output baseline was not presented"
+grep -Eq '^sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=(none|[0-9]+)$' \
+    "$evidence" || fail "native ownership did not suspend through a clean drain"
 
 mapfile -t ready_heads < <(
     grep -E '^sophia_live_native_head schema=1 status=ready output=[0-9]+ connector=DP-[12] connector_id=[0-9]+ mode=[0-9]+x[0-9]+ refresh_millihz=[0-9]+ mirrored=true$' \
@@ -67,6 +69,12 @@ dp2_output="$(field "$dp2" output)" || fail "DP-2 omitted output identity"
 dp1_connector="$(field "$dp1" connector_id)" || fail "DP-1 omitted connector identity"
 dp2_connector="$(field "$dp2" connector_id)" || fail "DP-2 omitted connector identity"
 [[ "$dp1_connector" != "$dp2_connector" ]] || fail "the heads share one connector identity"
+for connector in "$dp1_connector" "$dp2_connector"; do
+    grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=direct_cpu output=$dp1_output connector_id=$connector exports=1" \
+        "$evidence" || fail "connector $connector did not use direct-CPU bootstrap"
+    grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=worker_ready output=$dp1_output connector_id=$connector workers=1" \
+        "$evidence" || fail "connector $connector did not establish its renderer worker"
+done
 
 mapfile -t complete_heads < <(
     grep -E '^sophia_live_native_head schema=1 status=complete output=[0-9]+ connector_id=[0-9]+ checksum=[0-9]+ submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
@@ -83,6 +91,30 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     require_positive_field "$head_line" callbacks
     require_positive_field "$head_line" nonzero_exports
 done
+
+# Completion counters can be positive for unrelated generations. Require one
+# exact logical frame to have crossed submit, callback, and retire on both heads.
+common_frame=
+while read -r frame; do
+    [[ -n "$frame" ]] || continue
+    causal=true
+    for connector in "$dp1_connector" "$dp2_connector"; do
+        submit_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=submitted output=$dp1_output connector_id=$connector .* frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        callback_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=callback_accepted output=$dp1_output connector_id=$connector callbacks=1 kernel_sequence=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        retire_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=1 status=retired output=$dp1_output connector_id=$connector submission=[0-9]+ frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        if [[ -z "$submit_line" || -z "$callback_line" || -z "$retire_line" ]] \
+            || (( submit_line >= callback_line || callback_line >= retire_line )); then
+            causal=false
+        fi
+    done
+    if [[ "$causal" == true ]]; then
+        common_frame="$frame"
+        break
+    fi
+done < <(
+    sed -n "s/^sophia_live_native_head_page_flip schema=1 status=retired output=$dp1_output connector_id=$dp1_connector submission=[0-9][0-9]* frame=\([0-9][0-9]*\)$/\1/p" "$evidence"
+)
+[[ -n "$common_frame" ]] || fail "no logical frame completed causally on both heads"
 
 grep -Fxq 'sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced' \
     "$evidence" || fail "both heads did not complete without pacing rejection"
@@ -102,6 +134,18 @@ require_positive_field "$session" native_submissions
 require_positive_field "$session" native_retirements
 require_positive_field "$session" native_callback_accepted
 require_positive_field "$session" native_nonzero_exports
+resources="$(grep -E '^sophia_live_native_resources schema=5 status=complete ' "$evidence")"
+[[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
+    fail "expected one native renderer resource completion"
+require_positive_field "$resources" worker_requests
+require_positive_field "$resources" worker_completions
+for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; do
+    require_field "$resources" "$key" 0
+done
+require_field "$resources" worker_completions "$(field "$resources" worker_requests)"
+session_line="$(grep -nEm1 '^sophia_live_session schema=16 status=bounded_complete ' "$evidence" | cut -d: -f1)"
+last_retire_line="$(grep -nE '^sophia_live_native_head_page_flip schema=1 status=retired ' "$evidence" | tail -n1 | cut -d: -f1)"
+(( last_retire_line < session_line )) || fail "bounded completion preceded physical retirement"
 grep -Eq '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' \
     "$evidence" || fail "session health was not clean"
 grep -Fxq 'sophia_live_output_topology_health schema=1 status=clean quarantined=false' \

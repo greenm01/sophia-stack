@@ -183,7 +183,7 @@ pub enum LiveMixedCompositionLayer<'a> {
 #[derive(Debug)]
 pub enum LiveOwnedMixedCompositionLayer {
     Cpu {
-        buffer: crate::LiveCpuBufferSource,
+        buffer: crate::LiveSharedCpuBufferSource,
         placement: LiveCompositionPlacement,
     },
     DmaBuf {
@@ -721,7 +721,7 @@ where
                             stride: buffer.stride,
                             format: buffer.format,
                             generation: buffer.generation,
-                            bytes: &buffer.bytes,
+                            bytes: buffer.bytes.as_slice(),
                         },
                         placement: *placement,
                     }
@@ -828,6 +828,32 @@ impl NativeGbmScanoutBufferExporter {
             device,
             target,
             sophia_renderer_native_egl::export_rendered_gbm_scanout_buffer_from_backend_device_result,
+        )
+    }
+
+    pub fn export_direct_cpu_owned_scanout_buffer_from_backend_device_result<T: AsFd>(
+        device: std::io::Result<T>,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: &crate::LiveCpuComposedFrame,
+    ) -> NativeGbmOwnedScanoutBufferExportReport {
+        if !target.is_valid_scanout_target()
+            || frame.size != target.size
+            || frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+        {
+            return NativeGbmOwnedScanoutBufferExportReport::new(
+                LiveRendererScanoutBufferExportStatus::InvalidTarget,
+                LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                None,
+            );
+        }
+        reduced_native_owned_scanout_buffer_export_report(
+            sophia_renderer_native_egl::export_direct_cpu_xrgb8888_gbm_scanout_buffer_from_backend_device_result(
+                device,
+                target.size.width as u32,
+                target.size.height as u32,
+                frame.stride,
+                &frame.bytes,
+            ),
         )
     }
 }

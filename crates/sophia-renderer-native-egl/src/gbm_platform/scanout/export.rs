@@ -49,6 +49,52 @@ pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd
     }
 }
 
+/// Allocates and writes a scanout buffer without initializing EGL.
+///
+/// Mirror startup uses this fail-closed path before ownership moves to renderer
+/// workers. A host that cannot expose a writable linear GBM scanout buffer is
+/// rejected rather than silently falling back to an inline EGL context.
+pub fn export_direct_cpu_xrgb8888_gbm_scanout_buffer_from_backend_device_result<
+    T: std::os::fd::AsFd,
+>(
+    device: std::io::Result<T>,
+    width: u32,
+    height: u32,
+    stride: u32,
+    pixels: &[u8],
+) -> NativeGbmOwnedScanoutBufferExportReport {
+    let expected_stride = width.checked_mul(4);
+    let expected_len = expected_stride
+        .and_then(|stride| usize::try_from(stride).ok())
+        .and_then(|stride| stride.checked_mul(usize::try_from(height).ok()?));
+    if width == 0
+        || height == 0
+        || expected_stride != Some(stride)
+        || expected_len != Some(pixels.len())
+    {
+        return failed_scanout_buffer_report(NativeGbmScanoutBufferExportDetail::InvalidTarget);
+    }
+    let Ok(device) = device else {
+        return NativeGbmOwnedScanoutBufferExportReport {
+            status: NativeGbmScanoutBufferExportStatus::Unavailable,
+            detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
+            buffer: None,
+        };
+    };
+    let gbm_device = match gbm::Device::new(device) {
+        Ok(device) => device,
+        Err(_) => {
+            return failed_scanout_buffer_report(
+                NativeGbmScanoutBufferExportDetail::GbmDeviceUnavailable,
+            );
+        }
+    };
+    match write_direct_cpu_xrgb8888_scanout_buffer(&gbm_device, width, height, pixels) {
+        Ok(buffer) => exported_scanout_buffer_report(buffer),
+        Err(detail) => failed_scanout_buffer_report(detail),
+    }
+}
+
 pub fn export_rendered_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd>(
     device: std::io::Result<T>,
     width: u32,

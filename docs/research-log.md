@@ -3,6 +3,42 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-14: failed mirror proofs are diagnostics, not promotion evidence
+
+- The physical mirror runner now preserves a strict evidence boundary. Only a
+  successful session plus explicit pixel confirmation reaches the promotion
+  archive; runtime and visual-confirmation failures go to a separate diagnostic
+  archive and retain their original exit semantics.
+- A failed record pins the same source, binary, and profile identity as the
+  promotion proof, then adds the failing stage, exit, derived signal, and a
+  bounded kernel-log delta. Kernel access is opportunistic and non-interactive:
+  inability to read it is an explicit fact rather than a reason to prompt or to
+  discard the rest of the failure evidence.
+- Kernel deltas retain the newest 256 lines by default and record whether the
+  snapshots were continuous, reset, or truncated. The archive verifier binds
+  that metadata to the retained delta and rejects promotion markers, so a useful
+  crash artifact cannot accidentally become proof that mirroring worked.
+
+## 2026-08-14: mirror presentation is a joined physical-head generation
+
+- The failed physical run disproved the primary-head shortcut. A mirror output now
+  owns one scanout lane per connector: exporter, displayed and submitted buffers,
+  cleanup, callback serial, and timing. The Engine advances once, physical heads
+  submit independently at their native modes, and logical presentation becomes
+  visible only after the connector set joins on one frame identity.
+- The group is bounded to one active generation plus the exporters' newest pending
+  frame. A partially submitted generation is poisoned: accepted KMS owners drain,
+  no replacement generation is admitted, and no logical presentation is emitted.
+  Sequential per-head commits remain deliberate; they follow the X-style decision
+  recorded in `todo.md` and avoid unproven multi-CRTC event semantics.
+- CPU mirror layers now share immutable source bytes. Retained CPU, DMA-BUF,
+  renderer-image, solid, and cursor geometry is projected per head. Renderer-image
+  suspend handoff also covers each physical exporter instead of only the primary.
+- Mirror bootstrap uses head-sized CPU buffers before renderer workers start. This
+  removes the mirror-specific inline-EGL-to-worker transition from the failed run.
+  It is a code-side crash control, not proof that the AMDGPU rejection is fixed;
+  that conclusion still requires a diagnostic-capable physical rerun.
+
 ## 2026-08-14: continuous geometry is latest-value, cancellation is ordered
 
 - Engine's floating pointer capture now produces Begin, Update, and End for the

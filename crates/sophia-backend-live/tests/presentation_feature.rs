@@ -22,6 +22,7 @@ use sophia_protocol::{
 use sophia_renderer_live::{
     LiveBufferState, LiveCompositionPlacement, LiveOwnedMixedCompositionFrame,
     LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame, LiveRendererImageId,
+    LiveSharedCpuBufferSource,
 };
 
 fn fd() -> OwnedFd {
@@ -295,6 +296,53 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
             blue: 0xff,
         }
     );
+}
+
+#[test]
+fn mixed_frame_clone_shares_immutable_cpu_pixels() {
+    let pixels = std::sync::Arc::new(vec![0x7f; 64]);
+    let frame = LiveOwnedMixedCompositionFrame {
+        layers: vec![LiveOwnedMixedCompositionLayer::Cpu {
+            buffer: LiveSharedCpuBufferSource {
+                handle: 17,
+                size: Size {
+                    width: 4,
+                    height: 4,
+                },
+                stride: 16,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 23,
+                bytes: std::sync::Arc::clone(&pixels),
+            },
+            placement: LiveCompositionPlacement {
+                target: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 4,
+                    height: 4,
+                },
+                clip: None,
+                transform: sophia_protocol::Transform::IDENTITY,
+                alpha: 1.0,
+            },
+        }],
+        output_damage_snapshot: None,
+    };
+
+    let cloned = try_clone_mixed_frame(&frame).unwrap();
+    let LiveOwnedMixedCompositionLayer::Cpu {
+        buffer: original, ..
+    } = &frame.layers[0]
+    else {
+        panic!("CPU layer changed representation");
+    };
+    let LiveOwnedMixedCompositionLayer::Cpu { buffer: cloned, .. } = &cloned.layers[0] else {
+        panic!("cloned CPU layer changed representation");
+    };
+
+    assert!(std::sync::Arc::ptr_eq(&original.bytes, &cloned.bytes));
+    assert_eq!(original.handle, cloned.handle);
+    assert_eq!(original.generation, cloned.generation);
 }
 
 #[test]

@@ -353,6 +353,11 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
                     frame_serial: Some(22),
                 },
             }),
+            accepted_callbacks: vec![LivePageFlipCallback {
+                output: OutputId::from_raw(1),
+                connector_id: 1,
+                frame_serial: 22,
+            }],
             disconnected: false,
             max_reached: true,
         }
@@ -383,6 +388,11 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
                     frame_serial: Some(23),
                 },
             }),
+            accepted_callbacks: vec![LivePageFlipCallback {
+                output: OutputId::from_raw(1),
+                connector_id: 1,
+                frame_serial: 23,
+            }],
             disconnected: false,
             max_reached: true,
         }
@@ -406,6 +416,7 @@ fn live_runtime_assembly_drains_bounded_page_flip_callback_queue() {
             rejected_unexpected_output: 0,
             rejected_stale_frame_serial: 0,
             last_accepted: None,
+            accepted_callbacks: Vec::new(),
             disconnected: true,
             max_reached: false,
         }

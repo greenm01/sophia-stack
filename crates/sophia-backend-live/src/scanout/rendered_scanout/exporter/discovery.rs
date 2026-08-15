@@ -39,6 +39,9 @@ where
     last_target_lifecycle: Option<LiveGbmEglFrameTargetLifecycleReport>,
     last_export_status: Option<LiveRendererScanoutBufferExportStatus>,
     pending_frame: Option<PendingRenderedFrame>,
+    direct_cpu_bootstrap_armed: bool,
+    direct_cpu_bootstrap_attempts: usize,
+    direct_cpu_bootstrap_exports: usize,
     cpu_frame_export_attempts: usize,
     dmabuf_frame_export_attempts: usize,
     dmabuf_frame_exports: usize,
@@ -82,6 +85,9 @@ where
             last_target_lifecycle: None,
             last_export_status: None,
             pending_frame: None,
+            direct_cpu_bootstrap_armed: false,
+            direct_cpu_bootstrap_attempts: 0,
+            direct_cpu_bootstrap_exports: 0,
             cpu_frame_export_attempts: 0,
             dmabuf_frame_export_attempts: 0,
             dmabuf_frame_exports: 0,
@@ -117,6 +123,31 @@ where
         self.context = None;
         self.context_status = None;
         Ok(())
+    }
+
+    /// Arms the next CPU export as a direct-GBM-only bootstrap.
+    ///
+    /// This is intentionally incompatible with either renderer owner. Mirror
+    /// initialization must never create an inline EGL context and then replace
+    /// it with a worker while its first scanout buffer remains displayed.
+    pub fn arm_direct_cpu_bootstrap(&mut self) -> Result<(), &'static str> {
+        if self.worker.is_some() || self.context.is_some() || self.direct_cpu_bootstrap_armed {
+            return Err("direct CPU bootstrap requires an uninitialized renderer owner");
+        }
+        self.direct_cpu_bootstrap_armed = true;
+        Ok(())
+    }
+
+    pub const fn worker_enabled(&self) -> bool {
+        self.worker.is_some()
+    }
+
+    pub const fn direct_cpu_bootstrap_attempts(&self) -> usize {
+        self.direct_cpu_bootstrap_attempts
+    }
+
+    pub const fn direct_cpu_bootstrap_exports(&self) -> usize {
+        self.direct_cpu_bootstrap_exports
     }
 
     pub fn with_preferred_modifiers(mut self, preferred_modifiers: impl Into<Vec<u64>>) -> Self {
@@ -394,6 +425,52 @@ where
                 LiveRendererScanoutBufferExportDetail::InvalidTarget,
                 None,
                 None,
+            );
+        }
+
+        if self.direct_cpu_bootstrap_armed {
+            self.direct_cpu_bootstrap_armed = false;
+            self.direct_cpu_bootstrap_attempts =
+                self.direct_cpu_bootstrap_attempts.saturating_add(1);
+            let report = match self.pending_frame.take() {
+                Some(PendingRenderedFrame::Cpu {
+                    frame, checksum, ..
+                }) => {
+                    self.cpu_frame_export_attempts =
+                        self.cpu_frame_export_attempts.saturating_add(1);
+                    self.last_cpu_frame_checksum = Some(checksum);
+                    sophia_renderer_live::NativeGbmScanoutBufferExporter::export_direct_cpu_owned_scanout_buffer_from_backend_device_result(
+                        self.discovery.open_render_device(),
+                        target,
+                        &frame,
+                    )
+                }
+                Some(frame) => {
+                    self.pending_frame = Some(frame);
+                    sophia_renderer_live::NativeGbmOwnedScanoutBufferExportReport::new(
+                        LiveRendererScanoutBufferExportStatus::InvalidTarget,
+                        LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                        None,
+                    )
+                }
+                None => sophia_renderer_live::NativeGbmOwnedScanoutBufferExportReport::new(
+                    LiveRendererScanoutBufferExportStatus::Degraded,
+                    LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+                    None,
+                ),
+            };
+            if report.status == LiveRendererScanoutBufferExportStatus::Exported {
+                self.direct_cpu_bootstrap_exports =
+                    self.direct_cpu_bootstrap_exports.saturating_add(1);
+            }
+            let descriptor = report.buffer.as_ref().map(|buffer| buffer.descriptor());
+            self.last_cpu_frame_export_status = Some(report.status);
+            self.last_export_status = Some(report.status);
+            return LiveRenderedScanoutBufferExport::new(
+                report.status,
+                report.detail,
+                descriptor,
+                report.buffer.map(NativeGbmRenderedScanoutOwner::Inline),
             );
         }
 

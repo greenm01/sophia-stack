@@ -277,6 +277,7 @@ fn native_libdrm_poller_reads_and_polls_bounded_callbacks() {
         poller.drain_emitted_kernel_timestamps(),
         vec![LibdrmKernelPageFlipTimestamp {
             output: OutputId::from_raw(7),
+            connector_id: 1,
             frame_serial: 81,
             ust_usec: 123_456,
         }]

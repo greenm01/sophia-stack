@@ -275,49 +275,15 @@ where
         height: u32,
         pixels: &[u8],
     ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
-        let mut buffer = self
-            .gbm_device
-            .create_buffer_object::<()>(
-                width,
-                height,
-                gbm::Format::Xrgb8888,
-                gbm::BufferObjectFlags::SCANOUT
-                    | gbm::BufferObjectFlags::WRITE
-                    | gbm::BufferObjectFlags::LINEAR,
-            )
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable)?;
-        let source_stride = usize::try_from(width)
-            .ok()
-            .and_then(|width| width.checked_mul(4))
-            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
-        let target_stride = usize::try_from(buffer.stride())
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
-        if target_stride < source_stride {
-            return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
-        }
-        let upload = if target_stride == source_stride {
-            std::borrow::Cow::Borrowed(pixels)
-        } else {
-            let mut padded = vec![
-                0;
-                target_stride
-                    .checked_mul(usize::try_from(height).unwrap_or(0))
-                    .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?
-            ];
-            for row in 0..usize::try_from(height).unwrap_or(0) {
-                let source = row * source_stride;
-                let target = row * target_stride;
-                padded[target..target + source_stride]
-                    .copy_from_slice(&pixels[source..source + source_stride]);
-            }
-            std::borrow::Cow::Owned(padded)
-        };
-        buffer
-            .write(&upload)
-            .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed)?;
+        let buffer = write_direct_cpu_xrgb8888_scanout_buffer(
+            &self.gbm_device,
+            width,
+            height,
+            pixels,
+        )?;
         trace_native_lifecycle("cpu_frame_direct_written");
         self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-        native_owned_scanout_buffer_from_bo(width, height, buffer, None)
+        Ok(buffer)
     }
 
     fn render_one_shot_xrgb8888_with_recovery(
@@ -413,4 +379,52 @@ where
         Err(last_detail)
     }
 
+}
+
+fn write_direct_cpu_xrgb8888_scanout_buffer<T: std::os::fd::AsFd>(
+    gbm_device: &gbm::Device<T>,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
+    let mut buffer = gbm_device
+        .create_buffer_object::<()>(
+            width,
+            height,
+            gbm::Format::Xrgb8888,
+            gbm::BufferObjectFlags::SCANOUT
+                | gbm::BufferObjectFlags::WRITE
+                | gbm::BufferObjectFlags::LINEAR,
+        )
+        .map_err(|_| NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable)?;
+    let source_stride = usize::try_from(width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
+    let target_stride = usize::try_from(buffer.stride())
+        .map_err(|_| NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
+    if target_stride < source_stride {
+        return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
+    }
+    let upload = if target_stride == source_stride {
+        std::borrow::Cow::Borrowed(pixels)
+    } else {
+        let mut padded = vec![
+            0;
+            target_stride
+                .checked_mul(usize::try_from(height).unwrap_or(0))
+                .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?
+        ];
+        for row in 0..usize::try_from(height).unwrap_or(0) {
+            let source = row * source_stride;
+            let target = row * target_stride;
+            padded[target..target + source_stride]
+                .copy_from_slice(&pixels[source..source + source_stride]);
+        }
+        std::borrow::Cow::Owned(padded)
+    };
+    buffer
+        .write(&upload)
+        .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed)?;
+    native_owned_scanout_buffer_from_bo(width, height, buffer, None)
 }

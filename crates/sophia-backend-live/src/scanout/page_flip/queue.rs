@@ -1,13 +1,16 @@
 use super::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LivePageFlipCallbackQueueReport {
     pub drained: usize,
     pub accepted: usize,
     pub rejected_unexpected_output: usize,
     pub rejected_stale_frame_serial: usize,
     pub last_accepted: Option<LivePageFlipCallbackReport>,
+    /// Accepted callbacks retain physical-head identity for mirror-group
+    /// retirement. `last_accepted` is kept for the single-head API.
+    pub accepted_callbacks: Vec<LivePageFlipCallback>,
     pub disconnected: bool,
     pub max_reached: bool,
 }
@@ -56,6 +59,7 @@ impl LivePageFlipCallbackQueue {
                     report.record_decision(callback_report.decision);
                     if callback_report.decision == LivePageFlipCallbackDecision::Accepted {
                         report.last_accepted = Some(callback_report);
+                        report.accepted_callbacks.push(callback);
                     }
                 }
                 Err(TryRecvError::Empty) => break,

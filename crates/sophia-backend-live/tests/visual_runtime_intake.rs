@@ -6,7 +6,8 @@ use sophia_backend_live::{
     LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
     LiveProductionVisualRuntime, live_production_mixed_layer_order,
     live_production_projection_requires_gpu_scanout, live_production_should_preserve_gpu_output,
-    live_production_transactions_require_gpu_scanout, reduce_live_production_cpu_frame_queue,
+    live_production_transactions_require_gpu_scanout,
+    reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
 };
 use sophia_engine::HeadlessOutput;
@@ -150,6 +151,15 @@ fn revoked_native_suspend_is_idempotent_without_active_scanout() {
     assert_eq!(first.skipped_present, None);
     assert_eq!(second, first);
     assert_eq!(runtime.output_count(), 1);
+}
+
+#[test]
+fn forced_detach_counts_logical_and_physical_head_owners() {
+    assert_eq!(reduce_live_production_abandoned_scanout_count(1, 2), 3);
+    assert_eq!(
+        reduce_live_production_abandoned_scanout_count(usize::MAX, 1),
+        usize::MAX
+    );
 }
 
 #[test]

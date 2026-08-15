@@ -90,6 +90,13 @@ pub fn reduce_live_production_native_retirement_owner(
     }
 }
 
+pub const fn reduce_live_production_abandoned_scanout_count(
+    logical_runtime_owners: usize,
+    physical_head_owners: usize,
+) -> usize {
+    logical_runtime_owners.saturating_add(physical_head_owners)
+}
+
 impl LiveProductionVisualRuntime {
     pub fn retained_renderer_image_ids(&self) -> Vec<LiveRendererImageId> {
         let mut images = self
@@ -147,7 +154,12 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
-        let abandoned_scanouts = self.outputs.native_scanout_in_flight_count();
+        let abandoned_scanouts = reduce_live_production_abandoned_scanout_count(
+            self.outputs.native_scanout_in_flight_count(),
+            native_scanout
+                .as_deref()
+                .map_or(0, LiveProductionNativeScanout::head_scanout_in_flight_count),
+        );
         let skipped_present = self
             .present_scheduler
             .take_submitted()
@@ -240,7 +252,7 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .primary_output()
                 .ok_or("persistent backend runtime has no primary output")?;
-            native_scanout.queue_retained_mixed_frame(primary, frame);
+            native_scanout.queue_retained_mixed_frame(primary, frame)?;
         }
         Ok(restored)
     }
@@ -262,11 +274,18 @@ impl LiveProductionVisualRuntime {
         timeout: Duration,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let deadline = Instant::now() + timeout;
-        while self.native_scanout_in_flight() && Instant::now() < deadline {
-            self.retire_native_scanout(native_scanout)?;
+        while (self.native_scanout_in_flight()
+            || native_scanout.any_head_scanout_in_flight()
+            || native_scanout.any_head_cleanup_pending())
+            && Instant::now() < deadline
+        {
+            self.retire_native_scanout_for_drain(native_scanout)?;
             std::thread::sleep(Duration::from_millis(5));
         }
-        if self.native_scanout_in_flight() {
+        if self.native_scanout_in_flight()
+            || native_scanout.any_head_scanout_in_flight()
+            || native_scanout.any_head_cleanup_pending()
+        {
             return Ok(false);
         }
         let output_count = self.outputs.output_count();
@@ -369,7 +388,27 @@ impl LiveProductionVisualRuntime {
             .collect::<Vec<_>>();
         let mut retired_present = None;
         for output in outputs {
-            if let Some(retired) = self.retire_native_scanout_output(native_scanout, output)? {
+            if let Some(retired) =
+                self.retire_native_scanout_output_with_mode(native_scanout, output, false)?
+            {
+                retired_present = Some(retired);
+            }
+        }
+        Ok(retired_present)
+    }
+
+    fn retire_native_scanout_for_drain(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        let outputs = (0..self.outputs.output_count())
+            .filter_map(|index| self.outputs.output_id(index))
+            .collect::<Vec<_>>();
+        let mut retired_present = None;
+        for output in outputs {
+            if let Some(retired) =
+                self.retire_native_scanout_output_with_mode(native_scanout, output, true)?
+            {
                 retired_present = Some(retired);
             }
         }
@@ -380,6 +419,15 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
         selected_output: OutputId,
+    ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
+        self.retire_native_scanout_output_with_mode(native_scanout, selected_output, false)
+    }
+
+    fn retire_native_scanout_output_with_mode(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        selected_output: OutputId,
+        draining: bool,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
         let index = self
             .outputs
@@ -401,7 +449,11 @@ impl LiveProductionVisualRuntime {
             .runtime
             .assembly_mut()
             .replace_committed_surfaces(committed);
-        native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
+        if draining {
+            native_scanout.retire_ready_for_drain(selected_output, &mut output.runtime)?;
+        } else {
+            native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
+        }
         self.publish_presented_input_layers(native_scanout);
         if self.outputs.primary_output() == Some(selected_output)
             && let Some(retirement) = native_scanout.take_presentation_feedback(selected_output)

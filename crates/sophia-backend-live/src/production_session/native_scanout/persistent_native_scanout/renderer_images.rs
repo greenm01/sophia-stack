@@ -4,16 +4,22 @@ use super::*;
 pub struct LiveProductionRendererImageHandoff {
     output: OutputId,
     expected: Vec<sophia_renderer_live::LiveRendererImageId>,
+    heads: Vec<LiveProductionRendererImageHeadHandoff>,
+}
+
+#[derive(Debug)]
+struct LiveProductionRendererImageHeadHandoff {
+    connector_id: u32,
     snapshots: Vec<sophia_renderer_live::LiveRendererImageSnapshot>,
 }
 
 impl LiveProductionRendererImageHandoff {
     pub const fn len(&self) -> usize {
-        self.snapshots.len()
+        self.expected.len()
     }
 
     pub const fn is_empty(&self) -> bool {
-        self.snapshots.is_empty()
+        self.expected.is_empty()
     }
 
     pub fn image_ids(&self) -> &[sophia_renderer_live::LiveRendererImageId] {
@@ -42,6 +48,46 @@ fn validate_renderer_image_handoff_ids(
     }
 }
 
+fn project_owned_mixed_frame(
+    frame: &crate::LiveOwnedMixedCompositionFrame,
+    source: sophia_protocol::Size,
+    destination: sophia_protocol::Size,
+    fit: crate::NativeMirrorFit,
+) -> Result<crate::LiveOwnedMixedCompositionFrame, Box<dyn std::error::Error>> {
+    if source.width <= 0 || source.height <= 0 {
+        return Err("mirror mixed-frame source size is invalid".into());
+    }
+    let target = crate::project_mirror_rect(source, destination, fit);
+    if target.width <= 0 || target.height <= 0 {
+        return Err("mirror mixed-frame projection is empty".into());
+    }
+    let mut projected = crate::try_clone_mixed_frame(frame)?;
+    for layer in &mut projected.layers {
+        match layer {
+            sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu { placement, .. }
+            | sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. }
+            | sophia_renderer_live::LiveOwnedMixedCompositionLayer::RendererImage {
+                placement,
+                ..
+            } => {
+                placement.target =
+                    crate::project_mirror_child_rect(placement.target, source, target);
+                placement.clip = placement
+                    .clip
+                    .map(|clip| crate::project_mirror_child_rect(clip, source, target));
+            }
+            sophia_renderer_live::LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => {
+                *geometry = crate::project_mirror_child_rect(*geometry, source, target);
+            }
+        }
+    }
+    // Damage is expressed in the logical source's coordinate space. Until a
+    // projected damage record carries the destination size, repaint the bounded
+    // head rather than attaching geometrically false damage evidence.
+    projected.output_damage_snapshot = None;
+    Ok(projected)
+}
+
 impl LiveProductionNativeScanout {
     pub fn queue_present_cpu_frame(
         &mut self,
@@ -51,11 +97,13 @@ impl LiveProductionNativeScanout {
         let index = self
             .primary_head_index(output)
             .ok_or("native output has no head")?;
-        if self
-            .exporter(output)
-            .is_some_and(crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::pending_frame)
-        {
+        if self.pending_frame(output) {
             return Err("native output already has pending frame work");
+        }
+        if self.head_indices(output).len() > 1 {
+            return self
+                .queue_projected_frame(output, &frame, self.mirror_fit)
+                .ok_or("native mirror projection produced no head frame");
         }
         let frame_id = self.allocate_frame_id();
         let (head, exporter) = self.head_and_exporter(index, output);
@@ -79,36 +127,82 @@ impl LiveProductionNativeScanout {
         output: OutputId,
         transaction: TransactionId,
         frame: crate::LiveOwnedMixedCompositionFrame,
-    ) -> LiveProductionNativeFrameId {
-        let index = self
-            .primary_head_index(output)
-            .expect("native mixed frame targets a registered output");
-        let frame_id = self.allocate_frame_id();
-        let (head, exporter) = self.head_and_exporter(index, output);
-        let pending_before = exporter.pending_frame();
-        let worker_in_flight = exporter.worker_in_flight();
-        if let Some(superseded) = head.pending_content {
-            tracing::warn!(
-                "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        let Some(&index) = indices.first() else {
+            return Err("native mixed frame targets an unregistered output".into());
+        };
+        if indices.len() == 1 {
+            let frame_id = self.allocate_frame_id();
+            let (head, exporter) = self.head_and_exporter(index, output);
+            let pending_before = exporter.pending_frame();
+            let worker_in_flight = exporter.worker_in_flight();
+            if let Some(superseded) = head.pending_content {
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=Mixed({})",
+                    head.output.id.raw(),
+                    transaction.raw(),
+                );
+            }
+            head.pending_content = Some(LiveProductionScanoutContent::MixedPresent {
+                frame: frame_id,
+                transaction,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(frame);
+            tracing::debug!(
+                "sophia_live_retained_projection schema=1 status=native_queued output={} frame={} pending_before={} worker_in_flight={}",
                 head.output.id.raw(),
-                transaction.raw(),
+                frame_id.raw(),
+                pending_before,
+                worker_in_flight,
+            );
+            return Ok(frame_id);
+        }
+        let source = self.heads[index].output.size;
+        let output_damage_snapshot = frame.output_damage_snapshot.clone();
+        let projected = indices
+            .iter()
+            .map(|head_index| {
+                project_owned_mixed_frame(
+                    &frame,
+                    source,
+                    self.heads[*head_index].output.size,
+                    self.mirror_fit,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame_id = self.allocate_frame_id();
+        for (head_index, frame) in indices.into_iter().zip(projected) {
+            let (head, exporter) = self.head_and_exporter(head_index, output);
+            let pending_before = exporter.pending_frame();
+            let worker_in_flight = exporter.worker_in_flight();
+            if let Some(superseded) = head.pending_content {
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=Mixed({})",
+                    head.output.id.raw(),
+                    head.selection.connector_id(),
+                    transaction.raw(),
+                );
+            }
+            head.pending_content = Some(LiveProductionScanoutContent::MixedPresent {
+                frame: frame_id,
+                transaction,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(frame);
+            tracing::debug!(
+                "sophia_live_retained_projection schema=1 status=native_queued output={} connector_id={} frame={} pending_before={} worker_in_flight={}",
+                head.output.id.raw(),
+                head.selection.connector_id(),
+                frame_id.raw(),
+                pending_before,
+                worker_in_flight,
             );
         }
-        head.pending_content = Some(LiveProductionScanoutContent::MixedPresent {
-            frame: frame_id,
-            transaction,
-            nonzero_rgb_pixels: 0,
-        });
-        head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-        exporter.set_pending_mixed_frame(frame);
-        tracing::debug!(
-            "sophia_live_retained_projection schema=1 status=native_queued output={} frame={} pending_before={} worker_in_flight={}",
-            head.output.id.raw(),
-            frame_id.raw(),
-            pending_before,
-            worker_in_flight,
-        );
-        frame_id
+        Ok(frame_id)
     }
 
     /// Queues one composed frame onto every head of a logical output, each at the
@@ -125,30 +219,43 @@ impl LiveProductionNativeScanout {
     /// own size, which is right for a head whose mode matches the scene and wrong
     /// for every other head of a group.
     ///
-    /// Returns how many heads took the frame.
+    /// Returns the one logical frame identity shared by every projected head.
     pub fn queue_projected_frame(
         &mut self,
         output: OutputId,
-        frame: &sophia_renderer_live::LiveCpuComposedFrame,
+        frame: &LiveProductionComposedFrame,
         fit: crate::NativeMirrorFit,
-    ) -> usize {
+    ) -> Option<LiveProductionNativeFrameId> {
         let heads = self.head_indices(output);
-        let mut queued = 0usize;
-        for head_index in heads {
-            let destination = self.heads[head_index].output.size;
-            let target = crate::project_mirror_rect(frame.size, destination, fit);
-            if target.width <= 0 || target.height <= 0 {
-                continue;
-            }
+        let targets = heads
+            .iter()
+            .map(|head_index| {
+                crate::project_mirror_rect(
+                    frame.frame.size,
+                    self.heads[*head_index].output.size,
+                    fit,
+                )
+            })
+            .collect::<Vec<_>>();
+        if heads.is_empty()
+            || targets
+                .iter()
+                .any(|target| target.width <= 0 || target.height <= 0)
+        {
+            return None;
+        }
+        let frame_id = self.allocate_frame_id();
+        let source = sophia_renderer_live::LiveSharedCpuBufferSource {
+            handle: 0,
+            size: frame.frame.size,
+            stride: frame.frame.stride,
+            format: frame.frame.format,
+            generation: frame_id.raw(),
+            bytes: std::sync::Arc::clone(&frame.frame.bytes),
+        };
+        for (head_index, target) in heads.into_iter().zip(targets) {
             let layer = sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu {
-                buffer: sophia_renderer_live::LiveCpuBufferSource {
-                    handle: 0,
-                    size: frame.size,
-                    stride: frame.stride,
-                    format: frame.format,
-                    generation: 0,
-                    bytes: frame.bytes.as_ref().clone(),
-                },
+                buffer: source.clone(),
                 placement: sophia_renderer_live::LiveCompositionPlacement {
                     target,
                     clip: None,
@@ -156,11 +263,13 @@ impl LiveProductionNativeScanout {
                     alpha: 1.0,
                 },
             };
-            let frame_id = self.allocate_frame_id();
             let (head, exporter) = self.head_and_exporter(head_index, output);
+            head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
+            head.last_checksum = frame.checksum;
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
             head.pending_content = Some(LiveProductionScanoutContent::Cpu {
                 frame: frame_id,
-                checksum: 0,
+                checksum: frame.checksum,
             });
             exporter.set_pending_mixed_frame(
                 sophia_renderer_live::LiveOwnedMixedCompositionFrame {
@@ -168,34 +277,118 @@ impl LiveProductionNativeScanout {
                     output_damage_snapshot: None,
                 },
             );
-            queued = queued.saturating_add(1);
         }
-        queued
+        Some(frame_id)
+    }
+
+    /// Queues the first mirror generation through direct CPU buffers.
+    ///
+    /// Startup must synchronously establish KMS owners before renderer workers
+    /// exist. Projecting in CPU memory keeps that bootstrap out of inline EGL;
+    /// later mixed generations use the worker-backed path above.
+    pub fn queue_projected_bootstrap_frame(
+        &mut self,
+        output: OutputId,
+        frame: &LiveProductionComposedFrame,
+        fit: crate::NativeMirrorFit,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let heads = self.head_indices(output);
+        if heads.is_empty() {
+            return Err("native mirror bootstrap has no head".into());
+        }
+        let targets = heads
+            .iter()
+            .map(|head_index| {
+                crate::project_mirror_rect(
+                    frame.frame.size,
+                    self.heads[*head_index].output.size,
+                    fit,
+                )
+            })
+            .collect::<Vec<_>>();
+        let projected = heads
+            .iter()
+            .zip(&targets)
+            .map(|(head_index, target)| {
+                sophia_renderer_live::project_live_cpu_composed_frame(
+                    &frame.frame,
+                    self.heads[*head_index].output.size,
+                    *target,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame_id = self.allocate_frame_id();
+        for (head_index, projected) in heads.into_iter().zip(projected) {
+            let (head, exporter) = self.head_and_exporter(head_index, output);
+            head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
+            head.last_checksum = frame.checksum;
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+            head.pending_content = Some(LiveProductionScanoutContent::Cpu {
+                frame: frame_id,
+                checksum: frame.checksum,
+            });
+            exporter.set_pending_cpu_frame_with_damage(projected, frame.checksum, None);
+        }
+        Ok(frame_id)
     }
 
     pub fn queue_retained_mixed_frame(
         &mut self,
         output: OutputId,
         frame: crate::LiveOwnedMixedCompositionFrame,
-    ) -> LiveProductionNativeFrameId {
-        let index = self
-            .primary_head_index(output)
-            .expect("native retained frame targets a registered output");
-        let frame_id = self.allocate_frame_id();
-        let (head, exporter) = self.head_and_exporter(index, output);
-        if let Some(superseded) = head.pending_content {
-            tracing::warn!(
-                "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=RetainedMixed",
-                head.output.id.raw(),
-            );
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        let Some(&index) = indices.first() else {
+            return Err("native retained frame targets an unregistered output".into());
+        };
+        if indices.len() == 1 {
+            let frame_id = self.allocate_frame_id();
+            let (head, exporter) = self.head_and_exporter(index, output);
+            if let Some(superseded) = head.pending_content {
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} old={superseded:?} new=RetainedMixed",
+                    head.output.id.raw(),
+                );
+            }
+            head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
+                frame: frame_id,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(frame);
+            return Ok(frame_id);
         }
-        head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
-            frame: frame_id,
-            nonzero_rgb_pixels: 0,
-        });
-        head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-        exporter.set_pending_mixed_frame(frame);
-        frame_id
+        let source = self.heads[index].output.size;
+        let output_damage_snapshot = frame.output_damage_snapshot.clone();
+        let projected = indices
+            .iter()
+            .map(|head_index| {
+                project_owned_mixed_frame(
+                    &frame,
+                    source,
+                    self.heads[*head_index].output.size,
+                    self.mirror_fit,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let frame_id = self.allocate_frame_id();
+        for (head_index, frame) in indices.into_iter().zip(projected) {
+            let (head, exporter) = self.head_and_exporter(head_index, output);
+            if let Some(superseded) = head.pending_content {
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} connector_id={} old={superseded:?} new=RetainedMixed",
+                    head.output.id.raw(),
+                    head.selection.connector_id(),
+                );
+            }
+            head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
+                frame: frame_id,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(frame);
+        }
+        Ok(frame_id)
     }
 
     pub fn diagnose_mixed_frame(
@@ -263,23 +456,33 @@ impl LiveProductionNativeScanout {
         expected: &[sophia_renderer_live::LiveRendererImageId],
     ) -> Result<LiveProductionRendererImageHandoff, Box<dyn std::error::Error>> {
         validate_renderer_image_handoff_ids(expected, expected)?;
-        let mut snapshots = Vec::with_capacity(expected.len());
-        for image_id in expected {
-            let snapshot = self
-                .exporter_mut(output)?
-                .export_promoted_renderer_image(*image_id)?
-                .ok_or("retained scene refers to an unavailable promoted renderer image")?;
-            snapshots.push(snapshot);
+        let indices = self.head_indices(output);
+        if indices.is_empty() {
+            return Err("renderer-image handoff targets an unknown output".into());
         }
-        let actual = snapshots
-            .iter()
-            .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
-            .collect::<Vec<_>>();
-        validate_renderer_image_handoff_ids(expected, &actual)?;
+        let mut heads = Vec::with_capacity(indices.len());
+        for head_index in indices {
+            let mut snapshots = Vec::with_capacity(expected.len());
+            for image_id in expected {
+                let snapshot = self.exporters[head_index]
+                    .export_promoted_renderer_image(*image_id)?
+                    .ok_or("retained scene refers to an unavailable promoted renderer image")?;
+                snapshots.push(snapshot);
+            }
+            let actual = snapshots
+                .iter()
+                .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
+                .collect::<Vec<_>>();
+            validate_renderer_image_handoff_ids(expected, &actual)?;
+            heads.push(LiveProductionRendererImageHeadHandoff {
+                connector_id: self.heads[head_index].selection.connector_id(),
+                snapshots,
+            });
+        }
         Ok(LiveProductionRendererImageHandoff {
             output,
             expected: expected.to_vec(),
-            snapshots,
+            heads,
         })
     }
 
@@ -287,25 +490,32 @@ impl LiveProductionNativeScanout {
         &mut self,
         handoff: LiveProductionRendererImageHandoff,
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        if !self
-            .exporter_mut(handoff.output)?
-            .renderer_image_owner_initialized()
-        {
-            return Err("replacement renderer image owner is not initialized".into());
-        }
-        let actual = handoff
-            .snapshots
-            .iter()
-            .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
-            .collect::<Vec<_>>();
-        validate_renderer_image_handoff_ids(&handoff.expected, &actual)?;
         let expected_count = handoff.expected.len();
-        for snapshot in handoff.snapshots {
-            if !self
-                .exporter_mut(handoff.output)?
-                .restore_promoted_renderer_image(snapshot)?
-            {
-                return Err("replacement renderer rejected a retained image snapshot".into());
+        let expected_heads = self.head_indices(handoff.output);
+        if expected_heads.len() != handoff.heads.len() {
+            return Err("renderer-image handoff head coverage changed during replacement".into());
+        }
+        for head_handoff in handoff.heads {
+            let head_index = expected_heads
+                .iter()
+                .copied()
+                .find(|head_index| {
+                    self.heads[*head_index].selection.connector_id() == head_handoff.connector_id
+                })
+                .ok_or("renderer-image handoff names an unavailable connector")?;
+            if !self.exporters[head_index].renderer_image_owner_initialized() {
+                return Err("replacement renderer image owner is not initialized".into());
+            }
+            let actual = head_handoff
+                .snapshots
+                .iter()
+                .map(sophia_renderer_live::LiveRendererImageSnapshot::image_id)
+                .collect::<Vec<_>>();
+            validate_renderer_image_handoff_ids(&handoff.expected, &actual)?;
+            for snapshot in head_handoff.snapshots {
+                if !self.exporters[head_index].restore_promoted_renderer_image(snapshot)? {
+                    return Err("replacement renderer rejected a retained image snapshot".into());
+                }
             }
         }
         Ok(expected_count)

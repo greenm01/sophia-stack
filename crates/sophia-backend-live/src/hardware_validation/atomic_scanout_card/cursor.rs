@@ -46,17 +46,17 @@ pub trait LegacyHardwareCursorDevice {
     fn move_cursor(&mut self, crtc: Self::Crtc, x: i32, y: i32) -> io::Result<()>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LegacyHardwareCursorController<Crtc> {
     initialized: bool,
-    active_crtc: Option<Crtc>,
+    active_crtcs: Vec<Crtc>,
 }
 
 impl<Crtc: Copy + Debug + Eq> Default for LegacyHardwareCursorController<Crtc> {
     fn default() -> Self {
         Self {
             initialized: false,
-            active_crtc: None,
+            active_crtcs: Vec::new(),
         }
     }
 }
@@ -67,7 +67,11 @@ impl<Crtc: Copy + Debug + Eq> LegacyHardwareCursorController<Crtc> {
     }
 
     pub fn active_crtc(&self) -> Option<Crtc> {
-        self.active_crtc
+        self.active_crtcs.first().copied()
+    }
+
+    pub fn active_crtcs(&self) -> &[Crtc] {
+        &self.active_crtcs
     }
 
     pub fn initialize<D>(&mut self, device: &mut D, crtcs: &[Crtc]) -> io::Result<()>
@@ -80,7 +84,7 @@ impl<Crtc: Copy + Debug + Eq> LegacyHardwareCursorController<Crtc> {
         for crtc in crtcs.iter().copied() {
             device.hide_cursor(crtc)?;
         }
-        self.active_crtc = None;
+        self.active_crtcs.clear();
         self.initialized = true;
         Ok(())
     }
@@ -93,41 +97,57 @@ impl<Crtc: Copy + Debug + Eq> LegacyHardwareCursorController<Crtc> {
     where
         D: LegacyHardwareCursorDevice<Crtc = Crtc>,
     {
+        self.update_many(device, target.as_slice())
+    }
+
+    /// Shows the same logical cursor on every physical CRTC in a mirror group.
+    pub fn update_many<D>(
+        &mut self,
+        device: &mut D,
+        targets: &[LegacyHardwareCursorTarget<Crtc>],
+    ) -> io::Result<ClassicHardwareCursorUpdate>
+    where
+        D: LegacyHardwareCursorDevice<Crtc = Crtc>,
+    {
         if !self.initialized {
             return Err(io::Error::other(
                 "legacy hardware cursor was updated before initialization",
             ));
         }
-        let Some(target) = target else {
-            let Some(previous) = self.active_crtc else {
-                return Ok(ClassicHardwareCursorUpdate::Hidden);
-            };
-            device.hide_cursor(previous)?;
-            self.active_crtc = None;
-            return Ok(ClassicHardwareCursorUpdate::Hidden);
-        };
-
-        if self.active_crtc != Some(target.crtc) {
-            if let Some(previous) = self.active_crtc {
+        for previous in self.active_crtcs.iter().copied().collect::<Vec<_>>() {
+            if !targets.iter().any(|target| target.crtc == previous) {
                 device.hide_cursor(previous)?;
-                self.active_crtc = None;
+                self.active_crtcs.retain(|active| *active != previous);
             }
-            device.install_cursor(target.crtc)?;
-            self.active_crtc = Some(target.crtc);
         }
-        device.move_cursor(target.crtc, target.x, target.y)?;
-        Ok(ClassicHardwareCursorUpdate::Visible)
+        let mut seen = Vec::with_capacity(targets.len());
+        for target in targets.iter().copied() {
+            if seen.contains(&target.crtc) {
+                continue;
+            }
+            if !self.active_crtcs.contains(&target.crtc) {
+                device.install_cursor(target.crtc)?;
+                self.active_crtcs.push(target.crtc);
+            }
+            device.move_cursor(target.crtc, target.x, target.y)?;
+            seen.push(target.crtc);
+        }
+        self.active_crtcs
+            .sort_by_key(|active| seen.iter().position(|target| target == active));
+        Ok(if self.active_crtcs.is_empty() {
+            ClassicHardwareCursorUpdate::Hidden
+        } else {
+            ClassicHardwareCursorUpdate::Visible
+        })
     }
 
     pub fn hide_for_teardown<D>(&mut self, device: &mut D) -> io::Result<()>
     where
         D: LegacyHardwareCursorDevice<Crtc = Crtc>,
     {
-        let Some(crtc) = self.active_crtc else {
-            return Ok(());
-        };
-        device.hide_cursor(crtc)?;
-        self.active_crtc = None;
+        for crtc in self.active_crtcs.drain(..) {
+            device.hide_cursor(crtc)?;
+        }
         Ok(())
     }
 }

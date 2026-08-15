@@ -747,3 +747,40 @@ fn one_composed_frame_lands_on_two_heads_at_two_sizes() {
     assert_eq!((primary.x, primary.y), (0, 0));
     assert_eq!((mirrored.x, mirrored.y), (0, 0));
 }
+
+#[test]
+fn mixed_layers_and_clips_follow_the_projected_scene() {
+    let source = size(2560, 1440);
+    let projected = project_mirror_rect(source, size(1920, 1200), NativeMirrorFit::Fit);
+    assert_eq!(
+        projected,
+        Rect {
+            x: 0,
+            y: 60,
+            width: 1920,
+            height: 1080,
+        }
+    );
+    assert_eq!(
+        project_mirror_child_rect(
+            Rect {
+                x: 128,
+                y: 72,
+                width: 640,
+                height: 360,
+            },
+            source,
+            projected,
+        ),
+        Rect {
+            x: 96,
+            y: 114,
+            width: 480,
+            height: 270,
+        }
+    );
+    assert_eq!(
+        project_mirror_coordinates(128, 72, source, size(1920, 1200), NativeMirrorFit::Fit),
+        Some((96, 114))
+    );
+}

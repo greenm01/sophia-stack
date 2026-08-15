@@ -76,7 +76,8 @@ use sophia_backend_live::{
     discover_native_primary_plane_property_handles, discover_native_vrr_properties,
     libdrm_dependency_admission_report, libdrm_fd_authority_report,
     native_libdrm_event_adapter_report, native_libdrm_event_adapter_report_for_authority,
-    project_mirror_rect, real_atomic_scanout_preflight_report, real_atomic_scanout_validation_gate,
+    project_mirror_child_rect, project_mirror_coordinates, project_mirror_rect,
+    real_atomic_scanout_preflight_report, real_atomic_scanout_validation_gate,
     real_atomic_scanout_validation_smoke_report, real_libdrm_events_validation_gate,
     real_libdrm_events_validation_smoke_report, reduce_native_page_flip_event,
     resolve_native_output_mode_index, retire_native_primary_plane_scanout_after_page_flip,
@@ -98,10 +99,13 @@ use sophia_backend_live::{
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
     LiveCpuComposedFrame, LiveGbmEglFrameTargetStatus, LiveProductionCursorPresentation,
+    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
     LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
     NativeGbmRenderedScanoutBufferDiscoveryExporter, NativeGbmRenderedScanoutContextStatus,
     RealAtomicScanoutSmokeConfig, RenderDeviceDiscoveryBackend,
-    live_production_scanout_is_stable_present, reduce_output_native_frame_phase,
+    finish_live_production_native_initialization, live_production_scanout_is_stable_present,
+    reduce_output_native_frame_phase,
 };
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
@@ -139,3 +143,4 @@ include!("libdrm_events_feature/native_gbm.rs");
 include!("libdrm_events_feature/resource_lifetime.rs");
 include!("libdrm_events_feature/builders.rs");
 include!("libdrm_events_feature/multi_head_request.rs");
+include!("libdrm_events_feature/mirror_group_lifecycle.rs");

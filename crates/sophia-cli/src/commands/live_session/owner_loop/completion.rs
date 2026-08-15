@@ -48,6 +48,13 @@
         println!(
             "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
         );
+        if !report.outcome.drained() || report.abandoned_scanouts != 0 {
+            return Err(format!(
+                "native completion forced detach with {} abandoned scanouts",
+                report.abandoned_scanouts,
+            )
+            .into());
+        }
     }
     if let Some(runtime) = runtime.as_mut() {
         let report = runtime.shutdown_presentations()?;
@@ -387,6 +394,18 @@
         )
         .into());
     }
+    let native_in_flight = runtime
+        .as_ref()
+        .is_some_and(LiveProductionVisualRuntime::native_scanout_in_flight)
+        || native_scanout
+            .as_ref()
+            .is_some_and(LiveProductionNativeScanout::any_head_scanout_in_flight);
+    let native_cleanup_pending = runtime
+        .as_ref()
+        .is_some_and(LiveProductionVisualRuntime::native_cleanup_pending)
+        || native_scanout
+            .as_ref()
+            .is_some_and(LiveProductionNativeScanout::any_head_cleanup_pending);
     println!(
         "sophia_session_launches schema=1 status=complete peak_depth={} rejected={} admission_timeouts={}",
         session_launches.peak_depth(),
@@ -700,12 +719,8 @@
         native_scanout
             .as_ref()
             .map_or(0, LiveProductionNativeScanout::export_attempts),
-        runtime
-            .as_ref()
-            .is_some_and(LiveProductionVisualRuntime::native_scanout_in_flight),
-        runtime
-            .as_ref()
-            .is_some_and(LiveProductionVisualRuntime::native_cleanup_pending),
+        native_in_flight,
+        native_cleanup_pending,
         if physical_input.is_some() {
             "enabled"
         } else {
@@ -775,7 +790,7 @@
     {
         return Err("persistent Present resources did not retire exactly once".into());
     }
-    if let (Some(runtime), Some(native_scanout)) = (runtime.as_ref(), native_scanout.as_ref())
+    if let (Some(_), Some(native_scanout)) = (runtime.as_ref(), native_scanout.as_ref())
         && (native_scanout.submissions == 0
             || native_scanout.retirements == 0
             || native_scanout.nonzero_exports == 0
@@ -785,8 +800,8 @@
             || native_scanout.callback_queue_saturated != 0
             || native_scanout.vsync_overlap_rejections != 0
             || native_scanout.page_flip_phase_rejections != 0
-            || runtime.native_scanout_in_flight()
-            || runtime.native_cleanup_pending())
+            || native_in_flight
+            || native_cleanup_pending)
     {
         return Err(format!(
             "persistent native scanout did not submit, retire, and drain cleanly: overlap_rejections={} phase_rejections={}",
