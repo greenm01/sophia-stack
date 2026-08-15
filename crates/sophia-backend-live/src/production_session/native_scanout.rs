@@ -2109,6 +2109,27 @@ mod persistent_native_scanout {
             self.production_page_flips.discard_retirements(output);
         }
 
+        /// Whether any head of this output has KMS work in flight.
+        ///
+        /// A mirror group submits into per-head slots, so the runtime's single
+        /// per-output submission slot stays empty for one and reports Idle. The
+        /// frame service reads that phase to decide whether to poll for
+        /// retirement, so a grouped output was never polled, its retirements
+        /// never consumed, and Present completions never routed -- a silent
+        /// freeze on the first content change rather than an error.
+        pub fn output_in_flight(&self, output: OutputId) -> bool {
+            self.head_indices(output)
+                .into_iter()
+                .any(|index| self.heads[index].scanout_submission.is_some())
+        }
+
+        /// Whether any head of this output still owes resource cleanup.
+        pub fn output_cleanup_pending(&self, output: OutputId) -> bool {
+            self.head_indices(output)
+                .into_iter()
+                .any(|index| self.heads[index].scanout_cleanup.is_some())
+        }
+
         pub fn pending_frame(&self, output: OutputId) -> bool {
             if self.queued_mirror_successors.contains_key(&output) {
                 return true;

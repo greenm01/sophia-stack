@@ -236,14 +236,21 @@ impl LiveProductionVisualRuntime {
                     .outputs
                     .output_id(index)
                     .ok_or("production output index was not registered")?;
+                // Both sources, because a mirror group's work lives in per-head
+                // slots and an ungrouped output's lives in the runtime's single
+                // one. Reading only the runtime reported a grouped output as Idle
+                // forever, so the frame service never polled it for retirement and
+                // Present completions were never routed back to the client.
                 let in_flight = self
                     .outputs
                     .output_native_scanout_in_flight(index)
-                    .ok_or("production output in-flight state was not registered")?;
+                    .ok_or("production output in-flight state was not registered")?
+                    || native_scanout.output_in_flight(output);
                 let cleanup_pending = self
                     .outputs
                     .output_native_cleanup_pending(index)
-                    .ok_or("production output cleanup state was not registered")?;
+                    .ok_or("production output cleanup state was not registered")?
+                    || native_scanout.output_cleanup_pending(output);
                 Ok(OutputFrameServiceObservation {
                     output,
                     primary: output == primary,

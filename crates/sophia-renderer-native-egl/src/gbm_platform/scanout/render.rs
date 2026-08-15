@@ -503,6 +503,7 @@ fn render_native_target_composition(
                             .pipeline
                             .draw_texture_layer(
                                 texture,
+                                (layer.frame.width, layer.frame.height),
                                 layer.target.into(),
                                 layer.clip.map(Into::into),
                                 layer.alpha,
@@ -562,6 +563,7 @@ fn render_native_target_composition(
                         .pipeline
                         .draw_texture_layer(
                             texture,
+                            (image.buffer.width(), image.buffer.height()),
                             layer.target.into(),
                             layer.clip.map(Into::into),
                             layer.alpha,

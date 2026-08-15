@@ -31,6 +31,26 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     height: u32,
 }
 
+/// Which sampler a layer should be drawn with.
+///
+/// A layer drawn at its own size wants point sampling: every destination pixel
+/// has exactly one source pixel, and NEAREST guarantees the bytes survive, which
+/// is what the exact-pixel evidence downstream depends on.
+///
+/// A layer drawn at any other size is being resampled, and NEAREST there means
+/// dropping or doubling whole rows and columns. At the 0.75x a 2560x1440 scene
+/// lands on a 1920x1080 head that removes every fourth row, which is why glyph
+/// stems vanished and text came out broken on the smaller monitor of a mirror
+/// group.
+#[cfg(feature = "gbm-platform")]
+pub(crate) const fn layer_texture_filter(source: (u32, u32), target: GlCompositionRect) -> u32 {
+    if target.width == source.0 as i32 && target.height == source.1 as i32 {
+        glow::NEAREST
+    } else {
+        glow::LINEAR
+    }
+}
+
 #[cfg(feature = "gbm-platform")]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GlCompositionRect {
@@ -308,10 +328,17 @@ impl PersistentXrgb8888GlPipeline {
             width,
             height,
         );
+        // Per draw, not once at creation: filter state lives on the texture object
+        // and this one texture is reused for layers at different scales.
+        let filter = layer_texture_filter((width, height), target);
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl
                 .bind_texture(glow::TEXTURE_2D, Some(self.cpu_layer_texture));
+            self.gl
+                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter as i32);
+            self.gl
+                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter as i32);
             match upload {
                 NativeCpuTextureUpload::Update => self.gl.tex_sub_image_2d(
                     glow::TEXTURE_2D,
@@ -489,14 +516,22 @@ impl PersistentXrgb8888GlPipeline {
     pub(crate) fn draw_texture_layer(
         &self,
         texture: glow::NativeTexture,
+        source: (u32, u32),
         target: GlCompositionRect,
         clip: Option<GlCompositionRect>,
         alpha: f32,
         has_alpha: bool,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
+        // Same reasoning as the CPU layer: point sampling only where the draw is
+        // 1:1, because anywhere else it drops rows rather than resampling them.
+        let filter = layer_texture_filter(source, target);
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.gl
+                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, filter as i32);
+            self.gl
+                .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter as i32);
         }
         self.draw_bound_texture(target, clip, alpha, has_alpha)
     }
@@ -868,4 +903,49 @@ void main() {
 
 pub(crate) fn context_attributes() -> [khronos_egl::Int; 1] {
     [khronos_egl::NONE]
+}
+
+#[cfg(all(test, feature = "gbm-platform"))]
+mod tests {
+    use super::{GlCompositionRect, layer_texture_filter};
+
+    const fn rect(width: i32, height: i32) -> GlCompositionRect {
+        GlCompositionRect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_one_to_one_draw_keeps_point_sampling() {
+        // The exact-pixel property the composition evidence rests on: where every
+        // destination pixel has one source pixel, the bytes must survive the draw.
+        assert_eq!(
+            layer_texture_filter((1920, 1080), rect(1920, 1080)),
+            glow::NEAREST
+        );
+    }
+
+    #[test]
+    fn a_resampled_draw_stops_dropping_rows() {
+        // A mirror group's 2560x1440 scene on a 1920x1080 head. Under NEAREST this
+        // discards every fourth row and column, which is what broke glyph stems on
+        // the smaller monitor. Either axis differing is enough to resample.
+        assert_eq!(
+            layer_texture_filter((2560, 1440), rect(1920, 1080)),
+            glow::LINEAR
+        );
+        assert_eq!(
+            layer_texture_filter((1920, 1080), rect(1920, 1200)),
+            glow::LINEAR,
+            "a letterboxed fit differs on one axis only"
+        );
+        assert_eq!(
+            layer_texture_filter((1280, 720), rect(2560, 1440)),
+            glow::LINEAR,
+            "magnification is resampling too"
+        );
+    }
 }
