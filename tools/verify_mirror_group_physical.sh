@@ -137,7 +137,7 @@ dp2_gray_pixels="$(max_final_cpu_gray_pixels '1920x1080_0_0')"
     fail "DP-2 retained too little terminal text coverage after downsampling"
 
 mapfile -t complete_heads < <(
-    grep -E '^sophia_live_native_head schema=1 status=complete output=[0-9]+ connector_id=[0-9]+ checksum=[0-9]+ submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
+    grep -E '^sophia_live_native_head schema=2 status=complete output=[0-9]+ connector_id=[0-9]+ scene_generation=[0-9]+ logical_content_checksum=[0-9]+ head_pixel_checksum=(unavailable|[0-9]+) submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
         "$evidence"
 )
 (( ${#complete_heads[@]} == 2 )) || fail "expected exactly two completed heads"
@@ -145,15 +145,22 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     head_line="$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$connector ")"
     [[ -n "$head_line" ]] || fail "connector $connector has no completion record"
     require_field "$head_line" output "$dp1_output"
-    require_positive_field "$head_line" checksum
+    require_positive_field "$head_line" scene_generation
+    require_positive_field "$head_line" logical_content_checksum
     require_positive_field "$head_line" submissions
     require_positive_field "$head_line" retirements
     require_positive_field "$head_line" callbacks
     require_positive_field "$head_line" nonzero_exports
 done
-dp1_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" checksum)" ||
+dp1_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" scene_generation)" ||
+    fail "DP-1 completion omitted its scene generation"
+dp2_scene_generation="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" scene_generation)" ||
+    fail "DP-2 completion omitted its scene generation"
+[[ "$dp1_scene_generation" == "$dp2_scene_generation" ]] ||
+    fail "mirrored heads did not retire one logical scene generation"
+dp1_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp1_connector ")" logical_content_checksum)" ||
     fail "DP-1 completion omitted its logical checksum"
-dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" checksum)" ||
+dp2_checksum="$(field "$(printf '%s\n' "${complete_heads[@]}" | grep " connector_id=$dp2_connector ")" logical_content_checksum)" ||
     fail "DP-2 completion omitted its logical checksum"
 [[ "$dp1_checksum" == "$dp2_checksum" ]] ||
     fail "mirrored heads did not retain one logical frame checksum"
@@ -201,10 +208,12 @@ while read -r frame; do
         break
     fi
 done < <(
-    sed -n "s/^sophia_live_mirror_generation schema=1 status=presented output=$dp1_output frame=\([0-9][0-9]*\) source=cpu checksum=$dp1_checksum$/\1/p" "$evidence"
+    sed -n "s/^sophia_live_mirror_generation schema=2 status=presented output=$dp1_output frame=\([0-9][0-9]*\) source=cpu logical_content_checksum=$dp1_checksum$/\1/p" "$evidence"
 )
 [[ -n "$common_frame" ]] ||
     fail "no final-checksum CPU frame completed causally with positive projected damage on both heads"
+[[ "$common_frame" == "$dp1_scene_generation" ]] ||
+    fail "completed head evidence does not name the causally proven logical generation"
 
 # A shared logical snapshot is not valid evidence for different physical modes:
 # each head must accept and present its own projected geometry for the exact

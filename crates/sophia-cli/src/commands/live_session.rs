@@ -21,7 +21,8 @@ use sophia_cli::desktop_output_topology::{
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
 use sophia_cli::native_output_completion::{
-    NativeOutputChecksumError, validate_native_output_checksums,
+    NativeOutputContentEvidence, NativeOutputContentEvidenceError,
+    validate_native_output_content_evidence,
 };
 use sophia_cli::resize_transaction::{
     PendingLayoutGeometryAuthority, ResizeVisualCommit, ResizeVisualCommitTracker,

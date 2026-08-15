@@ -1118,7 +1118,7 @@ mod persistent_native_scanout {
                                 && joined
                             {
                                 tracing::info!(
-                                    "sophia_live_mirror_generation schema=1 status=presented output={} frame={} source={} checksum={}",
+                                    "sophia_live_mirror_generation schema=2 status=presented output={} frame={} source={} logical_content_checksum={}",
                                     output.raw(),
                                     frame.raw(),
                                     content.source_label(),

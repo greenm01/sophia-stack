@@ -502,9 +502,9 @@ fn validate_mirror_groups(
 /// and only a request that would work once the scanout half exists gets the
 /// unsupported refusal.
 ///
-/// Mirroring is same-mode only: no plane scaling exists anywhere on this path, so a
-/// member that cannot present the primary's mode would have to be letterboxed, and
-/// silently changing what a screen shows is worse than refusing the configuration.
+/// Every member resolves its own mode. The mirror-fit policy then names how one
+/// logical scene maps to unequal native targets; silently inventing a placement
+/// policy remains forbidden.
 fn validate_mirror_against_topology(
     candidate: &DesktopOutputCandidate,
     topology: &DesktopOutputTopologySnapshot,

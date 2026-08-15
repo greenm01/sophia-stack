@@ -31,7 +31,6 @@ if [[ "${#output_lines[@]}" -ne 2 ]]; then
     echo "QEMU evidence must contain exactly two per-output completion records" >&2
     exit 1
 fi
-declare -A output_checksums=()
 total_retirements=0
 total_callbacks=0
 for output_line in "${output_lines[@]}"; do
@@ -56,11 +55,10 @@ for output_line in "${output_lines[@]}"; do
     total_retirements=$((total_retirements + retirements))
     total_callbacks=$((total_callbacks + callbacks))
     checksum="$(sed -n 's/.* checksum=\([0-9][0-9]*\) .*/\1/p' <<< "$output_line")"
-    if [[ -z "$checksum" ]] || [[ -n "${output_checksums[$checksum]:-}" ]]; then
-        echo "QEMU output evidence does not contain distinct checksums" >&2
+    if [[ -z "$checksum" ]]; then
+        echo "QEMU output evidence is missing its logical-content checksum" >&2
         exit 1
     fi
-    output_checksums[$checksum]=1
 done
 if (( total_retirements == 0 || total_callbacks == 0 )); then
     echo "QEMU evidence has no asynchronous page-flip retirement" >&2

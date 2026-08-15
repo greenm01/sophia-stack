@@ -220,7 +220,7 @@ impl LiveProductionNativeScanout {
             exporter.set_pending_mixed_frame(queued.frame);
         }
         tracing::info!(
-            "sophia_live_mirror_generation schema=1 status={} output={} frame={} source={} checksum={}",
+            "sophia_live_mirror_generation schema=2 status={} output={} frame={} source={} logical_content_checksum={}",
             status,
             generation.output.raw(),
             generation.frame.raw(),
@@ -252,7 +252,7 @@ impl LiveProductionNativeScanout {
         }
         self.queued_mirror_successors.insert(output, generation);
         tracing::info!(
-            "sophia_live_mirror_generation schema=1 status={} output={} frame={} source={} checksum={} active={}",
+            "sophia_live_mirror_generation schema=2 status={} output={} frame={} source={} logical_content_checksum={} active={}",
             if matches!(
                 target,
                 LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(_)

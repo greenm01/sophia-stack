@@ -6,10 +6,13 @@ proof of the Rust implementation.
 `VisualRetirement.tla` explores the asynchronous lifetime of immutable visual
 candidates across two outputs and two generations. Each logical output is backed
 by one or more heads, and one output is a two-head mirror group, so a single run
-exercises joint retirement within a group and independent retirement between
-groups. That is the smallest scope that still explores out-of-order retirement,
-supersession, and mirror-group member loss. It excludes X11 objects, application
-metadata, pixel content, renderer handles, and native KMS objects.
+exercises per-head preparation, partial physical submission, joint retirement
+within a group, and independent retirement between groups. A transaction may
+name both outputs, but its feedback waits for both output retirements while each
+output retains its own committed generation. This is the smallest scope that
+still explores out-of-order retirement, supersession, and mirror-group member
+loss. It excludes X11 objects, application metadata, pixel content, renderer
+handles, and native KMS objects.
 The join is stated over heads and flips rather than over buffers, which is what
 lets the scanout architecture change without the model changing. It held when a
 mirror group shared one framebuffer and holds unchanged when each head owns a
@@ -18,26 +21,33 @@ the frame, not that they read it from the same memory.
 
 The model checks that:
 
+- every submitted head belongs to a completely prepared output cohort;
+- no physical head or partially submitted output cohort is in flight for two
+  generations, and overlapping output cohorts cannot both be active;
 - a successful commit follows retirement of every output required by that
   candidate, and a logical output retires only when every one of its heads has
   flipped;
 - distinct logical outputs never share a head, so one group's flip cannot retire
   another group's output;
-- a candidate whose mirror group lost a head never commits, and the lost lease is
-  dropped without counting as a flip;
-- a late or superseded generation cannot replace newer committed state;
-- committed input generation advances with committed visual generation;
+- a candidate whose mirror group lost a head settles as `head_lost`, never
+  commits, and drops the lost lease without counting it as a flip;
+- no candidate reaches a terminal outcome while a required output remains
+  logically pending;
+- a late or superseded generation cannot replace newer state on the same output;
+- input never leads physical visual state, and a successful transaction publishes
+  matching input only after every required output retires;
 - successful feedback exists only for a committed generation;
 - active, submitted, or committed resources cannot be released, which now also
   means no generation is released while any head still scans it out; and
 - admitted work eventually reaches one terminal settlement under the weak
   fairness assumption documented in the module.
 
-`MirrorGroupCommitsOnlyWithEveryHead` looks redundant beside
-`CommittedAfterExactRetirement` and is not. The latter is expressed through the
-`RetiredOutputs` definition and goes blind if that definition is itself wrong,
-which is the likely shape of a mirroring regression. Head loss is deliberately
-outside the fairness assumption: nothing guarantees a connector disappears.
+The checked configuration explores 2,372,390 generated states and 937,473
+distinct states to depth 28. Temporary negative controls independently remove
+the prepare-all guard, whole-cohort ownership guard, transaction feedback join,
+and release guard; each violates its corresponding enabled invariant. Head loss
+is deliberately outside the fairness assumption: nothing guarantees a connector
+disappears.
 
 `PresentFrameOwnership.tla` isolates the output-frame association needed by
 software Present. It allows an unrelated frame to submit and retire before the
@@ -238,6 +248,7 @@ the current owning Rust boundaries as follows:
 | `Settle(..., "timed_out")` | authority and WM timeout reducers returning `TransactionOutcome::TimedOut` |
 | `Settle(..., "disconnected")` | `AuthorityTransactionInbox::drain_ready` reports disconnect; universal visual settlement remains a gap |
 | `Settle(..., "removed")` | ordered `AuthorityTransactionIntake::removed_surfaces` handling, currently on the direct-commit path |
+| `LoseHead(...)/"head_lost"` | physical output loss while a head owns a native presentation lease |
 | `Release` | output retirement plus backend-specific lease teardown; a universal release reducer remains deferred |
 | `QueueNext` | `SurfaceContentStream::admit` carrying a complete `LiveProductionAuthorityGroup` |
 | `RetirePresent` | `finish_surface_content_owner` after exact DMA or software frame retirement |

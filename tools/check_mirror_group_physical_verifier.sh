@@ -77,14 +77,19 @@ reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=0/' 'a secondary f
 reject_mutation 's/region_gray_pixels=4200/region_gray_pixels=1000/' 'catastrophic secondary text-coverage loss'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=1 release_barrier_pending=0/' 'a pressed key left at shutdown'
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier_pending=1/' 'an unacknowledged synthetic key release'
-reject_mutation 's/connector_id=102 checksum=111/connector_id=102 checksum=222/' 'divergent mirror checksums'
+reject_mutation 's/connector_id=102 scene_generation=7/connector_id=102 scene_generation=8/' 'divergent mirror generations'
+reject_mutation 's/connector_id=102 scene_generation=7 logical_content_checksum=111/connector_id=102 scene_generation=7 logical_content_checksum=222/' 'divergent logical-content checksums'
 reject_mutation 's/cpu_checksum=111/cpu_checksum=222/' 'native heads stale behind the final CPU scene'
-reject_mutation 's/source=cpu checksum=111/source=retained_mixed checksum=111/' 'focus-only retained content as terminal evidence'
-reject_mutation '/sophia_live_mirror_generation schema=1 status=presented/d' 'missing logical CPU-generation presentation'
+reject_mutation 's/source=cpu logical_content_checksum=111/source=retained_mixed logical_content_checksum=111/' 'focus-only retained content as terminal evidence'
+reject_mutation '/sophia_live_mirror_generation schema=2 status=presented/d' 'missing logical CPU-generation presentation'
 reject_mutation '/sophia_live_mirror_head_damage.*connector_id=102/d' 'missing secondary projected damage'
 reject_mutation 's/connector_id=102 frame=7 width=1920/connector_id=102 frame=8 width=1920/' 'damage from a different logical generation'
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080/connector_id=102 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
+
+sed 's/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=94 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=123/; s/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=unavailable/connector_id=102 scene_generation=7 logical_content_checksum=111 head_pixel_checksum=456/' \
+    "$fixture" >"$work/distinct-head-pixels.log"
+"$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/distinct-head-pixels.log" >/dev/null
 
 sed $'s/^sophia_live_native_head_page_flip /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_native_head_page_flip /; s/^sophia_live_mirror_head_damage /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_head_damage /; s/^sophia_live_mirror_generation /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_generation /; s/^sophia_native_composition_sampling /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_renderer: \033[0m sophia_native_composition_sampling /' \
     "$fixture" >"$work/tracing-prefixed.log"

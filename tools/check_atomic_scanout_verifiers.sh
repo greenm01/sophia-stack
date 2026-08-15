@@ -109,7 +109,10 @@ expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_internal
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_no_pointer_pixels.log
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_one_connected_output.log
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_missing_second_retire.log
-expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_duplicate_output_checksum.log
+sed 's/output=2 checksum=12847590821349875/output=2 checksum=8957873632062205093/' \
+    "$FIXTURE_DIR/qemu_session_evidence_pass.log" >"$TEMP_DIR/qemu-identical-content.log"
+"$ROOT_DIR/tools/verify_qemu_session_evidence.sh" \
+    "$TEMP_DIR/qemu-identical-content.log" >/dev/null
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_vsync_overlap.log
 expect_pass tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_pass.log
 expect_fail tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_missing_guard_trigger.log

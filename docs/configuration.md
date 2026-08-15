@@ -246,6 +246,30 @@ does not advertise chrome-policy ownership, so it uses `config.kdl`. A failed
 or restarting WM retains the last complete visual chrome and geometry until a
 replacement policy can relayout atomically.
 
+### Mirrored outputs
+
+A named desktop output may list physical mirror members and choose how its one
+logical scene maps to unequal native modes:
+
+```kdl
+output {
+  named "DP-1" {
+    mode "2560x1440@60"
+    mirror "DP-2"
+    mirror-fit "fit"
+  }
+}
+```
+
+`mirror-fit` accepts `fit`, `cover`, or `exact`. `fit` is the default and keeps
+the complete logical scene visible with explicit bars when aspect ratios differ.
+`cover` fills the head and clips overflow. `exact` performs no scaling and
+centres the logical scene, clipping it when necessary. Configuration owns this
+operator choice; the target architecture has Engine normalize it and derive one
+immutable transform per head, while the backend only executes those plans. The
+current backend projection is transitional and must not become a second layout
+authority.
+
 Chrome has two explicit roles. A focus ring is painted only for the focused
 managed surface. A frame may be painted for every managed surface with
 focused and unfocused colors. Engine reserves one stable clearance equal to

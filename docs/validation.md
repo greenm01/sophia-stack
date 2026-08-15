@@ -596,11 +596,13 @@ and the verifier requires nonzero routed pointer events plus a second xterm
 pixel change. The guest requires two connected virtual KMS outputs. Engine
 discovers both, owns both connector/CRTC/primary-plane chains, and presents an
 extended horizontal desktop. The verifier requires per-output nonzero
-submissions, callbacks, retirements, exports, distinct logical-output
-checksums, and a page-flip-paced vsync record with zero overlap or phase
-rejection. Physical heads in one mirror group instead carry the same logical
-checksum; their connector-qualified lifecycle records prove that both scanout
-chains presented it.
+submissions, callbacks, retirements, exports, logical-content checksums, and a
+page-flip-paced vsync record with zero overlap or phase rejection. Checksums are
+diagnostic content evidence, not output identity: unrelated outputs may show
+identical content. Physical heads in one mirror group carry the same scene
+generation and logical-content checksum; optional native head-pixel checksums
+may differ. Connector-qualified lifecycle records prove that both scanout chains
+presented the cohort.
 It boots an isolated direct-kernel initramfs with virtio-gpu and verifies
 exactly 300 session ticks without host DRM, input-device, VT, disk, or guest
 network access. The QEMU evidence verifier also rejects native submit/retire
@@ -1962,7 +1964,9 @@ Positive aggregate counters alone are insufficient: they can describe unrelated
 head generations and therefore do not prove a mirror join. That same frame must
 have exactly one positive `sophia_live_mirror_head_damage` record per connector
 in the connector's physical mode; any `OutputMismatch` damage rejection fails
-the proof. Causal no-op generations with `mode=skip` do not mask a later valid
+the proof. Completed native-head schema 2 evidence names that scene generation
+and its shared `logical_content_checksum`; `head_pixel_checksum` is optional and
+never compared for equality. Causal no-op generations with `mode=skip` do not mask a later valid
 projected generation. The runner verifies this candidate before it appends the
 sole `status=passed` promotion result.
 

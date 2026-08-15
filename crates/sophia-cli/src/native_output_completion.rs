@@ -2,51 +2,68 @@ use std::collections::BTreeMap;
 
 use sophia_protocol::OutputId;
 
+/// Reduced logical and optional physical evidence for one native head.
+///
+/// Scene generation and logical-content checksum describe the shared cohort.
+/// A native pixel checksum, when a renderer can provide one, describes only
+/// that head's final pixels and is never a mirror join key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NativeOutputChecksumError {
-    MirrorMismatch {
+pub struct NativeOutputContentEvidence {
+    pub output: OutputId,
+    pub scene_generation: u64,
+    pub logical_content_checksum: u64,
+    pub head_pixel_checksum: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeOutputContentEvidenceError {
+    MirrorGenerationMismatch {
         output: OutputId,
         expected: u64,
         actual: u64,
     },
-    LogicalOutputCollision {
-        first: OutputId,
-        second: OutputId,
-        checksum: u64,
+    MirrorLogicalContentMismatch {
+        output: OutputId,
+        expected: u64,
+        actual: u64,
     },
 }
 
-/// Validates the checksum identity carried by physical scanout heads.
+/// Validates logical cohort identity without conflating it with head pixels.
 ///
-/// Heads behind one mirrored `OutputId` carry one logical scene and must agree.
-/// Separate logical outputs must remain distinguishable, even when each output
-/// happens to own only one physical head.
-pub fn validate_native_output_checksums(
-    heads: impl IntoIterator<Item = (OutputId, u64)>,
-) -> Result<(), NativeOutputChecksumError> {
-    let mut output_checksums = BTreeMap::<OutputId, u64>::new();
-    let mut checksum_outputs = BTreeMap::<u64, OutputId>::new();
+/// Heads behind one `OutputId` must report one scene generation and logical
+/// content identity. Independent outputs may legitimately show identical
+/// content, and head-local native pixel checksums may legitimately differ.
+pub fn validate_native_output_content_evidence(
+    heads: impl IntoIterator<Item = NativeOutputContentEvidence>,
+) -> Result<(), NativeOutputContentEvidenceError> {
+    let mut outputs = BTreeMap::<OutputId, (u64, u64)>::new();
 
-    for (output, checksum) in heads {
-        if let Some(expected) = output_checksums.get(&output).copied() {
-            if expected != checksum {
-                return Err(NativeOutputChecksumError::MirrorMismatch {
-                    output,
-                    expected,
-                    actual: checksum,
-                });
-            }
+    for head in heads {
+        let Some((expected_generation, expected_checksum)) = outputs.get(&head.output).copied()
+        else {
+            outputs.insert(
+                head.output,
+                (head.scene_generation, head.logical_content_checksum),
+            );
             continue;
-        }
-        if let Some(first) = checksum_outputs.get(&checksum).copied() {
-            return Err(NativeOutputChecksumError::LogicalOutputCollision {
-                first,
-                second: output,
-                checksum,
+        };
+        if expected_generation != head.scene_generation {
+            return Err(NativeOutputContentEvidenceError::MirrorGenerationMismatch {
+                output: head.output,
+                expected: expected_generation,
+                actual: head.scene_generation,
             });
         }
-        output_checksums.insert(output, checksum);
-        checksum_outputs.insert(checksum, output);
+        if expected_checksum != head.logical_content_checksum {
+            return Err(
+                NativeOutputContentEvidenceError::MirrorLogicalContentMismatch {
+                    output: head.output,
+                    expected: expected_checksum,
+                    actual: head.logical_content_checksum,
+                },
+            );
+        }
     }
     Ok(())
 }

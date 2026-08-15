@@ -988,9 +988,11 @@ is excluded; retained product behavior is not.
   the existing joint mirror retirement, but fan out before rasterization so
   every physical head owns a native plan, damage ledger, target slot,
   framebuffer, and KMS lifetime. Implement in this order:
-  1. Extend `VisualRetirement.tla` with per-head preparation and distinct target
-     leases. Require every mirror head prepared before the first submit, retain
-     joint retirement, and add negative controls for early submit and release.
+  1. **Done:** `VisualRetirement.tla` now models per-head preparation and
+     submission, output-scoped commit clocks, exclusive head ownership,
+     overlapping-output reservation, joint transaction feedback, and distinct
+     head loss. Its checked negative controls cover early submit, overlap, and
+     premature feedback/release.
   2. Split logical output-scene records from opaque physical-head targets.
      Normalize current `BufferSource` transactions into singleton bounded
      `SurfaceContentSet` records without exposing head identity to WM policy.
@@ -1007,6 +1009,10 @@ is excluded; retained product behavior is not.
   6. Gate unequal-size mirroring and differently scaled extended outputs with
      per-head plan/render/submit/callback/retire evidence, spanning-surface
      coverage, failure injection, topology replacement, and clean teardown.
+  Prerequisite evidence migration is also done: native-head completion names the
+  shared scene generation and logical-content checksum separately from an
+  optional head-pixel checksum, so future native raster differences cannot break
+  mirror identity.
 - [ ] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
   None of this exists today, and the pieces that look like it are startup-only.

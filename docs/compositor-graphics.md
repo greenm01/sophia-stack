@@ -80,9 +80,12 @@ New additions to this display list are governed by two principles:
 
 Only a visual effect declared optional may be skipped or degraded, and its
 committed fallback must remain legible. Mandatory content—including text,
-controls, and trust indications—cannot disappear silently. Performance targets
-must name a workload, hardware class, and measurement method; this architecture
-does not promise one refresh rate across all hardware.
+controls, and trust indications—cannot disappear silently. For a per-head
+composition cohort, mandatory content must be produced on every required head;
+failure on one head rejects the complete candidate before submission rather
+than presenting unequal semantics. Performance targets must name a workload,
+hardware class, and measurement method; this architecture does not promise one
+refresh rate across all hardware.
 
 “Shell-owned” is an ownership rule, not a product description. It covers a
 small status bar and a full set of panels and decorations alike. The display

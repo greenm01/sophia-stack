@@ -496,9 +496,10 @@ Both were open when this enumeration was first written. Both are now settled.
    invariant that presentation is output-scoped with no globally simultaneous
    multi-output retirement instant (`docs/engine-architecture.md`), to joint
    retirement *within* a mirror group and independent retirement *between* groups.
-   And it is same-mode-only, because no plane scaling exists anywhere in the tree —
-   mismatched modes must fail closed at reconcile time rather than silently
-   letterbox.
+   Each physical head has its own native target, so unequal modes are admitted
+   through the Engine-owned fit, cover, or exact transform without widening the
+   policy record. The old same-mode-only assumption was retired when distinct
+   per-head buffers and explicit mirror projection landed.
 
    Because joint multi-head retirement changes multi-output and buffer-lifetime
    semantics, it triggers the standing requirement to extend the bounded

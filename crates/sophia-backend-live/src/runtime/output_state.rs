@@ -30,7 +30,7 @@ pub struct LiveRenderedOutputState {
     pub(crate) native_selections: Vec<LibdrmNativePrimaryPlaneSelection>,
     /// Heads that went away while this output had work in flight.
     ///
-    /// `VisualRetirement.tla` settles such a generation as `removed`: the lost
+    /// `VisualRetirement.tla` settles such a generation as `head_lost`: the lost
     /// head leaves the in-flight set, never counts as a flip, and the candidate
     /// fails closed. A surviving sibling's flip must not be read as the group
     /// having presented, because it did not -- one of its screens is gone.

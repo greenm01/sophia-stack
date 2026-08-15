@@ -4,29 +4,18 @@ EXTENDS Integers, FiniteSets
 (***************************************************************************
  * A bounded authority model for Sophia's visual transition lifetime.       *
  *                                                                         *
- * Generations stand for immutable prepared candidates. Outputs are the     *
- * logical, output-scoped presentation requirements of each candidate. Each *
- * logical output is backed by one or more heads, so a mirror group is a    *
- * logical output with more than one head. This model intentionally omits   *
- * protocol objects, pixels, renderer handles, and KMS details.            *
+ * Generations are immutable visual candidates. Each candidate names one   *
+ * or more logical outputs, and every logical output is backed by one or    *
+ * more physical heads. Preparation, submission, callbacks, and leases are  *
+ * head-scoped. Logical retirement joins the complete head set of one       *
+ * output, while unrelated outputs retain independent commit clocks.        *
  *                                                                         *
- * The head layer exists because mirroring makes a logical output's         *
- * retirement a join over its heads: a group has not presented a frame      *
- * until every one of its heads has flipped, so the candidate is not        *
- * committed until the last of them does. Presentation therefore remains    *
- * output-scoped, and retirement is joint within a mirror group and         *
- * independent between groups. Sophia still claims no globally simultaneous *
- * multi-output retirement instant.                                        *
- *                                                                         *
- * That join is deliberately stated over heads and flips rather than over   *
- * buffers, and the distinction is load-bearing. It held when a group       *
- * shared one framebuffer, where the buffer stayed leased until the last    *
- * head flipped; it holds unchanged when each head owns a buffer at its own *
- * mode and the scene is composed into each, because what makes a group     *
- * presented is that every screen is showing the frame, not that they are   *
- * reading it from the same memory. A model written over buffer lifetime    *
- * would have had to be rewritten to change scanout architecture. This one  *
- * does not.                                                               *
+ * A transaction may span outputs without claiming simultaneous physical    *
+ * presentation. Each output commits at its own last-head callback, but     *
+ * transaction feedback and matching input state wait until every required  *
+ * output has retired that generation. An active candidate reserves all of  *
+ * its required outputs, so a successor cannot advance one member before    *
+ * that feedback join completes.                                           *
  ****************************************************************************)
 
 CONSTANTS Outputs, Generations, NoGeneration
@@ -37,19 +26,18 @@ ASSUME /\ Outputs # {}
        /\ NoGeneration = 0
 
 (***************************************************************************
- * The head topology is a definition rather than a model value so the       *
- * configuration stays limited to simple sets. One output is a two-head     *
- * mirror group and every other output drives a single head, which exercises *
- * joint retirement and independent retirement in the same run. CHOOSE is   *
- * deterministic, so the mirrored output is fixed for the whole check.      *
+ * One output is a two-head mirror group; every other output has one head.  *
+ * The checked configuration therefore covers joint mirror retirement and   *
+ * independent output progress in the smallest useful state space.          *
  ****************************************************************************)
 MirroredOutput == CHOOSE o \in Outputs : TRUE
 HeadsOf(o) == IF o = MirroredOutput
                  THEN {<<o, 1>>, <<o, 2>>}
                  ELSE {<<o, 1>>}
 Heads == UNION {HeadsOf(o) : o \in Outputs}
+HeadOutput(head) == CHOOSE o \in Outputs : head \in HeadsOf(o)
 
-Phases == {"absent", "proposed", "prepared", "submitted", "settled"}
+Phases == {"absent", "proposed", "preparing", "prepared", "submitted", "settled"}
 Outcomes == {
     "none",
     "committed",
@@ -57,18 +45,22 @@ Outcomes == {
     "superseded",
     "timed_out",
     "disconnected",
-    "removed"
+    "removed",
+    "head_lost"
 }
-
+OutputOutcomes == {"not_required", "pending", "committed", "superseded", "failed"}
 TerminalOutcomes == Outcomes \ {"none"}
+FailureOutcomes == {"rejected", "timed_out", "disconnected", "removed"}
 
 VARIABLES
     phase,
     required,
+    prepared,
     submitted,
     flipped,
     lost,
     inFlight,
+    outputOutcome,
     outcome,
     committed,
     inputGeneration,
@@ -78,10 +70,12 @@ VARIABLES
 vars == <<
     phase,
     required,
+    prepared,
     submitted,
     flipped,
     lost,
     inFlight,
+    outputOutcome,
     outcome,
     committed,
     inputGeneration,
@@ -89,96 +83,146 @@ vars == <<
     released
 >>
 
+RequiredHeads(g) == UNION {HeadsOf(o) : o \in required[g]}
+RetiredOutputs(g) == {o \in required[g] : HeadsOf(o) \subseteq flipped[g]}
+
 (***************************************************************************
- * Every head of a submitted output takes the lease. A logical output is    *
- * retired only when all of its heads have flipped, which is what makes a   *
- * mirror group retire jointly.                                            *
+ * Once a candidate submits any head, every output named by that candidate  *
+ * is reserved until the candidate settles. Disjoint-output candidates may  *
+ * remain active concurrently.                                             *
  ****************************************************************************)
-SubmittedHeads(g) == UNION {HeadsOf(o) : o \in submitted[g]}
-RetiredOutputs(g) == {o \in Outputs : HeadsOf(o) \subseteq flipped[g]}
+CandidateOutputsAvailable(g) ==
+    \A other \in Generations \ {g} :
+        (phase[other] = "submitted" /\ outcome[other] = "none") =>
+            required[g] \cap required[other] = {}
+
+HeadFreeForGeneration(g, head) ==
+    \A other \in Generations \ {g} : head \notin inFlight[other]
+
+InitialOutputOutcome == [o \in Outputs |-> "not_required"]
 
 Init ==
     /\ phase = [g \in Generations |-> "absent"]
     /\ required = [g \in Generations |-> {}]
+    /\ prepared = [g \in Generations |-> {}]
     /\ submitted = [g \in Generations |-> {}]
     /\ flipped = [g \in Generations |-> {}]
     /\ lost = [g \in Generations |-> {}]
     /\ inFlight = [g \in Generations |-> {}]
+    /\ outputOutcome = [g \in Generations |-> InitialOutputOutcome]
     /\ outcome = [g \in Generations |-> "none"]
-    /\ committed = NoGeneration
-    /\ inputGeneration = NoGeneration
+    /\ committed = [o \in Outputs |-> NoGeneration]
+    /\ inputGeneration = [o \in Outputs |-> NoGeneration]
     /\ feedback = {}
     /\ released = {}
 
 Propose(g, outs) ==
     /\ phase[g] = "absent"
-    /\ g > committed
     /\ outs \in SUBSET Outputs
     /\ outs # {}
+    /\ \A o \in outs : g > committed[o]
     /\ phase' = [phase EXCEPT ![g] = "proposed"]
     /\ required' = [required EXCEPT ![g] = outs]
+    /\ outputOutcome' = [outputOutcome EXCEPT
+        ![g] = [o \in Outputs |-> IF o \in outs THEN "pending" ELSE "not_required"]]
     /\ UNCHANGED <<
-        submitted, flipped, lost, inFlight, outcome, committed,
+        prepared, submitted, flipped, lost, inFlight, outcome, committed,
         inputGeneration, feedback, released
         >>
 
-Prepare(g) ==
-    /\ phase[g] = "proposed"
-    /\ outcome[g] = "none"
-    /\ phase' = [phase EXCEPT ![g] = "prepared"]
-    /\ UNCHANGED <<
-        required, submitted, flipped, lost, inFlight, outcome, committed,
-        inputGeneration, feedback, released
-        >>
-
-Submit(g, output) ==
-    /\ phase[g] \in {"prepared", "submitted"}
-    /\ outcome[g] = "none"
-    /\ output \in required[g] \ submitted[g]
-    /\ phase' = [phase EXCEPT ![g] = "submitted"]
-    /\ submitted' = [submitted EXCEPT ![g] = @ \cup {output}]
-    /\ inFlight' = [inFlight EXCEPT ![g] = @ \cup HeadsOf(output)]
-    /\ UNCHANGED <<
-        required, flipped, lost, outcome, committed, inputGeneration, feedback,
-        released
-        >>
-
-(***************************************************************************
- * One head completes its page flip. The candidate settles only once every  *
- * required output has every one of its heads flipped, so a partially       *
- * flipped mirror group can never be mistaken for a retired output.         *
- ****************************************************************************)
-Flip(g, head) ==
-    LET newFlipped == flipped[g] \cup {head}
-        newInFlight == inFlight[g] \ {head}
-        newRetired == {o \in Outputs : HeadsOf(o) \subseteq newFlipped}
+PrepareHead(g, head) ==
+    LET newPrepared == prepared[g] \cup {head}
     IN
-    /\ head \in inFlight[g]
-    /\ flipped' = [flipped EXCEPT ![g] = newFlipped]
-    /\ inFlight' = [inFlight EXCEPT ![g] = newInFlight]
-    /\ IF outcome[g] = "none" /\ required[g] \subseteq newRetired
-          THEN
-              /\ phase' = [phase EXCEPT ![g] = "settled"]
-              /\ IF g > committed
-                    THEN
-                        /\ outcome' = [outcome EXCEPT ![g] = "committed"]
-                        /\ committed' = g
-                        /\ inputGeneration' = g
-                        /\ feedback' = feedback \cup {g}
-                    ELSE
-                        /\ outcome' = [outcome EXCEPT ![g] = "superseded"]
-                        /\ UNCHANGED <<committed, inputGeneration, feedback>>
-          ELSE
-              UNCHANGED <<phase, outcome, committed, inputGeneration, feedback>>
-    /\ UNCHANGED <<required, submitted, lost, released>>
+    /\ phase[g] \in {"proposed", "preparing", "prepared", "submitted"}
+    /\ outcome[g] = "none"
+    /\ head \in RequiredHeads(g) \ prepared[g]
+    /\ prepared' = [prepared EXCEPT ![g] = newPrepared]
+    /\ phase' = [phase EXCEPT
+        ![g] = IF phase[g] = "submitted"
+                   THEN "submitted"
+                   ELSE IF RequiredHeads(g) \subseteq newPrepared
+                           THEN "prepared"
+                           ELSE "preparing"]
+    /\ UNCHANGED <<
+        required, submitted, flipped, lost, inFlight, outputOutcome, outcome,
+        committed, inputGeneration, feedback, released
+        >>
+
+SubmitHead(g, head) ==
+    LET output == HeadOutput(head)
+    IN
+    /\ phase[g] \in {"preparing", "prepared", "submitted"}
+    /\ outcome[g] = "none"
+    /\ head \in prepared[g] \ submitted[g]
+    /\ output \in required[g]
+    /\ HeadsOf(output) \subseteq prepared[g]
+    /\ g > committed[output]
+    /\ CandidateOutputsAvailable(g)
+    /\ \A member \in HeadsOf(output) : HeadFreeForGeneration(g, member)
+    /\ phase' = [phase EXCEPT ![g] = "submitted"]
+    /\ submitted' = [submitted EXCEPT ![g] = @ \cup {head}]
+    /\ inFlight' = [inFlight EXCEPT ![g] = @ \cup {head}]
+    /\ UNCHANGED <<
+        required, prepared, flipped, lost, outputOutcome, outcome, committed,
+        inputGeneration, feedback, released
+        >>
 
 (***************************************************************************
- * A head disappears while holding the lease, which is how mirror-group     *
- * member loss reaches this boundary. The lease is dropped without counting  *
- * as a flip, and the candidate fails closed rather than committing a        *
- * partial group: a surviving-head topology is a new candidate, not a        *
- * salvaged one. The buffer becomes releasable only once the remaining heads *
- * drain.                                                                   *
+ * A physical callback only transfers the head lease. Logical output state  *
+ * changes in RetireOutput after every required head has flipped.           *
+ ****************************************************************************)
+FlipHead(g, head) ==
+    /\ head \in inFlight[g]
+    /\ flipped' = [flipped EXCEPT ![g] = @ \cup {head}]
+    /\ inFlight' = [inFlight EXCEPT ![g] = @ \ {head}]
+    /\ UNCHANGED <<
+        phase, required, prepared, submitted, lost, outputOutcome, outcome,
+        committed, inputGeneration, feedback, released
+        >>
+
+RetireOutput(g, output) ==
+    /\ outcome[g] = "none"
+    /\ output \in required[g]
+    /\ outputOutcome[g][output] = "pending"
+    /\ HeadsOf(output) \subseteq flipped[g]
+    /\ IF g > committed[output]
+          THEN
+              /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "committed"]
+              /\ committed' = [committed EXCEPT ![output] = g]
+          ELSE
+              /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "superseded"]
+              /\ UNCHANGED committed
+    /\ UNCHANGED <<
+        phase, required, prepared, submitted, flipped, lost, inFlight, outcome,
+        inputGeneration, feedback, released
+        >>
+
+CompleteCandidate(g) ==
+    /\ outcome[g] = "none"
+    /\ required[g] # {}
+    /\ \A o \in required[g] : outputOutcome[g][o] \in {"committed", "superseded"}
+    /\ phase' = [phase EXCEPT ![g] = "settled"]
+    /\ IF \A o \in required[g] : outputOutcome[g][o] = "committed"
+          THEN
+              /\ outcome' = [outcome EXCEPT ![g] = "committed"]
+              /\ inputGeneration' = [o \in Outputs |->
+                    IF o \in required[g] THEN g ELSE inputGeneration[o]]
+              /\ feedback' = feedback \cup {g}
+          ELSE
+              /\ outcome' = [outcome EXCEPT ![g] = "superseded"]
+              /\ UNCHANGED <<inputGeneration, feedback>>
+    /\ UNCHANGED <<
+        required, prepared, submitted, flipped, lost, inFlight, outputOutcome,
+        committed, released
+        >>
+
+FailedOutputs(g) == [o \in Outputs |->
+    IF outputOutcome[g][o] = "pending" THEN "failed" ELSE outputOutcome[g][o]]
+
+(***************************************************************************
+ * Head loss is distinct from protocol-side surface removal. It never counts *
+ * as a flip, and already accepted sibling work remains in flight until its   *
+ * real callback or controlled detach drains the lease.                      *
  ****************************************************************************)
 LoseHead(g, head) ==
     /\ head \in inFlight[g]
@@ -187,42 +231,45 @@ LoseHead(g, head) ==
     /\ IF outcome[g] = "none"
           THEN
               /\ phase' = [phase EXCEPT ![g] = "settled"]
-              /\ outcome' = [outcome EXCEPT ![g] = "removed"]
+              /\ outputOutcome' = [outputOutcome EXCEPT ![g] = FailedOutputs(g)]
+              /\ outcome' = [outcome EXCEPT ![g] = "head_lost"]
           ELSE
-              UNCHANGED <<phase, outcome>>
+              UNCHANGED <<phase, outputOutcome, outcome>>
     /\ UNCHANGED <<
-        required, submitted, flipped, committed, inputGeneration, feedback,
-        released
+        required, prepared, submitted, flipped, committed, inputGeneration,
+        feedback, released
         >>
 
 Settle(g, result) ==
-    /\ phase[g] \in {"proposed", "prepared", "submitted"}
+    /\ phase[g] \in {"proposed", "preparing", "prepared", "submitted"}
     /\ outcome[g] = "none"
-    /\ result \in {"rejected", "timed_out", "disconnected", "removed"}
+    /\ result \in FailureOutcomes
     /\ phase' = [phase EXCEPT ![g] = "settled"]
+    /\ outputOutcome' = [outputOutcome EXCEPT ![g] = FailedOutputs(g)]
     /\ outcome' = [outcome EXCEPT ![g] = result]
     /\ UNCHANGED <<
-        required, submitted, flipped, lost, inFlight, committed,
+        required, prepared, submitted, flipped, lost, inFlight, committed,
         inputGeneration, feedback, released
         >>
 
 Release(g) ==
     /\ g \notin released
     /\ outcome[g] \in TerminalOutcomes
-    /\ g # committed
     /\ inFlight[g] = {}
+    /\ \A o \in Outputs : committed[o] # g
     /\ released' = released \cup {g}
     /\ UNCHANGED <<
-        phase, required, submitted, flipped, lost, inFlight, outcome,
-        committed, inputGeneration, feedback
+        phase, required, prepared, submitted, flipped, lost, inFlight,
+        outputOutcome, outcome, committed, inputGeneration, feedback
         >>
 
 Progress(g) ==
-    \/ Prepare(g)
-    \/ \E output \in Outputs : Submit(g, output)
-    \/ \E head \in Heads : Flip(g, head)
-    \/ \E result \in {"rejected", "timed_out", "disconnected", "removed"} :
-        Settle(g, result)
+    \/ \E head \in Heads : PrepareHead(g, head)
+    \/ \E head \in Heads : SubmitHead(g, head)
+    \/ \E head \in Heads : FlipHead(g, head)
+    \/ \E output \in Outputs : RetireOutput(g, output)
+    \/ CompleteCandidate(g)
+    \/ \E result \in FailureOutcomes : Settle(g, result)
 
 Next ==
     \/ \E g \in Generations :
@@ -234,64 +281,69 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 (***************************************************************************
- * Weak fairness is an explicit environment assumption: once an admitted    *
- * generation continually has a legal progress action, the scheduler and    *
- * backend eventually take one. It does not assume that failed hardware     *
- * reports success. Head loss is deliberately outside the fairness          *
- * assumption, because nothing guarantees a connector disappears.           *
+ * Once an admitted generation continually has a legal progress action, the *
+ * scheduler and backend eventually take one. Physical head loss remains an  *
+ * environment action and therefore is not assumed fair.                    *
  ****************************************************************************)
 FairSpec == Spec /\ \A g \in Generations : WF_vars(Progress(g))
 
 TypeOK ==
     /\ phase \in [Generations -> Phases]
     /\ required \in [Generations -> SUBSET Outputs]
-    /\ submitted \in [Generations -> SUBSET Outputs]
+    /\ prepared \in [Generations -> SUBSET Heads]
+    /\ submitted \in [Generations -> SUBSET Heads]
     /\ flipped \in [Generations -> SUBSET Heads]
     /\ lost \in [Generations -> SUBSET Heads]
     /\ inFlight \in [Generations -> SUBSET Heads]
+    /\ outputOutcome \in [Generations -> [Outputs -> OutputOutcomes]]
     /\ outcome \in [Generations -> Outcomes]
-    /\ committed \in Generations \cup {NoGeneration}
-    /\ inputGeneration \in Generations \cup {NoGeneration}
+    /\ committed \in [Outputs -> Generations \cup {NoGeneration}]
+    /\ inputGeneration \in [Outputs -> Generations \cup {NoGeneration}]
     /\ feedback \subseteq Generations
     /\ released \subseteq Generations
 
-(***************************************************************************
- * The head sets of distinct logical outputs are disjoint. Mirroring adds   *
- * heads to one logical output; it never makes two logical outputs share a  *
- * head. Without this, one group's flip could mark another group's output    *
- * retired.                                                                 *
- ****************************************************************************)
 HeadsPartitionOutputs ==
     \A o1, o2 \in Outputs :
         o1 # o2 => HeadsOf(o1) \cap HeadsOf(o2) = {}
 
+PreparationAccounting ==
+    \A g \in Generations :
+        /\ prepared[g] \subseteq RequiredHeads(g)
+        /\ submitted[g] \subseteq prepared[g]
+
 SubmissionAccounting ==
     \A g \in Generations :
-        /\ submitted[g] \subseteq required[g]
-        /\ flipped[g] \subseteq SubmittedHeads(g)
-        /\ lost[g] \subseteq SubmittedHeads(g)
+        /\ flipped[g] \subseteq submitted[g]
+        /\ lost[g] \subseteq submitted[g]
         /\ flipped[g] \cap lost[g] = {}
-        /\ inFlight[g] = SubmittedHeads(g) \ (flipped[g] \cup lost[g])
+        /\ inFlight[g] = submitted[g] \ (flipped[g] \cup lost[g])
 
-CommittedAfterExactRetirement ==
+PrepareAllBeforeSubmit ==
     \A g \in Generations :
-        outcome[g] = "committed" =>
-            /\ required[g] # {}
-            /\ required[g] \subseteq RetiredOutputs(g)
+        \A head \in submitted[g] : HeadsOf(HeadOutput(head)) \subseteq prepared[g]
 
-(***************************************************************************
- * The mirroring safety property. A committed candidate has flipped every    *
- * head of every required output, so no mirror group is ever committed half  *
- * presented.                                                               *
- *                                                                         *
- * This reads like a restatement of CommittedAfterExactRetirement and is    *
- * not. That invariant is expressed through RetiredOutputs, so it goes blind *
- * exactly when that definition is itself wrong. This one names the heads    *
- * directly and therefore still fails if retirement is ever redefined to     *
- * discount a head -- which is the likely shape of a mirroring regression.   *
- * A negative control that makes loss silently shrink a group violates this  *
- * invariant while leaving CommittedAfterExactRetirement satisfied.          *
- ****************************************************************************)
+ExclusiveHeadInFlight ==
+    \A g1, g2 \in Generations :
+        g1 # g2 => inFlight[g1] \cap inFlight[g2] = {}
+
+ExclusiveOutputCohortInFlight ==
+    \A g1, g2 \in Generations :
+        g1 # g2 =>
+            \A o \in Outputs :
+                inFlight[g1] \cap HeadsOf(o) # {} =>
+                    inFlight[g2] \cap HeadsOf(o) = {}
+
+ActiveOutputCohortsExclusive ==
+    \A g1, g2 \in Generations :
+        g1 # g2 /\ phase[g1] = "submitted" /\ outcome[g1] = "none"
+                /\ phase[g2] = "submitted" /\ outcome[g2] = "none" =>
+            required[g1] \cap required[g2] = {}
+
+OutputCommitAfterHeadRetirement ==
+    \A g \in Generations :
+        \A o \in required[g] :
+            outputOutcome[g][o] = "committed" => HeadsOf(o) \subseteq flipped[g]
+
 MirrorGroupCommitsOnlyWithEveryHead ==
     \A g \in Generations :
         outcome[g] = "committed" =>
@@ -299,41 +351,43 @@ MirrorGroupCommitsOnlyWithEveryHead ==
 
 PartialMirrorGroupNeverCommits ==
     \A g \in Generations :
-        (\E o \in required[g] : HeadsOf(o) \cap lost[g] # {}) =>
-            outcome[g] # "committed"
+        lost[g] # {} => outcome[g] # "committed"
 
-CommittedGenerationDominatesHistory ==
+TerminalCandidatesSettleRequiredOutputs ==
     \A g \in Generations :
-        /\ outcome[g] = "committed" => committed >= g
-        /\ outcome[g] = "superseded" => committed >= g
+        outcome[g] \in TerminalOutcomes =>
+            \A o \in required[g] : outputOutcome[g][o] # "pending"
 
-InputMatchesCommitted == inputGeneration = committed
+OutputGenerationDominatesHistory ==
+    \A g \in Generations :
+        \A o \in required[g] :
+            /\ outputOutcome[g][o] = "committed" => committed[o] >= g
+            /\ outputOutcome[g][o] = "superseded" => committed[o] >= g
+
+InputNeverLeadsVisual ==
+    \A o \in Outputs : inputGeneration[o] <= committed[o]
+
+CurrentCommittedTransactionPublishesInput ==
+    \A g \in Generations :
+        outcome[g] = "committed" =>
+            \A o \in required[g] : committed[o] = g => inputGeneration[o] = g
 
 FeedbackMatchesCommit ==
     \A g \in Generations : (g \in feedback) <=> (outcome[g] = "committed")
 
 ActiveResourcesRetained ==
     \A g \in Generations :
-        (phase[g] \in {"proposed", "prepared", "submitted"}
+        (phase[g] \in {"proposed", "preparing", "prepared", "submitted"}
          \/ inFlight[g] # {}) => g \notin released
 
-CommittedResourceRetained ==
-    committed # NoGeneration => committed \notin released
+CommittedResourcesRetained ==
+    \A o \in Outputs : committed[o] # NoGeneration => committed[o] \notin released
 
 ReleasedResourcesAreTerminal ==
     \A g \in released :
         /\ outcome[g] \in TerminalOutcomes
         /\ inFlight[g] = {}
-        /\ g # committed
-
-(***************************************************************************
- * The buffer-lifetime guarantee mirroring depends on -- that no generation  *
- * is released while any head still scans it out, including heads whose      *
- * mirror-group siblings already flipped -- needs no separate invariant.     *
- * ReleasedResourcesAreTerminal states it directly on inFlight, which is now *
- * head-scoped, and there is no derived definition in between that could go  *
- * wrong independently.                                                     *
- ****************************************************************************)
+        /\ \A o \in Outputs : committed[o] # g
 
 AdmittedEventuallySettles ==
     \A g \in Generations :

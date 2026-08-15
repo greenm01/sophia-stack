@@ -922,26 +922,43 @@
             native_scanout.vsync_overlap_rejections,
             native_scanout.page_flip_phase_rejections,
         );
+        let mut content_evidence = Vec::with_capacity(native_scanout.heads.len());
         for head in &native_scanout.heads {
+            let Some(content) = head.presented_content else {
+                return Err(format!(
+                    "native output {} connector {} has no presented logical content identity",
+                    head.output.id.raw(),
+                    head.selection.connector_id(),
+                )
+                .into());
+            };
+            let evidence = NativeOutputContentEvidence {
+                output: head.output.id,
+                scene_generation: content.frame().raw(),
+                logical_content_checksum: head.presented_checksum,
+                head_pixel_checksum: None,
+            };
             println!(
                 "sophia_live_output schema=1 status=complete output={} checksum={} submissions={} retirements={} callbacks={} nonzero_exports={}",
                 head.output.id.raw(),
-                head.last_checksum,
+                evidence.logical_content_checksum,
                 head.submissions,
                 head.retirements,
                 head.callback_accepted,
                 head.nonzero_exports,
             );
             println!(
-                "sophia_live_native_head schema=1 status=complete output={} connector_id={} checksum={} submissions={} retirements={} callbacks={} nonzero_exports={}",
+                "sophia_live_native_head schema=2 status=complete output={} connector_id={} scene_generation={} logical_content_checksum={} head_pixel_checksum=unavailable submissions={} retirements={} callbacks={} nonzero_exports={}",
                 head.output.id.raw(),
                 head.selection.connector_id(),
-                head.last_checksum,
+                evidence.scene_generation,
+                evidence.logical_content_checksum,
                 head.submissions,
                 head.retirements,
                 head.callback_accepted,
                 head.nonzero_exports,
             );
+            content_evidence.push(evidence);
         }
         if native_scanout.heads.iter().any(|head| {
             !independent_native_output_presented(
@@ -956,29 +973,23 @@
                 "one or more native outputs did not present and retire independently".into(),
             );
         }
-        if let Err(error) = validate_native_output_checksums(
-            native_scanout
-                .heads
-                .iter()
-                .map(|head| (head.output.id, head.last_checksum)),
-        ) {
+        if let Err(error) = validate_native_output_content_evidence(content_evidence) {
             return Err(match error {
-                NativeOutputChecksumError::MirrorMismatch {
+                NativeOutputContentEvidenceError::MirrorGenerationMismatch {
                     output,
                     expected,
                     actual,
                 } => format!(
-                    "mirrored native heads disagree for logical output {}: expected checksum {expected}, observed {actual}",
+                    "mirrored native heads disagree for logical output {}: expected scene generation {expected}, observed {actual}",
                     output.raw(),
                 ),
-                NativeOutputChecksumError::LogicalOutputCollision {
-                    first,
-                    second,
-                    checksum,
+                NativeOutputContentEvidenceError::MirrorLogicalContentMismatch {
+                    output,
+                    expected,
+                    actual,
                 } => format!(
-                    "logical native outputs {} and {} are not independently distinguishable: checksum {checksum}",
-                    first.raw(),
-                    second.raw(),
+                    "mirrored native heads disagree for logical output {}: expected logical-content checksum {expected}, observed {actual}",
+                    output.raw(),
                 ),
             }
             .into());
