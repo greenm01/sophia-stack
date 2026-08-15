@@ -966,7 +966,14 @@ is excluded; retained product behavior is not.
   adjacent post-scroll rows, and accepted same-surface CPU updates in causal
   ImageText8→CopyArea→ImageText8 order; core XID collision checks also prevent
   font/pixmap/GC creation from orphaning a live
-  window. This item remains open until the diagnostic-capable tty4 run
+  window. The next physical run brought both native heads up with the centered
+  scene, but the 0.75-scale head exposed visibly blocky 6x13 text and deadline
+  completion found one pressed key without a pending release barrier. Exact-size
+  composition now remains nearest-sampled, reductions use a fixed 4x4 Catmull-Rom
+  path with fail-closed physical evidence, and enlargements remain linear. Runtime
+  deadline completion now suppresses new physical input, synthesizes all held-key
+  releases, and waits on the ordered delivery/release barrier before native
+  teardown. This item remains open until the diagnostic-capable tty4 run
   visibly passes and its archive verifies; no userspace test is a substitute for
   that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an

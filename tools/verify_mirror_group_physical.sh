@@ -24,7 +24,7 @@ trap 'rm -f -- "$normalized_evidence"' EXIT
 # Production tracing prefixes schema payloads with timestamp, target, and ANSI
 # state. Normalize only stable Sophia schema records; ordinary client output is
 # intentionally left untouched.
-sed -E 's/^.*(sophia_(live_[^ ]+|mirror_group[^ ]*|session_[^ ]+|x11_[^ ]+) schema=)/\1/' \
+sed -E 's/^.*(sophia_(live_[^ ]+|mirror_group[^ ]*|native_[^ ]+|session_[^ ]+|x11_[^ ]+) schema=)/\1/' \
     "$raw_evidence" >"$normalized_evidence"
 evidence="$normalized_evidence"
 
@@ -68,6 +68,10 @@ if grep -Eq '^sophia_live_output_damage schema=1 status=queue_rejected .*reason=
     "$evidence"; then
     fail "a head rejected damage for a different output shape"
 fi
+if grep -Eq '^sophia_native_composition_sampling schema=1 status=(fallback|unavailable)([[:space:]]|$)' \
+    "$evidence"; then
+    fail "sharp mirror downsampling was unavailable or fell back"
+fi
 
 [[ "$(count '^sophia_mirror_group_gate schema=1 status=starting source_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} profile_sha256=[0-9a-f]{64}$')" == 1 ]] ||
     fail "expected one exact source/binary/profile identity record"
@@ -107,6 +111,10 @@ for connector in "$dp1_connector" "$dp2_connector"; do
     grep -Fxq "sophia_live_mirror_bootstrap schema=1 status=worker_ready output=$dp1_output connector_id=$connector workers=1" \
         "$evidence" || fail "connector $connector did not establish its renderer worker"
 done
+grep -Fxq 'sophia_native_composition_sampling schema=1 status=active requested=exact_nearest effective=exact_nearest source=2560x1440 target=2560x1440 output=2560x1440' \
+    "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
+grep -Fxq 'sophia_native_composition_sampling schema=1 status=active requested=sharp_downscale effective=sharp_downscale source=2560x1440 target=1920x1080 output=1920x1080' \
+    "$evidence" || fail "DP-2 did not use sharp 0.75x downsampling"
 
 mapfile -t complete_heads < <(
     grep -E '^sophia_live_native_head schema=1 status=complete output=[0-9]+ connector_id=[0-9]+ checksum=[0-9]+ submissions=[0-9]+ retirements=[0-9]+ callbacks=[0-9]+ nonzero_exports=[0-9]+$' \
@@ -226,10 +234,18 @@ resources="$(grep -E '^sophia_live_native_resources schema=5 status=complete ' "
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
 require_positive_field "$resources" worker_completions
+require_positive_field "$resources" exact_nearest_draws
+require_positive_field "$resources" sharp_downscale_draws
+require_field "$resources" sharp_downscale_fallbacks 0
 for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; do
     require_field "$resources" "$key" 0
 done
 require_field "$resources" worker_completions "$(field "$resources" worker_requests)"
+keys="$(grep -E '^sophia_live_session_keys schema=2 status=complete ' "$evidence")"
+[[ "$(printf '%s\n' "$keys" | wc -l)" == 1 ]] || fail "expected one key-state completion"
+require_field "$keys" pending 0
+require_field "$keys" release_barrier_pending 0
+require_field "$keys" repeat_active_seats 0
 session_line="$(grep -nEm1 '^sophia_live_session schema=16 status=bounded_complete ' "$evidence" | cut -d: -f1)"
 last_retire_line="$(grep -nE '^sophia_live_native_head_page_flip schema=1 status=retired ' "$evidence" | tail -n1 | cut -d: -f1)"
 (( last_retire_line < session_line )) || fail "bounded completion preceded physical retirement"
@@ -241,8 +257,8 @@ grep -Fxq 'sophia_live_session_cleanup schema=1 status=clean app_groups=0 fronte
     "$evidence" || fail "frontend workers or session authority resources did not cleanly stop"
 grep -Fxq 'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' \
     "$evidence" || fail "operator did not confirm the visible mirror"
-grep -Fxq 'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both foreground=white background=black' \
-    "$evidence" || fail "operator did not confirm identical mixed-case content with stable legibility"
+grep -Fxq 'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both scaled_text=sharp_not_blocky foreground=white background=black' \
+    "$evidence" || fail "operator did not confirm sharp, non-blocky scaled text"
 passed_count="$(count '^sophia_mirror_group_gate schema=1 status=passed( |$)')"
 exact_passed_count="$(count '^sophia_mirror_group_gate schema=1 status=passed exit=0$')"
 if [[ "$candidate" == true ]]; then

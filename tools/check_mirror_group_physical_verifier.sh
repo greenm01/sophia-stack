@@ -58,10 +58,17 @@ reject_mutation 's/native_cleanup_pending=false/native_cleanup_pending=true/' 'u
 reject_mutation 's/outcome=drained drained=true abandoned_scanouts=0/outcome=forced_detach_timeout drained=false abandoned_scanouts=1/' 'forced native detach'
 reject_mutation '/status=visual_confirmed/d' 'missing visible-pixel confirmation'
 reject_mutation '/sophia_mirror_group_visual/d' 'missing readable-text confirmation'
+reject_mutation 's/ scaled_text=sharp_not_blocky//' 'missing sharp scaled-text confirmation'
 reject_mutation '/sophia_live_session_cleanup/d' 'missing clean frontend/session teardown'
 reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
 reject_mutation '/status=direct_cpu output=1 connector_id=102/d' 'missing direct-CPU mirror bootstrap'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
+reject_mutation '/requested=exact_nearest/d' 'missing exact primary sampling evidence'
+reject_mutation '/requested=sharp_downscale/d' 'missing sharp secondary sampling evidence'
+reject_mutation 's/status=active requested=sharp_downscale/status=fallback requested=sharp_downscale/' 'a sharp-downscale fallback'
+reject_mutation 's/sharp_downscale_fallbacks=0/sharp_downscale_fallbacks=1/' 'a counted sharp-downscale fallback'
+reject_mutation 's/pending=0 release_barrier_pending=0/pending=1 release_barrier_pending=0/' 'a pressed key left at shutdown'
+reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier_pending=1/' 'an unacknowledged synthetic key release'
 reject_mutation 's/connector_id=102 checksum=111/connector_id=102 checksum=222/' 'divergent mirror checksums'
 reject_mutation 's/cpu_checksum=111/cpu_checksum=222/' 'native heads stale behind the final CPU scene'
 reject_mutation 's/source=cpu checksum=111/source=retained_mixed checksum=111/' 'focus-only retained content as terminal evidence'
@@ -71,7 +78,7 @@ reject_mutation 's/connector_id=102 frame=7 width=1920/connector_id=102 frame=8 
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080/connector_id=102 frame=7 width=2560 height=1440/' 'damage in the wrong physical coordinate space'
 reject_mutation 's/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=1/connector_id=102 frame=7 width=1920 height=1080 mode=full rects=0/' 'empty projected damage'
 
-sed $'s/^sophia_live_native_head_page_flip /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_native_head_page_flip /; s/^sophia_live_mirror_head_damage /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_head_damage /; s/^sophia_live_mirror_generation /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_generation /' \
+sed $'s/^sophia_live_native_head_page_flip /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_native_head_page_flip /; s/^sophia_live_mirror_head_damage /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_head_damage /; s/^sophia_live_mirror_generation /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_generation /; s/^sophia_native_composition_sampling /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_renderer: \033[0m sophia_native_composition_sampling /' \
     "$fixture" >"$work/tracing-prefixed.log"
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/tracing-prefixed.log" >/dev/null
 

@@ -273,6 +273,7 @@ fn run_session_loop(
     let mut client_key_scratch = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
     let mut client_key_deliveries = Vec::with_capacity(SESSION_CLIENT_PRESSED_KEY_CAPACITY);
     let mut client_key_release_barrier = BTreeSet::new();
+    let mut runtime_deadline_key_drain = RuntimeDeadlineKeyDrain::default();
     let mut emergency_chord = EmergencyChordState::armed();
     let mut virtual_terminal_chord = VirtualTerminalChordState::default();
     let mut keyboard_coverage = PhysicalKeyboardCoverage::default();

@@ -191,6 +191,7 @@ pub struct NativeGbmPersistentRenderStats {
     pub snapshot_live_entries: usize,
     pub snapshot_live_bytes: u64,
     pub import_cache: NativeDmaBufImportCacheStats,
+    pub sampling: crate::NativeCompositionSamplingStats,
     pub max_target_create: Duration,
     pub max_frame_surface_create: Duration,
     pub max_render: Duration,

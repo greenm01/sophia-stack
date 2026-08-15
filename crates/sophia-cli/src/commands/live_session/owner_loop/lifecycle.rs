@@ -574,7 +574,7 @@
             // explicit deadlines. Ending here can strand already-routed keys
             // without giving the frontend a chance to acknowledge them.
             if global_runtime_deadline_ends_session(config.input_proof_requested()) {
-                break;
+                service_runtime_deadline_key_drain!();
             }
         }
         if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
@@ -651,6 +651,9 @@
         }
         if output_topology_owner.input_quarantined() {
             input_routing_mode = PhysicalInputRoutingMode::ShortcutsOnly;
+        }
+        if runtime_deadline_key_drain.is_draining() {
+            input_routing_mode = PhysicalInputRoutingMode::Suppressed;
         }
         let input_phase_started = Instant::now();
         let input_requested_exit = input_routing_mode != PhysicalInputRoutingMode::Suppressed

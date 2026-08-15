@@ -93,8 +93,9 @@ fn pixel_metrics_reject_invalid_gbm_rows() {
 #[test]
 fn argb_composition_uses_premultiplied_source_over_without_double_alpha() {
     let source = include_str!("../src/gl.rs");
+    let shaders = include_str!("../src/gl/shaders.rs");
 
     assert!(source.contains(".blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA)"));
     assert!(!source.contains(".blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA)"));
-    assert!(source.contains("vec4(color.rgb * opacity, color.a * opacity)"));
+    assert!(shaders.contains("vec4(color.rgb * opacity, color.a * opacity)"));
 }

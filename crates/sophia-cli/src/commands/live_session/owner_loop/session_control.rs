@@ -271,6 +271,49 @@ macro_rules! flush_all_client_keys {
     }};
 }
 
+macro_rules! service_runtime_deadline_key_drain {
+    () => {{
+        let now_msec = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        match runtime_deadline_key_drain.observe(
+            now_msec,
+            client_keys.pending_len(),
+            input_delivery.pending.len(),
+            client_key_release_barrier.len(),
+        ) {
+            RuntimeDeadlineKeyDrainDecision::BeginRelease => {
+                flush_all_client_keys!("runtime_deadline");
+                println!(
+                    "sophia_live_session_keys schema=3 status=deadline_release pending_deliveries={} release_barrier_pending={}",
+                    input_delivery.pending.len(),
+                    client_key_release_barrier.len(),
+                );
+                continue;
+            }
+            RuntimeDeadlineKeyDrainDecision::Waiting => {
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            }
+            RuntimeDeadlineKeyDrainDecision::Complete => {
+                if runtime_deadline_key_drain.is_draining() {
+                    println!(
+                        "sophia_live_session_keys schema=3 status=deadline_drained pending=0 release_barrier_pending=0"
+                    );
+                }
+                break;
+            }
+            RuntimeDeadlineKeyDrainDecision::TimedOut => {
+                return Err(format!(
+                    "runtime deadline key-release barrier timed out: pressed={} pending_deliveries={} release_barrier_pending={}",
+                    client_keys.pending_len(),
+                    input_delivery.pending.len(),
+                    client_key_release_barrier.len(),
+                )
+                .into());
+            }
+        }
+    }};
+}
+
 macro_rules! reconcile_pending_wm_focus {
     ($runtime:expr) => {{
         if let Some((transaction, surface)) = layout.focus_to_apply {

@@ -17,6 +17,9 @@ tracing.workspace = true
 default = []
 gbm-platform = ["dep:gbm"]
 
+[dev-dependencies]
+sophia-x-authority = { path = "../sophia-x-authority" }
+
 [lints.rust]
 unsafe_code = "allow"
 

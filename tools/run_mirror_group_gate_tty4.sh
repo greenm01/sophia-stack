@@ -157,6 +157,7 @@ echo "  - xterm will scroll 40 numbered mixed-case rows, then print the exact ma
 echo "    'Sophia Mirror AaZz 0123456789' and leave an interactive shell"
 echo "  - Wait for the scene to settle, then verify identical logical content and"
 echo "    letter case, stable legibility, and white-on-black presentation on both"
+echo "  - DP-2's scaled glyph edges should look sharp and smooth, not blocky or stepped"
 echo
 echo "Evidence: $EVIDENCE"
 echo "Running now."
@@ -206,7 +207,8 @@ grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE
     | tail -20 || true
 echo
 echo "Did both monitors show the same scene at their native modes, including stable,"
-echo "legible white-on-black text with identical logical content and letter case?"
+echo "legible white-on-black text with identical logical content and letter case,"
+echo "and did DP-2's scaled text look sharp rather than blocky or stair-stepped?"
 echo "Type yes to record visible-pixel acceptance."
 visual_confirmation=
 if ! read -r visual_confirmation </dev/tty || [[ "$visual_confirmation" != "yes" ]]; then
@@ -217,7 +219,7 @@ fi
 printf '%s\n' \
     'sophia_mirror_group_gate schema=1 status=visual_confirmed outputs=1 connectors=2 heads=2 dp1_mode=2560x1440 dp2_mode=1920x1080' | tee -a "$EVIDENCE"
 printf '%s\n' \
-    'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both foreground=white background=black' | tee -a "$EVIDENCE"
+    'sophia_mirror_group_visual schema=1 status=confirmed content=logically_identical case=mixed legibility=stable_both scaled_text=sharp_not_blocky foreground=white background=black' | tee -a "$EVIDENCE"
 if ! "$ROOT_DIR/tools/verify_mirror_group_physical.sh" --candidate "$EVIDENCE"; then
     finish_failed_run verification 1
     echo "Mirror verification failed; diagnostic evidence remains at $EVIDENCE." >&2

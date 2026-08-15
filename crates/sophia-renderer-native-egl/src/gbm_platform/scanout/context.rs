@@ -131,8 +131,14 @@ where
         })
     }
 
-    pub const fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
-        self.stats
+    pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
+        let mut stats = self.stats;
+        if let Some(persistent) = self.composition_target.as_ref() {
+            stats.sampling = stats
+                .sampling
+                .saturating_add(persistent.target.pipeline.sampling_stats());
+        }
+        stats
     }
 
     pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
@@ -709,6 +715,10 @@ where
             persistent.import_cache.abandon(&self.egl, self.display);
             self.stats.import_cache = persistent.import_cache.stats();
         }
+        self.stats.sampling = self
+            .stats
+            .sampling
+            .saturating_add(persistent.target.pipeline.sampling_stats());
         self.destroy_native_render_target(persistent.target);
     }
 }

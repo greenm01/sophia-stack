@@ -10,6 +10,59 @@ const SHIFTED_PRINTABLE_KEYCODES: [u32; 21] = [
     41, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 26, 27, 43, 39, 40, 51, 52, 53,
 ];
 pub const SESSION_CLIENT_PRESSED_KEY_CAPACITY: usize = 256;
+pub const RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC: u64 = 500;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeDeadlineKeyDrain {
+    #[default]
+    Idle,
+    Draining {
+        deadline_msec: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeDeadlineKeyDrainDecision {
+    BeginRelease,
+    Waiting,
+    Complete,
+    TimedOut,
+}
+
+impl RuntimeDeadlineKeyDrain {
+    pub const fn is_draining(self) -> bool {
+        matches!(self, Self::Draining { .. })
+    }
+
+    pub fn observe(
+        &mut self,
+        now_msec: u64,
+        pressed_keys: usize,
+        pending_deliveries: usize,
+        release_barriers: usize,
+    ) -> RuntimeDeadlineKeyDrainDecision {
+        let pending = pressed_keys != 0 || pending_deliveries != 0 || release_barriers != 0;
+        match *self {
+            Self::Idle if !pending => RuntimeDeadlineKeyDrainDecision::Complete,
+            Self::Idle => {
+                *self = Self::Draining {
+                    deadline_msec: now_msec
+                        .saturating_add(RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC),
+                };
+                if pressed_keys == 0 {
+                    RuntimeDeadlineKeyDrainDecision::Waiting
+                } else {
+                    RuntimeDeadlineKeyDrainDecision::BeginRelease
+                }
+            }
+            Self::Draining { .. } if !pending => RuntimeDeadlineKeyDrainDecision::Complete,
+            Self::Draining { deadline_msec } if now_msec >= deadline_msec => {
+                RuntimeDeadlineKeyDrainDecision::TimedOut
+            }
+            Self::Draining { .. } => RuntimeDeadlineKeyDrainDecision::Waiting,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionClientPressedKey {

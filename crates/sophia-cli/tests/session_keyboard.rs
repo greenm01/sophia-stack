@@ -1,6 +1,7 @@
 use sophia_cli::session_keyboard::{
-    PhysicalKeyboardCoverage, SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState,
-    SessionClientPressedKey, VirtualTerminalChordAction, VirtualTerminalChordState,
+    PhysicalKeyboardCoverage, RuntimeDeadlineKeyDrain, RuntimeDeadlineKeyDrainDecision,
+    SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
+    VirtualTerminalChordAction, VirtualTerminalChordState,
 };
 use sophia_protocol::{DeviceId, SeatId, SurfaceId};
 
@@ -11,6 +12,48 @@ fn pressed_key(surface: u32, keycode: u32) -> SessionClientPressedKey {
         device: DeviceId::from_raw(1),
         keycode,
     }
+}
+
+#[test]
+fn runtime_deadline_releases_held_keys_then_waits_for_delivery_acknowledgement() {
+    let mut drain = RuntimeDeadlineKeyDrain::default();
+    assert_eq!(
+        drain.observe(1_000, 1, 0, 0),
+        RuntimeDeadlineKeyDrainDecision::BeginRelease,
+    );
+    assert!(drain.is_draining());
+    assert_eq!(
+        drain.observe(1_001, 0, 1, 1),
+        RuntimeDeadlineKeyDrainDecision::Waiting,
+    );
+    assert_eq!(
+        drain.observe(1_002, 0, 0, 0),
+        RuntimeDeadlineKeyDrainDecision::Complete,
+    );
+}
+
+#[test]
+fn runtime_deadline_key_release_is_immediate_when_idle_and_bounded_when_blocked() {
+    let mut idle = RuntimeDeadlineKeyDrain::default();
+    assert_eq!(
+        idle.observe(2_000, 0, 0, 0),
+        RuntimeDeadlineKeyDrainDecision::Complete,
+    );
+    assert!(!idle.is_draining());
+
+    let mut blocked = RuntimeDeadlineKeyDrain::default();
+    assert_eq!(
+        blocked.observe(2_000, 1, 0, 0),
+        RuntimeDeadlineKeyDrainDecision::BeginRelease,
+    );
+    assert_eq!(
+        blocked.observe(2_499, 0, 1, 1),
+        RuntimeDeadlineKeyDrainDecision::Waiting,
+    );
+    assert_eq!(
+        blocked.observe(2_500, 0, 1, 1),
+        RuntimeDeadlineKeyDrainDecision::TimedOut,
+    );
 }
 
 #[test]

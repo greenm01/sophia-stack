@@ -4,11 +4,23 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
-use crate::NativeEglDrawSmokeStatus;
+#[cfg(feature = "gbm-platform")]
+mod shaders;
+
+#[cfg(feature = "gbm-platform")]
+use shaders::{
+    FRAGMENT_SHADER, SHARP_DOWNSCALE_FRAGMENT_SHADER, VERTEX_SHADER, compile_program,
+    compile_shader,
+};
+
 #[cfg(feature = "gbm-platform")]
 use crate::{
     NativeCompositionPixelMetrics, NativeGbmScanoutBufferExportDetail,
     native_composition_gl_read_y, native_composition_pixel_metrics,
+};
+use crate::{
+    NativeCompositionSampling, NativeCompositionSamplingStats, NativeEglDrawSmokeStatus,
+    native_composition_sampling,
 };
 #[cfg(feature = "gbm-platform")]
 use std::cell::Cell;
@@ -22,33 +34,19 @@ const FULLSCREEN_QUAD_VERTICES: [f32; 16] = [
 pub(crate) struct PersistentXrgb8888GlPipeline {
     gl: glow::Context,
     program: glow::NativeProgram,
+    sharp_downscale_program: Option<glow::NativeProgram>,
     texture: glow::NativeTexture,
     cpu_layer_texture: glow::NativeTexture,
     cpu_layer_texture_width: Cell<u32>,
     cpu_layer_texture_height: Cell<u32>,
     vertex_buffer: glow::NativeBuffer,
+    sampling_evidence: Cell<u8>,
+    exact_nearest_draws: Cell<usize>,
+    sharp_downscale_draws: Cell<usize>,
+    linear_upscale_draws: Cell<usize>,
+    sharp_downscale_fallbacks: Cell<usize>,
     width: u32,
     height: u32,
-}
-
-/// Which sampler a layer should be drawn with.
-///
-/// A layer drawn at its own size wants point sampling: every destination pixel
-/// has exactly one source pixel, and NEAREST guarantees the bytes survive, which
-/// is what the exact-pixel evidence downstream depends on.
-///
-/// A layer drawn at any other size is being resampled, and NEAREST there means
-/// dropping or doubling whole rows and columns. At the 0.75x a 2560x1440 scene
-/// lands on a 1920x1080 head that removes every fourth row, which is why glyph
-/// stems vanished and text came out broken on the smaller monitor of a mirror
-/// group.
-#[cfg(feature = "gbm-platform")]
-pub(crate) const fn layer_texture_filter(source: (u32, u32), target: GlCompositionRect) -> u32 {
-    if target.width == source.0 as i32 && target.height == source.1 as i32 {
-        glow::NEAREST
-    } else {
-        glow::LINEAR
-    }
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -103,24 +101,18 @@ impl PersistentXrgb8888GlPipeline {
     }
 
     unsafe fn new_inner(gl: glow::Context, width: u32, height: u32) -> Result<Self, String> {
-        let vertex_shader = unsafe { compile_shader(&gl, glow::VERTEX_SHADER, VERTEX_SHADER)? };
-        let fragment_shader =
-            unsafe { compile_shader(&gl, glow::FRAGMENT_SHADER, FRAGMENT_SHADER)? };
-        let program = unsafe { gl.create_program()? };
-        unsafe {
-            gl.attach_shader(program, vertex_shader);
-            gl.attach_shader(program, fragment_shader);
-            gl.bind_attrib_location(program, 0, "position");
-            gl.bind_attrib_location(program, 1, "texture_coordinate");
-            gl.link_program(program);
-        }
-        if !unsafe { gl.get_program_link_status(program) } {
-            return Err(unsafe { gl.get_program_info_log(program) });
-        }
-        unsafe {
-            gl.delete_shader(vertex_shader);
-            gl.delete_shader(fragment_shader);
-        }
+        let program = unsafe { compile_program(&gl, FRAGMENT_SHADER)? };
+        let sharp_downscale_program = match unsafe {
+            compile_program(&gl, SHARP_DOWNSCALE_FRAGMENT_SHADER)
+        } {
+            Ok(program) => Some(program),
+            Err(error) => {
+                tracing::warn!(
+                    "sophia_native_composition_sampling schema=1 status=unavailable mode=sharp_downscale reason=shader_compile error={error}"
+                );
+                None
+            }
+        };
         let texture = unsafe { gl.create_texture()? };
         let cpu_layer_texture = unsafe { gl.create_texture()? };
         let vertex_buffer = unsafe { gl.create_buffer()? };
@@ -205,11 +197,17 @@ impl PersistentXrgb8888GlPipeline {
         Ok(Self {
             gl,
             program,
+            sharp_downscale_program,
             texture,
             cpu_layer_texture,
             cpu_layer_texture_width: Cell::new(width),
             cpu_layer_texture_height: Cell::new(height),
             vertex_buffer,
+            sampling_evidence: Cell::new(0),
+            exact_nearest_draws: Cell::new(0),
+            sharp_downscale_draws: Cell::new(0),
+            linear_upscale_draws: Cell::new(0),
+            sharp_downscale_fallbacks: Cell::new(0),
             width,
             height,
         })
@@ -330,7 +328,8 @@ impl PersistentXrgb8888GlPipeline {
         );
         // Per draw, not once at creation: filter state lives on the texture object
         // and this one texture is reused for layers at different scales.
-        let filter = layer_texture_filter((width, height), target);
+        let sampling = sampling_for_rect((width, height), target);
+        let filter = texture_filter(sampling);
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl
@@ -368,7 +367,7 @@ impl PersistentXrgb8888GlPipeline {
                 self.cpu_layer_texture_height.set(height);
             }
         }
-        self.draw_bound_texture(target, clip, alpha, has_alpha)
+        self.draw_bound_texture(target, clip, alpha, has_alpha, (width, height), sampling)
     }
 
     pub(crate) fn draw_solid_layer(
@@ -464,6 +463,8 @@ impl PersistentXrgb8888GlPipeline {
             None,
             1.0,
             false,
+            (self.width, self.height),
+            NativeCompositionSampling::ExactNearest,
         );
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
@@ -524,7 +525,8 @@ impl PersistentXrgb8888GlPipeline {
     ) -> Result<(), NativeEglDrawSmokeStatus> {
         // Same reasoning as the CPU layer: point sampling only where the draw is
         // 1:1, because anywhere else it drops rows rather than resampling them.
-        let filter = layer_texture_filter(source, target);
+        let sampling = sampling_for_rect(source, target);
+        let filter = texture_filter(sampling);
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
@@ -533,7 +535,7 @@ impl PersistentXrgb8888GlPipeline {
             self.gl
                 .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter as i32);
         }
-        self.draw_bound_texture(target, clip, alpha, has_alpha)
+        self.draw_bound_texture(target, clip, alpha, has_alpha, source, sampling)
     }
 
     pub(crate) unsafe fn delete_texture(&self, texture: glow::NativeTexture) {
@@ -552,6 +554,15 @@ impl PersistentXrgb8888GlPipeline {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn sampling_stats(&self) -> NativeCompositionSamplingStats {
+        NativeCompositionSamplingStats {
+            exact_nearest_draws: self.exact_nearest_draws.get(),
+            sharp_downscale_draws: self.sharp_downscale_draws.get(),
+            linear_upscale_draws: self.linear_upscale_draws.get(),
+            sharp_downscale_fallbacks: self.sharp_downscale_fallbacks.get(),
+        }
     }
 
     pub(crate) fn read_composition_pixels(
@@ -620,6 +631,8 @@ impl PersistentXrgb8888GlPipeline {
         clip: Option<GlCompositionRect>,
         alpha: f32,
         has_alpha: bool,
+        source: (u32, u32),
+        requested_sampling: NativeCompositionSampling,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
         if target.width <= 0 || target.height <= 0 || !alpha.is_finite() || alpha <= 0.0 {
             return Ok(());
@@ -638,6 +651,24 @@ impl PersistentXrgb8888GlPipeline {
                 vertices.len() * std::mem::size_of::<f32>(),
             )
         };
+        let (program, effective_sampling, status) = match requested_sampling {
+            NativeCompositionSampling::SharpDownscale => self.sharp_downscale_program.map_or(
+                (
+                    self.program,
+                    NativeCompositionSampling::LinearUpscale,
+                    "fallback",
+                ),
+                |program| (program, requested_sampling, "active"),
+            ),
+            _ => (self.program, requested_sampling, "active"),
+        };
+        self.record_sampling(
+            requested_sampling,
+            effective_sampling,
+            status,
+            source,
+            target,
+        );
         unsafe {
             if has_alpha || alpha < 1.0 {
                 self.gl.enable(glow::BLEND);
@@ -660,17 +691,22 @@ impl PersistentXrgb8888GlPipeline {
                 .bind_buffer(glow::ARRAY_BUFFER, Some(self.vertex_buffer));
             self.gl
                 .buffer_data_u8_slice(glow::ARRAY_BUFFER, vertex_bytes, glow::STREAM_DRAW);
-            self.gl.use_program(Some(self.program));
-            self.gl.uniform_1_i32(
-                self.gl.get_uniform_location(self.program, "frame").as_ref(),
-                0,
-            );
+            self.gl.use_program(Some(program));
+            self.gl
+                .uniform_1_i32(self.gl.get_uniform_location(program, "frame").as_ref(), 0);
             self.gl.uniform_1_f32(
-                self.gl
-                    .get_uniform_location(self.program, "opacity")
-                    .as_ref(),
+                self.gl.get_uniform_location(program, "opacity").as_ref(),
                 alpha.clamp(0.0, 1.0),
             );
+            if effective_sampling == NativeCompositionSampling::SharpDownscale {
+                self.gl.uniform_2_f32(
+                    self.gl
+                        .get_uniform_location(program, "source_size")
+                        .as_ref(),
+                    source.0 as f32,
+                    source.1 as f32,
+                );
+            }
             self.gl.enable_vertex_attrib_array(0);
             self.gl
                 .vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 16, 0);
@@ -683,6 +719,69 @@ impl PersistentXrgb8888GlPipeline {
             }
         }
         Ok(())
+    }
+
+    fn record_sampling(
+        &self,
+        requested: NativeCompositionSampling,
+        effective: NativeCompositionSampling,
+        status: &'static str,
+        source: (u32, u32),
+        target: GlCompositionRect,
+    ) {
+        let counter = match effective {
+            NativeCompositionSampling::ExactNearest => &self.exact_nearest_draws,
+            NativeCompositionSampling::SharpDownscale => &self.sharp_downscale_draws,
+            NativeCompositionSampling::LinearUpscale => &self.linear_upscale_draws,
+        };
+        counter.set(counter.get().saturating_add(1));
+        if status == "fallback" {
+            self.sharp_downscale_fallbacks
+                .set(self.sharp_downscale_fallbacks.get().saturating_add(1));
+        }
+        let bit = match (requested, status) {
+            (NativeCompositionSampling::ExactNearest, _) => 1,
+            (NativeCompositionSampling::SharpDownscale, "active") => 2,
+            (NativeCompositionSampling::SharpDownscale, _) => 4,
+            (NativeCompositionSampling::LinearUpscale, _) => 8,
+        };
+        if self.sampling_evidence.get() & bit != 0 {
+            return;
+        }
+        self.sampling_evidence
+            .set(self.sampling_evidence.get() | bit);
+        tracing::info!(
+            "sophia_native_composition_sampling schema=1 status={status} requested={} effective={} source={}x{} target={}x{} output={}x{}",
+            requested.reduced_name(),
+            effective.reduced_name(),
+            source.0,
+            source.1,
+            target.width,
+            target.height,
+            self.width,
+            self.height,
+        );
+    }
+}
+
+#[cfg(feature = "gbm-platform")]
+fn sampling_for_rect(source: (u32, u32), target: GlCompositionRect) -> NativeCompositionSampling {
+    native_composition_sampling(
+        source,
+        (
+            u32::try_from(target.width).unwrap_or(0),
+            u32::try_from(target.height).unwrap_or(0),
+        ),
+    )
+}
+
+#[cfg(feature = "gbm-platform")]
+const fn texture_filter(sampling: NativeCompositionSampling) -> u32 {
+    match sampling {
+        NativeCompositionSampling::ExactNearest => glow::NEAREST,
+        NativeCompositionSampling::SharpDownscale | NativeCompositionSampling::LinearUpscale => {
+            glow::LINEAR
+        }
     }
 }
 
@@ -859,93 +958,6 @@ unsafe fn draw_xrgb8888_frame(
     }
 }
 
-#[cfg(feature = "gbm-platform")]
-unsafe fn compile_shader(
-    gl: &glow::Context,
-    shader_type: u32,
-    source: &str,
-) -> Result<glow::Shader, String> {
-    let shader = unsafe { gl.create_shader(shader_type)? };
-    unsafe {
-        gl.shader_source(shader, source);
-        gl.compile_shader(shader);
-    }
-    if unsafe { gl.get_shader_compile_status(shader) } {
-        Ok(shader)
-    } else {
-        let error = unsafe { gl.get_shader_info_log(shader) };
-        unsafe { gl.delete_shader(shader) };
-        Err(error)
-    }
-}
-
-#[cfg(feature = "gbm-platform")]
-const VERTEX_SHADER: &str = r#"#version 110
-attribute vec2 position;
-attribute vec2 texture_coordinate;
-varying vec2 texture_position;
-void main() {
-    texture_position = texture_coordinate;
-    gl_Position = vec4(position, 0.0, 1.0);
-}
-"#;
-
-#[cfg(feature = "gbm-platform")]
-const FRAGMENT_SHADER: &str = r#"#version 110
-uniform sampler2D frame;
-uniform float opacity;
-varying vec2 texture_position;
-void main() {
-    vec4 color = texture2D(frame, texture_position);
-    gl_FragColor = vec4(color.rgb * opacity, color.a * opacity);
-}
-"#;
-
 pub(crate) fn context_attributes() -> [khronos_egl::Int; 1] {
     [khronos_egl::NONE]
-}
-
-#[cfg(all(test, feature = "gbm-platform"))]
-mod tests {
-    use super::{GlCompositionRect, layer_texture_filter};
-
-    const fn rect(width: i32, height: i32) -> GlCompositionRect {
-        GlCompositionRect {
-            x: 0,
-            y: 0,
-            width,
-            height,
-        }
-    }
-
-    #[test]
-    fn a_one_to_one_draw_keeps_point_sampling() {
-        // The exact-pixel property the composition evidence rests on: where every
-        // destination pixel has one source pixel, the bytes must survive the draw.
-        assert_eq!(
-            layer_texture_filter((1920, 1080), rect(1920, 1080)),
-            glow::NEAREST
-        );
-    }
-
-    #[test]
-    fn a_resampled_draw_stops_dropping_rows() {
-        // A mirror group's 2560x1440 scene on a 1920x1080 head. Under NEAREST this
-        // discards every fourth row and column, which is what broke glyph stems on
-        // the smaller monitor. Either axis differing is enough to resample.
-        assert_eq!(
-            layer_texture_filter((2560, 1440), rect(1920, 1080)),
-            glow::LINEAR
-        );
-        assert_eq!(
-            layer_texture_filter((1920, 1080), rect(1920, 1200)),
-            glow::LINEAR,
-            "a letterboxed fit differs on one axis only"
-        );
-        assert_eq!(
-            layer_texture_filter((1280, 720), rect(2560, 1440)),
-            glow::LINEAR,
-            "magnification is resampling too"
-        );
-    }
 }

@@ -878,6 +878,18 @@ impl LiveProductionNativeScanout {
                 metrics.import_cache_capacity_rejections = metrics
                     .import_cache_capacity_rejections
                     .saturating_add(stats.import_cache.capacity_rejections);
+                metrics.exact_nearest_draws = metrics
+                    .exact_nearest_draws
+                    .saturating_add(stats.exact_nearest_draws);
+                metrics.sharp_downscale_draws = metrics
+                    .sharp_downscale_draws
+                    .saturating_add(stats.sharp_downscale_draws);
+                metrics.linear_upscale_draws = metrics
+                    .linear_upscale_draws
+                    .saturating_add(stats.linear_upscale_draws);
+                metrics.sharp_downscale_fallbacks = metrics
+                    .sharp_downscale_fallbacks
+                    .saturating_add(stats.sharp_downscale_fallbacks);
                 if let Some(worker) = exporter.worker_metrics() {
                     metrics.worker_requests =
                         metrics.worker_requests.saturating_add(worker.requests);
