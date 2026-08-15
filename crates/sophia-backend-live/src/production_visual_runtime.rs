@@ -416,10 +416,9 @@ impl LiveProductionVisualRuntime {
                             .output_id(index)
                             .ok_or("production output index was not registered")?;
                         outputs.run_output(index, snapshot, |runtime| {
-                            let layer_templates =
-                                projection::committed_layer_snapshots(snapshot, &surface_metadata);
-                            let input = compositor_tick_input(
-                                &layer_templates,
+                            let input = compositor_tick_input_for_committed(
+                                snapshot,
+                                &surface_metadata,
                                 event_count,
                                 authority_commits.to_vec(),
                                 wm_update.clone(),
@@ -738,9 +737,9 @@ impl LiveProductionVisualRuntime {
         self.record_focus_ring_observation(&committed, true)?;
         let frames = scene.frames_for_outputs(output_descriptors)?;
         self.initialize_native_scanout(native_scanout, &frames)?;
-        let layer_templates = self.compositor_layer_templates();
         let output_count = self.outputs.output_count();
         let production = &self.production;
+        let surface_metadata = &self.surface_metadata;
         let outputs = &mut self.outputs;
         let mut frames = frames.into_iter();
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
@@ -753,7 +752,13 @@ impl LiveProductionVisualRuntime {
                     if let Some(frame) = frames.next() {
                         native_scanout.queue_frame(output_id, frame);
                     }
-                    let input = compositor_tick_input(&layer_templates, 0, Vec::new(), None);
+                    let input = compositor_tick_input_for_committed(
+                        snapshot,
+                        surface_metadata,
+                        0,
+                        Vec::new(),
+                        None,
+                    );
                     Ok(if runtime.rendered_primary_plane_scanout_in_flight() {
                         runtime.run_tick(input)?
                     } else {
@@ -817,6 +822,22 @@ fn compositor_tick_input(
         scanout_submit_state: None,
         scanout_lifecycle_states: Vec::new(),
     }
+}
+
+fn compositor_tick_input_for_committed(
+    committed: &[CommittedSurfaceState],
+    surface_metadata: &BTreeMap<SurfaceId, projection::LiveSurfaceProjectionMetadata>,
+    x_event_count: usize,
+    authority_commits: Vec<TransactionCommit>,
+    wm_update: Option<WmTransactionUpdate>,
+) -> CompositorBackendTickInput {
+    let layer_templates = projection::committed_layer_snapshots(committed, surface_metadata);
+    compositor_tick_input(
+        &layer_templates,
+        x_event_count,
+        authority_commits,
+        wm_update,
+    )
 }
 
 fn authority_transaction_count_for_groups(groups: &[LiveProductionAuthorityGroup]) -> usize {

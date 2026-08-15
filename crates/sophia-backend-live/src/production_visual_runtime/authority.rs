@@ -495,10 +495,9 @@ impl LiveProductionVisualRuntime {
                 // prepare and run -- a Present settling, a retirement -- would
                 // otherwise leave the assembly holding a surface the frozen
                 // templates lack, which the engine rejects as an invalid surface.
-                let layer_templates =
-                    super::projection::committed_layer_snapshots(committed, surface_metadata);
-                let input = compositor_tick_input(
-                    &layer_templates,
+                let input = compositor_tick_input_for_committed(
+                    committed,
+                    surface_metadata,
                     event_count,
                     prepared.authority_commits.clone(),
                     wm_update.clone(),

@@ -245,8 +245,8 @@ impl LiveProductionVisualRuntime {
         let output_count = self.outputs.output_count();
         let frame = native_scanout.queue_mixed_frame(primary_output, transaction, mixed)?;
 
-        let layer_templates = self.compositor_layer_templates();
         let production = &self.production;
+        let surface_metadata = &self.surface_metadata;
         let outputs = &mut self.outputs;
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
@@ -258,7 +258,13 @@ impl LiveProductionVisualRuntime {
                     native_scanout.run_tick(
                         output_id,
                         runtime,
-                        compositor_tick_input(&layer_templates, 0, Vec::new(), None),
+                        compositor_tick_input_for_committed(
+                            committed,
+                            surface_metadata,
+                            0,
+                            Vec::new(),
+                            None,
+                        ),
                     )
                 })
             },

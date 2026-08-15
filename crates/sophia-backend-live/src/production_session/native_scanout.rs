@@ -680,7 +680,7 @@ mod persistent_native_scanout {
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
             if self.head_indices(output).len() > 1 {
-                let report = self.run_mirror_group_tick(output, runtime, input)?;
+                let report = self.run_mirror_group_scene_tick(output, runtime, input)?;
                 if self.mirror_poison_drained(output) {
                     return Err("mirror generation failed after physical ownership drained".into());
                 }
@@ -1192,7 +1192,7 @@ mod persistent_native_scanout {
             Some(event)
         }
 
-        fn run_mirror_group_tick(
+        fn run_mirror_group_scene_tick(
             &mut self,
             output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
@@ -1571,11 +1571,25 @@ mod persistent_native_scanout {
             runtime: &mut crate::LiveBackendRuntimeAssembly,
         ) -> Result<(), Box<dyn std::error::Error>> {
             if self.head_indices(output).len() > 1 {
-                let _ = self.run_mirror_group_tick(
-                    output,
-                    runtime,
-                    CompositorBackendTickInput::default(),
-                )?;
+                // Retirement is physical ownership work. In particular it must
+                // not invent an empty compositor input and re-enter scene
+                // projection: an output can have committed surfaces while a
+                // page-flip poll has no layer templates to contribute. The frame
+                // service will schedule any promoted successor through `run_tick`
+                // after this callback-only phase returns.
+                let retirement = self.service_mirror_group_retirement(output, runtime);
+                if !retirement.errors.is_empty() {
+                    return Err(format!(
+                        "mirror retirement failed after servicing callbacks and cleanup: {}",
+                        retirement.errors.join("; ")
+                    )
+                    .into());
+                }
+                self.ensure_page_flip_progress()?;
+                self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
+                if retirement.completed_serial.is_some() {
+                    self.promote_queued_mirror_generation(output)?;
+                }
                 if self.mirror_poison_drained(output) {
                     return Err("mirror generation failed after physical ownership drained".into());
                 }

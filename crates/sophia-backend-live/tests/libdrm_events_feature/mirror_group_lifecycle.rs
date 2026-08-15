@@ -257,3 +257,20 @@ fn shutdown_drain_keeps_logical_frame_after_primary_flips_before_sibling() {
     assert_eq!(group.completed_frame(), Some(frame));
     assert!(!group.failed());
 }
+
+#[test]
+fn normal_mirror_retirement_cannot_reenter_scene_projection() {
+    let source = include_str!("../../src/production_session/native_scanout.rs");
+    let retirement = source
+        .split_once("        pub fn retire_ready(\n")
+        .expect("native scanout retains the normal retirement entry point")
+        .1
+        .split_once("        pub(crate) fn retire_ready_for_drain(\n")
+        .expect("normal and drain retirement remain separate")
+        .0;
+
+    assert!(!retirement.contains("run_mirror_group_scene_tick"));
+    assert!(!retirement.contains("CompositorBackendTickInput::default()"));
+    assert!(retirement.contains("service_mirror_group_retirement"));
+    assert!(retirement.contains("promote_queued_mirror_generation"));
+}

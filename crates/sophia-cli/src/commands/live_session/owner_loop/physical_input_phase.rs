@@ -682,18 +682,33 @@ let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
 let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
-'session: loop {
-    if let Some(wm) = wm_session.as_mut() {
-        wm.service_policy_update()?;
+let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
+    'session: loop {
+        if let Some(wm) = wm_session.as_mut() {
+            wm.service_policy_update()?;
+        }
+        service_core_config_reload!();
+        service_session_controls!();
+        include!("topology_phase.rs");
+        include!("lifecycle.rs");
+        include!("wm_phase.rs");
+        include!("authority.rs");
+        include!("input_proof.rs");
+        service_session_controls!();
     }
-    service_core_config_reload!();
-    service_session_controls!();
-    include!("topology_phase.rs");
-    include!("lifecycle.rs");
-    include!("wm_phase.rs");
-    include!("authority.rs");
-    include!("input_proof.rs");
-    service_session_controls!();
+    Ok(())
+})();
+if let Err(error) = session_loop_result {
+    let original = error.to_string();
+    terminal_runtime_error = Some(original.clone());
+    match frontend_service_sender.send(XServerFrontendServiceCommand::StopAccepting) {
+        Ok(()) => terminal_client_intake_stopped = true,
+        Err(error) => terminal_client_cleanup_failures
+            .push(format!("frontend intake stop failed: {error}")),
+    }
+    println!(
+        "sophia_live_session_runtime_fatal schema=1 status=detected source=owner_loop action=bounded_cleanup error={original:?}"
+    );
 }
 
 include!("completion.rs")

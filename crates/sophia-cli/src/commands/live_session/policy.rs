@@ -7,7 +7,7 @@ fn session_protocol_errors_are_fatal(
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct SessionClientFatalCleanupEvidence {
+struct SessionFatalCleanupEvidence {
     frontend_intake_stopped: bool,
     native_heads_in_flight_before: usize,
     native_cleanup_required: bool,
@@ -19,7 +19,7 @@ struct SessionClientFatalCleanupEvidence {
     presentations_shutdown: bool,
 }
 
-impl SessionClientFatalCleanupEvidence {
+impl SessionFatalCleanupEvidence {
     const fn clean(self) -> bool {
         self.frontend_intake_stopped
             && (!self.native_cleanup_required
@@ -32,9 +32,9 @@ impl SessionClientFatalCleanupEvidence {
     }
 }
 
-fn settle_session_client_fatal_error(
+fn settle_session_fatal_error(
     original: &str,
-    evidence: SessionClientFatalCleanupEvidence,
+    evidence: SessionFatalCleanupEvidence,
     cleanup_failures: &[String],
 ) -> String {
     if evidence.clean() && cleanup_failures.is_empty() {

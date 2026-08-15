@@ -400,8 +400,7 @@ impl LiveProductionVisualRuntime {
         // underneath them, and a template whose surface no longer matches its
         // committed state is rejected as an invalid surface -- which is what this
         // tick did the first time a mirror group ever reached it.
-        let layer_templates = self.compositor_layer_templates();
-        let committed = self.production.committed_surfaces().to_vec();
+        let (layer_templates, committed) = self.scene_views();
         let output = self
             .outputs
             .values_mut()

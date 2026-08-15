@@ -266,6 +266,31 @@ if "$ROOT_DIR/tools/verify_mirror_group_diagnostic.sh" \
 fi
 
 : >"$work/kernel-unavailable.log"
+cat >"$work/controlled-runtime-diagnostic.log" <<EOF
+sophia_mirror_group_gate schema=1 status=starting source_commit=$commit sophia_sha256=$sophia_sha256 profile_sha256=$profile_sha256
+sophia_live_mirror_bootstrap schema=1 status=worker_ready output=1 connector_id=94 workers=1
+sophia_live_session_runtime_fatal schema=1 status=detected source=owner_loop action=bounded_cleanup error="synthetic runtime failure"
+sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
+sophia_live_session_runtime_fatal schema=1 status=cleaned source=owner_loop frontend_intake_stopped=true native_heads_in_flight_before=1 native_cleanup_required=true native_suspend_attempted=true native_suspend_reported=true native_drained=true abandoned_scanouts=0 renderer_images_cleared=true presentations_shutdown=true cleanup_errors=0
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
+sophia_mirror_group_kernel schema=1 status=captured availability=unavailable continuity=unknown lines=0 total_lines=0 truncated=false
+sophia_mirror_group_gate schema=1 status=failed stage=runtime exit=1 signal=0 kernel_capture=unavailable
+EOF
+"$ROOT_DIR/tools/verify_mirror_group_diagnostic.sh" \
+    "$work/controlled-runtime-diagnostic.log" "$work/kernel-unavailable.log" >/dev/null
+for missing in \
+    sophia_live_session_native_suspend \
+    'sophia_live_session_runtime_fatal schema=1 status=cleaned' \
+    sophia_live_session_cleanup; do
+    grep -Fv "$missing" "$work/controlled-runtime-diagnostic.log" \
+        >"$work/rejected-controlled-runtime.log"
+    if "$ROOT_DIR/tools/verify_mirror_group_diagnostic.sh" \
+        "$work/rejected-controlled-runtime.log" "$work/kernel-unavailable.log" >/dev/null 2>&1; then
+        echo "mirror-group diagnostic verifier accepted controlled runtime failure without $missing" >&2
+        exit 1
+    fi
+done
+
 sed \
     -e 's/availability=available continuity=append lines=2 total_lines=3 truncated=true/availability=unavailable continuity=unknown lines=0 total_lines=0 truncated=false/' \
     -e 's/stage=runtime exit=134 signal=6 kernel_capture=available/stage=visual_confirmation exit=1 signal=0 kernel_capture=unavailable/' \

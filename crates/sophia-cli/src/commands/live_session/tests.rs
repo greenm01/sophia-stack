@@ -15,8 +15,8 @@ use super::{
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
     SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-    SessionClientFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard, Size,
-    Transform, XPresentCadence, authority_transaction_count, authority_wait_timeout,
+    SessionFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard, Size, Transform,
+    XPresentCadence, authority_transaction_count, authority_wait_timeout,
     center_geometry_without_scaling, clamp_floating_pointer_outline,
     clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
     current_cpu_frame_is_presented, flush_all_client_pressed_keys,
@@ -33,7 +33,7 @@ use super::{
     production_cycle_native_owner_policy, public_policy_launch_spec,
     public_policy_restart_decision, public_session_operations, record_runtime_commits,
     rects_intersect, resolve_public_shortcuts, route_input_events,
-    session_protocol_errors_are_fatal, settle_session_client_fatal_error,
+    session_protocol_errors_are_fatal, settle_session_fatal_error,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
@@ -482,7 +482,7 @@ fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
         LiveProductionMirrorHeadTransition::GroupReady
     );
     assert_eq!(group.take_completed_frame(), Some(frame));
-    let evidence = SessionClientFatalCleanupEvidence {
+    let evidence = SessionFatalCleanupEvidence {
         frontend_intake_stopped: true,
         // The sibling head still owns frame 10 when the client fails. The
         // bounded completion drain consumes that callback before detaching.
@@ -498,7 +498,7 @@ fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
 
     assert!(evidence.clean());
     assert_eq!(
-        settle_session_client_fatal_error(original, evidence, &[]),
+        settle_session_fatal_error(original, evidence, &[]),
         original
     );
 }
@@ -506,7 +506,7 @@ fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
 #[test]
 fn fatal_client_cleanup_aggregates_owner_abandonment_without_masking_client_error() {
     let original = "session client exited during live session with status exit status: 83";
-    let evidence = SessionClientFatalCleanupEvidence {
+    let evidence = SessionFatalCleanupEvidence {
         frontend_intake_stopped: true,
         native_heads_in_flight_before: 1,
         native_cleanup_required: true,
@@ -519,10 +519,32 @@ fn fatal_client_cleanup_aggregates_owner_abandonment_without_masking_client_erro
     };
     let failures = vec!["native completion forced detach with 1 abandoned scanouts".to_owned()];
 
-    let error = settle_session_client_fatal_error(original, evidence, &failures);
+    let error = settle_session_fatal_error(original, evidence, &failures);
     assert!(error.starts_with(original));
     assert!(error.contains("bounded session cleanup failed"));
     assert!(error.contains("1 abandoned scanouts"));
+}
+
+#[test]
+fn runtime_fatal_cleanup_preserves_the_engine_error_after_clean_drain() {
+    let original = "engine backend tick failed: invalid surface ID";
+    let evidence = SessionFatalCleanupEvidence {
+        frontend_intake_stopped: true,
+        native_heads_in_flight_before: 1,
+        native_cleanup_required: true,
+        native_suspend_attempted: true,
+        native_suspend_reported: true,
+        native_drained: true,
+        abandoned_scanouts: 0,
+        renderer_images_cleared: true,
+        presentations_shutdown: true,
+    };
+
+    assert!(evidence.clean());
+    assert_eq!(
+        settle_session_fatal_error(original, evidence, &[]),
+        original
+    );
 }
 
 #[test]

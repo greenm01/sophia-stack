@@ -106,4 +106,24 @@ elif (( visual_count != 0 )); then
     exit 1
 fi
 
+# A controlled owner-loop failure after native bootstrap has enough process
+# lifetime to drain its physical owners. Treat omission of that evidence as a
+# second failure, while leaving signal/abort diagnostics admissible because the
+# process may not have had a cleanup opportunity.
+if [[ "$stage" == runtime && "$signal" == 0 ]] \
+    && grep -q 'sophia_live_mirror_bootstrap schema=1 status=' "$evidence"; then
+    [[ "$(grep -Ec '^sophia_live_session_runtime_fatal schema=1 status=cleaned .*native_suspend_reported=true native_drained=true abandoned_scanouts=0 .*presentations_shutdown=true cleanup_errors=0$' "$evidence" || true)" == 1 ]] || {
+        echo "controlled native runtime failure lacks clean bounded-fatal evidence" >&2
+        exit 1
+    }
+    [[ "$(grep -Ec '^sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 ' "$evidence" || true)" == 1 ]] || {
+        echo "controlled native runtime failure lacks a clean suspend record" >&2
+        exit 1
+    }
+    [[ "$(grep -Ec '^sophia_live_session_cleanup schema=1 status=clean .*frontend_workers=0 .*namespace=revoked xauthority=removed$' "$evidence" || true)" == 1 ]] || {
+        echo "controlled native runtime failure lacks clean frontend teardown" >&2
+        exit 1
+    }
+fi
+
 echo "mirror-group diagnostic verified: stage=$stage exit=$exit_status signal=$signal kernel_capture=$availability"

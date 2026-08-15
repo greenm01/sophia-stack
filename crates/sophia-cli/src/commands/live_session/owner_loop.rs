@@ -320,6 +320,7 @@ fn run_session_loop(
     let mut primary_child_exited = child.is_none();
     let mut primary_exit_status = None;
     let mut terminal_client_error: Option<(&'static str, String)> = None;
+    let mut terminal_runtime_error: Option<String> = None;
     let mut terminal_client_intake_stopped = false;
     let mut terminal_client_cleanup_failures = Vec::new();
     let mut post_startup_exit_pointer_reported = false;
@@ -402,5 +403,5 @@ fn run_session_loop(
         }};
     }
 
-    include!("owner_loop/session_control.rs")
+include!("owner_loop/session_control.rs")
 }

@@ -33,23 +33,23 @@
     } = metrics;
 
     let mut cleanup_failures = terminal_client_cleanup_failures;
-    let mut client_fatal_cleanup = SessionClientFatalCleanupEvidence {
+    let mut fatal_cleanup = SessionFatalCleanupEvidence {
         frontend_intake_stopped: terminal_client_intake_stopped,
         native_cleanup_required: native_scanout.is_some(),
         presentations_shutdown: runtime.is_none(),
         ..Default::default()
     };
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
-        client_fatal_cleanup.native_suspend_attempted = true;
-        client_fatal_cleanup.native_heads_in_flight_before =
+        fatal_cleanup.native_suspend_attempted = true;
+        fatal_cleanup.native_heads_in_flight_before =
             native_scanout.head_scanout_in_flight_count();
         let mut detach_established = false;
         match runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2)) {
             Ok(report) => {
                 detach_established = true;
-                client_fatal_cleanup.native_suspend_reported = true;
-                client_fatal_cleanup.native_drained = report.outcome.drained();
-                client_fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
+                fatal_cleanup.native_suspend_reported = true;
+                fatal_cleanup.native_drained = report.outcome.drained();
+                fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
                 println!(
                     "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={}",
                     report.outcome.reduced_name(),
@@ -73,9 +73,9 @@
                     && let Some(report) = suspend_error.detach_report
                 {
                     detach_established = true;
-                    client_fatal_cleanup.native_suspend_reported = true;
-                    client_fatal_cleanup.native_drained = report.outcome.drained();
-                    client_fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
+                    fatal_cleanup.native_suspend_reported = true;
+                    fatal_cleanup.native_drained = report.outcome.drained();
+                    fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
                     println!(
                         "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={} error={error}",
                         report.outcome.reduced_name(),
@@ -97,7 +97,7 @@
         if detach_established {
             match native_scanout.clear_renderer_images() {
                 Ok(evicted_renderer_images) => {
-                    client_fatal_cleanup.renderer_images_cleared = true;
+                    fatal_cleanup.renderer_images_cleared = true;
                     println!(
                         "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
                     );
@@ -119,7 +119,7 @@
     if let Some(runtime) = runtime.as_mut() {
         match runtime.shutdown_presentations() {
             Ok(report) => {
-                client_fatal_cleanup.presentations_shutdown = true;
+                fatal_cleanup.presentations_shutdown = true;
                 present_feedback.clear();
                 match runtime.drain_present_feedback_into(&mut present_feedback) {
                     Ok(()) => {
@@ -138,28 +138,31 @@
             }
         }
     }
-    if let Some((source, original)) = terminal_client_error.as_ref() {
-        let clean = client_fatal_cleanup.clean() && cleanup_failures.is_empty();
+    if let Some((schema, source, original)) = terminal_client_error
+        .as_ref()
+        .map(|(source, original)| ("client_fatal", *source, original))
+        .or_else(|| {
+            terminal_runtime_error
+                .as_ref()
+                .map(|original| ("runtime_fatal", "owner_loop", original))
+        })
+    {
+        let clean = fatal_cleanup.clean() && cleanup_failures.is_empty();
         println!(
-            "sophia_live_session_client_fatal schema=1 status={} source={source} frontend_intake_stopped={} native_heads_in_flight_before={} native_cleanup_required={} native_suspend_attempted={} native_suspend_reported={} native_drained={} abandoned_scanouts={} renderer_images_cleared={} presentations_shutdown={} cleanup_errors={}",
+            "sophia_live_session_{schema} schema=1 status={} source={source} frontend_intake_stopped={} native_heads_in_flight_before={} native_cleanup_required={} native_suspend_attempted={} native_suspend_reported={} native_drained={} abandoned_scanouts={} renderer_images_cleared={} presentations_shutdown={} cleanup_errors={}",
             if clean { "cleaned" } else { "cleanup_failed" },
-            client_fatal_cleanup.frontend_intake_stopped,
-            client_fatal_cleanup.native_heads_in_flight_before,
-            client_fatal_cleanup.native_cleanup_required,
-            client_fatal_cleanup.native_suspend_attempted,
-            client_fatal_cleanup.native_suspend_reported,
-            client_fatal_cleanup.native_drained,
-            client_fatal_cleanup.abandoned_scanouts,
-            client_fatal_cleanup.renderer_images_cleared,
-            client_fatal_cleanup.presentations_shutdown,
+            fatal_cleanup.frontend_intake_stopped,
+            fatal_cleanup.native_heads_in_flight_before,
+            fatal_cleanup.native_cleanup_required,
+            fatal_cleanup.native_suspend_attempted,
+            fatal_cleanup.native_suspend_reported,
+            fatal_cleanup.native_drained,
+            fatal_cleanup.abandoned_scanouts,
+            fatal_cleanup.renderer_images_cleared,
+            fatal_cleanup.presentations_shutdown,
             cleanup_failures.len(),
         );
-        return Err(settle_session_client_fatal_error(
-            original,
-            client_fatal_cleanup,
-            &cleanup_failures,
-        )
-        .into());
+        return Err(settle_session_fatal_error(original, fatal_cleanup, &cleanup_failures).into());
     }
     if let Some(error) = cleanup_failures.into_iter().next() {
         return Err(error.into());
