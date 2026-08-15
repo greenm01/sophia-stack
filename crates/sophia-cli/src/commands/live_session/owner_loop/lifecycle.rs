@@ -714,7 +714,7 @@
         if let Some(candidate) = pointer_cursor_checksum
             && native_scanout.as_ref().is_none_or(|native| {
                 native.heads.first().is_some_and(|head| {
-                    head.presented_checksum == candidate && head.nonzero_exports > 0
+                    head.presented_logical_checksum == candidate && head.nonzero_exports > 0
                 })
             })
         {

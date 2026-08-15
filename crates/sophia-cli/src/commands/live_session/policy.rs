@@ -200,8 +200,8 @@ fn current_cpu_frame_is_presented(
 ) -> bool {
     scene_frame.is_some_and(|(checksum, nonzero_pixel_bytes)| {
         nonzero_pixel_bytes > 0
-            && native_frame.is_none_or(|(presented_checksum, nonzero_exports)| {
-                presented_checksum == checksum && nonzero_exports > 0
+            && native_frame.is_none_or(|(presented_logical_checksum, nonzero_exports)| {
+                presented_logical_checksum == checksum && nonzero_exports > 0
             })
     })
 }

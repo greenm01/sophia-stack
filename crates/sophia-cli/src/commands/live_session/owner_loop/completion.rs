@@ -935,7 +935,7 @@
             let evidence = NativeOutputContentEvidence {
                 output: head.output.id,
                 scene_generation: content.frame().raw(),
-                logical_content_checksum: head.presented_checksum,
+                logical_content_checksum: head.presented_logical_checksum,
                 head_pixel_checksum: None,
             };
             // Emitted once per head despite its name, so a mirror group produces

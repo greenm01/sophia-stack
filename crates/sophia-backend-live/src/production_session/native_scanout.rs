@@ -113,7 +113,14 @@ mod persistent_native_scanout {
         pub rendering_content: Option<LiveProductionScanoutContent>,
         pub submitted_content: Option<LiveProductionScanoutContent>,
         pub presented_content: Option<LiveProductionScanoutContent>,
-        pub presented_checksum: u64,
+        /// Checksum of the logical scene this head presented, never of the pixels
+        /// this head scanned out. A mirror group composes one scene and projects
+        /// it into each head's own mode, so head pixels legitimately differ while
+        /// this value must not: the group join below refuses heads that disagree
+        /// on it, and comparing per-head pixels there would refuse every mirror
+        /// whose heads differ in size. Anything head-local belongs in a separate
+        /// field, not here.
+        pub presented_logical_checksum: u64,
         pub presented_submissions: usize,
         pub presented_submission_ust_usec: u64,
         pub presented_page_flip_ust_usec: u64,
@@ -349,7 +356,7 @@ mod persistent_native_scanout {
                         rendering_content: None,
                         submitted_content: None,
                         presented_content: None,
-                        presented_checksum: 0,
+                        presented_logical_checksum: 0,
                         presented_submissions: 0,
                         presented_submission_ust_usec: 0,
                         presented_page_flip_ust_usec: 0,
@@ -987,7 +994,7 @@ mod persistent_native_scanout {
                 self.callback_accepted = self.callback_accepted.saturating_add(1);
                 self.heads[head_index].presented_content =
                     self.heads[head_index].submitted_content.take();
-                self.heads[head_index].presented_checksum = self.heads[head_index]
+                self.heads[head_index].presented_logical_checksum = self.heads[head_index]
                     .submitted_checksum
                     .take()
                     .unwrap_or_default();
@@ -1092,9 +1099,9 @@ mod persistent_native_scanout {
                             let presented_content = indices
                                 .first()
                                 .and_then(|index| self.heads[*index].presented_content);
-                            let presented_checksum = indices
+                            let presented_logical_checksum = indices
                                 .first()
-                                .map(|index| self.heads[*index].presented_checksum)
+                                .map(|index| self.heads[*index].presented_logical_checksum)
                                 .unwrap_or_default();
                             if presented_content.is_none_or(|content| content.frame() != frame)
                                 || indices.iter().any(|index| {
@@ -1104,8 +1111,8 @@ mod persistent_native_scanout {
                                         .is_none_or(|(head, logical)| {
                                             !head.same_logical_identity(logical)
                                         })
-                                        || self.heads[*index].presented_checksum
-                                            != presented_checksum
+                                        || self.heads[*index].presented_logical_checksum
+                                            != presented_logical_checksum
                                 })
                             {
                                 errors.push(
@@ -1122,7 +1129,7 @@ mod persistent_native_scanout {
                                     output.raw(),
                                     frame.raw(),
                                     content.source_label(),
-                                    presented_checksum,
+                                    presented_logical_checksum,
                                 );
                             }
                         }
@@ -1783,7 +1790,7 @@ mod persistent_native_scanout {
                         .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
                 );
                 if let Some(checksum) = self.heads[index].submitted_checksum.take() {
-                    self.heads[index].presented_checksum = checksum;
+                    self.heads[index].presented_logical_checksum = checksum;
                 }
                 if let Some(submission) = self.heads[index].submitted_sequence.take() {
                     self.heads[index].presented_submissions = submission;
@@ -1976,7 +1983,7 @@ mod persistent_native_scanout {
                 self.submissions = self.submissions.saturating_add(1);
                 trace_live_native_lifecycle("initial_modeset_complete");
                 head.submissions = head.submissions.saturating_add(1);
-                head.presented_checksum = head.last_checksum;
+                head.presented_logical_checksum = head.last_checksum;
                 head.presented_submissions = head.submissions;
                 head.presented_content = head.pending_content.take();
                 if head.output_frames.pending().is_some() {

@@ -16,7 +16,7 @@
                 native
                     .heads
                     .first()
-                    .map(|head| (head.presented_checksum, head.nonzero_exports))
+                    .map(|head| (head.presented_logical_checksum, head.nonzero_exports))
             }),
         );
         let input_baseline_presented =
