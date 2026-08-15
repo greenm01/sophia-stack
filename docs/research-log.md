@@ -11223,7 +11223,10 @@ acknowledgement ordering.
   configuration failed immediately with `UnknownApplication("terminal")`.
 - The gate now resolves an absolute executable xterm path, explicitly selects
   normal-session mode, declares and starts `terminal`, then applies its bounded
-  6x13/white-on-black/scroll arguments. It also uses `--no-config`, keeping proof
-  startup independent of installed session applications. Parser and shell
-  regressions prevent terminal arguments from becoming detached from their
-  application declaration again.
+  6x13/white-on-black/scroll arguments. Parser and shell regressions prevent
+  terminal arguments from becoming detached from their application declaration
+  again.
+- Follow-up attempt `0008` also stopped before KMS because the first correction
+  combined `--no-config` with the explicit `--desktop-profile`, two intentionally
+  exclusive configuration sources. The gate now uses the explicit proof profile
+  alone, and its exact parser regression includes that profile argument.

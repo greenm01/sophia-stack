@@ -169,7 +169,6 @@ set +e
     # session that drives real KMS is a different act from one that does not.
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         ./target/release/sophia sophia-live-session \
-        --no-config \
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --desktop-profile="$PROFILE" \

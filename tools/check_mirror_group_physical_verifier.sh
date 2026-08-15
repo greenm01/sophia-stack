@@ -37,6 +37,10 @@ grep -Fq -- '--session-mode=normal' "$runner" \
     echo "mirror-group runner passes terminal arguments without declaring its startup application" >&2
     exit 1
 }
+if grep -Fq -- '--no-config' "$runner"; then
+    echo "mirror-group runner combines mutually exclusive no-config and desktop-profile sources" >&2
+    exit 1
+fi
 
 reject_mutation() {
     local expression="$1" description="$2"
