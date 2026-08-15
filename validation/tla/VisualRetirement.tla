@@ -84,7 +84,6 @@ vars == <<
 >>
 
 RequiredHeads(g) == UNION {HeadsOf(o) : o \in required[g]}
-RetiredOutputs(g) == {o \in required[g] : HeadsOf(o) \subseteq flipped[g]}
 
 (***************************************************************************
  * Once a candidate submits any head, every output named by that candidate  *
@@ -180,21 +179,44 @@ FlipHead(g, head) ==
         committed, inputGeneration, feedback, released
         >>
 
+(***************************************************************************
+ * Retirement commits unconditionally, because a stale generation cannot     *
+ * reach this action: SubmitHead refuses a generation the output has already  *
+ * passed, and the whole-cohort reservation keeps the output's committed      *
+ * generation fixed for as long as this one holds it. A regression in either  *
+ * guard would move an output's committed generation backwards here, which    *
+ * OutputGenerationDominatesHistory catches. Relabelling the retirement       *
+ * instead would hide it.                                                     *
+ ****************************************************************************)
 RetireOutput(g, output) ==
     /\ outcome[g] = "none"
     /\ output \in required[g]
     /\ outputOutcome[g][output] = "pending"
     /\ HeadsOf(output) \subseteq flipped[g]
-    /\ IF g > committed[output]
-          THEN
-              /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "committed"]
-              /\ committed' = [committed EXCEPT ![output] = g]
-          ELSE
-              /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "superseded"]
-              /\ UNCHANGED committed
+    /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "committed"]
+    /\ committed' = [committed EXCEPT ![output] = g]
     /\ UNCHANGED <<
         phase, required, prepared, submitted, flipped, lost, inFlight, outcome,
         inputGeneration, feedback, released
+        >>
+
+(***************************************************************************
+ * Supersession happens before the kernel, not after it. An output owns one   *
+ * active generation and one latest-wins successor, so a candidate still      *
+ * waiting to submit an output that a newer generation has already committed  *
+ * loses that output and can never present it. This is the only way an        *
+ * output leaves "pending" without retiring, and it is what lets a candidate  *
+ * spanning several outputs settle when one of them moved on without it.      *
+ ****************************************************************************)
+SupersedeOutput(g, output) ==
+    /\ outcome[g] = "none"
+    /\ output \in required[g]
+    /\ outputOutcome[g][output] = "pending"
+    /\ committed[output] >= g
+    /\ outputOutcome' = [outputOutcome EXCEPT ![g][output] = "superseded"]
+    /\ UNCHANGED <<
+        phase, required, prepared, submitted, flipped, lost, inFlight, outcome,
+        committed, inputGeneration, feedback, released
         >>
 
 CompleteCandidate(g) ==
@@ -252,6 +274,12 @@ Settle(g, result) ==
         inputGeneration, feedback, released
         >>
 
+(***************************************************************************
+ * The last conjunct outlives failure. A generation that committed one output *
+ * and then lost a head elsewhere is terminal but still on that screen, so it  *
+ * stays retained until a successor commits the output. Failing is not what     *
+ * frees a buffer; being replaced is.                                          *
+ ****************************************************************************)
 Release(g) ==
     /\ g \notin released
     /\ outcome[g] \in TerminalOutcomes
@@ -268,6 +296,7 @@ Progress(g) ==
     \/ \E head \in Heads : SubmitHead(g, head)
     \/ \E head \in Heads : FlipHead(g, head)
     \/ \E output \in Outputs : RetireOutput(g, output)
+    \/ \E output \in Outputs : SupersedeOutput(g, output)
     \/ CompleteCandidate(g)
     \/ \E result \in FailureOutcomes : Settle(g, result)
 
@@ -281,11 +310,27 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 (***************************************************************************
- * Once an admitted generation continually has a legal progress action, the *
- * scheduler and backend eventually take one. Physical head loss remains an  *
- * environment action and therefore is not assumed fair.                    *
+ * Fairness is stated per action rather than over the whole progress          *
+ * disjunction, because Settle is enabled in every non-terminal state: one    *
+ * lumped assumption would let arbitrary failure discharge the obligation,    *
+ * and any settlement property would then hold without a single productive    *
+ * step ever being taken.                                                     *
+ *                                                                            *
+ * Settle is therefore deliberately absent here. Failure stays permitted and  *
+ * never required, so the settlement property below has to be satisfied by    *
+ * work that actually advances: preparing, submitting, retiring, superseding, *
+ * completing. LoseHead is absent for the same reason it always was --        *
+ * nothing guarantees a connector disappears. FlipHead is assumed fair        *
+ * because a kernel that accepted a page flip does deliver its callback; that *
+ * is the one environment obligation this model does take.                    *
  ****************************************************************************)
-FairSpec == Spec /\ \A g \in Generations : WF_vars(Progress(g))
+FairSpec == Spec /\ \A g \in Generations :
+    /\ WF_vars(\E head \in Heads : PrepareHead(g, head))
+    /\ WF_vars(\E head \in Heads : SubmitHead(g, head))
+    /\ WF_vars(\E head \in Heads : FlipHead(g, head))
+    /\ WF_vars(\E output \in Outputs : RetireOutput(g, output))
+    /\ WF_vars(\E output \in Outputs : SupersedeOutput(g, output))
+    /\ WF_vars(CompleteCandidate(g))
 
 TypeOK ==
     /\ phase \in [Generations -> Phases]
@@ -363,6 +408,28 @@ OutputGenerationDominatesHistory ==
         \A o \in required[g] :
             /\ outputOutcome[g][o] = "committed" => committed[o] >= g
             /\ outputOutcome[g][o] = "superseded" => committed[o] >= g
+
+(***************************************************************************
+ * The successor rule read from the other side: losing an output is a thing  *
+ * that happens to work still waiting for the kernel. Once any head of a      *
+ * cohort is submitted, that cohort's fate is its own -- it commits or it     *
+ * fails, and no newer generation can relabel it.                            *
+ ****************************************************************************)
+SubmittedOutputsAreNeverSuperseded ==
+    \A g \in Generations :
+        \A o \in Outputs :
+            outputOutcome[g][o] = "superseded" =>
+                submitted[g] \cap HeadsOf(o) = {}
+
+SupersededOutputsNeverPresent ==
+    \A g \in Generations :
+        \A o \in Outputs :
+            outputOutcome[g][o] = "superseded" =>
+                /\ committed[o] # g
+                /\ inputGeneration[o] # g
+
+SupersededCandidatesNeverPublishFeedback ==
+    \A g \in Generations : outcome[g] = "superseded" => g \notin feedback
 
 InputNeverLeadsVisual ==
     \A o \in Outputs : inputGeneration[o] <= committed[o]

@@ -33,21 +33,42 @@ The model checks that:
   commits, and drops the lost lease without counting it as a flip;
 - no candidate reaches a terminal outcome while a required output remains
   logically pending;
-- a late or superseded generation cannot replace newer state on the same output;
+- a late generation loses an output to the newer one that already committed it,
+  and loses it before the kernel rather than after: supersession reaches only
+  outputs with no submitted head, a superseded output never becomes that
+  output's committed or input generation, and a superseded candidate never
+  publishes feedback;
 - input never leads physical visual state, and a successful transaction publishes
   matching input only after every required output retires;
 - successful feedback exists only for a committed generation;
 - active, submitted, or committed resources cannot be released, which now also
   means no generation is released while any head still scans it out; and
-- admitted work eventually reaches one terminal settlement under the weak
-  fairness assumption documented in the module.
+- admitted work eventually reaches one terminal settlement without arbitrary
+  failure being available to satisfy it.
 
-The checked configuration explores 2,372,390 generated states and 937,473
-distinct states to depth 28. Temporary negative controls independently remove
-the prepare-all guard, whole-cohort ownership guard, transaction feedback join,
-and release guard; each violates its corresponding enabled invariant. Head loss
-is deliberately outside the fairness assumption: nothing guarantees a connector
-disappears.
+The checked configuration explores 2,432,103 generated states and 968,679
+distinct states to depth 28.
+
+Fairness is per action rather than over the whole progress disjunction, and
+`Settle` is outside it. That distinction is the difference between a settlement
+property and a tautology: `Settle` is enabled in every non-terminal state, so a
+single lumped assumption is discharged by failing, and the property holds even
+with no productive action assumed fair at all. A temporary control restoring the
+lumped assumption confirms this -- it passes while assuming nothing about
+preparation, submission, retirement, or completion. Head loss stays outside
+fairness because nothing guarantees a connector disappears; page-flip callbacks
+stay inside it because a kernel that accepted a flip does report it.
+
+Temporary negative controls independently remove the prepare-all guard,
+whole-cohort ownership guard, transaction feedback join, release guard,
+submit-time staleness guard, and supersession guard, and weaken joint
+retirement to accept one flipped head; each violates its corresponding enabled
+invariant, reaching `SubmittedOutputsAreNeverSuperseded`,
+`OutputGenerationDominatesHistory`, and `OutputCommitAfterHeadRetirement`
+respectively for the last three.
+Removing supersession from the fairness assumption violates the settlement
+property, which is what shows that property is now carried by work that
+advances.
 
 `PresentFrameOwnership.tla` isolates the output-frame association needed by
 software Present. It allows an unrelated frame to submit and retire before the
