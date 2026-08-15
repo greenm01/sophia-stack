@@ -41,7 +41,7 @@ impl PersistentLiveLayout {
                     );
                 }
             } else {
-                match transaction.target_buffer {
+                match transaction.target_buffer() {
                     BufferSource::CpuBuffer { .. } => {
                         if self.admissions.mark_managed(*surface) {
                             self.planning_surfaces.remove(surface);
@@ -56,7 +56,7 @@ impl PersistentLiveLayout {
                             );
                             if let (Some(source), Some(target)) = (
                                 live_transaction_pixel_size(
-                                    transaction.target_buffer,
+                                    transaction.target_buffer(),
                                     &self.dma_buf_sizes,
                                     &self.cpu_buffer_sizes,
                                 ),
@@ -97,7 +97,7 @@ impl PersistentLiveLayout {
         if !pending.staged_transactions.is_empty() {
             for transaction in pending.staged_transactions.values() {
                 if let Some(size) = live_transaction_pixel_size(
-                    transaction.target_buffer,
+                    transaction.target_buffer(),
                     &self.dma_buf_sizes,
                     &self.cpu_buffer_sizes,
                 ) {
@@ -276,7 +276,7 @@ impl PersistentLiveLayout {
         let projected_cpu_handles = projected
             .transactions
             .iter()
-            .filter_map(|transaction| match transaction.target_buffer {
+            .filter_map(|transaction| match transaction.target_buffer() {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })

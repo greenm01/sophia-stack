@@ -276,7 +276,7 @@ impl PersistentLiveLayout {
                     observed_size.height,
                     visual_evidence,
                 );
-                let (source, buffer) = match transaction.target_buffer {
+                let (source, buffer) = match transaction.target_buffer() {
                     BufferSource::DmaBuf { handle } => ("dma_buf", handle),
                     BufferSource::CpuBuffer { handle } => ("cpu_buffer", handle),
                     BufferSource::XPixmap { pixmap } => ("x_pixmap", u64::from(pixmap)),
@@ -299,7 +299,7 @@ impl PersistentLiveLayout {
                 // geometry. The queued relayout changes geometry only after
                 // the temporary admission constraint has been removed.
                 if let Some(layer) = self.layers.get_mut(&transaction.surface) {
-                    layer.source = transaction.target_buffer;
+                    layer.source = transaction.target_buffer();
                     layer.damage = transaction.damage.clone();
                     layer.generation =
                         transaction.previous_committed_generation.saturating_add(1);
@@ -338,7 +338,7 @@ impl PersistentLiveLayout {
                         .iter_mut()
                         .find(|layer| layer.surface == transaction.surface)
                     {
-                        layer.source = transaction.target_buffer;
+                        layer.source = transaction.target_buffer();
                         layer.damage = transaction.damage.clone();
                         layer.generation =
                             transaction.previous_committed_generation.saturating_add(1);
@@ -358,7 +358,7 @@ impl PersistentLiveLayout {
                     {
                         layer.geometry = transaction.target_geometry;
                     }
-                    layer.source = transaction.target_buffer;
+                    layer.source = transaction.target_buffer();
                     layer.damage = transaction.damage.clone();
                     layer.generation = transaction.previous_committed_generation.saturating_add(1);
                     layer.clone()
@@ -405,7 +405,7 @@ impl PersistentLiveLayout {
                             )
                         },
                         geometry,
-                        source: transaction.target_buffer,
+                        source: transaction.target_buffer(),
                         damage: transaction.damage.clone(),
                         opacity: 1.0,
                         crop: None,
@@ -699,7 +699,7 @@ impl PersistentLiveLayout {
                 .iter_mut()
                 .find(|layer| layer.surface == *surface)
             {
-                layer.source = transaction.target_buffer;
+                layer.source = transaction.target_buffer();
                 layer.damage = transaction.damage.clone();
                 layer.generation = transaction.previous_committed_generation.saturating_add(1);
             }

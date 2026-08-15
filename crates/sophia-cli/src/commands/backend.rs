@@ -760,7 +760,7 @@ fn compose_terminal_cpu_buffers(
     let mut surfaces = std::collections::BTreeMap::new();
     for batch in &proof.authority_batches {
         for transaction in &batch.transactions {
-            let BufferSource::CpuBuffer { handle } = transaction.target_buffer else {
+            let BufferSource::CpuBuffer { handle } = transaction.target_buffer() else {
                 continue;
             };
             surfaces.insert(transaction.surface, (transaction.target_geometry, handle));

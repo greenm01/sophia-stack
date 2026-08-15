@@ -30,10 +30,13 @@ fn inset_present_content_proves_the_outer_layout_extent_without_scaling() {
         surface,
         namespace: None,
         target_geometry: outer,
-        target_content_size: content,
-        target_buffer: BufferSource::DmaBuf {
-            handle: buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+            content,
+        ),
+
         damage: Region::single(outer),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -63,13 +66,16 @@ fn mismatched_present_content_cannot_prove_the_outer_layout_extent() {
         surface: SurfaceId::new(771, 1),
         namespace: None,
         target_geometry: rect(1276, 1422),
-        target_content_size: Size {
-            width: 1266,
-            height: 1412,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: 1266,
+                height: 1412,
+            },
+        ),
+
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -91,11 +97,14 @@ fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
         surface: SurfaceId::new(79, 1),
         namespace: None,
         target_geometry: rect(500, 500),
-        target_content_size: Size {
-            width: 500,
-            height: 500,
-        },
-        target_buffer: BufferSource::XPixmap { pixmap: 0x220001 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::XPixmap { pixmap: 0x220001 },
+            sophia_protocol::Size {
+                width: 500,
+                height: 500,
+            },
+        ),
+
         damage: Region::single(rect(500, 500)),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -119,11 +128,14 @@ fn presented_cpu_snapshot_is_complete_present_evidence() {
         surface: SurfaceId::new(78, 1),
         namespace: None,
         target_geometry: rect(500, 500),
-        target_content_size: Size {
-            width: 500,
-            height: 500,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 780 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 780 },
+            sophia_protocol::Size {
+                width: 500,
+                height: 500,
+            },
+        ),
+
         damage: Region::single(rect(500, 500)),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -160,20 +172,26 @@ fn backing_snapshot_cannot_impersonate_same_transaction_present() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
-            width: geometry.width,
-            height: geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: dma_buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: dma_buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
         previous_committed_generation: 0,
     };
     let backing = SurfaceTransaction {
-        target_buffer: BufferSource::CpuBuffer { handle: cpu_handle },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: cpu_handle },
+            dma.target_content_size(),
+        ),
         ..dma.clone()
     };
     let mut batch = crate::commands::live_session::wm_update_coordinator_batch(transaction);
@@ -259,13 +277,16 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: initial,
-        target_content_size: Size {
-            width: initial.width,
-            height: initial.height,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: present_buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: present_buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: initial.width,
+                height: initial.height,
+            },
+        ),
+
         damage: Region::single(initial),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -300,13 +321,16 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: tiled,
-        target_content_size: Size {
-            width: tiled.width,
-            height: tiled.height,
-        },
-        target_buffer: BufferSource::CpuBuffer {
-            handle: backing_handle,
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer {
+                handle: backing_handle,
+            },
+            sophia_protocol::Size {
+                width: tiled.width,
+                height: tiled.height,
+            },
+        ),
+
         damage: Region::single(tiled),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

@@ -579,6 +579,11 @@ parallel multi-monitor subsystem.
   coordinates, and damage snapshots fan out to the heads.
 - The current renderer can apply exact, downsampled, and upsampled sampling and
   reports requested/effective paths and fallback outcomes.
+- Content crosses the authority boundary as a bounded `SurfaceContentSet` of
+  density-deduplicated `SurfaceContentVariant` records with a dedicated named
+  capacity; every current producer normalizes into a one-variant set and the
+  committed state retains the whole set. Per-variant damage, readiness, and
+  transform class join with their consumers.
 - Head identity is opaque end to end: the backend mints session-scoped
   `RenderHeadId`s, Engine's `EngineHeadRegistry` holds generation-stamped
   `HeadRenderTarget` records grouped by logical output, and mirror
@@ -599,8 +604,6 @@ artifacts, but they do not satisfy this target architecture.
 ### Target
 
 - Split logical scene snapshots from physical render targets.
-- Carry bounded surface content variants through the authority transaction and
-  committed-state lifecycle.
 - Derive per-head plans, damage ledgers, native targets, and compositor raster
   work before rendering.
 - Replace all primary-derived and flat-output mirror composition paths with the

@@ -772,7 +772,13 @@ pub fn compositor_floating_outline(
         surface,
         committed_generation: 0,
         geometry,
-        buffer: BufferSource::None,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::None,
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::empty(),
     };
     surface_chrome_border(&committed, SurfaceChromeRole::FloatingOutline, width, color)

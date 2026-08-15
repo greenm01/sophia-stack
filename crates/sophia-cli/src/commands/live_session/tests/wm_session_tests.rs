@@ -796,13 +796,16 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
         surface,
         namespace: None,
         target_geometry,
-        target_content_size: Size {
-            width: target_geometry.width,
-            height: target_geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer {
-            handle: backing_handle,
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer {
+                handle: backing_handle,
+            },
+            sophia_protocol::Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
+            },
+        ),
+
         damage: Region::single(target_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -833,13 +836,16 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
         surface,
         namespace: None,
         target_geometry,
-        target_content_size: Size {
-            width: target_geometry.width,
-            height: target_geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: present_buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: present_buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
+            },
+        ),
+
         damage: Region::single(target_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -910,11 +916,14 @@ fn backing_resize_still_commits_for_cpu_only_surface() {
         surface,
         namespace: None,
         target_geometry,
-        target_content_size: Size {
-            width: target_geometry.width,
-            height: target_geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: buffer },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: buffer },
+            sophia_protocol::Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
+            },
+        ),
+
         damage: Region::single(target_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -1218,13 +1227,16 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         surface: firefox,
         namespace: None,
         target_geometry: fallback_geometry,
-        target_content_size: Size {
-            width: fallback_geometry.width,
-            height: fallback_geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: pixel_buffer.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: pixel_buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: fallback_geometry.width,
+                height: fallback_geometry.height,
+            },
+        ),
+
         damage: Region::single(fallback_geometry),
         readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

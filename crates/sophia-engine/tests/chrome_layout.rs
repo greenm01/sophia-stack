@@ -69,7 +69,13 @@ fn chrome_clearance_insets_wm_allocations_once_and_preserves_outer_extent() {
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     };
     let list = surface_chrome_display_list(
@@ -258,9 +264,15 @@ fn committed(surface: SurfaceId, geometry: Rect) -> CommittedSurfaceState {
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer {
-            handle: u64::from(surface.index()),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer {
+                handle: u64::from(surface.index()),
+            },
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }
 }

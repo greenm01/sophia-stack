@@ -5,12 +5,14 @@ use crate::ids::{
 };
 
 mod authority_surface;
+mod content_set;
 mod layout;
 mod presentation_intent;
 mod snapshot;
 mod transaction;
 
 pub use authority_surface::*;
+pub use content_set::*;
 pub use layout::*;
 pub use presentation_intent::*;
 pub use snapshot::*;

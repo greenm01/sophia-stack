@@ -567,7 +567,7 @@ fn x11_dispatch_sophia_present_emits_xpixmap_surface_transaction() {
         SurfaceId::new(0x220121, 1)
     );
     assert_eq!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::XPixmap { pixmap: 0x990 }
     );
     assert_eq!(

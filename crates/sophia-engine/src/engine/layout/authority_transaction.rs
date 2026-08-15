@@ -107,13 +107,16 @@ impl HeadlessEngine {
 
         let mut next_committed = baseline.clone();
         for surface_transaction in transactions {
+            // The committed state carries the transaction's whole content
+            // set: squashing it to the canonical variant here would discard
+            // authority-asserted variants before any head could select one.
             let next_state = CommittedSurfaceState {
                 surface: surface_transaction.surface,
                 committed_generation: surface_transaction
                     .previous_committed_generation
                     .saturating_add(1),
                 geometry: surface_transaction.target_geometry,
-                buffer: surface_transaction.target_buffer,
+                content: surface_transaction.content.clone(),
                 damage: surface_transaction.damage.clone(),
             };
 

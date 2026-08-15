@@ -52,11 +52,13 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
-            target_content_size: Size {
-                width: self.geometry.width,
-                height: self.geometry.height,
-            },
-            target_buffer: self.source,
+            content: SurfaceContentSet::singleton(
+                self.source,
+                Size {
+                    width: self.geometry.width,
+                    height: self.geometry.height,
+                },
+            ),
             damage: self.damage.clone(),
             readiness,
             timeout_msec,
@@ -96,11 +98,13 @@ impl LayerSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
-            target_content_size: Size {
-                width: self.geometry.width,
-                height: self.geometry.height,
-            },
-            target_buffer: self.source,
+            content: SurfaceContentSet::singleton(
+                self.source,
+                Size {
+                    width: self.geometry.width,
+                    height: self.geometry.height,
+                },
+            ),
             damage: self.damage.clone(),
             readiness,
             timeout_msec,

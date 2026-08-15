@@ -91,7 +91,13 @@ fn production_scene_discards_late_patch_but_reports_missing_committed_base() {
             width: 2,
             height: 1,
         },
-        buffer: BufferSource::CpuBuffer { handle: 72 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 72 },
+            sophia_protocol::Size {
+                width: 2,
+                height: 1,
+            },
+        ),
         damage: Region::empty(),
     }];
     let mut scene = LiveProductionCpuScene::new(size);
@@ -463,7 +469,13 @@ fn production_scene_composes_only_the_visible_surface_order() {
             width: 2,
             height: 2,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 2,
+                height: 2,
+            },
+        ),
         damage: Region::empty(),
     };
     let mut scene = LiveProductionCpuScene::new(size);
@@ -951,7 +963,13 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
                 width: 2,
                 height: 1,
             },
-            buffer: BufferSource::CpuBuffer { handle: 1 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 1 },
+                sophia_protocol::Size {
+                    width: 2,
+                    height: 1,
+                },
+            ),
             damage: Region::empty(),
         },
         CommittedSurfaceState {
@@ -963,7 +981,13 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
                 width: 2,
                 height: 1,
             },
-            buffer: BufferSource::CpuBuffer { handle: 2 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 2 },
+                sophia_protocol::Size {
+                    width: 2,
+                    height: 1,
+                },
+            ),
             damage: Region::empty(),
         },
     ];

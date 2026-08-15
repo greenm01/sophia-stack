@@ -17,11 +17,11 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 44 }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf { handle: 44 },
+        }),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,

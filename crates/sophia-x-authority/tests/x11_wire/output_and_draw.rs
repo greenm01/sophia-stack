@@ -949,7 +949,7 @@ fn x11_dispatch_put_image_emits_software_surface_transaction() {
         SurfaceId::new(0x220111, 1)
     );
     assert!(matches!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer { .. }
     ));
     assert_eq!(

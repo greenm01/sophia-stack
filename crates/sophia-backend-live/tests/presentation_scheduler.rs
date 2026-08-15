@@ -63,13 +63,16 @@ fn scheduler_batch(
                     width: 64,
                     height: 48,
                 },
-                target_content_size: Size {
-                    width: 64,
-                    height: 48,
-                },
-                target_buffer: BufferSource::DmaBuf {
-                    handle: handle.raw(),
-                },
+                content: sophia_protocol::SurfaceContentSet::singleton(
+                    BufferSource::DmaBuf {
+                        handle: handle.raw(),
+                    },
+                    sophia_protocol::Size {
+                        width: 64,
+                        height: 48,
+                    },
+                ),
+
                 damage: Region::single(Rect {
                     x: 0,
                     y: 0,
@@ -123,25 +126,24 @@ fn in_flight_present(
         height: 48,
     };
     let buffer = BufferSource::DmaBuf { handle: 900 };
-    let production = ProductionSessionCoordinator::new(HeadlessEngine::default())
-        .with_committed_surfaces(vec![CommittedSurfaceState {
-            surface,
-            committed_generation: 1,
-            geometry,
-            buffer,
-            damage: Region::empty(),
-        }]);
+    let production =
+        ProductionSessionCoordinator::new(HeadlessEngine::default()).with_committed_surfaces(vec![
+            CommittedSurfaceState::with_source(surface, 1, geometry, buffer, Region::empty()),
+        ]);
     let prepared = production.prepare_present_transaction(&SurfaceTransaction {
         transaction,
         authority: AuthorityKind::SophiaX,
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
-            width: geometry.width,
-            height: geometry.height,
-        },
-        target_buffer: buffer,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            buffer,
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -350,11 +352,14 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
                     width: 2560,
                     height: 14,
                 },
-                target_content_size: Size {
-                    width: 2560,
-                    height: 14,
-                },
-                target_buffer: BufferSource::CpuBuffer { handle: 406 },
+                content: sophia_protocol::SurfaceContentSet::singleton(
+                    BufferSource::CpuBuffer { handle: 406 },
+                    sophia_protocol::Size {
+                        width: 2560,
+                        height: 14,
+                    },
+                ),
+
                 damage: Region::empty(),
                 readiness: SurfaceTransactionReadiness::Ready,
                 timeout_msec: 250,
@@ -453,7 +458,7 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
         namespace: None,
         stack_rank: 0,
         geometry,
-        source: batch.groups[0].transactions[0].target_buffer,
+        source: batch.groups[0].transactions[0].target_buffer(),
         damage: Region::empty(),
         opacity: 1.0,
         crop: None,
@@ -528,7 +533,13 @@ fn committed_epoch_present_waits_until_surface_is_visible() {
             width: 64,
             height: 48,
         },
-        buffer: BufferSource::CpuBuffer { handle: 98 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 98 },
+            sophia_protocol::Size {
+                width: 64,
+                height: 48,
+            },
+        ),
         damage: Region::empty(),
     }];
     assert_eq!(
@@ -637,7 +648,7 @@ fn present_released_after_commit_runs_when_its_surface_is_visible() {
         namespace: None,
         stack_rank: 0,
         geometry: batch.groups[0].transactions[0].target_geometry,
-        source: batch.groups[0].transactions[0].target_buffer,
+        source: batch.groups[0].transactions[0].target_buffer(),
         damage: Region::empty(),
         opacity: 1.0,
         crop: None,
@@ -966,7 +977,13 @@ fn newly_visible_layout_work_preserves_one_present_per_surface() {
                 width: 64,
                 height: 48,
             },
-            buffer: BufferSource::CpuBuffer { handle: 718 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 718 },
+                sophia_protocol::Size {
+                    width: 64,
+                    height: 48,
+                },
+            ),
             damage: Region::empty(),
         },
         CommittedSurfaceState {
@@ -978,7 +995,13 @@ fn newly_visible_layout_work_preserves_one_present_per_surface() {
                 width: 64,
                 height: 48,
             },
-            buffer: BufferSource::CpuBuffer { handle: 719 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 719 },
+                sophia_protocol::Size {
+                    width: 64,
+                    height: 48,
+                },
+            ),
             damage: Region::empty(),
         },
     ];

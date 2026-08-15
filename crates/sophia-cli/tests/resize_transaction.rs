@@ -281,11 +281,14 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
             width: 640,
             height: 800,
         },
-        target_content_size: Size {
-            width: 640,
-            height: 800,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 9 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 9 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 800,
+            },
+        ),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -341,7 +344,7 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
             namespace: None,
             stack_rank: 0,
             geometry: committed_geometry,
-            source: transaction.target_buffer,
+            source: transaction.target_buffer(),
             damage: Region::empty(),
             opacity: 1.0,
             crop: None,

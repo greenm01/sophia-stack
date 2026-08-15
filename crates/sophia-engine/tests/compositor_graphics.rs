@@ -15,9 +15,15 @@ fn committed(surface: SurfaceId, geometry: Rect, generation: u64) -> CommittedSu
         surface,
         committed_generation: generation,
         geometry,
-        buffer: BufferSource::CpuBuffer {
-            handle: u64::from(surface.index()),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer {
+                handle: u64::from(surface.index()),
+            },
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }
 }

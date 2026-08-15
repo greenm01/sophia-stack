@@ -159,7 +159,7 @@ fn present_pixmap_update_becomes_ready_surface_transaction() {
     assert_eq!(transaction.surface, SurfaceId::new(3, 1));
     assert_eq!(transaction.namespace, Some(namespace));
     assert_eq!(
-        transaction.target_buffer,
+        transaction.target_buffer(),
         BufferSource::XPixmap { pixmap: 0x900 }
     );
     assert_eq!(transaction.readiness, SurfaceTransactionReadiness::Ready);
@@ -211,10 +211,10 @@ fn shm_and_core_draw_updates_become_ready_cpu_buffer_transactions() {
     )
     .unwrap();
 
-    assert_eq!(shm.target_buffer, BufferSource::CpuBuffer { handle: 100 });
+    assert_eq!(shm.target_buffer(), BufferSource::CpuBuffer { handle: 100 });
     assert_eq!(shm.readiness, SurfaceTransactionReadiness::Ready);
     assert_eq!(shm.previous_committed_generation, 1);
-    assert_eq!(core.target_buffer, BufferSource::CpuBuffer { handle: 101 });
+    assert_eq!(core.target_buffer(), BufferSource::CpuBuffer { handle: 101 });
     assert_eq!(core.damage.rects[0].width, 7);
     assert_eq!(core.previous_committed_generation, 2);
 }
@@ -665,7 +665,7 @@ fn descendant_software_drawing_reduces_to_its_toplevel_surface() {
         }
     );
     assert_eq!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer {
             handle: snapshot.handle
         }
@@ -830,7 +830,7 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
     assert_eq!(snapshot.drawable, window);
     assert!(snapshot.bytes.iter().any(|byte| *byte == 0x5a));
     assert_eq!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer {
             handle: snapshot.handle
         }

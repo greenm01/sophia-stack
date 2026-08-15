@@ -42,11 +42,14 @@ fn initial_transaction(previous_committed_generation: u64) -> SurfaceTransaction
             width: 640,
             height: 480,
         },
-        target_content_size: Size {
-            width: 640,
-            height: 480,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -361,7 +364,10 @@ fn page_flip_watchdog_fails_closed_after_its_hard_boundary() {
 #[test]
 fn gpu_scanout_preservation_follows_post_batch_active_transactions() {
     let mut gpu = initial_transaction(0);
-    gpu.target_buffer = BufferSource::DmaBuf { handle: 7 };
+    gpu.content = sophia_protocol::SurfaceContentSet::singleton(
+        BufferSource::DmaBuf { handle: 7 },
+        gpu.target_content_size(),
+    );
     let cpu = initial_transaction(0);
 
     assert!(live_production_transactions_require_gpu_scanout(

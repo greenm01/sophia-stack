@@ -17,7 +17,7 @@ fn layer_snapshots_from_committed(
             namespace: None,
             stack_rank: u32::try_from(stack_rank).unwrap_or(u32::MAX),
             geometry: surface.geometry,
-            source: surface.buffer,
+            source: surface.buffer(),
             damage: surface.damage.clone(),
             opacity: 1.0,
             crop: None,
@@ -171,7 +171,13 @@ fn test_committed_cpu_surface(
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer { handle },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }
 }
@@ -201,7 +207,13 @@ fn committed_snapshot_preserves_surface_generation_in_render_layers() {
             width: 300,
             height: 200,
         },
-        buffer: BufferSource::CpuBuffer { handle: 99 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 99 },
+            sophia_protocol::Size {
+                width: 300,
+                height: 200,
+            },
+        ),
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -241,11 +253,14 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
             width: 632,
             height: 464,
         },
-        target_content_size: Size {
-            width: 632,
-            height: 464,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 18 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 18 },
+            sophia_protocol::Size {
+                width: 632,
+                height: 464,
+            },
+        ),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -308,11 +323,14 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
-            width: geometry.width,
-            height: geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 192 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 192 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -391,11 +409,14 @@ fn duplicate_software_present_fails_before_renderer_registration() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
-            width: geometry.width,
-            height: geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 195 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 195 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

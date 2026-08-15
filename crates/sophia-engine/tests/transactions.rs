@@ -163,7 +163,7 @@ fn ready_surface_transaction_commits_geometry_and_buffer_together() {
     assert_eq!(commit.applied_surfaces, vec![SurfaceId::new(0, 1)]);
     assert_eq!(committed[0].committed_generation, 2);
     assert_eq!(committed[0].geometry.width, 400);
-    assert_eq!(committed[0].buffer, BufferSource::DmaBuf { handle: 44 });
+    assert_eq!(committed[0].buffer(), BufferSource::DmaBuf { handle: 44 });
 }
 
 #[test]
@@ -187,7 +187,13 @@ fn committed_surface_state_projects_to_layer_with_committed_visual_truth() {
             width: 640,
             height: 480,
         },
-        buffer: BufferSource::DmaBuf { handle: 90 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf { handle: 90 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
         damage: Region::single(Rect {
             x: 40,
             y: 50,
@@ -227,7 +233,13 @@ fn committed_surface_projection_drives_frame_planning() {
             width: 300,
             height: 240,
         },
-        buffer: BufferSource::CpuBuffer { handle: 55 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 55 },
+            sophia_protocol::Size {
+                width: 300,
+                height: 240,
+            },
+        ),
         damage: Region::single(Rect {
             x: 100,
             y: 120,
@@ -269,7 +281,13 @@ fn committed_surface_projection_rejects_missing_or_mismatched_templates() {
             width: 100,
             height: 100,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 100,
+                height: 100,
+            },
+        ),
         damage: Region::empty(),
     };
     let other_template = test_layer(1, 0, 0, Region::empty());
@@ -377,7 +395,10 @@ fn surface_transaction_readiness_allows_null_buffer_unmap_after_mapping() {
     let mut pending = ready.clone();
     pending.readiness = SurfaceTransactionReadiness::Pending;
     let mut missing_buffer = ready.clone();
-    missing_buffer.target_buffer = BufferSource::None;
+    missing_buffer.content = sophia_protocol::SurfaceContentSet::singleton(
+        BufferSource::None,
+        missing_buffer.target_content_size(),
+    );
     let mut empty_geometry = ready.clone();
     empty_geometry.target_geometry.width = 0;
     let mut stale = ready.clone();
@@ -425,7 +446,10 @@ fn null_buffer_unmaps_but_malformed_geometry_does_not_commit() {
         250,
         before[0].committed_generation,
     );
-    missing_buffer.target_buffer = BufferSource::None;
+    missing_buffer.content = sophia_protocol::SurfaceContentSet::singleton(
+        BufferSource::None,
+        missing_buffer.target_content_size(),
+    );
 
     let commit = engine.commit_surface_transactions(
         TransactionId::from_raw(84),
@@ -435,7 +459,7 @@ fn null_buffer_unmaps_but_malformed_geometry_does_not_commit() {
 
     assert_eq!(commit.outcome, TransactionOutcome::Committed);
     assert_eq!(commit.applied_surfaces, vec![old_layer.surface]);
-    assert_eq!(committed[0].buffer, BufferSource::None);
+    assert_eq!(committed[0].buffer(), BufferSource::None);
 
     let mut committed = before.clone();
 
@@ -472,7 +496,10 @@ fn slow_client_timeout_preserves_committed_state_by_default() {
         committed.committed_generation,
     );
     timed_out.target_geometry.width = 700;
-    timed_out.target_buffer = BufferSource::DmaBuf { handle: 700 };
+    timed_out.content = sophia_protocol::SurfaceContentSet::singleton(
+        BufferSource::DmaBuf { handle: 700 },
+        timed_out.target_content_size(),
+    );
 
     assert_eq!(
         table.slow_client_timeout_decision(&timed_out, SurfaceTimeoutPolicy::default()),
@@ -502,7 +529,10 @@ fn slow_client_timeout_replans_without_admitting_pending_pixels() {
         committed.committed_generation,
     );
     timed_out.target_geometry.width = 701;
-    timed_out.target_buffer = BufferSource::DmaBuf { handle: 701 };
+    timed_out.content = sophia_protocol::SurfaceContentSet::singleton(
+        BufferSource::DmaBuf { handle: 701 },
+        timed_out.target_content_size(),
+    );
 
     let SlowClientVisualDecision::ReplanAtCommittedExtent {
         surface,
@@ -607,7 +637,7 @@ fn prepared_surface_transaction_does_not_mutate_until_applied() {
     assert_eq!(committed, before);
     assert_eq!(prepared.candidate()[0].geometry.width, 500);
     assert_eq!(
-        prepared.candidate()[0].buffer,
+        prepared.candidate()[0].buffer(),
         BufferSource::DmaBuf { handle: 91 }
     );
 
@@ -672,7 +702,7 @@ fn prepared_surface_transaction_preserves_an_unrelated_newer_commit() {
     let commit = engine.apply_prepared_surface_commit(prepared, &mut committed);
 
     assert_eq!(commit.outcome, TransactionOutcome::Committed);
-    assert_eq!(committed[0].buffer, BufferSource::DmaBuf { handle: 92 });
+    assert_eq!(committed[0].buffer(), BufferSource::DmaBuf { handle: 92 });
     assert_eq!(committed[1].committed_generation, 9);
     assert_eq!(committed[1].geometry.x, 77);
 }
@@ -750,4 +780,60 @@ fn invalid_surface_transaction_fails_closed() {
     assert_eq!(commit.outcome, TransactionOutcome::RejectedInvalidSurface);
     assert!(commit.applied_surfaces.is_empty());
     assert!(committed.is_empty());
+}
+
+#[test]
+fn committed_state_retains_the_whole_content_set() {
+    let engine = HeadlessEngine::default();
+    let old_layer = test_layer(0, 0, 0, Region::empty());
+    let mut committed = vec![engine.committed_state_from_layer(&old_layer)];
+    let extent = Size {
+        width: 100,
+        height: 100,
+    };
+    let multi_variant = sophia_protocol::SurfaceContentSet::new(
+        extent,
+        vec![
+            sophia_protocol::SurfaceContentVariant {
+                variant: 1,
+                source: BufferSource::CpuBuffer { handle: 90 },
+                pixel_size: extent,
+                density_millis: 1_000,
+            },
+            sophia_protocol::SurfaceContentVariant {
+                variant: 2,
+                source: BufferSource::CpuBuffer { handle: 91 },
+                pixel_size: Size {
+                    width: 200,
+                    height: 200,
+                },
+                density_millis: 2_000,
+            },
+        ],
+    )
+    .unwrap();
+    let mut transaction = old_layer.to_surface_transaction(
+        TransactionId::from_raw(71),
+        AuthorityKind::SophiaNative,
+        SurfaceTransactionReadiness::Ready,
+        250,
+        1,
+    );
+    transaction.content = multi_variant.clone();
+
+    let commit = engine.commit_surface_transactions(
+        TransactionId::from_raw(71),
+        &[transaction],
+        &mut committed,
+    );
+
+    // The committed state carries the authority's whole variant set; a commit
+    // that squashed it to the canonical raster would strip the alternatives
+    // before any head could select one.
+    assert_eq!(commit.outcome, TransactionOutcome::Committed);
+    assert_eq!(committed[0].content, multi_variant);
+    assert_eq!(
+        committed[0].buffer(),
+        BufferSource::CpuBuffer { handle: 90 }
+    );
 }

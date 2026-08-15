@@ -145,10 +145,13 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
                         width: size.width,
                         height: size.height,
                     },
-                    target_content_size: size,
-                    target_buffer: BufferSource::CpuBuffer {
-                        handle: update.handle(),
-                    },
+                    content: sophia_protocol::SurfaceContentSet::singleton(
+                        BufferSource::CpuBuffer {
+                            handle: update.handle(),
+                        },
+                        size,
+                    ),
+
                     damage: Region::empty(),
                     readiness: SurfaceTransactionReadiness::Ready,
                     timeout_msec: 250,
@@ -270,8 +273,11 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: size,
-        target_buffer: BufferSource::CpuBuffer { handle: 72 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 72 },
+            size,
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -311,7 +317,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         namespace: None,
         stack_rank: 0,
         geometry,
-        source: surface_transaction.target_buffer,
+        source: surface_transaction.target_buffer(),
         damage: surface_transaction.damage.clone(),
         opacity: 1.0,
         crop: None,
@@ -399,8 +405,11 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         surface: cpu_surface,
         namespace: None,
         target_geometry: cpu_geometry,
-        target_content_size: size,
-        target_buffer: BufferSource::CpuBuffer { handle: 82 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 82 },
+            size,
+        ),
+
         damage: Region::single(cpu_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -415,10 +424,13 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         surface: dma_surface,
         namespace: None,
         target_geometry: cpu_geometry,
-        target_content_size: size,
-        target_buffer: BufferSource::DmaBuf {
-            handle: dma_handle.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: dma_handle.raw(),
+            },
+            size,
+        ),
+
         damage: Region::single(cpu_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -542,10 +554,13 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
                 surface,
                 namespace: None,
                 target_geometry: geometry,
-                target_content_size: size,
-                target_buffer: BufferSource::DmaBuf {
-                    handle: handle.raw(),
-                },
+                content: sophia_protocol::SurfaceContentSet::singleton(
+                    BufferSource::DmaBuf {
+                        handle: handle.raw(),
+                    },
+                    size,
+                ),
+
                 damage: Region::single(geometry),
                 readiness: SurfaceTransactionReadiness::Ready,
                 timeout_msec: 250,

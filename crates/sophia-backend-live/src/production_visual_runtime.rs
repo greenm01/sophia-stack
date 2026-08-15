@@ -877,16 +877,20 @@ fn write_cpu_buffer_residency<'a>(
     recent_updates: &VecDeque<u64>,
 ) {
     handles.clear();
-    handles.extend(committed.iter().filter_map(|surface| match surface.buffer {
-        BufferSource::CpuBuffer { handle } => Some(handle),
-        _ => None,
-    }));
+    handles.extend(
+        committed
+            .iter()
+            .filter_map(|surface| match surface.buffer() {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            }),
+    );
     handles.extend(
         batch
             .groups
             .iter()
             .flat_map(|group| group.transactions.iter())
-            .filter_map(|transaction| match transaction.target_buffer {
+            .filter_map(|transaction| match transaction.target_buffer() {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             }),
@@ -894,7 +898,7 @@ fn write_cpu_buffer_residency<'a>(
     handles.extend(
         pending_groups
             .flat_map(|group| group.transactions.iter())
-            .filter_map(|transaction| match transaction.target_buffer {
+            .filter_map(|transaction| match transaction.target_buffer() {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             }),
@@ -927,7 +931,7 @@ fn authority_group_present_owners(
         let mut candidates = group.transactions.iter().filter(|transaction| {
             transaction.transaction == submission.transaction
                 && transaction.surface == submission.surface
-                && transaction.target_buffer
+                && transaction.target_buffer()
                     == BufferSource::DmaBuf {
                         handle: submission.buffer.raw(),
                     }
@@ -984,7 +988,7 @@ pub fn live_production_transactions_require_gpu_scanout(
 ) -> bool {
     transactions
         .iter()
-        .any(|transaction| matches!(transaction.target_buffer, BufferSource::DmaBuf { .. }))
+        .any(|transaction| matches!(transaction.target_buffer(), BufferSource::DmaBuf { .. }))
 }
 
 pub fn live_production_projection_requires_gpu_scanout(
@@ -993,7 +997,7 @@ pub fn live_production_projection_requires_gpu_scanout(
 ) -> bool {
     transactions.iter().any(|transaction| {
         presentation_order.contains(&transaction.surface)
-            && matches!(transaction.target_buffer, BufferSource::DmaBuf { .. })
+            && matches!(transaction.target_buffer(), BufferSource::DmaBuf { .. })
     })
 }
 
@@ -1003,7 +1007,7 @@ fn live_production_committed_projection_requires_gpu_scanout(
 ) -> bool {
     committed.iter().any(|state| {
         presentation_order.contains(&state.surface)
-            && matches!(state.buffer, BufferSource::DmaBuf { .. })
+            && matches!(state.buffer(), BufferSource::DmaBuf { .. })
     })
 }
 

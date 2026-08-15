@@ -205,7 +205,7 @@ fn x11_dispatch_mit_shm_put_image_emits_bounded_surface_transaction() {
         SurfaceId::new(0x220701, 1)
     );
     assert!(matches!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer { .. }
     ));
     assert_eq!(
@@ -295,7 +295,7 @@ fn x11_image_text_updates_bounded_xrgb_cpu_pixels() {
             .any(|pixel| pixel != [0, 0, 0, 0])
     );
     assert_eq!(
-        response.transactions[0].target_buffer,
+        response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer {
             handle: snapshot.handle
         }

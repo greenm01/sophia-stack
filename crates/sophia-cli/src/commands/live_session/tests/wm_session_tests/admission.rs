@@ -148,11 +148,11 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
             y: 0,
             ..geometry
         },
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 45 }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf { handle: 45 },
+        }),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -296,11 +296,13 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
             surface,
             namespace: None,
             target_geometry: geometry,
-            target_content_size: Size {
-                width: geometry.width,
-                height: geometry.height,
-            },
-            target_buffer,
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                target_buffer,
+                Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            ),
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
@@ -412,13 +414,13 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
+            handle: buffer.raw(),
+        }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf {
-            handle: buffer.raw(),
-        },
+        }),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -751,13 +753,13 @@ fn selected_present_settles_older_present_group_without_committing_it() {
             surface,
             namespace: None,
             target_geometry: geometry,
-            target_content_size: Size {
+            content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            }, sophia_protocol::Size {
                 width: geometry.width,
                 height: geometry.height,
-            },
-            target_buffer: BufferSource::DmaBuf {
-                handle: buffer.raw(),
-            },
+            }),
+
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
@@ -879,11 +881,11 @@ fn backing_admission_releases_cpu_replacement_before_selected_patch() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle },
+        }),
+
         damage: Region::single(geometry),
         readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

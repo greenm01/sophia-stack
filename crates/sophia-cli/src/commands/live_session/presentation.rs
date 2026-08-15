@@ -315,7 +315,7 @@ fn production_authority_batch(
             .iter()
             .find(|transaction| {
                 matches!(
-                    transaction.target_buffer,
+                    transaction.target_buffer(),
                     BufferSource::CpuBuffer { handle } if handle == update.handle()
                 )
             })
@@ -393,7 +393,7 @@ fn production_software_present_submission(
     let mut candidates = transactions.iter().filter(|transaction| {
         transaction.transaction == submission.transaction
             && transaction.surface == submission.surface
-            && matches!(transaction.target_buffer, BufferSource::CpuBuffer { .. })
+            && matches!(transaction.target_buffer(), BufferSource::CpuBuffer { .. })
     });
     let candidate = candidates
         .next()
@@ -402,7 +402,7 @@ fn production_software_present_submission(
         return Err("software Present has multiple CPU transactions");
     }
     let source_size = live_transaction_pixel_size(
-        candidate.target_buffer,
+        candidate.target_buffer(),
         &layout.dma_buf_sizes,
         &layout.cpu_buffer_sizes,
     )

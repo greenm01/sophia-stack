@@ -86,10 +86,10 @@ fn inset_present_retires_the_standing_outer_target_and_releases_recovery() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: content,
-        target_buffer: BufferSource::DmaBuf {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
             handle: buffer.raw(),
-        },
+        }, content),
+
         damage: Region::single(geometry),
         readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

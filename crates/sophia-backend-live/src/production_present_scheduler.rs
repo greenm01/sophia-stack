@@ -191,7 +191,7 @@ impl LiveProductionPresentScheduler {
             let mut candidates = group.transactions.iter().filter(|transaction| {
                 transaction.surface == surface
                     && transaction.transaction == submission.transaction
-                    && transaction.target_buffer
+                    && transaction.target_buffer()
                         == (BufferSource::DmaBuf {
                             handle: submission.buffer.raw(),
                         })

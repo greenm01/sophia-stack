@@ -643,9 +643,15 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
             width: 64,
             height: 48,
         },
-        buffer: BufferSource::DmaBuf {
-            handle: handle.raw(),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: handle.raw(),
+            },
+            sophia_protocol::Size {
+                width: 64,
+                height: 48,
+            },
+        ),
         damage: Region::empty(),
     };
     let mut production = ProductionSessionCoordinator::new(HeadlessEngine::default())
@@ -656,11 +662,14 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
         surface,
         namespace: None,
         target_geometry: committed.geometry,
-        target_content_size: Size {
-            width: committed.geometry.width,
-            height: committed.geometry.height,
-        },
-        target_buffer: committed.buffer,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            committed.buffer(),
+            sophia_protocol::Size {
+                width: committed.geometry.width,
+                height: committed.geometry.height,
+            },
+        ),
+
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

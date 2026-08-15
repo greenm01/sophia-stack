@@ -16,7 +16,7 @@ fn replaceable_deferred_present_surface(group: &LiveProductionAuthorityGroup) ->
     };
     (transaction.transaction == submission.transaction
         && transaction.surface == submission.surface
-        && transaction.target_buffer
+        && transaction.target_buffer()
             == (BufferSource::DmaBuf {
                 handle: submission.buffer.raw(),
             }))

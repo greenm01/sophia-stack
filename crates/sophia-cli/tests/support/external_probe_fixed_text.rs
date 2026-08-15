@@ -47,11 +47,11 @@ fn transaction(surface: sophia_protocol::SurfaceId, handle: u64) -> SurfaceTrans
             width: 120,
             height: 52,
         },
-        target_content_size: sophia_protocol::Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(sophia_protocol::BufferSource::CpuBuffer { handle }, sophia_protocol::Size {
             width: 120,
             height: 52,
-        },
-        target_buffer: sophia_protocol::BufferSource::CpuBuffer { handle },
+        }),
+
         damage: sophia_protocol::Region::single(sophia_protocol::Rect {
             x: 0,
             y: 0,

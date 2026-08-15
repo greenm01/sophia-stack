@@ -327,7 +327,13 @@ fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }];
     let mut focus = InputFocusState::new();
@@ -721,7 +727,13 @@ fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }];
     let mut focus = InputFocusState::new();
@@ -766,11 +778,14 @@ fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: Size {
-            width: geometry.width,
-            height: geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 1_000,
@@ -932,7 +947,13 @@ fn routed_keyboard_report_retains_the_opaque_focus_target() {
         surface,
         committed_generation: 1,
         geometry,
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
         damage: Region::single(geometry),
     }];
     let mut focus = InputFocusState::new();

@@ -103,11 +103,14 @@ fn explicit_software_present_completes_resize_only_after_native_retirement() {
         surface,
         namespace: None,
         target_geometry,
-        target_content_size: Size {
-            width: target_geometry.width,
-            height: target_geometry.height,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: buffer },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: buffer },
+            sophia_protocol::Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
+            },
+        ),
+
         damage: Region::single(target_geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,
@@ -155,8 +158,11 @@ fn cpu_present_admission_remains_fenced_until_exact_native_retirement() {
         surface,
         namespace: None,
         target_geometry: geometry,
-        target_content_size: size,
-        target_buffer: BufferSource::CpuBuffer { handle: 862 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 862 },
+            size,
+        ),
+
         damage: Region::single(geometry),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

@@ -195,7 +195,7 @@ fn seed_committed_states_for_transactions(
                 surface: transaction.surface,
                 committed_generation: transaction.previous_committed_generation,
                 geometry: transaction.target_geometry,
-                buffer: transaction.target_buffer,
+                content: transaction.content.clone(),
                 damage: Region::empty(),
             });
     }

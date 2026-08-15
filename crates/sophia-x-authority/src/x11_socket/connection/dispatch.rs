@@ -971,7 +971,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             let response = output.response.as_ref()?;
                             let transaction = response.transactions.first()?;
                             let sophia_protocol::BufferSource::DmaBuf { handle } =
-                                transaction.target_buffer
+                                transaction.target_buffer()
                             else {
                                 return None;
                             };
@@ -1002,7 +1002,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             let response = output.response.as_ref()?;
                             let transaction = response.transactions.first()?;
                             if !matches!(
-                                transaction.target_buffer,
+                                transaction.target_buffer(),
                                 sophia_protocol::BufferSource::CpuBuffer { .. }
                             ) {
                                 return None;

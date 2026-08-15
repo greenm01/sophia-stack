@@ -1,3 +1,4 @@
+use sophia_protocol::SurfaceContentSet;
 use sophia_protocol::{
     AuthoritySurface, IpcCodecError, IpcMessageKind, PortalTransfer, SurfaceTransaction,
     TransactionId, decode_frame, encode_frame,
@@ -386,8 +387,8 @@ fn encode_surface_transaction(
     encode_surface_id(transaction.surface, out);
     encode_optional_namespace_id(transaction.namespace, out);
     encode_rect(transaction.target_geometry, out);
-    encode_size(transaction.target_content_size, out);
-    encode_buffer_source(transaction.target_buffer, out);
+    encode_size(transaction.target_content_size(), out);
+    encode_buffer_source(transaction.target_buffer(), out);
     encode_region(&transaction.damage, out)?;
     encode_readiness(transaction.readiness, out);
     push_u32(out, transaction.timeout_msec);
@@ -404,8 +405,13 @@ fn decode_surface_transaction(
         surface: decode_surface_id(cursor)?,
         namespace: decode_optional_namespace_id(cursor)?,
         target_geometry: decode_rect(cursor)?,
-        target_content_size: decode_size(cursor)?,
-        target_buffer: decode_buffer_source(cursor)?,
+        content: {
+            let target_content_size = decode_size(cursor)?;
+            sophia_protocol::SurfaceContentSet::singleton(
+                decode_buffer_source(cursor)?,
+                target_content_size,
+            )
+        },
         damage: decode_region(cursor)?,
         readiness: decode_readiness(cursor.u16()?)?,
         timeout_msec: cursor.u32()?,

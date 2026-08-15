@@ -29,7 +29,13 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
             width: 1,
             height: 1,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 1,
+                height: 1,
+            },
+        ),
         damage: Region::empty(),
     }];
     let display_list = CompositorDisplayList {

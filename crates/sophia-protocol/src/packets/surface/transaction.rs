@@ -8,14 +8,14 @@ pub struct SurfaceTransaction {
     pub namespace: Option<NamespaceId>,
     /// Logical placement of the authority-owned surface.
     pub target_geometry: Rect,
-    /// Exact pixel extent expected from `target_buffer`.
+    /// The bounded raster content asserted for this surface generation.
     ///
-    /// Protocol authorities may project a descendant content window onto a
-    /// larger policy-managed surface. Keeping the two extents distinct lets
-    /// the Engine retain pixel-exact presentation without teaching it a
-    /// client protocol's window hierarchy.
-    pub target_content_size: Size,
-    pub target_buffer: BufferSource,
+    /// The set's logical extent is the exact pixel extent the geometry
+    /// presents. Protocol authorities may project a descendant content window
+    /// onto a larger policy-managed surface; keeping the content extent
+    /// distinct from the geometry lets the Engine retain pixel-exact
+    /// presentation without teaching it a client protocol's window hierarchy.
+    pub content: SurfaceContentSet,
     pub damage: Region,
     pub readiness: SurfaceTransactionReadiness,
     pub timeout_msec: u32,
@@ -52,25 +52,34 @@ pub fn dma_buf_present_pairs_are_exact(
     presents: &[DmaBufPresentKey],
 ) -> bool {
     transactions.iter().all(|transaction| {
-        let BufferSource::DmaBuf { handle } = transaction.target_buffer else {
-            return true;
-        };
-        presents
-            .iter()
-            .filter(|present| {
-                present.transaction == transaction.transaction
-                    && present.surface == transaction.surface
-                    && present.buffer.raw() == handle
-            })
-            .count()
-            == 1
+        transaction.content.variants().iter().all(|variant| {
+            let BufferSource::DmaBuf { handle } = variant.source else {
+                return true;
+            };
+            presents
+                .iter()
+                .filter(|present| {
+                    present.transaction == transaction.transaction
+                        && present.surface == transaction.surface
+                        && present.buffer.raw() == handle
+                })
+                .count()
+                == 1
+        })
     }) && presents.iter().all(|present| {
         transactions
             .iter()
-            .filter(|transaction| {
+            .flat_map(|transaction| {
+                transaction
+                    .content
+                    .variants()
+                    .iter()
+                    .map(move |variant| (transaction, variant))
+            })
+            .filter(|(transaction, variant)| {
                 transaction.transaction == present.transaction
                     && transaction.surface == present.surface
-                    && transaction.target_buffer
+                    && variant.source
                         == BufferSource::DmaBuf {
                             handle: present.buffer.raw(),
                         }
@@ -81,12 +90,22 @@ pub fn dma_buf_present_pairs_are_exact(
 }
 
 impl SurfaceTransaction {
-    pub const fn key(&self) -> SurfaceTransactionKey {
+    pub fn key(&self) -> SurfaceTransactionKey {
         SurfaceTransactionKey {
             transaction: self.transaction,
             surface: self.surface,
-            target_buffer: self.target_buffer,
+            target_buffer: self.target_buffer(),
         }
+    }
+
+    /// The canonical single content value, until per-head variant selection
+    /// consumes the full set.
+    pub fn target_buffer(&self) -> BufferSource {
+        self.content.canonical_source()
+    }
+
+    pub fn target_content_size(&self) -> Size {
+        self.content.logical_extent()
     }
 
     pub fn from_layer_snapshot(
@@ -137,18 +156,51 @@ pub struct CommittedSurfaceState {
     pub surface: SurfaceId,
     pub committed_generation: u64,
     pub geometry: Rect,
-    pub buffer: BufferSource,
+    /// The committed content set. Its generation identity is
+    /// `committed_generation`: content advances exactly with authority
+    /// commits, so the record carries one clock, not two.
+    pub content: SurfaceContentSet,
     pub damage: Region,
 }
 
 impl CommittedSurfaceState {
     pub fn from_layer_snapshot(layer: &LayerSnapshot) -> Self {
+        Self::with_source(
+            layer.surface,
+            layer.generation,
+            layer.geometry,
+            layer.source,
+            layer.damage.clone(),
+        )
+    }
+
+    /// Builds a committed state around a single canonical raster whose
+    /// pixels span the geometry, which is every current producer's shape.
+    pub fn with_source(
+        surface: SurfaceId,
+        committed_generation: u64,
+        geometry: Rect,
+        source: BufferSource,
+        damage: Region,
+    ) -> Self {
         Self {
-            surface: layer.surface,
-            committed_generation: layer.generation,
-            geometry: layer.geometry,
-            buffer: layer.source,
-            damage: layer.damage.clone(),
+            surface,
+            committed_generation,
+            geometry,
+            content: SurfaceContentSet::singleton(
+                source,
+                Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            ),
+            damage,
         }
+    }
+
+    /// The canonical single content value, until per-head variant selection
+    /// consumes the full set.
+    pub fn buffer(&self) -> BufferSource {
+        self.content.canonical_source()
     }
 }

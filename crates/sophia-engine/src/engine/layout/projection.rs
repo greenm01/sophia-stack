@@ -33,7 +33,7 @@ impl HeadlessEngine {
 
         let mut layer = template.clone();
         layer.geometry = committed.geometry;
-        layer.source = committed.buffer;
+        layer.source = committed.buffer();
         layer.damage = committed.damage.clone();
         layer.generation = committed.committed_generation;
         Ok(layer)

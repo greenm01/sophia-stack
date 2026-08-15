@@ -108,11 +108,11 @@ fn live_runtime_driver_adapter_commits_authority_batches_before_rendering() {
             width: 140,
             height: 90,
         },
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 700 }, sophia_protocol::Size {
             width: 140,
             height: 90,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 700 },
+        }),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -342,7 +342,7 @@ fn live_renderer_runtime_adapter_projects_committed_state_before_frame_planning(
             width: 320,
             height: 240,
         },
-        buffer: BufferSource::DmaBuf { handle: 701 },
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 701 }, sophia_protocol::Size { width: 320, height: 240 }),
         damage: Region::single(Rect {
             x: 200,
             y: 220,

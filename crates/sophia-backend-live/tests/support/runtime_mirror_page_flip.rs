@@ -50,7 +50,13 @@ fn mirror_shutdown_drain_accepts_callback_without_running_invalid_surface_projec
                 width: 64,
                 height: 48,
             },
-            buffer: BufferSource::CpuBuffer { handle: 7 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 7 },
+                sophia_protocol::Size {
+                    width: 64,
+                    height: 48,
+                },
+            ),
             damage: Region::empty(),
         }]);
     let before = runtime.page_flip_observation();

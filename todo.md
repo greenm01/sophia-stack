@@ -1016,9 +1016,23 @@ is excluded; retained product behavior is not.
      prints a head id beside its connector name, and the physical verifiers
      correlate through it. A callback whose CRTC resolves to no admitted head
      fails closed with a named unknown-head error. The physical verifier,
-     meta-check, and fixture log are updated and green offline; the
-     `SurfaceContentSet` content half of this step remains open, and the next
-     tty4 mirror run re-proves the rekeyed path on hardware.
+     meta-check, and fixture log are updated and green offline.
+     **The content half is done too.** `SurfaceTransaction` and
+     `CommittedSurfaceState` carry a bounded `SurfaceContentSet`
+     (`MAX_SURFACE_CONTENT_VARIANTS` is its own named capacity), every
+     producer normalizes into a one-variant set, and commit clones the whole
+     set so variants survive to the committed scene. Set invariants are
+     unrepresentable-by-construction (private fields, fail-closed
+     constructor), envelope identity is structural, DMA-BUF Present pairing
+     ranges over every variant, and the authority wire format is unchanged
+     (canonical extent and source encode as before). Per-variant damage,
+     readiness, and transform class join with their consumers in later steps;
+     head identity still never reaches WM policy. Diagnostic
+     run `0017` proved the rekeyed path on hardware end to end and failed only
+     at visual confirmation; the ratified bar for that confirmation is
+     sharp-not-blocky (native client-text sharpness on a fractional-density
+     head is an explicit non-goal of unequal-mode mirroring), so a re-run with
+     that reading banks the physical baseline.
   3. Add the pure per-head planner and per-head damage/presentation ledgers.
      Use one rational transform for layers, clips, damage, cursor projection,
      and input inversion; remove visual dependence on a primary output.

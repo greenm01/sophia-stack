@@ -448,7 +448,7 @@ fn latest_transaction_cpu_buffer<'a>(
 ) -> Option<&'a XAuthorityCpuBufferSnapshot> {
     let handle = transactions
         .last()
-        .and_then(|transaction| match transaction.target_buffer {
+        .and_then(|transaction| match transaction.target_buffer() {
             BufferSource::CpuBuffer { handle } => Some(handle),
             _ => None,
         })?;
@@ -517,7 +517,7 @@ fn fixed_text_scroll_proof(
         if transaction.target_geometry.width <= 0 || transaction.target_geometry.height <= 0 {
             return false;
         }
-        let BufferSource::CpuBuffer { handle } = transaction.target_buffer else {
+        let BufferSource::CpuBuffer { handle } = transaction.target_buffer() else {
             return false;
         };
         buffers.get(&handle).is_some_and(|buffer| {
@@ -546,7 +546,7 @@ fn request_proves_scrolling_surface(
         let updates_surface = request.cpu_buffer_handle.is_some_and(|handle| {
             request.transactions.iter().any(|transaction| {
                 transaction.surface == surface
-                    && transaction.target_buffer == BufferSource::CpuBuffer { handle }
+                    && transaction.target_buffer() == BufferSource::CpuBuffer { handle }
             })
         });
         if !updates_surface {

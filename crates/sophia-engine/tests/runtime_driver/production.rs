@@ -128,11 +128,11 @@ fn production_surface_batch(transaction: u64) -> AuthorityTransactionIntake {
                 width: 320,
                 height: 200,
             },
-            target_content_size: Size {
+            content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 900 }, sophia_protocol::Size {
                 width: 320,
                 height: 200,
-            },
-            target_buffer: BufferSource::CpuBuffer { handle: 900 },
+            }),
+
             damage: Region::single(Rect {
                 x: 0,
                 y: 0,
@@ -171,7 +171,7 @@ fn production_coordinator_applies_prepared_present_to_its_owned_snapshot() {
     assert_eq!(commit.outcome, TransactionOutcome::Committed);
     assert_eq!(coordinator.committed_surfaces()[0].geometry.width, 640);
     assert_eq!(
-        coordinator.committed_surfaces()[0].buffer,
+        coordinator.committed_surfaces()[0].buffer(),
         BufferSource::DmaBuf { handle: 77 }
     );
 }
@@ -193,11 +193,11 @@ fn present_candidate_preserves_unrelated_committed_surface_identity() {
             width: 1280,
             height: 1426,
         },
-        target_content_size: Size {
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 77 }, sophia_protocol::Size {
             width: 1280,
             height: 1426,
-        },
-        target_buffer: BufferSource::DmaBuf { handle: 77 },
+        }),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,

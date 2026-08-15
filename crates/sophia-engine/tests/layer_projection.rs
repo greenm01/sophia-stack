@@ -17,13 +17,16 @@ fn authority_transaction_template_preserves_namespace_and_order() {
             width: 64,
             height: 64,
         },
-        target_content_size: Size {
-            width: 64,
-            height: 64,
-        },
-        target_buffer: BufferSource::CpuBuffer {
-            handle: u64::from(index),
-        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer {
+                handle: u64::from(index),
+            },
+            sophia_protocol::Size {
+                width: 64,
+                height: 64,
+            },
+        ),
+
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

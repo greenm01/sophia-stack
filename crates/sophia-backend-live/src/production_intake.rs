@@ -109,7 +109,7 @@ impl LiveProductionAuthorityGroup {
                 .iter()
                 .filter(|transaction| {
                     matches!(
-                        transaction.target_buffer,
+                        transaction.target_buffer(),
                         sophia_protocol::BufferSource::CpuBuffer { handle }
                             if handle == update.handle()
                     )
@@ -146,7 +146,7 @@ impl LiveProductionAuthorityGroup {
                         && transaction.surface == submission.surface
                         && transaction.key() == submission.candidate
                         && matches!(
-                            transaction.target_buffer,
+                            transaction.target_buffer(),
                             sophia_protocol::BufferSource::CpuBuffer { .. }
                         )
                 })

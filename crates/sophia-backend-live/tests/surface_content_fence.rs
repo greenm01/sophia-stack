@@ -26,13 +26,16 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
                 width: 1276,
                 height: 1422,
             },
-            target_content_size: Size {
-                width: 1276,
-                height: 1422,
-            },
-            target_buffer: BufferSource::CpuBuffer {
-                handle: transaction.raw(),
-            },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer {
+                    handle: transaction.raw(),
+                },
+                sophia_protocol::Size {
+                    width: 1276,
+                    height: 1422,
+                },
+            ),
+
             damage: Region::empty(),
             readiness: SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
@@ -152,7 +155,13 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
             surface: firefox,
             committed_generation: 1,
             geometry: initial_geometry,
-            buffer: BufferSource::CpuBuffer { handle: 804 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 804 },
+                sophia_protocol::Size {
+                    width: initial_geometry.width,
+                    height: initial_geometry.height,
+                },
+            ),
             damage: Region::empty(),
         }]);
     let resize_transaction = TransactionId::from_raw(805);
@@ -162,11 +171,14 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
         surface: firefox,
         namespace: None,
         target_geometry,
-        target_content_size: Size {
-            width: target_geometry.width,
-            height: target_geometry.height,
-        },
-        target_buffer: BufferSource::DmaBuf { handle: 805 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf { handle: 805 },
+            sophia_protocol::Size {
+                width: target_geometry.width,
+                height: target_geometry.height,
+            },
+        ),
+
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: 250,

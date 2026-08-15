@@ -138,7 +138,7 @@ impl LiveProductionCpuScene {
     ) -> usize {
         committed_surfaces
             .iter()
-            .filter_map(|surface| match surface.buffer {
+            .filter_map(|surface| match surface.buffer() {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })
@@ -181,7 +181,7 @@ impl LiveProductionCpuScene {
                 let committed = committed_surfaces
                     .iter()
                     .find(|committed| committed.surface == *surface)?;
-                let BufferSource::CpuBuffer { handle } = committed.buffer else {
+                let BufferSource::CpuBuffer { handle } = committed.buffer() else {
                     return None;
                 };
                 Some(LiveCpuPresentationLayer {
@@ -227,7 +227,7 @@ impl LiveProductionCpuScene {
                     let Some(committed) = committed else {
                         continue;
                     };
-                    let BufferSource::CpuBuffer { handle } = committed.buffer else {
+                    let BufferSource::CpuBuffer { handle } = committed.buffer() else {
                         continue;
                     };
                     let Some(buffer) = self.buffers.get(handle) else {
@@ -368,7 +368,7 @@ impl LiveProductionCpuScene {
         let layers = surface_order
             .iter()
             .filter_map(|surface| {
-                let BufferSource::CpuBuffer { handle } = surface.buffer else {
+                let BufferSource::CpuBuffer { handle } = surface.buffer() else {
                     return None;
                 };
                 let buffer = self.buffers.get(handle)?;
@@ -439,7 +439,7 @@ impl LiveProductionCpuScene {
         let committed = committed_surfaces
             .iter()
             .find(|committed| committed.surface == surface)?;
-        let BufferSource::CpuBuffer { handle } = committed.buffer else {
+        let BufferSource::CpuBuffer { handle } = committed.buffer() else {
             return None;
         };
         Some(self.buffers.get(handle)?.generation)
@@ -461,7 +461,7 @@ impl LiveProductionCpuScene {
         else {
             return false;
         };
-        let BufferSource::CpuBuffer { handle } = committed.buffer else {
+        let BufferSource::CpuBuffer { handle } = committed.buffer() else {
             return false;
         };
         let Some(buffer) = self.buffers.get(handle) else {

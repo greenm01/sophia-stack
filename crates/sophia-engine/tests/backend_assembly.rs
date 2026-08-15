@@ -54,11 +54,14 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
             width: 160,
             height: 90,
         },
-        target_content_size: Size {
-            width: 160,
-            height: 90,
-        },
-        target_buffer: BufferSource::CpuBuffer { handle: 900 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 900 },
+            sophia_protocol::Size {
+                width: 160,
+                height: 90,
+            },
+        ),
+
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -103,7 +106,7 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
     assert_eq!(assembly.committed_surfaces().len(), 1);
     assert_eq!(assembly.committed_surfaces()[0].geometry.x, 25);
     assert_eq!(
-        assembly.committed_surfaces()[0].buffer,
+        assembly.committed_surfaces()[0].buffer(),
         BufferSource::CpuBuffer { handle: 900 }
     );
     assert_eq!(
@@ -144,7 +147,13 @@ fn headless_backend_assembly_accepts_an_authoritative_committed_snapshot() {
             width: 320,
             height: 200,
         },
-        buffer: BufferSource::CpuBuffer { handle: 710 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 710 },
+            sophia_protocol::Size {
+                width: 320,
+                height: 200,
+            },
+        ),
         damage: Region::single(Rect {
             x: 0,
             y: 0,
@@ -326,7 +335,7 @@ fn backend_assembly_drains_bounded_authority_inbox_before_runtime_tick() {
     assert_eq!(report.runtime.runtime_state.authority_surfaces_applied, 1);
     assert_eq!(assembly.committed_surfaces().len(), 1);
     assert_eq!(
-        assembly.committed_surfaces()[0].buffer,
+        assembly.committed_surfaces()[0].buffer(),
         BufferSource::XPixmap { pixmap: 66 }
     );
 }

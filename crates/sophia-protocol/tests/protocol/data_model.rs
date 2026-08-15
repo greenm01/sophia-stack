@@ -330,14 +330,14 @@ fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
     assert_eq!(transaction.surface, SurfaceId::new(4, 1));
     assert_eq!(transaction.target_geometry.width, 800);
     assert_eq!(
-        transaction.target_content_size,
+        transaction.target_content_size(),
         Size {
             width: 800,
             height: 600,
         }
     );
     assert_eq!(
-        transaction.target_buffer,
+        transaction.target_buffer(),
         BufferSource::DmaBuf { handle: 55 }
     );
     assert_eq!(transaction.damage.rects.len(), 1);
@@ -373,7 +373,7 @@ fn committed_surface_state_is_cloneable_visual_state() {
     assert_eq!(cloned.surface, SurfaceId::new(5, 1));
     assert_eq!(cloned.committed_generation, 11);
     assert_eq!(cloned.geometry.width, 320);
-    assert_eq!(cloned.buffer, BufferSource::CpuBuffer { handle: 3 });
+    assert_eq!(cloned.buffer(), BufferSource::CpuBuffer { handle: 3 });
 }
 
 #[test]
@@ -522,4 +522,177 @@ fn one_label_bound_is_shared_by_every_hop() {
     // copies would let a label be valid where it is produced and rejected where it
     // is stored.
     assert_eq!(MAX_CHROME_LABEL_LEN, 128);
+}
+
+fn content_variant(variant: u32, density_millis: u32) -> SurfaceContentVariant {
+    SurfaceContentVariant {
+        variant,
+        source: BufferSource::CpuBuffer {
+            handle: u64::from(variant),
+        },
+        pixel_size: Size {
+            width: 640,
+            height: 480,
+        },
+        density_millis,
+    }
+}
+
+#[test]
+fn surface_content_set_construction_enforces_its_bounds() {
+    let extent = Size {
+        width: 640,
+        height: 480,
+    };
+
+    assert_eq!(
+        SurfaceContentSet::new(extent, Vec::new()),
+        Err(SurfaceContentSetError::EmptyVariantSet)
+    );
+    assert_eq!(
+        SurfaceContentSet::new(
+            extent,
+            (1..=u32::try_from(MAX_SURFACE_CONTENT_VARIANTS + 1).unwrap())
+                .map(|index| content_variant(index, index * 500))
+                .collect(),
+        ),
+        Err(SurfaceContentSetError::VariantCapacityExceeded {
+            count: MAX_SURFACE_CONTENT_VARIANTS + 1
+        })
+    );
+    assert_eq!(
+        SurfaceContentSet::new(extent, vec![content_variant(0, 1_000)]),
+        Err(SurfaceContentSetError::InvalidVariantIdentity)
+    );
+    assert_eq!(
+        SurfaceContentSet::new(extent, vec![content_variant(1, 0)]),
+        Err(SurfaceContentSetError::InvalidDensity { variant: 1 })
+    );
+    assert_eq!(
+        SurfaceContentSet::new(
+            extent,
+            vec![content_variant(1, 1_000), content_variant(1, 2_000)],
+        ),
+        Err(SurfaceContentSetError::DuplicateVariantIdentity { variant: 1 })
+    );
+    assert_eq!(
+        SurfaceContentSet::new(
+            extent,
+            vec![content_variant(1, 1_000), content_variant(2, 1_000)],
+        ),
+        Err(SurfaceContentSetError::DuplicateDensityClass {
+            density_millis: 1_000
+        })
+    );
+}
+
+#[test]
+fn surface_content_set_canonical_variant_prefers_identity_density() {
+    let extent = Size {
+        width: 640,
+        height: 480,
+    };
+    let set = SurfaceContentSet::new(
+        extent,
+        vec![
+            content_variant(3, 2_000),
+            content_variant(1, 1_000),
+            content_variant(2, 750),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(set.canonical_variant().variant, 1);
+    assert_eq!(
+        set.canonical_source(),
+        BufferSource::CpuBuffer { handle: 1 }
+    );
+
+    // Without an exact 1x variant, the nearest density wins and ties break on
+    // the stable variant identity.
+    let set = SurfaceContentSet::new(
+        extent,
+        vec![content_variant(5, 1_250), content_variant(4, 750)],
+    )
+    .unwrap();
+    assert_eq!(set.canonical_variant().variant, 4);
+}
+
+#[test]
+fn surface_content_singleton_normalizes_one_identity_raster() {
+    let extent = Size {
+        width: 320,
+        height: 200,
+    };
+    let set = SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 9 }, extent);
+
+    assert_eq!(set.logical_extent(), extent);
+    assert_eq!(set.variants().len(), 1);
+    assert_eq!(set.variants()[0].variant, 1);
+    assert_eq!(set.variants()[0].pixel_size, extent);
+    assert_eq!(
+        set.variants()[0].density_millis,
+        SURFACE_CONTENT_DENSITY_1X_MILLIS
+    );
+    assert_eq!(set.canonical_source(), BufferSource::DmaBuf { handle: 9 });
+}
+
+#[test]
+fn dma_buf_pairing_covers_every_variant_of_a_content_set() {
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let extent = Size {
+        width: 640,
+        height: 480,
+    };
+    let mut transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(7),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(1, 1),
+        namespace: None,
+        target_geometry: geometry,
+        content: SurfaceContentSet::new(
+            extent,
+            vec![
+                content_variant(1, 1_000),
+                SurfaceContentVariant {
+                    variant: 2,
+                    source: BufferSource::DmaBuf { handle: 44 },
+                    pixel_size: extent,
+                    density_millis: 2_000,
+                },
+            ],
+        )
+        .unwrap(),
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let present = DmaBufPresentKey {
+        transaction: TransactionId::from_raw(7),
+        surface: SurfaceId::new(1, 1),
+        buffer: BufferHandle::from_raw(44),
+    };
+
+    // A DMA-BUF variant anywhere in the set requires its exact Present pair,
+    // even when the canonical variant is a CPU raster.
+    assert!(!dma_buf_present_pairs_are_exact(
+        std::slice::from_ref(&transaction),
+        &[]
+    ));
+    assert!(dma_buf_present_pairs_are_exact(
+        std::slice::from_ref(&transaction),
+        std::slice::from_ref(&present)
+    ));
+
+    transaction.content = SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 1 }, extent);
+    assert!(!dma_buf_present_pairs_are_exact(
+        std::slice::from_ref(&transaction),
+        std::slice::from_ref(&present)
+    ));
 }

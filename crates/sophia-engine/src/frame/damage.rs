@@ -83,7 +83,7 @@ pub fn output_frame_damage_snapshot(
             surface,
             committed_generation: committed.committed_generation,
             geometry: committed.geometry,
-            buffer: committed.buffer,
+            buffer: committed.buffer(),
         });
     }
     Ok(OutputFrameDamageSnapshot {

@@ -19,9 +19,10 @@ mod prelude {
         OutputEdge, OutputId, OutputReservation, Point, PortalTransferId, Rect, Region,
         RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
         SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, SanitizedChromeMetadata, SeatId, Size,
-        SurfaceId, SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
-        SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
-        TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
+        SurfaceContentSet, SurfaceId, SurfaceOutputReservations, SurfacePresentationRole,
+        SurfaceTransaction, SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit,
+        TransactionId, TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket,
+        WorkspaceId,
     };
     pub(crate) use sophia_runtime::{
         RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,

@@ -183,7 +183,7 @@ fn layer_snapshot(
         namespace: metadata.and_then(|metadata| metadata.namespace),
         stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
         geometry: state.geometry,
-        source: state.buffer,
+        source: state.buffer(),
         damage: state.damage.clone(),
         opacity: 1.0,
         crop: None,
@@ -221,7 +221,13 @@ mod tests {
                     width: 640,
                     height: 480,
                 },
-                buffer: BufferSource::CpuBuffer { handle: 7 },
+                content: sophia_protocol::SurfaceContentSet::singleton(
+                    BufferSource::CpuBuffer { handle: 7 },
+                    sophia_protocol::Size {
+                        width: 640,
+                        height: 480,
+                    },
+                ),
                 damage: Region::empty(),
             },
             CommittedSurfaceState {
@@ -233,7 +239,13 @@ mod tests {
                     width: 640,
                     height: 480,
                 },
-                buffer: BufferSource::CpuBuffer { handle: 8 },
+                content: sophia_protocol::SurfaceContentSet::singleton(
+                    BufferSource::CpuBuffer { handle: 8 },
+                    sophia_protocol::Size {
+                        width: 640,
+                        height: 480,
+                    },
+                ),
                 damage: Region::empty(),
             },
         ];
@@ -409,11 +421,14 @@ mod tests {
                 width: 200,
                 height: 100,
             },
-            target_content_size: Size {
-                width: 200,
-                height: 100,
-            },
-            target_buffer: BufferSource::CpuBuffer { handle: 77 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 77 },
+                sophia_protocol::Size {
+                    width: 200,
+                    height: 100,
+                },
+            ),
+
             damage: Region::single(Rect {
                 x: 0,
                 y: 0,

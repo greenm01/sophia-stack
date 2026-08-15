@@ -21,11 +21,14 @@ fn renderer_residency_tracks_only_cpu_buffers_owned_by_admission_groups() {
             surface,
             namespace: None,
             target_geometry: geometry,
-            target_content_size: Size {
-                width: geometry.width,
-                height: geometry.height,
-            },
-            target_buffer: BufferSource::CpuBuffer { handle: 369 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 369 },
+                sophia_protocol::Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            ),
+
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
@@ -71,11 +74,14 @@ fn released_admission_pixels_wait_for_policy_assignment() {
             surface,
             namespace: None,
             target_geometry: geometry,
-            target_content_size: Size {
-                width: geometry.width,
-                height: geometry.height,
-            },
-            target_buffer: BufferSource::CpuBuffer { handle: 371 },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 371 },
+                sophia_protocol::Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            ),
+
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,
@@ -203,13 +209,16 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
             surface,
             namespace: None,
             target_geometry: geometry,
-            target_content_size: Size {
-                width: geometry.width,
-                height: geometry.height,
-            },
-            target_buffer: BufferSource::DmaBuf {
-                handle: transaction.raw(),
-            },
+            content: sophia_protocol::SurfaceContentSet::singleton(
+                BufferSource::DmaBuf {
+                    handle: transaction.raw(),
+                },
+                sophia_protocol::Size {
+                    width: geometry.width,
+                    height: geometry.height,
+                },
+            ),
+
             damage: Region::single(geometry),
             readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
             timeout_msec: 250,

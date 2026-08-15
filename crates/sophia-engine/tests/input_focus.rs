@@ -14,7 +14,13 @@ fn committed(surface: SurfaceId) -> CommittedSurfaceState {
             width: 640,
             height: 480,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
         damage: Region::empty(),
     }
 }

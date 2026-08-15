@@ -123,7 +123,7 @@ fn authority_removal_batch_drops_the_committed_surface() {
             width: 80,
             height: 60,
         },
-        buffer: BufferSource::CpuBuffer { handle: 77 },
+        content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 77 }, sophia_protocol::Size { width: 80, height: 60 }),
         damage: Region::empty(),
     }];
 

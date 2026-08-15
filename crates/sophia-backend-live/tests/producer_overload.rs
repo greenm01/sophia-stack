@@ -66,13 +66,16 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
                     surface,
                     namespace: None,
                     target_geometry: geometry,
-                    target_content_size: Size {
-                        width: geometry.width,
-                        height: geometry.height,
-                    },
-                    target_buffer: BufferSource::DmaBuf {
-                        handle: handle.raw(),
-                    },
+                    content: sophia_protocol::SurfaceContentSet::singleton(
+                        BufferSource::DmaBuf {
+                            handle: handle.raw(),
+                        },
+                        sophia_protocol::Size {
+                            width: geometry.width,
+                            height: geometry.height,
+                        },
+                    ),
+
                     damage: Region::single(geometry),
                     readiness: SurfaceTransactionReadiness::Ready,
                     timeout_msec: 250,

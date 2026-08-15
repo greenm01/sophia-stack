@@ -605,7 +605,13 @@ fn external_wm_never_reconciles_focus_to_a_committed_hidden_surface() {
             width: 640,
             height: 480,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
         damage: Region::empty(),
     }];
 
@@ -984,7 +990,13 @@ fn vt_chord_releases_application_modifiers_before_suspension() {
             width: 640,
             height: 480,
         },
-        buffer: BufferSource::CpuBuffer { handle: 1 },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
         damage: Region::single(Rect {
             x: 0,
             y: 0,

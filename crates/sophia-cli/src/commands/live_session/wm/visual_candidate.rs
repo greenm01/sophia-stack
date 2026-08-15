@@ -25,13 +25,13 @@ fn live_transaction_observed_size(
         height: transaction.target_geometry.height,
     };
     let Some(source) = live_transaction_pixel_size(
-        transaction.target_buffer,
+        transaction.target_buffer(),
         dma_buf_sizes,
         cpu_buffer_sizes,
     ) else {
         return logical;
     };
-    if source == transaction.target_content_size {
+    if source == transaction.target_content_size() {
         logical
     } else {
         // An old or partial buffer cannot satisfy a new logical extent. Keep
@@ -45,7 +45,7 @@ fn live_transaction_visual_evidence(
     transaction: &SurfaceTransaction,
     batch: &sophia_x_authority::XAuthorityObservedTransactionBatch,
 ) -> sophia_engine::SurfaceVisualEvidence {
-    let presented = match transaction.target_buffer {
+    let presented = match transaction.target_buffer() {
         sophia_protocol::BufferSource::DmaBuf { handle } => batch
             .present_submissions
             .iter()
@@ -73,7 +73,7 @@ fn live_transaction_visual_evidence(
                         candidate.transaction == transaction.transaction
                             && candidate.surface == transaction.surface
                             && matches!(
-                                candidate.target_buffer,
+                                candidate.target_buffer(),
                                 sophia_protocol::BufferSource::CpuBuffer { .. }
                             )
                     })
@@ -109,7 +109,7 @@ impl PersistentLiveLayout {
             return false;
         }
         let Some(source_size) = live_transaction_pixel_size(
-            transaction.target_buffer,
+            transaction.target_buffer(),
             &self.dma_buf_sizes,
             &self.cpu_buffer_sizes,
         ) else {
