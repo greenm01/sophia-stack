@@ -6,6 +6,48 @@ fn session_protocol_errors_are_fatal(
     protocol_error_count != 0 && (normal_session || application_proof)
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct SessionClientFatalCleanupEvidence {
+    frontend_intake_stopped: bool,
+    native_heads_in_flight_before: usize,
+    native_cleanup_required: bool,
+    native_suspend_attempted: bool,
+    native_suspend_reported: bool,
+    native_drained: bool,
+    abandoned_scanouts: usize,
+    renderer_images_cleared: bool,
+    presentations_shutdown: bool,
+}
+
+impl SessionClientFatalCleanupEvidence {
+    const fn clean(self) -> bool {
+        self.frontend_intake_stopped
+            && (!self.native_cleanup_required
+            || (self.native_suspend_attempted
+                && self.native_suspend_reported
+                && self.native_drained
+                && self.abandoned_scanouts == 0
+                && self.renderer_images_cleared))
+            && self.presentations_shutdown
+    }
+}
+
+fn settle_session_client_fatal_error(
+    original: &str,
+    evidence: SessionClientFatalCleanupEvidence,
+    cleanup_failures: &[String],
+) -> String {
+    if evidence.clean() && cleanup_failures.is_empty() {
+        return original.to_owned();
+    }
+    let details = if cleanup_failures.is_empty() {
+        "bounded cleanup did not reach a clean terminal state".to_owned()
+    } else {
+        cleanup_failures.join("; ")
+    };
+    format!("{original}; bounded session cleanup failed: {details}")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhysicalInputRoutingMode {
     Suppressed,

@@ -526,6 +526,370 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
 }
 
 #[test]
+fn x11_dispatch_poly_rectangle_draws_outlines_and_validates_resources() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x220141;
+    let gc = 0x220142;
+    let create = decode_x11_core_request(
+        context(namespace, 621, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 32, 24),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let create_gc = decode_x11_core_request(
+        context(namespace, 622, XByteOrder::LittleEndian),
+        &create_gc_values_request(
+            XByteOrder::LittleEndian,
+            gc,
+            window,
+            6,
+            u32::MAX,
+            0x00ff_8040,
+            0,
+            0,
+            0,
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 55),
+        create_gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let outline = decode_x11_core_request(
+        context(namespace, 623, XByteOrder::LittleEndian),
+        &poly_rectangle_request(
+            XByteOrder::LittleEndian,
+            window,
+            gc,
+            &[(5, 6, 10, 8), (20, 4, 0, 5), (2, 18, 4, 0)],
+        ),
+    )
+    .unwrap();
+    let outline = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 67),
+        outline,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(outline.outputs.is_empty());
+    let response = outline.response.unwrap();
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(response.transactions.len(), 1);
+    assert_eq!(
+        response.transactions[0].damage,
+        Region::single(Rect {
+            x: 2,
+            y: 4,
+            width: 19,
+            height: 15,
+        })
+    );
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime.take_cpu_buffer_update().unwrap()
+    else {
+        panic!("the first rectangle draw must replace the CPU buffer");
+    };
+    let pixel = |x: usize, y: usize| {
+        let offset = y * usize::try_from(snapshot.stride).unwrap() + x * 4;
+        u32::from_le_bytes(snapshot.bytes[offset..offset + 4].try_into().unwrap())
+    };
+    // GXxor exposes duplicate corner writes; every outline pixel must be touched once.
+    for (x, y) in [(5, 6), (15, 6), (15, 14), (5, 14), (10, 6), (5, 10)] {
+        assert_eq!(pixel(x, y), 0x00ff_8040);
+    }
+    assert_eq!(pixel(10, 10), 0);
+    for y in 4..=9 {
+        assert_eq!(pixel(20, y), 0x00ff_8040);
+    }
+    for x in 2..=6 {
+        assert_eq!(pixel(x, 18), 0x00ff_8040);
+    }
+
+    let wide_window = 0x220148;
+    let wide_gc = 0x220145;
+    let create_wide_window = decode_x11_core_request(
+        context(namespace, 624, XByteOrder::LittleEndian),
+        &create_window_request(
+            XByteOrder::LittleEndian,
+            wide_window,
+            0,
+            0,
+            32,
+            24,
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 1),
+        create_wide_window,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let create_wide_gc = decode_x11_core_request(
+        context(namespace, 624, XByteOrder::LittleEndian),
+        &create_gc_values_request(
+            XByteOrder::LittleEndian,
+            wide_gc,
+            wide_window,
+            6,
+            u32::MAX,
+            0x0000_c0ff,
+            0,
+            3,
+            0,
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 55),
+        create_wide_gc,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let wide = decode_x11_core_request(
+        context(namespace, 625, XByteOrder::LittleEndian),
+        &poly_rectangle_request(
+            XByteOrder::LittleEndian,
+            wide_window,
+            wide_gc,
+            &[(23, 13, 4, 4)],
+        ),
+    )
+    .unwrap();
+    let wide = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 67),
+        wide,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(
+        wide.response.unwrap().transactions[0].damage,
+        Region::single(Rect {
+            x: 22,
+            y: 12,
+            width: 7,
+            height: 7,
+        })
+    );
+    let XAuthorityCpuBufferUpdate::Replace(wide_snapshot) =
+        runtime.take_cpu_buffer_update().unwrap()
+    else {
+        panic!("wide rectangle draw must preserve a CPU snapshot");
+    };
+    let wide_pixel = |x: usize, y: usize| {
+        let offset = y * usize::try_from(wide_snapshot.stride).unwrap() + x * 4;
+        u32::from_le_bytes(wide_snapshot.bytes[offset..offset + 4].try_into().unwrap())
+    };
+    for y in 12..=18 {
+        for x in 22..=28 {
+            let expected = if (x, y) == (25, 15) { 0 } else { 0x0000_c0ff };
+            assert_eq!(wide_pixel(x, y), expected, "pixel ({x}, {y})");
+        }
+    }
+
+    let empty = decode_x11_core_request(
+        context(namespace, 624, XByteOrder::LittleEndian),
+        &poly_rectangle_request(XByteOrder::LittleEndian, window, gc, &[]),
+    )
+    .unwrap();
+    let empty = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 67),
+        empty,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(empty.response.unwrap().outcome, XAuthorityResponseOutcome::Accepted);
+    assert!(runtime.take_cpu_buffer_update().is_none());
+
+    for (sequence, drawable, gc, code, resource_id) in [
+        (5, window, 0x2201ff, XErrorCode::BadGraphicsContext, 0x2201ff),
+        (6, 0x2201fe, gc, XErrorCode::BadDrawable, 0x2201fe),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, 624 + u64::from(sequence), XByteOrder::LittleEndian),
+            &poly_rectangle_request(XByteOrder::LittleEndian, drawable, gc, &[]),
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 67),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert_eq!(
+            result.outputs,
+            vec![XClientOutput::Error(XClientError {
+                code,
+                sequence,
+                resource_id,
+                minor_code: 0,
+                major_code: 67,
+            })]
+        );
+        assert_eq!(
+            result.encoded_outputs(XByteOrder::LittleEndian)[0][1],
+            code.wire_code()
+        );
+    }
+
+    let other_namespace = NamespaceId::from_raw(47);
+    let confined = decode_x11_core_request(
+        context(other_namespace, 630, XByteOrder::LittleEndian),
+        &poly_rectangle_request(XByteOrder::LittleEndian, window, gc, &[]),
+    )
+    .unwrap();
+    let confined = dispatch_x11_wire_request(
+        dispatch_context(other_namespace, 7, XByteOrder::LittleEndian, 67),
+        confined,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        confined.outputs.as_slice(),
+        [XClientOutput::Error(XClientError {
+            code: XErrorCode::BadAccess,
+            resource_id,
+            ..
+        })] if *resource_id == window
+    ));
+
+    let pixmap = 0x220143;
+    let depth_one_gc = 0x220144;
+    for (sequence, major_opcode, request) in [
+        (
+            7,
+            53,
+            create_pixmap_request(XByteOrder::LittleEndian, 1, pixmap, window, 8, 8),
+        ),
+        (
+            8,
+            55,
+            create_gc_request(XByteOrder::LittleEndian, depth_one_gc, pixmap),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, 630 + u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                sequence,
+                XByteOrder::LittleEndian,
+                major_opcode,
+            ),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+    let mismatch = decode_x11_core_request(
+        context(namespace, 639, XByteOrder::LittleEndian),
+        &poly_rectangle_request(XByteOrder::LittleEndian, window, depth_one_gc, &[]),
+    )
+    .unwrap();
+    let mismatch = dispatch_x11_wire_request(
+        dispatch_context(namespace, 9, XByteOrder::LittleEndian, 67),
+        mismatch,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        mismatch.outputs.as_slice(),
+        [XClientOutput::Error(XClientError {
+            code: XErrorCode::BadMatch,
+            resource_id,
+            ..
+        })] if *resource_id == window
+    ));
+
+    let source_pixmap = 0x220146;
+    let retained_gc = 0x220147;
+    for (sequence, major_opcode, request) in [
+        (
+            10,
+            53,
+            create_pixmap_request(
+                XByteOrder::LittleEndian,
+                24,
+                source_pixmap,
+                window,
+                8,
+                8,
+            ),
+        ),
+        (
+            11,
+            55,
+            create_gc_request(XByteOrder::LittleEndian, retained_gc, source_pixmap),
+        ),
+        (
+            12,
+            54,
+            resource_request(XByteOrder::LittleEndian, 54, source_pixmap),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, 640 + u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                sequence,
+                XByteOrder::LittleEndian,
+                major_opcode,
+            ),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(result.outputs.is_empty());
+    }
+    let retained = decode_x11_core_request(
+        context(namespace, 653, XByteOrder::LittleEndian),
+        &poly_rectangle_request(XByteOrder::LittleEndian, window, retained_gc, &[]),
+    )
+    .unwrap();
+    let retained = dispatch_x11_wire_request(
+        dispatch_context(namespace, 13, XByteOrder::LittleEndian, 67),
+        retained,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert_eq!(
+        retained.response.unwrap().outcome,
+        XAuthorityResponseOutcome::Accepted
+    );
+    assert!(retained.outputs.is_empty());
+}
+
+#[test]
 fn x11_dispatch_put_image_emits_software_surface_transaction() {
     let namespace = NamespaceId::from_raw(46);
     let mut runtime = XAuthorityRuntime::new();

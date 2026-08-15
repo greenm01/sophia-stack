@@ -939,7 +939,11 @@ is excluded; retained product behavior is not.
   a shutdown-only primary-head identity lookup after the primary flipped frame 12
   before its sibling submitted. Logical submitted identity now lives in the group
   lifecycle through the final callback, and startup readiness is deduplicated to
-  the one logical output required by the verifier. This item remains
+  the one logical output required by the verifier. The next run reached repeated
+  joined presentation but typing `ll` exposed missing X11 `PolyRectangle` support
+  in the xterm proof client; opcode 67 now has bounded outline rendering and full
+  drawable/GC error semantics. Fatal client exits also enter bounded native and
+  Present cleanup instead of bypassing drain evidence. This item remains
   open until the diagnostic-capable tty4 run visibly passes and its archive verifies;
   no userspace test is a substitute for that AMDGPU evidence.
 - [ ] Apply a desktop output configuration change to a *running* session, so an

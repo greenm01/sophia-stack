@@ -319,6 +319,9 @@ fn run_session_loop(
     let mut input_text_match = false;
     let mut primary_child_exited = child.is_none();
     let mut primary_exit_status = None;
+    let mut terminal_client_error: Option<(&'static str, String)> = None;
+    let mut terminal_client_intake_stopped = false;
+    let mut terminal_client_cleanup_failures = Vec::new();
     let mut post_startup_exit_pointer_reported = false;
     let mut application_surface_missing_since: Option<Instant> = None;
     let mut client_stdout = Vec::new();

@@ -359,6 +359,11 @@ pub enum XWireRequest {
         gc: XResourceId,
         points: Vec<XPoint>,
     },
+    PolyRectangle {
+        drawable: XResourceId,
+        gc: XResourceId,
+        rectangles: Vec<Rect>,
+    },
     FillPoly {
         drawable: XResourceId,
         gc: XResourceId,
@@ -860,6 +865,7 @@ pub fn decode_x11_core_request(
         X_COPY_AREA => decode_copy_area(context, bytes),
         X_POLY_LINE => decode_poly_line(context, bytes),
         X_POLY_SEGMENT => decode_poly_segment(context, bytes),
+        X_POLY_RECTANGLE => decode_poly_rectangle(context, bytes),
         X_FILL_POLY => decode_fill_poly(context, bytes),
         X_POLY_FILL_RECTANGLE => decode_poly_fill_rectangle(context, bytes),
         X_POLY_FILL_ARC => decode_poly_fill_arc(context, bytes),

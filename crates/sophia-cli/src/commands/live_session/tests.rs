@@ -15,11 +15,12 @@ use super::{
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
     SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-    SessionPointerPlacement, SessionProcessGuard, Size, Transform, XPresentCadence,
-    authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
-    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
-    completed_pointer_gesture_geometry, current_cpu_frame_is_presented,
-    flush_all_client_pressed_keys, global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
+    SessionClientFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard, Size,
+    Transform, XPresentCadence, authority_transaction_count, authority_wait_timeout,
+    center_geometry_without_scaling, clamp_floating_pointer_outline,
+    clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
+    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
+    global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_observed_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
@@ -32,9 +33,14 @@ use super::{
     production_cycle_native_owner_policy, public_policy_launch_spec,
     public_policy_restart_decision, public_session_operations, record_runtime_commits,
     rects_intersect, resolve_public_shortcuts, route_input_events,
-    session_protocol_errors_are_fatal, stable_gpu_frame_proves_post_input_pixels,
-    startup_submission_requirement, successful_primary_exit_ends_session,
-    synchronize_runtime_surface_chrome_style, take_settled_input_delivery_wait,
+    session_protocol_errors_are_fatal, settle_session_client_fatal_error,
+    stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
+    successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
+    take_settled_input_delivery_wait,
+};
+use sophia_backend_live::{
+    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
 };
 use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, SessionClientKeyState, SessionClientPressedKey,
@@ -446,6 +452,77 @@ fn settled_input_delivery_wait_is_consumed_once() {
 fn successful_primary_exit_keeps_requested_input_proof_alive() {
     assert!(successful_primary_exit_ends_session(false));
     assert!(!successful_primary_exit_ends_session(true));
+}
+
+#[test]
+fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
+    let original = "session client exited during live session with status exit status: 83";
+    let frame = LiveProductionNativeFrameId::from_raw(10);
+    let mut group =
+        LiveProductionMirrorGroupLifecycle::new(OutputId::from_raw(7), [94, 104]).unwrap();
+    assert_eq!(group.begin(frame), LiveProductionMirrorGroupBegin::Started);
+    assert_eq!(
+        group.mark_submitted(94, frame),
+        LiveProductionMirrorHeadTransition::Accepted
+    );
+    assert_eq!(
+        group.mark_flipped(94, frame),
+        LiveProductionMirrorHeadTransition::Accepted
+    );
+    assert_eq!(
+        group.mark_submitted(104, frame),
+        LiveProductionMirrorHeadTransition::GroupReady
+    );
+    assert!(group.awaiting_flips());
+
+    // Fatal intake stops here. The bounded drain must retain the sibling owner
+    // until its callback joins the logical generation.
+    assert_eq!(
+        group.mark_flipped(104, frame),
+        LiveProductionMirrorHeadTransition::GroupReady
+    );
+    assert_eq!(group.take_completed_frame(), Some(frame));
+    let evidence = SessionClientFatalCleanupEvidence {
+        frontend_intake_stopped: true,
+        // The sibling head still owns frame 10 when the client fails. The
+        // bounded completion drain consumes that callback before detaching.
+        native_heads_in_flight_before: 1,
+        native_cleanup_required: true,
+        native_suspend_attempted: true,
+        native_suspend_reported: true,
+        native_drained: true,
+        abandoned_scanouts: 0,
+        renderer_images_cleared: true,
+        presentations_shutdown: true,
+    };
+
+    assert!(evidence.clean());
+    assert_eq!(
+        settle_session_client_fatal_error(original, evidence, &[]),
+        original
+    );
+}
+
+#[test]
+fn fatal_client_cleanup_aggregates_owner_abandonment_without_masking_client_error() {
+    let original = "session client exited during live session with status exit status: 83";
+    let evidence = SessionClientFatalCleanupEvidence {
+        frontend_intake_stopped: true,
+        native_heads_in_flight_before: 1,
+        native_cleanup_required: true,
+        native_suspend_attempted: true,
+        native_suspend_reported: true,
+        native_drained: false,
+        abandoned_scanouts: 1,
+        renderer_images_cleared: false,
+        presentations_shutdown: true,
+    };
+    let failures = vec!["native completion forced detach with 1 abandoned scanouts".to_owned()];
+
+    let error = settle_session_client_fatal_error(original, evidence, &failures);
+    assert!(error.starts_with(original));
+    assert!(error.contains("bounded session cleanup failed"));
+    assert!(error.contains("1 abandoned scanouts"));
 }
 
 #[test]

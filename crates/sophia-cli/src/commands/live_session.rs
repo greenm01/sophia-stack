@@ -812,6 +812,8 @@ pub(crate) fn run_persistent_xterm_session(
             output_notifications,
         },
     );
+    let session_error = result.err().map(|error| error.to_string());
+    let mut outer_cleanup_failures = Vec::new();
     drop(randr_witness);
     println!("sophia_live_session_lifecycle schema=1 status=stopping_frontend");
     // Stop frontend routing before terminating its clients. Pointer motion can
@@ -821,23 +823,51 @@ pub(crate) fn run_persistent_xterm_session(
     drop(input_sender);
     drop(control_sender);
     println!("sophia_live_session_lifecycle schema=1 status=stopping_clients");
-    process.terminate()?;
+    if let Err(error) = process.terminate() {
+        outer_cleanup_failures.push(format!("session client cleanup failed: {error}"));
+    }
     let _ = service_command_sender.send(XServerFrontendServiceCommand::StopAndDisconnect);
     println!("sophia_live_session_lifecycle schema=1 status=joining_frontend");
-    let server_result = server
+    match server
         .take()
         .expect("X Server Frontend handle is retained after startup")
         .join()
-        .map_err(|_| "persistent X authority server thread panicked")?;
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            outer_cleanup_failures.push(format!("persistent X authority server failed: {error}"))
+        }
+        Err(_) => {
+            outer_cleanup_failures.push("persistent X authority server thread panicked".to_owned())
+        }
+    }
     println!("sophia_live_session_lifecycle schema=1 status=frontend_joined");
-    server_result.map_err(|error| format!("persistent X authority server failed: {error}"))?;
-    namespace_registry
-        .lock()
-        .map_err(|_| "Sophia namespace registry lock was poisoned")?
-        .revoke_namespace(x_namespace.id)?;
-    let xauthority_cleanup = xauthority.remove();
-    result?;
-    xauthority_cleanup?;
+    match namespace_registry.lock() {
+        Ok(mut registry) => {
+            if let Err(error) = registry.revoke_namespace(x_namespace.id) {
+                outer_cleanup_failures.push(format!("namespace revocation failed: {error}"));
+            }
+        }
+        Err(_) => {
+            outer_cleanup_failures.push("Sophia namespace registry lock was poisoned".to_owned())
+        }
+    }
+    if let Err(error) = xauthority.remove() {
+        outer_cleanup_failures.push(format!("X authority cleanup failed: {error}"));
+    }
+    if let Some(original) = session_error {
+        if outer_cleanup_failures.is_empty() {
+            return Err(original.into());
+        }
+        return Err(format!(
+            "{original}; outer session cleanup failed: {}",
+            outer_cleanup_failures.join("; ")
+        )
+        .into());
+    }
+    if let Some(error) = outer_cleanup_failures.into_iter().next() {
+        return Err(error.into());
+    }
     println!(
         "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
     );

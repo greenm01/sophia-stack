@@ -32,39 +32,106 @@
         cursor_max_motion_to_submit,
     } = metrics;
 
+    let mut cleanup_failures = terminal_client_cleanup_failures;
+    let mut client_fatal_cleanup = SessionClientFatalCleanupEvidence {
+        frontend_intake_stopped: terminal_client_intake_stopped,
+        native_cleanup_required: native_scanout.is_some(),
+        presentations_shutdown: runtime.is_none(),
+        ..Default::default()
+    };
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
-        let report =
-            runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2))?;
-        let evicted_renderer_images = native_scanout.clear_renderer_images()?;
-        println!(
-            "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={}",
-            report.outcome.reduced_name(),
-            report.outcome.drained(),
-            report.abandoned_scanouts,
-            report
-                .skipped_present
-                .map_or_else(|| "none".to_owned(), |transaction| transaction.raw().to_string()),
-        );
-        println!(
-            "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
-        );
-        if !report.outcome.drained() || report.abandoned_scanouts != 0 {
-            return Err(format!(
-                "native completion forced detach with {} abandoned scanouts",
-                report.abandoned_scanouts,
-            )
-            .into());
+        client_fatal_cleanup.native_suspend_attempted = true;
+        client_fatal_cleanup.native_heads_in_flight_before =
+            native_scanout.head_scanout_in_flight_count();
+        match runtime.suspend_native_scanout(native_scanout, &outputs, Duration::from_secs(2)) {
+            Ok(report) => {
+                client_fatal_cleanup.native_suspend_reported = true;
+                client_fatal_cleanup.native_drained = report.outcome.drained();
+                client_fatal_cleanup.abandoned_scanouts = report.abandoned_scanouts;
+                println!(
+                    "sophia_live_session_native_suspend schema=2 outcome={} drained={} abandoned_scanouts={} skipped_present={}",
+                    report.outcome.reduced_name(),
+                    report.outcome.drained(),
+                    report.abandoned_scanouts,
+                    report.skipped_present.map_or_else(
+                        || "none".to_owned(),
+                        |transaction| transaction.raw().to_string()
+                    ),
+                );
+                if !report.outcome.drained() || report.abandoned_scanouts != 0 {
+                    cleanup_failures.push(format!(
+                        "native completion forced detach with {} abandoned scanouts",
+                        report.abandoned_scanouts,
+                    ));
+                }
+            }
+            Err(error) => {
+                println!(
+                    "sophia_live_session_native_suspend schema=2 outcome=error drained=false abandoned_scanouts=unknown skipped_present=unknown error={error}"
+                );
+                cleanup_failures.push(format!("native completion drain failed: {error}"));
+            }
+        }
+        match native_scanout.clear_renderer_images() {
+            Ok(evicted_renderer_images) => {
+                client_fatal_cleanup.renderer_images_cleared = true;
+                println!(
+                    "sophia_live_renderer_images schema=1 status=cleared evicted={evicted_renderer_images}"
+                );
+            }
+            Err(error) => {
+                println!("sophia_live_renderer_images schema=1 status=error error={error}");
+                cleanup_failures.push(format!("renderer-image cleanup failed: {error}"));
+            }
         }
     }
     if let Some(runtime) = runtime.as_mut() {
-        let report = runtime.shutdown_presentations()?;
-        present_feedback.clear();
-        runtime.drain_present_feedback_into(&mut present_feedback)?;
-        for outcome in present_feedback.drain(..) {
-            present_observer.observe_feedback(outcome);
+        match runtime.shutdown_presentations() {
+            Ok(report) => {
+                client_fatal_cleanup.presentations_shutdown = true;
+                present_feedback.clear();
+                match runtime.drain_present_feedback_into(&mut present_feedback) {
+                    Ok(()) => {
+                        for outcome in present_feedback.drain(..) {
+                            present_observer.observe_feedback(outcome);
+                        }
+                    }
+                    Err(error) => cleanup_failures
+                        .push(format!("presentation feedback cleanup failed: {error}")),
+                }
+                present_observer.observe_disconnect(report);
+                present_observer.emit_progress(true);
+            }
+            Err(error) => {
+                cleanup_failures.push(format!("presentation shutdown failed: {error}"));
+            }
         }
-        present_observer.observe_disconnect(report);
-        present_observer.emit_progress(true);
+    }
+    if let Some((source, original)) = terminal_client_error.as_ref() {
+        let clean = client_fatal_cleanup.clean() && cleanup_failures.is_empty();
+        println!(
+            "sophia_live_session_client_fatal schema=1 status={} source={source} frontend_intake_stopped={} native_heads_in_flight_before={} native_cleanup_required={} native_suspend_attempted={} native_suspend_reported={} native_drained={} abandoned_scanouts={} renderer_images_cleared={} presentations_shutdown={} cleanup_errors={}",
+            if clean { "cleaned" } else { "cleanup_failed" },
+            client_fatal_cleanup.frontend_intake_stopped,
+            client_fatal_cleanup.native_heads_in_flight_before,
+            client_fatal_cleanup.native_cleanup_required,
+            client_fatal_cleanup.native_suspend_attempted,
+            client_fatal_cleanup.native_suspend_reported,
+            client_fatal_cleanup.native_drained,
+            client_fatal_cleanup.abandoned_scanouts,
+            client_fatal_cleanup.renderer_images_cleared,
+            client_fatal_cleanup.presentations_shutdown,
+            cleanup_failures.len(),
+        );
+        return Err(settle_session_client_fatal_error(
+            original,
+            client_fatal_cleanup,
+            &cleanup_failures,
+        )
+        .into());
+    }
+    if let Some(error) = cleanup_failures.into_iter().next() {
+        return Err(error.into());
     }
     if input_presented_latency.is_none()
         && input_pixel_change

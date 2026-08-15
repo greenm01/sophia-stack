@@ -47,6 +47,7 @@ impl Default for XGraphicsContextValues {
 pub struct XGraphicsContextRecord {
     pub id: XResourceId,
     pub drawable: XResourceId,
+    pub depth: u8,
     pub namespace: NamespaceId,
     pub values: XGraphicsContextValues,
 }
@@ -62,6 +63,7 @@ impl XGraphicsContextTable {
         namespace: NamespaceId,
         id: XResourceId,
         drawable: XResourceId,
+        depth: u8,
         values: XGraphicsContextValues,
     ) -> Result<(), XAuthorityAccessError> {
         if !namespace.is_valid() {
@@ -75,6 +77,7 @@ impl XGraphicsContextTable {
             XGraphicsContextRecord {
                 id,
                 drawable,
+                depth,
                 namespace,
                 values,
             },

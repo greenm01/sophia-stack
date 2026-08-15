@@ -10,6 +10,7 @@ fn dispatch_core_drawing_request(
             XWireRequest::PolyFillRectangle { .. }
             | XWireRequest::CopyArea { .. }
             | XWireRequest::PolyLine { .. }
+            | XWireRequest::PolyRectangle { .. }
             | XWireRequest::PolySegment { .. }
             | XWireRequest::PolyFillArc { .. }
             | XWireRequest::PolyText8 { .. }
@@ -50,6 +51,77 @@ fn dispatch_core_drawing_request(
                         ),
                         Err(error) => XAuthorityResponsePacket::rejected(transaction, error),
                     };
+                    let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                        vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            u32::try_from(drawable.local.raw()).unwrap_or(0),
+                        ))]
+                    } else {
+                        Vec::new()
+                    };
+                    XDispatchResult {
+                        response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::PolyRectangle {
+                    drawable,
+                    gc,
+                    rectangles,
+                } => {
+                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
+                        return Handled(core_draw_validation_error(
+                            context,
+                            transaction,
+                            error,
+                            XErrorCode::BadDrawable,
+                            drawable,
+                        ));
+                    }
+                    let (gc_depth, values) = match runtime
+                        .graphics_context_depth_and_values(context.namespace, gc)
+                    {
+                        Ok(record) => record,
+                        Err(error) => {
+                            return Handled(core_draw_validation_error(
+                                context,
+                                transaction,
+                                error,
+                                XErrorCode::BadGraphicsContext,
+                                gc,
+                            ));
+                        }
+                    };
+                    if runtime.drawable_depth(context.namespace, drawable) != Ok(gc_depth) {
+                        return Handled(core_draw_validation_error(
+                            context,
+                            transaction,
+                            XAuthorityRuntimeError::InvalidSurface,
+                            XErrorCode::BadMatch,
+                            drawable,
+                        ));
+                    }
+                    if runtime
+                        .validate_pixmap_access(context.namespace, drawable)
+                        .is_ok()
+                    {
+                        return Handled(XDispatchResult {
+                            response: Some(XAuthorityResponsePacket::accepted(transaction)),
+                            outputs: Vec::new(),
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    let response = runtime.apply_rectangle_draw(
+                        transaction,
+                        context.namespace,
+                        drawable,
+                        &rectangles,
+                        &values,
+                    );
                     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -349,4 +421,37 @@ fn dispatch_core_drawing_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     })
+}
+
+fn core_draw_validation_error(
+    context: XDispatchContext,
+    transaction: TransactionId,
+    runtime_error: XAuthorityRuntimeError,
+    missing_resource_code: XErrorCode,
+    resource: XResourceId,
+) -> XDispatchResult {
+    let code = match runtime_error {
+        XAuthorityRuntimeError::InvalidResource
+        | XAuthorityRuntimeError::UnknownResource
+        | XAuthorityRuntimeError::WrongResourceKind
+        | XAuthorityRuntimeError::InvalidSurface => missing_resource_code,
+        _ => x_error_from_runtime(
+            runtime_error,
+            context.sequence,
+            context.major_opcode,
+            u32::try_from(resource.local.raw()).unwrap_or(0),
+        )
+        .code,
+    };
+    XDispatchResult {
+        response: Some(XAuthorityResponsePacket::rejected(transaction, runtime_error)),
+        outputs: vec![XClientOutput::Error(crate::XClientError {
+            code,
+            sequence: context.sequence,
+            resource_id: u32::try_from(resource.local.raw()).unwrap_or(0),
+            minor_code: 0,
+            major_code: context.major_opcode,
+        })],
+        metadata_candidates: Vec::new(),
+    }
 }

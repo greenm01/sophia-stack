@@ -650,6 +650,26 @@ fn poly_fill_rectangle_request(
     out
 }
 
+fn poly_rectangle_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    rectangles: &[(i16, i16, u16, u16)],
+) -> Vec<u8> {
+    let mut out = vec![67, 0];
+    let len_units = 3 + rectangles.len() * 2;
+    push_u16(&mut out, byte_order, len_units as u16);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, gc);
+    for (x, y, width, height) in rectangles {
+        push_i16(&mut out, byte_order, *x);
+        push_i16(&mut out, byte_order, *y);
+        push_u16(&mut out, byte_order, *width);
+        push_u16(&mut out, byte_order, *height);
+    }
+    out
+}
+
 fn poly_text8_request(
     byte_order: XByteOrder,
     drawable: u32,

@@ -306,6 +306,35 @@ fn decode_poly_fill_rectangle(
     })
 }
 
+fn decode_poly_rectangle(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_POLY_RECTANGLE, X_POLY_RECTANGLE_REQ_LEN, bytes.len())?;
+    let rectangle_bytes = &bytes[X_POLY_RECTANGLE_REQ_LEN..];
+    if !rectangle_bytes.len().is_multiple_of(8) {
+        return Err(XWireParseError::InvalidLength {
+            opcode: X_POLY_RECTANGLE,
+            expected_at_least: X_POLY_RECTANGLE_REQ_LEN + ((rectangle_bytes.len() + 7) & !7),
+            actual: bytes.len(),
+        });
+    }
+    let mut rectangles = Vec::with_capacity(rectangle_bytes.len() / 8);
+    for rectangle in rectangle_bytes.chunks_exact(8) {
+        rectangles.push(Rect {
+            x: i32::from(context.byte_order.i16(&rectangle[0..2])),
+            y: i32::from(context.byte_order.i16(&rectangle[2..4])),
+            width: i32::from(context.byte_order.u16(&rectangle[4..6])),
+            height: i32::from(context.byte_order.u16(&rectangle[6..8])),
+        });
+    }
+    Ok(XWireRequest::PolyRectangle {
+        drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        rectangles,
+    })
+}
+
 fn decode_poly_fill_arc(
     context: XWireClientContext,
     bytes: &[u8],

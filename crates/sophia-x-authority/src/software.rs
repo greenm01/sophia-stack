@@ -337,6 +337,24 @@ impl XSoftwareBufferStore {
         finish_immutable_update(buffer, handle, replaced, Some(damage))
     }
 
+    pub fn draw_rectangles(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        rectangles: &[Rect],
+        gc: &XGraphicsContextValues,
+    ) -> Option<(XAuthorityCpuBufferUpdate, Rect)> {
+        let damage = rectangle_outline_bounds(rectangles, gc.line_width)?;
+        let handle = self.allocate_handle();
+        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let line_width = i32::from(gc.line_width.max(1));
+        for rectangle in rectangles {
+            draw_rectangle_outline(buffer, *rectangle, line_width, gc);
+        }
+        finish_immutable_update(buffer, handle, replaced, Some(damage))
+            .map(|update| (update, damage))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn copy_area(
         &mut self,
@@ -617,6 +635,94 @@ fn draw_line(
             y += sy;
         }
     }
+}
+
+fn draw_rectangle_outline(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    rectangle: Rect,
+    line_width: i32,
+    gc: &XGraphicsContextValues,
+) {
+    let half = line_width / 2;
+    let outer_left = rectangle.x.saturating_sub(half);
+    let outer_top = rectangle.y.saturating_sub(half);
+    let outer_right = rectangle
+        .x
+        .saturating_add(rectangle.width)
+        .saturating_sub(half)
+        .saturating_add(line_width);
+    let outer_bottom = rectangle
+        .y
+        .saturating_add(rectangle.height)
+        .saturating_sub(half)
+        .saturating_add(line_width);
+    let inner_left = outer_left.saturating_add(line_width);
+    let inner_top = outer_top.saturating_add(line_width);
+    let inner_right = outer_right.saturating_sub(line_width);
+    let inner_bottom = outer_bottom.saturating_sub(line_width);
+    let outer = Rect {
+        x: outer_left,
+        y: outer_top,
+        width: outer_right.saturating_sub(outer_left),
+        height: outer_bottom.saturating_sub(outer_top),
+    };
+    if inner_left >= inner_right || inner_top >= inner_bottom {
+        fill_rect(buffer, outer, gc.foreground, gc);
+        return;
+    }
+
+    // The four bands do not overlap. That keeps every pixel to one raster operation,
+    // and fill_rect clips each band before walking it.
+    for band in [
+        Rect {
+            x: outer_left,
+            y: outer_top,
+            width: outer.width,
+            height: inner_top.saturating_sub(outer_top),
+        },
+        Rect {
+            x: outer_left,
+            y: inner_bottom,
+            width: outer.width,
+            height: outer_bottom.saturating_sub(inner_bottom),
+        },
+        Rect {
+            x: outer_left,
+            y: inner_top,
+            width: inner_left.saturating_sub(outer_left),
+            height: inner_bottom.saturating_sub(inner_top),
+        },
+        Rect {
+            x: inner_right,
+            y: inner_top,
+            width: outer_right.saturating_sub(inner_right),
+            height: inner_bottom.saturating_sub(inner_top),
+        },
+    ] {
+        fill_rect(buffer, band, gc.foreground, gc);
+    }
+}
+
+fn rectangle_outline_bounds(rectangles: &[Rect], line_width: u16) -> Option<Rect> {
+    let first = *rectangles.first()?;
+    let mut left = first.x;
+    let mut top = first.y;
+    let mut right = first.x.saturating_add(first.width);
+    let mut bottom = first.y.saturating_add(first.height);
+    for rectangle in &rectangles[1..] {
+        left = left.min(rectangle.x);
+        top = top.min(rectangle.y);
+        right = right.max(rectangle.x.saturating_add(rectangle.width));
+        bottom = bottom.max(rectangle.y.saturating_add(rectangle.height));
+    }
+    let width = i32::from(line_width.max(1));
+    let half = width / 2;
+    Some(Rect {
+        x: left.saturating_sub(half),
+        y: top.saturating_sub(half),
+        width: right.saturating_sub(left).saturating_add(width),
+        height: bottom.saturating_sub(top).saturating_add(width),
+    })
 }
 
 fn point_bounds(points: &[XPoint], line_width: u16) -> Option<Rect> {

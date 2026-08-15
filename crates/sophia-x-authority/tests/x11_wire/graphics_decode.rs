@@ -34,6 +34,60 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         }
     );
 
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let outline = decode_x11_core_request(
+            context(namespace, 508, byte_order),
+            &poly_rectangle_request(
+                byte_order,
+                0x220010,
+                0x220011,
+                &[(-5, 6, 40, 30), (10, -12, 8, 9)],
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            outline,
+            XWireRequest::PolyRectangle {
+                drawable: XResourceId::new(0x220010, 1),
+                gc: XResourceId::new(0x220011, 1),
+                rectangles: vec![
+                    Rect {
+                        x: -5,
+                        y: 6,
+                        width: 40,
+                        height: 30,
+                    },
+                    Rect {
+                        x: 10,
+                        y: -12,
+                        width: 8,
+                        height: 9,
+                    },
+                ],
+            }
+        );
+    }
+
+    let mut malformed = poly_rectangle_request(
+        XByteOrder::LittleEndian,
+        0x220010,
+        0x220011,
+        &[],
+    );
+    malformed[2..4].copy_from_slice(&4u16.to_le_bytes());
+    malformed.extend_from_slice(&[0; 4]);
+    assert_eq!(
+        decode_x11_core_request(
+            context(namespace, 509, XByteOrder::LittleEndian),
+            &malformed,
+        ),
+        Err(XWireParseError::InvalidLength {
+            opcode: 67,
+            expected_at_least: 20,
+            actual: 16,
+        })
+    );
+
     let segments = decode_x11_core_request(
         context(namespace, 508, XByteOrder::LittleEndian),
         &poly_segment_request(

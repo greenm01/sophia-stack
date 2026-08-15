@@ -346,6 +346,20 @@
             && let Some(status) = primary_child.try_wait()?
         {
             primary_exit_status = Some(status);
+            if !status.success() && !config.normal_session {
+                let error =
+                    format!("session client exited during live session with status {status}");
+                terminal_client_error = Some(("primary", error));
+                match frontend_service_sender.send(XServerFrontendServiceCommand::StopAccepting) {
+                    Ok(()) => terminal_client_intake_stopped = true,
+                    Err(error) => terminal_client_cleanup_failures
+                        .push(format!("frontend intake stop failed: {error}")),
+                }
+                println!(
+                    "sophia_live_session_client_fatal schema=1 status=detected source=primary exit_status={status} action=bounded_cleanup"
+                );
+                break 'session;
+            }
             if status.success()
                 && config.expect_physical_pointer
                 && metrics.physical_pointer_buttons_routed == 0
@@ -388,12 +402,6 @@
                     && successful_primary_exit_ends_session(config.input_proof_requested())
                 {
                     break;
-                }
-                if !status.success() {
-                    return Err(format!(
-                        "session client exited during live session with status {status}"
-                    )
-                    .into());
                 }
                 // The proof helper intentionally exits after displaying its
                 // received text. Keep the session and secondary terminal alive so
@@ -455,11 +463,23 @@
                     }
                     secondary_children.remove(secondary_index);
                 } else {
-                    return Err(format!(
+                    let error = format!(
                         "secondary xterm {} exited during live session with status {status}",
                         secondary_index + 1
-                    )
-                    .into());
+                    );
+                    terminal_client_error = Some(("secondary", error));
+                    match frontend_service_sender
+                        .send(XServerFrontendServiceCommand::StopAccepting)
+                    {
+                        Ok(()) => terminal_client_intake_stopped = true,
+                        Err(error) => terminal_client_cleanup_failures
+                            .push(format!("frontend intake stop failed: {error}")),
+                    }
+                    println!(
+                        "sophia_live_session_client_fatal schema=1 status=detected source=secondary index={} exit_status={status} action=bounded_cleanup",
+                        secondary_index + 1,
+                    );
+                    break 'session;
                 }
             } else {
                 secondary_index += 1;

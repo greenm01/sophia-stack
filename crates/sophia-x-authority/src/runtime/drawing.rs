@@ -140,16 +140,17 @@ impl XAuthorityRuntime {
          values: XGraphicsContextValues,
      ) -> Result<(), XAuthorityRuntimeError> {
          self.validate_drawable_access(namespace, drawable)?;
+         let depth = self.drawable_depth(namespace, drawable)?;
          if let Some(font) = values.font {
              self.validate_font_access(namespace, font)?;
          }
          self.graphics_contexts
-             .create(namespace, gc, drawable, values)
+             .create(namespace, gc, drawable, depth, values)
              .map_err(XAuthorityRuntimeError::from)?;
          Ok(())
      }
  
-     pub fn graphics_context_values(
+    pub fn graphics_context_values(
          &self,
          namespace: NamespaceId,
          gc: crate::XResourceId,
@@ -158,6 +159,32 @@ impl XAuthorityRuntime {
              .get(namespace, gc)
              .map(|record| record.values.clone())
              .map_err(Into::into)
+     }
+
+     pub(crate) fn graphics_context_depth_and_values(
+         &self,
+         namespace: NamespaceId,
+         gc: crate::XResourceId,
+     ) -> Result<(u8, XGraphicsContextValues), XAuthorityRuntimeError> {
+         self.graphics_contexts
+             .get(namespace, gc)
+             .map(|record| (record.depth, record.values.clone()))
+             .map_err(Into::into)
+     }
+
+     pub(crate) fn drawable_depth(
+         &self,
+         namespace: NamespaceId,
+         drawable: crate::XResourceId,
+     ) -> Result<u8, XAuthorityRuntimeError> {
+         self.validate_drawable_access(namespace, drawable)?;
+         if drawable.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             return Ok(24);
+         }
+         if let Ok(depth) = self.pixmap_depth(namespace, drawable) {
+             return Ok(depth);
+         }
+         Ok(self.window_visual(drawable).0)
      }
  
      pub fn change_graphics_context(
@@ -432,6 +459,44 @@ impl XAuthorityRuntime {
              window,
              handle,
              damage,
+             record.generation,
+             250,
+         ))
+     }
+
+     pub fn apply_rectangle_draw(
+         &mut self,
+         transaction: TransactionId,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         rectangles: &[Rect],
+         gc: &XGraphicsContextValues,
+     ) -> XAuthorityResponsePacket {
+         let Some(record) = self.windows.get(window) else {
+             return XAuthorityResponsePacket::rejected(
+                 transaction,
+                 XAuthorityRuntimeError::UnknownResource,
+             );
+         };
+         let Some((update, damage)) = self.software_buffers.draw_rectangles(
+             window,
+             Size {
+                 width: record.geometry.width,
+                 height: record.geometry.height,
+             },
+             rectangles,
+             gc,
+         ) else {
+             return XAuthorityResponsePacket::accepted(transaction);
+         };
+         let handle = update.handle();
+         self.last_cpu_buffer_update = Some(update);
+         self.finish_drawing_update(XDrawingUpdate::core_draw(
+             transaction,
+             namespace,
+             window,
+             handle,
+             Region::single(damage),
              record.generation,
              250,
          ))
