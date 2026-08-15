@@ -938,6 +938,10 @@
                 logical_content_checksum: head.presented_checksum,
                 head_pixel_checksum: None,
             };
+            // Emitted once per head despite its name, so a mirror group produces
+            // several records naming one output. Verifiers that mean to count
+            // outputs must count distinct identities rather than records; the
+            // per-head reading of the same counters is the schema=2 record below.
             println!(
                 "sophia_live_output schema=1 status=complete output={} checksum={} submissions={} retirements={} callbacks={} nonzero_exports={}",
                 head.output.id.raw(),

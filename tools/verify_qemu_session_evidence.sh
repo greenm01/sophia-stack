@@ -31,9 +31,22 @@ if [[ "${#output_lines[@]}" -ne 2 ]]; then
     echo "QEMU evidence must contain exactly two per-output completion records" >&2
     exit 1
 fi
+# This gate's whole claim is two independent logical outputs, and the record is
+# emitted once per head rather than once per output. A mirror group would
+# therefore produce two records that both name output 1 -- structurally two
+# records, but one output. Counting distinct identities is what separates the
+# two cases; identical content no longer can, because two independent outputs
+# may legitimately present the same pixels.
+declare -A output_ids=()
 total_retirements=0
 total_callbacks=0
 for output_line in "${output_lines[@]}"; do
+    output_id="$(sed -n 's/.* output=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
+    if [[ -z "$output_id" ]]; then
+        echo "QEMU output evidence has no numeric output identity: $output_line" >&2
+        exit 1
+    fi
+    output_ids[$output_id]=1
     for field in submissions nonzero_exports; do
         value="$(sed -n "s/.* ${field}=\([0-9][0-9]*\).*/\1/p" <<< "$output_line")"
         if [[ -z "$value" ]] || (( value == 0 )); then
@@ -60,6 +73,10 @@ for output_line in "${output_lines[@]}"; do
         exit 1
     fi
 done
+if (( ${#output_ids[@]} != 2 )); then
+    echo "QEMU evidence names ${#output_ids[@]} distinct outputs; two required" >&2
+    exit 1
+fi
 if (( total_retirements == 0 || total_callbacks == 0 )); then
     echo "QEMU evidence has no asynchronous page-flip retirement" >&2
     exit 1

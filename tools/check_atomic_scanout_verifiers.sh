@@ -113,6 +113,15 @@ sed 's/output=2 checksum=12847590821349875/output=2 checksum=8957873632062205093
     "$FIXTURE_DIR/qemu_session_evidence_pass.log" >"$TEMP_DIR/qemu-identical-content.log"
 "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" \
     "$TEMP_DIR/qemu-identical-content.log" >/dev/null
+# Two completion records naming one output is what a mirror group emits, and it
+# must not satisfy a gate whose claim is two independent outputs.
+sed 's/^sophia_live_output schema=1 status=complete output=2 /sophia_live_output schema=1 status=complete output=1 /' \
+    "$FIXTURE_DIR/qemu_session_evidence_pass.log" >"$TEMP_DIR/qemu-mirrored-output.log"
+if "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" \
+    "$TEMP_DIR/qemu-mirrored-output.log" >/dev/null 2>&1; then
+    echo "QEMU verifier accepted two completion records for one output" >&2
+    exit 1
+fi
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_vsync_overlap.log
 expect_pass tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_pass.log
 expect_fail tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_missing_guard_trigger.log
