@@ -472,6 +472,7 @@ impl LiveProductionVisualRuntime {
         let output_count = self.outputs.output_count();
         let production = &self.production;
         let outputs = &mut self.outputs;
+        let surface_metadata = &self.surface_metadata;
         let mut native_frames = native_frames.unwrap_or_default().into_iter();
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
@@ -489,8 +490,15 @@ impl LiveProductionVisualRuntime {
                     .runtime
                     .assembly_mut()
                     .replace_committed_surfaces(committed.to_vec());
+                // Templates from the same slice this closure just replaced into
+                // the assembly, not from prepare time. Any commit landing between
+                // prepare and run -- a Present settling, a retirement -- would
+                // otherwise leave the assembly holding a surface the frozen
+                // templates lack, which the engine rejects as an invalid surface.
+                let layer_templates =
+                    super::projection::committed_layer_snapshots(committed, surface_metadata);
                 let input = compositor_tick_input(
-                    &prepared.layer_templates,
+                    &layer_templates,
                     event_count,
                     prepared.authority_commits.clone(),
                     wm_update.clone(),

@@ -778,12 +778,23 @@ impl LiveProductionVisualRuntime {
     pub fn run_observation_tick(
         &mut self,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
-        let layer_templates = self.compositor_layer_templates();
+        // Both views from one read, and the assembly resynchronised before the
+        // tick. This was the one tick that never replaced the committed list, so
+        // it paired fresh templates against whatever an earlier cycle had left in
+        // the assembly -- a mismatch the engine rejects as an invalid surface,
+        // masked until the first client surface ever committed and deterministic
+        // from then on. Nine call paths lead here, which is why the failure
+        // looked unrelated to any of them.
+        let (layer_templates, committed) = self.scene_views();
         let output = self
             .outputs
             .values_mut()
             .next()
             .ok_or("persistent backend runtime has no outputs")?;
+        output
+            .runtime
+            .assembly_mut()
+            .replace_committed_surfaces(committed);
         Ok(output
             .runtime
             .run_tick(compositor_tick_input(&layer_templates, 0, Vec::new(), None))?)

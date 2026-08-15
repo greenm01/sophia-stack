@@ -88,6 +88,22 @@ impl LiveProductionVisualRuntime {
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {
         committed_layer_snapshots(self.production.committed_surfaces(), &self.surface_metadata)
     }
+
+    /// Both views of the scene, from one read.
+    ///
+    /// The engine pairs a tick's committed surfaces against its layer templates
+    /// by `SurfaceId` and fails closed on a committed surface with no template.
+    /// Templates travel in the tick input while the committed list is cloned from
+    /// the per-output assembly, so any site that captures them at different
+    /// moments -- or from different coordinators -- can violate that invariant.
+    /// Building the templates FROM the committed slice makes the two set-equal by
+    /// construction, which turns a discipline every tick site had to remember
+    /// into a property none of them can break.
+    pub(super) fn scene_views(&self) -> (Vec<LayerSnapshot>, Vec<CommittedSurfaceState>) {
+        let committed = self.production.committed_surfaces().to_vec();
+        let templates = committed_layer_snapshots(&committed, &self.surface_metadata);
+        (templates, committed)
+    }
 }
 
 fn same_interaction_projection(previous: &[LayerSnapshot], next: &[LayerSnapshot]) -> bool {
@@ -183,6 +199,59 @@ mod tests {
 
     fn surface(index: u32, generation: u32) -> SurfaceId {
         SurfaceId::new(index, generation)
+    }
+
+    #[test]
+    fn layer_templates_cover_every_committed_surface() {
+        // The property scene_views rests on, and the one whose loss reopens the
+        // invalid-surface tick: the engine pairs committed surfaces against
+        // templates by SurfaceId and fails closed on a committed surface with no
+        // template, so the template projection must be total over its committed
+        // slice -- one template per entry, same id, metadata or not. A filter
+        // added here, however reasonable it looks, is that bug again.
+        let with_metadata = surface(21, 1);
+        let without_metadata = surface(22, 3);
+        let committed = vec![
+            CommittedSurfaceState {
+                surface: with_metadata,
+                committed_generation: 4,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+                buffer: BufferSource::CpuBuffer { handle: 7 },
+                damage: Region::empty(),
+            },
+            CommittedSurfaceState {
+                surface: without_metadata,
+                committed_generation: 1,
+                geometry: Rect {
+                    x: 640,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+                buffer: BufferSource::CpuBuffer { handle: 8 },
+                damage: Region::empty(),
+            },
+        ];
+        let metadata = BTreeMap::from([(
+            with_metadata,
+            LiveSurfaceProjectionMetadata {
+                namespace: Some(NamespaceId::from_raw(3)),
+            },
+        )]);
+
+        let templates = committed_layer_snapshots(&committed, &metadata);
+
+        assert_eq!(templates.len(), committed.len());
+        for (template, state) in templates.iter().zip(&committed) {
+            assert_eq!(template.surface, state.surface);
+        }
+        // Missing metadata degrades the namespace, never the layer.
+        assert_eq!(templates[1].namespace, None);
     }
 
     #[test]
