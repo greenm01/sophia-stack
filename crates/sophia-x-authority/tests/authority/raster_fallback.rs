@@ -627,3 +627,31 @@ fn a_requirement_naming_the_wrong_extent_is_distinguished_from_a_stale_generatio
         XRasterFallbackCause::LogicalExtentMismatch,
     );
 }
+
+#[test]
+fn the_first_satisfied_requirement_reports_without_a_prior_failure() {
+    let mut coalescer = XRasterFallbackCoalescer::default();
+    let surface = SurfaceId::new(240, 1);
+
+    // A density path that works from the outset must still say so once.
+    // Reporting only recoveries left a physical run with no evidence that
+    // replies had started being produced at all.
+    assert_eq!(coalescer.observe_satisfied(surface), Some(0));
+    assert_eq!(
+        coalescer.observe_satisfied(surface),
+        None,
+        "steady success stays silent after the first report"
+    );
+}
+
+#[test]
+fn a_recovery_still_reports_the_failures_it_ended() {
+    let mut coalescer = XRasterFallbackCoalescer::default();
+    let surface = SurfaceId::new(241, 1);
+    let cause = XRasterFallbackCause::UnsupportedPutImage;
+
+    for _ in 0..3 {
+        coalescer.observe(surface, cause);
+    }
+    assert_eq!(coalescer.observe_satisfied(surface), Some(3));
+}

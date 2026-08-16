@@ -392,3 +392,44 @@ fn production_coordinator_reports_feedback_failure_after_retirement() {
     assert_eq!(error.phase, ProductionSessionPhase::ProtocolFeedback);
     assert_eq!(coordinator.committed_surfaces().len(), 1);
 }
+
+/// A chain of same-surface transactions must commit inside one cycle.
+///
+/// The owner loop merges the batches a drawing client has already produced so
+/// a burst costs one cycle rather than one frame each. That is only sound
+/// because the coordinator applies a whole slice before composing once.
+#[test]
+fn production_coordinator_commits_a_same_surface_chain_in_one_cycle() {
+    let mut coordinator = ProductionSessionCoordinator::new(HeadlessEngine::default());
+    let mut adapter = RecordingProductionAdapter::default();
+
+    let chain = (0..3)
+        .map(|index| {
+            let mut intake = production_surface_batch(300 + index);
+            for transaction in &mut intake.transactions {
+                transaction.previous_committed_generation = index;
+            }
+            intake
+        })
+        .collect::<Vec<_>>();
+
+    let report = coordinator
+        .run_cycle(&chain, &mut adapter)
+        .expect("production cycle should complete");
+
+    assert_eq!(report.authority_commits.len(), 3);
+    assert!(
+        report
+            .authority_commits
+            .iter()
+            .all(|commit| commit.outcome == TransactionOutcome::Committed),
+        "every link of the chain must commit, not just the first"
+    );
+    assert_eq!(report.committed_surfaces.len(), 1);
+    assert_eq!(report.committed_surfaces[0].committed_generation, 3);
+    assert_eq!(
+        adapter.calls,
+        ["compose", "submit", "retire", "feedback"],
+        "three commits must still cost exactly one composition"
+    );
+}

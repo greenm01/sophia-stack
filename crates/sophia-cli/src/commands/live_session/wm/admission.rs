@@ -433,6 +433,24 @@ impl PersistentLiveLayout {
         self.pre_admission_groups = retained;
     }
 
+    /// Whether no admission group can be quarantined or released while one
+    /// owner cycle projects several authority batches.
+    ///
+    /// `projected_batch` computes its quarantine set from the pre-admission
+    /// and released queues and then *drains* the released one. If a group were
+    /// released between two projections of the same cycle, the earlier
+    /// projection would consume the release and the later batch would no
+    /// longer filter its own transactions, committing them twice. With these
+    /// three tables empty the release paths are no-ops, so that skew cannot
+    /// arise. A pending layout is deliberately not part of the test: requiring
+    /// one would disable merging through exactly the resize storms that
+    /// produce the bursts worth merging.
+    fn authority_merge_quiescent(&self) -> bool {
+        self.pre_admission_groups.is_empty()
+            && self.released_admission_groups.is_empty()
+            && self.unmanaged_surfaces.is_empty()
+    }
+
     fn admission_group_dma_bufs(&self) -> BTreeSet<sophia_protocol::BufferHandle> {
         self.pre_admission_groups
             .iter()

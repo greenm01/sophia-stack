@@ -4,23 +4,25 @@ use super::startup_readiness::{
     all_startup_outputs_presented, startup_native_recovery_reason, startup_surface_visual_detail,
     synchronous_modeset_record,
 };
+use super::wm_update_coordinator_batch;
 use super::{
-    BufferSource, CommittedSurfaceState, FirefoxM8StageProof, FirefoxM10DialogProof,
-    FirefoxM10KittyProof, FirefoxM10PrimaryProof, FirefoxM10SelectionKittyProof,
-    FloatingPointerGestureState, FloatingPointerOutline, FloatingPointerOutlineUpdate,
-    LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene, LiveProductionVisualRuntime,
-    LiveWmSession, LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig,
-    PhysicalInputRoutingMode, PhysicalTextProof, PolicySessionDirectory,
-    PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy, PublicPolicyFaultPoint,
-    PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
-    ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
-    SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-    SessionFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard, Size, Transform,
-    XPresentCadence, authority_transaction_count, authority_wait_timeout,
-    center_geometry_without_scaling, clamp_floating_pointer_outline,
-    clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
-    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
-    global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
+    AUTHORITY_MERGE_RUN_LIMIT, BufferSource, CommittedSurfaceState, FirefoxM8StageProof,
+    FirefoxM10DialogProof, FirefoxM10KittyProof, FirefoxM10PrimaryProof,
+    FirefoxM10SelectionKittyProof, FloatingPointerGestureState, FloatingPointerOutline,
+    FloatingPointerOutlineUpdate, LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene,
+    LiveProductionVisualRuntime, LiveWmSession, LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT,
+    PersistentXtermSessionConfig, PhysicalInputRoutingMode, PhysicalTextProof,
+    PolicySessionDirectory, PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy,
+    PublicPolicyFaultPoint, PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect,
+    Region, ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT,
+    SESSION_APP_ADMISSION_TIMEOUT_MSEC, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
+    SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC, SessionFatalCleanupEvidence,
+    SessionPointerPlacement, SessionProcessGuard, Size, Transform, XPresentCadence,
+    authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
+    authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
+    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
+    completed_pointer_gesture_geometry, current_cpu_frame_is_presented,
+    flush_all_client_pressed_keys, global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, live_transaction_observed_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
@@ -53,14 +55,17 @@ use sophia_engine::{
     OutputFrameServiceObservation, OutputFrameServiceRequest, OutputNativeFramePhase,
     WmShortcutRegistry, WmShortcutRouter, pointer_offset_for_geometry,
 };
-use sophia_protocol::OutputId;
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
     NamespaceProfile, Point, SeatId, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness,
     WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmHello, WmModifierMask,
     WmSessionAction,
 };
-use sophia_x_authority::{X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888, XAuthorityRoutedInputMode};
+use sophia_protocol::{OutputId, TransactionId};
+use sophia_x_authority::{
+    X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888, XAuthorityObservedTransactionBatch,
+    XAuthorityRoutedInputMode,
+};
 use sophia_x_authority::{
     XAuthorityClientSurfaceRoutes, XCoreKeyboardMapper, XKB_DEFAULT_REPEAT_DELAY_MSEC,
     XKB_DEFAULT_REPEAT_INTERVAL_MSEC, XkbKeymapSnapshot, XkbRmlvoConfig,
@@ -69,6 +74,7 @@ use std::io::Write;
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
 
+mod authority_merge_tests;
 mod desktop_shortcut_tests;
 mod input_policy_tests;
 mod output_topology_owner_tests;

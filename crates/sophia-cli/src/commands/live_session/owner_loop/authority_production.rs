@@ -206,10 +206,10 @@
                     pointer_pixel_change = true;
                 }
                 metrics.backend_ticks = metrics.backend_ticks.saturating_add(1);
-                metrics.runtime_committed = record_runtime_commits(
-                    metrics.runtime_committed,
-                    authority_transaction_count(&batch.transactions),
-                );
+                // Counts every transaction this cycle committed, which is the
+                // whole merged run rather than one batch's share.
+                metrics.runtime_committed =
+                    record_runtime_commits(metrics.runtime_committed, committed_transactions);
                 metrics.runtime_surfaces =
                     u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
                 if let Some(native_scanout) = native_scanout.as_ref() {

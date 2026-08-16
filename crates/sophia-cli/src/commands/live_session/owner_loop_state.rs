@@ -13,6 +13,10 @@ struct SessionLoopMetrics {
     software_present_submissions_observed: usize,
     cpu_compositions: usize,
     coalesced_batches: usize,
+    /// Batches committed alongside another in one production cycle, so a burst
+    /// of client draws costs one cycle rather than one frame each.
+    merged_batches: usize,
+    max_merge_run: usize,
     backend_ticks: usize,
     runtime_committed: u64,
     runtime_surfaces: u64,

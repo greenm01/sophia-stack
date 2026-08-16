@@ -73,304 +73,313 @@
                 native_frame_control_priority_cycles.saturating_add(1);
         }
         match authority_batch {
-            Ok(mut batch) => {
-                if !batch.raster_responses.is_empty()
-                    && (batch.raster_responses.len() != batch.transactions.len()
-                        || runtime.as_mut().is_none_or(|runtime| {
-                            !batch
-                                .raster_responses
-                                .iter()
-                                .copied()
-                                .all(|identity| runtime.accept_surface_raster_response(identity))
-                        }))
-                {
-                    tracing::warn!(
-                        "sophia_live_surface_raster schema=1 status=stale_response transaction={} responses={} retained_buffer_updates={}",
-                        batch.transaction.raw(),
-                        batch.raster_responses.len(),
-                        batch.cpu_buffer_updates.len(),
-                    );
-                    // Refusing the demand must not desynchronize buffer
-                    // ownership. The authority has already published these
-                    // handles and will keep naming them in later content sets,
-                    // so dropping the updates alongside the transaction leaves
-                    // a committed scene referencing buffers Engine never
-                    // received. Decline the transaction; keep the buffers.
-                    batch.transactions.clear();
-                    batch.raster_responses.clear();
+            Ok(batch) => {
+                drain_queued_authority_batches(
+                    &authority_receiver,
+                    &mut pending_authority_batches,
+                    AUTHORITY_DRAIN_CAPACITY,
+                    Duration::from_millis(2),
+                )?;
+                // Commit everything the client has already produced in one
+                // cycle. Composing per batch made a burst of draws cost one
+                // frame each, so displayed content trailed the client by the
+                // whole backlog.
+                let merge_run_len = authority_merge_run_len(
+                    &batch,
+                    pending_authority_batches.iter(),
+                    layout.authority_merge_quiescent(),
+                    AUTHORITY_MERGE_RUN_LIMIT,
+                );
+                let mut authority_run = Vec::with_capacity(merge_run_len);
+                authority_run.push(batch);
+                for _ in 1..merge_run_len {
+                    let Some(queued) = pending_authority_batches.pop_front() else {
+                        break;
+                    };
+                    authority_run.push(queued);
                 }
-                let drain_started = Instant::now();
-                while pending_authority_batches.len() < 64
-                    && drain_started.elapsed() < Duration::from_millis(2)
-                {
-                    match authority_receiver.try_recv() {
-                        Ok(queued) => pending_authority_batches.push_back(queued),
-                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            return Err(
-                                "persistent X authority transaction channel disconnected".into()
-                            );
-                        }
-                    }
-                }
+                let merge_run_len = authority_run.len();
+                // A merged cycle already commits every available batch, so a
+                // deferred frame is only correct when the bound, not the
+                // queue, ended the run.
                 let defer_cpu_frame = runtime.is_some()
-                    && software_batch_may_coalesce(&batch)
+                    && merge_run_len >= AUTHORITY_MERGE_RUN_LIMIT
                     && pending_authority_batches
                         .front()
-                        .is_some_and(software_batch_may_coalesce);
-                for error in &batch.protocol_errors {
-                    metrics.protocol_error_count = metrics.protocol_error_count.saturating_add(1);
-                    first_protocol_error.get_or_insert(*error);
-                }
-                metrics.expected_protocol_error_count = metrics.expected_protocol_error_count
-                    .saturating_add(batch.expected_protocol_errors.len());
-                if batch.selection_owner_change {
-                    selection_owner_changes = selection_owner_changes.saturating_add(1);
-                    if config.firefox_proof_requested() {
-                        println!(
-                            "sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count={selection_owner_changes} content=redacted"
+                        .is_some_and(authority_batch_may_follow_merge);
+                for batch in &mut authority_run {
+                    if !batch.raster_responses.is_empty()
+                        && (batch.raster_responses.len() != batch.transactions.len()
+                            || runtime.as_mut().is_none_or(|runtime| {
+                                !batch.raster_responses.iter().copied().all(|identity| {
+                                    runtime.accept_surface_raster_response(identity)
+                                })
+                            }))
+                    {
+                        tracing::warn!(
+                            "sophia_live_surface_raster schema=1 status=stale_response transaction={} responses={} retained_buffer_updates={}",
+                            batch.transaction.raw(),
+                            batch.raster_responses.len(),
+                            batch.cpu_buffer_updates.len(),
                         );
+                        // Refusing the demand must not desynchronize buffer
+                        // ownership. The authority has already published these
+                        // handles and keeps naming them in later content sets,
+                        // so dropping the updates alongside the transaction
+                        // leaves a committed scene referencing buffers Engine
+                        // never received. Decline the transaction; keep them.
+                        batch.transactions.clear();
+                        batch.raster_responses.clear();
                     }
                 }
-                if batch.selection_conversion {
-                    selection_conversions = selection_conversions.saturating_add(1);
-                    if config.firefox_proof_requested() {
-                        println!(
-                            "sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count={selection_conversions} content=redacted"
-                        );
+                for batch in &authority_run {
+                    for error in &batch.protocol_errors {
+                        metrics.protocol_error_count = metrics.protocol_error_count.saturating_add(1);
+                        first_protocol_error.get_or_insert(*error);
                     }
-                }
-                if config.firefox_proof_requested() {
-                    for metadata in &batch.metadata {
-                        if config.firefox_m10_rendering_proof
-                            && !firefox_m10_rendering_page_ready
-                            && metadata.property_name == "_NET_WM_NAME"
-                            && metadata.byte_len == 249
-                        {
-                            firefox_m10_rendering_page_ready = true;
+                    metrics.expected_protocol_error_count = metrics.expected_protocol_error_count
+                        .saturating_add(batch.expected_protocol_errors.len());
+                    if batch.selection_owner_change {
+                        selection_owner_changes = selection_owner_changes.saturating_add(1);
+                        if config.firefox_proof_requested() {
                             println!(
-                                "sophia_firefox_rendering schema=1 status=page_ready title_bytes=249 content=redacted"
+                                "sophia_firefox_m8 schema=1 status=selection_observed kind=owner_change count={selection_owner_changes} content=redacted"
                             );
                         }
-                        if config.firefox_m10_dialog_proof
-                            && let Some(checkpoint) = firefox_m10_dialog_proof
-                                .observe(&metadata.property_name, metadata.byte_len)
-                        {
+                    }
+                    if batch.selection_conversion {
+                        selection_conversions = selection_conversions.saturating_add(1);
+                        if config.firefox_proof_requested() {
                             println!(
-                                "sophia_firefox_dialog schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
-                                metadata.byte_len,
+                                "sophia_firefox_m8 schema=1 status=selection_observed kind=conversion count={selection_conversions} content=redacted"
                             );
                         }
-                        if config.firefox_m10_primary_proof
-                            && metadata.property_name == "_NET_WM_NAME"
-                        {
-                            println!(
-                                "sophia_firefox_primary schema=1 status=title_observed title_bytes={} content=redacted",
-                                metadata.byte_len
-                            );
-                            if let Some(checkpoint) = firefox_m10_primary_proof
-                                .observe(&metadata.property_name, metadata.byte_len)
+                    }
+                    if config.firefox_proof_requested() {
+                        for metadata in &batch.metadata {
+                            if config.firefox_m10_rendering_proof
+                                && !firefox_m10_rendering_page_ready
+                                && metadata.property_name == "_NET_WM_NAME"
+                                && metadata.byte_len == 249
+                            {
+                                firefox_m10_rendering_page_ready = true;
+                                println!(
+                                    "sophia_firefox_rendering schema=1 status=page_ready title_bytes=249 content=redacted"
+                                );
+                            }
+                            if config.firefox_m10_dialog_proof
+                                && let Some(checkpoint) = firefox_m10_dialog_proof
+                                    .observe(&metadata.property_name, metadata.byte_len)
                             {
                                 println!(
-                                    "sophia_firefox_primary schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
+                                    "sophia_firefox_dialog schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
                                     metadata.byte_len,
                                 );
                             }
-                        }
-                        if !firefox_m8_page_ready_reported
-                            && metadata.property_name == "_NET_WM_NAME"
-                            && metadata.byte_len == 36
-                        {
-                            firefox_m8_page_ready_reported = true;
-                            println!(
-                                "sophia_firefox_m8 schema=1 status=page_ready title_bytes=36 content=redacted"
-                            );
-                        }
-                        if !firefox_m8_navigation_ready_reported
-                            && firefox_m8_proof.navigation_ready(
-                                &metadata.property_name,
-                                metadata.byte_len,
-                            )
-                        {
-                            firefox_m8_navigation_ready_reported = true;
-                            println!(
-                                "sophia_firefox_m8 schema=1 status=navigation_ready content=redacted"
-                            );
-                        }
-                        if !firefox_m8_dialog_ready_reported
-                            && firefox_m8_proof.dialog_ready(
-                                &metadata.property_name,
-                                metadata.byte_len,
-                            )
-                        {
-                            firefox_m8_dialog_ready_reported = true;
-                            println!(
-                                "sophia_firefox_m8 schema=1 status=dialog_ready content=redacted"
-                            );
-                        }
-                        for (stage, index, title_bytes) in
-                            firefox_m8_proof.observe(&metadata.property_name, metadata.byte_len)
-                        {
-                            println!(
-                                "sophia_firefox_m8 schema=1 status=stage_complete stage={stage} index={index} title_bytes={} content=redacted",
-                                title_bytes,
-                            );
-                        }
-                        if (config.firefox_m10_proof || config.firefox_m10_lifecycle_proof)
-                            && let Some((terminal, checkpoint)) = firefox_m10_kitty_proof
-                                .observe(&metadata.property_name, metadata.byte_len)
-                        {
-                            println!(
-                                "sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal={terminal} checkpoint={checkpoint} content=redacted"
-                            );
-                        }
-                        if config.firefox_m10_selection_proof
-                            && let Some(checkpoint) = firefox_m10_selection_kitty_proof
-                                .observe(&metadata.property_name, metadata.byte_len)
-                        {
-                            println!(
-                                "sophia_firefox_selection schema=1 status=kitty_checkpoint checkpoint={checkpoint} content=redacted"
-                            );
+                            if config.firefox_m10_primary_proof
+                                && metadata.property_name == "_NET_WM_NAME"
+                            {
+                                println!(
+                                    "sophia_firefox_primary schema=1 status=title_observed title_bytes={} content=redacted",
+                                    metadata.byte_len
+                                );
+                                if let Some(checkpoint) = firefox_m10_primary_proof
+                                    .observe(&metadata.property_name, metadata.byte_len)
+                                {
+                                    println!(
+                                        "sophia_firefox_primary schema=1 status=checkpoint checkpoint={checkpoint} title_bytes={} content=redacted",
+                                        metadata.byte_len,
+                                    );
+                                }
+                            }
+                            if !firefox_m8_page_ready_reported
+                                && metadata.property_name == "_NET_WM_NAME"
+                                && metadata.byte_len == 36
+                            {
+                                firefox_m8_page_ready_reported = true;
+                                println!(
+                                    "sophia_firefox_m8 schema=1 status=page_ready title_bytes=36 content=redacted"
+                                );
+                            }
+                            if !firefox_m8_navigation_ready_reported
+                                && firefox_m8_proof.navigation_ready(
+                                    &metadata.property_name,
+                                    metadata.byte_len,
+                                )
+                            {
+                                firefox_m8_navigation_ready_reported = true;
+                                println!(
+                                    "sophia_firefox_m8 schema=1 status=navigation_ready content=redacted"
+                                );
+                            }
+                            if !firefox_m8_dialog_ready_reported
+                                && firefox_m8_proof.dialog_ready(
+                                    &metadata.property_name,
+                                    metadata.byte_len,
+                                )
+                            {
+                                firefox_m8_dialog_ready_reported = true;
+                                println!(
+                                    "sophia_firefox_m8 schema=1 status=dialog_ready content=redacted"
+                                );
+                            }
+                            for (stage, index, title_bytes) in
+                                firefox_m8_proof.observe(&metadata.property_name, metadata.byte_len)
+                            {
+                                println!(
+                                    "sophia_firefox_m8 schema=1 status=stage_complete stage={stage} index={index} title_bytes={} content=redacted",
+                                    title_bytes,
+                                );
+                            }
+                            if (config.firefox_m10_proof || config.firefox_m10_lifecycle_proof)
+                                && let Some((terminal, checkpoint)) = firefox_m10_kitty_proof
+                                    .observe(&metadata.property_name, metadata.byte_len)
+                            {
+                                println!(
+                                    "sophia_firefox_m10 schema=1 status=kitty_checkpoint terminal={terminal} checkpoint={checkpoint} content=redacted"
+                                );
+                            }
+                            if config.firefox_m10_selection_proof
+                                && let Some(checkpoint) = firefox_m10_selection_kitty_proof
+                                    .observe(&metadata.property_name, metadata.byte_len)
+                            {
+                                println!(
+                                    "sophia_firefox_selection schema=1 status=kitty_checkpoint checkpoint={checkpoint} content=redacted"
+                                );
+                            }
                         }
                     }
                 }
-                let has_engine_work = !batch.transactions.is_empty()
-                    || !batch.surface_presentations.is_empty()
-                    || !batch.presentation_intents.is_empty()
-                    || !batch.removed_surfaces.is_empty()
-                    || !batch.surface_output_reservations.is_empty()
-                    || !batch.cpu_buffer_updates.is_empty()
-                    || !batch.dma_buf_registrations.is_empty()
-                    || !batch.fence_registrations.is_empty()
-                    || !batch.present_submissions.is_empty()
-                    || !batch.released_dma_bufs.is_empty()
-                    || !batch.released_fences.is_empty()
+                let has_engine_work = authority_run.iter().any(authority_batch_has_engine_work)
                     || runtime
                         .as_ref()
                         .is_some_and(LiveProductionVisualRuntime::has_released_surface_content);
                 if !has_engine_work && pending_wm_update.is_none() {
                     continue;
                 }
-                if !wm_only_cycle {
-                    last_authority_update = Instant::now();
-                    metrics.batches = metrics.batches.saturating_add(1);
-                    metrics.transactions = metrics.transactions.saturating_add(
-                        authority_transaction_count(&batch.transactions),
-                    );
-                    metrics.cpu_buffer_updates = metrics
-                        .cpu_buffer_updates
-                        .saturating_add(batch.cpu_buffer_updates.len());
-                    metrics.cpu_buffer_replacements =
-                        metrics.cpu_buffer_replacements.saturating_add(
-                            batch
-                                .cpu_buffer_updates
-                                .iter()
-                                .filter(|update| update.is_replacement())
-                                .count(),
+                let mut removed_surfaces = Vec::new();
+                for batch in &authority_run {
+                    if !wm_only_cycle {
+                        last_authority_update = Instant::now();
+                        metrics.batches = metrics.batches.saturating_add(1);
+                        metrics.transactions = metrics.transactions.saturating_add(
+                            authority_transaction_count(&batch.transactions),
                         );
-                    metrics.cpu_buffer_patch_updates =
-                        metrics.cpu_buffer_patch_updates.saturating_add(
-                            batch
-                                .cpu_buffer_updates
-                                .iter()
-                                .filter(|update| !update.is_replacement())
-                                .count(),
-                        );
-                    metrics.cpu_buffer_patch_rects =
-                        metrics.cpu_buffer_patch_rects.saturating_add(
-                            batch
-                                .cpu_buffer_updates
-                                .iter()
-                                .map(sophia_x_authority::XAuthorityCpuBufferUpdate::patch_rects)
-                                .sum::<usize>(),
-                        );
-                    metrics.cpu_buffer_payload_bytes =
-                        metrics.cpu_buffer_payload_bytes.saturating_add(
-                            batch
-                                .cpu_buffer_updates
-                                .iter()
-                                .map(sophia_x_authority::XAuthorityCpuBufferUpdate::payload_bytes)
-                                .sum::<usize>(),
-                        );
-                    metrics.dma_buf_registrations_observed = metrics
-                        .dma_buf_registrations_observed
-                        .saturating_add(batch.dma_buf_registrations.len());
-                    metrics.fence_registrations_observed = metrics
-                        .fence_registrations_observed
-                        .saturating_add(batch.fence_registrations.len());
-                    metrics.present_submissions_observed = metrics
-                        .present_submissions_observed
-                        .saturating_add(batch.present_submissions.len());
-                    metrics.software_present_submissions_observed = metrics
-                        .software_present_submissions_observed
-                        .saturating_add(batch.software_present_submissions.len());
-                }
-                let removed_surfaces = batch.removed_surfaces.clone();
-                for surface in &removed_surfaces {
-                    let seats = application_route_leases
-                        .leases()
-                        .filter(|lease| {
-                            lease.target_surface == *surface
-                                && !matches!(
-                                    lease.phase,
-                                    sophia_engine::ApplicationRouteLeasePhase::Releasing { .. }
-                                )
-                        })
-                        .map(|lease| lease.identity.seat)
-                        .collect::<Vec<_>>();
-                    for lease_seat in seats {
-                        request_application_route_lease_release(
-                            &mut application_route_leases,
-                            &layout.client_routes,
-                            route_lease_release_sender,
-                            lease_seat,
-                            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        )?;
+                        metrics.cpu_buffer_updates = metrics
+                            .cpu_buffer_updates
+                            .saturating_add(batch.cpu_buffer_updates.len());
+                        metrics.cpu_buffer_replacements =
+                            metrics.cpu_buffer_replacements.saturating_add(
+                                batch
+                                    .cpu_buffer_updates
+                                    .iter()
+                                    .filter(|update| update.is_replacement())
+                                    .count(),
+                            );
+                        metrics.cpu_buffer_patch_updates =
+                            metrics.cpu_buffer_patch_updates.saturating_add(
+                                batch
+                                    .cpu_buffer_updates
+                                    .iter()
+                                    .filter(|update| !update.is_replacement())
+                                    .count(),
+                            );
+                        metrics.cpu_buffer_patch_rects =
+                            metrics.cpu_buffer_patch_rects.saturating_add(
+                                batch
+                                    .cpu_buffer_updates
+                                    .iter()
+                                    .map(sophia_x_authority::XAuthorityCpuBufferUpdate::patch_rects)
+                                    .sum::<usize>(),
+                            );
+                        metrics.cpu_buffer_payload_bytes =
+                            metrics.cpu_buffer_payload_bytes.saturating_add(
+                                batch
+                                    .cpu_buffer_updates
+                                    .iter()
+                                    .map(sophia_x_authority::XAuthorityCpuBufferUpdate::payload_bytes)
+                                    .sum::<usize>(),
+                            );
+                        metrics.dma_buf_registrations_observed = metrics
+                            .dma_buf_registrations_observed
+                            .saturating_add(batch.dma_buf_registrations.len());
+                        metrics.fence_registrations_observed = metrics
+                            .fence_registrations_observed
+                            .saturating_add(batch.fence_registrations.len());
+                        metrics.present_submissions_observed = metrics
+                            .present_submissions_observed
+                            .saturating_add(batch.present_submissions.len());
+                        metrics.software_present_submissions_observed = metrics
+                            .software_present_submissions_observed
+                            .saturating_add(batch.software_present_submissions.len());
                     }
-                }
-                if let Some(wm_session) = wm_session.as_mut() {
-                    for surface in &removed_surfaces {
+                    removed_surfaces.extend(batch.removed_surfaces.iter().copied());
+                    for surface in &batch.removed_surfaces {
+                        let seats = application_route_leases
+                            .leases()
+                            .filter(|lease| {
+                                lease.target_surface == *surface
+                                    && !matches!(
+                                        lease.phase,
+                                        sophia_engine::ApplicationRouteLeasePhase::Releasing { .. }
+                                    )
+                            })
+                            .map(|lease| lease.identity.seat)
+                            .collect::<Vec<_>>();
+                        for lease_seat in seats {
+                            request_application_route_lease_release(
+                                &mut application_route_leases,
+                                &layout.client_routes,
+                                route_lease_release_sender,
+                                lease_seat,
+                                u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                            )?;
+                        }
+                    }
+                    if let Some(wm_session) = wm_session.as_mut() {
+                        for surface in &batch.removed_surfaces {
+                            require_wm_request_admission(
+                                wm_session.enqueue_surface_removed(*surface)?,
+                                "surface_removed",
+                            )?;
+                        }
+                    }
+                    let layout_observation = layout.observe_authority_batch(&batch);
+                    if layout_observation.admission_group_invalid {
+                        return Err("pre-admission authority group is not transaction-homogeneous".into());
+                    }
+                    if layout_observation.admission_group_overflowed {
+                        return Err("pre-admission authority-group capacity exceeded".into());
+                    }
+                    if layout_observation.output_reservations_changed
+                        && let Some(wm_session) = wm_session.as_mut()
+                    {
                         require_wm_request_admission(
-                            wm_session.enqueue_surface_removed(*surface)?,
-                            "surface_removed",
+                            wm_session.update_output_work_areas(&layout, &outputs, output)?,
+                            "work_area",
                         )?;
                     }
-                }
-                let layout_observation = layout.observe_authority_batch(&batch);
-                if layout_observation.admission_group_invalid {
-                    return Err("pre-admission authority group is not transaction-homogeneous".into());
-                }
-                if layout_observation.admission_group_overflowed {
-                    return Err("pre-admission authority-group capacity exceeded".into());
-                }
-                if layout_observation.output_reservations_changed
-                    && let Some(wm_session) = wm_session.as_mut()
-                {
-                    require_wm_request_admission(
-                        wm_session.update_output_work_areas(&layout, &outputs, output)?,
-                        "work_area",
-                    )?;
-                }
-                if let Some(wm_session) = wm_session.as_mut() {
-                    for surface in &layout_observation.withdrawn_surfaces {
-                        require_wm_request_admission(
-                            wm_session.enqueue_surface_removed(*surface)?,
-                            "surface_withdrawn",
-                        )?;
+                    if let Some(wm_session) = wm_session.as_mut() {
+                        for surface in &layout_observation.withdrawn_surfaces {
+                            require_wm_request_admission(
+                                wm_session.enqueue_surface_removed(*surface)?,
+                                "surface_withdrawn",
+                            )?;
+                        }
                     }
-                }
-                for surface in layout_observation.new_surfaces {
-                    if session_launches.observe_surface(surface) {
-                        println!(
-                            "sophia_session_app schema=2 status=surface_observed source=action transaction={} surface={}",
-                            session_launches
-                                .admission()
-                                .expect("observed launch surface requires an admission")
-                                .intent
-                                .transaction
-                                .raw(),
-                            surface.index(),
-                        );
+                    for surface in layout_observation.new_surfaces {
+                        if session_launches.observe_surface(surface) {
+                            println!(
+                                "sophia_session_app schema=2 status=surface_observed source=action transaction={} surface={}",
+                                session_launches
+                                    .admission()
+                                    .expect("observed launch surface requires an admission")
+                                    .intent
+                                    .transaction
+                                    .raw(),
+                                surface.index(),
+                            );
+                        }
                     }
                 }
                 service_layout_progress!("authority");
@@ -508,12 +517,57 @@
                     }
                 }
                 layout.write_pending_cpu_buffer_handles(&mut staged_cpu_buffer_handles);
-                let (batch, released_admission_groups) = layout.projected_batch(&batch);
-                let production_batch =
-                    production_authority_batch(&batch, &released_admission_groups, &layout)?;
+                // One production envelope, built in arrival order. Group
+                // bucketing happens per projection call, and the merge
+                // selector already refused any run with a repeated
+                // transaction identity, so concatenation cannot split a group.
+                let mut production_batch = LiveProductionAuthorityBatch {
+                    groups: Vec::new(),
+                    dma_buf_registrations: Vec::new(),
+                    fence_registrations: Vec::new(),
+                    released_dma_bufs: Vec::new(),
+                    released_fences: Vec::new(),
+                };
+                let mut committed_transactions = 0usize;
+                for batch in &authority_run {
+                    let (batch, released_admission_groups) = layout.projected_batch(batch);
+                    let part =
+                        production_authority_batch(&batch, &released_admission_groups, &layout)?;
+                    committed_transactions = committed_transactions
+                        .saturating_add(authority_transaction_count(&batch.transactions));
+                    production_batch.groups.extend(part.groups);
+                    production_batch
+                        .dma_buf_registrations
+                        .extend(part.dma_buf_registrations);
+                    production_batch
+                        .fence_registrations
+                        .extend(part.fence_registrations);
+                    production_batch.released_dma_bufs.extend(part.released_dma_bufs);
+                    production_batch.released_fences.extend(part.released_fences);
+                }
+                if merge_run_len > 1 {
+                    metrics.merged_batches = metrics
+                        .merged_batches
+                        .saturating_add(merge_run_len.saturating_sub(1));
+                    metrics.max_merge_run = metrics.max_merge_run.max(merge_run_len);
+                    tracing::debug!(
+                        "sophia_live_authority_merge schema=1 status=committed batches={merge_run_len} transactions={committed_transactions} deferred_frame={defer_cpu_frame} queued={}",
+                        pending_authority_batches.len(),
+                    );
+                }
                 include!("authority_production.rs");
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Frame-service and preemption turns are where the producer
+                // actually gets ahead. Buffering here lets the next authority
+                // turn see the whole backlog and merge it, instead of
+                // discovering one batch at a time.
+                drain_queued_authority_batches(
+                    &authority_receiver,
+                    &mut pending_authority_batches,
+                    AUTHORITY_DRAIN_CAPACITY,
+                    Duration::from_millis(2),
+                )?;
                 let expired = layout.expire_pending(&mut session_controls)?;
                 if let Some(result) = expired {
                     pending_wm_update = Some(apply_wm_commit_result!(

@@ -13,6 +13,8 @@
         software_present_submissions_observed: _,
         cpu_compositions,
         coalesced_batches,
+        merged_batches,
+        max_merge_run,
         backend_ticks,
         runtime_committed,
         runtime_surfaces,
@@ -775,7 +777,7 @@
         native_resources.composition_target_reuses,
     );
     println!(
-        "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches}"
+        "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches} merged_batches={merged_batches} max_merge_run={max_merge_run}"
     );
     println!(
         "sophia_live_owner_timing schema=2 status=complete max_child_reap_msec={} max_input_phase_msec={}",

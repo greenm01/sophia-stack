@@ -18,6 +18,11 @@ pub struct XRasterFallbackCoalescer {
     last_cause: BTreeMap<SurfaceId, XRasterFallbackCause>,
     /// Surfaces currently in a failing run, so the first recovery is emitted.
     failing: BTreeSet<SurfaceId>,
+    /// Surfaces that have reported a satisfied requirement. The first success
+    /// always emits, even with no prior failure: a run where the density path
+    /// began working from the outset would otherwise log nothing at all, which
+    /// is exactly what happened when replies started being produced.
+    satisfied: BTreeSet<SurfaceId>,
 }
 
 /// Distinct (surface, cause) pairs retained before the table resets. The reset
@@ -33,6 +38,7 @@ impl XRasterFallbackCoalescer {
         {
             self.counts.clear();
             self.last_cause.clear();
+            self.satisfied.clear();
         }
         let changed_cause = self.last_cause.insert(surface, cause) != Some(cause);
         self.failing.insert(surface);
@@ -46,7 +52,9 @@ impl XRasterFallbackCoalescer {
     /// consecutive failures this recovery ended, when the recovery is itself
     /// worth reporting.
     pub fn observe_satisfied(&mut self, surface: SurfaceId) -> Option<u64> {
-        if !self.failing.remove(&surface) {
+        let recovered = self.failing.remove(&surface);
+        let first = self.satisfied.insert(surface);
+        if !recovered && !first {
             return None;
         }
         let ended = self

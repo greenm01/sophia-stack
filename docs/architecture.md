@@ -379,6 +379,19 @@ single group that claims both storage paths is malformed and fails closed.
 Future frame merging must preserve this explicit ownership relation rather
 than infer it from queue order.
 
+The owner loop may commit several authority batches in one production cycle,
+in arrival order, composing once at the newest committed state. Merging is the
+frame-merging case that ownership relation anticipated, so it is restricted to
+batches carrying only client content: any batch with Present work, surface
+removals, DMA-BUF or fence traffic, presentation intents, or output
+reservations keeps its own cycle. Merging also requires a quiescent admission
+pipeline, because projecting a batch drains the released-group queue and a
+release landing between two projections of one cycle would emit a quarantined
+group twice. A raster-requirement response may open a merged run but never
+join one, since it is judged against the requirement state of its own cycle.
+Without merging, a client that draws in a burst is displayed one draw per
+frame, trailing itself by the whole backlog.
+
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and
 constraints to outer allocations using the active chrome clearance. The

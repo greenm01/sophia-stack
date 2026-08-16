@@ -242,6 +242,128 @@ fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bo
         && (!batch.transactions.is_empty() || !batch.cpu_buffer_updates.is_empty())
 }
 
+/// Queued batches one authority drain may buffer.
+const AUTHORITY_DRAIN_CAPACITY: usize = 64;
+/// Batches one production cycle may commit together, counting the head. The
+/// bound keeps a single owner turn short enough that native frame service is
+/// not starved; the producer channel holds 256, so a burst still drains in a
+/// handful of cycles rather than one per frame.
+const AUTHORITY_MERGE_RUN_LIMIT: usize = 64;
+
+/// Whether a batch carries only client content: pixels and geometry for
+/// surfaces the layout already knows, with no lifecycle, reservation, or
+/// resource edge that a later batch in the same cycle could reorder.
+fn authority_batch_is_pure_content(batch: &XAuthorityObservedTransactionBatch) -> bool {
+    software_batch_may_coalesce(batch)
+        && batch.surface_presentations.is_empty()
+        && batch.presentation_intents.is_empty()
+        && batch.surface_output_reservations.is_empty()
+}
+
+/// Whether a batch may follow another inside one merged commit run.
+///
+/// A raster response is evaluated against the requirement state of its own
+/// cycle, so it may open a run but never join one: merging accepts every
+/// response before any commit, and a response admitted against a state two
+/// batches stale is exactly the confusion this boundary exists to prevent.
+fn authority_batch_may_follow_merge(batch: &XAuthorityObservedTransactionBatch) -> bool {
+    authority_batch_is_pure_content(batch) && batch.raster_responses.is_empty()
+}
+
+/// Whether a batch carries work a production cycle must observe.
+fn authority_batch_has_engine_work(batch: &XAuthorityObservedTransactionBatch) -> bool {
+    !batch.transactions.is_empty()
+        || !batch.removed_surfaces.is_empty()
+        || !batch.cpu_buffer_updates.is_empty()
+        || !batch.dma_buf_registrations.is_empty()
+        || !batch.fence_registrations.is_empty()
+        || !batch.present_submissions.is_empty()
+        || !batch.software_present_submissions.is_empty()
+        || !batch.released_dma_bufs.is_empty()
+        || !batch.released_fences.is_empty()
+        || !batch.surface_presentations.is_empty()
+        || !batch.presentation_intents.is_empty()
+        || !batch.surface_output_reservations.is_empty()
+}
+
+/// How many queued batches this production cycle commits together, counting
+/// `head`.
+///
+/// One reproduces the historical cadence exactly. A longer run is admitted
+/// only while the admission pipeline is quiescent — projection drains the
+/// released-group queue, so a release landing between two projections in one
+/// cycle would emit a quarantined group twice — and only across batches that
+/// carry nothing but client content. A repeated transaction identity also ends
+/// the run: production groups are bucketed per projection call, so a repeat
+/// would split one atomic group across the concatenation.
+fn authority_merge_run_len<'a>(
+    head: &XAuthorityObservedTransactionBatch,
+    queued: impl IntoIterator<Item = &'a XAuthorityObservedTransactionBatch>,
+    admission_quiescent: bool,
+    limit: usize,
+) -> usize {
+    if limit <= 1 || !admission_quiescent || !authority_batch_is_pure_content(head) {
+        return 1;
+    }
+    let mut identities = BTreeSet::new();
+    authority_batch_transaction_identities(head, &mut identities);
+    let mut len = 1;
+    for batch in queued {
+        if len >= limit || !authority_batch_may_follow_merge(batch) {
+            break;
+        }
+        let mut candidate = identities.clone();
+        let before = candidate.len();
+        authority_batch_transaction_identities(batch, &mut candidate);
+        if candidate.len() != before.saturating_add(batch_transaction_identity_count(batch)) {
+            break;
+        }
+        identities = candidate;
+        len = len.saturating_add(1);
+    }
+    len
+}
+
+fn authority_batch_transaction_identities(
+    batch: &XAuthorityObservedTransactionBatch,
+    identities: &mut BTreeSet<TransactionId>,
+) {
+    identities.insert(batch.transaction);
+    for transaction in &batch.transactions {
+        identities.insert(transaction.transaction);
+    }
+}
+
+fn batch_transaction_identity_count(batch: &XAuthorityObservedTransactionBatch) -> usize {
+    let mut identities = BTreeSet::new();
+    authority_batch_transaction_identities(batch, &mut identities);
+    identities.len()
+}
+
+/// Buffers immediately available batches without blocking.
+///
+/// A `try_recv` returning `Empty` means nothing is ready now, so the drain
+/// ends there rather than spinning: the next iteration sees whatever arrives,
+/// and spinning would couple owner latency to producer scheduling.
+fn drain_queued_authority_batches(
+    receiver: &std::sync::mpsc::Receiver<XAuthorityObservedTransactionBatch>,
+    queued: &mut VecDeque<XAuthorityObservedTransactionBatch>,
+    capacity: usize,
+    budget: Duration,
+) -> Result<(), &'static str> {
+    let started = Instant::now();
+    while queued.len() < capacity && started.elapsed() < budget {
+        match receiver.try_recv() {
+            Ok(batch) => queued.push_back(batch),
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err("persistent X authority transaction channel disconnected");
+            }
+        }
+    }
+    Ok(())
+}
+
 struct SessionActionExecutionContext<'a> {
     config: &'a PersistentXtermSessionConfig,
     xauthority: &'a std::path::Path,
