@@ -126,10 +126,16 @@ impl SurfaceRasterRequirementTracker {
                 self.tracked.remove(&surface);
                 continue;
             }
+            // The demand is the extent and the classes it needs; the committed
+            // generation is only the vantage point it was observed from. Under
+            // a drawing client that vantage moves every frame, so treating it
+            // as part of the demand mints a fresh requirement edge per frame
+            // and guarantees every reply lands against an edge that no longer
+            // exists. One outstanding edge per distinct demand also keeps a
+            // single reply in flight, so an accepted reply cannot strand
+            // duplicates behind it.
             if previous.is_some_and(|tracked| {
-                tracked.content_generation == demand.content_generation
-                    && tracked.logical_extent == demand.logical_extent
-                    && tracked.classes == classes
+                tracked.logical_extent == demand.logical_extent && tracked.classes == classes
             }) {
                 continue;
             }

@@ -204,3 +204,53 @@ fn canonical_variant_reserves_one_slot_across_many_density_classes() {
         vec![600, 700, 800]
     );
 }
+
+#[test]
+fn an_unchanged_demand_keeps_one_outstanding_requirement_edge() {
+    let logical = Size {
+        width: 800,
+        height: 600,
+    };
+    let targets = [target(
+        2,
+        Size {
+            width: 1920,
+            height: 1080,
+        },
+    )];
+    let mut tracker = SurfaceRasterRequirementTracker::new();
+    let requirement = tracker
+        .reconcile(
+            &[scene(SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 11 },
+                logical,
+            ))],
+            &targets,
+        )
+        .unwrap()
+        .remove(0);
+
+    // The client keeps drawing, so Engine's committed vantage advances while
+    // the demand itself — extent and classes — is unchanged. That must not
+    // mint a new edge: a fresh edge per frame would strand every reply in
+    // flight against an edge that no longer exists.
+    for advanced in [5_u64, 6, 7] {
+        let mut snapshot = scene(SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 11 },
+            logical,
+        ));
+        snapshot.surfaces[0].committed_generation = advanced;
+        assert!(
+            tracker.reconcile(&[snapshot], &targets).unwrap().is_empty(),
+            "an unchanged demand must not re-issue while one edge is outstanding"
+        );
+    }
+
+    // A reply produced from newer content still answers the original edge.
+    assert!(tracker.accept_response(SurfaceRasterResponseIdentity {
+        transaction: TransactionId::from_raw(70),
+        surface: requirement.surface,
+        source_content_generation: requirement.committed_content_generation + 3,
+        requirement_generation: requirement.requirement_generation,
+    }));
+}

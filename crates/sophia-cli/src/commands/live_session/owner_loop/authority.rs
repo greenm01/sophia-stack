@@ -73,7 +73,7 @@
                 native_frame_control_priority_cycles.saturating_add(1);
         }
         match authority_batch {
-            Ok(batch) => {
+            Ok(mut batch) => {
                 if !batch.raster_responses.is_empty()
                     && (batch.raster_responses.len() != batch.transactions.len()
                         || runtime.as_mut().is_none_or(|runtime| {
@@ -85,11 +85,19 @@
                         }))
                 {
                     tracing::warn!(
-                        "sophia_live_surface_raster schema=1 status=stale_response transaction={} responses={}",
+                        "sophia_live_surface_raster schema=1 status=stale_response transaction={} responses={} retained_buffer_updates={}",
                         batch.transaction.raw(),
                         batch.raster_responses.len(),
+                        batch.cpu_buffer_updates.len(),
                     );
-                    continue;
+                    // Refusing the demand must not desynchronize buffer
+                    // ownership. The authority has already published these
+                    // handles and will keep naming them in later content sets,
+                    // so dropping the updates alongside the transaction leaves
+                    // a committed scene referencing buffers Engine never
+                    // received. Decline the transaction; keep the buffers.
+                    batch.transactions.clear();
+                    batch.raster_responses.clear();
                 }
                 let drain_started = Instant::now();
                 while pending_authority_batches.len() < 64
