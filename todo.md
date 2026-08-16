@@ -4,6 +4,10 @@ Sophia is a research prototype moving toward a usable native-X daily driver.
 This file contains active work, ordering constraints, and promotion gates.
 Completed milestones belong in `docs/roadmap-history.md`; detailed decisions,
 diagnoses, and retained evidence belong in `docs/research-log.md`.
+The normative multi-monitor design lives in
+[`docs/multi-monitor-composition.md`](docs/multi-monitor-composition.md); its
+"Current And Target State" section and this roadmap's multi-monitor critical
+path must be updated together.
 
 Roadmap rules:
 
@@ -711,464 +715,60 @@ is excluded; retained product behavior is not.
   generations survive an older in-flight refresh and that active output
   settles atomically with the frontend layout. Alloy and Z3 retain operation
   binding and presentation-geometry attacks alongside their protected checks.
-- [ ] Implement native output mirroring as one logical output backed by N
-  connectors, and prove it on two same-mode heads. This closes the port ledger's
-  mirroring requirement with evidence rather than an exclusion. The shape is fixed:
-  policy sees exactly one `SnapshotOutput` and no connector identity, so mirroring
-  carries no `sophia_wm_v1` wire risk. The rejected shape is two logical outputs
-  sharing surfaces, which violates one-output-per-surface and raises
-  `DuplicateSurface`; do not attempt it.
-  Ordering is fixed by the standing rule that the bounded visual-retirement model
-  is extended before multi-output or buffer-lifetime semantics change. Joint
-  multi-head retirement is exactly that, so Milestone 14's first item moved here.
-  Both prerequisites are now closed. `validation/tla/VisualRetirement.tla` carries
-  a head layer beneath output retirement: a logical output retires only when its
-  last head flips, the framebuffer stays leased until then, and one output in the
-  checked configuration is a two-head mirror group, so a single run exercises
-  joint retirement within a group and independent retirement between groups.
-  Head loss drops its lease without counting as a flip and fails the candidate
-  closed. 112,252 distinct states at depth 19; all 23 models pass. The ratified
-  output-scoped presentation invariant in `docs/engine-architecture.md` is
-  narrowed to match rather than dropped.
-  The configuration half is done. `mirror` is now an arm of the closed named-output
-  KDL match, carrying the connectors a primary drives, and
-  `DesktopNamedOutputCandidate` holds them. The group is named from its primary
-  because policy sees one `SnapshotOutput` and no connector identity, so the group
-  needs a single owner and the configured output is it.
-  Validation is split by what each layer can answer. Parsing rejects a group that
-  names itself, repeats a connector, names none, or exceeds the output bound —
-  mistakes that hold whatever hardware is attached. The whole candidate rejects one
-  connector claimed by two logical outputs, the single arrangement that would make
-  "one logical output backed by N connectors" untrue. The topology rejects an
-  unknown or disconnected member, and a member that cannot present the primary's
-  mode, resolved through the same `resolve_mode` the primary's own reconciliation
-  uses so the two cannot disagree. Same-mode is enforced here rather than later
-  because no plane scaling exists anywhere on this path, and the alternative to
-  refusing is silently letterboxing a screen the operator asked to match.
-  A group that would work is then refused as `MirrorUnsupported` until the scanout
-  half exists. Refused, not dropped: a mirror directive that is accepted and ignored
-  leaves an operator staring at an unmirrored screen with no error to search for.
-  The impossible cases are reported before the unsupported one, because "this asks
-  for something impossible" and "Sophia cannot do this yet" send an operator to
-  different places.
-  What remains lifts singular per-output connector selection to a set with per-head
-  page-flip intake, shares the rendered buffer lease that is exclusive today, allows
-  N heads per logical rect in the topology, exempts mirror-group members from the
-  overlap rejection they would otherwise trip, projects the group into
-  `DesktopOutputState`, and handles mirror-group member loss in topology settlement. Mirroring is same-mode
-  only because no plane scaling exists anywhere; mismatched modes must fail closed
-  at reconcile time rather than silently letterbox. Hagia's output migrator gains a
-  `mirror` arm, which closes a Triad config-migration gap.
-  The scanout foundation is now in place. `outputs()` returns logical outputs
-  rather than one per head, and the first-match lookups that silently addressed
-  head 0 -- the callback router, presentation feedback, stable present, and head
-  composition -- resolve a head explicitly. Head composition is keyed by connector
-  name, not by `OutputId`: two activation targets in a group share an `OutputId`,
-  so keying by output composed the same head twice and left the group's other
-  connector dark. `NativeMirrorGrouping` is keyed by connector name for the same
-  reason it has to be -- configuration speaks names, and the name-to-id map lives
-  on a capability that is only readable after the sessions the grouping is needed
-  to build.
-  The two models that could not express head loss now can.
-  `OutputTopologyLifecycle.tla` carries a live head count and the head set recorded
-  at publication, so losing one connector of a group republishes the full epoch
-  exactly as losing an output does; `PublishedHeadsAreCurrent` fails when it does
-  not. `PolicyOutputSettlement.tla` gives each output a head set that feeds the
-  canonical scene, so a head-set change makes an in-flight candidate stale and
-  `CommittedTopologyWasCurrent` keeps its meaning under mirroring. Both new
-  invariants were confirmed non-vacuous by negative controls that let a head loss
-  leave the scene alone. `VisualRetirement.tla` needed no change; it was already
-  ahead of the code.
-  Most of the render path is now in place. Page-flip callbacks carry the connector,
-  which the decode already had as a slot and threw away; the router matches on it
-  instead of taking the first head with the right output, and the monotonic
-  frame-serial guard is per connector so a sibling's flip is no longer rejected as
-  a stale repeat of the first. A group retires when its last head flips rather than
-  its first, which is what keeps a framebuffer from being destroyed while a sibling
-  connector still scans it out; whether a head has flipped is derived from the
-  intake's per-head serials against the submission baseline rather than tallied a
-  second time. The callback channel is per logical output, because a group's heads
-  feed one runtime. The topology owner carries a head count beside the output list,
-  so losing one connector of a group is a new candidate rather than no change at
-  all -- the code answer to `PublishedHeadsAreCurrent`.
-  One fault found on the way was wider than mirroring. Nine call sites passed a
-  position in the logical-output list into a parameter that indexes the head table.
-  The two agree exactly while every output has one head, so it never failed; a
-  group ends the coincidence and every output after it would be driven through the
-  wrong connector. Every per-head entry point now takes an `OutputId` and resolves
-  the head itself, and the lookup is renamed `primary_head_index` because
-  `output_index` is the name that invited the mistake.
-  The hardware has now answered the question buffer sharing rests on. On card0,
-  DP-1 and DP-2 share modes up to 1920x1080, and a validation-only two-head modeset
-  naming one framebuffer for both primary planes is accepted -- as is one mode blob
-  serving both CRTCs. The control ran beside it, two heads with a framebuffer each,
-  and was also accepted, so the acceptance is about sharing rather than about the
-  driver being indifferent to two-CRTC commits. A mirror group can therefore own a
-  single buffer, which is what the exporter-per-group and single-`ADD_FB2` design
-  assumes. `tools/native_mirror_probe.sh` is the probe; it allocates dumb buffers
-  and destroys them, and every commit carries `TEST_ONLY`, so it changes nothing.
-  The probe's second phase found something better than it went looking for. Both
-  CRTCs on this machine already scan out **the same framebuffer handle** -- the
-  kernel console drives two connectors from one buffer -- which is a stronger
-  demonstration that sharing works on this hardware than any validation-only commit
-  can give. It is not a mirror group, because the two run different modes
-  (2560x1440 and 1920x1080), and `MismatchedMirrorSize` refused the request exactly
-  as it should: one buffer cannot satisfy two scanout sizes without plane scaling.
-  So one hardware question stays open, and joint retirement already depends on the
-  answer: does a two-CRTC page-flip commit deliver one event per CRTC, or one per
-  commit? One per commit and a group waiting for every head waits forever. It
-  cannot be asked with `TEST_ONLY`, which the kernel rejects together with
-  `PAGE_FLIP_EVENT`, and it cannot be asked of the current desktop, which is not a
-  group. It belongs in the tty4 output gate, where Sophia owns the modeset and both
-  heads are same-mode by construction -- which is the condition the question is
-  about. Until it is answered, treat one-event-per-CRTC as an assumption the
-  retirement rule rests on rather than a fact.
-  Three implementations were read as references, and the result narrows the design.
-  **niri** and **river** do not implement mirroring at all: niri keys surfaces by
-  `crtc::Handle` and river creates one `Output` per `wlr_output`, so both are one
-  logical output per connector with no group concept. niri's only mention is a
-  comment allowing for the possibility. Neither offers a model to copy.
-  **X.Org's modesetting driver does**, and has for a long time
-  (`hw/xfree86/drivers/video/modesetting/pageflip.c`). What it does differs from the
-  plan on one point that matters. Even with `atomic_modeset` enabled,
-  `drmmode_crtc_flip` builds a request holding **one CRTC's** plane properties and
-  commits it alone with its own cookie; `ms_do_pageflip` loops over every enabled
-  CRTC issuing one such commit each. X deliberately does not name several CRTCs in a
-  single atomic commit. It joins them afterwards with `flipdata->flip_count`, a
-  refcount incremented per queued flip, and `ms_pageflip_handler` notifies the
-  extension and calls `drmModeRmFB` on the old framebuffer only when the last
-  completion arrives -- which is joint retirement, arrived at independently and
-  already the shape `group_awaiting_flip` has.
-  So item 8 changes: submit **per head** and join by count, rather than building a
-  multi-head page-flip commit. That also closes the open hardware question, because
-  one commit per CRTC unambiguously yields one event per CRTC; the ambiguity only
-  ever existed for the multi-CRTC commit nobody ships. Three further details are
-  worth taking: X holds a local reference across the submit loop so a first-flip
-  failure cannot free the shared state still in use; on partial failure it does not
-  try to cancel flips already queued, and removes the new framebuffer only if none
-  were; and it offers `async_flip_secondaries` because a group otherwise throttles
-  to its slowest head, judder that X names as specifically a clone/mirror problem.
-  The architectures differ where Sophia's contract requires it. X has no logical
-  output at all: the screen is one canvas, CRTCs are viewports at an `(x, y)` offset
-  into a single shared framebuffer, and mirroring is two CRTCs given the same
-  offset -- which RandR clients see as two CRTCs. Sophia's one-logical-output-backed-
-  by-N-heads exists so policy sees one screen and no connector identity, so the
-  grouping cannot simply be borrowed even though the buffer sharing and the
-  retirement count can.
-  The exporter now belongs to the logical output rather than the head, built from
-  the modifiers every head of the group can scan out -- a modifier only one plane
-  advertises would make a buffer its sibling cannot display, so the intersection is
-  the only safe set. Several counts moved with it, from per head to per exporter,
-  because a group's single exporter was being counted once per connector.
-  The render path is complete. Submission is per head joined by a completion count,
-  on X's model: the export and the framebuffer happen once, and only objects,
-  request, and commit loop. The hazard there was ownership -- every failure path
-  destroyed the resource bundle, which is right for one head and catastrophic for a
-  group, because once any head's commit lands a connector is scanning that buffer.
-  Ownership now transfers to the submission on the first successful commit and
-  later failures keep it, with `PartiallySubmitted` carrying that through three
-  layers so the candidate fails closed without the buffer being freed.
-  Head loss fails closed rather than hanging. X leaves a flip queued on a display
-  that went away waiting forever and calls it a configuration error;
-  `VisualRetirement.tla` settles such a generation as removed, so the lost head
-  leaves the awaited set, never counts as a flip, and a survivor's flip cannot
-  retire the frame as displayed.
-  The config gate is open. `MirrorUnsupported` is gone, `mirror_of` names each
-  group's primary, members take the primary's whole visual state rather than merely
-  being allowed to overlap it, and `reject_overlaps` skips same-group pairs because
-  members share a position by definition. The activation plan admits capabilities
-  sharing an `OutputId`, which is what a group is.
-  **Not reachable from any live path, which an earlier note in this entry got
-  wrong by calling it complete.** Three disconnections, found by tracing rather
-  than assumed. The config side and the KMS side are not wired together:
-  `LiveProductionNativeScanout` builds sessions through `into_page_flip_sessions`,
-  which hardcodes `NativeMirrorGrouping::none()`
-  (`hardware_validation/atomic_scanout_card/session.rs:591`); the mirroring-aware
-  constructor beside it is called only from tests. So a configured group parses,
-  validates, and then reaches a KMS layer that is always told there are no groups.
-  Frame targets never resize: `observe_gbm_egl_frame_target_size_for` and
-  `observe_output_size_for` (`runtime/frame_target.rs:39`, `:57`) have no
-  production callers at all, so an output's frame is fixed at the size it had when
-  the runtime was built, and the only way a size changes is tearing the runtime set
-  down and rebuilding it on hotplug.
-  And no session can apply a modeset. The live session uses
-  `NativeOutputTopologyValidationExecutor`, whose `apply` is a hard refusal --
-  "Apply is not gated here, it is absent" (`desktop_output_commit.rs:35`). The one
-  apply-capable executor is built only by the standalone `native-topology-apply`
-  command, which opens its own DRM master and so cannot run against a live session.
-  Nothing triggers an activation after startup either: no reload, no signal, no
-  control-socket message.
-  The tty4 gate cannot express any of this. Both `native-topology-validate` and
-  `native-topology-apply` pin the profile source to `None`
-  (`backend.rs:363`, `:434`), which means the compiled default
-  `output { inherit-sophia #true; }` rather than the operator's config, so the gate
-  can never request a group.
-  The shortest path to visible mirroring avoids runtime mode changes entirely:
-  wire config groups into `NativeMirrorGrouping` at session construction, and let
-  the session's *initial* modeset bring each head up at its own mode, composing the
-  scene into each head's buffer at a fitted rect. That needs no apply executor, no
-  runtime trigger, and no frame-target resize, because nothing changes mode after
-  startup. The framebuffer is created inside each head's submit, so two
-  heads sharing a buffer object would each `ADD_FB2` and get distinct handles, and
-  `RM_FB` would then run twice against one handle -- the second failing and latching
-  cleanup permanently. Both have to be resolved together with the lease, which is a
-  move-only affine token whose `Drop` is the release.
-  Then the config tranche: `mirror_of` on `DesktopOutputState`, the same-group
-  overlap exemption, and deleting `MirrorUnsupported`. That tranche is what makes
-  an end-to-end mirror test reachable at all; until it lands, reconciliation
-  refuses both the shared position and the `mirror` directive, so the
-  head-composition test asserts the projection shape those changes must preserve.
-  The 2026-08-14 physical attempt reached both configured heads but failed with an
-  AMDGPU command-stream rejection before visual confirmation. That failure exposed
-  a later regression: frames were queued for every exporter, while initialization,
-  ticks, resource ownership, and retirement still selected the primary head.
-  The repair now gives every connector an explicit scanout lane, submits distinct
-  native-size buffers per head, and joins callbacks on one logical frame identity.
-  Retained mixed frames, renderer-image handoff, and hardware cursor updates fan out
-  across the group; CPU source pixels are shared, and initial projection uses direct
-  CPU buffers so startup does not migrate an inline EGL target into a worker.
-  Failed gates now archive a bounded kernel delta separately from promotion proof,
-  and the physical verifier requires causal per-head submit/callback/retire records
-  for one common frame. The next physical attempt reached both worker-backed heads
-  without an AMDGPU rejection, then exposed a fast-head scheduling race: DP-2
-  flipped generation 2 and tried to submit generation 3 while DP-1 was still
-  rendering generation 2. Generation reservation, connector/frame fences,
-  cleanup-safe successor deferral, and a pre-submit progress watchdog now cover
-  that trace and its adjacent blocked-head case. Offline and fake-device coverage
-  is green. The following run completed joined frames 2 through 11, then exposed
-  a shutdown-only primary-head identity lookup after the primary flipped frame 12
-  before its sibling submitted. Logical submitted identity now lives in the group
-  lifecycle through the final callback, and startup readiness is deduplicated to
-  the one logical output required by the verifier. The next run reached repeated
-  joined presentation but typing `ll` exposed missing X11 `PolyRectangle` support
-  in the xterm proof client; opcode 67 now has bounded outline rendering and full
-  drawable/GC error semantics. Fatal client exits also enter bounded native and
-  Present cleanup instead of bypassing drain evidence. The following signed run
-  proved those fixes and joined frames on both heads, but `ll` plus Return filled
-  the 256-batch authority queue and the old fail-fast transport disconnected
-  xterm with status 84. Production authority intake now applies bounded,
-  lossless client backpressure; fail-fast emission remains probe-only. The next
-  `ll` burst remained responsive: 891 authority batches drained with zero drops
-  and both connectors joined through frame 8. That run exposed one stale
-  completion check that demanded distinct checksums from two heads sharing one
-  logical output; completion and physical verification now require mirror-group
-  equality and distinctness only between logical outputs. Diagnostic attempt
-  `0006` then reached joined frame 18 but exposed two independent correctness
-  gaps: shutdown re-entered scene projection with an empty tick and DP-2 received
-  source-sized damage metadata. Mirror drain is now callback/retirement/cleanup
-  only, with typed forced-detach evidence, and all CPU/mixed/retained queue paths
-  project destination-native damage before reserving a generation. The same
-  run's malformed terminal pixels led to replacing the synthetic uppercase text
-  with the public-domain X.Org 6x13 face, exact ImageText/PolyText semantics,
-  backed pixmap text, and overlap-safe clipped CopyArea. The local real-xterm
-  proof now passes white-on-black mixed-case scrolling with opcodes 76 and 62
-  and no X error. The proof is bound to a current per-surface buffer, four
-  adjacent post-scroll rows, and accepted same-surface CPU updates in causal
-  ImageText8→CopyArea→ImageText8 order; core XID collision checks also prevent
-  font/pixmap/GC creation from orphaning a live
-  window. The next physical run brought both native heads up with the centered
-  scene, but the 0.75-scale head exposed visibly blocky 6x13 text and deadline
-  completion found one pressed key without a pending release barrier. Exact-size
-  composition now remains nearest-sampled, reductions use a fixed 4x4 Catmull-Rom
-  path with fail-closed physical evidence, and enlargements remain linear. Runtime
-  deadline completion now suppresses new physical input, synthesizes all held-key
-  releases, and waits on the ordered delivery/release barrier before native
-  teardown. The next run exposed a separate XRGB contract bug: the sharp shader
-  interpreted XRGB's zero padding byte as transparent alpha and blackened DP-2's
-  terminal layer while separately rendered chrome and the hardware cursor stayed
-  visible. Texture draws now distinguish opaque XRGB from premultiplied ARGB,
-  and the gate requires native-size final-region text pixels on both heads rather
-  than inferring raster content from shared frame identity. This item remains
-  open until the diagnostic-capable tty4 run
-  visibly passes and its archive verifies; no userspace test is a substitute for
-  that AMDGPU evidence.
-- [ ] Replace primary-sized and flat-output multi-monitor rendering with the
-  normative per-head composition path in
-  `docs/multi-monitor-composition.md`. Preserve one logical scene generation and
-  the existing joint mirror retirement, but fan out before rasterization so
-  every physical head owns a native plan, damage ledger, target slot,
-  framebuffer, and KMS lifetime. Implement in this order:
-  1. **Done:** `VisualRetirement.tla` now models per-head preparation and
-     submission, output-scoped commit clocks, exclusive head ownership,
-     overlapping-output reservation, joint transaction feedback, and distinct
-     head loss. Its checked negative controls cover early submit, overlap, and
-     premature feedback/release.
-  2. Split logical output-scene records from opaque physical-head targets.
-     Normalize current `BufferSource` transactions into singleton bounded
-     `SurfaceContentSet` records without exposing head identity to WM policy.
-     **The identity half is done.** The backend mints session-scoped
-     `RenderHeadId`s while building page-flip sessions and keeps the
-     card/connector/CRTC/name mapping in a private
-     `LiveProductionNativeHeadTable`; Engine's raw-integer DRM registry is
-     replaced by `EngineHeadRegistry` holding generation-stamped
-     `HeadRenderTarget` records grouped by logical output (`MAX_HEADS_PER_OUTPUT`
-     is its own named capacity). A reshaped head must advance its target
-     generation or admission fails as stale. The logical view of an output is
-     the shape all heads agree on, fail closed; refresh is excluded from that
-     agreement because mirror heads legitimately run near-but-not-equal rates,
-     and logical pacing reduces to the slowest head. Sysfs discovery moved to
-     `sophia-backend-live` with the physical identity it reads. Mirror
-     lifecycles, page-flip routes/callbacks/kernel timestamps, and per-head
-     evidence are head-keyed (`sophia_live_native_head_page_flip schema=2`,
-     `sophia_live_mirror_bootstrap schema=2`, `sophia_live_mirror_head_damage
-     schema=2`, completion `schema=3`); the readiness line
-     (`sophia_live_native_head schema=2 status=ready`) is the one record that
-     prints a head id beside its connector name, and the physical verifiers
-     correlate through it. A callback whose CRTC resolves to no admitted head
-     fails closed with a named unknown-head error. The physical verifier,
-     meta-check, and fixture log are updated and green offline.
-     **The content half is done too.** `SurfaceTransaction` and
-     `CommittedSurfaceState` carry a bounded `SurfaceContentSet`
-     (`MAX_SURFACE_CONTENT_VARIANTS` is its own named capacity), every
-     producer normalizes into a one-variant set, and commit clones the whole
-     set so variants survive to the committed scene. Set invariants are
-     unrepresentable-by-construction (private fields, fail-closed
-     constructor), envelope identity is structural, DMA-BUF Present pairing
-     ranges over every variant, and the authority wire format is unchanged
-     (canonical extent and source encode as before). Published sets contain
-     ready-only variants; per-variant damage, fidelity, and transform class
-     join with their consumers in later steps;
-     head identity still never reaches WM policy. Diagnostic
-     run `0017` proved the rekeyed path on hardware end to end and failed only
-     at visual confirmation; the ratified bar for that confirmation is
-     sharp-not-blocky (native client-text sharpness on a fractional-density
-     head is an explicit non-goal of unequal-mode mirroring), so a re-run with
-     that reading banks the physical baseline.
-  3. **Planner, CPU lowering, and prepare-all ownership cutover done.** Engine now captures
-     one immutable `OutputSceneSnapshot`, derives fit/cover/exact
-     `HeadCompositionPlan`s with variant selection and head-local damage, and
-     stores logical output viewports independently from unequal native head
-     modes. The production CPU transaction invokes this planner from its exact
-     committed slice. CPU variants, native compositor solids, placement, clips,
-     and head-local damage are lowered into one independently queued native-size
-     frame per head. Synchronous startup and resume use the same semantic head
-     frames; no projected flat-baseline modeset remains.
-     `OutputPresentationCohort` now owns the live multi-head preparation barrier:
-     renderer export, framebuffer/import/blob creation, and atomic request
-     construction produce one affine prepared owner per head, and the scheduler
-     performs zero KMS commits until every required candidate is recorded.
-     Preparation failure cancels the complete prepared set; partial submission
-     still poisons and drains. `OutputTopologyTransaction` enforces
-     prepare/apply/first-presentation publication and rollback after partial
-     apply. Accepted IPC effects now reach the visual/session owner, where every
-     enabled and disabled head is bound to its current native objects and each
-     requested mode is resolved without mutation. Disabled heads remain required
-     transaction members and all target generations advance explicitly. Root-
-     space logical viewports survive resolution, so one committed scene now
-     lowers provisional mirror and extended heads independently. Topology
-     preparation owns each enabled framebuffer/import/mode blob without an early
-     submit, and one card-scoped atomic request combines enabled and disabled
-     heads. Card commits are now ordered deterministically, an accepted prefix
-     rolls back in reverse order after a later-card refusal, and rollback render
-     targets are reconstructed from the published snapshot plus live physical
-     sizes/generations rather than from the candidate. A typed cohort now blocks
-     apply until every enabled/disabled candidate member and every rollback
-     framebuffer is owned; protocol observations admit whole physical batches
-     or none. The live owner now nonblockingly drives candidate workers first and
-     rollback workers second, quarantines ordinary scanout during preparation,
-     and drains/cancels partial owners on failure or session completion. It now
-     retains the complete dual pool through KMS apply. Previously disabled
-     connected heads remain in the native model and contribute an explicit
-     rollback-disable property owner instead of an impossible rollback
-     framebuffer. The live session drives one blocking effect per card, installs
-     accepted owners without a second modeset, rebuilds logical output runtimes,
-     queues a complete native-size first cohort, and publishes only after every
-     replacement output presents. Renderer/service failure and supervised
-     output-peer loss before publication request reverse-card rollback; hotplug
-     refreshes the output protocol snapshot and capabilities only after its
-     replacement presentation. Deterministic effect-path failure injection now
-     covers preparation, partial card apply, installation/first-presentation
-     failure, supervised peer loss, and reverse rollback. Remaining work is
-     signed physical evidence.
-     Normal mirror startup now enters the same architectural shape: semantic
-     native-size head frames establish every worker, prepare every framebuffer
-     and modeset owner without KMS mutation, and cross a complete-head barrier
-     before one card-local blocking atomic modeset. Singleton, mirror, extended,
-     first-authority-cycle, explicit-repaint, and resume/recovery startup all use
-     that transaction. The physical verifier rejects the old direct-CPU baseline;
-     no native compatibility flat-baseline modeset remains. Pre-KMS failure
-     drains or discards every queued worker lease, and whole-output admission
-     rejects duplicate or incomplete logical batches before runtime mutation.
-  4. **Done:** the common plan lowerer resolves CPU, DMA-BUF, and retained
-     renderer-image sources while sharing only immutable source ownership and
-     duplicating affine DMA-BUF planes per generated head frame. Ordinary GPU
-     Present derives the exact old/new root-space output set, queues a native
-     cohort for every intersecting output, and joins output retirement in
-     Engine before feedback or input publication. Software Present, retained
-     scene, focus/chrome/outline, resume, damage, and cursor projection use the
-     same complete output set; no ordinary path uses a distinguished primary
-     output to decide another output's pixels. The live reducer now consumes
-     each head's committed IPC mapping, target generation, scale, transform,
-     and refresh; the former session-global backend mirror-fit policy is gone.
-     Each passive exporter frame now retains its Engine scene generation,
-     committed target generation, mapping, and logical checksum. Batch admission
-     rejects stale or cross-scene head work before queue mutation, and topology
-     candidate/rollback pools validate against the correct side of the plan.
-  5. Add authority-owned variants for server-rendered X11 core content. Select
-     exact density first and report downsample/upscale fallbacks explicitly;
-     arbitrary singleton client rasters remain supported without claiming
-     native rerasterization.
-  6. Gate unequal-size mirroring and differently scaled extended outputs with
-     per-head plan/render/submit/callback/retire evidence, spanning-surface
-     coverage, failure injection, topology replacement, and clean teardown.
-     The unequal-mirror verifier now requires a native-size plan and matching
-     queued identity for every head, with plan-before-queue-before-submit
-     ordering and negative controls for stale generation, mapping, and extent.
-     Mixed mirror-plus-extended physical evidence remains outstanding.
-  Prerequisite evidence migration is also done: native-head completion names the
-  shared scene generation and logical-content checksum separately from an
-  optional head-pixel checksum, so future native raster differences cannot break
-  mirror identity.
-- [x] Apply a desktop output configuration change to a *running* session, so an
-  operator can change a mode, position, scale, or transform without restarting.
-  The live path accepts complete `sophia_output_v1` proposals from the supervised
-  public WM/shell, including independently selected modes and mixed
-  mirrored/extended logical groups. It prepares candidate and rollback
-  render/KMS ownership before mutation, applies cards deterministically,
-  rebuilds runtime, X, WM, pointer, and input state, and commits authority only
-  after all new logical outputs present. The historical gaps below describe the
-  starting point and are retained as archaeology:
-  Frame targets never resize. `observe_gbm_egl_frame_target_size_for` and
-  `observe_output_size_for` (`runtime/frame_target.rs:39`, `:57`) have no
-  production callers at all, so an output's frame is fixed at the size it had when
-  the runtime was built. The only way a size changes is tearing the whole runtime
-  set down and rebuilding it, which is what hotplug rescan does.
-  No session can apply a modeset. The live session drives activation with
-  `NativeOutputTopologyValidationExecutor`, whose apply is a hard refusal --
-  "Apply is not gated here, it is absent" (`desktop_output_commit.rs:35`). The one
-  apply-capable executor, `NativeOutputCommitExecutor::activating`, is built only
-  by the standalone `native-topology-apply` command, which opens its own DRM
-  master and therefore cannot run against a live session at all.
-  Nothing triggers an activation after startup. The activation block runs once in
-  `run_persistent_xterm_session` before the event loop; there is no reload, no
-  signal handler, and no control-socket message that reaches it. The output
-  profile is read once at construction and never re-read.
-  And nothing reconciles after a successful apply: the engine topology, the
-  session's `initial_outputs`, and the policy scene would all still describe the
-  old modes.
-  Ordering note: this is **not** a prerequisite for mirroring. A group's heads can
-  come up at their own modes during the session's initial modeset, which needs
-  none of the above. The two were conflated once already, and the frame-target
-  gap was misdiagnosed as mirroring's blocker when the real one was that the
-  standalone apply command composes nothing and can only re-apply what is already
-  on screen.
-  The protocol-neutral front half now exists: `sophia_output_v1` has a bounded
-  authenticated role transport, complete snapshots/proposals/outcomes, one active
-  plus one complete latest successor, and candidate validation. Production DRM
-  capabilities bind to opaque heads and resolve independently selected per-head
-  modes into mixed mirror/extended groups. `LiveOutputAuthorityOwner` now holds
-  the last published snapshot while a candidate passes Engine's prepare, apply,
-  rollback, and all-output first-presentation phases; validation and rejected
-  preparation do not consume fresh logical-output identities. The selected public WM now owns
-  the exclusive supervised output role: its exact PID is authorized, the socket
-  is advertised through `SOPHIA_OUTPUT_SOCKET`, proposals are polled without
-  blocking visual progress, and a supervised restart disconnects the old peer
-  and advances the role epoch before authorizing the replacement. Validate-only
-  proposals reach and settle through the live authority owner. Apply becomes an
-  immutable effect contract consumed by the visual owner and resolves into a
-  complete native head plan, including explicit disable operations. Candidate
-  and rollback owners are prepared together, partial cross-card mutation rolls
-  back in reverse order, and connection loss cannot abandon applied KMS state.
+
+#### Multi-Monitor Per-Head Composition Critical Path
+
+The normative design, ownership boundaries, and acceptance rules live in
+[Multi-Monitor Per-Head Composition](docs/multi-monitor-composition.md). This
+roadmap tracks only the remaining executable slices. Completed mirror,
+per-head-planning, topology-transaction, output-IPC, and authority-raster
+foundation is summarized in [Roadmap
+History](docs/roadmap-history.md#2026-08-16-multi-monitor-per-head-composition-foundation).
+Detailed physical-run diagnoses remain in
+[Research Log](docs/research-log.md).
+
+- [ ] Make accepted core X11 `PutImage` replayable in authority-owned density
+  stores. Decode and retain bounded owned pixels, destination geometry, format,
+  depth, byte order, GC semantics, and source generation inside X Authority;
+  never expose X requests or XIDs to Engine. Raster each requested density
+  independently with the document's deterministic rational-edge/area-coverage
+  rules. A full opaque replacement may establish a new replay baseline and
+  discard older journal commands only when doing so preserves the canonical
+  protocol-visible drawable.
+- [ ] Extend replay to cross-drawable `CopyArea` with explicit source drawable
+  and generation dependencies. Preserve clipping, overlap, and GC semantics;
+  reject stale, destroyed, cyclic, cross-namespace, or over-budget dependencies
+  without poisoning unrelated surfaces. Until this is implemented, publish the
+  canonical raster with an explicit sampled-fallback reason.
+- [ ] Keep authority raster storage bounded and fail visible. Cover payload,
+  command-count, variant-count, and canonical-plus-derived byte limits; late
+  density demand; fractional targets; baseline replacement; source destruction;
+  and allocation failure. Classify fallback telemetry by cause (including
+  unsupported `PutImage`, unsupported cross-drawable copy, stale dependency,
+  journal capacity, backing capacity, and transform mismatch) and coalesce
+  repeated warnings without hiding counts.
+- [ ] Add deterministic authority regressions for the real xterm sequence:
+  startup `PutImage`, later ImageText8/PolyText8 and line drawing, same-drawable
+  scrolling, late 750-density demand, canonical plus derived publication, and
+  generation races. Require exact-density output to differ in pixel identity
+  where density differs while retaining the same logical content generation.
+  Add negative controls proving an unsupported or over-budget command cannot be
+  mislabeled as exact.
+- [ ] Re-run the signed unequal-mode mirror gate after the replay slice lands.
+  Require DP-1 to select its exact 1000-density variant and DP-2 to select a
+  distinct exact 750-density variant for one common logical generation; require
+  zero sampled fallback, positive native-size text evidence on both heads,
+  causal plan/queue/submit/callback/retire records, clean suspend, zero abandoned
+  ownership, and an archived verifier-approved result. Do not accept visual
+  similarity produced by downsampling the canonical head.
+- [ ] Prove the same architecture for a mixed mirror-plus-extended topology
+  driven through `sophia_output_v1`. The privileged output role hosted by the
+  shell or selected WM process must independently select each opaque head's
+  mode, scale, transform, position, and mirror membership. Ordinary
+  `sophia_wm_v1` policy remains logical-output-only and receives no head or
+  connector identity. Require spanning-surface coverage, complete candidate and
+  rollback ownership, first-presentation publication, head-loss recovery, and
+  clean teardown on the physical target.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

@@ -13,6 +13,15 @@ Boundary](renderer-import-boundary.md) defines native client-buffer admission.
 This document specializes those contracts for extended desktops, mirror groups,
 and other logical-output topologies with more than one physical display head.
 
+The executable implementation sequence is maintained in the
+[Multi-Monitor Per-Head Composition Critical
+Path](../todo.md#multi-monitor-per-head-composition-critical-path). This
+document is normative; the roadmap is the active checklist. Any change to an
+implemented capability, transitional limitation, or acceptance condition must
+update both documents in the same change. Completed slices are archived in
+[Roadmap History](roadmap-history.md), while run diagnoses and retained evidence
+belong in [Research Log](research-log.md).
+
 Normative target behavior that is not implemented is labelled as such. The
 current mirror path remains useful physical evidence, but composing one logical
 frame and then scaling that flattened result is not the target architecture.
@@ -28,6 +37,13 @@ may have several when mirrored. Several logical outputs form an extended
 desktop. The WM continues to see only logical outputs; it never receives
 physical mode, scale, transform, connector, CRTC, card, mode-object,
 framebuffer, render-target, or head-count identity.
+
+Physical topology control is a separate privileged authority. A shell or the
+selected WM process may host the exclusive `sophia_output_v1` role and receive
+opaque head capability handles needed to choose each head's mode, scale,
+transform, position, and mirror membership. Those handles and capabilities do
+not enter the ordinary `sophia_wm_v1` scene/policy projection, and neither IPC
+exposes connector, CRTC, card, mode-object, or framebuffer identity.
 
 Mirroring is semantic rather than framebuffer identity:
 
@@ -740,11 +756,30 @@ prepared before mutation; the live owner drives the per-card coordinator,
 installs the accepted side, rebuilds logical runtimes, and rolls an accepted
 prefix back in reverse order on failure. A previously disabled connected head
 remains in the native model and has an explicit rollback-disable owner rather
-than a fabricated framebuffer. Remaining limits are protocol drawing
-operations outside the bounded semantic journal (notably arbitrary PutImage
-and cross-drawable CopyArea), which must honestly retain sampled compatibility
-content, and signed physical evidence of the authority-raster plus complete
-mixed mirror-and-extended IPC cutover.
+than a fabricated framebuffer.
+
+The active critical path is X Authority replay coverage. Core `PutImage` into a
+window currently marks that surface's semantic journal unsupported, and
+cross-drawable `CopyArea` has no bounded source-generation dependency. Those
+operations therefore publish the canonical raster as sampled compatibility
+content rather than an exact authority-owned target-density variant. This is a
+correct fail-visible fallback, but it is not the target architecture and cannot
+satisfy the unequal-density physical gate.
+
+Signed gate attempt `0019` on `a5d916279c9fb8cd03415945d0dfeb11515c1a32`
+confirmed the boundary: both native heads rendered and retired cleanly, but the
+750-density head selected the 1000-density canonical handle and emitted 76
+`sampled_fallback` records. A traced real xterm issues opcode 72 (`PutImage`)
+during startup before later text and line operations. The next slice must retain
+and replay that bounded pixel operation inside X Authority; it must not weaken
+variant selection, relabel a sampled buffer as exact, or move X semantics into
+Engine.
+
+After `PutImage`, the remaining protocol replay gap is cross-drawable
+`CopyArea`. The remaining system evidence gaps are a verifier-approved exact
+1000/750 unequal-mirror run and a complete mixed mirror-plus-extended
+`sophia_output_v1` cutover. Their ordered implementation and exit criteria are
+maintained in the linked active roadmap.
 
 ### Target
 
@@ -754,6 +789,7 @@ mixed mirror-and-extended IPC cutover.
 - Replace all primary-derived and flat-output mirror composition paths with the
   common per-head planner used by mirrored and extended outputs.
 - Extend authority-owned native variants to the remaining server-rendered X11
-  operations without moving X semantics into Engine.
+  operations, beginning with bounded `PutImage` and then cross-drawable
+  `CopyArea`, without moving X semantics into Engine.
 - Enforce prepare-all mirror cohorts, joined retirement, and explicit sampling
   evidence in deterministic and physical acceptance gates.
