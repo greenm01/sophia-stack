@@ -424,3 +424,106 @@ fn wire_xy_pixmap_upload_is_classified_unsupported_at_dispatch() {
         XRasterFallbackCause::UnsupportedPutImage,
     );
 }
+
+#[test]
+fn partial_coverage_is_weighted_as_light_not_as_encoded_bytes() {
+    let namespace = NamespaceId::from_raw(152);
+    let window = 0x220f01;
+    let gc = 0x220f02;
+    let surface = SurfaceId::new(window, 1);
+    let order = XByteOrder::LittleEndian;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    put_image_dispatch(
+        namespace,
+        1,
+        1,
+        &create_window_request(order, window, 0, 0, 80, 40),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    put_image_dispatch(
+        namespace,
+        2,
+        55,
+        &create_gc_values_request(
+            order,
+            gc,
+            window,
+            u32::from(X_GX_COPY),
+            u32::MAX,
+            0x00ff_ffff,
+            0,
+            0,
+            0,
+        ),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    // A white block over black, halved. Every destination pixel along the
+    // trailing edge is partially covered, so its value reports how coverage
+    // was weighted.
+    let white = 0x00ff_ffff_u32;
+    let mut pixels = Vec::new();
+    for _ in 0..(6 * 6) {
+        pixels.extend_from_slice(&white.to_le_bytes());
+    }
+    put_image_dispatch(
+        namespace,
+        3,
+        72,
+        &put_image_request(
+            order,
+            window,
+            gc,
+            PutImageGeometry {
+                width: 6,
+                height: 6,
+                dst_x: 0,
+                dst_y: 0,
+            },
+            &pixels,
+        ),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let response = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(9_960),
+                &density_requirement(surface, 2, &[500]),
+            )
+            .unwrap(),
+        "a half-density store must replay from the journal",
+    );
+    let [XAuthorityCpuBufferUpdate::Replace(store)] = response.cpu_buffer_updates.as_slice() else {
+        panic!("the 0.5 class must publish one derived replacement");
+    };
+    let stored = xrgb_pixels(&store.bytes);
+
+    // Fully covered interior stays pure white: the weighting must not tint or
+    // dim content that no edge touches.
+    assert_eq!(stored[0] & 0xff, 0xff);
+
+    // Averaging encoded bytes would put a half-covered white pixel near 128.
+    // Weighting light puts it near 180, which is what half the luminance of
+    // white actually encodes to.
+    let partial = stored
+        .iter()
+        .map(|pixel| pixel & 0xff)
+        .filter(|value| *value != 0 && *value != 0xff)
+        .collect::<Vec<_>>();
+    for value in &partial {
+        assert!(
+            *value > 140,
+            "a partially covered white pixel must carry its share of light, got {value}"
+        );
+    }
+}

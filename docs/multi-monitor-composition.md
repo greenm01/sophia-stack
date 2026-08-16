@@ -653,7 +653,14 @@ parallel multi-monitor subsystem.
   coverage for GXcopy glyphs; non-copy raster operations use a binary coverage
   decision. Retained client rasters use the same rational-overlap rule as a
   per-channel area average, so a fully covered destination pixel keeps its
-  source color exactly and only boundary pixels blend. One authority
+  source color exactly and only boundary pixels blend. Partial coverage is
+  weighted as light rather than as gamma-encoded bytes: components are squared
+  before mixing and square-rooted after, which keeps the arithmetic exact and
+  reproducible while giving a half-covered pixel its intended luminance.
+  Averaging encoded bytes directly under-weights every antialiased edge, which
+  makes sub-pixel strokes read as out of focus. Full and zero coverage still
+  map to the endpoints exactly, so canonical-density text stays bit-identical
+  to the 1x drawable. One authority
   transaction carries every immutable CPU mutation and
   content variant, while production intake validates each update against
   exactly one member of the set. Authority request publication and late raster

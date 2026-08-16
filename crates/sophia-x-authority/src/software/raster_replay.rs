@@ -179,8 +179,14 @@ fn blit_projected_image(
                     let weight = overlap_x.saturating_mul(overlap_y);
                     area = area.saturating_add(weight);
                     for (index, channel) in channels.iter_mut().enumerate() {
+                        // Accumulate squared components so the average is a
+                        // mix of light rather than of gamma-encoded bytes;
+                        // see `blend_copy_pixel` for why the plain mean
+                        // darkens every partially covered pixel.
                         let component = i64::from((pixel >> (8 * index as u32)) & 0xff);
-                        *channel = channel.saturating_add(component.saturating_mul(weight));
+                        *channel = channel.saturating_add(
+                            component.saturating_mul(component).saturating_mul(weight),
+                        );
                     }
                 }
             }
@@ -188,7 +194,10 @@ fn blit_projected_image(
                 continue;
             }
             let component = |channel: i64| -> u32 {
-                u32::try_from(channel.saturating_add(area / 2) / area).unwrap_or(0xff) & 0xff
+                let mixed = channel.saturating_add(area / 2) / area;
+                u32::try_from(mixed.max(0).isqrt())
+                    .unwrap_or(0xff)
+                    .min(0xff)
             };
             let pixel =
                 component(channels[2]) << 16 | component(channels[1]) << 8 | component(channels[0]);
@@ -370,14 +379,33 @@ pub(super) fn blend_copy_pixel(
     };
     let destination = u32::from_le_bytes(bytes.try_into().unwrap_or([0; 4]));
     let alpha = u32::from(coverage);
+    // Partial coverage is a light-intensity mix, so it has to be weighted in
+    // linear space. Channel bytes are gamma-encoded, and averaging them
+    // directly makes every antialiased edge far darker than its coverage:
+    // half-covered white on black lands near 128, roughly a fifth of the
+    // intended luminance instead of half. Strokes thinner than a pixel are
+    // then uniformly under-weighted, which reads as out of focus rather than
+    // merely soft.
+    //
+    // Squaring approximates the encoding closely enough to fix that while
+    // staying exact integer arithmetic, so replay remains bit-reproducible;
+    // a real transfer function needs a power the platform is free to round
+    // differently. Full and zero coverage still map to the endpoints exactly,
+    // so canonical-density text stays bit-identical to the 1x drawable.
     let blend = |shift: u32| -> u32 {
-        let source: u32 = (source >> shift) & 0xff;
-        let destination: u32 = (destination >> shift) & 0xff;
-        (source
+        let source = (source >> shift) & 0xff;
+        let destination = (destination >> shift) & 0xff;
+        let mixed = source
+            .saturating_mul(source)
             .saturating_mul(alpha)
-            .saturating_add(destination.saturating_mul(255 - alpha))
-            .saturating_add(127))
-            / 255
+            .saturating_add(
+                destination
+                    .saturating_mul(destination)
+                    .saturating_mul(255 - alpha),
+            )
+            .saturating_add(127)
+            / 255;
+        mixed.isqrt().min(0xff)
     };
     let pixel = blend(16) << 16 | blend(8) << 8 | blend(0);
     set_pixel(snapshot, x, y, pixel, gc);
