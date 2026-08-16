@@ -399,15 +399,16 @@ fn dispatch_core_drawing_request(
             }
         }
         XWireRequest::PutImage {
+            format,
             drawable,
             gc,
             width,
             height,
             dst_x,
             dst_y,
+            left_pad,
             depth,
             data,
-            ..
         } => {
             let transaction = TransactionId::from_raw(u64::from(context.sequence));
             if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
@@ -419,7 +420,7 @@ fn dispatch_core_drawing_request(
                     drawable,
                 ));
             }
-            let (gc_depth, _) =
+            let (gc_depth, gc_values) =
                 match runtime.graphics_context_depth_and_values(context.namespace, gc) {
                     Ok(record) => record,
                     Err(error) => {
@@ -455,6 +456,13 @@ fn dispatch_core_drawing_request(
                 drawable,
                 damage,
                 Some(&data),
+                Some(&XPutImageSemantics {
+                    format,
+                    depth,
+                    left_pad,
+                    byte_order: context.byte_order,
+                    gc: gc_values,
+                }),
             );
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(

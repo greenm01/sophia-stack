@@ -129,6 +129,7 @@ fn dispatch_shm_request(
                 }
                 XWireRequest::ShmPutImage {
                     drawable,
+                    gc,
                     segment,
                     total_width,
                     total_height,
@@ -184,12 +185,29 @@ fn dispatch_shm_request(
                                 format,
                             })
                         });
+                    // `copy_shm_image_region` already normalized the segment
+                    // into tight ZPixmap depth-24/32 rows or returned nothing,
+                    // so the journal sees the normalized form rather than the
+                    // client's original format and padding.
+                    let semantics = image.as_ref().and_then(|_| {
+                        runtime
+                            .graphics_context_values(context.namespace, gc)
+                            .ok()
+                            .map(|values| XPutImageSemantics {
+                                format: X_IMAGE_FORMAT_Z_PIXMAP,
+                                depth,
+                                left_pad: 0,
+                                byte_order: context.byte_order,
+                                gc: values,
+                            })
+                    });
                     let response = runtime.apply_put_image(
                         transaction,
                         context.namespace,
                         drawable,
                         damage,
                         image.as_deref(),
+                        semantics.as_ref(),
                     );
                     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                         vec![XClientOutput::Error(x_error_from_runtime(

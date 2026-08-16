@@ -629,10 +629,12 @@ fn late_density_requirement_replays_into_stable_multi_variant_content() {
             },
         ],
     };
-    let response = runtime
-        .apply_surface_raster_requirements(TransactionId::from_raw(122), &requirements)
-        .unwrap()
-        .expect("the bounded semantic journal should satisfy 0.75x demand");
+    let response = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(TransactionId::from_raw(122), &requirements)
+            .unwrap(),
+        "the bounded semantic journal should satisfy 0.75x demand",
+    );
     assert_eq!(response.identity.source_content_generation, 2);
     assert_eq!(response.transaction.content.variants().len(), 2);
     let canonical = response.transaction.content.canonical_variant();
@@ -670,12 +672,14 @@ fn late_density_requirement_replays_into_stable_multi_variant_content() {
         })
     }));
 
-    assert!(
-        runtime
-            .apply_surface_raster_requirements(TransactionId::from_raw(124), &requirements)
-            .unwrap()
-            .is_none(),
-        "a response for content generation 2 must be stale after generation 3 committed"
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(TransactionId::from_raw(124), &requirements)
+                .unwrap(),
+            "a response for content generation 2 must be stale after generation 3 committed",
+        ),
+        XRasterFallbackCause::StaleDependency,
     );
 }
 
@@ -735,24 +739,28 @@ fn over_capacity_density_requirement_falls_back_without_partial_publication() {
             })
             .collect(),
     };
-    assert!(
-        runtime
-            .apply_surface_raster_requirements(
-                TransactionId::from_raw(127),
-                &requirement(8, &[600, 700, 800, 900]),
-            )
-            .unwrap()
-            .is_none(),
-        "canonical 1x plus four derived stores exceeds the protocol capacity"
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(
+                    TransactionId::from_raw(127),
+                    &requirement(8, &[600, 700, 800, 900]),
+                )
+                .unwrap(),
+            "canonical 1x plus four derived stores exceeds the protocol capacity",
+        ),
+        XRasterFallbackCause::BackingCapacity,
     );
 
-    let response = runtime
-        .apply_surface_raster_requirements(
-            TransactionId::from_raw(128),
-            &requirement(9, &[750, 1_000]),
-        )
-        .unwrap()
-        .expect("a later bounded requirement must remain satisfiable");
+    let response = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(128),
+                &requirement(9, &[750, 1_000]),
+            )
+            .unwrap(),
+        "a later bounded requirement must remain satisfiable",
+    );
     assert_eq!(response.cpu_buffer_updates.len(), 1);
     assert_eq!(response.transaction.content.variants().len(), 2);
     assert!(response.transaction.content.variants().iter().any(|variant| {
@@ -912,8 +920,7 @@ fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
             width: 4,
             height: 4,
         }),
-        Some(&image),
-    );
+        Some(&image), None,);
     assert_eq!(upload.outcome, XAuthorityResponseOutcome::Accepted);
     assert!(upload.transactions.is_empty());
     assert!(runtime.take_cpu_buffer_update().is_none());
@@ -993,8 +1000,7 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
                     width: 4,
                     height: 4,
                 }),
-                Some(&image),
-            )
+                Some(&image), None,)
             .outcome,
         XAuthorityResponseOutcome::Accepted
     );
@@ -1047,8 +1053,7 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
             width: 4,
             height: 4,
         }),
-        Some(&changed),
-    );
+        Some(&changed), None,);
     let update_region = Region {
         rects: vec![
             Rect {
@@ -1164,8 +1169,7 @@ fn present_shm_clear_and_core_draw_share_one_surface_generation_stream() {
         namespace,
         pixmap,
         Region::single(full),
-        Some(&vec![0x21; 8 * 8 * 4]),
-    );
+        Some(&vec![0x21; 8 * 8 * 4]), None,);
 
     let present = runtime.present_standard_pixmap(
         TransactionId::from_raw(92),
@@ -1183,8 +1187,7 @@ fn present_shm_clear_and_core_draw_share_one_surface_generation_stream() {
         namespace,
         window,
         Region::single(full),
-        Some(&vec![0x42; 8 * 8 * 4]),
-    );
+        Some(&vec![0x42; 8 * 8 * 4]), None,);
     let shm_update = runtime.take_cpu_buffer_update().unwrap();
     let clear = runtime.apply_clear(
         TransactionId::from_raw(94),

@@ -110,8 +110,7 @@ fn get_image_returns_large_z_pixmap_pixels_in_both_byte_orders() {
                 width: 1,
                 height: 1,
             }),
-            Some(&marker),
-        );
+            Some(&marker), None,);
         assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
 
         let encoded = dispatch_get_image_for_test(
@@ -180,8 +179,7 @@ fn get_image_sizes_xy_planes_and_empty_replies_exactly() {
                         width: 2,
                         height: 1,
                     }),
-                    Some(&[5, 0, 0, 0, 1, 0, 0, 0]),
-                )
+                    Some(&[5, 0, 0, 0, 1, 0, 0, 0]), None,)
                 .outcome,
             XAuthorityResponseOutcome::Accepted
         );

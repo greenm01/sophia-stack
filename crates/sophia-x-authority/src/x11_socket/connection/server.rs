@@ -493,6 +493,7 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
     });
     let mut accepting = true;
     let mut pending_raster_egress = None::<XAuthorityEgressEnvelope>;
+    let mut raster_fallbacks = XRasterFallbackCoalescer::default();
     let mut egress_finished = false;
     let service_result: Result<(), X11SetupSocketError> = (|| {
         loop {
@@ -579,25 +580,23 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     "failed to satisfy surface raster requirements: {error:?}"
                                 ))
                             })?;
-                        if let Some(response) = response {
-                            let batch =
-                                XAuthorityObservedTransactionBatch::from_raster_response(response);
-                            pending_raster_egress = Some(XAuthorityEgressEnvelope {
-                                transaction,
-                                batch: Some(batch),
-                            });
-                        } else {
-                            pending_raster_egress = Some(XAuthorityEgressEnvelope {
-                                transaction,
-                                batch: None,
-                            });
-                            tracing::warn!(
-                                "sophia_x11_raster_requirement schema=1 status=sampled_fallback surface={:?} content_generation={} requirement_generation={} classes={}",
-                                requirements.surface,
-                                requirements.committed_content_generation,
-                                requirements.requirement_generation,
-                                requirements.classes.len(),
-                            );
+                        match response {
+                            crate::XSurfaceRasterOutcome::Satisfied(response) => {
+                                let batch = XAuthorityObservedTransactionBatch::from_raster_response(
+                                    *response,
+                                );
+                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
+                                    transaction,
+                                    batch: Some(batch),
+                                });
+                            }
+                            crate::XSurfaceRasterOutcome::SampledFallback { cause } => {
+                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
+                                    transaction,
+                                    batch: None,
+                                });
+                                raster_fallbacks.report(&requirements, cause);
+                            }
                         }
                         progressed = true;
                     }

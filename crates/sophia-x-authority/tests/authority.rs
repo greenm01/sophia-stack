@@ -8,6 +8,7 @@ use sophia_protocol::{
 };
 use sophia_x_authority::*;
 
+include!("authority/raster_fallback.rs");
 include!("authority/resources.rs");
 include!("authority/selection_and_codec.rs");
 include!("authority/runtime_and_socket.rs");

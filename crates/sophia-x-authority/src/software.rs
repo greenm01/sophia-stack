@@ -4,12 +4,15 @@ use sophia_protocol::{Rect, Size};
 
 use crate::{XFontFace, XGraphicsContextValues, XPoint, XResourceId};
 
+mod raster_replay;
 mod raster_variants;
 mod update;
 
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
+    XRasterSatisfyOutcome, XRasterUnsupportedKind,
 };
+pub use raster_variants::{XPutImageSemantics, XRasterFallbackCause};
 pub use update::{
     X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
     XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,

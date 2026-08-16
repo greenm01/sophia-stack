@@ -127,3 +127,25 @@ fn wait_for_socket(path: &std::path::Path) {
     }
     panic!("timed out waiting for socket {}", path.display());
 }
+
+/// Unwraps a satisfied raster outcome, naming the fallback cause when the
+/// journal could not answer the requirement.
+fn expect_satisfied_raster(
+    outcome: XSurfaceRasterOutcome,
+    message: &str,
+) -> XAuthorityRasterRequirementResponse {
+    match outcome {
+        XSurfaceRasterOutcome::Satisfied(response) => *response,
+        XSurfaceRasterOutcome::SampledFallback { cause } => {
+            panic!("{message}: sampled fallback with cause {}", cause.as_str())
+        }
+    }
+}
+
+/// Asserts sampled fallback and returns its classified cause.
+fn expect_raster_fallback(outcome: XSurfaceRasterOutcome, message: &str) -> XRasterFallbackCause {
+    match outcome {
+        XSurfaceRasterOutcome::SampledFallback { cause } => cause,
+        XSurfaceRasterOutcome::Satisfied(_) => panic!("{message}: unexpectedly satisfied"),
+    }
+}

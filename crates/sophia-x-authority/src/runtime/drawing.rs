@@ -343,118 +343,6 @@ impl XAuthorityRuntime {
         ))
     }
 
-    pub fn apply_copy_area(
-        &mut self,
-        transaction: TransactionId,
-        namespace: NamespaceId,
-        source: crate::XResourceId,
-        destination: crate::XResourceId,
-        damage: Region,
-    ) -> XAuthorityResponsePacket {
-        if let Err(error) = self.validate_drawable_access(namespace, source) {
-            return XAuthorityResponsePacket::rejected(transaction, error);
-        }
-        if self.validate_pixmap_access(namespace, destination).is_ok() {
-            return XAuthorityResponsePacket::accepted(transaction);
-        }
-        self.apply_core_draw(transaction, namespace, destination, damage)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn apply_copy_area_with_gc(
-        &mut self,
-        transaction: TransactionId,
-        namespace: NamespaceId,
-        source: crate::XResourceId,
-        destination: crate::XResourceId,
-        src_x: i16,
-        src_y: i16,
-        dst_x: i16,
-        dst_y: i16,
-        width: u16,
-        height: u16,
-        gc: &XGraphicsContextValues,
-    ) -> XAuthorityResponsePacket {
-        if let Err(error) = self.validate_drawable_access(namespace, source) {
-            return XAuthorityResponsePacket::rejected(transaction, error);
-        }
-        if let Err(error) = self.validate_drawable_access(namespace, destination) {
-            return XAuthorityResponsePacket::rejected(transaction, error);
-        }
-        if self.drawable_depth(namespace, source) != self.drawable_depth(namespace, destination) {
-            return XAuthorityResponsePacket::rejected(
-                transaction,
-                XAuthorityRuntimeError::InvalidSurface,
-            );
-        }
-        if width == 0 || height == 0 {
-            return XAuthorityResponsePacket::accepted(transaction);
-        }
-        let (destination_size, window_generation) =
-            if let Ok(size) = self.pixmap_size(namespace, destination) {
-                (size, None)
-            } else if let Some(record) = self.windows.get(destination) {
-                (
-                    Size {
-                        width: record.geometry.width,
-                        height: record.geometry.height,
-                    },
-                    Some(record.generation),
-                )
-            } else {
-                return XAuthorityResponsePacket::rejected(
-                    transaction,
-                    XAuthorityRuntimeError::UnknownResource,
-                );
-            };
-        let Some((update, damage)) = self.software_buffers.copy_area(
-            source,
-            destination,
-            destination_size,
-            Rect {
-                x: i32::from(src_x),
-                y: i32::from(src_y),
-                width: i32::from(width),
-                height: i32::from(height),
-            },
-            dst_x,
-            dst_y,
-            gc,
-        ) else {
-            // Missing or entirely clipped source storage leaves the destination
-            // unchanged. Exposure delivery is handled separately from pixels.
-            return XAuthorityResponsePacket::accepted(transaction);
-        };
-        let Some(generation) = window_generation else {
-            return XAuthorityResponsePacket::accepted(transaction);
-        };
-        let handle = update.handle();
-        self.pending_raster_command = Some(if source == destination {
-            XAuthorityRasterCommand::CopyArea {
-                source: Rect {
-                    x: i32::from(src_x),
-                    y: i32::from(src_y),
-                    width: i32::from(width),
-                    height: i32::from(height),
-                },
-                destination_x: i32::from(dst_x),
-                destination_y: i32::from(dst_y),
-                gc: gc.clone(),
-            }
-        } else {
-            XAuthorityRasterCommand::Unsupported
-        });
-        self.finish_drawing_update(XDrawingUpdate::core_draw(
-            transaction,
-            namespace,
-            destination,
-            handle,
-            Region::single(damage),
-            generation,
-            250,
-        ))
-    }
-
     pub fn apply_line_draw(
         &mut self,
         transaction: TransactionId,
@@ -579,100 +467,6 @@ impl XAuthorityRuntime {
             record.generation,
             250,
         ))
-    }
-
-    pub fn apply_put_image(
-        &mut self,
-        transaction: TransactionId,
-        namespace: NamespaceId,
-        drawable: crate::XResourceId,
-        damage: Region,
-        data: Option<&[u8]>,
-    ) -> XAuthorityResponsePacket {
-        if let Err(error) = self.validate_drawable_access(namespace, drawable) {
-            return XAuthorityResponsePacket::rejected(transaction, error);
-        }
-        if let Ok(size) = self.pixmap_size(namespace, drawable) {
-            let wrote_image = data.and_then(|data| {
-                damage
-                    .rects
-                    .first()
-                    .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
-            });
-            if wrote_image.is_none() {
-                return XAuthorityResponsePacket::rejected(
-                    transaction,
-                    XAuthorityRuntimeError::InvalidResource,
-                );
-            }
-            return XAuthorityResponsePacket::accepted(transaction);
-        }
-        let Some(record) = self.windows.get(drawable) else {
-            return XAuthorityResponsePacket::rejected(
-                transaction,
-                XAuthorityRuntimeError::UnknownResource,
-            );
-        };
-        let size = Size {
-            width: record.geometry.width,
-            height: record.geometry.height,
-        };
-        let Some(buffer) = data
-            .and_then(|data| {
-                damage
-                    .rects
-                    .first()
-                    .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
-            })
-            .or_else(|| {
-                self.software_buffers.paint_damage(
-                    drawable,
-                    size,
-                    &damage.rects,
-                    &XGraphicsContextValues::default(),
-                )
-            })
-        else {
-            return XAuthorityResponsePacket::rejected(
-                transaction,
-                XAuthorityRuntimeError::InvalidResource,
-            );
-        };
-        let handle = buffer.handle();
-        self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported);
-        self.finish_drawing_update(XDrawingUpdate::shm_put_image(
-            transaction,
-            namespace,
-            drawable,
-            handle,
-            damage,
-            record.generation,
-            250,
-        ))
-    }
-
-    pub fn drawable_image_region(
-        &self,
-        namespace: NamespaceId,
-        drawable: crate::XResourceId,
-        region: Rect,
-    ) -> Result<Vec<u8>, XAuthorityRuntimeError> {
-        self.validate_drawable_access(namespace, drawable)?;
-        self.software_buffers
-            .image_region(drawable, region)
-            .ok_or(XAuthorityRuntimeError::InvalidResource)
-    }
-
-    pub(crate) fn read_drawable_image_region(
-        &self,
-        drawable: crate::XResourceId,
-        descriptor: XDrawableImageDescriptor,
-        region: Rect,
-    ) -> Result<Vec<u8>, XDrawableImageError> {
-        self.validate_drawable_image_region(descriptor, region)?;
-        self.software_buffers
-            .image_region(drawable, region)
-            .ok_or(XDrawableImageError::AllocationFailed)
     }
 
     pub(crate) fn apply_text_draw(
@@ -902,7 +696,8 @@ impl XAuthorityRuntime {
         &mut self,
         transaction: TransactionId,
         requirements: &sophia_protocol::SurfaceRasterRequirements,
-    ) -> Result<Option<crate::XAuthorityRasterRequirementResponse>, XAuthorityRuntimeError> {
+    ) -> Result<crate::XSurfaceRasterOutcome, XAuthorityRuntimeError> {
+        use crate::XSurfaceRasterOutcome;
         requirements
             .validate()
             .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
@@ -915,7 +710,9 @@ impl XAuthorityRuntime {
             .cloned()
             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
         if record.generation != requirements.committed_content_generation {
-            return Ok(None);
+            return Ok(XSurfaceRasterOutcome::SampledFallback {
+                cause: crate::XRasterFallbackCause::StaleDependency,
+            });
         }
         let canonical = self
             .software_buffers
@@ -923,12 +720,20 @@ impl XAuthorityRuntime {
             .cloned()
             .ok_or(XAuthorityRuntimeError::InvalidResource)?;
         if canonical.size != requirements.logical_extent {
-            return Ok(None);
+            return Ok(XSurfaceRasterOutcome::SampledFallback {
+                cause: crate::XRasterFallbackCause::StaleDependency,
+            });
         }
-        let updates = self
+        let updates = match self
             .raster_store
             .satisfy(record.id, requirements, canonical.bytes.len())
-            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?
+        {
+            crate::XRasterSatisfyOutcome::Satisfied(updates) => updates,
+            crate::XRasterSatisfyOutcome::Fallback(cause) => {
+                return Ok(XSurfaceRasterOutcome::SampledFallback { cause });
+            }
+        };
         let content = self.raster_store.content_set(record.id, &canonical);
         let all_satisfied = requirements.classes.iter().all(|class| {
             content.variants().iter().any(|variant| {
@@ -939,7 +744,11 @@ impl XAuthorityRuntime {
             })
         });
         if !all_satisfied {
-            return Ok(None);
+            // Guards content-set variant truncation: the store accepted the
+            // requirement, but publication could not carry every class.
+            return Ok(XSurfaceRasterOutcome::SampledFallback {
+                cause: crate::XRasterFallbackCause::BackingCapacity,
+            });
         }
         let surface_transaction = sophia_protocol::SurfaceTransaction {
             transaction,
@@ -961,15 +770,17 @@ impl XAuthorityRuntime {
         self.windows
             .advance_generation(record.id, record.generation)
             .map_err(XAuthorityRuntimeError::from)?;
-        Ok(Some(crate::XAuthorityRasterRequirementResponse {
-            identity: sophia_protocol::SurfaceRasterResponseIdentity {
-                transaction,
-                surface: record.surface,
-                source_content_generation: requirements.committed_content_generation,
-                requirement_generation: requirements.requirement_generation,
+        Ok(XSurfaceRasterOutcome::Satisfied(Box::new(
+            crate::XAuthorityRasterRequirementResponse {
+                identity: sophia_protocol::SurfaceRasterResponseIdentity {
+                    transaction,
+                    surface: record.surface,
+                    source_content_generation: requirements.committed_content_generation,
+                    requirement_generation: requirements.requirement_generation,
+                },
+                transaction: surface_transaction,
+                cpu_buffer_updates: updates,
             },
-            transaction: surface_transaction,
-            cpu_buffer_updates: updates,
-        }))
+        )))
     }
 }

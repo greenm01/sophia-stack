@@ -852,7 +852,20 @@ fn put_image_request(
     geometry: PutImageGeometry,
     data: &[u8],
 ) -> Vec<u8> {
-    let mut out = vec![72, 2];
+    put_image_request_with_format(byte_order, 2, drawable, gc, geometry, data)
+}
+
+/// Builds `PutImage` with an explicit image format, so a test can drive the
+/// formats outside the replayable subset.
+fn put_image_request_with_format(
+    byte_order: XByteOrder,
+    format: u8,
+    drawable: u32,
+    gc: u32,
+    geometry: PutImageGeometry,
+    data: &[u8],
+) -> Vec<u8> {
+    let mut out = vec![72, format];
     let len_units = (24 + padded_len_for_test(data.len())) / 4;
     push_u16(&mut out, byte_order, len_units as u16);
     push_u32(&mut out, byte_order, drawable);
@@ -889,4 +902,26 @@ fn get_image_request(
     push_u16(&mut out, byte_order, height);
     push_u32(&mut out, byte_order, plane_mask);
     out
+}
+
+/// Unwraps a satisfied raster outcome, naming the fallback cause when the
+/// journal could not answer the requirement.
+fn expect_satisfied_raster(
+    outcome: XSurfaceRasterOutcome,
+    message: &str,
+) -> XAuthorityRasterRequirementResponse {
+    match outcome {
+        XSurfaceRasterOutcome::Satisfied(response) => *response,
+        XSurfaceRasterOutcome::SampledFallback { cause } => {
+            panic!("{message}: sampled fallback with cause {}", cause.as_str())
+        }
+    }
+}
+
+/// Asserts sampled fallback and returns its classified cause.
+fn expect_raster_fallback(outcome: XSurfaceRasterOutcome, message: &str) -> XRasterFallbackCause {
+    match outcome {
+        XSurfaceRasterOutcome::SampledFallback { cause } => cause,
+        XSurfaceRasterOutcome::Satisfied(_) => panic!("{message}: unexpectedly satisfied"),
+    }
 }

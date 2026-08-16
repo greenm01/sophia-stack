@@ -83,9 +83,10 @@ fn fixed_text_late_density_replay_produces_distinct_coverage_raster() {
     assert_eq!(transaction.content.variants().len(), 1);
     assert_eq!(runtime.take_cpu_buffer_updates().len(), 1);
 
-    let response = runtime
-        .apply_surface_raster_requirements(
-            TransactionId::from_raw(9_100),
+    let response = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(9_100),
             &SurfaceRasterRequirements {
                 surface,
                 committed_content_generation: 2,
@@ -106,8 +107,9 @@ fn fixed_text_late_density_replay_produces_distinct_coverage_raster() {
                 ],
             },
         )
-        .unwrap()
-        .expect("fixed text journal should replay at 0.75 density");
+            .unwrap(),
+        "fixed text journal should replay at 0.75 density",
+    );
     assert_eq!(response.transaction.content.variants().len(), 2);
     let [XAuthorityCpuBufferUpdate::Replace(derived)] = response.cpu_buffer_updates.as_slice()
     else {

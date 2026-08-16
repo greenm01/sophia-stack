@@ -125,3 +125,14 @@ pub struct XAuthorityRasterRequirementResponse {
     pub transaction: sophia_protocol::SurfaceTransaction,
     pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
 }
+
+/// Outcome of answering one Engine raster requirement.
+///
+/// Fallback is never silent: the surface keeps publishing its canonical
+/// raster as sampled compatibility content, and the cause names the operation
+/// that prevented an authority-owned native-density variant.
+#[derive(Clone, Debug)]
+pub enum XSurfaceRasterOutcome {
+    Satisfied(Box<XAuthorityRasterRequirementResponse>),
+    SampledFallback { cause: crate::XRasterFallbackCause },
+}

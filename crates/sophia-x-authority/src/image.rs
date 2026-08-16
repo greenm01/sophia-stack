@@ -5,8 +5,8 @@ use crate::{
     XClientError, XErrorCode, XResourceId, x11_pixmap_format,
 };
 
-const X_IMAGE_FORMAT_XY_PIXMAP: u8 = 1;
-const X_IMAGE_FORMAT_Z_PIXMAP: u8 = 2;
+pub(crate) const X_IMAGE_FORMAT_XY_PIXMAP: u8 = 1;
+pub(crate) const X_IMAGE_FORMAT_Z_PIXMAP: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum XImageLayoutError {

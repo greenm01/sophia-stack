@@ -614,14 +614,35 @@ parallel multi-monitor subsystem.
   journal (4096 commands, 4 MiB owned payload, four total variants including
   the canonical store, and 64 MiB total canonical-plus-derived backing) replays
   clear/fill, line, rectangle,
-  ImageText8/PolyText8, and same-drawable CopyArea operations when demand
-  arrives after the original request. Full opaque clears reset the journal;
-  unsupported or over-budget replay is reported as sampled fallback rather
-  than impersonating a native authority raster.
+  ImageText8/PolyText8, same-drawable CopyArea, and core `PutImage` operations
+  when demand arrives after the original request. Full opaque clears reset the
+  journal; unsupported or over-budget replay is reported as sampled fallback
+  rather than impersonating a native authority raster.
+- Accepted core and MIT-SHM `PutImage` retains its own bounded client pixels
+  inside X Authority, together with the destination rectangle, depth,
+  connection byte order, and graphics-context semantics. Retention is fail
+  closed: only tight ZPixmap depth-24/32 rows with no left padding, written
+  through an unconditional GXcopy with a full visible plane mask and no clip
+  rectangles, are replayable, because only those reproduce the canonical
+  drawable. Anything else poisons the journal with a named cause. A full-window
+  upload meeting those conditions may replace the journal as a new baseline on
+  the same terms as a full opaque clear. Replay projects the retained 1x pixels
+  directly rather than resampling the canonical store, so ordering against
+  later text and copy commands is preserved.
+- Sampled fallback is cause-classified. X Authority reports unsupported
+  `PutImage`, unsupported cross-drawable copy, unsupported command, stale
+  dependency, journal capacity, backing capacity, and transform mismatch, and a
+  bounded per-surface coalescer emits the first occurrence and each subsequent
+  power of two with a cumulative count, so repeated warnings never hide their
+  volume. The cause stays authority-private; Engine continues to observe only
+  `SurfaceContentFidelity`.
 - Fixed 6x13 text remains bit-exact at canonical density. Fractional derived
   stores use one integer rational-edge projector and deterministic 8-bit area
   coverage for GXcopy glyphs; non-copy raster operations use a binary coverage
-  decision. One authority transaction carries every immutable CPU mutation and
+  decision. Retained client rasters use the same rational-overlap rule as a
+  per-channel area average, so a fully covered destination pixel keeps its
+  source color exactly and only boundary pixels blend. One authority
+  transaction carries every immutable CPU mutation and
   content variant, while production intake validates each update against
   exactly one member of the set. Authority request publication and late raster
   responses share a lossless ordered egress boundary, with bounded waits held
@@ -758,28 +779,30 @@ prefix back in reverse order on failure. A previously disabled connected head
 remains in the native model and has an explicit rollback-disable owner rather
 than a fabricated framebuffer.
 
-The active critical path is X Authority replay coverage. Core `PutImage` into a
-window currently marks that surface's semantic journal unsupported, and
-cross-drawable `CopyArea` has no bounded source-generation dependency. Those
-operations therefore publish the canonical raster as sampled compatibility
-content rather than an exact authority-owned target-density variant. This is a
-correct fail-visible fallback, but it is not the target architecture and cannot
-satisfy the unequal-density physical gate.
+The active critical path is X Authority replay coverage. Core `PutImage` is now
+replayable within its bounded subset, so the remaining protocol replay gap is
+cross-drawable `CopyArea`, which has no bounded source-generation dependency and
+therefore publishes the canonical raster as sampled compatibility content. A
+`PutImage` outside the replayable subset does the same. Both are correct
+fail-visible fallbacks with named causes, but neither is the target
+architecture.
 
 Signed gate attempt `0019` on `a5d916279c9fb8cd03415945d0dfeb11515c1a32`
-confirmed the boundary: both native heads rendered and retired cleanly, but the
-750-density head selected the 1000-density canonical handle and emitted 76
-`sampled_fallback` records. A traced real xterm issues opcode 72 (`PutImage`)
-during startup before later text and line operations. The next slice must retain
-and replay that bounded pixel operation inside X Authority; it must not weaken
-variant selection, relabel a sampled buffer as exact, or move X semantics into
-Engine.
+established the boundary: both native heads rendered and retired cleanly, but
+the 750-density head selected the 1000-density canonical handle and emitted 76
+`sampled_fallback` records, because a traced real xterm issues opcode 72
+(`PutImage`) during startup before later text and line operations. Deterministic
+regressions now drive that same order — upload, ImageText8, PolyText8, line,
+same-drawable scroll, then late 750 and 1000 demand — and require both classes
+to publish distinct native-size authority rasters with zero sampled fallback.
+The gate must be re-run on hardware to convert that into promotion evidence; its
+fallback causes then decide whether cross-drawable `CopyArea` must precede a
+passing run.
 
-After `PutImage`, the remaining protocol replay gap is cross-drawable
-`CopyArea`. The remaining system evidence gaps are a verifier-approved exact
-1000/750 unequal-mirror run and a complete mixed mirror-plus-extended
-`sophia_output_v1` cutover. Their ordered implementation and exit criteria are
-maintained in the linked active roadmap.
+The remaining system evidence gaps are a verifier-approved exact 1000/750
+unequal-mirror run and a complete mixed mirror-plus-extended `sophia_output_v1`
+cutover. Their ordered implementation and exit criteria are maintained in the
+linked active roadmap.
 
 ### Target
 
@@ -789,7 +812,8 @@ maintained in the linked active roadmap.
 - Replace all primary-derived and flat-output mirror composition paths with the
   common per-head planner used by mirrored and extended outputs.
 - Extend authority-owned native variants to the remaining server-rendered X11
-  operations, beginning with bounded `PutImage` and then cross-drawable
-  `CopyArea`, without moving X semantics into Engine.
+  operations. Bounded `PutImage` is implemented; cross-drawable `CopyArea` with
+  explicit source-generation dependencies remains, and neither moves X semantics
+  into Engine.
 - Enforce prepare-all mirror cohorts, joined retirement, and explicit sampling
   evidence in deterministic and physical acceptance gates.

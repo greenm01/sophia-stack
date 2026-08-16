@@ -727,7 +727,7 @@ History](docs/roadmap-history.md#2026-08-16-multi-monitor-per-head-composition-f
 Detailed physical-run diagnoses remain in
 [Research Log](docs/research-log.md).
 
-- [ ] Make accepted core X11 `PutImage` replayable in authority-owned density
+- [x] Make accepted core X11 `PutImage` replayable in authority-owned density
   stores. Decode and retain bounded owned pixels, destination geometry, format,
   depth, byte order, GC semantics, and source generation inside X Authority;
   never expose X requests or XIDs to Engine. Raster each requested density
@@ -735,11 +735,22 @@ Detailed physical-run diagnoses remain in
   rules. A full opaque replacement may establish a new replay baseline and
   discard older journal commands only when doing so preserves the canonical
   protocol-visible drawable.
+  Core and MIT-SHM uploads now retain bounded owned pixels behind a fail-closed
+  subset gate: tight ZPixmap depth-24/32 rows, no left padding, unconditional
+  GXcopy, full visible plane mask, no clip rectangles. Replay projects those
+  retained 1x pixels per density as a per-channel rational area average, so a
+  fully covered destination pixel keeps its source color exactly. A full-window
+  qualifying upload replaces the journal as a new baseline; a partial one does
+  not.
 - [ ] Extend replay to cross-drawable `CopyArea` with explicit source drawable
   and generation dependencies. Preserve clipping, overlap, and GC semantics;
   reject stale, destroyed, cyclic, cross-namespace, or over-budget dependencies
   without poisoning unrelated surfaces. Until this is implemented, publish the
   canonical raster with an explicit sampled-fallback reason.
+  The explicit reason is in place: a cross-drawable copy now poisons its journal
+  with the `unsupported_cross_drawable_copy` cause rather than an unnamed
+  fallback. Replay itself remains open, and the re-run gate's causes decide
+  whether it must precede a passing unequal-density run.
 - [ ] Keep authority raster storage bounded and fail visible. Cover payload,
   command-count, variant-count, and canonical-plus-derived byte limits; late
   density demand; fractional targets; baseline replacement; source destruction;
@@ -747,13 +758,27 @@ Detailed physical-run diagnoses remain in
   unsupported `PutImage`, unsupported cross-drawable copy, stale dependency,
   journal capacity, backing capacity, and transform mismatch) and coalesce
   repeated warnings without hiding counts.
-- [ ] Add deterministic authority regressions for the real xterm sequence:
+  Cause classification and coalescing are implemented: an authority-private
+  cause accompanies every sampled-fallback outcome, and a bounded per-surface
+  coalescer emits the first occurrence and each subsequent power of two with a
+  cumulative count. Deterministic coverage exists for unsupported `PutImage`,
+  unsupported cross-drawable copy, stale dependency, journal capacity, backing
+  capacity, and transform mismatch. Source destruction and allocation failure
+  remain open.
+- [x] Add deterministic authority regressions for the real xterm sequence:
   startup `PutImage`, later ImageText8/PolyText8 and line drawing, same-drawable
   scrolling, late 750-density demand, canonical plus derived publication, and
   generation races. Require exact-density output to differ in pixel identity
   where density differs while retaining the same logical content generation.
   Add negative controls proving an unsupported or over-budget command cannot be
   mislabeled as exact.
+  The wire sequence drives opcodes 72, 76, 74, 65, and 62 in the traced order,
+  then requires 750 and 1000 to publish distinct native-size authority rasters
+  with zero sampled fallback. Pixel identity is proven by a source split whose
+  boundary does not align with a 0.75 pixel edge, so replay produces boundary
+  values absent from the uploaded palette. Negative controls cover XYPixmap at
+  the wire, non-copy function, partial plane mask, clipping, absent semantics,
+  journal capacity, transform mismatch, and a generation race.
 - [ ] Re-run the signed unequal-mode mirror gate after the replay slice lands.
   Require DP-1 to select its exact 1000-density variant and DP-2 to select a
   distinct exact 750-density variant for one common logical generation; require

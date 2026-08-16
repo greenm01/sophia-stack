@@ -1,3 +1,4 @@
+use crate::image::X_IMAGE_FORMAT_Z_PIXMAP;
 use crate::{
     X_ATOM_NONE, X_BIG_REQUESTS_EXTENSION_NAME, X_BIG_REQUESTS_MAJOR_OPCODE, X_FIXED_6X13_ASCENT,
     X_FIXED_6X13_DESCENT, X_MIT_SHM_EXTENSION_NAME, X_MIT_SHM_MAJOR_OPCODE, X_RANDR_EXTENSION_NAME,
@@ -6,12 +7,12 @@ use crate::{
     XAtomTable, XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket,
     XAuthorityRuntime, XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput,
     XClientReply, XColorRgb16, XColormapError, XErrorCode, XFontFace, XGlxContextConfig,
-    XMetadataPropertyCandidate, XPolyText8Item, XPropertyError, XPropertyTable, XRandrModeInfo,
-    XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError,
-    XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints, decode_x_transient_for,
-    decode_x_window_type_facts, encode_x_client_output, metadata_property_candidate,
-    x_error_from_runtime, x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event,
-    x_true_color_visual,
+    XMetadataPropertyCandidate, XPolyText8Item, XPropertyError, XPropertyTable, XPutImageSemantics,
+    XRandrModeInfo, XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate,
+    XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints,
+    decode_x_transient_for, decode_x_window_type_facts, encode_x_client_output,
+    metadata_property_candidate, x_error_from_runtime, x_error_from_wire_parse,
+    x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 

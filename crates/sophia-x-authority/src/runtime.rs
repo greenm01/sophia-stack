@@ -16,15 +16,17 @@ use crate::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XAuthorityRequestKind, XAuthorityRequestPacket,
     XAuthorityResponsePacket, XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder,
     XDrawingUpdate, XFontFace, XGraphicsContextTable, XGraphicsContextValues, XOwnedTextDraw,
-    XPoint, XPropertyChange, XPropertyMode, XPropertyTable, XRasterPoint, XResourceKind,
-    XResourceTable, XSelectionEvent, XSelectionMonitor, XShmSegmentTable, XSoftwareBufferStore,
-    XTextDraw, XWindowLifecycleEvent, XWindowTable, clipboard_selection_failure_notify,
-    dispatch_clipboard_selection_request, surface_transaction_from_drawing_update,
+    XPoint, XPropertyChange, XPropertyMode, XPropertyTable, XPutImageSemantics, XRasterPoint,
+    XRasterUnsupportedKind, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
+    XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
+    clipboard_selection_failure_notify, dispatch_clipboard_selection_request,
+    surface_transaction_from_drawing_update,
 };
 
 include!("runtime/clipboard.rs");
 include!("runtime/color.rs");
 include!("runtime/drawing.rs");
+include!("runtime/drawing/image_ops.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/sync.rs");
 include!("runtime/windows.rs");
