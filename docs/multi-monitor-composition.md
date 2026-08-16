@@ -636,6 +636,12 @@ parallel multi-monitor subsystem.
   framebuffer/import/mode-blob owners without committing; those owners can join
   one card-scoped atomic modeset containing both enabled and explicitly disabled
   heads, then become ordinary retirement owners only after kernel acceptance.
+  The card executor submits that complete change as one blocking modeset, and a
+  passive coordinator orders cards deterministically. If a later card refuses
+  the candidate, the accepted prefix rolls back in reverse card order. The
+  published snapshot is projected independently back into the live heads'
+  current native sizes and generations, so rollback composition cannot inherit
+  a provisional viewport or mode.
 
 ### Transitional Limitation
 
@@ -651,8 +657,9 @@ The native scheduler now has the prepare-all barrier, and live topology planning
 creates replacement selections for enabled heads while representing omitted
 connected heads as explicit disable effects. Candidate CPU frames and native
 resource owners can now be prepared, and the per-card apply request is defined,
-but the live owner does not yet schedule the candidate-plus-rollback pools or
-execute/reconcile those commits. The distinguished primary output also remains
+and the cross-card apply/rollback order is explicit. The live owner does not yet
+schedule the candidate-plus-rollback exporter pools or install/reconcile their
+accepted owners. The distinguished primary output also remains
 in retained scene and Present paths.
 Configuration currently maps `DesktopMirrorFit` manually to backend-owned
 `NativeMirrorFit`.

@@ -115,6 +115,38 @@ fn topology_change_request_rejects_object_overlap_before_building_properties() {
 }
 
 #[test]
+fn topology_change_submit_is_one_blocking_modeset_without_page_flip_event() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicTopologyChange, NativeTopologySubmitOutcome,
+        submit_native_topology_change_on_device,
+    };
+
+    let device = RecordingCommitDevice::default();
+    let outcome = submit_native_topology_change_on_device(
+        &device,
+        &[
+            LibdrmNativeAtomicTopologyChange::Enabled(head(
+                1,
+                11,
+                21,
+                31,
+                scanout_size(1920, 1080),
+            )),
+            LibdrmNativeAtomicTopologyChange::Disabled(disabled_head(2, 12, 22)),
+        ],
+    );
+
+    assert_eq!(outcome, NativeTopologySubmitOutcome::Accepted);
+    let submissions = device.submissions.borrow();
+    assert_eq!(submissions.len(), 1);
+    let flags = submissions[0];
+    assert!(flags.contains(drm::control::AtomicCommitFlags::ALLOW_MODESET));
+    assert!(!flags.contains(drm::control::AtomicCommitFlags::PAGE_FLIP_EVENT));
+    assert!(!flags.contains(drm::control::AtomicCommitFlags::NONBLOCK));
+    assert!(!flags.contains(drm::control::AtomicCommitFlags::TEST_ONLY));
+}
+
+#[test]
 fn mirror_damage_projection_preserves_identity_and_targets_each_head() {
     use sophia_engine::{
         CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,

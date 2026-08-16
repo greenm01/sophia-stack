@@ -100,6 +100,43 @@ where
     }
 }
 
+/// Applies one complete card-scoped topology change with independently owned
+/// enabled framebuffers and explicit disabled heads.
+///
+/// This is the execution counterpart to
+/// [`build_native_topology_change_atomic_request`]. The request is deliberately
+/// blocking and carries no page-flip event: returning `Accepted` means the card
+/// has completed its modeset, so a userspace coordinator may advance to the next
+/// card or begin rollback without racing an outstanding commit on this card.
+#[cfg(feature = "libdrm-events")]
+pub fn submit_native_topology_change_on_device<D>(
+    device: &D,
+    changes: &[LibdrmNativeAtomicTopologyChange],
+) -> NativeTopologySubmitOutcome
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let build = build_native_topology_change_atomic_request(changes);
+    if build.status != LibdrmNativeMultiHeadRequestBuildStatus::Built {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    }
+    let Some(request) = build.request else {
+        return NativeTopologySubmitOutcome::Unbuildable(build.status);
+    };
+    let (flags, native) = request
+        .allow_modeset()
+        .without_page_flip_event()
+        .blocking()
+        .into_native();
+    match device.submit_atomic_commit(flags, native) {
+        Ok(()) => NativeTopologySubmitOutcome::Accepted,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            NativeTopologySubmitOutcome::Busy
+        }
+        Err(_) => NativeTopologySubmitOutcome::Rejected,
+    }
+}
+
 /// Validates one topology against real hardware without naming a framebuffer.
 ///
 /// There is no `Activate` counterpart on purpose. A topology request carries no

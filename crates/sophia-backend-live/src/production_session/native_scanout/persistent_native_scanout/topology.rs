@@ -58,6 +58,235 @@ pub struct LiveProductionNativeTopologyPlan {
     pub heads: Vec<LiveProductionNativeTopologyHeadPlan>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeTopologyApplyPhase {
+    Prepared,
+    Applying,
+    RollingBack,
+    Applied,
+    RolledBack,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LiveProductionNativeTopologyCard {
+    card_index: usize,
+    heads: Vec<sophia_engine::RenderHeadId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeTopologyApplyTransition {
+    Accepted,
+    Retry,
+    CardApplied {
+        card_index: usize,
+        heads: Vec<sophia_engine::RenderHeadId>,
+    },
+    Applied {
+        card_index: usize,
+        heads: Vec<sophia_engine::RenderHeadId>,
+    },
+    RollbackRequired {
+        failed_card_index: usize,
+    },
+    CardRolledBack {
+        card_index: usize,
+        heads: Vec<sophia_engine::RenderHeadId>,
+    },
+    RolledBack {
+        card_index: usize,
+        heads: Vec<sophia_engine::RenderHeadId>,
+    },
+    FailedWithoutMutation {
+        card_index: usize,
+    },
+    RollbackFailed {
+        card_index: usize,
+    },
+    OutOfOrder,
+    Terminal,
+}
+
+/// Orders blocking card commits and reverses the accepted prefix on failure.
+///
+/// KMS is atomic only within one DRM card. This reducer supplies the missing
+/// userspace transaction across cards: cards apply in stable index order, and a
+/// later rejection rolls the accepted prefix back in reverse order. It owns no
+/// DRM handles; the live executor keeps candidate and rollback resource owners
+/// beside it and consumes the card named by `current_card_index()`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveProductionNativeTopologyApplyCoordinator {
+    cards: Vec<LiveProductionNativeTopologyCard>,
+    phase: LiveProductionNativeTopologyApplyPhase,
+    next_apply: usize,
+    applied: usize,
+    rollback_remaining: usize,
+}
+
+impl LiveProductionNativeTopologyApplyCoordinator {
+    pub fn new(plan: &LiveProductionNativeTopologyPlan) -> Option<Self> {
+        let mut by_card = BTreeMap::<usize, Vec<sophia_engine::RenderHeadId>>::new();
+        for head in &plan.heads {
+            by_card.entry(head.card_index).or_default().push(head.head);
+        }
+        if by_card.is_empty() {
+            return None;
+        }
+        let cards = by_card
+            .into_iter()
+            .map(|(card_index, mut heads)| {
+                heads.sort();
+                heads.dedup();
+                LiveProductionNativeTopologyCard { card_index, heads }
+            })
+            .collect::<Vec<_>>();
+        if cards.iter().any(|card| card.heads.is_empty())
+            || cards.iter().map(|card| card.heads.len()).sum::<usize>() != plan.heads.len()
+        {
+            return None;
+        }
+        Some(Self {
+            cards,
+            phase: LiveProductionNativeTopologyApplyPhase::Prepared,
+            next_apply: 0,
+            applied: 0,
+            rollback_remaining: 0,
+        })
+    }
+
+    pub const fn phase(&self) -> LiveProductionNativeTopologyApplyPhase {
+        self.phase
+    }
+
+    pub fn current_card_index(&self) -> Option<usize> {
+        match self.phase {
+            LiveProductionNativeTopologyApplyPhase::Applying => {
+                self.cards.get(self.next_apply).map(|card| card.card_index)
+            }
+            LiveProductionNativeTopologyApplyPhase::RollingBack => self
+                .rollback_remaining
+                .checked_sub(1)
+                .and_then(|index| self.cards.get(index))
+                .map(|card| card.card_index),
+            _ => None,
+        }
+    }
+
+    pub fn current_heads(&self) -> &[sophia_engine::RenderHeadId] {
+        match self.phase {
+            LiveProductionNativeTopologyApplyPhase::Applying => self
+                .cards
+                .get(self.next_apply)
+                .map_or(&[], |card| card.heads.as_slice()),
+            LiveProductionNativeTopologyApplyPhase::RollingBack => self
+                .rollback_remaining
+                .checked_sub(1)
+                .and_then(|index| self.cards.get(index))
+                .map_or(&[], |card| card.heads.as_slice()),
+            _ => &[],
+        }
+    }
+
+    pub fn begin_apply(&mut self) -> LiveProductionNativeTopologyApplyTransition {
+        if self.phase != LiveProductionNativeTopologyApplyPhase::Prepared {
+            return self.out_of_order();
+        }
+        self.phase = LiveProductionNativeTopologyApplyPhase::Applying;
+        LiveProductionNativeTopologyApplyTransition::Accepted
+    }
+
+    pub fn observe_apply(
+        &mut self,
+        card_index: usize,
+        outcome: crate::NativeTopologySubmitOutcome,
+    ) -> LiveProductionNativeTopologyApplyTransition {
+        if self.phase != LiveProductionNativeTopologyApplyPhase::Applying
+            || self.current_card_index() != Some(card_index)
+        {
+            return self.out_of_order();
+        }
+        if outcome == crate::NativeTopologySubmitOutcome::Busy {
+            return LiveProductionNativeTopologyApplyTransition::Retry;
+        }
+        if outcome != crate::NativeTopologySubmitOutcome::Accepted {
+            if self.applied == 0 {
+                self.phase = LiveProductionNativeTopologyApplyPhase::Failed;
+                return LiveProductionNativeTopologyApplyTransition::FailedWithoutMutation {
+                    card_index,
+                };
+            }
+            self.phase = LiveProductionNativeTopologyApplyPhase::RollingBack;
+            self.rollback_remaining = self.applied;
+            return LiveProductionNativeTopologyApplyTransition::RollbackRequired {
+                failed_card_index: card_index,
+            };
+        }
+
+        let card = &self.cards[self.next_apply];
+        let transition = if self.next_apply + 1 == self.cards.len() {
+            self.phase = LiveProductionNativeTopologyApplyPhase::Applied;
+            LiveProductionNativeTopologyApplyTransition::Applied {
+                card_index,
+                heads: card.heads.clone(),
+            }
+        } else {
+            LiveProductionNativeTopologyApplyTransition::CardApplied {
+                card_index,
+                heads: card.heads.clone(),
+            }
+        };
+        self.next_apply += 1;
+        self.applied += 1;
+        transition
+    }
+
+    pub fn observe_rollback(
+        &mut self,
+        card_index: usize,
+        outcome: crate::NativeTopologySubmitOutcome,
+    ) -> LiveProductionNativeTopologyApplyTransition {
+        if self.phase != LiveProductionNativeTopologyApplyPhase::RollingBack
+            || self.current_card_index() != Some(card_index)
+        {
+            return self.out_of_order();
+        }
+        if outcome == crate::NativeTopologySubmitOutcome::Busy {
+            return LiveProductionNativeTopologyApplyTransition::Retry;
+        }
+        if outcome != crate::NativeTopologySubmitOutcome::Accepted {
+            self.phase = LiveProductionNativeTopologyApplyPhase::Failed;
+            return LiveProductionNativeTopologyApplyTransition::RollbackFailed { card_index };
+        }
+        let card = &self.cards[self.rollback_remaining - 1];
+        self.rollback_remaining -= 1;
+        if self.rollback_remaining == 0 {
+            self.phase = LiveProductionNativeTopologyApplyPhase::RolledBack;
+            LiveProductionNativeTopologyApplyTransition::RolledBack {
+                card_index,
+                heads: card.heads.clone(),
+            }
+        } else {
+            LiveProductionNativeTopologyApplyTransition::CardRolledBack {
+                card_index,
+                heads: card.heads.clone(),
+            }
+        }
+    }
+
+    fn out_of_order(&self) -> LiveProductionNativeTopologyApplyTransition {
+        if matches!(
+            self.phase,
+            LiveProductionNativeTopologyApplyPhase::Applied
+                | LiveProductionNativeTopologyApplyPhase::RolledBack
+                | LiveProductionNativeTopologyApplyPhase::Failed
+        ) {
+            LiveProductionNativeTopologyApplyTransition::Terminal
+        } else {
+            LiveProductionNativeTopologyApplyTransition::OutOfOrder
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiveProductionNativeTopologyPlanError {
     Empty,
@@ -68,6 +297,7 @@ pub enum LiveProductionNativeTopologyPlanError {
     InvalidOutput(OutputId),
     InvalidGeneration(sophia_engine::RenderHeadId),
     ModeUnavailable(sophia_engine::RenderHeadId),
+    PublishedSnapshotMismatch,
     Native(String),
 }
 
@@ -271,6 +501,109 @@ pub fn plan_live_production_native_topology(
     })
 }
 
+/// Projects the published authority snapshot back into native render targets.
+///
+/// This is the rollback-side twin of candidate resolution. It deliberately
+/// joins logical state from the published snapshot with physical size and
+/// generation from the live head owner, preventing a provisional candidate
+/// from contaminating the rollback image set.
+pub fn project_live_production_published_topology(
+    current: &[LiveProductionNativeTopologyCurrentHead],
+    snapshot: &sophia_protocol::OutputAuthoritySnapshot,
+    mut selected_timing: impl FnMut(
+        LiveProductionNativeTopologyCurrentHead,
+    ) -> Result<
+        crate::LibdrmNativeOutputTiming,
+        LiveProductionNativeTopologyPlanError,
+    >,
+) -> Result<crate::LiveResolvedOutputTopology, LiveProductionNativeTopologyPlanError> {
+    snapshot
+        .validate()
+        .map_err(|_| LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
+    let mut output_by_head = BTreeMap::new();
+    let mut mapping_by_head = BTreeMap::new();
+    for group in &snapshot.groups {
+        for member in &group.members {
+            let head = sophia_engine::RenderHeadId::from_raw(member.head.raw());
+            if output_by_head.insert(head, group.output).is_some()
+                || mapping_by_head.insert(head, member.mapping).is_some()
+            {
+                return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
+            }
+        }
+    }
+    let descriptor_by_head = snapshot
+        .heads
+        .iter()
+        .map(|head| (sophia_engine::RenderHeadId::from_raw(head.head.raw()), head))
+        .collect::<BTreeMap<_, _>>();
+    if descriptor_by_head.len() != snapshot.heads.len() || descriptor_by_head.len() != current.len()
+    {
+        return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
+    }
+
+    let mut targets = Vec::with_capacity(current.len());
+    for native in current.iter().copied() {
+        let descriptor = descriptor_by_head
+            .get(&native.head)
+            .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
+        let output = output_by_head
+            .get(&native.head)
+            .copied()
+            .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
+        let timing = selected_timing(native)?;
+        if !descriptor.connected
+            || !descriptor.enabled
+            || descriptor.generation != native.target_generation
+            || output != native.output
+            || u32::try_from(native.selection.size().width).ok() != Some(timing.width)
+            || u32::try_from(native.selection.size().height).ok() != Some(timing.height)
+        {
+            return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
+        }
+        targets.push(crate::LiveOutputAuthorityHeadTarget {
+            head: native.head,
+            target_generation: native.target_generation,
+            output,
+            timing,
+            native_size: native.selection.size(),
+            transform: sophia_protocol::OutputTransform::Normal,
+            mapping: mapping_by_head[&native.head],
+            vrr: sophia_protocol::OutputVrrPolicy::Disabled,
+        });
+    }
+    let logical_viewports = snapshot
+        .groups
+        .iter()
+        .map(|group| crate::LiveOutputAuthorityLogicalViewport {
+            output: group.output,
+            logical: group.logical,
+        })
+        .collect::<Vec<_>>();
+    let outputs = snapshot
+        .groups
+        .iter()
+        .map(|group| sophia_engine::HeadlessOutput {
+            id: group.output,
+            size: sophia_protocol::Size {
+                width: group.logical.width,
+                height: group.logical.height,
+            },
+            scale: 1,
+        })
+        .collect::<Vec<_>>();
+    Ok(crate::LiveResolvedOutputTopology {
+        primary_output: snapshot.primary_output,
+        outputs,
+        logical_viewports,
+        disabled_heads: Vec::new(),
+        targets,
+        // Connector grouping is a discovery/configuration input. Rendering
+        // rollback targets needs only the already-resolved opaque members.
+        mirror_grouping: crate::NativeMirrorGrouping::none(),
+    })
+}
+
 impl LiveProductionNativeScanout {
     /// Resolves a provisional IPC topology against the live DRM master without
     /// mutating the currently published head table or any scanout ownership.
@@ -298,6 +631,42 @@ impl LiveProductionNativeScanout {
                 timing,
             )
             .map_err(|error| LiveProductionNativeTopologyPlanError::Native(error.to_string()))
+        })
+    }
+
+    /// Reconstructs the still-published topology as render targets for a
+    /// rollback pool. This never consults the provisional candidate: logical
+    /// positions come from the published authority snapshot, while native sizes
+    /// and generations come from the live head owner.
+    pub fn published_output_topology(
+        &self,
+        snapshot: &sophia_protocol::OutputAuthoritySnapshot,
+    ) -> Result<crate::LiveResolvedOutputTopology, LiveProductionNativeTopologyPlanError> {
+        let capabilities = self
+            .output_capabilities()
+            .map_err(|error| LiveProductionNativeTopologyPlanError::Native(error.to_string()))?;
+        let capability_by_head = capabilities
+            .iter()
+            .filter_map(|capability| capability.head().map(|head| (head, capability)))
+            .collect::<BTreeMap<_, _>>();
+        let current = self
+            .heads
+            .iter()
+            .map(|head| {
+                LiveProductionNativeTopologyCurrentHead::new(
+                    head.head,
+                    head.group,
+                    head.output.id,
+                    head.selection,
+                    head.target_generation,
+                )
+            })
+            .collect::<Vec<_>>();
+        project_live_production_published_topology(&current, snapshot, |native| {
+            capability_by_head
+                .get(&native.head)
+                .map(|capability| capability.selected_mode())
+                .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)
         })
     }
 }

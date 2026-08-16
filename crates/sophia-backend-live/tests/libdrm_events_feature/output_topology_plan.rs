@@ -244,3 +244,253 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
         ))
     );
 }
+
+fn topology_apply_plan(card_indices: &[usize]) -> sophia_backend_live::LiveProductionNativeTopologyPlan {
+    use sophia_backend_live::{
+        LiveOutputAuthorityLogicalViewport, LiveProductionNativeTopologyDisposition,
+        LiveProductionNativeTopologyHeadPlan, LiveProductionNativeTopologyPlan,
+    };
+    use sophia_protocol::{OutputHeadMapping, OutputTransform, OutputVrrPolicy};
+
+    let output = OutputId::from_raw(1);
+    let size = Size {
+        width: 1_920,
+        height: 1_080,
+    };
+    LiveProductionNativeTopologyPlan {
+        primary_output: output,
+        outputs: vec![sophia_engine::HeadlessOutput {
+            id: output,
+            size,
+            scale: 1,
+        }],
+        logical_viewports: vec![LiveOutputAuthorityLogicalViewport {
+            output,
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: size.height,
+            },
+        }],
+        heads: card_indices
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, card_index)| {
+                let head = RenderHeadId::from_raw(index as u64 + 1);
+                let previous_selection = topology_plan_selection(index as u32 + 1, size);
+                LiveProductionNativeTopologyHeadPlan {
+                    head,
+                    card_index,
+                    previous_output: output,
+                    previous_selection,
+                    previous_target_generation: 1,
+                    candidate_target_generation: 2,
+                    disposition: LiveProductionNativeTopologyDisposition::Enabled {
+                        output,
+                        selection: previous_selection,
+                        transform: OutputTransform::Normal,
+                        mapping: OutputHeadMapping::Exact,
+                        vrr: OutputVrrPolicy::Disabled,
+                    },
+                }
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn topology_apply_coordinator_rolls_back_the_accepted_card_prefix_in_reverse_order() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyApplyCoordinator as Coordinator,
+        LiveProductionNativeTopologyApplyPhase as Phase,
+        LiveProductionNativeTopologyApplyTransition as Transition, NativeTopologySubmitOutcome,
+    };
+
+    let mut coordinator = Coordinator::new(&topology_apply_plan(&[9, 3, 7])).unwrap();
+    assert_eq!(coordinator.phase(), Phase::Prepared);
+    assert_eq!(coordinator.begin_apply(), Transition::Accepted);
+
+    // Cards are canonicalized independently of head discovery order.
+    assert_eq!(coordinator.current_card_index(), Some(3));
+    assert!(matches!(
+        coordinator.observe_apply(3, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardApplied { card_index: 3, .. }
+    ));
+    assert_eq!(coordinator.current_card_index(), Some(7));
+    assert!(matches!(
+        coordinator.observe_apply(7, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardApplied { card_index: 7, .. }
+    ));
+    assert_eq!(coordinator.current_card_index(), Some(9));
+    assert_eq!(
+        coordinator.observe_apply(9, NativeTopologySubmitOutcome::Rejected),
+        Transition::RollbackRequired {
+            failed_card_index: 9
+        }
+    );
+
+    assert_eq!(coordinator.phase(), Phase::RollingBack);
+    assert_eq!(coordinator.current_card_index(), Some(7));
+    assert!(matches!(
+        coordinator.observe_rollback(7, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardRolledBack { card_index: 7, .. }
+    ));
+    assert_eq!(coordinator.current_card_index(), Some(3));
+    assert!(matches!(
+        coordinator.observe_rollback(3, NativeTopologySubmitOutcome::Accepted),
+        Transition::RolledBack { card_index: 3, .. }
+    ));
+    assert_eq!(coordinator.phase(), Phase::RolledBack);
+    assert_eq!(coordinator.current_card_index(), None);
+}
+
+#[test]
+fn topology_apply_coordinator_retries_busy_and_distinguishes_unmutated_failure() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyApplyCoordinator as Coordinator,
+        LiveProductionNativeTopologyApplyPhase as Phase,
+        LiveProductionNativeTopologyApplyTransition as Transition, NativeTopologySubmitOutcome,
+    };
+
+    let mut coordinator = Coordinator::new(&topology_apply_plan(&[4, 4])).unwrap();
+    assert_eq!(coordinator.begin_apply(), Transition::Accepted);
+    assert_eq!(coordinator.current_heads().len(), 2);
+    assert_eq!(
+        coordinator.observe_apply(4, NativeTopologySubmitOutcome::Busy),
+        Transition::Retry
+    );
+    assert_eq!(coordinator.current_card_index(), Some(4));
+    assert!(matches!(
+        coordinator.observe_apply(4, NativeTopologySubmitOutcome::Accepted),
+        Transition::Applied { card_index: 4, .. }
+    ));
+    assert_eq!(coordinator.phase(), Phase::Applied);
+
+    let mut rejected = Coordinator::new(&topology_apply_plan(&[2, 5])).unwrap();
+    assert_eq!(rejected.begin_apply(), Transition::Accepted);
+    assert_eq!(
+        rejected.observe_apply(2, NativeTopologySubmitOutcome::Rejected),
+        Transition::FailedWithoutMutation { card_index: 2 }
+    );
+    assert_eq!(rejected.phase(), Phase::Failed);
+    assert_eq!(rejected.current_card_index(), None);
+}
+
+#[test]
+fn published_topology_projection_uses_published_viewports_and_live_native_targets() {
+    use sophia_backend_live::{
+        LibdrmNativeOutputTiming, LiveProductionNativeTopologyCurrentHead,
+        project_live_production_published_topology,
+    };
+    use sophia_protocol::{
+        DisplayHeadId, DisplayModeId, OutputAuthoritySnapshot, OutputGroupMember,
+        OutputHeadDescriptor, OutputHeadMapping, OutputLogicalGroupState, OutputModeDescriptor,
+        OutputTransformSet,
+    };
+
+    let left = OutputId::from_raw(1);
+    let right = OutputId::from_raw(2);
+    let left_head = RenderHeadId::from_raw(31);
+    let right_head = RenderHeadId::from_raw(32);
+    let left_size = Size {
+        width: 2_560,
+        height: 1_440,
+    };
+    let right_size = Size {
+        width: 1_920,
+        height: 1_080,
+    };
+    let descriptor = |head: RenderHeadId, generation, size: Size| OutputHeadDescriptor {
+        head: DisplayHeadId::from_raw(head.raw()),
+        generation,
+        label: format!("Display {}", head.raw()),
+        connected: true,
+        enabled: true,
+        current_mode: Some(DisplayModeId::from_raw(head.raw() * 10)),
+        transforms: OutputTransformSet::NORMAL,
+        vrr_capable: false,
+        modes: vec![OutputModeDescriptor {
+            mode: DisplayModeId::from_raw(head.raw() * 10),
+            pixel_size: size,
+            refresh_millihz: 60_000,
+            preferred: true,
+        }],
+    };
+    let snapshot = OutputAuthoritySnapshot {
+        topology_epoch: 8,
+        primary_output: left,
+        heads: vec![
+            descriptor(left_head, 4, left_size),
+            descriptor(right_head, 7, right_size),
+        ],
+        groups: vec![
+            OutputLogicalGroupState {
+                output: left,
+                generation: 3,
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1_280,
+                    height: 720,
+                },
+                members: vec![OutputGroupMember {
+                    head: DisplayHeadId::from_raw(left_head.raw()),
+                    mapping: OutputHeadMapping::Exact,
+                }],
+            },
+            OutputLogicalGroupState {
+                output: right,
+                generation: 5,
+                logical: Rect {
+                    x: 1_280,
+                    y: 0,
+                    width: 1_920,
+                    height: 1_080,
+                },
+                members: vec![OutputGroupMember {
+                    head: DisplayHeadId::from_raw(right_head.raw()),
+                    mapping: OutputHeadMapping::Fit,
+                }],
+            },
+        ],
+    };
+    let current = [
+        LiveProductionNativeTopologyCurrentHead::new(
+            left_head,
+            0,
+            left,
+            topology_plan_selection(10, left_size),
+            4,
+        ),
+        LiveProductionNativeTopologyCurrentHead::new(
+            right_head,
+            1,
+            right,
+            topology_plan_selection(20, right_size),
+            7,
+        ),
+    ];
+
+    let projected = project_live_production_published_topology(
+        &current,
+        &snapshot,
+        |head| {
+            Ok(LibdrmNativeOutputTiming::new(
+                head.selection.size().width as u32,
+                head.selection.size().height as u32,
+                60_000,
+            ))
+        },
+    )
+    .unwrap();
+
+    assert_eq!(projected.logical_viewports[0].logical, snapshot.groups[0].logical);
+    assert_eq!(projected.logical_viewports[1].logical, snapshot.groups[1].logical);
+    assert_eq!(projected.targets[0].native_size, left_size);
+    assert_eq!(projected.targets[0].target_generation, 4);
+    assert_eq!(projected.targets[1].native_size, right_size);
+    assert_eq!(projected.targets[1].target_generation, 7);
+    assert_eq!(projected.targets[1].mapping, OutputHeadMapping::Fit);
+}
