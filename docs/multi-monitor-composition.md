@@ -820,3 +820,26 @@ linked active roadmap.
   into Engine.
 - Enforce prepare-all mirror cohorts, joined retirement, and explicit sampling
   evidence in deterministic and physical acceptance gates.
+- Add opportunistic scanout cloning beneath per-head composition. This is
+  normative target behavior that is not implemented. When every head of one
+  logical output has an equivalent `HeadCompositionPlan` — the entire plan
+  record except head identity and content checksum: mapping, native size,
+  transform, density class, scene generation, and committed target generation,
+  with identical modes including refresh and all heads on one card — the
+  backend may compose once and scan the shared framebuffer out on every
+  eligible head's plane, subject to an atomic `TEST_ONLY` probe. Content
+  identity is guaranteed by compositor determinism, not checked at runtime:
+  a checksum comparison is incoherent for cloning because clone mode performs
+  one composition, so it could arm the optimization but never detect the need
+  to revoke it. Per-CRTC cursor planes and gamma/CTM/degamma properties stay
+  head-local beneath the shared framebuffer. Framebuffer release joins every
+  scanning head's retirement through the existing presentation cohort. The
+  decision is backend-private and re-evaluated only through
+  `OutputTopologyTransaction` events, so strategy switching happens at
+  configuration cadence with first-presentation barriers; no policy client,
+  `sophia_wm_v1` peer, or `sophia_output_v1` role can observe or select the
+  strategy. Any field later added to the plan record is equivalence-relevant
+  by default, so unconsidered head-local state disables cloning rather than
+  wrongly preserving it. Render copy — the per-head composition path this
+  document specifies — remains the universal fallback and the semantic ground
+  truth; the optimizer may decline a clone, never a topology.

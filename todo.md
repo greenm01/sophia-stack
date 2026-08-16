@@ -1210,6 +1210,20 @@ Launcher, And Shell Integration are pre-freeze port requirements.
 - [ ] Add client-selected classic X11 cursor images or further toolkit,
   extension, font, color, and WM behavior only when a retained workflow exposes
   the missing protocol fact.
+- [ ] Add opportunistic scanout cloning for equal-mode mirror heads after the
+  per-head composition path is promotion-proven. Eligibility is plan-record
+  equivalence (geometry, mapping, density, generations; never the content
+  checksum) per the normative design in
+  [Multi-Monitor Per-Head Composition](docs/multi-monitor-composition.md#target);
+  the decision stays backend-private and switches only through topology
+  transactions. Exit gate: an equal-mode physical mirror run whose evidence
+  shows one composition per frame and one framebuffer identity behind both
+  opaque heads' plane assignments with joined retirement; a dual-render audit
+  phase proving the cloned and per-head compositions byte-identical for one
+  committed scene; a forced mid-run divergence through `sophia_output_v1` that
+  demotes to per-head with no visual discontinuity or leaked framebuffer; and
+  re-promotion only after a passing atomic `TEST_ONLY` probe. Cross-card
+  mirrors and unequal modes remain render copy permanently.
 
 ### Hardware Diagnostics And Hotplug
 
