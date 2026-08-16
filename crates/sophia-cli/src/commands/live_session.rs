@@ -300,6 +300,7 @@ pub(crate) fn run_persistent_xterm_session(
     if let Some(native) = native_scanout.as_mut() {
         native.mirror_fit = mirror_fit;
     }
+    let mut output_authority_capabilities = None;
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
         for capability in &capabilities {
@@ -408,6 +409,7 @@ pub(crate) fn run_persistent_xterm_session(
             focused,
             "native desktop output candidate admitted"
         );
+        output_authority_capabilities = Some(capabilities.clone());
     }
     let device_map =
         sophia_backend_live::NativeLibinputDeviceMap::new(SeatId::from_raw(SESSION_SEAT_RAW))
@@ -440,8 +442,27 @@ pub(crate) fn run_persistent_xterm_session(
         .as_ref()
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
-    let mut wm_session =
-        LiveWmSession::from_config(&config, &initial_outputs, public_policy_launch)?;
+    let output_authority_bootstrap = if public_policy_launch.is_some() {
+        output_authority_capabilities
+            .take()
+            .map(|capabilities| {
+                sophia_backend_live::project_live_output_authority_snapshot(
+                    &capabilities,
+                    &initial_outputs,
+                    1,
+                )
+                .map(|snapshot| (snapshot, capabilities))
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let mut wm_session = LiveWmSession::from_config(
+        &config,
+        &initial_outputs,
+        public_policy_launch,
+        output_authority_bootstrap,
+    )?;
     let policy_map_mode = LivePolicyMapMode::from_external_wm(wm_session.is_some());
     let output_topology = output_topology_from_engine_outputs(&initial_outputs)?;
 

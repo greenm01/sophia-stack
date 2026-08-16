@@ -49,6 +49,9 @@ impl PublicPolicyFaultPoint {
 
 struct LivePublicPolicyState {
     worker: Option<PolicyTransportWorker>,
+    output_service: Option<sophia_runtime::OutputTransportService>,
+    output_authority: Option<sophia_cli::live_output_authority::LiveOutputAuthorityOwner>,
+    output_capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     _profile_fragments: sophia_config::DesktopProfileFragments,
     _profile_slot: PreparedAuthorityFragment,
     profile_key: Option<sophia_config::DesktopProfileActivationKey>,
@@ -113,6 +116,7 @@ struct StartedPublicPolicyRuntime {
     supervisor_state: sophia_runtime::SupervisorState,
     restart_policy: RestartPolicy,
     worker: PolicyTransportWorker,
+    output_transport: Option<sophia_runtime::OutputSessionTransport>,
     socket_path: std::path::PathBuf,
     checkpoint_path: std::path::PathBuf,
 }
@@ -295,6 +299,18 @@ impl PreparedPublicPolicyLaunch {
     ) -> Result<StartedPublicPolicyRuntime, Box<dyn std::error::Error>> {
         let mut transport = bind_public_policy_transport(&self.directory, profile_key)?;
         let socket_path = transport.socket_path().to_path_buf();
+        let mut output_transport = config
+            .native_scanout
+            .then(|| {
+                sophia_runtime::OutputSessionTransport::bind_for_supervised_uid(
+                    self.directory.path().join("output-endpoint"),
+                    rustix::process::geteuid().as_raw(),
+                )
+            })
+            .transpose()?;
+        let output_socket_path = output_transport
+            .as_ref()
+            .map(|transport| transport.socket_path().to_path_buf());
         let checkpoint_path = self.directory.checkpoint_path();
         let spec = public_policy_launch_spec(
             config,
@@ -304,6 +320,7 @@ impl PreparedPublicPolicyLaunch {
             self.profile_fragments
                 .path(sophia_config::DesktopAuthority::Policy),
             profile_key.is_some(),
+            output_socket_path.as_deref(),
         );
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
         let restart_policy = RestartPolicy::default();
@@ -322,6 +339,9 @@ impl PreparedPublicPolicyLaunch {
             .child_id()
             .ok_or("public WM supervisor did not retain Hagia's PID")?;
         transport.authorize_supervised_pid(child_pid)?;
+        if let Some(output_transport) = output_transport.as_mut() {
+            output_transport.authorize_supervised_pid(child_pid)?;
+        }
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;
         let worker = start_public_policy_worker(transport, 1, profile_key)?;
@@ -330,6 +350,7 @@ impl PreparedPublicPolicyLaunch {
             supervisor_state,
             restart_policy,
             worker,
+            output_transport,
             socket_path,
             checkpoint_path,
         })
@@ -383,6 +404,186 @@ const fn public_policy_restart_decision(
 }
 
 impl LivePublicPolicyState {
+    fn poll_output_authority(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        const MAX_EVENTS_PER_TURN: usize = 16;
+        for _ in 0..MAX_EVENTS_PER_TURN {
+            let event = match self.output_service.as_ref() {
+                Some(service) => match service.try_event() {
+                    Ok(Some(event)) => event,
+                    Ok(None) => break,
+                    Err(()) => {
+                        self.output_service.take();
+                        println!(
+                            "sophia_live_output_authority schema=1 status=degraded reason=service_disconnected preserved_topology=true"
+                        );
+                        break;
+                    }
+                },
+                None => break,
+            };
+            match event {
+                sophia_runtime::OutputTransportServiceEvent::Connected { connection_epoch } => {
+                    let authority = self
+                        .output_authority
+                        .as_mut()
+                        .ok_or("output service connected without an authority owner")?;
+                    if connection_epoch > authority.connection_epoch() {
+                        authority.replace_connection_epoch(connection_epoch)?;
+                    } else if connection_epoch != authority.connection_epoch() {
+                        return Err("output service connected with a stale epoch".into());
+                    }
+                    println!(
+                        "sophia_live_output_authority schema=1 status=connected epoch={connection_epoch}"
+                    );
+                }
+                sophia_runtime::OutputTransportServiceEvent::Proposal {
+                    proposal,
+                    admission,
+                } => match admission {
+                    sophia_runtime::OutputProposalAdmission::Active => {
+                        self.settle_output_proposal(proposal)?;
+                    }
+                    sophia_runtime::OutputProposalAdmission::Queued { replaced } => {
+                        if let Some(replaced) = replaced {
+                            let authority = self
+                                .output_authority
+                                .as_ref()
+                                .ok_or("queued output proposal has no authority owner")?;
+                            self.output_service
+                                .as_ref()
+                                .ok_or("queued output proposal lost its service")?
+                                .command(sophia_runtime::OutputTransportServiceCommand::Reply {
+                                    transaction: replaced.transaction,
+                                    outcome: sophia_protocol::OutputV1Outcome {
+                                        connection_epoch: authority.connection_epoch(),
+                                        topology_epoch: authority.published().topology_epoch,
+                                        kind: sophia_protocol::OutputV1OutcomeKind::Stale,
+                                        reason: sophia_protocol::SOPHIA_OUTPUT_OUTCOME_REASON_STALE,
+                                    },
+                                })
+                                .map_err(|_| "output stale-reply queue disconnected")?;
+                        }
+                    }
+                },
+                sophia_runtime::OutputTransportServiceEvent::Promoted(proposal) => {
+                    self.settle_output_proposal(proposal)?;
+                }
+                sophia_runtime::OutputTransportServiceEvent::ProposalRejected {
+                    transaction,
+                    message,
+                } => {
+                    println!(
+                        "sophia_live_output_authority schema=1 status=rejected transaction={} phase=admission reason={message:?}",
+                        transaction.raw(),
+                    );
+                }
+                sophia_runtime::OutputTransportServiceEvent::Disconnected {
+                    connection_epoch,
+                } => {
+                    self.abandon_output_candidate()?;
+                    println!(
+                        "sophia_live_output_authority schema=1 status=disconnected epoch={connection_epoch} preserved_topology=true"
+                    );
+                }
+                sophia_runtime::OutputTransportServiceEvent::AssigneeReplaced {
+                    connection_epoch,
+                    abandoned,
+                } => {
+                    self.abandon_output_candidate()?;
+                    self.output_authority
+                        .as_mut()
+                        .ok_or("output assignee replacement has no authority owner")?
+                        .replace_connection_epoch(connection_epoch)?;
+                    println!(
+                        "sophia_live_output_authority schema=1 status=reauthorized epoch={} abandoned={} preserved_topology=true",
+                        connection_epoch,
+                        abandoned.len(),
+                    );
+                }
+                sophia_runtime::OutputTransportServiceEvent::ConnectionRejected { message } => {
+                    println!(
+                        "sophia_live_output_authority schema=1 status=connection_rejected reason={message:?} preserved_topology=true"
+                    );
+                }
+                sophia_runtime::OutputTransportServiceEvent::Failed { message } => {
+                    self.abandon_output_candidate()?;
+                    self.output_service.take();
+                    println!(
+                        "sophia_live_output_authority schema=1 status=degraded reason={message:?} preserved_topology=true"
+                    );
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn settle_output_proposal(
+        &mut self,
+        proposal: sophia_runtime::AdmittedOutputProposal,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let settlement = {
+            let authority = self
+                .output_authority
+                .as_mut()
+                .ok_or("output proposal has no authority owner")?;
+            match authority.admit(
+                proposal.transaction,
+                &proposal.message,
+                &self.output_capabilities,
+            ) {
+                Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Validated(
+                    settlement,
+                )) => settlement,
+                Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Prepared) => {
+                    // Effect execution is the next cutover. Until renderer
+                    // targets and rollback owners are wired, an Apply request
+                    // must settle explicitly instead of mutating only a subset.
+                    authority.fail(
+                        sophia_engine::OutputTopologyTransactionFailure::Preparation,
+                    )?;
+                    authority.settle_terminal()?
+                }
+                Err(_error) => sophia_cli::live_output_authority::LiveOutputAuthoritySettlement {
+                    transaction: proposal.transaction,
+                    outcome: sophia_protocol::OutputV1Outcome {
+                        connection_epoch: authority.connection_epoch(),
+                        topology_epoch: authority.published().topology_epoch,
+                        kind: sophia_protocol::OutputV1OutcomeKind::Rejected,
+                        reason: sophia_protocol::SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT,
+                    },
+                    published_snapshot: None,
+                },
+            }
+        };
+        self.output_service
+            .as_ref()
+            .ok_or("output settlement lost its transport service")?
+            .command(sophia_runtime::OutputTransportServiceCommand::Settle {
+                transaction: settlement.transaction,
+                outcome: settlement.outcome,
+            })
+            .map_err(|_| "output settlement queue disconnected")?;
+        println!(
+            "sophia_live_output_authority schema=1 status=settled transaction={} outcome={:?} topology_epoch={}",
+            settlement.transaction.raw(),
+            settlement.outcome.kind,
+            settlement.outcome.topology_epoch,
+        );
+        Ok(())
+    }
+
+    fn abandon_output_candidate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(authority) = self.output_authority.as_mut() else {
+            return Ok(());
+        };
+        if authority.active_transaction().is_some() {
+            authority.fail(sophia_engine::OutputTopologyTransactionFailure::Stale)?;
+            let _ = authority.settle_terminal()?;
+        }
+        Ok(())
+    }
+
     fn initial_scene(
         outputs: &[sophia_engine::HeadlessOutput],
         active_output: sophia_protocol::OutputId,
@@ -821,12 +1022,21 @@ fn public_policy_launch_spec(
     checkpoint_path: &std::path::Path,
     candidate_path: &std::path::Path,
     require_profile_activation: bool,
+    output_socket_path: Option<&std::path::Path>,
 ) -> ProcessLaunchSpec {
     let spec = ProcessLaunchSpec::new(process)
         .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
         .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
         .env("HAGIA_POLICY_CANDIDATE", candidate_path)
         .process_group();
+    let spec = if let Some(output_socket_path) = output_socket_path {
+        spec.env(
+            sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV,
+            output_socket_path,
+        )
+    } else {
+        spec
+    };
     let spec = if require_profile_activation {
         spec.env("HAGIA_POLICY_PROFILE_ACTIVATION", "required")
     } else {
@@ -843,6 +1053,10 @@ impl LiveWmSession {
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
         started_launch: StartedPublicPolicyLaunch,
+        output_bootstrap: Option<(
+            sophia_protocol::OutputAuthoritySnapshot,
+            Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+        )>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let StartedPublicPolicyLaunch {
             profile_fragments,
@@ -857,11 +1071,37 @@ impl LiveWmSession {
                     supervisor_state,
                     restart_policy,
                     worker,
+                    output_transport,
                     socket_path,
                     checkpoint_path,
                 },
             profile_key,
         } = started_launch;
+
+        let (output_service, output_authority, output_capabilities) =
+            match (output_transport, output_bootstrap) {
+                (Some(transport), Some((snapshot, capabilities))) => {
+                    let authority =
+                        sophia_cli::live_output_authority::LiveOutputAuthorityOwner::new(
+                            1,
+                            snapshot.clone(),
+                        )?;
+                    let service = sophia_runtime::OutputTransportService::spawn(
+                        transport,
+                        1,
+                        TransactionId::from_raw(1),
+                        snapshot,
+                    )?;
+                    (Some(service), Some(authority), capabilities)
+                }
+                (None, None) => (None, None, Vec::new()),
+                (Some(_), None) => {
+                    return Err("native output role has no capability snapshot".into());
+                }
+                (None, Some(_)) => {
+                    return Err("native output snapshot has no supervised role endpoint".into());
+                }
+            };
 
         let (session_operations, operation_actions) = public_session_operations(config);
         let active = outputs
@@ -887,6 +1127,9 @@ impl LiveWmSession {
             directory,
             checkpoint_path,
             worker: Some(worker),
+            output_service,
+            output_authority,
+            output_capabilities,
             reducer,
             connection_epoch: 1,
             next_connection_epoch: 2,
@@ -971,6 +1214,7 @@ impl LiveWmSession {
         _output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         let mut public = self.public.take().expect("public WM state is present");
+        public.poll_output_authority()?;
         public.flush_deferred_command()?;
         let event = public
             .worker
@@ -1309,6 +1553,13 @@ impl LiveWmSession {
             .child_id()
             .ok_or("restarted public WM has no supervised PID")?;
         transport.authorize_supervised_pid(pid)?;
+        if let Some(output_service) = public.output_service.as_ref() {
+            output_service
+                .command(
+                    sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid },
+                )
+                .map_err(|_| "output authority service is unavailable during WM restart")?;
+        }
         let (state, _) = update_supervisor(self.supervisor_state.clone(), started, self.restart_policy);
         self.supervisor_state = state;
         public.reducer.connect(next_epoch)?;

@@ -11541,3 +11541,21 @@ acknowledgement ordering.
   split header/payload remains ordered and lossless. The live supervisor still
   needs an explicit assignee and restart handoff before advertising this socket
   to a WM or shell.
+
+## 2026-08-15: the supervised public WM owns the live output role
+
+- Native public-policy startup now binds the exclusive `sophia_output_v1`
+  endpoint inside the private policy directory, authorizes the exact supervised
+  WM PID, and advertises only that endpoint through `SOPHIA_OUTPUT_SOCKET`.
+  Static and legacy policy paths receive no physical-output capability.
+- The optional transport service and `LiveOutputAuthorityOwner` are retained by
+  the live WM session. Complete proposals are polled in a bounded owner turn;
+  validate-only proposals settle through the resolver and topology reducer,
+  while apply proposals fail explicitly at preparation rather than mutating a
+  subset of native state.
+- A supervised WM restart disconnects the old output peer, abandons its active
+  and queued proposals, advances the connection epoch, and authorizes the new
+  PID before it can reconnect. The published topology survives the role handoff.
+  This closes the supervision boundary; renderer-target preparation, live KMS
+  apply/rollback, runtime rebuild, and first-presentation publication remain the
+  ordered cutover.

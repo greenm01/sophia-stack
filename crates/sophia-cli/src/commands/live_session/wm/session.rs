@@ -377,6 +377,10 @@ impl LiveWmSession {
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
         public_launch: Option<StartedPublicPolicyLaunch>,
+        output_bootstrap: Option<(
+            sophia_protocol::OutputAuthoritySnapshot,
+            Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+        )>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(process) = config.wm_process.as_deref() else {
             if public_launch.is_some() {
@@ -387,8 +391,10 @@ impl LiveWmSession {
         if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
             let started = public_launch
                 .ok_or("public WM launch requires an activated desktop profile")?;
-            return Self::from_started_public_config(config, outputs, started).map(Some);
+            return Self::from_started_public_config(config, outputs, started, output_bootstrap)
+                .map(Some);
         }
+        let _ = output_bootstrap;
         if public_launch.is_some() {
             return Err("legacy WM launch cannot consume public profile preparation".into());
         }

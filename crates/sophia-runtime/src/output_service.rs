@@ -14,11 +14,18 @@ use crate::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutputTransportServiceCommand {
+    ReplaceSupervisedPid {
+        pid: u32,
+    },
     PublishSnapshot {
         transaction: TransactionId,
         snapshot: OutputAuthoritySnapshot,
     },
     Settle {
+        transaction: TransactionId,
+        outcome: OutputV1Outcome,
+    },
+    Reply {
         transaction: TransactionId,
         outcome: OutputV1Outcome,
     },
@@ -44,6 +51,10 @@ pub enum OutputTransportServiceEvent {
     },
     ConnectionRejected {
         message: String,
+    },
+    AssigneeReplaced {
+        connection_epoch: u64,
+        abandoned: Vec<AdmittedOutputProposal>,
     },
     Failed {
         message: String,
@@ -146,6 +157,26 @@ fn run_output_transport_service(
     loop {
         while let Ok(command) = commands.try_recv() {
             match command {
+                OutputTransportServiceCommand::ReplaceSupervisedPid { pid } => {
+                    let abandoned = if connected {
+                        transport.disconnect().map_err(|error| error.to_string())?
+                    } else {
+                        Vec::new()
+                    };
+                    connected = false;
+                    connection_epoch = connection_epoch
+                        .checked_add(1)
+                        .ok_or_else(|| "output connection epoch exhausted".to_owned())?;
+                    transport
+                        .authorize_supervised_pid(pid)
+                        .map_err(|error| error.to_string())?;
+                    events
+                        .send(OutputTransportServiceEvent::AssigneeReplaced {
+                            connection_epoch,
+                            abandoned,
+                        })
+                        .map_err(|_| "output owner event channel disconnected".to_owned())?;
+                }
                 OutputTransportServiceCommand::PublishSnapshot {
                     transaction,
                     snapshot: replacement,
@@ -185,6 +216,17 @@ fn run_output_transport_service(
                             .send(OutputTransportServiceEvent::Promoted(promoted))
                             .map_err(|_| "output owner event channel disconnected".to_owned())?;
                     }
+                }
+                OutputTransportServiceCommand::Reply {
+                    transaction,
+                    outcome,
+                } => {
+                    if !connected {
+                        return Err("output reply arrived without a client".to_owned());
+                    }
+                    transport
+                        .send_outcome(transaction, outcome)
+                        .map_err(|error| error.to_string())?;
                 }
                 OutputTransportServiceCommand::Stop => return Ok(()),
             }

@@ -96,6 +96,64 @@ fn optional_output_service_stops_without_a_client() {
     assert!(started.elapsed() < Duration::from_secs(1));
 }
 
+#[test]
+fn output_service_reauthorizes_a_restarted_supervised_process() {
+    let directory = temporary_directory("restart");
+    let uid = rustix::process::geteuid().as_raw();
+    let pid = std::process::id();
+    let mut transport = OutputSessionTransport::bind_for_supervised_uid(&directory, uid).unwrap();
+    transport.authorize_supervised_pid(pid).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let service =
+        OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), snapshot())
+            .unwrap();
+    let mut first = connect_output_client(&socket_path);
+    assert_eq!(
+        decode_output_v1_server_welcome_frame(&read_frame(&mut first))
+            .unwrap()
+            .connection_epoch,
+        1
+    );
+    decode_output_v1_snapshot_frame(&read_frame(&mut first)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 1
+        }
+    );
+
+    service
+        .command(OutputTransportServiceCommand::ReplaceSupervisedPid { pid })
+        .unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::AssigneeReplaced {
+            connection_epoch: 2,
+            abandoned: Vec::new(),
+        }
+    );
+    first
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    let mut closed = [0u8; 1];
+    assert_eq!(first.read(&mut closed).unwrap(), 0);
+
+    let mut second = connect_output_client(&socket_path);
+    assert_eq!(
+        decode_output_v1_server_welcome_frame(&read_frame(&mut second))
+            .unwrap()
+            .connection_epoch,
+        2
+    );
+    decode_output_v1_snapshot_frame(&read_frame(&mut second)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 2
+        }
+    );
+}
+
 fn temporary_directory(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "sophia-output-service-{label}-{}-{}",
@@ -185,4 +243,19 @@ fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
         .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
         .unwrap();
     frame
+}
+
+fn connect_output_client(path: &std::path::Path) -> UnixStream {
+    let mut stream = UnixStream::connect(path).unwrap();
+    stream
+        .write_all(
+            &encode_output_v1_client_hello_frame(OutputV1ClientHello {
+                minimum_revision: 1,
+                maximum_revision: 1,
+                capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+    stream
 }

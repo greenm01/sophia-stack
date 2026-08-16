@@ -384,6 +384,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         false,
+        None,
     );
     assert!(spec.environment.contains(&(
         "HAGIA_POLICY_CANDIDATE".into(),
@@ -407,12 +408,19 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         true,
+        Some(std::path::Path::new(
+            "/run/user/1000/sophia/policy/output.sock",
+        )),
     );
     assert!(
         activated
             .environment
             .contains(&("HAGIA_POLICY_PROFILE_ACTIVATION".into(), "required".into()))
     );
+    assert!(activated.environment.contains(&(
+        sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV.into(),
+        "/run/user/1000/sophia/policy/output.sock".into(),
+    )));
 }
 
 #[test]

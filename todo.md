@@ -1098,12 +1098,16 @@ is excluded; retained product behavior is not.
   the last published snapshot while a candidate passes Engine's prepare, apply,
   rollback, and all-output first-presentation phases; validation and rejected
   preparation do not consume fresh logical-output identities. The remaining
-  critical path is to grant the role from supervision, execute renderer-target
-  and KMS effects through the live owner, rebuild Engine/runtime state, and feed
-  real first-presentation observations into that publication barrier. The
-  optional transport service and partial-frame buffering are implemented, so an
-  absent or slow output client cannot block owner progress or shutdown; binding
-  that service to the selected supervised WM/shell lifecycle remains open.
+  critical path is to execute renderer-target and KMS effects through the live
+  owner, rebuild Engine/runtime state, and feed real first-presentation
+  observations into that publication barrier. The selected public WM now owns
+  the exclusive supervised output role: its exact PID is authorized, the socket
+  is advertised through `SOPHIA_OUTPUT_SOCKET`, proposals are polled without
+  blocking visual progress, and a supervised restart disconnects the old peer
+  and advances the role epoch before authorizing the replacement. Validate-only
+  proposals reach and settle through the live authority owner. Apply remains an
+  explicit preparation rejection until the replacement renderer targets and
+  rollback owners exist; no partial KMS mutation is performed.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

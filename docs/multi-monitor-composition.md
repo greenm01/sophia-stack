@@ -614,8 +614,13 @@ parallel multi-monitor subsystem.
 - The output transport also has an optional cancellable service loop and
   incrementally buffered proposal intake. No-client startup and shutdown are
   bounded, and a client may pause between frame header and payload without
-  blocking the visual owner. The service is not yet granted to a live WM or
-  shell process.
+  blocking the visual owner. A native live session now binds that service in
+  the selected public WM's private policy directory, authorizes the exact
+  supervised PID, advertises it through `SOPHIA_OUTPUT_SOCKET`, and replaces
+  the assignee and connection epoch on a supervised restart. Complete
+  proposals reach the session-side authority owner. Validate-only proposals
+  settle normally; apply proposals still reject at the preparation boundary
+  until replacement renderer/KMS ownership is wired.
 
 ### Transitional Limitation
 
