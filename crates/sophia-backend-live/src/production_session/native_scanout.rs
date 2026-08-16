@@ -68,9 +68,13 @@ mod persistent_native_scanout {
         output_callbacks: BTreeMap<OutputId, Receiver<crate::LivePageFlipCallback>>,
         /// Physical-head joins for logical mirror generations.
         output_lifecycles: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
+        /// Engine-owned prepare/submit/flip barrier for the active generation
+        /// of each multi-head logical output.
+        output_cohorts: BTreeMap<OutputId, sophia_engine::OutputPresentationCohort>,
         /// The only place a head's card, connector, and CRTC identity lives.
         pub head_table: crate::LiveProductionNativeHeadTable,
         next_frame_id: u64,
+        next_head_candidate_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
         pub presentation_started: Instant,
         pub kernel_page_flip_timestamps: usize,
@@ -108,6 +112,7 @@ mod persistent_native_scanout {
         /// clone of the same sender.
         pub sender: SyncSender<crate::LivePageFlipCallback>,
         pub output: sophia_engine::HeadlessOutput,
+        pub target_generation: u64,
         pub submitted_at: Option<Instant>,
         pub submitted_ust_usec: Option<u64>,
         pub pending_nonzero_pixel_bytes: usize,
@@ -142,10 +147,109 @@ mod persistent_native_scanout {
         /// every connector's owner here after initialization.
         pub(crate) displayed_scanout: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
         pub(crate) scanout_submission: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
+        pub(crate) prepared_scanout: Option<
+            crate::LivePreparedRenderedPrimaryPlaneScanout<crate::NativeGbmRenderedScanoutOwner>,
+        >,
+        pub(crate) prepared_group_frame: Option<LiveProductionNativeFrameId>,
+        pub(crate) prepared_worker_was_in_flight: bool,
         pub(crate) scanout_cleanup: Option<crate::BoxedRenderedPrimaryPlaneScanoutCleanup>,
         pub(crate) scanout_in_flight_ticks: u64,
         pub(crate) last_callback_serial: Option<u64>,
         pub(crate) submitted_group_frame: Option<LiveProductionNativeFrameId>,
+    }
+
+    fn mirror_tracked_prepare_report(
+        prepare: &crate::LiveRenderedPrimaryPlaneScanoutPrepareResult<
+            crate::NativeGbmRenderedScanoutOwner,
+        >,
+        size: sophia_protocol::Size,
+    ) -> crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
+        use crate::LiveRenderedPrimaryPlaneScanoutPrepareStatus as Prepare;
+        use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Tracked;
+        let (status, runtime_scanout_state) = match prepare.status {
+            Prepare::Prepared => (
+                Tracked::ScanoutExportPending,
+                crate::RuntimeScanoutState::Deferred,
+            ),
+            Prepare::ScanoutExportPending => (
+                Tracked::ScanoutExportPending,
+                crate::RuntimeScanoutState::Deferred,
+            ),
+            Prepare::ScanoutTargetNotReady => (
+                Tracked::ScanoutTargetNotReady,
+                crate::RuntimeScanoutState::Rejected,
+            ),
+            Prepare::FrameTargetUnavailable => (
+                Tracked::FrameTargetUnavailable,
+                crate::RuntimeScanoutState::Rejected,
+            ),
+            Prepare::ScanoutExportFailed => (
+                Tracked::ScanoutExportFailed,
+                crate::RuntimeScanoutState::Rejected,
+            ),
+            Prepare::PrimaryPlanePrepareFailed => (
+                Tracked::PrimaryPlaneSubmitFailed,
+                crate::RuntimeScanoutState::Rejected,
+            ),
+        };
+        crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
+            status,
+            scanout_target: prepare.scanout_target,
+            output_size: Some(size),
+            target: prepare.target,
+            target_size: Some(size),
+            export: prepare.export,
+            scanout_buffer: prepare.scanout_buffer,
+            buffer_format: prepare.buffer_format,
+            buffer_modifier: prepare.buffer_modifier,
+            buffer_planes: prepare.buffer_planes,
+            properties: prepare.properties,
+            format_table: prepare.format_table,
+            resources: prepare.resources,
+            framebuffer: prepare.framebuffer,
+            request: prepare.request,
+            submit: prepare.submit,
+            request_scope: prepare.request_scope,
+            commit_flags: prepare.commit_flags,
+            commit_submit: None,
+            runtime_scanout_state: Some(runtime_scanout_state),
+            in_flight: false,
+            in_flight_ticks: 0,
+            cleanup_pending: prepare.cleanup.is_some(),
+        }
+    }
+
+    fn mirror_tracked_submit_report(
+        result: &crate::LiveRenderedPrimaryPlaneScanoutSubmitResult<
+            crate::NativeGbmRenderedScanoutOwner,
+        >,
+        size: sophia_protocol::Size,
+    ) -> crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
+        crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
+            status: result.status.into(),
+            scanout_target: result.scanout_target,
+            output_size: Some(size),
+            target: result.target,
+            target_size: Some(size),
+            export: result.export,
+            scanout_buffer: result.scanout_buffer,
+            buffer_format: result.buffer_format,
+            buffer_modifier: result.buffer_modifier,
+            buffer_planes: result.buffer_planes,
+            properties: result.properties,
+            format_table: result.format_table,
+            resources: result.resources,
+            framebuffer: result.framebuffer,
+            request: result.request,
+            submit: result.submit,
+            request_scope: result.request_scope,
+            commit_flags: result.commit_flags,
+            commit_submit: result.commit_submit,
+            runtime_scanout_state: Some(result.runtime_scanout_state()),
+            in_flight: result.submission.is_some(),
+            in_flight_ticks: 0,
+            cleanup_pending: result.cleanup.is_some(),
+        }
     }
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -362,6 +466,7 @@ mod persistent_native_scanout {
                             size,
                             scale: 1,
                         },
+                        target_generation: 1,
                         submitted_at: None,
                         submitted_ust_usec: None,
                         pending_nonzero_pixel_bytes: 0,
@@ -385,6 +490,9 @@ mod persistent_native_scanout {
                         last_submit_report: None,
                         displayed_scanout: None,
                         scanout_submission: None,
+                        prepared_scanout: None,
+                        prepared_group_frame: None,
+                        prepared_worker_was_in_flight: false,
                         scanout_cleanup: None,
                         scanout_in_flight_ticks: 0,
                         last_callback_serial: None,
@@ -459,8 +567,10 @@ mod persistent_native_scanout {
                 queued_mirror_successors: BTreeMap::new(),
                 output_callbacks,
                 output_lifecycles,
+                output_cohorts: BTreeMap::new(),
                 head_table,
                 next_frame_id: 1,
+                next_head_candidate_id: 1,
                 production_page_flips,
                 presentation_started: Instant::now(),
                 kernel_page_flip_timestamps: 0,
@@ -584,6 +694,16 @@ mod persistent_native_scanout {
                 .checked_add(1)
                 .expect("native frame ID space exhausted");
             frame
+        }
+
+        fn allocate_head_candidate_id(&mut self) -> sophia_engine::HeadFrameCandidateId {
+            let candidate =
+                sophia_engine::HeadFrameCandidateId::from_raw(self.next_head_candidate_id);
+            self.next_head_candidate_id = self
+                .next_head_candidate_id
+                .checked_add(1)
+                .expect("native head candidate ID space exhausted");
+            candidate
         }
 
         pub fn page_flip_hard_stall(&self) -> Option<(OutputId, Duration)> {
@@ -1037,6 +1157,31 @@ mod persistent_native_scanout {
                     ));
                     continue;
                 };
+                if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                    let transition = cohort.mark_flipped(callback.head, callback_ust);
+                    if !matches!(
+                        transition,
+                        sophia_engine::OutputPresentationTransition::Accepted
+                            | sophia_engine::OutputPresentationTransition::PhaseReady
+                    ) {
+                        errors.push(format!(
+                            "mirror head {} entered invalid cohort flip transition {transition:?}",
+                            callback.head.raw(),
+                        ));
+                    } else if self.heads[head_index].scanout_cleanup.is_none() {
+                        let cleanup = cohort.mark_cleanup_complete(callback.head);
+                        if !matches!(
+                            cleanup,
+                            sophia_engine::OutputPresentationTransition::Accepted
+                                | sophia_engine::OutputPresentationTransition::PhaseReady
+                        ) {
+                            errors.push(format!(
+                                "mirror head {} entered invalid cohort cleanup transition {cleanup:?}",
+                                callback.head.raw(),
+                            ));
+                        }
+                    }
+                }
                 tracing::info!(
                     "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks=1 kernel_sequence={} frame={}",
                     output.raw(),
@@ -1193,6 +1338,18 @@ mod persistent_native_scanout {
                     self.heads[head_index].scanout_cleanup = retried.cleanup;
                     if self.heads[head_index].scanout_cleanup.is_some() {
                         self.retire_failures = self.retire_failures.saturating_add(1);
+                    } else if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                        let transition = cohort.mark_cleanup_complete(self.heads[head_index].head);
+                        if !matches!(
+                            transition,
+                            sophia_engine::OutputPresentationTransition::Accepted
+                                | sophia_engine::OutputPresentationTransition::PhaseReady
+                        ) {
+                            errors.push(format!(
+                                "mirror head {} entered invalid retried cleanup transition {transition:?}",
+                                self.heads[head_index].head.raw(),
+                            ));
+                        }
                     }
                 }
             }
@@ -1230,6 +1387,21 @@ mod persistent_native_scanout {
             };
             runtime.set_page_flip_observation(event);
             Some(event)
+        }
+
+        fn finish_mirror_presentation_cohort(
+            &mut self,
+            output: OutputId,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            if let Some(cohort) = self.output_cohorts.remove(&output)
+                && !matches!(
+                    cohort.terminal(),
+                    Some(sophia_engine::OutputPresentationTerminal::Presented { .. })
+                )
+            {
+                return Err("mirror generation joined before its Engine cohort presented".into());
+            }
+            Ok(())
         }
 
         fn run_mirror_group_scene_tick(
@@ -1272,6 +1444,7 @@ mod persistent_native_scanout {
             let completed_retire = retirement.completed_retire;
             let completed_serial = retirement.completed_serial;
             if completed_serial.is_some() {
+                self.finish_mirror_presentation_cohort(output)?;
                 self.promote_queued_mirror_generation(output)?;
             }
 
@@ -1310,16 +1483,25 @@ mod persistent_native_scanout {
                     // until the group join clears the active generation.
                     continue;
                 }
-                if !self.exporters[head_index].pending_frame() {
+                let already_prepared = self.heads[head_index].prepared_scanout.is_some();
+                if !already_prepared && !self.exporters[head_index].pending_frame() {
                     continue;
                 }
-                let worker_was_in_flight = self.exporters[head_index].worker_in_flight();
-                let work_frame = live_production_mirror_head_work_frame(
-                    worker_was_in_flight,
-                    self.heads[head_index].rendering_content,
-                    self.heads[head_index].pending_content,
-                )
-                .ok_or("mirror head has pending renderer work without frame identity")?;
+                let worker_was_in_flight = if already_prepared {
+                    self.heads[head_index].prepared_worker_was_in_flight
+                } else {
+                    self.exporters[head_index].worker_in_flight()
+                };
+                let work_frame = if already_prepared {
+                    self.heads[head_index].prepared_group_frame
+                } else {
+                    live_production_mirror_head_work_frame(
+                        worker_was_in_flight,
+                        self.heads[head_index].rendering_content,
+                        self.heads[head_index].pending_content,
+                    )
+                }
+                .ok_or("mirror head has renderer work without frame identity")?;
                 let active_frame = self
                     .output_lifecycles
                     .get(&output)
@@ -1349,35 +1531,139 @@ mod persistent_native_scanout {
                 }
                 let selection = self.heads[head_index].selection;
                 let size = self.heads[head_index].output.size;
-                let mut runtime_state = None;
                 let head_group = self.heads[head_index].group;
-                let submit = {
-                    let device = self.groups[head_group].session.card();
-                    let head = &mut self.heads[head_index];
-                    let exporter = &mut self.exporters[head_index];
-                    crate::track_rendered_primary_plane_scanout_submit_from_target_and_selection_with(
-                        crate::LiveKmsScanoutTargetStatus::Ready,
-                        Some(size),
-                        Some(crate::LiveGbmEglFrameTargetRecord::new(size)),
-                        &mut head.scanout_submission,
-                        &mut head.scanout_cleanup,
-                        &mut runtime_state,
-                        &mut head.scanout_in_flight_ticks,
-                        head.last_callback_serial,
-                        None,
-                        crate::LibdrmNativePrimaryPlaneSelectionResult {
-                            status: crate::LibdrmNativePrimaryPlaneSelectionStatus::Selected,
-                            selection: Some(selection),
-                        },
-                        None,
-                        device,
-                        exporter,
-                    )
+                let submit = if let Some(prepared) = self.heads[head_index].prepared_scanout.take()
+                {
+                    if !self
+                        .output_cohorts
+                        .get(&output)
+                        .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
+                    {
+                        self.heads[head_index].prepared_scanout = Some(prepared);
+                        continue;
+                    }
+                    let mut result = crate::submit_prepared_rendered_primary_plane_scanout(
+                        self.groups[head_group].session.card(),
+                        prepared,
+                    );
+                    if let Some(submission) = result.submission.take() {
+                        self.heads[head_index].scanout_submission = Some(
+                            submission
+                                .with_submitted_after_page_flip_serial(
+                                    self.heads[head_index].last_callback_serial,
+                                )
+                                .map_scanout_buffer(|owner| {
+                                    Box::new(owner) as Box<dyn std::any::Any>
+                                }),
+                        );
+                    }
+                    if let Some(cleanup) = result.cleanup.take() {
+                        self.heads[head_index].scanout_cleanup =
+                            Some(cleanup.map_scanout_buffer(|owner| {
+                                Box::new(owner) as Box<dyn std::any::Any>
+                            }));
+                    }
+                    mirror_tracked_submit_report(&result, size)
+                } else {
+                    if !self.output_cohorts.contains_key(&output) {
+                        let cohort = sophia_engine::OutputPresentationCohort::new(
+                            output,
+                            logical_frame.raw(),
+                            indices.iter().map(|index| self.heads[*index].head),
+                        )
+                        .ok_or("mirror generation could not create a preparation cohort")?;
+                        self.output_cohorts.insert(output, cohort);
+                    }
+                    let mut prepare = {
+                        let device = self.groups[head_group].session.card();
+                        let exporter = &mut self.exporters[head_index];
+                        crate::prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+                            crate::LiveKmsScanoutTargetStatus::Ready,
+                            Some(crate::LiveGbmEglFrameTargetRecord::new(size)),
+                            crate::LibdrmNativePrimaryPlaneSelectionResult {
+                                status: crate::LibdrmNativePrimaryPlaneSelectionStatus::Selected,
+                                selection: Some(selection),
+                            },
+                            None,
+                            device,
+                            exporter,
+                        )
+                    };
+                    let report = mirror_tracked_prepare_report(&prepare, size);
+                    if let Some(cleanup) = prepare.cleanup.take() {
+                        self.heads[head_index].scanout_cleanup =
+                            Some(cleanup.map_scanout_buffer(|owner| {
+                                Box::new(owner) as Box<dyn std::any::Any>
+                            }));
+                    }
+                    if let Some(prepared) = prepare.prepared.take() {
+                        let content = if worker_was_in_flight {
+                            self.heads[head_index].rendering_content
+                        } else {
+                            self.heads[head_index].pending_content
+                        };
+                        let Some(content) = content else {
+                            self.cancel_prepared_head_owner(head_index, prepared);
+                            return Err("prepared mirror head lost its content identity".into());
+                        };
+                        let logical_content_checksum = content
+                            .cpu_checksum()
+                            .unwrap_or(self.heads[head_index].last_checksum);
+                        let candidate = sophia_engine::HeadFrameCandidate {
+                            candidate: self.allocate_head_candidate_id(),
+                            output,
+                            scene_generation: logical_frame.raw(),
+                            head: head_id,
+                            target_generation: self.heads[head_index].target_generation,
+                            logical_content_checksum,
+                        };
+                        let transition = self
+                            .output_cohorts
+                            .get_mut(&output)
+                            .expect("mirror preparation cohort exists")
+                            .mark_prepared(candidate);
+                        if !matches!(
+                            transition,
+                            sophia_engine::OutputPresentationTransition::Accepted
+                                | sophia_engine::OutputPresentationTransition::PhaseReady
+                        ) {
+                            self.cancel_prepared_head_owner(head_index, prepared);
+                            return Err(format!(
+                                "mirror head {} entered invalid prepared transition {transition:?}",
+                                head_id.raw(),
+                            )
+                            .into());
+                        }
+                        self.heads[head_index].prepared_scanout = Some(prepared);
+                        self.heads[head_index].prepared_group_frame = Some(logical_frame);
+                        self.heads[head_index].prepared_worker_was_in_flight = worker_was_in_flight;
+                        self.heads[head_index].last_submit_report = Some(report);
+                        self.output_lifecycles
+                            .get_mut(&output)
+                            .expect("mirror output has a lifecycle")
+                            .observe_physical_progress(logical_frame);
+                        tracing::info!(
+                            "sophia_live_native_head_page_flip schema=2 status=prepared output={} head={} frame={} all_prepared={}",
+                            output.raw(),
+                            head_id.raw(),
+                            logical_frame.raw(),
+                            self.output_cohorts
+                                .get(&output)
+                                .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared),
+                        );
+                        if tick.rendered_primary_plane_scanout_submit.is_none() {
+                            tick.rendered_primary_plane_scanout_submit = Some(report);
+                        }
+                        continue;
+                    }
+                    report
                 };
                 self.heads[head_index].last_submit_report = Some(submit);
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
+                        self.heads[head_index].prepared_group_frame = None;
+                        self.heads[head_index].prepared_worker_was_in_flight = false;
                         let content = if worker_was_in_flight {
                             self.heads[head_index].rendering_content.take()
                         } else {
@@ -1456,6 +1742,22 @@ mod persistent_native_scanout {
                             content,
                             logical_frame.raw(),
                         );
+                        let cohort_transition = self
+                            .output_cohorts
+                            .get_mut(&output)
+                            .ok_or("submitted mirror generation has no preparation cohort")?
+                            .mark_submitted(head_id);
+                        if !matches!(
+                            cohort_transition,
+                            sophia_engine::OutputPresentationTransition::Accepted
+                                | sophia_engine::OutputPresentationTransition::PhaseReady
+                        ) {
+                            return Err(format!(
+                                "mirror-head {} entered invalid cohort submit transition {cohort_transition:?}",
+                                head_id.raw(),
+                            )
+                            .into());
+                        }
                         let transition = self
                             .output_lifecycles
                             .get_mut(&output)
@@ -1528,6 +1830,25 @@ mod persistent_native_scanout {
                         }
                         self.submit_failures = self.submit_failures.saturating_add(1);
                         self.queued_mirror_successors.remove(&output);
+                        let cohort_failure = if self
+                            .output_cohorts
+                            .get(&output)
+                            .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
+                        {
+                            sophia_engine::OutputPresentationFailure::Submission
+                        } else {
+                            sophia_engine::OutputPresentationFailure::Preparation
+                        };
+                        if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                            cohort.fail(cohort_failure);
+                        }
+                        for prepared_index in indices.iter().copied() {
+                            if let Some(prepared) =
+                                self.heads[prepared_index].prepared_scanout.take()
+                            {
+                                self.cancel_prepared_head_owner(prepared_index, prepared);
+                            }
+                        }
                         tracing::error!(
                             "sophia_live_native_head_page_flip schema=2 status=submit_failed output={} head={} submit_status={:?} action=terminate_session",
                             output.raw(),
@@ -1629,6 +1950,7 @@ mod persistent_native_scanout {
                 self.ensure_page_flip_progress()?;
                 self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
                 if retirement.completed_serial.is_some() {
+                    self.finish_mirror_presentation_cohort(output)?;
                     self.promote_queued_mirror_generation(output)?;
                 }
                 if self.mirror_poison_drained(output) {
@@ -1687,6 +2009,30 @@ mod persistent_native_scanout {
             Ok(())
         }
 
+        fn cancel_prepared_head_owner(
+            &mut self,
+            head_index: usize,
+            prepared: crate::LivePreparedRenderedPrimaryPlaneScanout<
+                crate::NativeGbmRenderedScanoutOwner,
+            >,
+        ) {
+            let group = self.heads[head_index].group;
+            let result = crate::cancel_prepared_rendered_primary_plane_scanout(
+                self.groups[group].session.card(),
+                prepared,
+            );
+            if let Some(cleanup) = result.cleanup {
+                self.heads[head_index].scanout_cleanup = Some(
+                    cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                );
+            }
+            if result.destroy != crate::LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed {
+                self.retire_failures = self.retire_failures.saturating_add(1);
+            }
+            self.heads[head_index].prepared_group_frame = None;
+            self.heads[head_index].prepared_worker_was_in_flight = false;
+        }
+
         pub fn release_displayed_output(
             &mut self,
             output: OutputId,
@@ -1705,6 +2051,9 @@ mod persistent_native_scanout {
             let mut mirror_cleanup_pending = false;
             self.queued_mirror_successors.remove(&output);
             for head_index in self.head_indices(output) {
+                if let Some(prepared) = self.heads[head_index].prepared_scanout.take() {
+                    self.cancel_prepared_head_owner(head_index, prepared);
+                }
                 if let Some(displayed) = self.heads[head_index].displayed_scanout.take() {
                     let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
                         scanout_buffer,
@@ -1739,7 +2088,29 @@ mod persistent_native_scanout {
                 .into());
             }
             trace_live_native_lifecycle("displayed_scanout_owner_released");
+            self.output_cohorts.remove(&output);
             Ok(())
+        }
+
+        pub fn cancel_prepared_output(&mut self, output: OutputId) -> usize {
+            let mut cancelled = 0usize;
+            for head_index in self.head_indices(output) {
+                let Some(prepared) = self.heads[head_index].prepared_scanout.take() else {
+                    continue;
+                };
+                self.cancel_prepared_head_owner(head_index, prepared);
+                cancelled = cancelled.saturating_add(1);
+            }
+            if cancelled > 0 {
+                if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                    cohort.fail(sophia_engine::OutputPresentationFailure::StaleTopology);
+                }
+                tracing::info!(
+                    "sophia_live_mirror_generation schema=2 status=preparation_cancelled output={} heads={cancelled}",
+                    output.raw(),
+                );
+            }
+            cancelled
         }
 
         pub fn observe_retire(
@@ -2190,6 +2561,7 @@ mod persistent_native_scanout {
             }
             self.head_indices(output).into_iter().any(|index| {
                 self.exporters[index].pending_frame()
+                    || self.heads[index].prepared_scanout.is_some()
                     || self.heads[index].scanout_submission.is_some()
             })
         }
@@ -2283,7 +2655,9 @@ mod persistent_native_scanout {
                 live_production_scanout_is_stable_present(
                     head.presented_content,
                     head.submitted_content,
-                    self.exporters[index].pending_frame() || head.scanout_submission.is_some(),
+                    self.exporters[index].pending_frame()
+                        || head.prepared_scanout.is_some()
+                        || head.scanout_submission.is_some(),
                     transaction,
                 )
             })

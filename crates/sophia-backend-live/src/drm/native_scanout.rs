@@ -5,6 +5,8 @@ mod evidence;
 #[cfg(feature = "libdrm-events")]
 mod policy;
 #[cfg(feature = "libdrm-events")]
+mod prepare;
+#[cfg(feature = "libdrm-events")]
 mod reports;
 #[cfg(feature = "libdrm-events")]
 mod retire;
@@ -19,6 +21,8 @@ pub use commit::*;
 pub use evidence::*;
 #[cfg(feature = "libdrm-events")]
 pub use policy::*;
+#[cfg(feature = "libdrm-events")]
+pub use prepare::*;
 #[cfg(feature = "libdrm-events")]
 pub use reports::*;
 #[cfg(feature = "libdrm-events")]

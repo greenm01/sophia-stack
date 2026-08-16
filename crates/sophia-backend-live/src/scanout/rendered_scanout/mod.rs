@@ -1,5 +1,6 @@
 mod backpressure;
 mod exporter;
+mod prepare;
 mod retire;
 mod retire_report;
 mod runtime_adapter;
@@ -12,6 +13,7 @@ mod tracked_submit;
 
 pub use backpressure::*;
 pub use exporter::*;
+pub use prepare::*;
 pub use retire::*;
 pub use retire_report::*;
 pub(crate) use runtime_adapter::*;

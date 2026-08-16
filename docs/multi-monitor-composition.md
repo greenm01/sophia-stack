@@ -600,8 +600,12 @@ parallel multi-monitor subsystem.
 - `OutputPresentationCohort` and `OutputTopologyTransaction` are implemented as
   Engine reducers. They enforce prepare-before-submit, joint flip/cleanup,
   fail-closed head loss, partial-apply rollback, and a first-presentation barrier
-  before topology publication. The current native mirror owners have not yet
-  migrated onto the preparation barrier.
+  before topology publication. The live multi-head scheduler now renders and
+  creates each head's framebuffer/import/blob and atomic request as an affine
+  prepared owner, records those candidates in `OutputPresentationCohort`, and
+  performs no KMS submit until the complete required-head set is prepared.
+  Preparation failure cancels every prepared owner before the generation is
+  poisoned; shutdown cancels prepared owners before callback-only drain.
 - The exclusive `sophia_output_v1` Rust wire and authenticated transport exist
   with bounded capability snapshots and complete topology proposals. Backend
   projection binds capabilities to opaque heads and resolves independently
@@ -632,12 +636,11 @@ because their affine image leases do not yet have the per-head source resolver
 needed by the common lowerer. They fail closed if routed through the CPU-only
 lowerer rather than disappearing or being reported as native.
 
-The native scheduler also still combines export/framebuffer preparation with
-each per-head KMS submit. `OutputPresentationCohort` models the required
-prepare-all barrier, but the live owner has not yet split export from commit and
-migrated to that reducer. The distinguished primary output remains in retained
-scene and Present paths. Configuration currently maps `DesktopMirrorFit`
-manually to backend-owned `NativeMirrorFit`.
+The native scheduler now has the prepare-all barrier, but topology replacement
+does not yet create replacement selections/target pools or use that prepared
+ownership for live modeset apply and rollback. The distinguished primary output
+also remains in retained scene and Present paths. Configuration currently maps
+`DesktopMirrorFit` manually to backend-owned `NativeMirrorFit`.
 
 ### Target
 

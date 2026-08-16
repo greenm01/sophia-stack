@@ -58,6 +58,213 @@ fn native_libdrm_primary_plane_scanout_submit_chains_renderer_descriptor_to_atom
 }
 
 #[test]
+fn native_primary_plane_preparation_does_not_submit_and_can_be_cancelled() {
+    let device = full_primary_plane_scanout_device();
+    let selection = select_native_primary_plane_target(&device);
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        );
+
+    assert_eq!(
+        prepared.status,
+        LibdrmNativePrimaryPlaneScanoutPrepareStatus::Prepared
+    );
+    assert_eq!(device.commits.get(), 0);
+    assert_eq!(device.resources.destroyed_framebuffers.get(), 0);
+    let cancelled = cancel_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+    assert_eq!(
+        cancelled.status,
+        LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
+    );
+    assert_eq!(device.commits.get(), 0);
+    assert_eq!(device.resources.destroyed_framebuffers.get(), 1);
+}
+
+#[test]
+fn native_primary_plane_prepared_owner_submits_exactly_once() {
+    let device = full_primary_plane_scanout_device();
+    let selection = select_native_primary_plane_target(&device);
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        );
+    assert_eq!(device.commits.get(), 0);
+
+    let submitted = submit_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+    assert_eq!(
+        submitted.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    assert_eq!(device.commits.get(), 1);
+    assert_eq!(
+        submitted
+            .submission
+            .expect("accepted commit retains native resources")
+            .retire(&device)
+            .status,
+        LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
+    );
+    assert_eq!(device.resources.destroyed_framebuffers.get(), 1);
+}
+
+#[test]
+fn rendered_head_preparation_retains_export_owner_without_committing() {
+    let device = full_primary_plane_scanout_device();
+    let size = Size {
+        width: 1280,
+        height: 720,
+    };
+    let selection = select_native_primary_plane_target(&device);
+    let mut exporter = FakeRenderedScanoutExporter::exported(size);
+    let mut prepared = prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+        LiveKmsScanoutTargetStatus::Ready,
+        Some(LiveGbmEglFrameTargetRecord::new(size)),
+        selection,
+        None,
+        &device,
+        &mut exporter,
+    );
+
+    assert_eq!(
+        prepared.status,
+        LiveRenderedPrimaryPlaneScanoutPrepareStatus::Prepared
+    );
+    assert_eq!(device.commits.get(), 0);
+    let cancelled = cancel_prepared_rendered_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("renderer preparation retains the complete head owner"),
+    );
+    assert_eq!(
+        cancelled.destroy,
+        LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
+    );
+    assert!(cancelled.cleanup.is_none());
+    assert_eq!(device.commits.get(), 0);
+}
+
+#[test]
+fn rendered_mirror_cohort_submits_nothing_until_every_head_is_prepared() {
+    let device = full_primary_plane_scanout_device();
+    let size = Size {
+        width: 1280,
+        height: 720,
+    };
+    let selection = select_native_primary_plane_target(&device);
+    let output = OutputId::from_raw(4);
+    let heads = [RenderHeadId::from_raw(11), RenderHeadId::from_raw(12)];
+    let mut cohort = OutputPresentationCohort::new(output, 9, heads).unwrap();
+
+    let mut first_exporter = FakeRenderedScanoutExporter::exported(size);
+    let mut first = prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+        LiveKmsScanoutTargetStatus::Ready,
+        Some(LiveGbmEglFrameTargetRecord::new(size)),
+        selection,
+        None,
+        &device,
+        &mut first_exporter,
+    );
+    assert_eq!(
+        cohort.mark_prepared(HeadFrameCandidate {
+            candidate: HeadFrameCandidateId::from_raw(1),
+            output,
+            scene_generation: 9,
+            head: heads[0],
+            target_generation: 3,
+            logical_content_checksum: 77,
+        }),
+        OutputPresentationTransition::Accepted
+    );
+    assert!(!cohort.all_prepared());
+    assert_eq!(device.commits.get(), 0);
+
+    let mut second_exporter = FakeRenderedScanoutExporter::exported(size);
+    let mut second = prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+        LiveKmsScanoutTargetStatus::Ready,
+        Some(LiveGbmEglFrameTargetRecord::new(size)),
+        selection,
+        None,
+        &device,
+        &mut second_exporter,
+    );
+    assert_eq!(
+        cohort.mark_prepared(HeadFrameCandidate {
+            candidate: HeadFrameCandidateId::from_raw(2),
+            output,
+            scene_generation: 9,
+            head: heads[1],
+            target_generation: 3,
+            logical_content_checksum: 77,
+        }),
+        OutputPresentationTransition::PhaseReady
+    );
+    assert!(cohort.all_prepared());
+    assert_eq!(device.commits.get(), 0);
+
+    for (head, prepared) in [
+        (
+            heads[0],
+            first.prepared.take().expect("first head prepared"),
+        ),
+        (
+            heads[1],
+            second.prepared.take().expect("second head prepared"),
+        ),
+    ] {
+        assert!(matches!(
+            cohort.mark_submitted(head),
+            OutputPresentationTransition::Accepted | OutputPresentationTransition::PhaseReady
+        ));
+        let submitted = submit_prepared_rendered_primary_plane_scanout(&device, prepared);
+        let retired = retire_rendered_primary_plane_scanout_after_page_flip(
+            &device,
+            submitted
+                .submission
+                .expect("prepared head commit was accepted"),
+            &LivePageFlipCallbackReport {
+                decision: LivePageFlipCallbackDecision::Accepted,
+                event: LivePageFlipEvent {
+                    status: LivePageFlipEventStatus::Presented,
+                    frame_serial: Some(9),
+                },
+            },
+        );
+        assert_eq!(
+            retired.destroy,
+            Some(LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed)
+        );
+    }
+    assert_eq!(device.commits.get(), 2);
+}
+
+#[test]
 fn native_libdrm_primary_plane_scanout_submit_page_flip_policy_disallows_modeset() {
     let device = full_primary_plane_scanout_device();
     assert_eq!(

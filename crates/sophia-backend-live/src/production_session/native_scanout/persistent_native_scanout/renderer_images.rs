@@ -205,6 +205,7 @@ impl LiveProductionNativeScanout {
         if generation.heads.iter().any(|queued| {
             self.heads[queued.head_index].pending_content.is_some()
                 || self.heads[queued.head_index].rendering_content.is_some()
+                || self.heads[queued.head_index].prepared_scanout.is_some()
                 || self.exporters[queued.head_index].pending_frame()
         }) {
             return Err("mirror generation promotion found occupied head work");
@@ -216,10 +217,22 @@ impl LiveProductionNativeScanout {
         if lifecycle.active_frame().is_some() {
             return Err("mirror successor promoted before the active generation retired");
         }
+        if self.output_cohorts.contains_key(&generation.output) {
+            return Err("mirror generation would replace an active presentation cohort");
+        }
         if lifecycle.initialized()
             && lifecycle.begin(generation.frame) != LiveProductionMirrorGroupBegin::Started
         {
             return Err("mirror generation could not reserve its lifecycle");
+        }
+        if lifecycle.initialized() {
+            let cohort = sophia_engine::OutputPresentationCohort::new(
+                generation.output,
+                generation.frame.raw(),
+                expected.iter().map(|index| self.heads[*index].head),
+            )
+            .ok_or("mirror generation could not create its presentation cohort")?;
+            self.output_cohorts.insert(generation.output, cohort);
         }
         let source = generation.source();
         let checksum = generation.logical_checksum();

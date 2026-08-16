@@ -1034,7 +1034,7 @@ is excluded; retained product behavior is not.
      sharp-not-blocky (native client-text sharpness on a fractional-density
      head is an explicit non-goal of unequal-mode mirroring), so a re-run with
      that reading banks the physical baseline.
-  3. **Planner and CPU lowering done; ownership cutover open.** Engine now captures
+  3. **Planner, CPU lowering, and prepare-all ownership cutover done.** Engine now captures
      one immutable `OutputSceneSnapshot`, derives fit/cover/exact
      `HeadCompositionPlan`s with variant selection and head-local damage, and
      stores logical output viewports independently from unequal native head
@@ -1042,11 +1042,16 @@ is excluded; retained product behavior is not.
      committed slice. CPU variants, native compositor solids, placement, clips,
      and head-local damage are lowered into one independently queued native-size
      frame per head; the flat frame remains only for the synchronous bootstrap.
-     `OutputPresentationCohort` enforces all-prepared before
-     first submit and joint flip/cleanup; `OutputTopologyTransaction` enforces
+     `OutputPresentationCohort` now owns the live multi-head preparation barrier:
+     renderer export, framebuffer/import/blob creation, and atomic request
+     construction produce one affine prepared owner per head, and the scheduler
+     performs zero KMS commits until every required candidate is recorded.
+     Preparation failure cancels the complete prepared set; partial submission
+     still poisons and drains. `OutputTopologyTransaction` enforces
      prepare/apply/first-presentation publication and rollback after partial
-     apply. Split renderer export/framebuffer preparation from KMS commit and
-     migrate native owners to these reducers.
+     apply. The remaining ownership work is to build replacement mode selections
+     and target pools, execute their live modesets/rollback, and publish only
+     after the new outputs present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining

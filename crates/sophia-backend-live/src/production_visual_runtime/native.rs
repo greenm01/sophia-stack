@@ -342,6 +342,9 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         timeout: Duration,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        for output in native_scanout.outputs() {
+            native_scanout.cancel_prepared_output(output.id);
+        }
         let deadline = Instant::now() + timeout;
         while (self.native_scanout_in_flight()
             || native_scanout.any_head_scanout_in_flight()
