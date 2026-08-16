@@ -23,6 +23,54 @@ fn authority_capability(
 }
 
 #[test]
+fn authority_snapshot_retains_independent_backend_head_mappings() {
+    use std::collections::BTreeMap;
+
+    use sophia_backend_live::{
+        LiveOutputAuthorityProjectionError, apply_live_output_authority_head_mappings,
+        project_live_output_authority_snapshot,
+    };
+    use sophia_protocol::{OutputHeadMapping, OutputId, Size};
+
+    let capabilities = vec![
+        authority_capability(11, 1, "DP-1", (2_560, 1_440)),
+        authority_capability(12, 1, "DP-2", (1_920, 1_080)),
+    ];
+    let mut snapshot = project_live_output_authority_snapshot(
+        &capabilities,
+        &[sophia_engine::HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: Size {
+                width: 2_560,
+                height: 1_440,
+            },
+            scale: 1,
+        }],
+        9,
+    )
+    .unwrap();
+    let mappings = BTreeMap::from([
+        (RenderHeadId::from_raw(11), OutputHeadMapping::Exact),
+        (RenderHeadId::from_raw(12), OutputHeadMapping::Cover),
+    ]);
+
+    apply_live_output_authority_head_mappings(&mut snapshot, &mappings).unwrap();
+    assert_eq!(snapshot.groups[0].members[0].mapping, OutputHeadMapping::Exact);
+    assert_eq!(snapshot.groups[0].members[1].mapping, OutputHeadMapping::Cover);
+
+    let missing = BTreeMap::from([(
+        RenderHeadId::from_raw(11),
+        OutputHeadMapping::Exact,
+    )]);
+    let before_rejection = snapshot.clone();
+    assert!(matches!(
+        apply_live_output_authority_head_mappings(&mut snapshot, &missing),
+        Err(LiveOutputAuthorityProjectionError::MissingOpaqueHead(_))
+    ));
+    assert_eq!(snapshot, before_rejection);
+}
+
+#[test]
 fn output_authority_resolves_independent_modes_with_mirror_and_extended_groups() {
     use sophia_protocol::{
         OutputGroupMember, OutputHeadMapping, OutputHeadTargetProposal,

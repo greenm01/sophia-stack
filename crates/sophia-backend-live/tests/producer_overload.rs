@@ -132,7 +132,7 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
         released_fences: Vec::new(),
     };
     let mut scene = LiveProductionCpuScene::new(size);
-    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
     let mut run = |batch: &LiveProductionAuthorityBatch| {
         runtime
             .run_gpu_production_cycle(LiveProductionCycleRequest {

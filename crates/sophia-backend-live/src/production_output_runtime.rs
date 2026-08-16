@@ -1,11 +1,10 @@
 use crate::{
     LIVE_RENDERED_OUTPUT_CAPACITY, LiveBackendRuntimeAssembly, LivePageFlipCallbackQueue,
-    LiveProductionComposedFrame, LiveProductionNativeScanout, LiveRendererImportPathStatus,
-    LiveRendererImportStartupStatus, LiveRendererRuntimeObservation,
-    LiveRendererSelectionObservation,
+    LiveProductionNativeScanout, LiveRendererImportPathStatus, LiveRendererImportStartupStatus,
+    LiveRendererRuntimeObservation, LiveRendererSelectionObservation,
 };
 use sophia_engine::{HeadlessCompositorBackendAssembly, HeadlessOutput};
-use sophia_protocol::{CommittedSurfaceState, OutputId};
+use sophia_protocol::{CommittedSurfaceState, OutputId, Rect};
 use std::collections::BTreeMap;
 use std::error::Error;
 
@@ -16,19 +15,37 @@ pub struct LiveProductionOutputRuntime {
 
 pub struct LiveProductionOutputRuntimeSet {
     outputs: BTreeMap<OutputId, LiveProductionOutputRuntime>,
+    logical_viewports: BTreeMap<OutputId, Rect>,
 }
 
 impl LiveProductionOutputRuntimeSet {
     pub fn new(
         outputs: &[HeadlessOutput],
         committed_surfaces: &[CommittedSurfaceState],
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<Self, Box<dyn Error>> {
+        Self::build(outputs, committed_surfaces, native_scanout, false)
+    }
+
+    /// Rebinds runtime-only output state to buffers already established by a
+    /// blocking topology commit. It must not issue another modeset.
+    pub fn adopt_native_topology(
+        outputs: &[HeadlessOutput],
+        committed_surfaces: &[CommittedSurfaceState],
+        native_scanout: &mut LiveProductionNativeScanout,
+    ) -> Result<Self, Box<dyn Error>> {
+        Self::build(outputs, committed_surfaces, Some(native_scanout), true)
+    }
+
+    fn build(
+        outputs: &[HeadlessOutput],
+        committed_surfaces: &[CommittedSurfaceState],
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
-        initial_native_frames: Option<Vec<LiveProductionComposedFrame>>,
+        adopted_native: bool,
     ) -> Result<Self, Box<dyn Error>> {
         if outputs.is_empty() || outputs.len() > LIVE_RENDERED_OUTPUT_CAPACITY {
             return Err("production output runtime requires 1-16 outputs".into());
         }
-        let mut initial_native_frames = initial_native_frames.unwrap_or_default().into_iter();
         let mut output_runtimes = BTreeMap::new();
         for output in outputs.iter().copied() {
             let assembly = HeadlessCompositorBackendAssembly::new(output)
@@ -43,7 +60,7 @@ impl LiveProductionOutputRuntimeSet {
             let mut runtime =
                 LiveBackendRuntimeAssembly::from_ready_headless_scanout(assembly, output, renderer)
                     .with_persistent_rendered_primary_plane_scanout();
-            let mut native_initialized = native_scanout.is_none();
+            let native_initialized = native_scanout.is_none() || adopted_native;
             if let Some(native_scanout) = native_scanout.as_deref_mut() {
                 // Heads are addressed through the output, not through this loop's
                 // position. They coincide only until a mirror group puts two heads
@@ -71,10 +88,6 @@ impl LiveProductionOutputRuntimeSet {
                 ) {
                     return Err("production native output heads were not registered".into());
                 }
-                if let Some(initial_frame) = initial_native_frames.next() {
-                    native_scanout.initialize(output.id, &mut runtime, initial_frame)?;
-                    native_initialized = true;
-                }
             }
             output_runtimes.insert(
                 output.id,
@@ -84,27 +97,62 @@ impl LiveProductionOutputRuntimeSet {
                 },
             );
         }
+        let mut logical_x = 0i32;
+        let logical_viewports = outputs
+            .iter()
+            .map(|output| {
+                let scale = i32::try_from(output.scale.max(1)).unwrap_or(i32::MAX);
+                let logical = Rect {
+                    x: logical_x,
+                    y: 0,
+                    width: output.size.width.saturating_add(scale - 1) / scale,
+                    height: output.size.height.saturating_add(scale - 1) / scale,
+                };
+                logical_x = logical_x.saturating_add(logical.width);
+                (output.id, logical)
+            })
+            .collect();
         Ok(Self {
             outputs: output_runtimes,
+            logical_viewports,
         })
     }
 
-    pub fn initialize_native_scanout(
+    pub fn native_initialized(&self, output: OutputId) -> bool {
+        self.outputs
+            .get(&output)
+            .is_some_and(|output| output.native_initialized)
+    }
+
+    pub fn mark_native_initialized(&mut self, output: OutputId) -> Result<(), Box<dyn Error>> {
+        let output = self
+            .outputs
+            .get_mut(&output)
+            .ok_or("production output was not registered")?;
+        output.native_initialized = true;
+        Ok(())
+    }
+
+    pub fn initialize_native_head_composition(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
-        frames: &[LiveProductionComposedFrame],
-    ) -> Result<(), Box<dyn Error>> {
-        if frames.len() != self.outputs.len() {
-            return Err("production native initialization frame count mismatch".into());
+        output: OutputId,
+        frames: Vec<crate::LiveProductionHeadCompositionFrame>,
+    ) -> Result<crate::LiveProductionNativeFrameId, Box<dyn Error>> {
+        let output_runtime = self
+            .outputs
+            .get_mut(&output)
+            .ok_or("production output was not registered")?;
+        if output_runtime.native_initialized {
+            return Err("production output native scanout was already initialized".into());
         }
-        for (index, (id, output)) in self.outputs.iter_mut().enumerate() {
-            if output.native_initialized {
-                continue;
-            }
-            native_scanout.initialize(*id, &mut output.runtime, frames[index].clone())?;
-            output.native_initialized = true;
-        }
-        Ok(())
+        let frame = native_scanout.initialize_head_composition(
+            output,
+            &mut output_runtime.runtime,
+            frames,
+        )?;
+        output_runtime.native_initialized = true;
+        Ok(frame)
     }
 
     pub fn run_output<R>(
@@ -183,6 +231,42 @@ impl LiveProductionOutputRuntimeSet {
             .values()
             .nth(index)
             .map(|output| output.runtime.assembly().engine().output())
+    }
+
+    pub fn logical_viewport(&self, output: OutputId) -> Option<Rect> {
+        self.logical_viewports.get(&output).copied()
+    }
+
+    pub fn logical_viewports(&self) -> impl Iterator<Item = (OutputId, Rect)> + '_ {
+        self.logical_viewports
+            .iter()
+            .map(|(output, logical)| (*output, *logical))
+    }
+
+    /// Replaces the complete root-space placement contract for this runtime
+    /// set. The update is validated before mutation so a partial IPC topology
+    /// can never leave composition and input projection on different layouts.
+    pub fn replace_logical_viewports(
+        &mut self,
+        logical_viewports: &[(OutputId, Rect)],
+    ) -> Result<(), Box<dyn Error>> {
+        if logical_viewports.len() != self.outputs.len() {
+            return Err("logical viewport replacement omitted an output".into());
+        }
+        let mut replacement = BTreeMap::new();
+        for (output, logical) in logical_viewports {
+            if !self.outputs.contains_key(output) || logical.is_empty() {
+                return Err("logical viewport replacement is invalid".into());
+            }
+            if replacement.insert(*output, *logical).is_some() {
+                return Err("logical viewport replacement duplicates an output".into());
+            }
+        }
+        if replacement.keys().ne(self.outputs.keys()) {
+            return Err("logical viewport replacement targets the wrong outputs".into());
+        }
+        self.logical_viewports = replacement;
+        Ok(())
     }
 
     pub fn output_count(&self) -> usize {

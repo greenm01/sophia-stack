@@ -89,6 +89,49 @@ impl LiveOutputTopologyOwner {
         Ok(true)
     }
 
+    /// Quarantines input for an authority-driven topology transaction without
+    /// pretending that a DRM hotplug notice occurred. The replacement remains
+    /// private until `observe_rebuild` and `mark_published` run after its
+    /// physical first-presentation barrier.
+    fn begin_policy_change(&mut self) -> Result<bool, &'static str> {
+        if self.phase != LiveOutputTopologyPhase::Stable {
+            return Err("live policy topology change overlaps another transition");
+        }
+        self.transition = self
+            .transition
+            .checked_add(1)
+            .ok_or("live topology transition identity exhausted")?;
+        self.phase = LiveOutputTopologyPhase::Quarantined;
+        Ok(true)
+    }
+
+    /// Restores the published topology after a policy candidate was rejected
+    /// or physically rolled back. No published fields were mutated while the
+    /// owner was quarantined, so cancellation is an explicit phase transition.
+    fn cancel_policy_change(&mut self) -> Result<(), &'static str> {
+        if self.phase != LiveOutputTopologyPhase::Quarantined {
+            return Err("live policy topology cancellation is out of order");
+        }
+        self.phase = LiveOutputTopologyPhase::Stable;
+        Ok(())
+    }
+
+    /// Records the monotonic X/RandR generation consumed while reverting a
+    /// candidate that reached the frontend but never became Engine authority.
+    /// The logical topology epoch and published output set remain unchanged.
+    fn observe_policy_transport_rollback(
+        &mut self,
+        publication_generation: u64,
+    ) -> Result<(), &'static str> {
+        if self.phase != LiveOutputTopologyPhase::Quarantined
+            || publication_generation <= self.publication_generation
+        {
+            return Err("live policy topology transport rollback is out of order");
+        }
+        self.publication_generation = publication_generation;
+        Ok(())
+    }
+
     fn observe_rebuild(
         &mut self,
         outputs: Vec<sophia_engine::HeadlessOutput>,
@@ -122,6 +165,33 @@ impl LiveOutputTopologyOwner {
         } else {
             LiveOutputTopologyRebuild::TransportReplaced
         })
+    }
+
+    /// Installs an authority-approved policy candidate after its physical
+    /// first-presentation barrier. Unlike hotplug reduction, this always
+    /// advances the topology epoch: mode timing, transform, mapping, and VRR
+    /// changes may preserve both logical extents and mirror member counts.
+    fn observe_policy_rebuild(
+        &mut self,
+        outputs: Vec<sophia_engine::HeadlessOutput>,
+        heads: Vec<(sophia_protocol::OutputId, usize)>,
+        candidate_topology_epoch: u64,
+    ) -> Result<(), &'static str> {
+        if self.phase != LiveOutputTopologyPhase::Quarantined
+            || outputs.is_empty()
+            || candidate_topology_epoch != self.topology_epoch.checked_add(1).unwrap_or(0)
+        {
+            return Err("live policy topology rebuild is invalid or out of order");
+        }
+        self.topology_epoch = candidate_topology_epoch;
+        self.publication_generation = self
+            .publication_generation
+            .checked_add(1)
+            .ok_or("live output publication generation exhausted")?;
+        self.outputs = outputs;
+        self.heads = heads;
+        self.phase = LiveOutputTopologyPhase::Rebuilt;
+        Ok(())
     }
 
     fn mark_published(

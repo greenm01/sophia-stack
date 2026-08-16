@@ -96,9 +96,10 @@
                             }
                             Err(error) => {
                                 seat_release_prepared = false;
-                                let mut resumed = LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                                let mut resumed = LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
                                     &controller.device_opener(),
                                     mirror_grouping,
+                                    initial_head_mapping,
                                 )?;
                                 if resumed.outputs() != outputs {
                                     schedule_output_topology_rebuild!("switch_rejected", true);
@@ -173,9 +174,10 @@
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                    LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
                     &controller.device_opener(),
                     &mirror_grouping,
+                    initial_head_mapping,
                 )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("switch_timeout", true);
@@ -280,9 +282,10 @@
             if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
                 println!("sophia_live_seat schema=1 status=acquire_pending");
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                    LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
                     &controller.device_opener(),
                     &mirror_grouping,
+                    initial_head_mapping,
                 )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("seat_resume", true);
@@ -578,23 +581,59 @@
             }
         }
         if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut())
-            && !native_scanout.output_topology_preparation_active()
+            && native_scanout.output_topology_allows_frame_service()
         {
             if layout.pending.is_none() {
                 runtime.release_layout_deferred_presentations();
             }
-            let service = runtime.service_native(native_scanout)?;
-            for retired in service.retired_software_presents {
-                record_native_software_present_retirement(&mut layout, retired);
-            }
-            if let Some(retired) = service.retired_present {
-                let NativePresentRetirementObservation {
-                    surface,
-                    stable,
-                    ust_usec: _,
-                    msc: _,
-                } =
-                    record_native_present_retirement(
+            let service = match runtime.service_native(native_scanout) {
+                Ok(service) => Some(service),
+                Err(error) => {
+                    let Some(execution) = active_output_topology_preparation.as_mut() else {
+                        return Err(error);
+                    };
+                    let transaction = execution.effect.transaction;
+                    let failure = error.to_string();
+                    let recovered = begin_output_topology_first_presentation_rollback(
+                        &mut execution.phase,
+                        transaction,
+                        &failure,
+                        |reason| native_scanout.request_output_topology_rollback(reason),
+                        |transaction| {
+                            wm_session
+                                .as_mut()
+                                .ok_or_else(|| {
+                                    Box::<dyn std::error::Error>::from(
+                                        "first-presentation rollback lost its WM owner",
+                                    )
+                                })?
+                                .reject_output_topology_effect(
+                                    transaction,
+                                    sophia_engine::OutputTopologyTransactionFailure::FirstPresentation,
+                                )
+                        },
+                    )?;
+                    if !recovered {
+                        return Err(error);
+                    }
+                    tracing::warn!(
+                        "sophia_live_output_authority schema=2 status=rollback_started transaction={} reason=first_presentation_service error={error} published=false",
+                        transaction.raw(),
+                    );
+                    None
+                }
+            };
+            if let Some(service) = service {
+                for retired in service.retired_software_presents {
+                    record_native_software_present_retirement(&mut layout, retired);
+                }
+                if let Some(retired) = service.retired_present {
+                    let NativePresentRetirementObservation {
+                        surface,
+                        stable,
+                        ust_usec: _,
+                        msc: _,
+                    } = record_native_present_retirement(
                         &mut layout,
                         runtime,
                         native_scanout,
@@ -603,13 +642,14 @@
                         &mut startup_surface_presentations,
                         &mut startup_readiness,
                     );
-                if stable_gpu_frame_proves_post_input_pixels(
-                    input_proof_started_at.is_some(),
-                    input_surface,
-                    surface,
-                    stable,
-                ) {
-                    input_pixel_change = true;
+                    if stable_gpu_frame_proves_post_input_pixels(
+                        input_proof_started_at.is_some(),
+                        input_surface,
+                        surface,
+                        stable,
+                    ) {
+                        input_pixel_change = true;
+                    }
                 }
             }
             correlate_physical_input_page_flip(
@@ -665,10 +705,13 @@
             break;
         }
         if cursor_updates.dirty
-            && let (Some(native_scanout), Some(position)) =
-                (native_scanout.as_mut(), pointer.position())
+            && let (Some(native_scanout), Some(runtime), Some(position)) =
+                (native_scanout.as_mut(), runtime.as_ref(), pointer.position())
         {
-            match native_scanout.update_classic_hardware_cursor(position) {
+            let logical_viewports = runtime.logical_viewports();
+            match native_scanout
+                .update_classic_hardware_cursor(position, &logical_viewports)
+            {
                 Ok(ClassicHardwareCursorUpdate::Visible) => {
                     pointer_pixel_change |= metrics.physical_pointer_routed > 0;
                     if let Some(started) = cursor_updates.dirty_since.take() {

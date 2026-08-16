@@ -241,7 +241,7 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
         })
         .collect::<Vec<_>>();
     let surface = sophia_protocol::SurfaceId::new(17, 1);
-    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
     let transaction = SurfaceTransaction {
         transaction: sophia_protocol::TransactionId::from_raw(90),
         authority: AuthorityKind::SophiaX,
@@ -285,7 +285,7 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
             groups: std::slice::from_ref(&group),
             event_count: 1,
             native_scanout: None,
-            native_frames: None,
+            native_head_frames: None,
             wm_update: None,
         })
         .unwrap();

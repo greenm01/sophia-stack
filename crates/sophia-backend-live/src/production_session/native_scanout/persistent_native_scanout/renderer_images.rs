@@ -10,8 +10,114 @@ pub(super) struct LiveProductionQueuedMirrorGeneration {
 #[derive(Debug)]
 pub struct LiveProductionHeadCompositionFrame {
     pub head: sophia_engine::RenderHeadId,
+    pub scene_generation: u64,
+    pub target_generation: u64,
+    pub mapping: sophia_protocol::OutputHeadMapping,
     pub logical_content_checksum: u64,
     pub frame: crate::LiveOwnedMixedCompositionFrame,
+}
+
+/// Validates the complete passive Engine-plan batch before any exporter slot is
+/// mutated. The batch is one immutable logical scene, but every member must
+/// retain its own current target generation, mapping, and native damage extent.
+pub fn validate_live_head_composition_frame_batch(
+    output: OutputId,
+    expected: &[sophia_engine::HeadRenderTarget],
+    frames: &[LiveProductionHeadCompositionFrame],
+) -> Result<u64, &'static str> {
+    if expected.is_empty() || expected.len() != frames.len() {
+        return Err("head composition does not cover the output's physical heads");
+    }
+    let expected_heads = expected
+        .iter()
+        .map(|target| target.head)
+        .collect::<BTreeSet<_>>();
+    let actual_heads = frames
+        .iter()
+        .map(|frame| frame.head)
+        .collect::<BTreeSet<_>>();
+    if expected_heads != actual_heads || actual_heads.len() != frames.len() {
+        return Err("head composition repeats or targets an unknown physical head");
+    }
+    let checksum = frames
+        .first()
+        .map(|frame| frame.logical_content_checksum)
+        .ok_or("head composition is empty")?;
+    if frames
+        .iter()
+        .any(|frame| frame.logical_content_checksum != checksum)
+    {
+        return Err("head composition frames disagree on logical content");
+    }
+    let scene_generation = frames
+        .first()
+        .map(|frame| frame.scene_generation)
+        .filter(|generation| *generation != 0)
+        .ok_or("head composition has an invalid scene generation")?;
+    if frames
+        .iter()
+        .any(|frame| frame.scene_generation != scene_generation)
+    {
+        return Err("head composition frames disagree on scene generation");
+    }
+    for frame in frames {
+        let target = expected
+            .iter()
+            .find(|target| target.head == frame.head)
+            .expect("head coverage checked above");
+        let Some(damage) = frame.frame.output_damage_snapshot.as_ref() else {
+            return Err("head composition frame has no native damage snapshot");
+        };
+        if target.output != output
+            || damage.output
+                != (sophia_engine::HeadlessOutput {
+                    id: output,
+                    size: target.native_size,
+                    scale: target.scale,
+                })
+        {
+            return Err("head composition damage does not match its native target");
+        }
+        if frame.target_generation != target.target_generation {
+            return Err("head composition targets a stale native generation");
+        }
+        if frame.mapping != target.mapping {
+            return Err("head composition mapping does not match its native target");
+        }
+    }
+    Ok(checksum)
+}
+
+#[derive(Clone, Copy)]
+enum LiveProductionHeadCompositionContent {
+    Scene,
+    MixedPresent(TransactionId),
+    Retained,
+}
+
+impl LiveProductionHeadCompositionContent {
+    fn scanout_content(
+        self,
+        frame: LiveProductionNativeFrameId,
+        logical_content_checksum: u64,
+    ) -> LiveProductionScanoutContent {
+        match self {
+            Self::Scene => LiveProductionScanoutContent::HeadComposition {
+                frame,
+                logical_content_checksum,
+                nonzero_rgb_pixels: 0,
+            },
+            Self::MixedPresent(transaction) => LiveProductionScanoutContent::MixedPresent {
+                frame,
+                transaction,
+                nonzero_rgb_pixels: 0,
+            },
+            Self::Retained => LiveProductionScanoutContent::RetainedMixed {
+                frame,
+                nonzero_rgb_pixels: 0,
+            },
+        }
+    }
 }
 
 struct LiveProductionQueuedMirrorHeadFrame {
@@ -107,7 +213,7 @@ fn project_owned_mixed_frame(
     frame: &crate::LiveOwnedMixedCompositionFrame,
     source: sophia_protocol::Size,
     destination: sophia_engine::HeadlessOutput,
-    fit: crate::NativeMirrorFit,
+    fit: sophia_protocol::OutputHeadMapping,
 ) -> Result<crate::LiveOwnedMixedCompositionFrame, Box<dyn std::error::Error>> {
     if source.width <= 0 || source.height <= 0 {
         return Err("mirror mixed-frame source size is invalid".into());
@@ -321,7 +427,7 @@ impl LiveProductionNativeScanout {
         }
         if self.head_indices(output).len() > 1 {
             return self
-                .queue_projected_frame(output, &frame, self.mirror_fit)
+                .queue_projected_frame(output, &frame)
                 .ok_or("native mirror projection produced no head frame");
         }
         let frame_id = self.allocate_frame_id();
@@ -390,7 +496,7 @@ impl LiveProductionNativeScanout {
                     &frame,
                     source,
                     self.heads[*head_index].output,
-                    self.mirror_fit,
+                    self.heads[*head_index].mapping,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -419,14 +525,13 @@ impl LiveProductionNativeScanout {
         Ok(frame_id)
     }
 
-    /// Queues one composed frame onto every head of a logical output, each at the
-    /// rect that frame lands on for that head.
+    /// Queues a compatibility flat CPU frame onto every head of a logical
+    /// output, using each head's committed mapping policy.
     ///
-    /// This is mirroring's whole visual behaviour. A group's heads show one
-    /// *scene*, not one buffer: the same composed pixels are placed into each
-    /// head's own buffer at its own mode, scaled and centred by `fit`. Nothing is
-    /// captured and nothing is composed twice -- the frame is already a single
-    /// flat buffer, and the placement is what differs per head.
+    /// Ordinary presentation fans out the semantic scene through
+    /// `HeadCompositionPlan` before rasterization. This path remains for a
+    /// singleton authority raster and the synchronous startup transition; it
+    /// reports resampling honestly and must not become the common mirror path.
     ///
     /// It goes through the mixed door rather than the CPU one deliberately. The
     /// pure-CPU path carries no destination rect and would upload the frame at its
@@ -438,7 +543,6 @@ impl LiveProductionNativeScanout {
         &mut self,
         output: OutputId,
         frame: &LiveProductionComposedFrame,
-        fit: crate::NativeMirrorFit,
     ) -> Option<LiveProductionNativeFrameId> {
         if let Some(existing) = self.queued_mirror_successors.get(&output)
             && existing.cpu_checksum() == Some(frame.checksum)
@@ -452,7 +556,7 @@ impl LiveProductionNativeScanout {
                 crate::project_mirror_rect(
                     frame.frame.size,
                     self.heads[*head_index].output.size,
-                    fit,
+                    self.heads[*head_index].mapping,
                 )
             })
             .collect::<Vec<_>>();
@@ -475,7 +579,7 @@ impl LiveProductionNativeScanout {
                             snapshot,
                             frame.frame.size,
                             self.heads[*head_index].output,
-                            fit,
+                            self.heads[*head_index].mapping,
                         )
                     })
                     .transpose()
@@ -530,80 +634,6 @@ impl LiveProductionNativeScanout {
         Some(frame_id)
     }
 
-    /// Queues the first mirror generation through direct CPU buffers.
-    ///
-    /// Startup must synchronously establish KMS owners before renderer workers
-    /// exist. Projecting in CPU memory keeps that bootstrap out of inline EGL;
-    /// later mixed generations use the worker-backed path above.
-    pub fn queue_projected_bootstrap_frame(
-        &mut self,
-        output: OutputId,
-        frame: &LiveProductionComposedFrame,
-        fit: crate::NativeMirrorFit,
-    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
-        let heads = self.head_indices(output);
-        if heads.is_empty() {
-            return Err("native mirror bootstrap has no head".into());
-        }
-        let targets = heads
-            .iter()
-            .map(|head_index| {
-                crate::project_mirror_rect(
-                    frame.frame.size,
-                    self.heads[*head_index].output.size,
-                    fit,
-                )
-            })
-            .collect::<Vec<_>>();
-        let projected = heads
-            .iter()
-            .zip(&targets)
-            .map(|(head_index, target)| {
-                sophia_renderer_live::project_live_cpu_composed_frame(
-                    &frame.frame,
-                    self.heads[*head_index].output.size,
-                    *target,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let projected_damage = heads
-            .iter()
-            .map(|head_index| {
-                frame
-                    .output_damage_snapshot
-                    .as_ref()
-                    .map(|snapshot| {
-                        project_mirror_output_damage_snapshot(
-                            snapshot,
-                            frame.frame.size,
-                            self.heads[*head_index].output,
-                            fit,
-                        )
-                    })
-                    .transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let frame_id = self.allocate_frame_id();
-        for ((head_index, projected), output_damage_snapshot) in
-            heads.into_iter().zip(projected).zip(projected_damage)
-        {
-            let (head, exporter) = self.head_and_exporter(head_index, output);
-            head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
-            head.last_checksum = frame.checksum;
-            head.queue_output_damage_snapshot(output_damage_snapshot.clone());
-            head.pending_content = Some(LiveProductionScanoutContent::Cpu {
-                frame: frame_id,
-                checksum: frame.checksum,
-            });
-            exporter.set_pending_cpu_frame_with_damage(
-                projected,
-                frame.checksum,
-                output_damage_snapshot,
-            );
-        }
-        Ok(frame_id)
-    }
-
     pub fn queue_retained_mixed_frame(
         &mut self,
         output: OutputId,
@@ -638,7 +668,7 @@ impl LiveProductionNativeScanout {
                     &frame,
                     source,
                     self.heads[*head_index].output,
-                    self.mirror_fit,
+                    self.heads[*head_index].mapping,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -674,44 +704,176 @@ impl LiveProductionNativeScanout {
         output: OutputId,
         frames: Vec<LiveProductionHeadCompositionFrame>,
     ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
-        let indices = self.head_indices(output);
-        if indices.is_empty() || indices.len() != frames.len() {
-            return Err("head composition does not cover the output's physical heads".into());
+        self.queue_head_composition_frames_with_content(
+            output,
+            frames,
+            LiveProductionHeadCompositionContent::Scene,
+        )
+    }
+
+    /// Installs the first semantic frame for every head without reserving an
+    /// ordinary page-flip generation.
+    ///
+    /// Startup presents these frames through one blocking card-scoped modeset,
+    /// so there is no later callback to complete `LiveProductionMirrorGroupLifecycle`.
+    /// The caller must prepare every queued head before submitting any KMS
+    /// mutation and then mark the initial presentation synchronously.
+    pub(super) fn queue_initial_head_composition_frames(
+        &mut self,
+        output: OutputId,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let (indices, checksum) = self.validate_head_composition_frames(output, &frames)?;
+        if indices.is_empty() {
+            return Err("semantic startup requires at least one head".into());
         }
-        let expected = indices
-            .iter()
-            .map(|index| self.heads[*index].head)
-            .collect::<BTreeSet<_>>();
-        let actual = frames
-            .iter()
-            .map(|frame| frame.head)
-            .collect::<BTreeSet<_>>();
-        if expected != actual || actual.len() != frames.len() {
-            return Err("head composition repeats or targets an unknown physical head".into());
-        }
-        let checksum = frames
-            .first()
-            .map(|frame| frame.logical_content_checksum)
-            .ok_or("head composition is empty")?;
-        if frames
-            .iter()
-            .any(|frame| frame.logical_content_checksum != checksum)
+        if self
+            .output_lifecycles
+            .get(&output)
+            .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
+            .is_some()
+            || indices.iter().any(|index| {
+                self.heads[*index].pending_content.is_some()
+                    || self.heads[*index].displayed_scanout.is_some()
+                    || self.exporters[*index].pending_frame()
+            })
         {
-            return Err("head composition frames disagree on logical content".into());
+            return Err("semantic multi-head startup found pre-existing head work".into());
         }
-        for frame in &frames {
-            let index = indices
-                .iter()
-                .copied()
-                .find(|index| self.heads[*index].head == frame.head)
-                .expect("head coverage checked above");
-            let Some(damage) = frame.frame.output_damage_snapshot.as_ref() else {
-                return Err("head composition frame has no native damage snapshot".into());
-            };
-            if damage.output.id != output || damage.output.size != self.heads[index].output.size {
-                return Err("head composition damage does not match its native target".into());
+        let frame_id = self.allocate_frame_id();
+        let mut by_head = frames
+            .into_iter()
+            .map(|frame| (frame.head, frame))
+            .collect::<BTreeMap<_, _>>();
+        for head_index in indices {
+            let prepared = by_head
+                .remove(&self.heads[head_index].head)
+                .expect("initial head coverage checked above");
+            let damage = prepared
+                .frame
+                .output_damage_snapshot
+                .as_ref()
+                .expect("initial head damage checked above");
+            tracing::info!(
+                "sophia_live_head_composition_queue schema=1 status=queued output={} head={} frame={} scene_generation={} target_generation={} mapping={} width={} height={} logical_content_checksum={} source=head_plan",
+                output.raw(),
+                prepared.head.raw(),
+                frame_id.raw(),
+                prepared.scene_generation,
+                prepared.target_generation,
+                prepared.mapping.reduced_name(),
+                damage.output.size.width,
+                damage.output.size.height,
+                checksum,
+            );
+            let (head, exporter) = self.head_and_exporter(head_index, output);
+            head.last_checksum = checksum;
+            head.pending_content = Some(LiveProductionScanoutContent::HeadComposition {
+                frame: frame_id,
+                logical_content_checksum: checksum,
+                nonzero_rgb_pixels: 0,
+            });
+            head.queue_output_damage_snapshot(prepared.frame.output_damage_snapshot.clone());
+            exporter.set_pending_mixed_frame(prepared.frame);
+        }
+        Ok(frame_id)
+    }
+
+    pub fn queue_present_head_composition_frames(
+        &mut self,
+        output: OutputId,
+        transaction: TransactionId,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        self.queue_head_composition_frames_with_content(
+            output,
+            frames,
+            LiveProductionHeadCompositionContent::MixedPresent(transaction),
+        )
+    }
+
+    /// Admits every logical-output cohort of one Present only after the whole
+    /// cross-output batch has passed head coverage, damage, and readiness
+    /// validation. Once queueing starts, any unexpected failure is a fatal
+    /// invariant rather than permission to publish a partial transaction.
+    pub fn queue_present_output_head_composition_frames(
+        &mut self,
+        transaction: TransactionId,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        if batches.is_empty() {
+            return Err("Present has no applicable logical output".into());
+        }
+        let mut outputs = BTreeSet::new();
+        for (output, frames) in &batches {
+            if !outputs.insert(*output) {
+                return Err("Present repeats a logical output cohort".into());
             }
+            if self.pending_frame(*output)
+                || self.output_in_flight(*output)
+                || self.output_cleanup_pending(*output)
+            {
+                return Err("Present output cohort is not ready for a new generation".into());
+            }
+            self.validate_head_composition_frames(*output, frames)?;
         }
+        let mut queued = BTreeMap::new();
+        for (output, frames) in batches {
+            let frame = self.queue_head_composition_frames_with_content(
+                output,
+                frames,
+                LiveProductionHeadCompositionContent::MixedPresent(transaction),
+            )?;
+            queued.insert(output, frame);
+        }
+        Ok(queued)
+    }
+
+    pub fn queue_retained_head_composition_frames(
+        &mut self,
+        output: OutputId,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        self.queue_head_composition_frames_with_content(
+            output,
+            frames,
+            LiveProductionHeadCompositionContent::Retained,
+        )
+    }
+
+    pub fn queue_retained_output_head_composition_frames(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        if batches.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let mut outputs = BTreeSet::new();
+        for (output, frames) in &batches {
+            if !outputs.insert(*output) {
+                return Err("retained scene repeats a logical output cohort".into());
+            }
+            self.validate_head_composition_frames(*output, frames)?;
+        }
+        let mut queued = BTreeMap::new();
+        for (output, frames) in batches {
+            let frame = self.queue_head_composition_frames_with_content(
+                output,
+                frames,
+                LiveProductionHeadCompositionContent::Retained,
+            )?;
+            queued.insert(output, frame);
+        }
+        Ok(queued)
+    }
+
+    fn queue_head_composition_frames_with_content(
+        &mut self,
+        output: OutputId,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+        content: LiveProductionHeadCompositionContent,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let (indices, checksum) = self.validate_head_composition_frames(output, &frames)?;
         let frame_id = self.allocate_frame_id();
         for prepared in &frames {
             let damage = prepared
@@ -720,14 +882,16 @@ impl LiveProductionNativeScanout {
                 .as_ref()
                 .expect("head damage validated above");
             tracing::info!(
-                output = output.raw(),
-                head = prepared.head.raw(),
-                frame = frame_id.raw(),
-                width = damage.output.size.width,
-                height = damage.output.size.height,
-                logical_content_checksum = checksum,
-                source = "head_plan",
-                "sophia_live_head_composition_queue"
+                "sophia_live_head_composition_queue schema=1 status=queued output={} head={} frame={} scene_generation={} target_generation={} mapping={} width={} height={} logical_content_checksum={} source=head_plan",
+                output.raw(),
+                prepared.head.raw(),
+                frame_id.raw(),
+                prepared.scene_generation,
+                prepared.target_generation,
+                prepared.mapping.reduced_name(),
+                damage.output.size.width,
+                damage.output.size.height,
+                checksum,
             );
         }
         if indices.len() == 1 {
@@ -735,11 +899,7 @@ impl LiveProductionNativeScanout {
             let prepared = frames.into_iter().next().expect("one frame checked above");
             let (head, exporter) = self.head_and_exporter(index, output);
             head.last_checksum = checksum;
-            head.pending_content = Some(LiveProductionScanoutContent::HeadComposition {
-                frame: frame_id,
-                logical_content_checksum: checksum,
-                nonzero_rgb_pixels: 0,
-            });
+            head.pending_content = Some(content.scanout_content(frame_id, checksum));
             head.queue_output_damage_snapshot(prepared.frame.output_damage_snapshot.clone());
             exporter.set_pending_mixed_frame(prepared.frame);
             return Ok(frame_id);
@@ -757,11 +917,7 @@ impl LiveProductionNativeScanout {
                 LiveProductionQueuedMirrorHeadFrame {
                     head_index,
                     output_damage_snapshot: prepared.frame.output_damage_snapshot.clone(),
-                    content: LiveProductionScanoutContent::HeadComposition {
-                        frame: frame_id,
-                        logical_content_checksum: checksum,
-                        nonzero_rgb_pixels: 0,
-                    },
+                    content: content.scanout_content(frame_id, checksum),
                     frame: prepared.frame,
                     cpu_nonzero_pixel_bytes: 0,
                 }
@@ -774,6 +930,17 @@ impl LiveProductionNativeScanout {
             heads,
         })?;
         Ok(frame_id)
+    }
+
+    fn validate_head_composition_frames(
+        &self,
+        output: OutputId,
+        frames: &[LiveProductionHeadCompositionFrame],
+    ) -> Result<(Vec<usize>, u64), Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        let expected = self.head_render_targets(output);
+        let checksum = validate_live_head_composition_frame_batch(output, &expected, frames)?;
+        Ok((indices, checksum))
     }
 
     pub fn diagnose_mixed_frame(

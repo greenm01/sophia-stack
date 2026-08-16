@@ -15,12 +15,13 @@ let renderer_handoff = capture_renderer_image_handoff(
     output.id,
 )?;
 drop(current);
-let mut replacement = LiveProductionNativeScanout::new_with_seat_and_mirroring(
+let mut replacement = LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
     &seat_controller
         .as_ref()
         .ok_or("startup native recovery lost the seat controller")?
         .device_opener(),
     mirror_grouping,
+    initial_head_mapping,
 )?;
 if replacement.outputs() != outputs {
     suspended_renderer_images = Some(renderer_handoff);
@@ -40,13 +41,6 @@ if replacement.outputs() != outputs {
         &outputs,
         &mut scene,
         Some(renderer_handoff),
-    )?;
-    let _ = runtime.run_cpu_repaint(
-        &mut scene,
-        focused_surface,
-        None,
-        &outputs,
-        &mut replacement,
     )?;
     *native_scanout = Some(replacement);
     let _ = reduce_session_startup(

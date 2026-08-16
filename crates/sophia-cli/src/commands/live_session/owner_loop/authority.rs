@@ -488,7 +488,7 @@
                     production_authority_batch(&batch, &released_admission_groups, &layout)?;
                 if runtime.is_none() {
                     runtime = Some(
-                        LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut(), None)?
+                        LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
                             .with_m4_proof_controls(
                                 config.m4_first_acquire_delay,
                                 config.m4_reject_first_present,

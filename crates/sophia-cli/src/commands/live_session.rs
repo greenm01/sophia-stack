@@ -281,25 +281,23 @@ pub(crate) fn run_persistent_xterm_session(
         config.output_profile.candidate().mirror_groups(),
     )
     .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
-    let mirror_fit = match config.output_profile.candidate().mirror_fit() {
-        Some(sophia_config::DesktopMirrorFit::Cover) => sophia_backend_live::NativeMirrorFit::Cover,
-        Some(sophia_config::DesktopMirrorFit::Exact) => sophia_backend_live::NativeMirrorFit::Exact,
+    let initial_head_mapping = match config.output_profile.candidate().mirror_fit() {
+        Some(sophia_config::DesktopMirrorFit::Cover) => sophia_protocol::OutputHeadMapping::Cover,
+        Some(sophia_config::DesktopMirrorFit::Exact) => sophia_protocol::OutputHeadMapping::Exact,
         Some(sophia_config::DesktopMirrorFit::Fit) | None => {
-            sophia_backend_live::NativeMirrorFit::Fit
+            sophia_protocol::OutputHeadMapping::Fit
         }
     };
     let mut native_scanout = seat_controller
         .as_ref()
         .map(|controller| {
-            LiveProductionNativeScanout::new_with_seat_and_mirroring(
+            LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
                 &controller.device_opener(),
                 &mirror_grouping,
+                initial_head_mapping,
             )
         })
         .transpose()?;
-    if let Some(native) = native_scanout.as_mut() {
-        native.mirror_fit = mirror_fit;
-    }
     let mut output_authority_capabilities = None;
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
@@ -443,17 +441,18 @@ pub(crate) fn run_persistent_xterm_session(
         .map(LiveProductionNativeScanout::outputs)
         .unwrap_or_else(|| vec![sophia_engine::HeadlessOutput::deterministic()]);
     let output_authority_bootstrap = if public_policy_launch.is_some() {
-        output_authority_capabilities
-            .take()
-            .map(|capabilities| {
-                sophia_backend_live::project_live_output_authority_snapshot(
-                    &capabilities,
-                    &initial_outputs,
-                    1,
-                )
-                .map(|snapshot| (snapshot, capabilities))
-            })
-            .transpose()?
+        match (
+            output_authority_capabilities.take(),
+            native_scanout.as_ref(),
+        ) {
+            (Some(capabilities), Some(native)) => {
+                Some((native.output_authority_snapshot(1)?, capabilities))
+            }
+            (None, _) => None,
+            (Some(_), None) => {
+                return Err("output authority capabilities lost their native owner".into());
+            }
+        }
     } else {
         None
     };
@@ -840,6 +839,7 @@ pub(crate) fn run_persistent_xterm_session(
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
             mirror_grouping: &mirror_grouping,
+            initial_head_mapping,
         },
         SessionLoopStartup {
             xauthority: xauthority.path(),

@@ -430,11 +430,120 @@ fn production_output_runtime_resolves_primary_by_output_identity() {
             scale: 1,
         },
     ];
-    let runtimes = LiveProductionOutputRuntimeSet::new(&outputs, &[], None, None).unwrap();
+    let runtimes = LiveProductionOutputRuntimeSet::new(&outputs, &[], None).unwrap();
 
     assert_eq!(runtimes.primary_output(), Some(OutputId::from_raw(3)));
     assert_eq!(runtimes.output_index(OutputId::from_raw(3)), Some(0));
     assert_eq!(runtimes.output_index(OutputId::from_raw(9)), Some(1));
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn production_output_runtime_replaces_complete_root_space_viewports_transactionally() {
+    let outputs = [
+        sophia_engine::HeadlessOutput {
+            id: OutputId::from_raw(3),
+            size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            scale: 1,
+        },
+        sophia_engine::HeadlessOutput {
+            id: OutputId::from_raw(9),
+            size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            scale: 1,
+        },
+    ];
+    let mut runtimes = LiveProductionOutputRuntimeSet::new(&outputs, &[], None).unwrap();
+    let replacement = [
+        (
+            OutputId::from_raw(3),
+            Rect {
+                x: -2560,
+                y: 180,
+                width: 2560,
+                height: 1440,
+            },
+        ),
+        (
+            OutputId::from_raw(9),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+        ),
+    ];
+
+    runtimes.replace_logical_viewports(&replacement).unwrap();
+
+    assert_eq!(
+        runtimes.logical_viewport(OutputId::from_raw(3)),
+        Some(replacement[0].1)
+    );
+    assert_eq!(
+        runtimes.logical_viewport(OutputId::from_raw(9)),
+        Some(replacement[1].1)
+    );
+    assert!(
+        runtimes
+            .replace_logical_viewports(&[replacement[0]])
+            .is_err()
+    );
+    assert_eq!(
+        runtimes.logical_viewport(OutputId::from_raw(9)),
+        Some(replacement[1].1),
+        "a rejected partial replacement must preserve the published layout"
+    );
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn hardware_cursor_uses_exact_root_space_viewport_offsets() {
+    let left = OutputId::from_raw(3);
+    let raised = OutputId::from_raw(9);
+    let viewports = [
+        (
+            left,
+            Rect {
+                x: -2560,
+                y: 180,
+                width: 2560,
+                height: 1440,
+            },
+        ),
+        (
+            raised,
+            Rect {
+                x: 0,
+                y: -120,
+                width: 1920,
+                height: 1080,
+            },
+        ),
+    ];
+
+    assert_eq!(
+        project_native_cursor_logical_viewport(
+            sophia_protocol::Point { x: 20.75, y: -99.2 },
+            &viewports,
+        )
+        .unwrap(),
+        Some((
+            raised,
+            20,
+            20,
+            Size {
+                width: 1920,
+                height: 1080,
+            },
+        ))
+    );
 }
 
 #[cfg(feature = "gbm-probe")]

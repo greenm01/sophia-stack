@@ -111,7 +111,7 @@ fi
 # second failure, while leaving signal/abort diagnostics admissible because the
 # process may not have had a cleanup opportunity.
 if [[ "$stage" == runtime && "$signal" == 0 ]] \
-    && grep -q 'sophia_live_mirror_bootstrap schema=2 status=' "$evidence"; then
+    && grep -Eq 'sophia_live_(mirror_bootstrap schema=2|head_bootstrap schema=1) status=' "$evidence"; then
     [[ "$(grep -Ec '^sophia_live_session_runtime_fatal schema=1 status=cleaned .*native_suspend_reported=true native_drained=true abandoned_scanouts=0 .*presentations_shutdown=true cleanup_errors=0$' "$evidence" || true)" == 1 ]] || {
         echo "controlled native runtime failure lacks clean bounded-fatal evidence" >&2
         exit 1

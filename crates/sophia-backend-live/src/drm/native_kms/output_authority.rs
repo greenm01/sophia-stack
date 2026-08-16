@@ -214,6 +214,41 @@ pub fn project_live_output_authority_snapshot(
     Ok(snapshot)
 }
 
+/// Applies backend-retained per-head mapping policy to a connector-neutral
+/// authority snapshot.
+///
+/// Capability projection deliberately cannot infer this policy: it comes from
+/// configuration initially and from committed output IPC afterward. Every
+/// enabled member must resolve through its opaque head identity before the
+/// snapshot can be published.
+pub fn apply_live_output_authority_head_mappings(
+    snapshot: &mut OutputAuthoritySnapshot,
+    mappings: &BTreeMap<RenderHeadId, OutputHeadMapping>,
+) -> Result<(), LiveOutputAuthorityProjectionError> {
+    let replacements = snapshot
+        .groups
+        .iter()
+        .flat_map(|group| &group.members)
+        .map(|member| {
+            let head = RenderHeadId::from_raw(member.head.raw());
+            mappings.get(&head).copied().ok_or_else(|| {
+                LiveOutputAuthorityProjectionError::MissingOpaqueHead(member.head.raw().to_string())
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut replacements = replacements.into_iter();
+    for group in &mut snapshot.groups {
+        for member in &mut group.members {
+            member.mapping = replacements
+                .next()
+                .expect("mapping coverage was prevalidated");
+        }
+    }
+    snapshot
+        .validate()
+        .map_err(LiveOutputAuthorityProjectionError::InvalidSnapshot)
+}
+
 pub fn resolve_live_output_topology_candidate(
     snapshot: &OutputAuthoritySnapshot,
     capabilities: &[LibdrmNativeOutputCapability],

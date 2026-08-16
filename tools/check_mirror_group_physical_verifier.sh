@@ -65,7 +65,8 @@ reject_mutation '/sophia_mirror_group_visual/d' 'missing readable-text confirmat
 reject_mutation 's/ scaled_text=sharp_not_blocky//' 'missing sharp scaled-text confirmation'
 reject_mutation '/sophia_live_session_cleanup/d' 'missing clean frontend/session teardown'
 reject_mutation '/sophia_live_native_startup_output/d' 'missing logical startup-output proof'
-reject_mutation '/status=direct_cpu output=1 head=2/d' 'missing direct-CPU mirror bootstrap'
+reject_mutation '/status=worker_composed output=1 head=2/d' 'missing semantic worker-composed mirror bootstrap'
+reject_mutation 's/status=worker_composed output=1 head=2 frame=1 scene_generation=1/status=worker_composed output=1 head=2 frame=2 scene_generation=1/' 'divergent semantic startup frames'
 reject_mutation 's/worker_failures=0/worker_failures=1/' 'a failed mirror renderer worker'
 reject_mutation '/requested=exact_nearest/d' 'missing exact primary sampling evidence'
 reject_mutation '/requested=sharp_downscale/d' 'missing sharp secondary sampling evidence'
@@ -79,8 +80,13 @@ reject_mutation 's/pending=0 release_barrier_pending=0/pending=1 release_barrier
 reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier_pending=1/' 'an unacknowledged synthetic key release'
 reject_mutation 's/head=2 scene_generation=7/head=2 scene_generation=8/' 'divergent mirror generations'
 reject_mutation 's/head=2 scene_generation=7 logical_content_checksum=111/head=2 scene_generation=7 logical_content_checksum=222/' 'divergent logical-content checksums'
+reject_mutation '/sophia_live_head_composition_plan.*head=2/d' 'missing secondary per-head composition plan'
+reject_mutation '/sophia_live_head_composition_queue.*head=2/d' 'missing secondary per-head composition queue evidence'
+reject_mutation 's/head=2 frame=7 scene_generation=23 target_generation=1/head=2 frame=7 scene_generation=23 target_generation=2/' 'a queued stale target generation'
+reject_mutation 's/head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit/head=2 frame=7 scene_generation=23 target_generation=1 mapping=exact/' 'a queued frame with the wrong mapping'
+reject_mutation 's/head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit width=1920/head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit width=2560/' 'a queued frame with the wrong native width'
 reject_mutation 's/cpu_checksum=111/cpu_checksum=222/' 'native heads stale behind the final CPU scene'
-reject_mutation 's/source=cpu logical_content_checksum=111/source=retained_mixed logical_content_checksum=111/' 'focus-only retained content as terminal evidence'
+reject_mutation 's/source=head_composition logical_content_checksum=111/source=retained_mixed logical_content_checksum=111/' 'focus-only retained content as terminal evidence'
 reject_mutation '/sophia_live_mirror_generation schema=2 status=presented/d' 'missing logical CPU-generation presentation'
 reject_mutation '/sophia_live_mirror_head_damage.*head=2/d' 'missing secondary projected damage'
 reject_mutation 's/head=2 frame=7 width=1920/head=2 frame=8 width=1920/' 'damage from a different logical generation'
@@ -105,6 +111,15 @@ printf '%s\n' \
     >>"$work/rejected.log"
 if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/rejected.log" >/dev/null 2>&1; then
     echo "mirror-group verifier accepted OutputMismatch damage" >&2
+    exit 1
+fi
+
+cp "$fixture" "$work/rejected.log"
+printf '%s\n' \
+    'sophia_live_mirror_bootstrap schema=2 status=direct_cpu output=1 head=1 exports=1' \
+    >>"$work/rejected.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/rejected.log" >/dev/null 2>&1; then
+    echo "mirror-group verifier accepted a flat direct-CPU startup regression" >&2
     exit 1
 fi
 
@@ -153,6 +168,16 @@ awk '
 ' "$fixture" >"$work/reordered.log"
 if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/reordered.log" >/dev/null 2>&1; then
     echo "mirror-group verifier accepted callback evidence before submission" >&2
+    exit 1
+fi
+
+awk '
+    /sophia_live_head_composition_queue .* head=2 frame=7 / { queued = $0; next }
+    /status=submitted output=1 head=2 .* frame=7$/ { print; print queued; next }
+    { print }
+' "$fixture" >"$work/late-head-queue.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/late-head-queue.log" >/dev/null 2>&1; then
+    echo "mirror-group verifier accepted per-head composition queued after KMS submission" >&2
     exit 1
 fi
 

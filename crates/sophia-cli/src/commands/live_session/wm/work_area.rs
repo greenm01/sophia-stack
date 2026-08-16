@@ -31,10 +31,24 @@ impl LiveWmSession {
         outputs: &[sophia_engine::HeadlessOutput],
         primary: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if self.public.is_some() {
-            return self.update_public_work_areas(layout, outputs, primary);
+        self.update_output_work_areas_at(layout, outputs, &wm_output_bounds(outputs), primary)
+    }
+
+    fn update_output_work_areas_at(
+        &mut self,
+        layout: &PersistentLiveLayout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        full_bounds: &[(sophia_protocol::OutputId, Rect)],
+        primary: sophia_engine::HeadlessOutput,
+    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+        let output_ids = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
+        let bound_ids = full_bounds
+            .iter()
+            .map(|(output, _)| *output)
+            .collect::<BTreeSet<_>>();
+        if output_ids != bound_ids || bound_ids.len() != full_bounds.len() {
+            return Err("live WM output bounds do not cover the logical outputs".into());
         }
-        let full_bounds = wm_output_bounds(outputs);
         let root = full_bounds.iter().try_fold(
             Rect {
                 x: 0,
@@ -56,10 +70,26 @@ impl LiveWmSession {
         };
         let work_areas = sophia_engine::reduce_output_work_areas(
             root,
-            full_bounds,
+            full_bounds.iter().copied(),
             &layout.active_output_reservations(),
         );
-        let mut changed = 0usize;
+        let work_bounds = work_areas
+            .iter()
+            .map(|area| {
+                area.work
+                    .map(|work| (area.output, work))
+                    .ok_or("live WM output work-area reduction rejected an output")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if self.public.is_some() {
+            let admission =
+                self.update_public_work_areas_at(layout, outputs, full_bounds, primary)?;
+            if admission != LiveWmRequestAdmission::RejectedCapacity {
+                self.workspace_state.replace_outputs(work_bounds)?;
+            }
+            return Ok(admission);
+        }
+        let changed = usize::from(self.workspace_state.replace_outputs(work_bounds)?);
         let mut rejected = 0usize;
         for area in &work_areas {
             let Some(work) = area.work else {
@@ -86,10 +116,6 @@ impl LiveWmSession {
                 work.x,
                 work.y,
             );
-            changed = changed.saturating_add(usize::from(
-                self.workspace_state
-                    .update_output_bounds(area.output, work)?,
-            ));
         }
         println!(
             "sophia_live_work_area schema=1 status=reduced outputs={} changed={} rejected={} active_reservations={}",

@@ -81,6 +81,49 @@ fn optional_output_service_exchanges_candidate_and_settlement() {
 }
 
 #[test]
+fn connected_output_service_publishes_a_replacement_hardware_snapshot() {
+    let directory = temporary_directory("publish-snapshot");
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let transport = OutputSessionTransport::bind(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let initial = snapshot();
+    let service =
+        OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), initial.clone())
+            .unwrap();
+    let mut client = connect_output_client(&socket_path);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    decode_output_v1_server_welcome_frame(&read_frame(&mut client)).unwrap();
+    let (_, observed) = decode_output_v1_snapshot_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(observed.snapshot, initial);
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 1
+        }
+    );
+
+    let mut replacement = snapshot();
+    replacement.topology_epoch = 2;
+    replacement.groups[0].logical.width = 1_280;
+    service
+        .command(OutputTransportServiceCommand::PublishSnapshot {
+            transaction: TransactionId::from_raw(2),
+            snapshot: replacement.clone(),
+        })
+        .unwrap();
+    let (transaction, observed) =
+        decode_output_v1_snapshot_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(transaction, TransactionId::from_raw(2));
+    assert_eq!(observed.connection_epoch, 1);
+    assert_eq!(observed.snapshot, replacement);
+}
+
+#[test]
 fn optional_output_service_stops_without_a_client() {
     let directory = temporary_directory("idle");
     let peer = PolicyPeerIdentity {

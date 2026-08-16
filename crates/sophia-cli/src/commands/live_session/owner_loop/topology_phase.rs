@@ -1,9 +1,21 @@
 {
-    let monitor_notice = output_topology_monitor
+    let polled_monitor_notice = output_topology_monitor
         .as_mut()
         .map(sophia_backend_live::LiveDrmTopologyMonitor::poll_notice)
         .transpose()?
         .flatten();
+    let monitor_notice = if active_output_topology_preparation.is_some() {
+        if let Some(notice) = polled_monitor_notice {
+            if deferred_output_topology_notice
+                .is_none_or(|deferred| notice.sequence > deferred.sequence)
+            {
+                deferred_output_topology_notice = Some(notice);
+            }
+        }
+        None
+    } else {
+        polled_monitor_notice.or_else(|| deferred_output_topology_notice.take())
+    };
     let retry_due = output_topology_retry_at.is_some_and(|deadline| Instant::now() >= deadline);
     if let Some(notice) = monitor_notice {
         let advance_security_epoch = output_topology_owner.begin_rescan(notice.sequence)?;
@@ -71,9 +83,10 @@
 
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
-                LiveProductionNativeScanout::new_with_seat_and_mirroring(
+                LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
                     &controller.device_opener(),
                     &mirror_grouping,
+                    initial_head_mapping,
                 )
                     .map_err(|error| error.to_string())
             }
@@ -94,6 +107,10 @@
                 let rebuild = output_topology_owner
                     .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
                 let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
+                let replacement_capabilities = replacement.output_capabilities()?;
+                let replacement_authority = replacement.output_authority_snapshot(
+                    output_topology_owner.topology_epoch,
+                )?;
                 let replacement_primary = replacement_outputs[0];
                 if scene.reconfigure_output_size(replacement_primary.size)? {
                     let committed = runtime
@@ -163,6 +180,8 @@
                 let presentation_baseline = replacement.retirements;
                 output_topology_owner
                     .mark_published(presentation_baseline, policy_required)?;
+                pending_hardware_output_publication =
+                    Some((replacement_authority, replacement_capabilities));
                 *native_scanout = Some(replacement);
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",
@@ -195,6 +214,11 @@
     if let Some(retirements) = native_scanout.as_ref().map(|native| native.retirements)
         && output_topology_owner.observe_presentation(retirements)
     {
+        if let Some((snapshot, capabilities)) = pending_hardware_output_publication.take()
+            && let Some(wm) = wm_session.as_mut()
+        {
+            let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
+        }
         if startup_topology_recovery_pending {
             let _ = reduce_session_startup(
                 &mut startup_readiness,

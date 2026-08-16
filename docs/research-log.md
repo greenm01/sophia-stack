@@ -3,6 +3,117 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-16: native startup now crosses a semantic prepare-all barrier
+
+The initial empty desktop, first CPU authority cycle, explicit repaint, and
+resume/recovery paths no longer modeset a projected flat raster and then replace
+it with per-head work. Each validates and queues one complete
+`HeadCompositionPlan` result per physical head, establishes every renderer
+worker before export, prepares every framebuffer and modeset property owner
+without KMS mutation, and admits the blocking card commit only when the worker
+and prepared-owner sets exactly cover the required opaque heads. Mirror groups
+remain card-local, so the first visible mutation is one atomic card-scoped
+request rather than a sequential head prefix. Accepted owners are all adopted
+before any bookkeeping error may return; rejection cancels prepared owners into
+the retryable cleanup ledger. A failure before KMS also drains or discards every
+queued renderer-worker command before clearing its passive content and damage
+state, so startup cannot leave an affine renderer lease detached from rollback.
+
+The physical mirror contract now rejects `direct_cpu` startup evidence. It
+requires matching plan, queue, worker-composed, and synchronous-modeset records
+for one shared semantic scene, plus the later plan/queue/KMS chain for the final
+interactive frame. A pure barrier regression proves that missing workers,
+missing prepared owners, prepared-before-worker state, and foreign heads cannot
+reach KMS. Whole-output admission additionally rejects duplicate or incomplete
+logical-output batches before any output runtime advances. Resume and recovery
+restore retained renderer images before deriving the same per-head startup
+transaction; there is no compatibility flat-baseline modeset left in the native
+startup lifecycle.
+
+## 2026-08-15: per-head frame identity now survives planning through KMS
+
+The per-head lowerer produced the right native geometry, but its passive backend
+envelope retained only the opaque head and logical checksum. A queued worker
+result could therefore no longer prove which Engine scene generation, committed
+target generation, or `Fit`/`Cover`/`Exact` mapping had produced its pixels.
+That omission weakened stale-plan rejection precisely where an IPC topology
+change may replace a target while older renderer work is still completing.
+
+`LiveProductionHeadCompositionFrame` now carries the scene generation, target
+generation, and protocol-neutral mapping in addition to head and logical
+checksum. Admission validates the complete unique head set against the current
+`HeadRenderTarget` set before mutating any exporter, and topology candidate and
+rollback pools validate the same identity against their respective plan side.
+Stable plan and queue evidence records preserve the chain without exposing DRM
+identity. The mirror physical verifier accepts a generation only when each head
+has one native-size plan, one matching queued frame, the expected sampling
+density, and strict plan-before-queue-before-KMS ordering. Deterministic negative
+fixtures cover missing heads, stale target generations, mapping/extent mismatch,
+and late queue evidence.
+
+## 2026-08-15: committed head mappings now drive every projection lane
+
+The output IPC already committed `Fit`, `Cover`, or `Exact` independently on
+each opaque head, but ordinary native composition still reconstructed every
+`HeadRenderTarget` from one session-global `mirror_fit`. Cursor, flat fallback,
+bootstrap, mixed, retained, and damage projection used the same hidden global.
+An accepted runtime mapping change could therefore update authority state while
+the displayed pixels continued using the startup policy.
+
+The duplicate backend policy is removed. Initial desktop configuration is
+normalized directly to protocol-neutral `OutputHeadMapping` when the native
+owner is constructed; VT and hotplug reconstruction retain that initial policy.
+After an output-authority commit, each live head's stored mapping is the single
+source consumed by composition, damage, cursor, and fallback projection.
+`HeadRenderTarget` projection also carries that head's actual target generation,
+scale, refresh, and transform rather than hard-coded generation/transform facts.
+Connector-neutral authority snapshots are patched transactionally from the
+backend's opaque-head mapping table before publication, so missing coverage
+cannot mutate a valid prefix.
+
+Deterministic regressions prove distinct mappings and target generations on two
+heads, rejection without partial snapshot mutation, and omission of disabled
+heads from the render-target set. The 223-test libdrm feature suite and the
+187-test CLI binary suite pass. Remaining architecture work is the native scene
+bootstrap, authority-owned native-density variants for server-rendered content,
+and signed physical mixed mirror-plus-extended evidence.
+
+## 2026-08-15: ordinary presentation no longer has a primary-output composition lane
+
+The live output runtime now retains the exact root-space logical viewport from
+the output authority across both candidate installation and rollback. Ordinary
+CPU, DMA-BUF, retained renderer-image, compositor-chrome, software Present, and
+hardware-cursor work consumes that placement instead of reconstructing a
+horizontal layout or treating every output as origin zero.
+
+Engine owns two new pure facts at the cross-output boundary. The applicable
+retirement set is the union of logical outputs intersecting the old and new
+root-space surface geometry, so a move cannot update its destination while
+leaving stale source pixels. `TransactionPresentationCohort` then joins those
+independently submitted and retired logical outputs at the latest output UST;
+the transaction generation is its logical sequence, rather than a fabricated
+combination of CRTC-local MSCs. Output-local mirror cohorts continue to join
+their own physical heads below this reducer.
+
+Production DMA-BUF Present now builds all applicable output snapshots from one
+prepared Engine candidate, resolves CPU/DMA-BUF/retained sources once, lowers
+every head at native size, and retains one frame identity per logical output.
+The client source becomes submitted only after every applicable output submits,
+and feedback, source release, committed input geometry, and displayed-image
+promotion wait for the final output retirement. Software Present uses the same
+retained source-set lowerer and output join; the former synthetic secondary
+marker frame is no longer a presentation path. Focus, order, chrome, outline,
+resume, and cursor updates likewise cover the complete runtime output set.
+
+Deterministic evidence includes the Engine cross-output move/retirement reducer,
+asymmetric output submission and retirement in the Present scheduler, exact
+root-space runtime replacement, opaque-head DMA-BUF duplication, retained-image
+native geometry, and a cursor projected through negative/raised viewports. The
+full backend, 187-test CLI binary, Engine, and renderer-live suites pass. The
+remaining acceptance boundary is signed physical evidence for a mixed
+mirror-plus-extended topology and native-density authority variants for client
+content that can actually provide them.
+
 ## 2026-08-15: topology resources now join card-scoped apply requests
 
 `HeadlessOutput` has no origin, so retaining only its extent during candidate
@@ -11692,3 +11803,23 @@ acknowledgement ordering.
   must retain rollback owners across physical apply, output-runtime
   reconstruction, and the first-presentation barrier rather than adding a
   premature finalize operation.
+
+## 2026-08-15: live output IPC crosses the physical publication barrier
+
+- The session now retains candidate and rollback affine owners through an
+  ordered per-card modeset transaction. Accepted candidate owners are installed
+  directly into rebuilt output runtimes, avoiding a second modeset, and one
+  native-size cohort is queued for every replacement logical output.
+- Engine, X topology, WM work areas, pointer bounds, and input authority remain
+  coordinated around an all-output first-presentation barrier. Only then does
+  `sophia_output_v1` publish the new topology and release the rollback pool.
+- A renderer/native service failure before that barrier is no longer a session
+  escape: physical rollback is requested first, the Engine transaction enters
+  `RollingBack`, and completion retains the same recovery record. Supervised WM
+  restart or output-peer loss uses the same handshake and defers connection-epoch
+  replacement until reverse apply settles.
+- Hardware hotplug projects fresh capabilities and an authority snapshot from
+  the replacement native owner, but publishes them to the optional output
+  service only after replacement scanout presents. Remaining critical work is
+  deterministic effect-path failure coverage, per-head DMA-BUF/retained
+  lowering, and the signed physical multi-monitor gate.

@@ -57,12 +57,46 @@ impl LiveProductionQueuedPresent {
 
 #[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
-    pub frame: LiveProductionNativeFrameId,
+    frames: BTreeMap<sophia_protocol::OutputId, LiveProductionNativeFrameId>,
+    output_cohort: sophia_engine::TransactionPresentationCohort,
     pub candidate: SurfaceTransactionKey,
     pub transaction: TransactionId,
     pub surface: sophia_protocol::SurfaceId,
     pub prepared: PreparedSurfaceCommit,
     pub displayed_layer: crate::LiveRetainedRendererImageLayer,
+}
+
+impl LiveProductionSubmittedPresent {
+    pub fn new(
+        frames: BTreeMap<sophia_protocol::OutputId, LiveProductionNativeFrameId>,
+        candidate: SurfaceTransactionKey,
+        transaction: TransactionId,
+        surface: sophia_protocol::SurfaceId,
+        prepared: PreparedSurfaceCommit,
+        displayed_layer: crate::LiveRetainedRendererImageLayer,
+    ) -> Option<Self> {
+        let output_cohort =
+            sophia_engine::TransactionPresentationCohort::new(transaction, frames.keys().copied())?;
+        (!frames.is_empty()).then_some(Self {
+            frames,
+            output_cohort,
+            candidate,
+            transaction,
+            surface,
+            prepared,
+            displayed_layer,
+        })
+    }
+
+    pub fn frames(
+        &self,
+    ) -> impl Iterator<Item = (sophia_protocol::OutputId, LiveProductionNativeFrameId)> + '_ {
+        self.frames.iter().map(|(output, frame)| (*output, *frame))
+    }
+
+    pub fn frame(&self, output: sophia_protocol::OutputId) -> Option<LiveProductionNativeFrameId> {
+        self.frames.get(&output).copied()
+    }
 }
 
 #[derive(Debug)]
@@ -379,7 +413,10 @@ impl LiveProductionPresentScheduler {
         self.queued.pop_front()
     }
 
-    pub fn mark_submitted(&mut self, submitted: LiveProductionSubmittedPresent) {
+    pub fn mark_submitted(&mut self, mut submitted: LiveProductionSubmittedPresent) {
+        for output in submitted.frames.keys().copied().collect::<Vec<_>>() {
+            let _ = submitted.output_cohort.mark_submitted(output);
+        }
         self.in_flight = Some(LiveProductionInFlightPresent::Submitted(submitted));
     }
 
@@ -389,8 +426,11 @@ impl LiveProductionPresentScheduler {
 
     pub fn promote_rendering_to_submitted(&mut self) -> Option<TransactionId> {
         match self.in_flight.take()? {
-            LiveProductionInFlightPresent::Rendering(rendering) => {
+            LiveProductionInFlightPresent::Rendering(mut rendering) => {
                 let transaction = rendering.transaction;
+                for output in rendering.frames.keys().copied().collect::<Vec<_>>() {
+                    let _ = rendering.output_cohort.mark_submitted(output);
+                }
                 self.in_flight = Some(LiveProductionInFlightPresent::Submitted(rendering));
                 Some(transaction)
             }
@@ -436,9 +476,74 @@ impl LiveProductionPresentScheduler {
         )
     }
 
-    pub fn submitted_frame(&self) -> Option<LiveProductionNativeFrameId> {
+    pub fn mark_output_submitted(
+        &mut self,
+        output: sophia_protocol::OutputId,
+    ) -> Result<Option<TransactionId>, &'static str> {
+        let Some(in_flight) = self.in_flight.take() else {
+            return Err("output submission has no in-flight Present cohort");
+        };
+        let (mut rendering, was_submitted) = match in_flight {
+            LiveProductionInFlightPresent::Rendering(rendering) => (rendering, false),
+            LiveProductionInFlightPresent::Submitted(submitted) => (submitted, true),
+        };
+        if rendering.frame(output).is_none() {
+            self.in_flight = Some(if was_submitted {
+                LiveProductionInFlightPresent::Submitted(rendering)
+            } else {
+                LiveProductionInFlightPresent::Rendering(rendering)
+            });
+            return Err("output submission targets an unrelated Present cohort");
+        }
+        use sophia_engine::TransactionPresentationTransition as Transition;
+        let transition = rendering.output_cohort.mark_submitted(output);
+        let all_submitted = rendering.output_cohort.all_submitted();
+        let transaction = rendering.transaction;
+        self.in_flight = Some(if all_submitted {
+            LiveProductionInFlightPresent::Submitted(rendering)
+        } else {
+            LiveProductionInFlightPresent::Rendering(rendering)
+        });
+        match transition {
+            Transition::Accepted => Ok(None),
+            Transition::PhaseReady => Ok(Some(transaction)),
+            Transition::Duplicate if was_submitted || all_submitted => Ok(None),
+            _ => Err("Present cohort rejected output submission"),
+        }
+    }
+
+    pub fn mark_output_retired(
+        &mut self,
+        output: sophia_protocol::OutputId,
+        ust_usec: u64,
+    ) -> Result<Option<sophia_engine::TransactionPresentationTerminal>, &'static str> {
+        let Some(in_flight) = self.in_flight.as_mut() else {
+            return Err("output retirement has no in-flight Present cohort");
+        };
+        let present = match in_flight {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => present,
+        };
+        use sophia_engine::TransactionPresentationTransition as Transition;
+        match present.output_cohort.mark_retired(output, ust_usec) {
+            Transition::Accepted => Ok(None),
+            Transition::PhaseReady => Ok(present.output_cohort.terminal()),
+            Transition::Duplicate => Ok(None),
+            _ => Err("Present cohort rejected output retirement"),
+        }
+    }
+
+    pub fn submitted_frame(
+        &self,
+        output: sophia_protocol::OutputId,
+    ) -> Option<LiveProductionNativeFrameId> {
         match self.in_flight.as_ref()? {
-            LiveProductionInFlightPresent::Submitted(submitted) => Some(submitted.frame),
+            LiveProductionInFlightPresent::Submitted(submitted) => submitted.frame(output),
+            LiveProductionInFlightPresent::Rendering(rendering)
+                if rendering.output_cohort.output_submitted(output) =>
+            {
+                rendering.frame(output)
+            }
             LiveProductionInFlightPresent::Rendering(_) => None,
         }
     }
@@ -460,6 +565,13 @@ impl LiveProductionPresentScheduler {
             | LiveProductionInFlightPresent::Submitted(present) => {
                 Some(present.prepared.candidate())
             }
+        }
+    }
+
+    pub fn in_flight_transaction(&self) -> Option<TransactionId> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => Some(present.transaction),
         }
     }
 

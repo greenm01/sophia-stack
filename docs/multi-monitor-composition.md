@@ -606,6 +606,14 @@ parallel multi-monitor subsystem.
   performs no KMS submit until the complete required-head set is prepared.
   Preparation failure cancels every prepared owner before the generation is
   poisoned; shutdown cancels prepared owners before callback-only drain.
+- `TransactionPresentationCohort` is the Engine-owned cross-output join. A pure
+  reducer selects the union of output viewports intersecting a surface's old
+  and new root-space geometry. DMA-BUF and software Presents may submit those
+  logical outputs independently, but protocol feedback, source release,
+  displayed-image promotion, and cross-output input publication wait for the
+  last applicable output retirement. The latest output UST and transaction
+  generation form the logical completion clock; CRTC-local sequences are not
+  combined.
 - The exclusive `sophia_output_v1` Rust wire and authenticated transport exist
   with bounded capability snapshots and complete topology proposals. Backend
   projection binds capabilities to opaque heads and resolves independently
@@ -613,8 +621,7 @@ parallel multi-monitor subsystem.
   owner now joins that projection to `OutputTopologyTransaction`: validation is
   nonmutating, fresh identities remain provisional through preparation and
   rollback, and the replacement snapshot stays private until every new logical
-  output presents. Live-session supervision, physical effect execution, and
-  generated language-neutral conformance remain cutover work.
+  output presents. Generated language-neutral conformance remains cutover work.
 - The output transport also has an optional cancellable service loop and
   incrementally buffered proposal intake. No-client startup and shutdown are
   bounded, and a client may pause between frame header and payload without
@@ -623,12 +630,11 @@ parallel multi-monitor subsystem.
   supervised PID, advertises it through `SOPHIA_OUTPUT_SOCKET`, and replaces
   the assignee and connection epoch on a supervised restart. Complete
   proposals reach the session-side authority owner. Validate-only proposals
-  settle normally. Apply proposals now cross into the visual/session owner as
+  settle normally. Apply proposals cross into the visual/session owner as
   immutable effect contracts; that owner binds every enabled and disabled head
   to its existing card/connector/CRTC/plane, resolves each requested mode
   against the live DRM master, and retains per-head target generations without
-  mutating the published topology. It still rejects at target preparation until
-  replacement renderer/KMS and rollback ownership are wired.
+  mutating the published topology.
 - Resolved output candidates retain root-space logical viewports as well as
   `HeadlessOutput` extents. The visual runtime can therefore capture one
   committed root scene and independently lower every provisional extended or
@@ -648,39 +654,71 @@ parallel multi-monitor subsystem.
   rejected insertions return their affine owner. Physical head/output
   observation batches advance protocol authority transactionally, so a bad
   member cannot leave a valid prefix recorded.
-- The native live owner now drives the candidate renderer workers to completion,
-  then drives a separately composed rollback frame through every head, while
-  ordinary presentation scheduling is quarantined. Preparation failure drains
-  in-flight worker leases and cancels partial affine owners; session completion
-  performs the same bounded abort. Until accepted-owner installation is wired,
-  the live path cancels a completely prepared dual pool and rejects before the
-  first KMS submit. This makes the remaining boundary apply/install, not an
-  unexercised rendering placeholder.
+- The native live owner drives candidate and rollback renderer workers to
+  completion while ordinary presentation scheduling is quarantined. It applies
+  cards in deterministic order, installs accepted owners into rebuilt output
+  runtimes without a second modeset, queues one native-size cohort for every
+  replacement logical output, and keeps the published authority private until
+  every output crosses its first-presentation barrier. A later-card refusal,
+  renderer/service failure before that barrier, or supervised output-peer loss
+  enters reverse-card rollback. X topology, WM work areas, pointer bounds, input
+  quarantine, and protocol authority reconcile around that barrier. Hardware
+  hotplug similarly republishes output capabilities only after replacement
+  scanout presents. Preparation failure and session completion retain bounded
+  affine-owner cancellation and cleanup.
+- Exact root-space viewports survive runtime adoption and rollback, so ordinary
+  extended-output composition cannot collapse back to origin zero. DMA-BUF
+  Present resolves its authority-owned sources once, builds one native plan per
+  head of every intersecting output, and retains one output frame identity until
+  the cross-output join completes. Software Present, retained scene, focus,
+  chrome, floating outline, resume, and hardware-cursor projection use the same
+  complete output set; the old secondary-output marker frame is not used for
+  presentation.
+- A head's committed `OutputHeadMapping`, target generation, scale, transform,
+  and refresh now flow directly into its `HeadRenderTarget`. Composition,
+  damage, cursor, flat fallback, and startup projection consume that head-local
+  mapping; an IPC `Fit`, `Cover`, or `Exact` change no longer falls back to one
+  session-global mirror policy. Initial configuration is normalized into the
+  same protocol-neutral mapping before the native owner is built, and authority
+  snapshots preserve the mapping transactionally by opaque head identity.
+- The passive frame handed to each backend exporter retains the complete plan
+  identity: opaque head, Engine scene generation, committed target generation,
+  mapping, and logical-content checksum. Whole-batch admission rejects stale,
+  incomplete, duplicate, or cross-scene work before any per-head queue mutates.
+  Topology candidate and rollback pools validate against their respective plan
+  generations. Stable plan/queue records let physical gates prove the chain from
+  native-size plan through queue and KMS without publishing connector identity
+  above the backend.
+- Native startup and resume are semantic and worker-first for singleton,
+  mirrored, and extended outputs. Every native-size head frame is queued before
+  export, all workers and affine framebuffer/mode owners must satisfy one pure
+  prepare-all barrier, and each card-local output set enters one blocking atomic
+  modeset. The old projected flat-CPU prefix is not an accepted physical
+  baseline. Adoption retains every accepted owner before a bookkeeping failure
+  can unwind through explicit cleanup; a pre-KMS failure drains or discards
+  every queued worker command before clearing its passive content and damage
+  state.
 
 ### Transitional Limitation
 
-CPU-authority frames now consume per-head plans in production. The old flat CPU
-frame remains only as the synchronous startup modeset baseline; the following
-cohort is independently composed. DMA-BUF Present and retained renderer-image
-paths still assemble a primary-oriented mixed frame and project it per head,
-because their affine image leases do not yet have the per-head source resolver
-needed by the common lowerer. They fail closed if routed through the CPU-only
-lowerer rather than disappearing or being reported as native.
+CPU-authority frames consume per-head plans in production. Initial empty-desktop
+startup, the first authority cycle, explicit repaint, and resume/recovery all use
+those semantic frames for their synchronous modeset; the projected flat-CPU
+startup path is absent. Ordinary DMA-BUF, retained renderer-image, software
+Present, compositor, damage, and cursor work fans out from the logical scene
+before rasterization and joins across every applicable output.
 
-The native scheduler now has the prepare-all barrier, and live topology planning
+The native scheduler has the prepare-all barrier, and live topology planning
 creates replacement selections for enabled heads while representing omitted
-connected heads as explicit disable effects. Candidate CPU frames and native
-resource owners can now be prepared, and the per-card apply request is defined,
-and the cross-card apply/rollback order is explicit. The live owner now schedules
-both candidate and rollback exporter pools and proves them complete without a
-KMS mutation. A previously disabled connected head remains in the native model
-and has an explicit rollback-disable owner rather than a fabricated framebuffer.
-The production WM path still stops before driving the already-defined card
-coordinator, and it does not yet install/reconcile accepted owners. The
-distinguished primary output also remains
-in retained scene and Present paths.
-Configuration currently maps `DesktopMirrorFit` manually to backend-owned
-`NativeMirrorFit`.
+connected heads as explicit disable effects. Candidate and rollback pools are
+prepared before mutation; the live owner drives the per-card coordinator,
+installs the accepted side, rebuilds logical runtimes, and rolls an accepted
+prefix back in reverse order on failure. A previously disabled connected head
+remains in the native model and has an explicit rollback-disable owner rather
+than a fabricated framebuffer. Remaining limits are singleton client rasters
+that must honestly report resampling until their authority supplies a
+native-density variant, and signed physical evidence of the complete mixed
+mirror-plus-extended IPC cutover.
 
 ### Target
 

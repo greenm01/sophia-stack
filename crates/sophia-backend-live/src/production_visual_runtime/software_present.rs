@@ -1,17 +1,20 @@
 use super::*;
 
-pub(super) enum LiveProductionSoftwarePresentFramePayload {
-    Cpu(LiveProductionComposedFrame),
-    Mixed(LiveOwnedMixedCompositionFrame),
+pub(super) enum LiveProductionSoftwarePresentSettlement {
+    NotOwned,
+    Waiting,
+    Settled,
 }
 
 pub(super) struct LiveProductionSoftwarePresentFrame {
-    pub output: OutputId,
-    pub payload: LiveProductionSoftwarePresentFramePayload,
+    pub source_set: compositor_graphics::LiveProductionRetainedCompositionSourceSet,
     pub submissions: Vec<LiveProductionSoftwarePresentSubmission>,
 }
 
 pub(super) struct LiveProductionSoftwarePresentBinding {
+    pub frames: BTreeMap<OutputId, LiveProductionNativeFrameId>,
+    pub output_cohort: sophia_engine::TransactionPresentationCohort,
+    pub retirements: BTreeMap<OutputId, LiveProductionNativeFrameRetirement>,
     pub submissions: Vec<LiveProductionSoftwarePresentSubmission>,
     pub phase: LiveProductionSoftwarePresentFramePhase,
 }
@@ -69,7 +72,7 @@ impl LiveProductionVisualRuntime {
     pub(super) fn queue_software_present_frame(
         &mut self,
         scene: &mut LiveProductionCpuScene,
-        output_descriptors: &[HeadlessOutput],
+        _output_descriptors: &[HeadlessOutput],
         submissions: Vec<LiveProductionSoftwarePresentSubmission>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if submissions.is_empty() {
@@ -83,40 +86,10 @@ impl LiveProductionVisualRuntime {
         {
             return Err("production software Present frame queue overflowed".into());
         }
-        let output = self
-            .outputs
-            .primary_output()
-            .ok_or("software Present has no primary output")?;
-        let cpu_layers = scene.presentation_layers(
-            self.production.committed_surfaces(),
-            &self.presentation_order,
-        );
-        let gpu_projection = self.present_scheduler.has_in_flight()
-            || self
-                .presentation_order
-                .iter()
-                .any(|surface| self.displayed_surfaces.contains_key(surface));
-        let payload = if gpu_projection {
-            let frame = self
-                .retained_mixed_frame(&cpu_layers)?
-                .ok_or("software Present mixed projection has no client pixels")?;
-            LiveProductionSoftwarePresentFramePayload::Mixed(frame)
-        } else {
-            let primary_index = output_descriptors
-                .iter()
-                .position(|descriptor| descriptor.id == output)
-                .ok_or("software Present primary output descriptor is missing")?;
-            let frame = scene
-                .frames_for_outputs(output_descriptors)?
-                .into_iter()
-                .nth(primary_index)
-                .ok_or("software Present CPU frame is missing")?;
-            LiveProductionSoftwarePresentFramePayload::Cpu(frame)
-        };
+        let source_set = self.retained_composition_source_set(scene)?;
         self.software_present_frames_waiting
             .push_back(LiveProductionSoftwarePresentFrame {
-                output,
-                payload,
+                source_set,
                 submissions,
             });
         Ok(())
@@ -130,32 +103,62 @@ impl LiveProductionVisualRuntime {
         if native_scanout.primary_head_index(output).is_none() {
             return Err("software Present targeted an unknown native output".into());
         }
-        if native_scanout.pending_frame(output) {
+        let required_outputs = self
+            .outputs
+            .logical_viewports()
+            .map(|(output, _)| output)
+            .collect::<Vec<_>>();
+        if required_outputs.iter().any(|output| {
+            native_scanout.pending_frame(*output)
+                || native_scanout.output_in_flight(*output)
+                || native_scanout.output_cleanup_pending(*output)
+        }) {
             return Ok(false);
         }
-        let Some(waiting) = self.software_present_frames_waiting.front() else {
+        let Some(_) = self.software_present_frames_waiting.front() else {
             return Ok(false);
         };
-        if waiting.output != output {
-            return Ok(false);
-        }
         let waiting = self
             .software_present_frames_waiting
             .pop_front()
             .expect("software Present frame front checked above");
-        let frame = match waiting.payload {
-            LiveProductionSoftwarePresentFramePayload::Cpu(frame) => {
-                native_scanout.queue_present_cpu_frame(output, frame)?
-            }
-            LiveProductionSoftwarePresentFramePayload::Mixed(frame) => {
-                native_scanout.queue_retained_mixed_frame(output, frame)?
-            }
-        };
+        let batches = self.retained_output_head_composition_frames_from_sources(
+            native_scanout,
+            &waiting.source_set,
+        )?;
+        let frames = native_scanout.queue_retained_output_head_composition_frames(batches)?;
+        let cohort_transaction = waiting
+            .submissions
+            .first()
+            .map(|submission| submission.transaction)
+            .ok_or("software Present cohort has no submission")?;
+        let output_cohort = sophia_engine::TransactionPresentationCohort::new(
+            cohort_transaction,
+            frames.keys().copied(),
+        )
+        .ok_or("software Present cohort has invalid output coverage")?;
+        let root = frames
+            .values()
+            .next()
+            .copied()
+            .ok_or("software Present cohort produced no native frame")?;
+        if frames.values().any(|frame| {
+            self.software_present_frame_owners.contains_key(frame)
+                || self.software_present_frames_bound.contains_key(frame)
+        }) {
+            return Err("native frame ID was reused for software Present".into());
+        }
+        for frame in frames.values() {
+            self.software_present_frame_owners.insert(*frame, root);
+        }
         if self
             .software_present_frames_bound
             .insert(
-                frame,
+                root,
                 LiveProductionSoftwarePresentBinding {
+                    frames,
+                    output_cohort,
+                    retirements: BTreeMap::new(),
                     submissions: waiting.submissions,
                     phase: LiveProductionSoftwarePresentFramePhase::Pending,
                 },
@@ -165,9 +168,9 @@ impl LiveProductionVisualRuntime {
             return Err("native frame ID was reused for software Present".into());
         }
         tracing::debug!(
-            output = output.raw(),
-            frame = frame.raw(),
-            "bound software Present work to an immutable native frame"
+            outputs = required_outputs.len(),
+            frame = root.raw(),
+            "bound software Present work to an immutable native output cohort"
         );
         Ok(true)
     }
@@ -176,15 +179,21 @@ impl LiveProductionVisualRuntime {
         &mut self,
         frame: LiveProductionNativeFrameId,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(binding) = self.software_present_frames_bound.get_mut(&frame) else {
+        let Some(root) = self.software_present_frame_owners.get(&frame).copied() else {
             return Ok(());
         };
-        match reduce_software_present_frame_observation(
-            frame,
-            binding.phase,
-            LiveProductionSoftwarePresentFrameObservation::NativeSubmitted(frame),
-        ) {
-            LiveProductionSoftwarePresentFrameTransition::Submitted => {
+        let binding = self
+            .software_present_frames_bound
+            .get_mut(&root)
+            .ok_or("software Present frame lost its cohort owner")?;
+        let output = binding
+            .frames
+            .iter()
+            .find_map(|(output, owned)| (*owned == frame).then_some(*output))
+            .ok_or("software Present cohort does not own submitted frame")?;
+        use sophia_engine::TransactionPresentationTransition as Transition;
+        match binding.output_cohort.mark_submitted(output) {
+            Transition::PhaseReady => {
                 for submission in &binding.submissions {
                     self.presentation_feedback
                         .resources_mut()
@@ -192,8 +201,8 @@ impl LiveProductionVisualRuntime {
                 }
                 binding.phase = LiveProductionSoftwarePresentFramePhase::Submitted;
             }
-            LiveProductionSoftwarePresentFrameTransition::AlreadySubmitted => {}
-            _ => return Err("software Present frame submission identity is invalid".into()),
+            Transition::Accepted | Transition::Duplicate => {}
+            _ => return Err("software Present cohort rejected output submission".into()),
         }
         Ok(())
     }
@@ -201,23 +210,65 @@ impl LiveProductionVisualRuntime {
     pub(super) fn settle_software_present_frame(
         &mut self,
         retirement: LiveProductionNativeFrameRetirement,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(binding) = self.software_present_frames_bound.remove(&retirement.frame) else {
-            return Ok(());
+    ) -> Result<LiveProductionSoftwarePresentSettlement, Box<dyn std::error::Error>> {
+        let Some(root) = self
+            .software_present_frame_owners
+            .get(&retirement.frame)
+            .copied()
+        else {
+            return Ok(LiveProductionSoftwarePresentSettlement::NotOwned);
         };
-        if reduce_software_present_frame_observation(
-            retirement.frame,
-            binding.phase,
-            LiveProductionSoftwarePresentFrameObservation::NativeRetired(retirement.frame),
-        ) != LiveProductionSoftwarePresentFrameTransition::Retired
-        {
-            return Err("software Present frame retired before submission".into());
+        let terminal = {
+            let binding = self
+                .software_present_frames_bound
+                .get_mut(&root)
+                .ok_or("software Present retirement lost its cohort owner")?;
+            let output = binding
+                .frames
+                .iter()
+                .find_map(|(output, frame)| (*frame == retirement.frame).then_some(*output))
+                .ok_or("software Present cohort does not own retired frame")?;
+            binding.retirements.insert(output, retirement);
+            binding.output_cohort.mark_retired(output, retirement.ust)
+        };
+        use sophia_engine::TransactionPresentationTransition as Transition;
+        if !matches!(terminal, Transition::PhaseReady) {
+            return match terminal {
+                Transition::Accepted | Transition::Duplicate => {
+                    Ok(LiveProductionSoftwarePresentSettlement::Waiting)
+                }
+                _ => Err("software Present cohort rejected output retirement".into()),
+            };
         }
+        let binding = self
+            .software_present_frames_bound
+            .remove(&root)
+            .ok_or("software Present terminal cohort disappeared")?;
+        for frame in binding.frames.values() {
+            self.software_present_frame_owners.remove(frame);
+        }
+        let terminal = binding
+            .output_cohort
+            .terminal()
+            .ok_or("software Present cohort reached no terminal state")?;
+        let sophia_engine::TransactionPresentationTerminal::Presented {
+            logical_sequence,
+            ust_usec,
+        } = terminal
+        else {
+            return Err("software Present output cohort failed".into());
+        };
+        let evidence = binding
+            .retirements
+            .values()
+            .copied()
+            .max_by_key(|retirement| (retirement.ust, retirement.output))
+            .ok_or("software Present cohort retained no retirement evidence")?;
         for submission in binding.submissions {
             let outcome = self.presentation_feedback.complete_copy(
                 submission.transaction,
-                retirement.ust,
-                retirement.msc,
+                ust_usec,
+                logical_sequence,
             )?;
             self.route_present_feedback(outcome);
             if self.retired_software_presents.len() == PRESENT_FEEDBACK_CAPACITY {
@@ -227,15 +278,15 @@ impl LiveProductionVisualRuntime {
                     .push_back(LiveProductionRetiredSoftwarePresent {
                         candidate: submission.candidate,
                         source_size: submission.source_size,
-                        frame: retirement.frame,
-                        native_submission: retirement.submission,
-                        ust_usec: retirement.ust,
-                        msc: retirement.msc,
+                        frame: evidence.frame,
+                        native_submission: evidence.submission,
+                        ust_usec,
+                        msc: logical_sequence,
                     });
             }
             self.finish_surface_content_owner(submission.candidate)?;
         }
-        Ok(())
+        Ok(LiveProductionSoftwarePresentSettlement::Settled)
     }
 
     pub(super) fn reject_software_present_frames(&mut self) -> usize {
@@ -254,6 +305,7 @@ impl LiveProductionVisualRuntime {
                     .flat_map(|binding| binding.submissions),
             )
             .collect::<Vec<_>>();
+        self.software_present_frame_owners.clear();
         let mut rejected = 0usize;
         for submission in submissions {
             if let Ok(outcome) = self

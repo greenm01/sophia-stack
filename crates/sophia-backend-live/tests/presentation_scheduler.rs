@@ -13,8 +13,8 @@ use sophia_backend_live::{
 use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
     AuthorityKind, BufferHandle, BufferSource, CommittedSurfaceState, DRM_FORMAT_MOD_INVALID,
-    DmaBufDescriptor, DmaBufPlaneDescriptor, Rect, Region, Size, SurfaceId, SurfaceTransaction,
-    SurfaceTransactionReadiness, TransactionId, Transform,
+    DmaBufDescriptor, DmaBufPlaneDescriptor, OutputId, Rect, Region, Size, SurfaceId,
+    SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
 };
 use sophia_renderer_live::{LiveCompositionPlacement, LiveRendererImageId};
 
@@ -119,6 +119,14 @@ fn in_flight_present(
     transaction: TransactionId,
     surface: SurfaceId,
 ) -> LiveProductionSubmittedPresent {
+    in_flight_present_for_outputs(transaction, surface, [OutputId::from_raw(1)])
+}
+
+fn in_flight_present_for_outputs(
+    transaction: TransactionId,
+    surface: SurfaceId,
+    outputs: impl IntoIterator<Item = OutputId>,
+) -> LiveProductionSubmittedPresent {
     let geometry = Rect {
         x: 0,
         y: 0,
@@ -149,9 +157,20 @@ fn in_flight_present(
         timeout_msec: 250,
         previous_committed_generation: 1,
     });
-    LiveProductionSubmittedPresent {
-        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
-        candidate: sophia_protocol::SurfaceTransactionKey {
+    LiveProductionSubmittedPresent::new(
+        outputs
+            .into_iter()
+            .enumerate()
+            .map(|(index, output)| {
+                (
+                    output,
+                    sophia_backend_live::LiveProductionNativeFrameId::from_raw(
+                        u64::try_from(index).unwrap() + 1,
+                    ),
+                )
+            })
+            .collect(),
+        sophia_protocol::SurfaceTransactionKey {
             transaction,
             surface,
             target_buffer: buffer,
@@ -159,7 +178,7 @@ fn in_flight_present(
         transaction,
         surface,
         prepared,
-        displayed_layer: LiveRetainedRendererImageLayer {
+        LiveRetainedRendererImageLayer {
             image_id: LiveRendererImageId::from_raw(901),
             size: Size {
                 width: 64,
@@ -173,7 +192,45 @@ fn in_flight_present(
                 alpha: 1.0,
             },
         },
-    }
+    )
+    .unwrap()
+}
+
+#[test]
+fn submitted_present_joins_outputs_after_independent_submission_and_retirement() {
+    let transaction = TransactionId::from_raw(880);
+    let surface = SurfaceId::new(881, 1);
+    let output_a = OutputId::from_raw(3);
+    let output_b = OutputId::from_raw(9);
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler.mark_rendering(in_flight_present_for_outputs(
+        transaction,
+        surface,
+        [output_a, output_b],
+    ));
+
+    assert_eq!(scheduler.mark_output_submitted(output_a).unwrap(), None);
+    assert!(scheduler.submitted_frame(output_a).is_some());
+    assert_eq!(scheduler.submitted_frame(output_b), None);
+    assert_eq!(scheduler.mark_output_retired(output_a, 900).unwrap(), None);
+    assert_eq!(
+        scheduler.mark_output_submitted(output_b).unwrap(),
+        Some(transaction)
+    );
+    assert!(scheduler.has_submitted());
+    assert_eq!(
+        scheduler.mark_output_retired(output_b, 1_200).unwrap(),
+        Some(sophia_engine::TransactionPresentationTerminal::Presented {
+            logical_sequence: transaction.raw(),
+            ust_usec: 1_200,
+        })
+    );
+    assert_eq!(
+        scheduler
+            .take_submitted()
+            .map(|present| present.transaction),
+        Some(transaction)
+    );
 }
 
 #[test]

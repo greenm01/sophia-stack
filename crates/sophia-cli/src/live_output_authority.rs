@@ -33,6 +33,7 @@ pub enum LiveOutputAuthorityOwnerError {
     ActiveCandidate,
     NoActiveCandidate,
     TopologyEpochExhausted,
+    StalePublishedSnapshot,
     Projection(LiveOutputAuthorityProjectionError),
     TransactionInvariant,
     NotTerminal,
@@ -72,6 +73,9 @@ pub struct LiveOutputAuthorityEffect {
     pub base_topology_epoch: u64,
     pub candidate_topology_epoch: u64,
     pub published_snapshot: OutputAuthoritySnapshot,
+    /// Protocol-visible replacement retained privately until the physical
+    /// first-presentation barrier completes.
+    pub candidate_snapshot: OutputAuthoritySnapshot,
     pub resolved: LiveResolvedOutputTopology,
 }
 
@@ -133,6 +137,36 @@ impl LiveOutputAuthorityOwner {
 
     pub const fn published(&self) -> &OutputAuthoritySnapshot {
         &self.published
+    }
+
+    /// Replaces the externally published baseline after a hardware-owned
+    /// hotplug transaction has completed its first-presentation barrier.
+    /// Protocol proposals cannot race this operation: an active candidate
+    /// keeps the previous snapshot authoritative until it settles.
+    pub fn replace_published_snapshot(
+        &mut self,
+        replacement: OutputAuthoritySnapshot,
+    ) -> Result<(), LiveOutputAuthorityOwnerError> {
+        if self.active.is_some() {
+            return Err(LiveOutputAuthorityOwnerError::ActiveCandidate);
+        }
+        replacement
+            .validate()
+            .map_err(|error| LiveOutputAuthorityProjectionError::InvalidSnapshot(error))?;
+        if replacement.topology_epoch < self.published.topology_epoch {
+            return Err(LiveOutputAuthorityOwnerError::StalePublishedSnapshot);
+        }
+        if replacement.topology_epoch == self.published.topology_epoch
+            && replacement != self.published
+        {
+            return Err(LiveOutputAuthorityOwnerError::StalePublishedSnapshot);
+        }
+        let allocator =
+            LiveLogicalOutputAllocator::after(replacement.groups.iter().map(|group| group.output))
+                .ok_or(LiveOutputAuthorityOwnerError::TopologyEpochExhausted)?;
+        self.published = replacement;
+        self.allocator = allocator;
+        Ok(())
     }
 
     pub fn replace_connection_epoch(
@@ -241,6 +275,7 @@ impl LiveOutputAuthorityOwner {
             base_topology_epoch: active.transaction_state.base_topology_epoch(),
             candidate_topology_epoch: active.transaction_state.candidate_topology_epoch(),
             published_snapshot: self.published.clone(),
+            candidate_snapshot: active.candidate_snapshot.clone(),
             resolved: active.resolved.clone(),
         })
     }

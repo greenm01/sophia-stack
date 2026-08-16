@@ -1,6 +1,40 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionSemanticStartupBarrier {
+    Waiting,
+    Ready,
+    Invalid,
+}
+
+/// Pure admission boundary for the first semantic modeset.
+///
+/// A prepared framebuffer is meaningful only for a required head whose worker
+/// was established first. KMS may mutate only when both sets exactly cover the
+/// unique required-head set.
+pub fn reduce_live_production_semantic_startup_barrier(
+    required: &[sophia_engine::RenderHeadId],
+    workers: &BTreeSet<sophia_engine::RenderHeadId>,
+    prepared: &BTreeSet<sophia_engine::RenderHeadId>,
+) -> LiveProductionSemanticStartupBarrier {
+    let required_set = required.iter().copied().collect::<BTreeSet<_>>();
+    if required.is_empty()
+        || required_set.len() != required.len()
+        || required_set.iter().any(|head| !head.is_valid())
+        || !workers.is_subset(&required_set)
+        || !prepared.is_subset(&required_set)
+        || !prepared.is_subset(workers)
+    {
+        return LiveProductionSemanticStartupBarrier::Invalid;
+    }
+    if workers == &required_set && prepared == &required_set {
+        LiveProductionSemanticStartupBarrier::Ready
+    } else {
+        LiveProductionSemanticStartupBarrier::Waiting
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveProductionNativeTopologyCurrentHead {
     pub head: sophia_engine::RenderHeadId,
     pub enabled: bool,
@@ -8,6 +42,11 @@ pub struct LiveProductionNativeTopologyCurrentHead {
     pub output: OutputId,
     pub selection: crate::LibdrmNativePrimaryPlaneSelection,
     pub target_generation: u64,
+    pub scale: u32,
+    pub refresh_millihz: u32,
+    pub transform: sophia_protocol::OutputTransform,
+    pub mapping: sophia_protocol::OutputHeadMapping,
+    pub vrr: sophia_protocol::OutputVrrPolicy,
 }
 
 impl LiveProductionNativeTopologyCurrentHead {
@@ -18,7 +57,19 @@ impl LiveProductionNativeTopologyCurrentHead {
         selection: crate::LibdrmNativePrimaryPlaneSelection,
         target_generation: u64,
     ) -> Self {
-        Self::new_with_enabled(head, true, card_index, output, selection, target_generation)
+        Self::new_with_target(
+            head,
+            true,
+            card_index,
+            output,
+            selection,
+            target_generation,
+            1,
+            60_000,
+            sophia_protocol::OutputTransform::Normal,
+            sophia_protocol::OutputHeadMapping::Fit,
+            sophia_protocol::OutputVrrPolicy::Disabled,
+        )
     }
 
     pub const fn new_with_enabled(
@@ -29,6 +80,35 @@ impl LiveProductionNativeTopologyCurrentHead {
         selection: crate::LibdrmNativePrimaryPlaneSelection,
         target_generation: u64,
     ) -> Self {
+        Self::new_with_target(
+            head,
+            enabled,
+            card_index,
+            output,
+            selection,
+            target_generation,
+            1,
+            60_000,
+            sophia_protocol::OutputTransform::Normal,
+            sophia_protocol::OutputHeadMapping::Fit,
+            sophia_protocol::OutputVrrPolicy::Disabled,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new_with_target(
+        head: sophia_engine::RenderHeadId,
+        enabled: bool,
+        card_index: usize,
+        output: OutputId,
+        selection: crate::LibdrmNativePrimaryPlaneSelection,
+        target_generation: u64,
+        scale: u32,
+        refresh_millihz: u32,
+        transform: sophia_protocol::OutputTransform,
+        mapping: sophia_protocol::OutputHeadMapping,
+        vrr: sophia_protocol::OutputVrrPolicy,
+    ) -> Self {
         Self {
             head,
             enabled,
@@ -36,8 +116,34 @@ impl LiveProductionNativeTopologyCurrentHead {
             output,
             selection,
             target_generation,
+            scale,
+            refresh_millihz,
+            transform,
+            mapping,
+            vrr,
         }
     }
+}
+
+/// Reduces one backend-private current head into the exact passive target that
+/// Engine may plan against. Disabled heads are not render targets.
+///
+/// Keeping this reduction pure prevents composition from recovering a stale
+/// session-global mapping or hard-coded target generation after an IPC topology
+/// commit.
+pub fn reduce_live_production_head_render_target(
+    head: LiveProductionNativeTopologyCurrentHead,
+) -> Option<sophia_engine::HeadRenderTarget> {
+    head.enabled.then_some(sophia_engine::HeadRenderTarget {
+        head: head.head,
+        output: head.output,
+        target_generation: head.target_generation,
+        native_size: head.selection.size(),
+        scale: head.scale,
+        refresh_millihz: head.refresh_millihz,
+        transform: head.transform,
+        mapping: head.mapping,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +151,7 @@ pub enum LiveProductionNativeTopologyDisposition {
     Enabled {
         output: OutputId,
         selection: crate::LibdrmNativePrimaryPlaneSelection,
+        scale: u32,
         refresh_millihz: u32,
         transform: sophia_protocol::OutputTransform,
         mapping: sophia_protocol::OutputHeadMapping,
@@ -61,6 +168,11 @@ pub struct LiveProductionNativeTopologyHeadPlan {
     pub previous_enabled: bool,
     pub previous_selection: crate::LibdrmNativePrimaryPlaneSelection,
     pub previous_target_generation: u64,
+    pub previous_scale: u32,
+    pub previous_refresh_millihz: u32,
+    pub previous_transform: sophia_protocol::OutputTransform,
+    pub previous_mapping: sophia_protocol::OutputHeadMapping,
+    pub previous_vrr: sophia_protocol::OutputVrrPolicy,
     pub candidate_target_generation: u64,
     pub disposition: LiveProductionNativeTopologyDisposition,
 }
@@ -195,6 +307,12 @@ pub enum LiveProductionNativeTopologyPreparationPhase {
     PreparingCandidate,
     PreparingRollback,
     Prepared,
+    Applying,
+    RollingBack,
+    Applied,
+    CandidateInstalled,
+    FirstFramesQueued,
+    RolledBack,
     Aborting,
     Failed,
 }
@@ -210,11 +328,28 @@ pub struct LiveProductionNativeTopologyPreparationReport {
 #[derive(Debug)]
 pub(super) struct LiveProductionNativeTopologyPreparation {
     plan: LiveProductionNativeTopologyPlan,
+    rollback: crate::LiveResolvedOutputTopology,
     resources: LiveProductionNativeTopologyResources,
     rollback_frames:
         BTreeMap<sophia_engine::RenderHeadId, crate::LiveProductionHeadCompositionFrame>,
+    apply: LiveProductionNativeTopologyApplyCoordinator,
     phase: LiveProductionNativeTopologyPreparationPhase,
     failure: Option<String>,
+}
+
+struct LiveProductionNativeInstalledHead {
+    index: usize,
+    enabled: bool,
+    output: OutputId,
+    selection: crate::LibdrmNativePrimaryPlaneSelection,
+    target_generation: u64,
+    scale: u32,
+    refresh_millihz: u32,
+    transform: sophia_protocol::OutputTransform,
+    mapping: sophia_protocol::OutputHeadMapping,
+    vrr: sophia_protocol::OutputVrrPolicy,
+    sender: Option<SyncSender<crate::LivePageFlipCallback>>,
+    output_frames: OutputFramePresentationState,
 }
 
 impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disabled> {
@@ -525,6 +660,36 @@ impl LiveProductionNativeTopologyApplyCoordinator {
         LiveProductionNativeTopologyApplyTransition::Accepted
     }
 
+    /// Starts a full reverse-card rollback after every candidate card applied.
+    ///
+    /// Runtime reconstruction and first presentation remain fallible after the
+    /// blocking modesets succeed, so a terminal `Applied` coordinator must
+    /// retain a route back to the published topology.
+    pub fn begin_rollback_after_apply(&mut self) -> LiveProductionNativeTopologyApplyTransition {
+        if self.phase != LiveProductionNativeTopologyApplyPhase::Applied
+            || self.applied != self.cards.len()
+        {
+            return self.out_of_order();
+        }
+        self.phase = LiveProductionNativeTopologyApplyPhase::RollingBack;
+        self.rollback_remaining = self.applied;
+        LiveProductionNativeTopologyApplyTransition::Accepted
+    }
+
+    pub fn begin_rollback_after_partial_apply(
+        &mut self,
+    ) -> LiveProductionNativeTopologyApplyTransition {
+        if self.phase != LiveProductionNativeTopologyApplyPhase::Applying
+            || self.applied == 0
+            || self.applied >= self.cards.len()
+        {
+            return self.out_of_order();
+        }
+        self.phase = LiveProductionNativeTopologyApplyPhase::RollingBack;
+        self.rollback_remaining = self.applied;
+        LiveProductionNativeTopologyApplyTransition::Accepted
+    }
+
     pub fn observe_apply(
         &mut self,
         card_index: usize,
@@ -793,6 +958,12 @@ pub fn plan_live_production_native_topology(
                     LiveProductionNativeTopologyDisposition::Enabled {
                         output: target.output,
                         selection,
+                        scale: resolved
+                            .outputs
+                            .iter()
+                            .find(|output| output.id == target.output)
+                            .expect("candidate output identity was validated")
+                            .scale,
                         refresh_millihz: target.timing.refresh_millihz,
                         transform: target.transform,
                         mapping: target.mapping,
@@ -821,6 +992,11 @@ pub fn plan_live_production_native_topology(
             previous_enabled: current.enabled,
             previous_selection: current.selection,
             previous_target_generation: current.target_generation,
+            previous_scale: current.scale,
+            previous_refresh_millihz: current.refresh_millihz,
+            previous_transform: current.transform,
+            previous_mapping: current.mapping,
+            previous_vrr: current.vrr,
             candidate_target_generation,
             disposition,
         });
@@ -902,8 +1078,10 @@ pub fn project_live_production_published_topology(
             .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
         let timing = selected_timing(native)?;
         if output != native.output
+            || mapping_by_head.get(&native.head).copied() != Some(native.mapping)
             || u32::try_from(native.selection.size().width).ok() != Some(timing.width)
             || u32::try_from(native.selection.size().height).ok() != Some(timing.height)
+            || timing.refresh_millihz != native.refresh_millihz
         {
             return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
         }
@@ -913,9 +1091,9 @@ pub fn project_live_production_published_topology(
             output,
             timing,
             native_size: native.selection.size(),
-            transform: sophia_protocol::OutputTransform::Normal,
-            mapping: mapping_by_head[&native.head],
-            vrr: sophia_protocol::OutputVrrPolicy::Disabled,
+            transform: native.transform,
+            mapping: native.mapping,
+            vrr: native.vrr,
         });
     }
     let logical_viewports = snapshot
@@ -951,6 +1129,320 @@ pub fn project_live_production_published_topology(
 }
 
 impl LiveProductionNativeScanout {
+    /// Establishes the first displayed generation of a logical output from
+    /// independently lowered semantic frames.
+    ///
+    /// Renderer workers are enabled before any export. Every framebuffer and
+    /// modeset property owner is then prepared without KMS mutation. Because a
+    /// mirror group is card-local, one blocking card-scoped atomic commit makes
+    /// the complete set visible; no head can expose a prepared prefix.
+    pub(super) fn initialize_semantic_head_transaction(
+        &mut self,
+        output: OutputId,
+        runtime: &mut crate::LiveBackendRuntimeAssembly,
+        frames: Vec<LiveProductionHeadCompositionFrame>,
+    ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        if indices.is_empty() {
+            return Err("semantic startup requires at least one head".into());
+        }
+        let singleton = indices.len() == 1;
+        if singleton
+            && (runtime.rendered_primary_plane_scanout_displayed()
+                || runtime.rendered_primary_plane_scanout_in_flight()
+                || runtime.rendered_primary_plane_scanout_cleanup_pending())
+        {
+            return Err("semantic singleton startup found pre-existing runtime ownership".into());
+        }
+        let group = self.heads[indices[0]].group;
+        if indices
+            .iter()
+            .any(|index| self.heads[*index].group != group)
+        {
+            return Err("one mirrored logical output cannot span DRM cards".into());
+        }
+        let identities = frames
+            .iter()
+            .map(|frame| {
+                (
+                    frame.head,
+                    (
+                        frame.scene_generation,
+                        frame.target_generation,
+                        frame.mapping,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let frame = self.queue_initial_head_composition_frames(output, frames)?;
+        let required = indices
+            .iter()
+            .map(|index| self.heads[*index].head)
+            .collect::<Vec<_>>();
+        let mut workers = BTreeSet::new();
+        for index in indices.iter().copied() {
+            self.exporters[index].enable_worker()?;
+            if !self.exporters[index].worker_enabled() {
+                return Err("semantic startup renderer worker was not established".into());
+            }
+            tracing::info!(
+                "sophia_live_head_bootstrap schema=1 status=worker_ready output={} head={} workers=1",
+                output.raw(),
+                self.heads[index].head.raw(),
+            );
+            workers.insert(self.heads[index].head);
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut prepared =
+            BTreeMap::<sophia_engine::RenderHeadId, LiveProductionPreparedTopologyHead>::new();
+        loop {
+            for index in indices.iter().copied() {
+                let head = self.heads[index].head;
+                if prepared.contains_key(&head) {
+                    continue;
+                }
+                let selection = self.heads[index].selection;
+                let vrr_enabled = topology_vrr_enabled(self.heads[index].vrr);
+                match self.prepare_output_topology_head(head, selection, vrr_enabled) {
+                    Ok(Some(owner)) => {
+                        prepared.insert(head, owner);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.cancel_semantic_startup_resources(group, prepared);
+                        return Err(error);
+                    }
+                }
+            }
+            if prepared.len() == indices.len() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                self.cancel_semantic_startup_resources(group, prepared);
+                return Err("semantic multi-head startup renderer deadline expired".into());
+            }
+            std::thread::yield_now();
+        }
+
+        let prepared_heads = prepared.keys().copied().collect::<BTreeSet<_>>();
+        if reduce_live_production_semantic_startup_barrier(&required, &workers, &prepared_heads)
+            != LiveProductionSemanticStartupBarrier::Ready
+        {
+            self.cancel_semantic_startup_resources(group, prepared);
+            return Err("semantic multi-head startup prepare barrier was incomplete".into());
+        }
+
+        let changes = indices
+            .iter()
+            .map(|index| {
+                let owner = prepared
+                    .get(&self.heads[*index].head)
+                    .expect("semantic startup prepared complete head coverage");
+                crate::LibdrmNativeAtomicTopologyChange::Enabled(owner.atomic_head())
+            })
+            .collect::<Vec<_>>();
+        loop {
+            match crate::submit_native_topology_change_on_device(
+                self.groups[group].session.card(),
+                &changes,
+            ) {
+                crate::NativeTopologySubmitOutcome::Accepted => break,
+                crate::NativeTopologySubmitOutcome::Busy if Instant::now() < deadline => {
+                    std::thread::yield_now();
+                }
+                outcome => {
+                    self.cancel_semantic_startup_resources(group, prepared);
+                    return Err(format!(
+                        "semantic multi-head startup atomic commit failed: {outcome:?}"
+                    )
+                    .into());
+                }
+            }
+        }
+
+        let mut adoption_errors = Vec::new();
+        for index in indices {
+            let head_id = self.heads[index].head;
+            let owner = prepared
+                .remove(&head_id)
+                .expect("accepted semantic startup retained every head owner");
+            let displayed = crate::adopt_prepared_rendered_topology_head_after_commit(owner);
+            if singleton {
+                if let Err(displayed) =
+                    runtime.try_adopt_presented_rendered_primary_plane_scanout(displayed)
+                {
+                    self.heads[index].displayed_scanout = Some(
+                        displayed
+                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                    );
+                    adoption_errors.push(
+                        "semantic singleton startup runtime rejected its displayed owner"
+                            .to_owned(),
+                    );
+                }
+            } else {
+                self.heads[index].displayed_scanout = Some(
+                    displayed.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                );
+            }
+            let exported_nonzero = self.exporters[index].composition_nonzero_rgb_pixels() > 0;
+            if exported_nonzero {
+                self.nonzero_exports = self.nonzero_exports.saturating_add(1);
+                self.heads[index].nonzero_exports =
+                    self.heads[index].nonzero_exports.saturating_add(1);
+            }
+            self.submissions = self.submissions.saturating_add(1);
+            trace_live_native_lifecycle("initial_modeset_complete");
+            let head = &mut self.heads[index];
+            head.submissions = head.submissions.saturating_add(1);
+            head.presented_logical_checksum = head.last_checksum;
+            head.presented_submissions = head.submissions;
+            head.presented_content = head.pending_content.take();
+            if head.output_frames.pending().is_some() {
+                match head.output_frames.mark_initial_presented() {
+                    Ok(presented) => {
+                        trace_presented_output_damage(
+                            "initial_presented",
+                            head.output.id,
+                            &presented,
+                        );
+                    }
+                    Err(error) => adoption_errors.push(format!(
+                        "initial compositor display-list transition failed for head {}: {error}",
+                        head_id.raw(),
+                    )),
+                }
+            }
+            head.initial_modeset_submission = Some(head.submissions);
+            let transition = self
+                .output_lifecycles
+                .get_mut(&output)
+                .expect("a registered output has a head lifecycle")
+                .mark_initialized(head_id);
+            if !matches!(
+                transition,
+                LiveProductionMirrorHeadTransition::Accepted
+                    | LiveProductionMirrorHeadTransition::GroupReady
+            ) {
+                adoption_errors.push(format!(
+                    "semantic startup lifecycle rejected initialized head {}: {transition:?}",
+                    head_id.raw(),
+                ));
+            }
+            let (scene_generation, target_generation, mapping) = identities
+                .get(&head_id)
+                .copied()
+                .expect("semantic startup retained head plan identity");
+            tracing::info!(
+                "sophia_live_head_bootstrap schema=1 status=worker_composed output={} head={} frame={} scene_generation={} target_generation={} mapping={} exports=1",
+                output.raw(),
+                head_id.raw(),
+                frame.raw(),
+                scene_generation,
+                target_generation,
+                mapping.reduced_name(),
+            );
+        }
+        if !prepared.is_empty() {
+            return Err("semantic startup retained an unadopted head owner".into());
+        }
+        if !adoption_errors.is_empty() {
+            return Err(format!(
+                "semantic startup adoption failed after retaining every KMS owner: {}",
+                adoption_errors.join("; "),
+            )
+            .into());
+        }
+        Ok(frame)
+    }
+
+    fn cancel_semantic_startup_resources(
+        &mut self,
+        group: usize,
+        prepared: BTreeMap<sophia_engine::RenderHeadId, LiveProductionPreparedTopologyHead>,
+    ) {
+        for (head, owner) in prepared {
+            let cancelled = crate::cancel_prepared_rendered_topology_head(
+                self.groups[group].session.card(),
+                owner,
+            );
+            if let Some(cleanup) = cancelled.cleanup {
+                let cleanup =
+                    cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>);
+                if let Some(index) = self.head_index_for_head(head)
+                    && self.heads[index].scanout_cleanup.is_none()
+                {
+                    self.heads[index].scanout_cleanup = Some(cleanup);
+                } else {
+                    self.output_topology_cleanup.push((head, cleanup));
+                }
+            }
+            if cancelled.destroy != crate::LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
+            {
+                self.retire_failures = self.retire_failures.saturating_add(1);
+            }
+        }
+    }
+
+    /// Releases semantic startup work that never reached KMS.
+    ///
+    /// A worker command is affine even before framebuffer preparation. It must
+    /// be polled to a terminal owner and dropped; merely clearing the head's
+    /// passive bookkeeping would detach that renderer lease from cleanup.
+    pub(super) fn abort_semantic_startup_head_work(
+        &mut self,
+        output: OutputId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let indices = self.head_indices(output);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let mut pending = false;
+            for index in indices.iter().copied() {
+                if !self.exporters[index].pending_frame() {
+                    continue;
+                }
+                if !self.exporters[index].worker_in_flight() {
+                    self.exporters[index].discard_pending_frame();
+                    continue;
+                }
+                let selection = self.heads[index].selection;
+                let export =
+                    crate::LiveRenderedScanoutBufferExporter::export_rendered_scanout_buffer(
+                        &mut self.exporters[index],
+                        crate::LiveGbmEglFrameTargetRecord::new(selection.size()),
+                    );
+                pending |= export.status == crate::LiveRendererScanoutBufferExportStatus::Pending;
+                // A terminal worker export has not acquired DRM ownership yet;
+                // dropping it here returns the renderer lease to its worker.
+                drop(export);
+            }
+            if !pending
+                && indices
+                    .iter()
+                    .all(|index| !self.exporters[*index].pending_frame())
+            {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("semantic startup renderer abort deadline expired".into());
+            }
+            std::thread::yield_now();
+        }
+        for index in indices {
+            let head = &mut self.heads[index];
+            head.pending_content = None;
+            head.rendering_content = None;
+            head.output_frames.discard_pending();
+            tracing::info!(
+                "sophia_live_head_bootstrap schema=1 status=aborted output={} head={} renderer_pending=0",
+                output.raw(),
+                head.head.raw(),
+            );
+        }
+        Ok(())
+    }
+
     /// Resolves a provisional IPC topology against the live DRM master without
     /// mutating the currently published head table or any scanout ownership.
     pub fn plan_output_topology(
@@ -961,13 +1453,18 @@ impl LiveProductionNativeScanout {
             .heads
             .iter()
             .map(|head| {
-                LiveProductionNativeTopologyCurrentHead::new_with_enabled(
+                LiveProductionNativeTopologyCurrentHead::new_with_target(
                     head.head,
                     head.enabled,
                     head.group,
                     head.output.id,
                     head.selection,
                     head.target_generation,
+                    head.scale,
+                    head.refresh_millihz,
+                    head.transform,
+                    head.mapping,
+                    head.vrr,
                 )
             })
             .collect::<Vec<_>>();
@@ -1000,13 +1497,18 @@ impl LiveProductionNativeScanout {
             .heads
             .iter()
             .map(|head| {
-                LiveProductionNativeTopologyCurrentHead::new_with_enabled(
+                LiveProductionNativeTopologyCurrentHead::new_with_target(
                     head.head,
                     head.enabled,
                     head.group,
                     head.output.id,
                     head.selection,
                     head.target_generation,
+                    head.scale,
+                    head.refresh_millihz,
+                    head.transform,
+                    head.mapping,
+                    head.vrr,
                 )
             })
             .collect::<Vec<_>>();
@@ -1022,19 +1524,86 @@ impl LiveProductionNativeScanout {
         self.output_topology_preparation.is_some()
     }
 
+    pub fn output_topology_preparation_phase(
+        &self,
+    ) -> Option<LiveProductionNativeTopologyPreparationPhase> {
+        self.output_topology_preparation
+            .as_ref()
+            .map(|state| state.phase)
+    }
+
+    pub fn output_topology_failed_without_mutation(&self) -> bool {
+        self.output_topology_preparation
+            .as_ref()
+            .is_some_and(|state| {
+                state.phase == LiveProductionNativeTopologyPreparationPhase::Failed
+                    && state.apply.applied == 0
+            })
+    }
+
+    pub fn output_topology_allows_frame_service(&self) -> bool {
+        self.output_topology_preparation
+            .as_ref()
+            .is_none_or(|state| {
+                state.phase == LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued
+            })
+    }
+
     pub fn output_topology_cleanup_pending(&self) -> bool {
         !self.output_topology_cleanup.is_empty()
     }
 
     pub fn request_abort_output_topology_preparation(&mut self, reason: impl Into<String>) -> bool {
-        let Some(state) = self.output_topology_preparation.as_mut() else {
+        let Some(mut state) = self.output_topology_preparation.take() else {
             return false;
         };
         if state.phase == LiveProductionNativeTopologyPreparationPhase::Failed {
+            self.output_topology_preparation = Some(state);
             return true;
         }
         state.failure.get_or_insert_with(|| reason.into());
-        state.phase = LiveProductionNativeTopologyPreparationPhase::Aborting;
+        match state.phase {
+            LiveProductionNativeTopologyPreparationPhase::PreparingCandidate
+            | LiveProductionNativeTopologyPreparationPhase::PreparingRollback
+            | LiveProductionNativeTopologyPreparationPhase::Prepared => {
+                state.phase = LiveProductionNativeTopologyPreparationPhase::Aborting;
+            }
+            LiveProductionNativeTopologyPreparationPhase::Applying => {
+                if state.apply.applied == 0 {
+                    if let Err(error) = self.cancel_partial_output_topology_resources(&mut state) {
+                        state.failure = Some(format!(
+                            "topology abort resource cancellation failed: {error}"
+                        ));
+                    }
+                    state.phase = LiveProductionNativeTopologyPreparationPhase::Failed;
+                } else if state.apply.begin_rollback_after_partial_apply()
+                    == LiveProductionNativeTopologyApplyTransition::Accepted
+                {
+                    state.phase = LiveProductionNativeTopologyPreparationPhase::RollingBack;
+                } else {
+                    state.failure =
+                        Some("topology abort could not enter partial-apply rollback".to_owned());
+                    state.phase = LiveProductionNativeTopologyPreparationPhase::Failed;
+                }
+            }
+            LiveProductionNativeTopologyPreparationPhase::Applied
+            | LiveProductionNativeTopologyPreparationPhase::CandidateInstalled
+            | LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued => {
+                if state.apply.begin_rollback_after_apply()
+                    == LiveProductionNativeTopologyApplyTransition::Accepted
+                {
+                    state.phase = LiveProductionNativeTopologyPreparationPhase::RollingBack;
+                } else {
+                    state.failure = Some("topology abort could not enter full rollback".to_owned());
+                    state.phase = LiveProductionNativeTopologyPreparationPhase::Failed;
+                }
+            }
+            LiveProductionNativeTopologyPreparationPhase::RollingBack
+            | LiveProductionNativeTopologyPreparationPhase::RolledBack => {}
+            LiveProductionNativeTopologyPreparationPhase::Aborting
+            | LiveProductionNativeTopologyPreparationPhase::Failed => {}
+        }
+        self.output_topology_preparation = Some(state);
         true
     }
 
@@ -1059,6 +1628,7 @@ impl LiveProductionNativeScanout {
     pub fn begin_output_topology_preparation(
         &mut self,
         plan: LiveProductionNativeTopologyPlan,
+        rollback: crate::LiveResolvedOutputTopology,
         candidate_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
         rollback_frames: Vec<crate::LiveProductionHeadCompositionFrame>,
     ) -> Result<LiveProductionNativeTopologyPreparationReport, Box<dyn std::error::Error>> {
@@ -1091,6 +1661,7 @@ impl LiveProductionNativeScanout {
 
         let mut candidate_frames =
             validate_live_production_topology_frames(&plan, candidate_frames, true)?;
+        validate_live_production_rollback_topology(&plan, &rollback)?;
         let rollback_frames =
             validate_live_production_topology_frames(&plan, rollback_frames, false)?;
         let mut resources = LiveProductionNativeTopologyResources::new(&plan)
@@ -1165,7 +1736,10 @@ impl LiveProductionNativeScanout {
 
         let affected_heads = plan.heads.len();
         self.output_topology_preparation = Some(LiveProductionNativeTopologyPreparation {
+            apply: LiveProductionNativeTopologyApplyCoordinator::new(&plan)
+                .ok_or("native output topology apply coordinator is invalid")?,
             plan,
+            rollback,
             resources,
             rollback_frames,
             phase: LiveProductionNativeTopologyPreparationPhase::PreparingCandidate,
@@ -1300,6 +1874,507 @@ impl LiveProductionNativeScanout {
         ))
     }
 
+    pub fn begin_prepared_output_topology_apply(
+        &mut self,
+    ) -> Result<Vec<sophia_engine::RenderHeadId>, Box<dyn std::error::Error>> {
+        let state = self
+            .output_topology_preparation
+            .as_mut()
+            .ok_or("native output topology preparation is not active")?;
+        if state.phase != LiveProductionNativeTopologyPreparationPhase::Prepared
+            || !state.resources.ready()
+            || state.apply.begin_apply() != LiveProductionNativeTopologyApplyTransition::Accepted
+        {
+            return Err("native output topology resources are not ready to apply".into());
+        }
+        state.phase = LiveProductionNativeTopologyPreparationPhase::Applying;
+        Ok(state.plan.heads.iter().map(|head| head.head).collect())
+    }
+
+    /// Submits at most one blocking card effect per owner turn.
+    pub fn service_prepared_output_topology_apply(
+        &mut self,
+    ) -> Result<LiveProductionNativeTopologyApplyTransition, Box<dyn std::error::Error>> {
+        let mut state = self
+            .output_topology_preparation
+            .take()
+            .ok_or("native output topology preparation is not active")?;
+        if !matches!(
+            state.phase,
+            LiveProductionNativeTopologyPreparationPhase::Applying
+                | LiveProductionNativeTopologyPreparationPhase::RollingBack
+        ) {
+            self.output_topology_preparation = Some(state);
+            return Err("native output topology apply is not active".into());
+        }
+        let card_index = state
+            .apply
+            .current_card_index()
+            .ok_or("native topology apply coordinator has no current card")?;
+        let rollback = state.phase == LiveProductionNativeTopologyPreparationPhase::RollingBack;
+        let changes = topology_card_changes(&state, card_index, rollback)?;
+        let group = self
+            .groups
+            .get(card_index)
+            .ok_or("native topology apply references an unknown card")?;
+        let outcome =
+            crate::submit_native_topology_change_on_device(group.session.card(), &changes);
+        let transition = if rollback {
+            state.apply.observe_rollback(card_index, outcome)
+        } else {
+            state.apply.observe_apply(card_index, outcome)
+        };
+        match transition {
+            LiveProductionNativeTopologyApplyTransition::RollbackRequired { .. } => {
+                state.phase = LiveProductionNativeTopologyPreparationPhase::RollingBack;
+            }
+            LiveProductionNativeTopologyApplyTransition::Applied { .. } => {
+                state.phase = LiveProductionNativeTopologyPreparationPhase::Applied;
+            }
+            LiveProductionNativeTopologyApplyTransition::RolledBack { .. } => {
+                state.phase = LiveProductionNativeTopologyPreparationPhase::RolledBack;
+            }
+            LiveProductionNativeTopologyApplyTransition::FailedWithoutMutation { .. } => {
+                state.failure = Some("the first card rejected the topology candidate".to_owned());
+                self.cancel_partial_output_topology_resources(&mut state)?;
+                state.phase = LiveProductionNativeTopologyPreparationPhase::Failed;
+            }
+            LiveProductionNativeTopologyApplyTransition::RollbackFailed { .. } => {
+                state.failure =
+                    Some("topology rollback failed after physical candidate mutation".to_owned());
+                state.phase = LiveProductionNativeTopologyPreparationPhase::Failed;
+            }
+            LiveProductionNativeTopologyApplyTransition::Accepted
+            | LiveProductionNativeTopologyApplyTransition::Retry
+            | LiveProductionNativeTopologyApplyTransition::CardApplied { .. }
+            | LiveProductionNativeTopologyApplyTransition::CardRolledBack { .. } => {}
+            LiveProductionNativeTopologyApplyTransition::OutOfOrder
+            | LiveProductionNativeTopologyApplyTransition::Terminal => {
+                self.output_topology_preparation = Some(state);
+                return Err("native topology apply coordinator rejected its own effect".into());
+            }
+        }
+        tracing::info!(
+            "sophia_live_output_topology schema=1 status=card_effect card={} rollback={} outcome={outcome:?} transition={transition:?}",
+            card_index,
+            rollback,
+        );
+        self.output_topology_preparation = Some(state);
+        Ok(transition)
+    }
+
+    pub fn request_output_topology_rollback(
+        &mut self,
+        reason: impl Into<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let state = self
+            .output_topology_preparation
+            .as_mut()
+            .ok_or("native output topology preparation is not active")?;
+        if !matches!(
+            state.phase,
+            LiveProductionNativeTopologyPreparationPhase::Applied
+                | LiveProductionNativeTopologyPreparationPhase::CandidateInstalled
+                | LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued
+        ) || state.apply.begin_rollback_after_apply()
+            != LiveProductionNativeTopologyApplyTransition::Accepted
+        {
+            return Err("native output topology cannot begin post-apply rollback".into());
+        }
+        state.failure = Some(reason.into());
+        state.phase = LiveProductionNativeTopologyPreparationPhase::RollingBack;
+        Ok(())
+    }
+
+    /// Adopts the candidate buffers accepted by every card while retaining the
+    /// complete rollback side. Authority must not publish yet.
+    pub fn install_applied_output_topology(
+        &mut self,
+    ) -> Result<Vec<sophia_engine::HeadlessOutput>, Box<dyn std::error::Error>> {
+        let mut state = self
+            .output_topology_preparation
+            .take()
+            .ok_or("native output topology preparation is not active")?;
+        if state.phase != LiveProductionNativeTopologyPreparationPhase::Applied {
+            self.output_topology_preparation = Some(state);
+            return Err("native output topology candidate is not physically applied".into());
+        }
+        let result = self.install_output_topology_side(&mut state, true);
+        match result {
+            Ok(outputs) => {
+                state.phase = LiveProductionNativeTopologyPreparationPhase::CandidateInstalled;
+                self.output_topology_preparation = Some(state);
+                Ok(outputs)
+            }
+            Err(error) => {
+                self.output_topology_preparation = Some(state);
+                Err(error)
+            }
+        }
+    }
+
+    /// Releases the rollback pool only after every replacement logical output
+    /// has completed its first ordinary presentation cohort.
+    pub fn commit_installed_output_topology(
+        &mut self,
+    ) -> Result<LiveProductionNativeTopologyPlan, Box<dyn std::error::Error>> {
+        let state = self
+            .output_topology_preparation
+            .as_ref()
+            .ok_or("native output topology preparation is not active")?;
+        if state.phase != LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued {
+            return Err("native output topology is not awaiting first presentation".into());
+        }
+        if state
+            .plan
+            .heads
+            .iter()
+            .any(|head| self.head_index_for_head(head.head).is_none())
+        {
+            return Err("topology commit lost a live head before finalization".into());
+        }
+        let mut state = self
+            .output_topology_preparation
+            .take()
+            .expect("topology preparation was validated above");
+        if let Err(error) = self.cancel_partial_output_topology_resources(&mut state) {
+            self.output_topology_preparation = Some(state);
+            return Err(error);
+        }
+        tracing::info!(
+            "sophia_live_output_topology schema=1 status=committed heads={} outputs={} cleanup_pending={}",
+            state.plan.heads.len(),
+            self.logical_outputs.len(),
+            self.output_topology_cleanup.len(),
+        );
+        Ok(state.plan)
+    }
+
+    /// Opens ordinary frame service only after one complete native-size cohort
+    /// has been queued for every replacement logical output.
+    pub fn arm_installed_output_topology_first_presentation(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self
+            .output_topology_preparation
+            .as_ref()
+            .map(|state| state.phase)
+            != Some(LiveProductionNativeTopologyPreparationPhase::CandidateInstalled)
+        {
+            return Err("native output topology candidate is not ready to arm".into());
+        }
+        for output in &self.logical_outputs {
+            let indices = self.head_indices(output.id);
+            if indices.is_empty()
+                || indices.iter().any(|index| {
+                    self.heads[*index].pending_content.is_none()
+                        || !self.exporters[*index].pending_frame()
+                })
+            {
+                return Err("native output topology first-frame coverage is incomplete".into());
+            }
+        }
+        self.output_topology_preparation
+            .as_mut()
+            .expect("topology state checked above")
+            .phase = LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued;
+        Ok(())
+    }
+
+    /// Installs the published rollback buffers after every required reverse
+    /// card effect succeeded, then releases any never-adopted candidate owner.
+    pub fn install_rolled_back_output_topology(
+        &mut self,
+    ) -> Result<(LiveProductionNativeTopologyPlan, String), Box<dyn std::error::Error>> {
+        let mut state = self
+            .output_topology_preparation
+            .take()
+            .ok_or("native output topology preparation is not active")?;
+        if state.phase != LiveProductionNativeTopologyPreparationPhase::RolledBack {
+            self.output_topology_preparation = Some(state);
+            return Err("native output topology rollback is not physically complete".into());
+        }
+        if let Err(error) = self.install_output_topology_side(&mut state, false) {
+            self.output_topology_preparation = Some(state);
+            return Err(error);
+        }
+        self.cancel_partial_output_topology_resources(&mut state)?;
+        let reason = state
+            .failure
+            .take()
+            .unwrap_or_else(|| "candidate apply rolled back".to_owned());
+        tracing::info!(
+            "sophia_live_output_topology schema=1 status=rolled_back heads={} outputs={} cleanup_pending={}",
+            state.plan.heads.len(),
+            self.logical_outputs.len(),
+            self.output_topology_cleanup.len(),
+        );
+        Ok((state.plan, reason))
+    }
+
+    fn install_output_topology_side(
+        &mut self,
+        state: &mut LiveProductionNativeTopologyPreparation,
+        candidate: bool,
+    ) -> Result<Vec<sophia_engine::HeadlessOutput>, Box<dyn std::error::Error>> {
+        let logical_outputs = if candidate {
+            state.plan.outputs.clone()
+        } else {
+            state.rollback.outputs.clone()
+        };
+        if logical_outputs.is_empty() {
+            return Err("installed native topology has no logical output".into());
+        }
+        let logical_by_id = logical_outputs
+            .iter()
+            .map(|output| (output.id, *output))
+            .collect::<BTreeMap<_, _>>();
+        if logical_by_id.len() != logical_outputs.len() {
+            return Err("installed native topology repeats a logical output".into());
+        }
+
+        let mut senders = BTreeMap::new();
+        let mut receivers = BTreeMap::new();
+        for output in logical_by_id.keys().copied() {
+            let (sender, receiver) = sync_channel(64);
+            senders.insert(output, sender);
+            receivers.insert(output, receiver);
+        }
+        let mut installed = Vec::with_capacity(state.plan.heads.len());
+        let mut registry = sophia_engine::EngineHeadRegistry::new();
+        for head_plan in &state.plan.heads {
+            let index = self
+                .head_index_for_head(head_plan.head)
+                .ok_or("topology installation lost a physical head")?;
+            let (
+                enabled,
+                output,
+                selection,
+                target_generation,
+                scale,
+                refresh_millihz,
+                transform,
+                mapping,
+                vrr,
+            ) = if candidate {
+                match head_plan.disposition {
+                    LiveProductionNativeTopologyDisposition::Enabled {
+                        output,
+                        selection,
+                        scale,
+                        refresh_millihz,
+                        transform,
+                        mapping,
+                        vrr,
+                    } => (
+                        true,
+                        output,
+                        selection,
+                        head_plan.candidate_target_generation,
+                        scale,
+                        refresh_millihz,
+                        transform,
+                        mapping,
+                        vrr,
+                    ),
+                    LiveProductionNativeTopologyDisposition::Disabled => (
+                        false,
+                        head_plan.previous_output,
+                        head_plan.previous_selection,
+                        head_plan.candidate_target_generation,
+                        head_plan.previous_scale,
+                        head_plan.previous_refresh_millihz,
+                        head_plan.previous_transform,
+                        head_plan.previous_mapping,
+                        head_plan.previous_vrr,
+                    ),
+                }
+            } else {
+                (
+                    head_plan.previous_enabled,
+                    head_plan.previous_output,
+                    head_plan.previous_selection,
+                    head_plan.previous_target_generation,
+                    head_plan.previous_scale,
+                    head_plan.previous_refresh_millihz,
+                    head_plan.previous_transform,
+                    head_plan.previous_mapping,
+                    head_plan.previous_vrr,
+                )
+            };
+            let resource = if candidate {
+                state.resources.candidate(head_plan.head)
+            } else {
+                state.resources.rollback(head_plan.head)
+            }
+            .ok_or("topology installation lost a prepared physical owner")?;
+            if enabled
+                != matches!(
+                    resource,
+                    LiveProductionNativeTopologyCandidateResource::Enabled(_)
+                )
+            {
+                return Err("topology installation resource disposition mismatch".into());
+            }
+            let sender = if enabled {
+                Some(
+                    senders
+                        .get(&output)
+                        .ok_or("enabled topology head names an unknown logical output")?
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            let physical_output = sophia_engine::HeadlessOutput {
+                id: output,
+                size: selection.size(),
+                scale,
+            };
+            let output_frames = OutputFramePresentationState::new(physical_output)?;
+            if enabled
+                && !registry
+                    .admit(sophia_engine::HeadRenderTarget {
+                        head: head_plan.head,
+                        output,
+                        target_generation,
+                        native_size: selection.size(),
+                        scale,
+                        refresh_millihz,
+                        transform,
+                        mapping,
+                    })
+                    .is_admitted()
+            {
+                return Err("installed Engine head registry rejected a physical target".into());
+            }
+            installed.push(LiveProductionNativeInstalledHead {
+                index,
+                enabled,
+                output,
+                selection,
+                target_generation,
+                scale,
+                refresh_millihz,
+                transform,
+                mapping,
+                vrr,
+                sender,
+                output_frames,
+            });
+        }
+        if registry.output_count() != logical_outputs.len() {
+            return Err("installed topology has a logical output without a physical head".into());
+        }
+
+        let mut lifecycles = BTreeMap::new();
+        for output in logical_by_id.keys().copied() {
+            let members = installed
+                .iter()
+                .filter(|head| head.enabled && head.output == output)
+                .map(|head| self.heads[head.index].head)
+                .collect::<Vec<_>>();
+            let mut lifecycle = LiveProductionMirrorGroupLifecycle::new(output, members.clone())
+                .ok_or("installed logical output has no lifecycle members")?;
+            for head in members {
+                if !matches!(
+                    lifecycle.mark_initialized(head),
+                    LiveProductionMirrorHeadTransition::Accepted
+                        | LiveProductionMirrorHeadTransition::GroupReady
+                ) {
+                    return Err("installed logical output lifecycle rejected initialization".into());
+                }
+            }
+            lifecycles.insert(output, lifecycle);
+        }
+
+        for install in &installed {
+            if self.exporters[install.index].worker_in_flight() {
+                return Err("topology installation cannot replace active renderer work".into());
+            }
+        }
+        for install in &installed {
+            self.exporters[install.index].discard_pending_frame();
+        }
+
+        for mut install in installed {
+            self.retire_topology_displayed_owner(install.index);
+            let selected = if candidate {
+                state
+                    .resources
+                    .take_candidate(self.heads[install.index].head)
+            } else {
+                state
+                    .resources
+                    .take_rollback(self.heads[install.index].head)
+            }
+            .expect("selected topology resources were prevalidated");
+            self.heads[install.index].displayed_scanout = match selected {
+                LiveProductionNativeTopologyCandidateResource::Enabled(owner) => Some(
+                    crate::adopt_prepared_rendered_topology_head_after_commit(owner)
+                        .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                ),
+                LiveProductionNativeTopologyCandidateResource::Disabled(_) => None,
+            };
+            let head = &mut self.heads[install.index];
+            head.enabled = install.enabled;
+            head.selection = install.selection;
+            head.target_generation = install.target_generation;
+            head.scale = install.scale;
+            head.refresh_millihz = install.refresh_millihz;
+            head.transform = install.transform;
+            head.mapping = install.mapping;
+            head.vrr = install.vrr;
+            head.output = sophia_engine::HeadlessOutput {
+                id: install.output,
+                size: install.selection.size(),
+                scale: install.scale,
+            };
+            if let Some(sender) = install.sender.take() {
+                head.sender = sender;
+            }
+            head.pending_content = None;
+            head.rendering_content = None;
+            head.submitted_content = None;
+            head.presented_content = None;
+            head.submitted_group_frame = None;
+            head.prepared_group_frame = None;
+            head.submitted_at = None;
+            head.submitted_ust_usec = None;
+            head.output_frames = install.output_frames;
+        }
+        self.logical_outputs = logical_outputs.clone();
+        self.presentation_outputs = logical_outputs.len();
+        self.output_callbacks = receivers;
+        self.output_lifecycles = lifecycles;
+        self.output_cohorts.clear();
+        self.queued_mirror_successors.clear();
+        self.production_page_flips = crate::LiveProductionPageFlipTracker::from_outputs(&registry);
+        self.kernel_page_flip_ust.clear();
+        Ok(logical_outputs)
+    }
+
+    fn retire_topology_displayed_owner(&mut self, index: usize) {
+        let Some(previous) = self.heads[index].displayed_scanout.take() else {
+            return;
+        };
+        let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
+            scanout_buffer,
+            primary_plane,
+            ..
+        } = previous;
+        let retired = primary_plane.retire(self.card(index));
+        if let Some(primary_plane) = retired.cleanup {
+            self.output_topology_cleanup.push((
+                self.heads[index].head,
+                crate::LiveRenderedPrimaryPlaneScanoutCleanup {
+                    scanout_buffer,
+                    primary_plane,
+                },
+            ));
+        }
+    }
+
     fn service_output_topology_preparation_inner(
         &mut self,
         state: &mut LiveProductionNativeTopologyPreparation,
@@ -1388,6 +2463,14 @@ impl LiveProductionNativeScanout {
                 }
             }
             LiveProductionNativeTopologyPreparationPhase::Prepared => {}
+            LiveProductionNativeTopologyPreparationPhase::Applying
+            | LiveProductionNativeTopologyPreparationPhase::RollingBack
+            | LiveProductionNativeTopologyPreparationPhase::Applied
+            | LiveProductionNativeTopologyPreparationPhase::CandidateInstalled
+            | LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued
+            | LiveProductionNativeTopologyPreparationPhase::RolledBack => {
+                return Err("topology renderer preparation was serviced after apply began".into());
+            }
             LiveProductionNativeTopologyPreparationPhase::Aborting => {
                 let mut renderer_drained = true;
                 for head_plan in &state.plan.heads {
@@ -1569,6 +2652,103 @@ fn topology_vrr_enabled(policy: sophia_protocol::OutputVrrPolicy) -> Option<bool
     }
 }
 
+fn topology_card_changes(
+    state: &LiveProductionNativeTopologyPreparation,
+    card_index: usize,
+    rollback: bool,
+) -> Result<Vec<crate::LibdrmNativeAtomicTopologyChange>, Box<dyn std::error::Error>> {
+    let heads = state.resources.card_heads(card_index);
+    if heads.is_empty() {
+        return Err("topology card effect has no heads".into());
+    }
+    heads
+        .into_iter()
+        .map(|head| {
+            let resource = if rollback {
+                state.resources.rollback(head)
+            } else {
+                state.resources.candidate(head)
+            }
+            .ok_or("topology card effect is missing a prepared head")?;
+            Ok(match resource {
+                LiveProductionNativeTopologyCandidateResource::Enabled(owner) => {
+                    crate::LibdrmNativeAtomicTopologyChange::Enabled(owner.atomic_head())
+                }
+                LiveProductionNativeTopologyCandidateResource::Disabled(owner) => {
+                    crate::LibdrmNativeAtomicTopologyChange::Disabled(owner.atomic_head())
+                }
+            })
+        })
+        .collect()
+}
+
+pub fn validate_live_production_rollback_topology(
+    plan: &LiveProductionNativeTopologyPlan,
+    rollback: &crate::LiveResolvedOutputTopology,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let outputs = rollback
+        .outputs
+        .iter()
+        .map(|output| (output.id, output))
+        .collect::<BTreeMap<_, _>>();
+    if outputs.len() != rollback.outputs.len()
+        || outputs.is_empty()
+        || !outputs.contains_key(&rollback.primary_output)
+    {
+        return Err("rollback topology has invalid logical-output coverage".into());
+    }
+    let targets = rollback
+        .targets
+        .iter()
+        .map(|target| (target.head, target))
+        .collect::<BTreeMap<_, _>>();
+    let disabled = rollback
+        .disabled_heads
+        .iter()
+        .map(|head| (head.head, head))
+        .collect::<BTreeMap<_, _>>();
+    if targets.len() != rollback.targets.len()
+        || disabled.len() != rollback.disabled_heads.len()
+        || targets.keys().any(|head| disabled.contains_key(head))
+        || targets.len().saturating_add(disabled.len()) != plan.heads.len()
+    {
+        return Err("rollback topology has invalid physical-head coverage".into());
+    }
+    for head in &plan.heads {
+        if head.previous_enabled {
+            let target = targets
+                .get(&head.head)
+                .ok_or("rollback topology omitted a previously enabled head")?;
+            let output = outputs
+                .get(&head.previous_output)
+                .ok_or("rollback topology omitted a previous logical output")?;
+            if target.output != head.previous_output
+                || target.target_generation != head.previous_target_generation
+                || target.native_size != head.previous_selection.size()
+                || target.timing.width
+                    != u32::try_from(target.native_size.width).unwrap_or_default()
+                || target.timing.height
+                    != u32::try_from(target.native_size.height).unwrap_or_default()
+                || target.timing.refresh_millihz != head.previous_refresh_millihz
+                || output.scale != head.previous_scale
+                || target.transform != head.previous_transform
+                || target.mapping != head.previous_mapping
+                || target.vrr != head.previous_vrr
+            {
+                return Err("rollback topology changed previous enabled-head state".into());
+            }
+        } else {
+            let previous = disabled
+                .get(&head.head)
+                .ok_or("rollback topology omitted a previously disabled head")?;
+            if previous.target_generation != head.previous_target_generation {
+                return Err("rollback topology changed previous disabled-head generation".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_live_production_topology_frames(
     plan: &LiveProductionNativeTopologyPlan,
     frames: Vec<crate::LiveProductionHeadCompositionFrame>,
@@ -1601,28 +2781,68 @@ pub fn validate_live_production_topology_frames(
     if by_head.len() != expected.len() {
         return Err("topology composition has incomplete physical-head coverage".into());
     }
+    let scene_generation = by_head
+        .values()
+        .next()
+        .map(|frame| frame.scene_generation)
+        .filter(|generation| *generation != 0)
+        .ok_or("topology composition has an invalid scene generation")?;
+    if by_head
+        .values()
+        .any(|frame| frame.scene_generation != scene_generation)
+    {
+        return Err("topology composition frames disagree on scene generation".into());
+    }
     for head in expected {
         let frame = by_head
             .get(&head.head)
             .ok_or("topology composition omitted a physical head")?;
-        let (output, size) = if candidate {
+        let (output, size, scale, target_generation, mapping) = if candidate {
             let LiveProductionNativeTopologyDisposition::Enabled {
-                output, selection, ..
+                output,
+                selection,
+                scale,
+                mapping,
+                ..
             } = head.disposition
             else {
                 unreachable!("candidate expected set excludes disabled heads");
             };
-            (output, selection.size())
+            (
+                output,
+                selection.size(),
+                scale,
+                head.candidate_target_generation,
+                mapping,
+            )
         } else {
-            (head.previous_output, head.previous_selection.size())
+            (
+                head.previous_output,
+                head.previous_selection.size(),
+                head.previous_scale,
+                head.previous_target_generation,
+                head.previous_mapping,
+            )
         };
         let damage = frame
             .frame
             .output_damage_snapshot
             .as_ref()
             .ok_or("topology composition frame has no damage snapshot")?;
-        if damage.output.id != output || damage.output.size != size {
+        if damage.output
+            != (sophia_engine::HeadlessOutput {
+                id: output,
+                size,
+                scale,
+            })
+        {
             return Err("topology composition frame targets the wrong output extent".into());
+        }
+        if frame.target_generation != target_generation {
+            return Err("topology composition frame targets a stale generation".into());
+        }
+        if frame.mapping != mapping {
+            return Err("topology composition frame targets the wrong mapping".into());
         }
     }
     Ok(by_head)

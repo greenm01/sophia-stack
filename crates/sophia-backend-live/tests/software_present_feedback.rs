@@ -120,7 +120,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
         scale: 1,
     };
     let mut scene = LiveProductionCpuScene::new(size);
-    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
     let run_update = |runtime: &mut LiveProductionVisualRuntime,
                       scene: &mut LiveProductionCpuScene,
                       updates: Vec<LiveCpuBufferUpdate>| {
@@ -326,7 +326,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         resize_sync: ResizeSyncCapability::ImplicitOnly,
     }];
     let mut scene = LiveProductionCpuScene::new(size);
-    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
     let (submission, committed) = runtime
         .run_cpu_production_cycle(LiveProductionCycleRequest {
             batch: &batch,
@@ -496,7 +496,7 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         released_dma_bufs: Vec::new(),
         released_fences: Vec::new(),
     };
-    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
 
     runtime
         .run_batch(&batch, &[], None, None, Vec::new(), None)
@@ -630,7 +630,7 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
         released_fences: Vec::new(),
     };
     let mut scene = LiveProductionCpuScene::new(size);
-    let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
     for batch in [&first, &successor] {
         runtime
             .run_gpu_production_cycle(LiveProductionCycleRequest {

@@ -523,6 +523,13 @@ fn public_policy_restart_aborts_settlement_before_process_replacement() {
 }
 
 #[test]
+fn output_topology_effect_is_a_restart_settlement_barrier() {
+    assert!(public_policy_restart_settlement_pending(false, true));
+    assert!(public_policy_restart_settlement_pending(true, false));
+    assert!(!public_policy_restart_settlement_pending(false, false));
+}
+
+#[test]
 fn public_policy_checkpoint_parent_survives_peer_endpoint_replacement() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};

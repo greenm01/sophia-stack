@@ -31,9 +31,9 @@ use super::{
     physical_input_pixels_already_changed, physical_input_routing_mode,
     place_pointer_event_for_routing, pointer_press_starts_focus_handoff, policy_profile_identity,
     production_cycle_native_owner_policy, public_policy_launch_spec,
-    public_policy_restart_decision, public_session_operations, record_runtime_commits,
-    rects_intersect, resolve_public_shortcuts, route_input_events,
-    session_protocol_errors_are_fatal, settle_session_fatal_error,
+    public_policy_restart_decision, public_policy_restart_settlement_pending,
+    public_session_operations, record_runtime_commits, rects_intersect, resolve_public_shortcuts,
+    route_input_events, session_protocol_errors_are_fatal, settle_session_fatal_error,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
@@ -219,7 +219,7 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
 #[test]
 fn promoted_chrome_is_synchronized_at_the_production_boundary() {
     let outputs = [sophia_engine::HeadlessOutput::deterministic()];
-    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None, None).unwrap();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
     let promoted = sophia_engine::SurfaceChromeStyle {
         focus_ring: sophia_engine::FocusRingStyle {
             width: 6,

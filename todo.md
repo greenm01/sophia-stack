@@ -1041,7 +1041,8 @@ is excluded; retained product behavior is not.
      modes. The production CPU transaction invokes this planner from its exact
      committed slice. CPU variants, native compositor solids, placement, clips,
      and head-local damage are lowered into one independently queued native-size
-     frame per head; the flat frame remains only for the synchronous bootstrap.
+     frame per head. Synchronous startup and resume use the same semantic head
+     frames; no projected flat-baseline modeset remains.
      `OutputPresentationCohort` now owns the live multi-head preparation barrier:
      renderer export, framebuffer/import/blob creation, and atomic request
      construction produce one affine prepared owner per head, and the scheduler
@@ -1065,18 +1066,44 @@ is excluded; retained product behavior is not.
      framebuffer is owned; protocol observations admit whole physical batches
      or none. The live owner now nonblockingly drives candidate workers first and
      rollback workers second, quarantines ordinary scanout during preparation,
-     and drains/cancels partial owners on failure or session completion. It still
-     cancels a complete dual pool and rejects before KMS. Previously disabled
-     connected heads are now retained in the native model and contribute an
-     explicit rollback-disable property owner instead of an impossible rollback
-     framebuffer. The remaining ownership work is to drive the already-defined
-     per-card coordinator, install/reconcile accepted owners while retaining
-     rollback resources through runtime rebuild, and publish only after the new
-     outputs present.
-  4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
-     renderer-image affine leases. Share immutable sources and renderer caches,
-     never final head framebuffers or scanout leases; remove the remaining
-     primary-derived mixed-frame projection paths after all source kinds resolve.
+     and drains/cancels partial owners on failure or session completion. It now
+     retains the complete dual pool through KMS apply. Previously disabled
+     connected heads remain in the native model and contribute an explicit
+     rollback-disable property owner instead of an impossible rollback
+     framebuffer. The live session drives one blocking effect per card, installs
+     accepted owners without a second modeset, rebuilds logical output runtimes,
+     queues a complete native-size first cohort, and publishes only after every
+     replacement output presents. Renderer/service failure and supervised
+     output-peer loss before publication request reverse-card rollback; hotplug
+     refreshes the output protocol snapshot and capabilities only after its
+     replacement presentation. Deterministic effect-path failure injection now
+     covers preparation, partial card apply, installation/first-presentation
+     failure, supervised peer loss, and reverse rollback. Remaining work is
+     signed physical evidence.
+     Normal mirror startup now enters the same architectural shape: semantic
+     native-size head frames establish every worker, prepare every framebuffer
+     and modeset owner without KMS mutation, and cross a complete-head barrier
+     before one card-local blocking atomic modeset. Singleton, mirror, extended,
+     first-authority-cycle, explicit-repaint, and resume/recovery startup all use
+     that transaction. The physical verifier rejects the old direct-CPU baseline;
+     no native compatibility flat-baseline modeset remains. Pre-KMS failure
+     drains or discards every queued worker lease, and whole-output admission
+     rejects duplicate or incomplete logical batches before runtime mutation.
+  4. **Done:** the common plan lowerer resolves CPU, DMA-BUF, and retained
+     renderer-image sources while sharing only immutable source ownership and
+     duplicating affine DMA-BUF planes per generated head frame. Ordinary GPU
+     Present derives the exact old/new root-space output set, queues a native
+     cohort for every intersecting output, and joins output retirement in
+     Engine before feedback or input publication. Software Present, retained
+     scene, focus/chrome/outline, resume, damage, and cursor projection use the
+     same complete output set; no ordinary path uses a distinguished primary
+     output to decide another output's pixels. The live reducer now consumes
+     each head's committed IPC mapping, target generation, scale, transform,
+     and refresh; the former session-global backend mirror-fit policy is gone.
+     Each passive exporter frame now retains its Engine scene generation,
+     committed target generation, mapping, and logical checksum. Batch admission
+     rejects stale or cross-scene head work before queue mutation, and topology
+     candidate/rollback pools validate against the correct side of the plan.
   5. Add authority-owned variants for server-rendered X11 core content. Select
      exact density first and report downsample/upscale fallbacks explicitly;
      arbitrary singleton client rasters remain supported without claiming
@@ -1084,14 +1111,23 @@ is excluded; retained product behavior is not.
   6. Gate unequal-size mirroring and differently scaled extended outputs with
      per-head plan/render/submit/callback/retire evidence, spanning-surface
      coverage, failure injection, topology replacement, and clean teardown.
+     The unequal-mirror verifier now requires a native-size plan and matching
+     queued identity for every head, with plan-before-queue-before-submit
+     ordering and negative controls for stale generation, mapping, and extent.
+     Mixed mirror-plus-extended physical evidence remains outstanding.
   Prerequisite evidence migration is also done: native-head completion names the
   shared scene generation and logical-content checksum separately from an
   optional head-pixel checksum, so future native raster differences cannot break
   mirror identity.
-- [ ] Apply a desktop output configuration change to a *running* session, so an
+- [x] Apply a desktop output configuration change to a *running* session, so an
   operator can change a mode, position, scale, or transform without restarting.
-  None of this exists today, and the pieces that look like it are startup-only.
-  Four gaps, in dependency order, all found by tracing rather than assumed:
+  The live path accepts complete `sophia_output_v1` proposals from the supervised
+  public WM/shell, including independently selected modes and mixed
+  mirrored/extended logical groups. It prepares candidate and rollback
+  render/KMS ownership before mutation, applies cards deterministically,
+  rebuilds runtime, X, WM, pointer, and input state, and commits authority only
+  after all new logical outputs present. The historical gaps below describe the
+  starting point and are retained as archaeology:
   Frame targets never resize. `observe_gbm_egl_frame_target_size_for` and
   `observe_output_size_for` (`runtime/frame_target.rs:39`, `:57`) have no
   production callers at all, so an output's frame is fixed at the size it had when
@@ -1123,19 +1159,16 @@ is excluded; retained product behavior is not.
   modes into mixed mirror/extended groups. `LiveOutputAuthorityOwner` now holds
   the last published snapshot while a candidate passes Engine's prepare, apply,
   rollback, and all-output first-presentation phases; validation and rejected
-  preparation do not consume fresh logical-output identities. The remaining
-  critical path is to execute renderer-target and KMS effects through the live
-  owner, rebuild Engine/runtime state, and feed real first-presentation
-  observations into that publication barrier. The selected public WM now owns
+  preparation do not consume fresh logical-output identities. The selected public WM now owns
   the exclusive supervised output role: its exact PID is authorized, the socket
   is advertised through `SOPHIA_OUTPUT_SOCKET`, proposals are polled without
   blocking visual progress, and a supervised restart disconnects the old peer
   and advances the role epoch before authorizing the replacement. Validate-only
-  proposals reach and settle through the live authority owner. Apply now becomes
-  an immutable effect contract consumed by the visual owner and is resolved into
-  a complete native head plan, including explicit disable operations. It remains
-  an explicit target-preparation rejection until replacement renderer targets
-  and rollback owners exist; no partial KMS mutation is performed.
+  proposals reach and settle through the live authority owner. Apply becomes an
+  immutable effect contract consumed by the visual owner and resolves into a
+  complete native head plan, including explicit disable operations. Candidate
+  and rollback owners are prepared together, partial cross-card mutation rolls
+  back in reverse order, and connection loss cannot abandon applied KMS state.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

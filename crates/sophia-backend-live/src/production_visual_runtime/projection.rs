@@ -360,8 +360,7 @@ mod tests {
             id: OutputId::from_raw(2),
             ..primary
         };
-        let mut runtime =
-            LiveProductionVisualRuntime::new(&[secondary, primary], None, None).unwrap();
+        let mut runtime = LiveProductionVisualRuntime::new(&[secondary, primary], None).unwrap();
         assert_eq!(runtime.input_projections()[0].output, primary.id);
         assert_eq!(runtime.input_projections()[1].output, secondary.id);
         let layer_for = |surface, handle| LayerSnapshot {
@@ -409,7 +408,7 @@ mod tests {
     #[test]
     fn committed_authority_state_does_not_publish_before_output_run() {
         let output = HeadlessOutput::deterministic();
-        let mut runtime = LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+        let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
         let transaction = SurfaceTransaction {
             transaction: TransactionId::from_raw(1),
             authority: AuthorityKind::SophiaX,

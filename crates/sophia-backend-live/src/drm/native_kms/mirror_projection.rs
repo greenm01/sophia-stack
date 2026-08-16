@@ -11,27 +11,14 @@
 //! without a GPU.
 
 use crate::prelude::*;
-use sophia_protocol::Rect;
+use sophia_protocol::{OutputHeadMapping, Rect};
 
-/// How a group's frame is placed on a head whose mode differs from the scene.
+/// Compatibility name for the protocol-neutral per-head mapping policy.
 ///
-/// Named policies rather than one hardcoded behaviour, so letterboxing is an
-/// operator's choice instead of a surprise. The vocabulary is `wl-mirror`'s, which
-/// is the one users of other mirroring tools will already know.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum NativeMirrorFit {
-    /// Scale until the whole frame fits, preserving aspect. Unused space becomes
-    /// black bars. Nothing is cropped, which is why it is the default: a mirror
-    /// that hides part of the screen is worse than one with bars.
-    #[default]
-    Fit,
-    /// Scale until the frame covers the head, preserving aspect. No bars, and
-    /// whatever falls outside is cropped.
-    Cover,
-    /// No scaling. The frame is centred at its own size, cropped if the head is
-    /// smaller. For an operator who would rather see exact pixels than a resample.
-    Exact,
-}
+/// The backend no longer owns a second mirror-fit policy. The mapping committed
+/// by output authority is retained on each physical head and consumed directly
+/// by composition, damage, cursor, and input projection.
+pub type NativeMirrorFit = OutputHeadMapping;
 
 /// Places a `source`-sized frame into a `destination`-sized buffer.
 ///
@@ -39,7 +26,7 @@ pub enum NativeMirrorFit {
 /// `Exact`; that is the crop, and the caller clips it. Degenerate sizes produce an
 /// empty rect at the origin rather than a division by zero, because a head with no
 /// area is a state to skip rather than a reason to fail a frame.
-pub fn project_mirror_rect(source: Size, destination: Size, fit: NativeMirrorFit) -> Rect {
+pub fn project_mirror_rect(source: Size, destination: Size, fit: OutputHeadMapping) -> Rect {
     if source.width <= 0 || source.height <= 0 || destination.width <= 0 || destination.height <= 0
     {
         return Rect {
@@ -51,14 +38,14 @@ pub fn project_mirror_rect(source: Size, destination: Size, fit: NativeMirrorFit
     }
 
     let (width, height) = match fit {
-        NativeMirrorFit::Exact => (source.width, source.height),
-        NativeMirrorFit::Fit | NativeMirrorFit::Cover => {
+        OutputHeadMapping::Exact => (source.width, source.height),
+        OutputHeadMapping::Fit | OutputHeadMapping::Cover => {
             // Scaled in one rational step rather than through a float ratio, so a
             // head whose mode is an exact multiple of the scene lands on exact
             // pixels instead of one short.
             let by_width = i64::from(destination.width) * i64::from(source.height);
             let by_height = i64::from(destination.height) * i64::from(source.width);
-            let use_width = if fit == NativeMirrorFit::Fit {
+            let use_width = if fit == OutputHeadMapping::Fit {
                 by_width <= by_height
             } else {
                 by_width >= by_height
@@ -145,7 +132,7 @@ pub fn project_mirror_coordinates(
     y: i32,
     source: Size,
     destination: Size,
-    fit: NativeMirrorFit,
+    fit: OutputHeadMapping,
 ) -> Option<(i32, i32)> {
     let scene = project_mirror_rect(source, destination, fit);
     if scene.width <= 0 || scene.height <= 0 {

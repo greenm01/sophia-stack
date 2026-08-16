@@ -56,6 +56,7 @@ mod session;
 mod shortcut;
 mod surface_admission;
 mod surface_content_stream;
+mod transaction_presentation;
 mod visual_state;
 mod wm;
 
@@ -83,6 +84,7 @@ pub use session::*;
 pub use shortcut::*;
 pub use surface_admission::*;
 pub use surface_content_stream::*;
+pub use transaction_presentation::*;
 pub use visual_state::*;
 pub use wm::*;
 

@@ -13,11 +13,13 @@ mod persistent_native_scanout {
     mod renderer_images;
     mod state;
     mod topology;
+    pub use cursor::project_native_cursor_logical_viewport;
     pub use frame_damage::project_mirror_output_damage_snapshot;
     use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
     use renderer_images::LiveProductionQueuedMirrorGeneration;
     pub use renderer_images::{
         LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
+        validate_live_head_composition_frame_batch,
     };
     pub use state::*;
     pub use topology::*;
@@ -42,9 +44,6 @@ mod persistent_native_scanout {
         pub callback_rejected: usize,
         pub callback_queue_saturated: usize,
         pub nonzero_exports: usize,
-        /// How a group's frame is placed on a head whose mode differs from the
-        /// scene, from configuration.
-        pub mirror_fit: crate::NativeMirrorFit,
         /// One scanout buffer exporter per head, parallel to `heads`.
         ///
         /// Per head because each connector scans out its own buffer at its own
@@ -125,6 +124,11 @@ mod persistent_native_scanout {
         pub enabled: bool,
         pub group: usize,
         pub selection: crate::LibdrmNativePrimaryPlaneSelection,
+        pub scale: u32,
+        pub refresh_millihz: u32,
+        pub transform: sophia_protocol::OutputTransform,
+        pub mapping: sophia_protocol::OutputHeadMapping,
+        pub vrr: sophia_protocol::OutputVrrPolicy,
         /// Feeds this head's logical output. Every head of a mirror group holds a
         /// clone of the same sender.
         pub sender: SyncSender<crate::LivePageFlipCallback>,
@@ -325,7 +329,11 @@ mod persistent_native_scanout {
         pub fn new_with_mirroring(
             grouping: &crate::NativeMirrorGrouping,
         ) -> Result<Self, Box<dyn std::error::Error>> {
-            Self::new_with_selection(crate::select_real_atomic_scanout_cards(), grouping)
+            Self::new_with_selection(
+                crate::select_real_atomic_scanout_cards(),
+                grouping,
+                sophia_protocol::OutputHeadMapping::Fit,
+            )
         }
 
         #[cfg(feature = "seat-control")]
@@ -345,15 +353,33 @@ mod persistent_native_scanout {
             opener: &crate::LiveSeatDeviceOpener,
             grouping: &crate::NativeMirrorGrouping,
         ) -> Result<Self, Box<dyn std::error::Error>> {
+            Self::new_with_seat_mirroring_and_mapping(
+                opener,
+                grouping,
+                sophia_protocol::OutputHeadMapping::Fit,
+            )
+        }
+
+        /// Builds a scanout whose initial physical heads retain the neutral
+        /// mapping selected by configuration. Later output-authority topology
+        /// commits replace that value independently per head.
+        #[cfg(feature = "seat-control")]
+        pub fn new_with_seat_mirroring_and_mapping(
+            opener: &crate::LiveSeatDeviceOpener,
+            grouping: &crate::NativeMirrorGrouping,
+            mapping: sophia_protocol::OutputHeadMapping,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
             Self::new_with_selection(
                 crate::select_real_atomic_scanout_cards_with_seat(opener),
                 grouping,
+                mapping,
             )
         }
 
         fn new_with_selection(
             selection: crate::RealAtomicScanoutSelectionSet,
             grouping: &crate::NativeMirrorGrouping,
+            initial_mapping: sophia_protocol::OutputHeadMapping,
         ) -> Result<Self, Box<dyn std::error::Error>> {
             let authority = crate::RealAtomicScanoutSmokeConfig::default_primary_output()
                 .ok_or("persistent native scanout config is invalid")?
@@ -414,7 +440,7 @@ mod persistent_native_scanout {
                         scale: record.scale,
                         refresh_millihz: record.mode.refresh_millihz,
                         transform: sophia_protocol::OutputTransform::Normal,
-                        mapping: sophia_protocol::OutputHeadMapping::Fit,
+                        mapping: initial_mapping,
                     };
                     if !presentation_outputs.admit(target).is_admitted() {
                         return Err(format!(
@@ -453,6 +479,9 @@ mod persistent_native_scanout {
                     .zip(session.heads().to_vec())
                 {
                     let size = selection.size();
+                    let target = *presentation_outputs
+                        .head(head_id)
+                        .expect("native head was admitted before owner construction");
                     // This head's own exporter, against this head's own plane
                     // formats. The group-wide modifier intersection went with the
                     // shared buffer that needed it: a head scanning out its own
@@ -478,6 +507,11 @@ mod persistent_native_scanout {
                         enabled: true,
                         group,
                         selection,
+                        scale: target.scale,
+                        refresh_millihz: target.refresh_millihz,
+                        transform: target.transform,
+                        mapping: target.mapping,
+                        vrr: sophia_protocol::OutputVrrPolicy::Disabled,
                         sender,
                         output: sophia_engine::HeadlessOutput {
                             id: output_id,
@@ -591,7 +625,6 @@ mod persistent_native_scanout {
                 callback_rejected: 0,
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
-                mirror_fit: crate::NativeMirrorFit::default(),
                 exporters,
                 queued_mirror_successors: BTreeMap::new(),
                 output_callbacks,
@@ -866,7 +899,7 @@ mod persistent_native_scanout {
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
             self.retry_output_topology_cleanup();
-            if self.output_topology_preparation_active() {
+            if !self.output_topology_allows_frame_service() {
                 return Err(
                     "ordinary native frame scheduling is quarantined during topology preparation"
                         .into(),
@@ -2308,150 +2341,49 @@ mod persistent_native_scanout {
                 .saturating_add(nanos / 1_000)
         }
 
-        pub fn initialize(
+        pub fn initialize_head_composition(
             &mut self,
             output: OutputId,
             runtime: &mut crate::LiveBackendRuntimeAssembly,
-            frame: LiveProductionComposedFrame,
-        ) -> Result<(), Box<dyn std::error::Error>> {
+            frames: Vec<LiveProductionHeadCompositionFrame>,
+        ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
             let has_head = !self.head_indices(output).is_empty();
-            let initialized = self.initialize_transaction(output, runtime, frame);
-            finish_live_production_native_initialization(initialized, has_head, || {
-                self.release_displayed_output(output, runtime)
-            })
+            let initialized = self.initialize_semantic_head_transaction(output, runtime, frames);
+            match initialized {
+                Ok(frame) => Ok(frame),
+                Err(error) => {
+                    let error = match self.abort_semantic_startup_head_work(output) {
+                        Ok(()) => error,
+                        Err(abort) => format!(
+                            "semantic startup failed: {error}; renderer abort failed: {abort}"
+                        )
+                        .into(),
+                    };
+                    finish_live_production_native_initialization(Err(error), has_head, || {
+                        self.release_displayed_output(output, runtime)
+                    })?;
+                    unreachable!("failed initialization cannot settle successfully")
+                }
+            }
         }
 
-        fn initialize_transaction(
-            &mut self,
-            output: OutputId,
-            runtime: &mut crate::LiveBackendRuntimeAssembly,
-            frame: LiveProductionComposedFrame,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            let indices = self.head_indices(output);
-            let Some(&index) = indices.first() else {
-                return Err(format!("native output {} has no head", output.raw()).into());
-            };
-            if indices.len() > 1 {
-                self.queue_projected_bootstrap_frame(output, &frame, self.mirror_fit)?;
-                for head_index in indices.iter().copied() {
-                    self.exporters[head_index].arm_direct_cpu_bootstrap()?;
+        pub fn enable_renderer_workers(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+            let mut enabled = 0usize;
+            for index in 0..self.exporters.len() {
+                if !self.heads[index].enabled {
+                    continue;
                 }
-            } else {
-                self.queue_frame(output, frame);
+                self.exporters[index].enable_worker()?;
+                if !self.exporters[index].worker_enabled() {
+                    return Err("native renderer worker was not established".into());
+                }
+                enabled = enabled.saturating_add(1);
             }
-            for (position, head_index) in indices.into_iter().enumerate() {
-                let group = self.heads[head_index].group;
-                let selection = self.heads[head_index].selection;
-                let export_attempts_before = self.exporters[head_index].cpu_frame_export_attempts();
-                let direct_attempts_before =
-                    self.exporters[head_index].direct_cpu_bootstrap_attempts();
-                let direct_exports_before =
-                    self.exporters[head_index].direct_cpu_bootstrap_exports();
-                let mixed_attempts_before =
-                    self.exporters[head_index].mixed_frame_export_attempts();
-                if position == 0 {
-                    self.groups[group]
-                        .session
-                        .initialize_persistent_native_gbm_scanout_for_selection(
-                            runtime,
-                            &mut self.exporters[head_index],
-                            selection,
-                        )
-                        .map_err(|evidence| {
-                            format!("persistent native initial modeset failed: {evidence:?}")
-                        })?;
-                } else {
-                    let displayed = self.groups[group]
-                        .session
-                        .initialize_persistent_native_gbm_scanout_head(
-                            &mut self.exporters[head_index],
-                            selection,
-                        )
-                        .map_err(|evidence| {
-                            format!("persistent native mirror-head modeset failed: {evidence:?}")
-                        })?;
-                    self.heads[head_index].displayed_scanout = Some(
-                        displayed
-                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                    );
-                }
-                if self.head_indices(output).len() > 1 {
-                    if self.exporters[head_index].direct_cpu_bootstrap_attempts()
-                        != direct_attempts_before.saturating_add(1)
-                        || self.exporters[head_index].direct_cpu_bootstrap_exports()
-                            != direct_exports_before.saturating_add(1)
-                    {
-                        return Err("mirror bootstrap did not export through direct CPU GBM".into());
-                    }
-                    tracing::info!(
-                        "sophia_live_mirror_bootstrap schema=2 status=direct_cpu output={} head={} exports=1",
-                        output.raw(),
-                        self.heads[head_index].head.raw(),
-                    );
-                }
-                self.exporters[head_index].enable_worker()?;
-                if self.head_indices(output).len() > 1 {
-                    if !self.exporters[head_index].worker_enabled() {
-                        return Err("mirror renderer worker was not established".into());
-                    }
-                    tracing::info!(
-                        "sophia_live_mirror_bootstrap schema=2 status=worker_ready output={} head={} workers=1",
-                        output.raw(),
-                        self.heads[head_index].head.raw(),
-                    );
-                }
-                let head = &mut self.heads[head_index];
-                let exported_nonzero = (self.exporters[head_index].cpu_frame_export_attempts()
-                    > export_attempts_before
-                    && head.pending_nonzero_pixel_bytes > 0)
-                    || (self.exporters[head_index].mixed_frame_export_attempts()
-                        > mixed_attempts_before
-                        && self.exporters[head_index].composition_nonzero_rgb_pixels() > 0);
-                if exported_nonzero {
-                    self.nonzero_exports = self.nonzero_exports.saturating_add(1);
-                    head.nonzero_exports = head.nonzero_exports.saturating_add(1);
-                }
-                if !self.exporters[head_index].pending_cpu_frame() {
-                    head.pending_nonzero_pixel_bytes = 0;
-                }
-                self.submissions = self.submissions.saturating_add(1);
-                trace_live_native_lifecycle("initial_modeset_complete");
-                head.submissions = head.submissions.saturating_add(1);
-                head.presented_logical_checksum = head.last_checksum;
-                head.presented_submissions = head.submissions;
-                head.presented_content = head.pending_content.take();
-                if head.output_frames.pending().is_some() {
-                    let presented =
-                        head.output_frames
-                            .mark_initial_presented()
-                            .map_err(|error| {
-                                format!(
-                                    "initial compositor display-list transition failed: {error}"
-                                )
-                            })?;
-                    trace_presented_output_damage("initial_presented", head.output.id, &presented);
-                }
-                head.initial_modeset_submission = Some(head.submissions);
-                let head_id = self.heads[head_index].head;
-                let transition = self
-                    .output_lifecycles
-                    .get_mut(&output)
-                    .expect("a registered output has a head lifecycle")
-                    .mark_initialized(head_id);
-                debug_assert!(matches!(
-                    transition,
-                    LiveProductionMirrorHeadTransition::Accepted
-                        | LiveProductionMirrorHeadTransition::GroupReady
-                ));
-            }
-            if self.head_indices(output).len() > 1 {
-                self.heads[index].displayed_scanout = Some(
-                    runtime
-                        .take_displayed_rendered_primary_plane_scanout()
-                        .ok_or("mirror primary baseline owner was not retained")?,
-                );
-            }
-            Ok(())
+            Ok(enabled)
+        }
+
+        pub fn enabled_head_count(&self) -> usize {
+            self.heads.iter().filter(|head| head.enabled).count()
         }
 
         pub fn queue_frame(
@@ -2500,7 +2432,7 @@ mod persistent_native_scanout {
                         return unchanged;
                     }
                 }
-                let projected = self.queue_projected_frame(output, &frame, self.mirror_fit);
+                let projected = self.queue_projected_frame(output, &frame);
                 return if projected.is_some() {
                     LiveProductionCpuFrameQueueStatus::Queued
                 } else {
@@ -2685,6 +2617,23 @@ mod persistent_native_scanout {
                 .presented()
         }
 
+        pub fn presented_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
+            let indices = self.head_indices(output);
+            let first = indices.first().and_then(|index| {
+                self.heads[*index]
+                    .presented_content
+                    .map(LiveProductionScanoutContent::frame)
+            })?;
+            indices
+                .into_iter()
+                .all(|index| {
+                    self.heads[index]
+                        .presented_content
+                        .is_some_and(|content| content.frame() == first)
+                })
+                .then_some(first)
+        }
+
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
             let indices = self.head_indices(output);
             if indices.is_empty() {
@@ -2746,21 +2695,30 @@ mod persistent_native_scanout {
                 }
                 (callbacks, timestamps)
             };
-            for timestamp in timestamps {
+            for mut timestamp in timestamps {
+                let head = self
+                    .heads
+                    .iter()
+                    .find(|head| head.group == group && head.enabled && head.head == timestamp.head)
+                    .ok_or("native timestamp referenced an inactive or unknown head")?;
+                // The libdrm route was created at discovery time. Dynamic
+                // regrouping changes only the logical output, so normalize that
+                // policy identity through the current opaque head owner.
+                timestamp.output = head.output.id;
                 self.kernel_page_flip_ust.insert(
                     (timestamp.output, timestamp.head, timestamp.frame_serial),
                     timestamp.ust_usec,
                 );
             }
-            for callback in callbacks {
+            for mut callback in callbacks {
                 // By head, not by output. Two heads of a mirror group share an
                 // output, so matching on it delivered both flips to whichever head
                 // came first and left the sibling looking like it never flipped.
-                let Some(head) = self.heads.iter().find(|head| {
-                    head.group == group
-                        && head.head == callback.head
-                        && head.output.id == callback.output
-                }) else {
+                let Some(head) = self
+                    .heads
+                    .iter()
+                    .find(|head| head.group == group && head.enabled && head.head == callback.head)
+                else {
                     return Err(format!(
                         "native callback referenced an unknown head: head={} output={}",
                         callback.head.raw(),
@@ -2768,6 +2726,7 @@ mod persistent_native_scanout {
                     )
                     .into());
                 };
+                callback.output = head.output.id;
                 head.sender
                     .try_send(callback)
                     .map_err(|error| match error {
@@ -2804,11 +2763,15 @@ pub use persistent_native_scanout::{
     LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
     LiveProductionNativeTopologyResourceTransition, LiveProductionPageFlipWatchdogStatus,
     LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, plan_live_production_native_topology,
-    project_live_production_published_topology, project_mirror_output_damage_snapshot,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_mirror_generation_queue_target,
-    reduce_live_production_page_flip_watchdog, validate_live_production_topology_frames,
+    LiveProductionSemanticStartupBarrier, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    plan_live_production_native_topology, project_live_production_published_topology,
+    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
+    reduce_live_production_mirror_generation_queue_target,
+    reduce_live_production_page_flip_watchdog, reduce_live_production_semantic_startup_barrier,
+    validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
+    validate_live_production_topology_frames,
 };
 
 #[derive(Debug)]

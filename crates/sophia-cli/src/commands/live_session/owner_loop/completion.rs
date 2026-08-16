@@ -39,45 +39,118 @@
         presentations_shutdown: runtime.is_none(),
         ..Default::default()
     };
+    let mut topology_rollback_established = false;
     if let Some(native_scanout) = native_scanout.as_mut()
         && native_scanout.output_topology_preparation_active()
     {
+        if native_scanout.output_topology_preparation_phase()
+            == Some(
+                sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::FirstFramesQueued,
+            )
+            && let Some(runtime) = runtime.as_mut()
+        {
+            let candidate_outputs = native_scanout.outputs();
+            if let Err(error) = runtime.suspend_native_scanout(
+                native_scanout,
+                &candidate_outputs,
+                Duration::from_secs(2),
+            ) {
+                cleanup_failures.push(format!(
+                    "candidate topology first-frame drain failed before rollback: {error}"
+                ));
+            }
+        }
         native_scanout.request_abort_output_topology_preparation(
             "session completion cancelled topology preparation",
         );
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
-            match native_scanout.service_output_topology_preparation() {
-                Ok(report)
-                    if report.phase
-                        == sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Failed =>
-                {
+            use sophia_backend_live::LiveProductionNativeTopologyPreparationPhase as Phase;
+            match native_scanout.output_topology_preparation_phase() {
+                Some(Phase::Failed) => {
+                    let published_preserved =
+                        native_scanout.output_topology_failed_without_mutation();
                     match native_scanout.finish_failed_output_topology_preparation() {
                         Ok((plan, reason)) => println!(
-                            "sophia_live_output_topology schema=1 status=completion_cancelled heads={} reason={reason:?} kms_submits=0",
+                            "sophia_live_output_topology schema=2 status=completion_cancelled heads={} reason={reason:?}",
                             plan.heads.len(),
                         ),
                         Err(error) => cleanup_failures.push(format!(
                             "topology preparation completion failed: {error}"
                         )),
                     }
+                    topology_rollback_established = published_preserved;
                     break;
                 }
-                Ok(_) if Instant::now() < deadline => std::thread::yield_now(),
-                Ok(_) => {
+                Some(Phase::RolledBack) => {
+                    match native_scanout.install_rolled_back_output_topology() {
+                        Ok((plan, reason)) => {
+                            let rollback_outputs = native_scanout.outputs();
+                            let rollback_viewports = plan
+                                .logical_viewports
+                                .iter()
+                                .map(|viewport| (viewport.output, viewport.logical))
+                                .collect::<Vec<_>>();
+                            if let Some(runtime) = runtime.as_mut()
+                                && let Err(error) = runtime.rebind_applied_native_topology(
+                                    native_scanout,
+                                    &rollback_outputs,
+                                    &rollback_viewports,
+                                )
+                            {
+                                cleanup_failures.push(format!(
+                                    "topology rollback runtime rebind failed: {error}"
+                                ));
+                            }
+                            println!(
+                                "sophia_live_output_topology schema=2 status=completion_rolled_back heads={} reason={reason:?}",
+                                plan.heads.len(),
+                            );
+                            topology_rollback_established = true;
+                        }
+                        Err(error) => cleanup_failures.push(format!(
+                            "topology rollback installation failed: {error}"
+                        )),
+                    }
+                    break;
+                }
+                Some(Phase::RollingBack) => {
+                    if let Err(error) =
+                        native_scanout.service_prepared_output_topology_apply()
+                    {
+                        cleanup_failures
+                            .push(format!("topology completion rollback failed: {error}"));
+                        break;
+                    }
+                }
+                Some(
+                    Phase::PreparingCandidate
+                    | Phase::PreparingRollback
+                    | Phase::Prepared
+                    | Phase::Aborting,
+                ) => {
+                    if let Err(error) = native_scanout.service_output_topology_preparation() {
+                        cleanup_failures.push(format!(
+                            "topology renderer preparation abort failed: {error}"
+                        ));
+                        break;
+                    }
+                }
+                Some(Phase::Applying | Phase::Applied | Phase::CandidateInstalled | Phase::FirstFramesQueued) => {
                     cleanup_failures.push(
-                        "topology renderer preparation did not abort within two seconds"
-                            .to_owned(),
+                        "topology completion abort did not enter a safe rollback phase".to_owned(),
                     );
                     break;
                 }
-                Err(error) => {
-                    cleanup_failures.push(format!(
-                        "topology renderer preparation abort failed: {error}"
-                    ));
-                    break;
-                }
+                None => break,
             }
+            if Instant::now() >= deadline {
+                    cleanup_failures.push(
+                        "topology transaction did not abort within two seconds".to_owned(),
+                    );
+                break;
+            }
+            std::thread::yield_now();
         }
         while native_scanout.output_topology_cleanup_pending() && Instant::now() < deadline {
             native_scanout.retry_output_topology_cleanup();
@@ -86,6 +159,62 @@
         if native_scanout.output_topology_cleanup_pending() {
             cleanup_failures
                 .push("topology resource cleanup remained pending at native suspension".to_owned());
+        }
+    }
+    if let Some(execution) = active_output_topology_preparation.take() {
+        if execution.frontend_candidate_published && topology_rollback_established {
+            let generation = output_topology_owner
+                .publication_generation
+                .checked_add(2)
+                .ok_or("output publication generation exhausted during completion")?;
+            match output_topology_from_authority_at_generation(
+                &execution.effect.published_snapshot,
+                generation,
+            ) {
+                Ok(snapshot) => {
+                    let (ack_sender, ack_receiver) = sync_channel(1);
+                    match frontend_service_sender.send(
+                        XServerFrontendServiceCommand::UpdateOutputTopology {
+                            snapshot,
+                            acknowledgement: ack_sender,
+                        },
+                    ) {
+                        Ok(()) => match ack_receiver.recv_timeout(Duration::from_secs(1)) {
+                            Ok(sophia_x_authority::XAuthorityOutputUpdateOutcome::Applied {
+                                ..
+                            }) => {
+                                if let Err(error) = output_topology_owner
+                                    .observe_policy_transport_rollback(generation)
+                                {
+                                    cleanup_failures.push(format!(
+                                        "topology completion transport rollback observation failed: {error}"
+                                    ));
+                                }
+                            }
+                            Ok(outcome) => cleanup_failures.push(format!(
+                                "X frontend rejected completion topology rollback: {outcome:?}"
+                            )),
+                            Err(error) => cleanup_failures.push(format!(
+                                "X frontend topology rollback acknowledgement failed: {error}"
+                            )),
+                        },
+                        Err(error) => cleanup_failures.push(format!(
+                            "X frontend topology rollback dispatch failed: {error}"
+                        )),
+                    }
+                }
+                Err(error) => cleanup_failures.push(format!(
+                    "completion topology rollback projection failed: {error}"
+                )),
+            }
+        }
+        if topology_rollback_established
+            && output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+            && let Err(error) = output_topology_owner.cancel_policy_change()
+        {
+            cleanup_failures.push(format!(
+                "completion topology quarantine release failed: {error}"
+            ));
         }
     }
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {

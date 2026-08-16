@@ -104,7 +104,7 @@ fn mixed_layer_order_preserves_cpu_client_below_current_gpu() {
 
 #[test]
 fn initial_surface_enters_visual_state_only_through_engine_commit() {
-    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None).expect("runtime");
 
     assert!(runtime.committed_surfaces().is_empty());
     let prepared = runtime
@@ -122,7 +122,7 @@ fn initial_surface_enters_visual_state_only_through_engine_commit() {
 
 #[test]
 fn initial_surface_cannot_seed_a_forged_generation() {
-    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None).expect("runtime");
 
     let prepared = runtime
         .prepare_authority_transactions(TransactionId::from_raw(1), &[initial_transaction(7)], &[])
@@ -133,6 +133,33 @@ fn initial_surface_cannot_seed_a_forged_generation() {
         TransactionOutcome::RejectedStaleSurface
     );
     assert!(runtime.committed_surfaces().is_empty());
+}
+
+#[test]
+fn native_head_frame_admission_rejects_duplicate_and_incomplete_output_batches() {
+    let mut second = output();
+    second.id = OutputId::from_raw(2);
+
+    for (frames, expected) in [
+        (
+            vec![(output().id, Vec::new()), (output().id, Vec::new())],
+            "native head composition named a logical output more than once",
+        ),
+        (
+            vec![(output().id, Vec::new())],
+            "native head composition did not cover every logical output",
+        ),
+    ] {
+        let mut runtime =
+            LiveProductionVisualRuntime::new(&[output(), second], None).expect("runtime");
+        let prepared = runtime
+            .prepare_authority_transactions(TransactionId::from_raw(1), &[], &[])
+            .expect("prepare empty authority cycle");
+        let error = runtime
+            .run_prepared_authority_transactions(prepared, 0, None, Some(frames), None)
+            .expect_err("malformed native output batch must fail closed");
+        assert_eq!(error.to_string(), expected);
+    }
 }
 
 #[test]
@@ -148,7 +175,7 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
         LiveProductionCpuScene,
     };
 
-    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None).expect("runtime");
     runtime
         .prepare_authority_transactions(TransactionId::from_raw(1), &[initial_transaction(0)], &[])
         .expect("commit one spanning surface");
@@ -260,8 +287,7 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
 #[test]
 fn revoked_native_suspend_is_idempotent_without_active_scanout() {
     let output = output();
-    let mut runtime =
-        LiveProductionVisualRuntime::new(&[output], None, None).expect("headless runtime");
+    let mut runtime = LiveProductionVisualRuntime::new(&[output], None).expect("headless runtime");
 
     let first = runtime
         .suspend_revoked_native_scanout(&[output])

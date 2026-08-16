@@ -72,6 +72,9 @@ if grep -Eq '^sophia_native_composition_sampling schema=2 status=(fallback|unava
     "$evidence"; then
     fail "sharp mirror downsampling was unavailable or fell back"
 fi
+if grep -Eq '^sophia_live_mirror_bootstrap schema=2 status=direct_cpu ' "$evidence"; then
+    fail "mirror startup regressed to a flat direct-CPU raster"
+fi
 
 [[ "$(count '^sophia_mirror_group_gate schema=1 status=starting source_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} profile_sha256=[0-9a-f]{64}$')" == 1 ]] ||
     fail "expected one exact source/binary/profile identity record"
@@ -110,11 +113,41 @@ dp2_connector="$(field "$dp2" connector_id)" || fail "DP-2 omitted connector ide
 dp1_head="$(field "$dp1" head)" || fail "DP-1 omitted head identity"
 dp2_head="$(field "$dp2" head)" || fail "DP-2 omitted head identity"
 [[ "$dp1_head" != "$dp2_head" ]] || fail "the heads share one head identity"
+startup_frame=
+startup_scene=
 for head in "$dp1_head" "$dp2_head"; do
-    grep -Fxq "sophia_live_mirror_bootstrap schema=2 status=direct_cpu output=$dp1_output head=$head exports=1" \
-        "$evidence" || fail "head $head did not use direct-CPU bootstrap"
-    grep -Fxq "sophia_live_mirror_bootstrap schema=2 status=worker_ready output=$dp1_output head=$head workers=1" \
+    grep -Fxq "sophia_live_head_bootstrap schema=1 status=worker_ready output=$dp1_output head=$head workers=1" \
         "$evidence" || fail "head $head did not establish its renderer worker"
+    mapfile -t bootstrap_records < <(
+        grep -E "^sophia_live_head_bootstrap schema=1 status=worker_composed output=$dp1_output head=$head frame=[0-9]+ scene_generation=[0-9]+ target_generation=[0-9]+ mapping=(fit|cover|exact) exports=1$" \
+            "$evidence"
+    )
+    (( ${#bootstrap_records[@]} == 1 )) ||
+        fail "head $head did not establish exactly one worker-composed semantic baseline"
+    bootstrap="${bootstrap_records[0]}"
+    frame="$(field "$bootstrap" frame)" || fail "head $head bootstrap omitted frame identity"
+    scene="$(field "$bootstrap" scene_generation)" ||
+        fail "head $head bootstrap omitted scene identity"
+    require_positive_field "$bootstrap" frame
+    require_positive_field "$bootstrap" scene_generation
+    require_positive_field "$bootstrap" target_generation
+    require_field "$bootstrap" mapping fit
+    if [[ -z "$startup_frame" ]]; then
+        startup_frame="$frame"
+        startup_scene="$scene"
+    elif [[ "$frame" != "$startup_frame" || "$scene" != "$startup_scene" ]]; then
+        fail "semantic startup heads did not share one frame and scene generation"
+    fi
+    queue="$(grep -Em1 "^sophia_live_head_composition_queue schema=1 status=queued output=$dp1_output head=$head frame=$frame scene_generation=$scene target_generation=$(field "$bootstrap" target_generation) mapping=fit " "$evidence" || true)"
+    [[ -n "$queue" ]] || fail "head $head semantic startup omitted matching queue identity"
+    plan="$(grep -Em1 "^sophia_live_head_composition_plan schema=1 status=ready output=$dp1_output head=$head scene_generation=$scene target_generation=$(field "$bootstrap" target_generation) " "$evidence" || true)"
+    [[ -n "$plan" ]] || fail "head $head semantic startup omitted matching plan identity"
+    plan_line="$(grep -nFm1 "$plan" "$evidence" | cut -d: -f1)"
+    queue_line="$(grep -nFm1 "$queue" "$evidence" | cut -d: -f1)"
+    bootstrap_line="$(grep -nFm1 "$bootstrap" "$evidence" | cut -d: -f1)"
+    startup_output_line="$(grep -nFm1 "${startup_outputs[0]}" "$evidence" | cut -d: -f1)"
+    (( plan_line < queue_line && queue_line < bootstrap_line && bootstrap_line < startup_output_line )) ||
+        fail "head $head semantic startup evidence is not plan -> queue -> worker -> modeset ordered"
 done
 grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440' \
     "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
@@ -198,6 +231,66 @@ mirror_frame_has_positive_head_damage() {
     done
 }
 
+# A native-size buffer is proof of per-head composition only when its passive
+# identity still names the Engine scene, committed target generation, mapping,
+# and logical checksum that produced it. Require that plan/queue chain before
+# accepting the later KMS lifecycle as physical evidence.
+mirror_frame_has_head_composition_plan() {
+    local frame="$1" head_and_mode head size width height density_key
+    local queue_line plan_line scene_generation queue_number plan_number submit_number
+    local common_scene=
+    local -a records
+    for head_and_mode in \
+        "$dp1_head:2560:1440:exact" \
+        "$dp2_head:1920:1080:downsampled"; do
+        head="${head_and_mode%%:*}"
+        size="${head_and_mode#*:}"
+        width="${size%%:*}"
+        size="${size#*:}"
+        height="${size%%:*}"
+        density_key="${size#*:}"
+        mapfile -t records < <(
+            grep -E "^sophia_live_head_composition_queue schema=1 status=queued output=$dp1_output head=$head frame=$frame " \
+                "$evidence" || true
+        )
+        (( ${#records[@]} == 1 )) || return 1
+        queue_line="${records[0]}"
+        [[ "$(field "$queue_line" width)" == "$width" \
+            && "$(field "$queue_line" height)" == "$height" \
+            && "$(field "$queue_line" mapping)" == fit \
+            && "$(field "$queue_line" logical_content_checksum)" == "$dp1_checksum" \
+            && "$(field "$queue_line" source)" == head_plan ]] || return 1
+        scene_generation="$(field "$queue_line" scene_generation)" || return 1
+        [[ "$scene_generation" =~ ^[0-9]+$ ]] && (( scene_generation > 0 )) || return 1
+        if [[ -z "$common_scene" ]]; then
+            common_scene="$scene_generation"
+        elif [[ "$scene_generation" != "$common_scene" ]]; then
+            return 1
+        fi
+        mapfile -t records < <(
+            grep -E "^sophia_live_head_composition_plan schema=1 status=ready output=$dp1_output head=$head scene_generation=$scene_generation " \
+                "$evidence" || true
+        )
+        (( ${#records[@]} == 1 )) || return 1
+        plan_line="${records[0]}"
+        [[ "$(field "$plan_line" target_generation)" == "$(field "$queue_line" target_generation)" \
+            && "$(field "$plan_line" width)" == "$width" \
+            && "$(field "$plan_line" height)" == "$height" \
+            && "$(field "$plan_line" mapping)" == fit \
+            && "$(field "$plan_line" logical_content_checksum)" == "$dp1_checksum" \
+            && "$(field "$plan_line" fallback)" == 0 \
+            && "$(field "$plan_line" unavailable)" == 0 ]] || return 1
+        [[ "$(field "$plan_line" "$density_key")" =~ ^[1-9][0-9]*$ \
+            && "$(field "$plan_line" active)" =~ ^[1-9][0-9]*$ \
+            && "$(field "$plan_line" compositor_primitives)" =~ ^[1-9][0-9]*$ ]] || return 1
+        plan_number="$(grep -nFm1 "$plan_line" "$evidence" | cut -d: -f1)"
+        queue_number="$(grep -nFm1 "$queue_line" "$evidence" | cut -d: -f1)"
+        submit_number="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=2 status=submitted output=$dp1_output head=$head .* frame=$frame$" "$evidence" | cut -d: -f1 || true)"
+        [[ -n "$plan_number" && -n "$queue_number" && -n "$submit_number" ]] \
+            && (( plan_number < queue_number && queue_number < submit_number )) || return 1
+    done
+}
+
 common_frame=
 while read -r frame; do
     [[ -n "$frame" ]] || continue
@@ -211,15 +304,17 @@ while read -r frame; do
             causal=false
         fi
     done
-    if [[ "$causal" == true ]] && mirror_frame_has_positive_head_damage "$frame"; then
+    if [[ "$causal" == true ]] \
+        && mirror_frame_has_positive_head_damage "$frame" \
+        && mirror_frame_has_head_composition_plan "$frame"; then
         common_frame="$frame"
         break
     fi
 done < <(
-    sed -n "s/^sophia_live_mirror_generation schema=2 status=presented output=$dp1_output frame=\([0-9][0-9]*\) source=cpu logical_content_checksum=$dp1_checksum$/\1/p" "$evidence"
+    sed -n "s/^sophia_live_mirror_generation schema=2 status=presented output=$dp1_output frame=\([0-9][0-9]*\) source=head_composition logical_content_checksum=$dp1_checksum$/\1/p" "$evidence"
 )
 [[ -n "$common_frame" ]] ||
-    fail "no final-checksum CPU frame completed causally with positive projected damage on both heads"
+    fail "no final-checksum per-head composition frame completed causally with positive projected damage on both heads"
 [[ "$common_frame" == "$dp1_scene_generation" ]] ||
     fail "completed head evidence does not name the causally proven logical generation"
 

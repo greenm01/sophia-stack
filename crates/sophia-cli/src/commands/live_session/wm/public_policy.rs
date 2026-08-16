@@ -52,6 +52,9 @@ struct LivePublicPolicyState {
     output_service: Option<sophia_runtime::OutputTransportService>,
     output_authority: Option<sophia_cli::live_output_authority::LiveOutputAuthorityOwner>,
     output_effect_dispatched: bool,
+    output_cancel_requested: Option<(TransactionId, String)>,
+    output_pending_connection_epoch: Option<u64>,
+    next_output_snapshot_transaction: u64,
     output_capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     _profile_fragments: sophia_config::DesktopProfileFragments,
     _profile_slot: PreparedAuthorityFragment,
@@ -76,6 +79,7 @@ struct LivePublicPolicyState {
         sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
     actions: Vec<sophia_protocol::PolicyActionRegistration>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
+    output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
     work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
@@ -404,8 +408,23 @@ const fn public_policy_restart_decision(
     }
 }
 
+const fn public_policy_restart_settlement_pending(
+    layout_settlement_pending: bool,
+    output_effect_dispatched: bool,
+) -> bool {
+    layout_settlement_pending || output_effect_dispatched
+}
+
 impl LivePublicPolicyState {
     fn poll_output_authority(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // The transport may already have admitted a replacement peer after the
+        // old one vanished. Leave its bounded event queue untouched until the
+        // physical rollback settles and the authority owner adopts the new
+        // connection epoch; otherwise a valid proposal against the preserved
+        // snapshot is spuriously rejected as stale.
+        if self.output_cancel_requested.is_some() {
+            return Ok(());
+        }
         const MAX_EVENTS_PER_TURN: usize = 16;
         for _ in 0..MAX_EVENTS_PER_TURN {
             let event = match self.output_service.as_ref() {
@@ -429,7 +448,16 @@ impl LivePublicPolicyState {
                         .as_mut()
                         .ok_or("output service connected without an authority owner")?;
                     if connection_epoch > authority.connection_epoch() {
-                        authority.replace_connection_epoch(connection_epoch)?;
+                        if self.output_effect_dispatched {
+                            self.output_pending_connection_epoch = Some(
+                                self.output_pending_connection_epoch
+                                    .map_or(connection_epoch, |pending| {
+                                        pending.max(connection_epoch)
+                                    }),
+                            );
+                        } else {
+                            authority.replace_connection_epoch(connection_epoch)?;
+                        }
                     } else if connection_epoch != authority.connection_epoch() {
                         return Err("output service connected with a stale epoch".into());
                     }
@@ -481,25 +509,34 @@ impl LivePublicPolicyState {
                 sophia_runtime::OutputTransportServiceEvent::Disconnected {
                     connection_epoch,
                 } => {
-                    self.abandon_output_candidate()?;
+                    let replacement_epoch = connection_epoch
+                        .checked_add(1)
+                        .ok_or("output connection epoch exhausted after disconnect")?;
+                    self.request_output_candidate_cancellation(
+                        format!("output peer disconnected at epoch {connection_epoch}"),
+                        Some(replacement_epoch),
+                    )?;
                     println!(
                         "sophia_live_output_authority schema=1 status=disconnected epoch={connection_epoch} preserved_topology=true"
                     );
+                    break;
                 }
                 sophia_runtime::OutputTransportServiceEvent::AssigneeReplaced {
                     connection_epoch,
                     abandoned,
                 } => {
-                    self.abandon_output_candidate()?;
-                    self.output_authority
-                        .as_mut()
-                        .ok_or("output assignee replacement has no authority owner")?
-                        .replace_connection_epoch(connection_epoch)?;
+                    self.request_output_candidate_cancellation(
+                        format!("output assignee replaced at epoch {connection_epoch}"),
+                        Some(connection_epoch),
+                    )?;
                     println!(
                         "sophia_live_output_authority schema=1 status=reauthorized epoch={} abandoned={} preserved_topology=true",
                         connection_epoch,
                         abandoned.len(),
                     );
+                    if self.output_cancel_requested.is_some() {
+                        break;
+                    }
                 }
                 sophia_runtime::OutputTransportServiceEvent::ConnectionRejected { message } => {
                     println!(
@@ -507,7 +544,10 @@ impl LivePublicPolicyState {
                     );
                 }
                 sophia_runtime::OutputTransportServiceEvent::Failed { message } => {
-                    self.abandon_output_candidate()?;
+                    self.request_output_candidate_cancellation(
+                        format!("output authority service failed: {message}"),
+                        None,
+                    )?;
                     self.output_service.take();
                     println!(
                         "sophia_live_output_authority schema=1 status=degraded reason={message:?} preserved_topology=true"
@@ -591,6 +631,154 @@ impl LivePublicPolicyState {
         Ok(())
     }
 
+    fn finish_output_settlement(
+        &mut self,
+        settlement: sophia_cli::live_output_authority::LiveOutputAuthoritySettlement,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let cancelled = self
+            .output_cancel_requested
+            .as_ref()
+            .is_some_and(|(transaction, _)| *transaction == settlement.transaction);
+        if cancelled {
+            let reason = self
+                .output_cancel_requested
+                .as_ref()
+                .expect("matching output cancellation remains recorded")
+                .1
+                .clone();
+            if let Some(connection_epoch) = self.output_pending_connection_epoch {
+                let mut replacement = self
+                    .output_authority
+                    .as_ref()
+                    .ok_or("cancelled output settlement lost its authority owner")?
+                    .clone();
+                replacement.replace_connection_epoch(connection_epoch)?;
+                self.output_authority = Some(replacement);
+            }
+            self.output_cancel_requested = None;
+            self.output_pending_connection_epoch = None;
+            println!(
+                "sophia_live_output_authority schema=2 status=settled_locally transaction={} outcome={:?} topology_epoch={} reason={reason:?} preserved_topology=true",
+                settlement.transaction.raw(),
+                settlement.outcome.kind,
+                settlement.outcome.topology_epoch,
+            );
+            return Ok(());
+        }
+        if let Err(error) = self.send_output_settlement(settlement.clone()) {
+            // The reducer is already terminal. In particular, a committed
+            // topology has crossed physical first presentation and cannot be
+            // made private again because its peer vanished between owner turns.
+            self.output_service.take();
+            tracing::warn!(
+                "sophia_live_output_authority schema=2 status=degraded reason=terminal_settlement_transport transaction={} outcome={:?} error={error} preserved_topology=true",
+                settlement.transaction.raw(),
+                settlement.outcome.kind,
+            );
+        }
+        Ok(())
+    }
+
+    fn request_output_candidate_cancellation(
+        &mut self,
+        reason: String,
+        replacement_epoch: Option<u64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(connection_epoch) = replacement_epoch {
+            self.output_pending_connection_epoch = Some(
+                self.output_pending_connection_epoch
+                    .map_or(connection_epoch, |pending| pending.max(connection_epoch)),
+            );
+        }
+        if self.output_effect_dispatched {
+            let transaction = self
+                .output_authority
+                .as_ref()
+                .and_then(|authority| authority.active_transaction())
+                .ok_or("dispatched output effect lost its authority transaction")?;
+            match self.output_cancel_requested.as_ref() {
+                Some((pending, _)) if *pending != transaction => {
+                    return Err("output cancellation targets a different transaction".into());
+                }
+                Some(_) => {}
+                None => self.output_cancel_requested = Some((transaction, reason)),
+            }
+            return Ok(());
+        }
+        self.abandon_output_candidate()?;
+        if let Some(connection_epoch) = self.output_pending_connection_epoch.take() {
+            self.output_authority
+                .as_mut()
+                .ok_or("output assignee replacement has no authority owner")?
+                .replace_connection_epoch(connection_epoch)?;
+        }
+        Ok(())
+    }
+
+    fn output_candidate_cancellation_reason(
+        &self,
+        transaction: TransactionId,
+    ) -> Option<&str> {
+        self.output_cancel_requested
+            .as_ref()
+            .filter(|(pending, _)| *pending == transaction)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    fn publish_output_authority_snapshot(
+        &mut self,
+        snapshot: sophia_protocol::OutputAuthoritySnapshot,
+        capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(authority) = self.output_authority.as_ref() else {
+            return Ok(false);
+        };
+        if self.output_effect_dispatched || self.output_cancel_requested.is_some() {
+            return Err("hardware output publication raced an active policy candidate".into());
+        }
+        let mut replacement = authority.clone();
+        replacement.replace_published_snapshot(snapshot.clone())?;
+        let transaction = TransactionId::from_raw(self.next_output_snapshot_transaction);
+        let next_transaction = self
+            .next_output_snapshot_transaction
+            .checked_add(1)
+            .ok_or("output snapshot transaction exhausted")?;
+        let transport_published = self.output_service.as_ref().is_some_and(|service| {
+            service
+                .command(sophia_runtime::OutputTransportServiceCommand::PublishSnapshot {
+                    transaction,
+                    snapshot,
+                })
+                .is_ok()
+        });
+        if !transport_published {
+            self.output_service.take();
+            tracing::warn!(
+                "sophia_live_output_authority schema=2 status=degraded reason=hardware_snapshot_transport preserved_topology=true"
+            );
+        }
+        self.output_authority = Some(replacement);
+        self.output_capabilities = capabilities;
+        self.next_output_snapshot_transaction = next_transaction;
+        println!(
+            "sophia_live_output_authority schema=2 status=hardware_snapshot_published transaction={} topology_epoch={} heads={} groups={} first_presented=true transport_published={transport_published}",
+            transaction.raw(),
+            self.output_authority
+                .as_ref()
+                .expect("replacement authority installed above")
+                .published()
+                .topology_epoch,
+            self.output_capabilities.len(),
+            self.output_authority
+                .as_ref()
+                .expect("replacement authority installed above")
+                .published()
+                .groups
+                .len(),
+        );
+        Ok(true)
+    }
+
     fn take_output_topology_effect(
         &mut self,
     ) -> Option<sophia_cli::live_output_authority::LiveOutputAuthorityEffect> {
@@ -637,9 +825,135 @@ impl LivePublicPolicyState {
         ) {
             let settlement = authority.settle_terminal()?;
             self.output_effect_dispatched = false;
-            self.send_output_settlement(settlement)?;
+            self.finish_output_settlement(settlement)?;
         }
         Ok(())
+    }
+
+    fn begin_output_topology_apply(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output apply observation has no authority owner")?;
+        if authority.active_transaction() != Some(transaction)
+            || authority.mark_prepared_batch(heads)?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+            || authority.begin_apply()?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        {
+            return Err("output apply preparation violated transaction order".into());
+        }
+        Ok(())
+    }
+
+    fn observe_output_topology_applied(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output apply observation has no authority owner")?;
+        if authority.active_transaction() != Some(transaction) {
+            return Err("output apply observation targets a stale transaction".into());
+        }
+        let transition = authority.mark_applied_batch(heads)?;
+        if !matches!(
+            transition,
+            sophia_engine::OutputTopologyTransactionTransition::Accepted
+                | sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        ) {
+            return Err("output apply observation violated transaction order".into());
+        }
+        Ok(())
+    }
+
+    fn observe_output_topology_first_presented(
+        &mut self,
+        transaction: TransactionId,
+        outputs: &[sophia_protocol::OutputId],
+    ) -> Result<Option<sophia_protocol::OutputAuthoritySnapshot>, Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output presentation observation has no authority owner")?;
+        if authority.active_transaction() != Some(transaction)
+            || authority.mark_first_presented_batch(outputs)?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        {
+            return Err("output first-presentation observation violated transaction order".into());
+        }
+        let settlement = authority.settle_terminal()?;
+        let published = settlement.published_snapshot.clone();
+        self.output_effect_dispatched = false;
+        self.finish_output_settlement(settlement)?;
+        Ok(published)
+    }
+
+    fn preview_output_topology_first_presented(
+        &self,
+        transaction: TransactionId,
+        outputs: &[sophia_protocol::OutputId],
+    ) -> Result<sophia_protocol::OutputAuthoritySnapshot, Box<dyn std::error::Error>> {
+        let mut authority = self
+            .output_authority
+            .as_ref()
+            .ok_or("output presentation preview has no authority owner")?
+            .clone();
+        if authority.active_transaction() != Some(transaction)
+            || authority.mark_first_presented_batch(outputs)?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        {
+            return Err("output first-presentation preview violated transaction order".into());
+        }
+        authority
+            .settle_terminal()?
+            .published_snapshot
+            .ok_or_else(|| "output authority preview did not commit a snapshot".into())
+    }
+
+    fn observe_output_topology_rolled_back(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output rollback observation has no authority owner")?;
+        if authority.active_transaction() != Some(transaction)
+            || authority.mark_rolled_back_batch(heads)?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        {
+            return Err("output rollback observation violated transaction order".into());
+        }
+        let settlement = authority.settle_terminal()?;
+        self.output_effect_dispatched = false;
+        self.finish_output_settlement(settlement)
+    }
+
+    fn observe_output_topology_rollback_failed(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output rollback failure has no authority owner")?;
+        if authority.active_transaction() != Some(transaction)
+            || authority.rollback_failed()?
+                != sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+        {
+            return Err("output rollback failure violated transaction order".into());
+        }
+        let settlement = authority.settle_terminal()?;
+        self.output_effect_dispatched = false;
+        self.finish_output_settlement(settlement)
     }
 
     fn abandon_output_candidate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -694,23 +1008,6 @@ impl LivePublicPolicyState {
             outputs.swap(0, index);
         }
         outputs
-    }
-
-    fn observe_outputs(
-        &mut self,
-        outputs: &[sophia_engine::HeadlessOutput],
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        let descriptors_changed = self.outputs != outputs;
-        let topology_changed = observe_public_output_topology(
-            &mut self.output_generations,
-            &mut self.live_output_ids,
-            &mut self.active_output,
-            outputs,
-        )?;
-        let next = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
-        self.outputs = outputs.to_vec();
-        self.work_areas.retain(|output, _| next.contains(output));
-        Ok(topology_changed || descriptors_changed)
     }
 
     fn queue_cause(&mut self, cause: LivePublicPolicyCause) -> LiveWmRequestAdmission {
@@ -877,11 +1174,17 @@ impl LivePublicPolicyState {
                 .filter(|surface| surface.current_output.is_none())
                 .count(),
         );
-        let bounds = wm_output_bounds(&self.outputs);
-        let outputs = bounds
-            .into_iter()
-            .map(|(output, bounds)| {
-                sophia_protocol::PolicyOutputSnapshot {
+        let outputs = self
+            .outputs
+            .iter()
+            .map(|descriptor| descriptor.id)
+            .map(|output| {
+                let bounds = self
+                    .output_bounds
+                    .get(&output)
+                    .copied()
+                    .ok_or("public WM snapshot lost logical output bounds")?;
+                Ok(sophia_protocol::PolicyOutputSnapshot {
                     output,
                     generation: self.output_generations.get(&output).copied().unwrap_or(1),
                     focus: self
@@ -892,9 +1195,9 @@ impl LivePublicPolicyState {
                         .and_then(|projection| projection.focus),
                     bounds,
                     work_area: self.work_areas.get(&output).copied().unwrap_or(bounds),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         let mut candidate = sophia_protocol::PolicySceneSnapshot {
             generation: previous.generation,
             active_output: self.active_output,
@@ -990,6 +1293,27 @@ impl LiveWmSession {
         self.public.as_mut()?.take_output_topology_effect()
     }
 
+    fn output_topology_cancellation_reason(
+        &self,
+        transaction: TransactionId,
+    ) -> Option<String> {
+        self.public
+            .as_ref()?
+            .output_candidate_cancellation_reason(transaction)
+            .map(str::to_owned)
+    }
+
+    fn publish_output_authority_snapshot(
+        &mut self,
+        snapshot: sophia_protocol::OutputAuthoritySnapshot,
+        capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(public) = self.public.as_mut() else {
+            return Ok(false);
+        };
+        public.publish_output_authority_snapshot(snapshot, capabilities)
+    }
+
     fn reject_output_topology_effect(
         &mut self,
         transaction: TransactionId,
@@ -999,6 +1323,71 @@ impl LiveWmSession {
             .as_mut()
             .ok_or("output effect observation requires the public policy owner")?
             .reject_output_topology_effect(transaction, failure)
+    }
+
+    fn begin_output_topology_apply(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output apply requires the public policy owner")?
+            .begin_output_topology_apply(transaction, heads)
+    }
+
+    fn observe_output_topology_applied(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output apply requires the public policy owner")?
+            .observe_output_topology_applied(transaction, heads)
+    }
+
+    fn observe_output_topology_first_presented(
+        &mut self,
+        transaction: TransactionId,
+        outputs: &[sophia_protocol::OutputId],
+    ) -> Result<Option<sophia_protocol::OutputAuthoritySnapshot>, Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output presentation requires the public policy owner")?
+            .observe_output_topology_first_presented(transaction, outputs)
+    }
+
+    fn preview_output_topology_first_presented(
+        &self,
+        transaction: TransactionId,
+        outputs: &[sophia_protocol::OutputId],
+    ) -> Result<sophia_protocol::OutputAuthoritySnapshot, Box<dyn std::error::Error>> {
+        self.public
+            .as_ref()
+            .ok_or("output presentation preview requires the public policy owner")?
+            .preview_output_topology_first_presented(transaction, outputs)
+    }
+
+    fn observe_output_topology_rolled_back(
+        &mut self,
+        transaction: TransactionId,
+        heads: &[sophia_engine::RenderHeadId],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output rollback requires the public policy owner")?
+            .observe_output_topology_rolled_back(transaction, heads)
+    }
+
+    fn observe_output_topology_rollback_failed(
+        &mut self,
+        transaction: TransactionId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output rollback requires the public policy owner")?
+            .observe_output_topology_rollback_failed(transaction)
     }
 }
 
@@ -1028,6 +1417,7 @@ fn observe_public_output_generations(
     Ok(())
 }
 
+#[cfg(test)]
 fn observe_public_output_topology(
     generations: &mut BTreeMap<sophia_protocol::OutputId, u64>,
     live: &mut BTreeSet<sophia_protocol::OutputId>,
@@ -1200,7 +1590,10 @@ impl LiveWmSession {
         let scene = LivePublicPolicyState::initial_scene(outputs, active, session_operations.clone());
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(scene)?;
         reducer.connect(1)?;
-        let work_areas = wm_output_bounds(outputs).into_iter().collect();
+        let output_bounds = wm_output_bounds(outputs)
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let work_areas = output_bounds.clone();
         let output_generations = outputs
             .iter()
             .map(|output| (output.id, 1))
@@ -1219,6 +1612,9 @@ impl LiveWmSession {
             output_service,
             output_authority,
             output_effect_dispatched: false,
+            output_cancel_requested: None,
+            output_pending_connection_epoch: None,
+            next_output_snapshot_transaction: 2,
             output_capabilities,
             reducer,
             connection_epoch: 1,
@@ -1237,6 +1633,7 @@ impl LiveWmSession {
             shortcut_profile_slot,
             actions: Vec::new(),
             outputs: outputs.to_vec(),
+            output_bounds,
             output_generations,
             live_output_ids,
             work_areas,
@@ -1575,10 +1972,15 @@ impl LiveWmSession {
         }
         let restart_requested = self.force_transport_restart;
         let process_exited = self.supervisor.poll()?.is_some();
-        let settlement_pending = layout
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.policy_settlement.is_some());
+        let settlement_pending = public_policy_restart_settlement_pending(
+            layout
+                .pending
+                .as_ref()
+                .is_some_and(|pending| pending.policy_settlement.is_some()),
+            self.public
+                .as_ref()
+                .is_some_and(|public| public.output_effect_dispatched),
+        );
         match public_policy_restart_decision(
             restart_requested,
             process_exited,
@@ -1590,6 +1992,10 @@ impl LiveWmSession {
                     self.supervisor.terminate()?;
                 }
                 let public = self.public.as_mut().expect("public WM state is present");
+                public.request_output_candidate_cancellation(
+                    "supervised WM restart requested during output apply".to_owned(),
+                    None,
+                )?;
                 public.worker.take();
                 public.transport_unavailable = true;
                 public.deferred_command = None;
@@ -1688,13 +2094,13 @@ impl LiveWmSession {
         Ok(None)
     }
 
-    fn update_public_work_areas(
+    fn update_public_work_areas_at(
         &mut self,
         layout: &PersistentLiveLayout,
         outputs: &[sophia_engine::HeadlessOutput],
+        full_bounds: &[(sophia_protocol::OutputId, Rect)],
         primary: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        let full_bounds = wm_output_bounds(outputs);
         let root = full_bounds.iter().try_fold(
             Rect {
                 x: 0,
@@ -1716,20 +2122,75 @@ impl LiveWmSession {
         };
         let reduced = sophia_engine::reduce_output_work_areas(
             root,
-            full_bounds,
+            full_bounds.iter().copied(),
             &layout.active_output_reservations(),
         );
         let public = self.public.as_mut().expect("public WM state is present");
-        let mut changed = public.observe_outputs(outputs)?;
+        let next_live = outputs
+            .iter()
+            .map(|output| output.id)
+            .collect::<BTreeSet<_>>();
+        let mut next_generations = public.output_generations.clone();
+        let mut generation_live = public.live_output_ids.clone();
+        observe_public_output_generations(
+            &mut next_generations,
+            &mut generation_live,
+            outputs,
+        )?;
+        if generation_live != next_live {
+            return Err("public WM output-generation projection is incomplete".into());
+        }
+        let next_active = if next_live.contains(&public.active_output) {
+            public.active_output
+        } else {
+            primary.id
+        };
+        let next_bounds = full_bounds.iter().copied().collect::<BTreeMap<_, _>>();
+        let mut next_work_areas = public.work_areas.clone();
+        next_work_areas.retain(|output, _| next_live.contains(output));
         for area in reduced {
             let Some(work) = area.work else {
                 continue;
             };
-            changed |= public.work_areas.insert(area.output, work) != Some(work);
+            next_work_areas.insert(area.output, work);
         }
+        let changed = public.outputs != outputs
+            || public.live_output_ids != next_live
+            || public.output_bounds != next_bounds
+            || public.work_areas != next_work_areas
+            || public.active_output != next_active;
         if !changed {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
+        let mut affected_outputs = next_live.iter().copied().collect::<Vec<_>>();
+        if let Some(index) = affected_outputs
+            .iter()
+            .position(|output| *output == primary.id)
+        {
+            affected_outputs.swap(0, index);
+        }
+        let cause = LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs,
+        };
+        let mut next_queue = public.queue.clone();
+        let admission = enqueue_public_policy_cause(
+            &mut next_queue,
+            public.in_flight_source,
+            public.in_flight_request.is_some(),
+            cause,
+        );
+        if admission == LiveWmRequestAdmission::RejectedCapacity {
+            return Ok(admission);
+        }
+        public.outputs = outputs.to_vec();
+        public.output_generations = next_generations;
+        public.live_output_ids = next_live;
+        public.output_bounds = next_bounds;
+        public.work_areas = next_work_areas;
+        public.active_output = next_active;
+        public.queue = next_queue;
         // Advance the reducer scene at the owner-observation boundary, before
         // a replacement request is issued. An in-flight response derived from
         // the retired output set is stale as soon as the owner accepts the new
@@ -1739,12 +2200,7 @@ impl LiveWmSession {
         if scene.generation > public.reducer.scene().generation {
             public.reducer.observe_scene(scene)?;
         }
-        let affected_outputs = public.all_outputs(primary.id);
-        Ok(public.queue_cause(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Relayout,
-            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
-            affected_outputs,
-        }))
+        Ok(admission)
     }
 
     fn prepare_public_layout_commit(

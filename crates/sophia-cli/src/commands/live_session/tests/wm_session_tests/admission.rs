@@ -375,7 +375,7 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
         scale: 1,
     };
     let mut runtime =
-        sophia_backend_live::LiveProductionVisualRuntime::new(&[output], None, None).unwrap();
+        sophia_backend_live::LiveProductionVisualRuntime::new(&[output], None).unwrap();
     let prepared = runtime
         .prepare_authority_groups(&production.groups)
         .unwrap();

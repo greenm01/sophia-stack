@@ -1,6 +1,222 @@
 use super::*;
 
+pub(super) struct LiveProductionRetainedCompositionSourceSet {
+    pub committed: Vec<CommittedSurfaceState>,
+    pub display_list: CompositorDisplayList,
+    pub scene_generation: u64,
+    pub sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
+}
+
 impl LiveProductionVisualRuntime {
+    pub(super) fn cpu_output_head_composition_frames_from_layers(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+        cpu_layers: &[LiveCpuPresentationLayer],
+        scene_generation: u64,
+    ) -> Result<
+        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        Box<dyn std::error::Error>,
+    > {
+        let committed = self.production.committed_surfaces();
+        let display_list = self.display_list(committed, &self.presentation_order)?;
+        let sources = cpu_layers
+            .iter()
+            .map(
+                |source| sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                    surface: source.surface,
+                    source: BufferSource::CpuBuffer {
+                        handle: source.buffer.handle,
+                    },
+                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
+                        source.buffer.clone().into(),
+                    ),
+                },
+            )
+            .collect::<Vec<_>>();
+        self.outputs
+            .logical_viewports()
+            .map(|(output, _)| {
+                Ok((
+                    output,
+                    self.compose_native_head_frames_from_sources(
+                        native_scanout,
+                        output,
+                        committed,
+                        display_list.clone(),
+                        scene_generation.max(1),
+                        &sources,
+                    )?,
+                ))
+            })
+            .collect()
+    }
+
+    pub(super) fn compose_native_head_frames_from_sources(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+        output: OutputId,
+        committed: &[CommittedSurfaceState],
+        display_list: CompositorDisplayList,
+        scene_generation: u64,
+        sources: &[sophia_renderer_live::LiveOwnedHeadCompositionSource],
+    ) -> Result<Vec<crate::LiveProductionHeadCompositionFrame>, Box<dyn std::error::Error>> {
+        let logical_viewport = self
+            .outputs
+            .logical_viewport(output)
+            .ok_or("head composition targets an unknown logical output")?;
+        let snapshot = sophia_engine::output_scene_snapshot_from_committed_in_view(
+            output,
+            scene_generation.max(1),
+            logical_viewport,
+            committed,
+            display_list,
+            None,
+        )?;
+        let targets = native_scanout.head_render_targets(output);
+        let plans = sophia_engine::build_output_head_plans(&snapshot, &targets)?;
+        if plans.len() != targets.len() {
+            return Err("head composition planner returned partial target coverage".into());
+        }
+        for plan in &plans {
+            trace_live_head_composition_plan(plan);
+        }
+        plans
+            .iter()
+            .map(|plan| {
+                Ok(crate::LiveProductionHeadCompositionFrame {
+                    head: plan.head,
+                    scene_generation: plan.scene_generation,
+                    target_generation: plan.target_generation,
+                    mapping: plan.mapping,
+                    logical_content_checksum: plan.logical_content_checksum,
+                    frame: sophia_renderer_live::lower_head_composition_plan(plan, sources)?,
+                })
+            })
+            .collect()
+    }
+
+    pub(super) fn retained_composition_source_set(
+        &self,
+        scene: &LiveProductionCpuScene,
+    ) -> Result<LiveProductionRetainedCompositionSourceSet, Box<dyn std::error::Error>> {
+        let committed = self
+            .present_scheduler
+            .in_flight_candidate()
+            .unwrap_or_else(|| self.production.committed_surfaces())
+            .to_vec();
+        let display_list = self.display_list(&committed, &self.presentation_order)?;
+        let cpu_layers = scene.presentation_variant_layers(&committed, &self.presentation_order);
+        let in_flight = self.present_scheduler.in_flight_displayed_layer();
+        let mut sources = Vec::new();
+        for command in &display_list.commands {
+            let CompositorDisplayCommand::Surface { surface } = command else {
+                continue;
+            };
+            let committed_source = committed
+                .iter()
+                .find(|state| state.surface == *surface)
+                .map(CommittedSurfaceState::buffer)
+                .ok_or("retained head plan lost a displayed surface")?;
+            if let Some((_, displayed)) =
+                in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == *surface)
+            {
+                sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                    surface: *surface,
+                    source: committed_source,
+                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+                        image_id: displayed.image_id,
+                        size: displayed.size,
+                        format: displayed.format,
+                    },
+                });
+                continue;
+            }
+            let cpu_sources = cpu_layers
+                .iter()
+                .filter(|layer| layer.surface == *surface)
+                .collect::<Vec<_>>();
+            if !cpu_sources.is_empty() {
+                sources.extend(cpu_sources.into_iter().map(|layer| {
+                    sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                        surface: *surface,
+                        source: BufferSource::CpuBuffer {
+                            handle: layer.buffer.handle,
+                        },
+                        kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
+                            layer.buffer.clone().into(),
+                        ),
+                    }
+                }));
+                continue;
+            }
+            if let Some(displayed) = self.displayed_surfaces.get(surface) {
+                if !matches!(committed_source, BufferSource::DmaBuf { .. }) {
+                    return Err("retained renderer image lost its DMA-BUF identity".into());
+                }
+                sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                    surface: *surface,
+                    source: committed_source,
+                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+                        image_id: displayed.layer.image_id,
+                        size: displayed.layer.size,
+                        format: displayed.layer.format,
+                    },
+                });
+                continue;
+            }
+            return Err("retained head plan has no authority-owned source".into());
+        }
+        let scene_generation = committed
+            .iter()
+            .map(|state| state.committed_generation)
+            .max()
+            .unwrap_or(1);
+        Ok(LiveProductionRetainedCompositionSourceSet {
+            committed,
+            display_list,
+            scene_generation,
+            sources,
+        })
+    }
+
+    pub(super) fn retained_output_head_composition_frames_from_sources(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+        source_set: &LiveProductionRetainedCompositionSourceSet,
+    ) -> Result<
+        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        Box<dyn std::error::Error>,
+    > {
+        self.outputs
+            .logical_viewports()
+            .map(|(output, _)| {
+                Ok((
+                    output,
+                    self.compose_native_head_frames_from_sources(
+                        native_scanout,
+                        output,
+                        &source_set.committed,
+                        source_set.display_list.clone(),
+                        source_set.scene_generation,
+                        &source_set.sources,
+                    )?,
+                ))
+            })
+            .collect()
+    }
+
+    pub(super) fn retained_output_head_composition_frames(
+        &self,
+        scene: &LiveProductionCpuScene,
+        native_scanout: &LiveProductionNativeScanout,
+    ) -> Result<
+        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        Box<dyn std::error::Error>,
+    > {
+        let source_set = self.retained_composition_source_set(scene)?;
+        self.retained_output_head_composition_frames_from_sources(native_scanout, &source_set)
+    }
+
     /// Lowers one immutable committed scene into candidate native-size frames
     /// for a provisional topology. This is read-only with respect to the live
     /// runtime: the caller must not publish or install the candidate until its
@@ -62,6 +278,9 @@ impl LiveProductionVisualRuntime {
             for plan in &plans {
                 frames.push(crate::LiveProductionHeadCompositionFrame {
                     head: plan.head,
+                    scene_generation: plan.scene_generation,
+                    target_generation: plan.target_generation,
+                    mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
                     frame: sophia_renderer_live::lower_cpu_head_composition_plan(
                         plan,
@@ -132,18 +351,9 @@ impl LiveProductionVisualRuntime {
             return Ok(false);
         }
         self.floating_outline = outline;
-        let cpu_layers = scene.presentation_layers(
-            self.production.committed_surfaces(),
-            &self.presentation_order,
-        );
-        if let (Some(native_scanout), Some(frame)) =
-            (native_scanout, self.retained_mixed_frame(&cpu_layers)?)
-        {
-            let primary = self
-                .outputs
-                .primary_output()
-                .ok_or("persistent backend runtime has no primary output")?;
-            native_scanout.queue_retained_mixed_frame(primary, frame)?;
+        if let Some(native_scanout) = native_scanout {
+            let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
+            native_scanout.queue_retained_output_head_composition_frames(batches)?;
         }
         Ok(true)
     }
@@ -212,85 +422,5 @@ impl LiveProductionVisualRuntime {
 
     pub fn take_chrome_set_observation(&mut self) -> Option<LiveChromeSetObservation> {
         self.pending_chrome_set_observation.take()
-    }
-
-    pub(super) fn retained_mixed_frame(
-        &self,
-        cpu_layers: &[LiveCpuPresentationLayer],
-    ) -> Result<Option<LiveOwnedMixedCompositionFrame>, std::io::Error> {
-        let mut retained_client_image = false;
-        let mut layers = Vec::with_capacity(self.displayed_surfaces.len().saturating_add(4));
-        // A serialized software frame may follow a DMA frame that has not yet
-        // retired. Its display list must preserve that prepared transaction.
-        let committed = self
-            .present_scheduler
-            .in_flight_candidate()
-            .unwrap_or_else(|| self.production.committed_surfaces());
-        let display_list = self
-            .display_list(committed, &self.presentation_order)
-            .map_err(std::io::Error::other)?;
-        let output = self
-            .outputs
-            .output_descriptor(0)
-            .ok_or_else(|| std::io::Error::other("mixed composition has no output descriptor"))?;
-        let output_damage_snapshot = Some(
-            output_frame_damage_snapshot(output, display_list.clone(), committed, None)
-                .map_err(std::io::Error::other)?,
-        );
-        let in_flight = self.present_scheduler.in_flight_displayed_layer();
-        for command in display_list.commands {
-            match command {
-                CompositorDisplayCommand::Surface { surface } => {
-                    if let Some((_, displayed)) =
-                        in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == surface)
-                    {
-                        retained_client_image = true;
-                        layers.push(LiveOwnedMixedCompositionLayer::RendererImage {
-                            image_id: displayed.image_id,
-                            size: displayed.size,
-                            format: displayed.format,
-                            placement: displayed.placement,
-                        });
-                    } else if let Some(layer) =
-                        cpu_layers.iter().find(|layer| layer.surface == surface)
-                    {
-                        retained_client_image = true;
-                        layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                            buffer: layer.buffer.clone().into(),
-                            placement: LiveCompositionPlacement {
-                                target: layer.geometry,
-                                clip: None,
-                                transform: Transform::IDENTITY,
-                                alpha: 1.0,
-                            },
-                        });
-                    } else if let Some(displayed) = self.displayed_surfaces.get(&surface) {
-                        retained_client_image = true;
-                        layers.push(LiveOwnedMixedCompositionLayer::RendererImage {
-                            image_id: displayed.layer.image_id,
-                            size: displayed.layer.size,
-                            format: displayed.layer.format,
-                            placement: displayed.layer.placement,
-                        });
-                    }
-                }
-                CompositorDisplayCommand::Border(border) => {
-                    for band in compositor_border_bands(border) {
-                        if !band.geometry.is_empty() {
-                            layers.push(LiveOwnedMixedCompositionLayer::Solid {
-                                geometry: band.geometry,
-                                color: band.color,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        Ok(
-            retained_client_image.then_some(LiveOwnedMixedCompositionFrame {
-                layers,
-                output_damage_snapshot,
-            }),
-        )
     }
 }

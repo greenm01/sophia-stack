@@ -14,7 +14,9 @@ use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 use output::{
     PreparedOutputProfile, output_topology_from_engine_outputs,
-    output_topology_from_engine_outputs_at_generation, wm_output_bounds,
+    output_topology_from_authority_at_generation,
+    output_topology_from_engine_outputs_at_generation,
+    output_topology_from_resolved_at_generation, resolved_output_bounds, wm_output_bounds,
 };
 use session::{
     SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec,

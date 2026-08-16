@@ -33,6 +33,46 @@ fn output_point_lookup_uses_half_open_multi_output_bounds() {
 }
 
 #[test]
+fn output_replacement_preserves_survivors_and_assigns_new_workspaces_atomically() {
+    let output_one = OutputId::from_raw(1);
+    let output_two = OutputId::from_raw(2);
+    let output_three = OutputId::from_raw(3);
+    let mut state =
+        WmWorkspaceState::new([(output_one, bounds(0)), (output_two, bounds(1280))], 4).unwrap();
+    let first_workspace = state.output(output_one).unwrap().workspace;
+    let second_workspace = state.output(output_two).unwrap().workspace;
+
+    assert!(
+        state
+            .replace_outputs([(output_two, bounds(0)), (output_three, bounds(1280)),])
+            .unwrap()
+    );
+    assert!(state.output(output_one).is_none());
+    assert_eq!(
+        state.output(output_two).unwrap().workspace,
+        second_workspace
+    );
+    assert_eq!(
+        state.output(output_three).unwrap().workspace,
+        first_workspace
+    );
+    assert_eq!(state.output_at_point(0, 0), Some(output_two));
+    assert_eq!(state.output_at_point(1280, 0), Some(output_three));
+}
+
+#[test]
+fn invalid_output_replacement_does_not_mutate_the_current_set() {
+    let output = OutputId::from_raw(1);
+    let mut state = WmWorkspaceState::new([(output, bounds(0))], 2).unwrap();
+    let before = state.clone();
+    assert_eq!(
+        state.replace_outputs([(output, bounds(0)), (output, bounds(1280))]),
+        Err(WmPolicyError::DuplicateOutput),
+    );
+    assert_eq!(state, before);
+}
+
+#[test]
 fn chrome_capability_is_explicit_and_blocks_unadvertised_policy_changes() {
     let chrome = sophia_protocol::WmChromePolicy::default();
     let registry = WmShortcutRegistry::from_hello(&WmHello {

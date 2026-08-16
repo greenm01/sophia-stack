@@ -255,7 +255,6 @@ impl LiveProductionVisualRuntime {
             outputs,
             self.production.committed_surfaces(),
             None,
-            None,
         )?;
         // A suspended/revoked output no longer has a visible native
         // interaction snapshot. Do not retain routes into retired pixels.
@@ -278,7 +277,7 @@ impl LiveProductionVisualRuntime {
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
-        frames: Vec<LiveProductionComposedFrame>,
+        scene: &LiveProductionCpuScene,
         renderer_handoff: Option<LiveProductionRendererImageHandoff>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let retained = self.retained_renderer_image_ids();
@@ -287,14 +286,18 @@ impl LiveProductionVisualRuntime {
             renderer_handoff.as_ref().map(|handoff| handoff.image_ids()),
         )?;
         let mut resume_phase = crate::LiveRendererImageResumePhase::default();
-        // Native initialization establishes the replacement renderer worker.
-        // Its image table cannot accept the retained snapshots before then.
+        // Build runtime-only output state first. Renderer workers and retained
+        // images must exist before the semantic head plans are lowered, while
+        // KMS must remain untouched until every resulting owner is prepared.
         let resumed_outputs = LiveProductionOutputRuntimeSet::new(
             outputs,
             self.production.committed_surfaces(),
             Some(native_scanout),
-            Some(frames),
         )?;
+        let workers = native_scanout.enable_renderer_workers()?;
+        if workers != native_scanout.enabled_head_count() {
+            return Err("native resume established partial renderer-worker coverage".into());
+        }
         if !native_scanout.renderer_image_owners_initialized() {
             return Err("native resume did not initialize every renderer image owner".into());
         }
@@ -312,18 +315,66 @@ impl LiveProductionVisualRuntime {
         if resume_phase != crate::LiveRendererImageResumePhase::Ready {
             return Err("native resume renderer-image lifecycle did not become ready".into());
         }
-        // Publish the replacement output runtime only after its retained IDs
-        // belong to the new renderer generation.
+        // Install the runtime privately, lower the restored scene for every
+        // native head, and synchronously present each complete output cohort.
         self.outputs = resumed_outputs;
-        self.publish_presented_input_layers(native_scanout);
-        if let Some(frame) = self.retained_mixed_frame(&[])? {
-            let primary = self
-                .outputs
-                .primary_output()
-                .ok_or("persistent backend runtime has no primary output")?;
-            native_scanout.queue_retained_mixed_frame(primary, frame)?;
+        let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
+        if batches.len() != self.outputs.output_count() {
+            return Err("native resume produced partial logical-output coverage".into());
         }
+        for (output, frames) in batches {
+            self.outputs
+                .initialize_native_head_composition(native_scanout, output, frames)?;
+        }
+        self.publish_presented_input_layers(native_scanout);
         Ok(restored)
+    }
+
+    /// Rebuilds logical output runtimes around scanout owners already installed
+    /// by a blocking topology transaction. No renderer initialization or KMS
+    /// modeset is performed here.
+    pub fn rebind_applied_native_topology(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        outputs: &[sophia_engine::HeadlessOutput],
+        logical_viewports: &[(OutputId, Rect)],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.native_scanout_in_flight()
+            || self.present_scheduler.in_flight_displayed_layer().is_some()
+            || self.present_scheduler.has_runnable_queued()
+            || !self.software_present_frames_waiting.is_empty()
+            || !self.software_present_frames_bound.is_empty()
+            || !self.software_presents_unframed.is_empty()
+        {
+            return Err(
+                "native topology runtime rebind requires quiescent presentation ownership".into(),
+            );
+        }
+        let mut next = LiveProductionOutputRuntimeSet::adopt_native_topology(
+            outputs,
+            self.production.committed_surfaces(),
+            native_scanout,
+        )?;
+        next.replace_logical_viewports(logical_viewports)?;
+        let input_epoch = self
+            .input_projections
+            .iter()
+            .map(|projection| projection.epoch)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or("presented input projection epoch exhausted")?;
+        let input_projections = outputs
+            .iter()
+            .map(|output| LivePresentedInputProjection {
+                output: output.id,
+                epoch: input_epoch,
+                layers: Vec::new(),
+            })
+            .collect();
+        self.outputs = next;
+        self.input_projections = input_projections;
+        Ok(())
     }
 
     pub fn drain_native_scanout(
@@ -436,8 +487,11 @@ impl LiveProductionVisualRuntime {
             .map(|submit| submit.status)
         {
             Some(Status::SubmittedWaitingForPageFlip) => {
-                if let Some(transaction) = self.present_scheduler.promote_rendering_to_submitted() {
-                    native_scanout.discard_presentation_feedback(self.outputs.primary_output());
+                if let Some(transaction) = self
+                    .present_scheduler
+                    .mark_output_submitted(selected_output)?
+                {
+                    native_scanout.discard_presentation_feedback(Some(selected_output));
                     self.presentation_feedback
                         .resources_mut()
                         .mark_submitted(transaction)?;
@@ -450,10 +504,11 @@ impl LiveProductionVisualRuntime {
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
             Some(_) => {
-                if let Some(rendering) = self.present_scheduler.take_rendering() {
-                    native_scanout.rollback_renderer_image(rendering.displayed_layer.image_id)?;
-                    self.reject_gpu_presentation(rendering.transaction);
-                }
+                return Err(format!(
+                    "Present output cohort failed while servicing output {}",
+                    selected_output.raw()
+                )
+                .into());
             }
         }
         Ok(report)
@@ -534,51 +589,79 @@ impl LiveProductionVisualRuntime {
         } else {
             native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
         }
-        self.publish_presented_input_layers(native_scanout);
-        if self.outputs.primary_output() == Some(selected_output)
-            && let Some(retirement) = native_scanout.take_presentation_feedback(selected_output)
-        {
-            return self.finalize_gpu_page_flip(native_scanout, retirement);
+        if let Some(retirement) = native_scanout.take_presentation_feedback(selected_output) {
+            match reduce_live_production_native_retirement_owner(
+                retirement.frame,
+                retirement.content,
+                self.present_scheduler.submitted_frame(selected_output),
+            ) {
+                LiveProductionNativeRetirementOwner::IndependentFrame => {
+                    let settlement = self.settle_software_present_frame(retirement)?;
+                    if !matches!(
+                        settlement,
+                        software_present::LiveProductionSoftwarePresentSettlement::Waiting
+                    ) {
+                        self.publish_presented_input_layers(native_scanout);
+                    }
+                    return Ok(None);
+                }
+                LiveProductionNativeRetirementOwner::SubmittedDmaPresent => {
+                    let retired =
+                        self.finalize_gpu_page_flip(native_scanout, selected_output, retirement)?;
+                    if retired.is_some() {
+                        self.publish_presented_input_layers(native_scanout);
+                    }
+                    return Ok(retired);
+                }
+                LiveProductionNativeRetirementOwner::InvalidDmaOwnership => {
+                    return Err(
+                        "DMA Present retired on a native frame with different ownership".into(),
+                    );
+                }
+            }
         }
+        self.publish_presented_input_layers(native_scanout);
         Ok(None)
     }
 
     pub fn finalize_gpu_page_flip(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
+        output: OutputId,
         retirement: LiveProductionNativeFrameRetirement,
     ) -> Result<Option<LiveProductionRetiredPresent>, Box<dyn std::error::Error>> {
-        let ust = retirement.ust;
-        let msc = retirement.msc;
-        match reduce_live_production_native_retirement_owner(
+        if reduce_live_production_native_retirement_owner(
             retirement.frame,
             retirement.content,
-            self.present_scheduler.submitted_frame(),
-        ) {
-            LiveProductionNativeRetirementOwner::IndependentFrame => {
-                // A callback and the next submission may share one backend
-                // tick. Retire only work bound to the callback's frame.
-                self.settle_software_present_frame(retirement)?;
-                return Ok(None);
-            }
-            LiveProductionNativeRetirementOwner::SubmittedDmaPresent => {}
-            LiveProductionNativeRetirementOwner::InvalidDmaOwnership => {
-                return Err(
-                    "DMA Present retired on a native frame with different ownership".into(),
-                );
-            }
+            self.present_scheduler.submitted_frame(output),
+        ) != LiveProductionNativeRetirementOwner::SubmittedDmaPresent
+        {
+            return Err("GPU retirement does not own the selected output frame".into());
         }
-        let submitted = self
-            .present_scheduler
-            .take_submitted()
-            .ok_or("native retirement lost its submitted DMA Present")?;
         if !matches!(
             retirement.content,
             LiveProductionScanoutContent::MixedPresent { transaction, .. }
-                if transaction == submitted.transaction
+                if Some(transaction) == self.present_scheduler.in_flight_transaction()
         ) {
             return Err("DMA Present retired on a native frame with different ownership".into());
         }
+        let terminal = self
+            .present_scheduler
+            .mark_output_retired(output, retirement.ust)?;
+        let Some(sophia_engine::TransactionPresentationTerminal::Presented {
+            logical_sequence,
+            ust_usec,
+        }) = terminal
+        else {
+            return Ok(None);
+        };
+        let ust = ust_usec;
+        let msc = logical_sequence;
+        let submitted = self
+            .present_scheduler
+            .take_submitted()
+            .ok_or("joined native retirement lost its submitted DMA Present")?;
+        let outputs = submitted.frames().map(|(output, _)| output).collect();
         // The page flip is the commit point for the compositor copy. Promote
         // its staged image before releasing the client source or emitting any
         // protocol feedback.
@@ -616,7 +699,6 @@ impl LiveProductionVisualRuntime {
         }
         if completion.commit.outcome != TransactionOutcome::Committed {
             native_scanout.evict_renderer_image(submitted.displayed_layer.image_id)?;
-            self.settle_software_present_frame(retirement)?;
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),
                 outcome = ?completion.commit.outcome,
@@ -635,11 +717,11 @@ impl LiveProductionVisualRuntime {
         if let Some(replaced) = replaced {
             native_scanout.evict_renderer_image(replaced.layer.image_id)?;
         }
-        self.settle_software_present_frame(retirement)?;
         Ok(Some(LiveProductionRetiredPresent {
             candidate: submitted.candidate,
             transaction: submitted.transaction,
             surface: submitted.surface,
+            outputs,
             source_size,
             target,
             clip,

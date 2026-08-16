@@ -465,7 +465,7 @@ impl LiveProductionVisualRuntime {
         prepared: LiveProductionPreparedAuthorityBatch,
         event_count: usize,
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
-        native_frames: Option<Vec<LiveProductionComposedFrame>>,
+        native_head_frames: Option<Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let native_enabled = native_scanout.is_some();
@@ -473,7 +473,21 @@ impl LiveProductionVisualRuntime {
         let production = &self.production;
         let outputs = &mut self.outputs;
         let surface_metadata = &self.surface_metadata;
-        let mut native_frames = native_frames.unwrap_or_default().into_iter();
+        let native_head_frames_requested = native_head_frames.is_some();
+        let provided_native_head_frames = native_head_frames.unwrap_or_default();
+        let provided_native_output_count = provided_native_head_frames.len();
+        let mut native_head_frames = provided_native_head_frames
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        if native_head_frames.len() != provided_native_output_count {
+            return Err("native head composition named a logical output more than once".into());
+        }
+        if native_head_frames_requested && native_head_frames.len() != output_count {
+            return Err("native head composition did not cover every logical output".into());
+        }
+        if native_head_frames_requested && !native_enabled {
+            return Err("native head composition was provided without native scanout".into());
+        }
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
@@ -482,14 +496,6 @@ impl LiveProductionVisualRuntime {
                 let output_id = outputs
                     .output_id(index)
                     .ok_or("production output index was not registered")?;
-                let output = outputs
-                    .values_mut()
-                    .nth(index)
-                    .ok_or("production output index was not registered")?;
-                output
-                    .runtime
-                    .assembly_mut()
-                    .replace_committed_surfaces(committed.to_vec());
                 // Templates from the same slice this closure just replaced into
                 // the assembly, not from prepare time. Any commit landing between
                 // prepare and run -- a Present settling, a retirement -- would
@@ -504,16 +510,27 @@ impl LiveProductionVisualRuntime {
                 );
                 Ok(match native_scanout.as_deref_mut() {
                     Some(native_scanout) => {
-                        if let Some(frame) = native_frames.next() {
-                            native_scanout.queue_frame(output_id, frame);
+                        if let Some(frames) = native_head_frames.remove(&output_id) {
+                            if outputs.native_initialized(output_id) {
+                                native_scanout.queue_head_composition_frames(output_id, frames)?;
+                            } else {
+                                outputs.initialize_native_head_composition(
+                                    native_scanout,
+                                    output_id,
+                                    frames,
+                                )?;
+                            }
                         }
-                        if output.runtime.rendered_primary_plane_scanout_in_flight() {
-                            output.runtime.run_tick(input)?
-                        } else {
-                            native_scanout.run_tick(output_id, &mut output.runtime, input)?
-                        }
+                        outputs.run_output(index, committed, |runtime| {
+                            Ok(if runtime.rendered_primary_plane_scanout_in_flight() {
+                                runtime.run_tick(input)?
+                            } else {
+                                native_scanout.run_tick(output_id, runtime, input)?
+                            })
+                        })?
                     }
-                    None => output.runtime.run_tick(input)?,
+                    None => outputs
+                        .run_output(index, committed, |runtime| Ok(runtime.run_tick(input)?))?,
                 })
             },
         );
@@ -523,6 +540,9 @@ impl LiveProductionVisualRuntime {
             .next()
             .ok_or("persistent backend runtime has no outputs")?;
         drop(adapter);
+        if !native_head_frames.is_empty() {
+            return Err("native head composition named an unknown logical output".into());
+        }
         if !native_enabled {
             self.publish_committed_input_layers();
         }
@@ -537,7 +557,7 @@ impl LiveProductionVisualRuntime {
             groups,
             event_count,
             native_scanout,
-            native_frames,
+            native_head_frames,
             wm_update,
         } = run;
         let prepared = self.prepare_authority_groups(groups)?;
@@ -545,7 +565,7 @@ impl LiveProductionVisualRuntime {
             prepared,
             event_count,
             native_scanout,
-            native_frames,
+            native_head_frames,
             wm_update,
         )
     }

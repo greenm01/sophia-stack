@@ -15,6 +15,48 @@ mod software_present;
 pub use native::*;
 pub use service::*;
 
+fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
+    let exact = plan
+        .layers
+        .iter()
+        .filter(|layer| layer.requested_sampling == sophia_engine::HeadSamplingClass::Exact)
+        .count();
+    let downsampled = plan
+        .layers
+        .iter()
+        .filter(|layer| layer.requested_sampling == sophia_engine::HeadSamplingClass::Downsampled)
+        .count();
+    let upsampled = plan
+        .layers
+        .len()
+        .saturating_sub(exact)
+        .saturating_sub(downsampled);
+    let active = plan
+        .layers
+        .iter()
+        .filter(|layer| layer.outcome == sophia_engine::HeadBindingOutcome::Active)
+        .count();
+    let fallback = plan.layers.len().saturating_sub(active);
+    tracing::info!(
+        "sophia_live_head_composition_plan schema=1 status=ready output={} head={} scene_generation={} target_generation={} width={} height={} mapping={} exact={} downsampled={} upsampled={} active={} fallback={} unavailable=0 compositor_primitives={} damage_rects={} logical_content_checksum={}",
+        plan.output.raw(),
+        plan.head.raw(),
+        plan.scene_generation,
+        plan.target_generation,
+        plan.native_size.width,
+        plan.native_size.height,
+        plan.mapping.reduced_name(),
+        exact,
+        downsampled,
+        upsampled,
+        active,
+        fallback,
+        plan.compositor.len(),
+        plan.repaint.rects.len(),
+        plan.logical_content_checksum,
+    );
+}
+
 #[derive(Debug)]
 struct LiveDisplayedSurface {
     layer: LiveRetainedRendererImageLayer,
@@ -80,6 +122,8 @@ pub struct LiveProductionVisualRuntime {
         LiveProductionNativeFrameId,
         software_present::LiveProductionSoftwarePresentBinding,
     >,
+    software_present_frame_owners:
+        BTreeMap<LiveProductionNativeFrameId, LiveProductionNativeFrameId>,
     software_presents_unframed: VecDeque<Vec<LiveProductionSoftwarePresentSubmission>>,
     retired_software_presents: VecDeque<LiveProductionRetiredSoftwarePresent>,
     retired_software_presents_overflowed: bool,
@@ -124,7 +168,7 @@ pub struct LiveAuthorityTransactionRun<'a> {
     pub groups: &'a [LiveProductionAuthorityGroup],
     pub event_count: usize,
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
-    pub native_frames: Option<Vec<LiveProductionComposedFrame>>,
+    pub native_head_frames: Option<Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>>,
     pub wm_update: Option<WmTransactionUpdate>,
 }
 
@@ -132,17 +176,11 @@ impl LiveProductionVisualRuntime {
     pub fn new(
         outputs: &[sophia_engine::HeadlessOutput],
         native_scanout: Option<&mut LiveProductionNativeScanout>,
-        initial_native_frames: Option<Vec<LiveProductionComposedFrame>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let production = sophia_engine::ProductionSessionCoordinator::new(
             sophia_engine::HeadlessEngine::default(),
         );
-        let output_runtimes = LiveProductionOutputRuntimeSet::new(
-            outputs,
-            &[],
-            native_scanout,
-            initial_native_frames,
-        )?;
+        let output_runtimes = LiveProductionOutputRuntimeSet::new(outputs, &[], native_scanout)?;
         let input_projections = (0..output_runtimes.output_count())
             .filter_map(|index| output_runtimes.output_id(index))
             .map(|output| LivePresentedInputProjection {
@@ -165,6 +203,7 @@ impl LiveProductionVisualRuntime {
             deferred_content_fence_releases: BTreeSet::new(),
             software_present_frames_waiting: VecDeque::new(),
             software_present_frames_bound: BTreeMap::new(),
+            software_present_frame_owners: BTreeMap::new(),
             software_presents_unframed: VecDeque::new(),
             retired_software_presents: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             retired_software_presents_overflowed: false,
@@ -188,27 +227,16 @@ impl LiveProductionVisualRuntime {
         })
     }
 
-    pub fn initialize_native_scanout(
-        &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
-        frames: &[LiveProductionComposedFrame],
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.outputs
-            .initialize_native_scanout(native_scanout, frames)?;
-        // Initial modesets are synchronously established as presented by the
-        // native owner and do not generate a later retirement callback.
-        self.publish_presented_input_layers(native_scanout);
-        Ok(())
-    }
-
     pub fn stable_present(
         &self,
         native_scanout: &LiveProductionNativeScanout,
         transaction: TransactionId,
+        outputs: &[OutputId],
     ) -> bool {
-        self.outputs
-            .primary_output()
-            .is_some_and(|output| native_scanout.stable_present(output, transaction))
+        !outputs.is_empty()
+            && outputs
+                .iter()
+                .all(|output| native_scanout.stable_present(*output, transaction))
     }
 
     pub fn with_m4_proof_controls(
@@ -295,10 +323,6 @@ impl LiveProductionVisualRuntime {
                 self.production.committed_surfaces(),
                 &self.presentation_order,
             );
-        let retained_cpu_layers = scene.presentation_layers(
-            self.production.committed_surfaces(),
-            &self.presentation_order,
-        );
         // A retained CPU layer is a snapshot from before this authority batch is
         // committed. Let a CPU-only scene compose the current updates instead of
         // placing new chrome around stale client pixels. GPU-owned projections
@@ -308,19 +332,15 @@ impl LiveProductionVisualRuntime {
             !updates.is_empty(),
             committed_projection_requires_gpu,
         ) {
-            match (
-                native_scanout.as_deref_mut(),
-                self.retained_mixed_frame(&retained_cpu_layers)?,
-            ) {
-                (Some(native_scanout), Some(frame)) => {
-                    let primary = self
-                        .outputs
-                        .primary_output()
-                        .ok_or("persistent backend runtime has no primary output")?;
-                    native_scanout.queue_retained_mixed_frame(primary, frame)?;
-                    true
+            match native_scanout.as_deref_mut() {
+                Some(native_scanout) => {
+                    let batches =
+                        self.retained_output_head_composition_frames(scene, native_scanout)?;
+                    let queued =
+                        native_scanout.queue_retained_output_head_composition_frames(batches)?;
+                    !queued.is_empty()
                 }
-                _ => false,
+                None => false,
             }
         } else {
             false
@@ -408,10 +428,6 @@ impl LiveProductionVisualRuntime {
                 // A deferred cycle may service retained native work without
                 // producing a new CPU frame; only an actual frame set initializes outputs.
                 let initialize_native = native_frames.is_some();
-                let native_frames = native_frames.unwrap_or_default();
-                if initialize_native && let Some(native_scanout) = native_scanout.as_deref_mut() {
-                    outputs.initialize_native_scanout(native_scanout, &native_frames)?;
-                }
                 let mut output_adapter = crate::LiveProductionOutputRuntimeAdapter::new(
                     output_count,
                     |index,
@@ -420,10 +436,14 @@ impl LiveProductionVisualRuntime {
                         let output_id = outputs
                             .output_id(index)
                             .ok_or("production output index was not registered")?;
-                        let output_descriptor = outputs
-                            .output_descriptor(index)
-                            .ok_or("production output descriptor was not registered")?;
-                        outputs.run_output(index, snapshot, |runtime| {
+                        let logical_viewport = outputs
+                            .logical_viewport(output_id)
+                            .ok_or("production output logical viewport was not registered")?;
+                        let needs_initialization = initialize_native
+                            && native_scanout.is_some()
+                            && !outputs.native_initialized(output_id);
+                        let mut initialized_here = false;
+                        let result = outputs.run_output(index, snapshot, |runtime| {
                             let input = compositor_tick_input_for_committed(
                                 snapshot,
                                 &surface_metadata,
@@ -462,15 +482,15 @@ impl LiveProductionVisualRuntime {
                                             sophia_engine::CompositorDisplayCommand::Border(border),
                                         );
                                     }
-                                    let scene = sophia_engine::output_scene_snapshot_from_committed(
-                                        output_descriptor,
+                                    let scene = sophia_engine::output_scene_snapshot_from_committed_in_view(
+                                        output_id,
                                         cycle.max(1),
+                                        logical_viewport,
                                         snapshot,
                                         display_list,
                                         None,
                                     )?;
-                                    let targets = native_scanout
-                                        .head_render_targets(output_id, 1);
+                                    let targets = native_scanout.head_render_targets(output_id);
                                     let plans = sophia_engine::build_output_head_plans(
                                         &scene,
                                         &targets,
@@ -482,53 +502,7 @@ impl LiveProductionVisualRuntime {
                                         );
                                     }
                                     for plan in &plans {
-                                        let exact = plan
-                                            .layers
-                                            .iter()
-                                            .filter(|layer| {
-                                                layer.requested_sampling
-                                                    == sophia_engine::HeadSamplingClass::Exact
-                                            })
-                                            .count();
-                                        let downsampled = plan
-                                            .layers
-                                            .iter()
-                                            .filter(|layer| {
-                                                layer.requested_sampling
-                                                    == sophia_engine::HeadSamplingClass::Downsampled
-                                            })
-                                            .count();
-                                        let upsampled = plan.layers.len()
-                                            .saturating_sub(exact)
-                                            .saturating_sub(downsampled);
-                                        let active = plan
-                                            .layers
-                                            .iter()
-                                            .filter(|layer| {
-                                                layer.outcome
-                                                    == sophia_engine::HeadBindingOutcome::Active
-                                            })
-                                            .count();
-                                        let fallback = plan.layers.len().saturating_sub(active);
-                                        tracing::info!(
-                                            output = plan.output.raw(),
-                                            head = plan.head.raw(),
-                                            scene_generation = plan.scene_generation,
-                                            target_generation = plan.target_generation,
-                                            width = plan.native_size.width,
-                                            height = plan.native_size.height,
-                                            mapping = ?plan.mapping,
-                                            exact,
-                                            downsampled,
-                                            upsampled,
-                                            active,
-                                            fallback,
-                                            unavailable = 0,
-                                            compositor_primitives = plan.compositor.len(),
-                                            damage_rects = plan.repaint.rects.len(),
-                                            logical_content_checksum = plan.logical_content_checksum,
-                                            "sophia_live_head_composition_plan"
-                                        );
+                                        trace_live_head_composition_plan(plan);
                                     }
                                     if initialize_native {
                                         let prepared = plans
@@ -536,6 +510,9 @@ impl LiveProductionVisualRuntime {
                                             .map(|plan| {
                                                 Ok(crate::LiveProductionHeadCompositionFrame {
                                                     head: plan.head,
+                                                    scene_generation: plan.scene_generation,
+                                                    target_generation: plan.target_generation,
+                                                    mapping: plan.mapping,
                                                     logical_content_checksum: plan
                                                         .logical_content_checksum,
                                                     frame: sophia_renderer_live::lower_cpu_head_composition_plan(
@@ -546,8 +523,19 @@ impl LiveProductionVisualRuntime {
                                             })
                                             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>(
                                             )?;
-                                        native_scanout
-                                            .queue_head_composition_frames(output_id, prepared)?;
+                                        if needs_initialization {
+                                            native_scanout.initialize_head_composition(
+                                                output_id,
+                                                runtime,
+                                                prepared,
+                                            )?;
+                                            initialized_here = true;
+                                        } else {
+                                            native_scanout.queue_head_composition_frames(
+                                                output_id,
+                                                prepared,
+                                            )?;
+                                        }
                                     }
                                     if runtime.rendered_primary_plane_scanout_in_flight() {
                                         runtime.run_tick(input)?
@@ -557,7 +545,11 @@ impl LiveProductionVisualRuntime {
                                 }
                                 None => runtime.run_tick(input)?,
                             })
-                        })
+                        });
+                        if result.is_ok() && initialized_here {
+                            outputs.mark_native_initialized(output_id)?;
+                        }
+                        result
                     },
                 );
                 (0..output_count)
@@ -611,7 +603,7 @@ impl LiveProductionVisualRuntime {
             cursor_presentation,
             defer_frame,
             output_descriptors,
-            mut native_scanout,
+            native_scanout,
             wm_update,
             presentation_layout,
             chrome_surfaces,
@@ -679,12 +671,8 @@ impl LiveProductionVisualRuntime {
                 .map(|_| scene.frames_for_outputs(output_descriptors))
                 .transpose()?
         };
-        let cpu_layers = scene.presentation_layers(&committed_surfaces, &self.presentation_order);
-        if let (Some(native_scanout), Some(frames)) =
-            (native_scanout.as_deref_mut(), native_frames.as_ref())
-        {
-            self.initialize_native_scanout(native_scanout, frames)?;
-        }
+        let cpu_layers =
+            scene.presentation_variant_layers(&committed_surfaces, &self.presentation_order);
         let tick = self.run_batch(
             &batch,
             presentation_layout,
@@ -825,13 +813,36 @@ impl LiveProductionVisualRuntime {
         if authority_groups.is_empty() {
             return self.run_observation_tick();
         }
-        self.run_authority_transactions(LiveAuthorityTransactionRun {
-            event_count: authority_transaction_count_for_groups(&authority_groups),
-            groups: &authority_groups,
+        let prepared = self.prepare_authority_groups(&authority_groups)?;
+        let scene_generation = self
+            .production
+            .committed_surfaces()
+            .iter()
+            .map(|state| state.committed_generation)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let native_head_frames = if native_frames.is_some() {
+            native_scanout
+                .as_deref()
+                .map(|native| {
+                    self.cpu_output_head_composition_frames_from_layers(
+                        native,
+                        &cpu_layers,
+                        scene_generation,
+                    )
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        self.run_prepared_authority_transactions(
+            prepared,
+            authority_transaction_count_for_groups(&authority_groups),
             native_scanout,
-            native_frames,
+            native_head_frames,
             wm_update,
-        })
+        )
     }
 
     pub fn run_cpu_repaint(
@@ -856,23 +867,31 @@ impl LiveProductionVisualRuntime {
             .compose_display_list(output, &committed, &display_list, cursor_position)?
             .clone();
         self.record_focus_ring_observation(&committed, true)?;
-        let frames = scene.frames_for_outputs(output_descriptors)?;
-        self.initialize_native_scanout(native_scanout, &frames)?;
+        let head_batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
         let output_count = self.outputs.output_count();
         let production = &self.production;
         let surface_metadata = &self.surface_metadata;
         let outputs = &mut self.outputs;
-        let mut frames = frames.into_iter();
+        let mut head_batches = head_batches.into_iter().collect::<BTreeMap<_, _>>();
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, snapshot: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
                 let output_id = outputs
                     .output_id(index)
                     .ok_or("production output index was not registered")?;
+                let frames = head_batches
+                    .remove(&output_id)
+                    .ok_or("CPU repaint omitted a logical-output head cohort")?;
+                if outputs.native_initialized(output_id) {
+                    native_scanout.queue_head_composition_frames(output_id, frames)?;
+                } else {
+                    outputs.initialize_native_head_composition(
+                        native_scanout,
+                        output_id,
+                        frames,
+                    )?;
+                }
                 outputs.run_output(index, snapshot, |runtime| {
-                    if let Some(frame) = frames.next() {
-                        native_scanout.queue_frame(output_id, frame);
-                    }
                     let input = compositor_tick_input_for_committed(
                         snapshot,
                         surface_metadata,

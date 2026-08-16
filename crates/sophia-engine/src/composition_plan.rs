@@ -314,6 +314,37 @@ pub fn output_scene_snapshot_from_committed_in_view(
     Ok(snapshot)
 }
 
+/// Computes the exact logical-output retirement set for one root-space scene
+/// change. Both old and new geometry participate so movement cannot publish on
+/// the destination while leaving stale pixels on the source output.
+pub fn applicable_output_retirement_set(
+    logical_viewports: &[(OutputId, Rect)],
+    previous_geometry: Option<Rect>,
+    current_geometry: Rect,
+) -> Result<Vec<OutputId>, HeadCompositionPlanError> {
+    if logical_viewports.is_empty()
+        || logical_viewports.len() > crate::MAX_DRM_KMS_OUTPUTS
+        || current_geometry.is_empty()
+        || previous_geometry.is_some_and(|geometry| geometry.is_empty())
+    {
+        return Err(HeadCompositionPlanError::InvalidSnapshot);
+    }
+    let mut seen = BTreeSet::new();
+    let mut applicable = BTreeSet::new();
+    for (output, viewport) in logical_viewports {
+        if !output.is_valid() || viewport.is_empty() || !seen.insert(*output) {
+            return Err(HeadCompositionPlanError::InvalidSnapshot);
+        }
+        if !intersect_rect(*viewport, current_geometry).is_empty()
+            || previous_geometry
+                .is_some_and(|geometry| !intersect_rect(*viewport, geometry).is_empty())
+        {
+            applicable.insert(*output);
+        }
+    }
+    Ok(applicable.into_iter().collect())
+}
+
 pub fn build_head_composition_plan(
     snapshot: &OutputSceneSnapshot,
     target: HeadRenderTarget,

@@ -1,5 +1,9 @@
-use super::super::{LiveOutputTopologyOwner, LiveOutputTopologyPhase, LiveOutputTopologyRebuild};
-use sophia_protocol::{OutputId, Size};
+use super::super::{
+    LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
+    LiveOutputTopologyRebuild, begin_output_topology_first_presentation_rollback,
+};
+use sophia_protocol::{OutputId, Size, TransactionId};
+use std::cell::RefCell;
 
 /// Rebuild with one head per output: the ordinary unmirrored desktop, and every
 /// case here except the group that loses a connector.
@@ -152,4 +156,134 @@ fn duplicate_coalescer_token_does_not_restart_a_transition() {
     assert!(!owner.begin_rescan(3).unwrap());
     assert_eq!(owner.transition, 1);
     assert_eq!(owner.phase, LiveOutputTopologyPhase::Quarantined);
+}
+
+#[test]
+fn policy_change_keeps_published_identity_private_until_commit() {
+    let mut owner = owner();
+    assert_eq!(owner.begin_policy_change(), Ok(true));
+    assert!(owner.input_quarantined());
+    assert_eq!(owner.topology_epoch, 1);
+    assert_eq!(owner.publication_generation, 1);
+    assert_eq!(owner.outputs, vec![output(1, 1280)]);
+
+    assert_eq!(
+        observe_unmirrored(&mut owner, vec![output(1, 1920), output(2, 1280)]),
+        Ok(LiveOutputTopologyRebuild::TopologyChanged),
+    );
+    assert_eq!(owner.topology_epoch, 2);
+    assert_eq!(owner.publication_generation, 2);
+    owner.mark_published(8, false).unwrap();
+    assert!(owner.observe_presentation(9));
+}
+
+#[test]
+fn rejected_policy_change_restores_stable_without_consuming_public_identity() {
+    let mut owner = owner();
+    owner.begin_policy_change().unwrap();
+    owner.cancel_policy_change().unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Stable);
+    assert_eq!(owner.topology_epoch, 1);
+    assert_eq!(owner.publication_generation, 1);
+    assert_eq!(owner.outputs, vec![output(1, 1280)]);
+}
+
+#[test]
+fn frontend_candidate_rollback_consumes_only_transport_generations() {
+    let mut owner = owner();
+    owner.begin_policy_change().unwrap();
+    owner.observe_policy_transport_rollback(3).unwrap();
+    owner.cancel_policy_change().unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Stable);
+    assert_eq!(owner.topology_epoch, 1);
+    assert_eq!(owner.publication_generation, 3);
+    assert_eq!(owner.outputs, vec![output(1, 1280)]);
+}
+
+#[test]
+fn policy_commit_advances_epoch_when_logical_shape_is_unchanged() {
+    let mut owner = owner();
+    owner.begin_policy_change().unwrap();
+    owner
+        .observe_policy_rebuild(vec![output(1, 1280)], vec![(OutputId::from_raw(1), 1)], 2)
+        .unwrap();
+    assert_eq!(owner.topology_epoch, 2);
+    assert_eq!(owner.publication_generation, 2);
+    owner.mark_published(4, false).unwrap();
+    assert!(owner.observe_presentation(5));
+}
+
+#[test]
+fn first_presentation_service_failure_orders_physical_rollback_before_policy_rejection() {
+    let mut phase = LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation;
+    let transaction = TransactionId::from_raw(41);
+    let effects = RefCell::new(Vec::new());
+
+    assert!(
+        begin_output_topology_first_presentation_rollback(
+            &mut phase,
+            transaction,
+            "renderer worker refused frame",
+            |reason| {
+                effects.borrow_mut().push(format!("native:{reason}"));
+                Ok(())
+            },
+            |observed| {
+                effects
+                    .borrow_mut()
+                    .push(format!("policy:{}", observed.raw()));
+                Ok(())
+            },
+        )
+        .unwrap()
+    );
+    assert_eq!(phase, LiveOutputTopologyExecutionPhase::RollingBack);
+    assert_eq!(
+        effects.into_inner(),
+        vec![
+            "native:first topology presentation failed: renderer worker refused frame",
+            "policy:41",
+        ]
+    );
+}
+
+#[test]
+fn native_service_failure_outside_first_presentation_remains_fatal() {
+    let mut phase = LiveOutputTopologyExecutionPhase::Applying;
+    let effects = RefCell::new(Vec::new());
+
+    assert!(
+        !begin_output_topology_first_presentation_rollback(
+            &mut phase,
+            TransactionId::from_raw(42),
+            "unrelated failure",
+            |reason| {
+                effects.borrow_mut().push(reason);
+                Ok(())
+            },
+            |transaction| {
+                effects.borrow_mut().push(transaction.raw().to_string());
+                Ok(())
+            },
+        )
+        .unwrap()
+    );
+    assert_eq!(phase, LiveOutputTopologyExecutionPhase::Applying);
+    assert!(effects.into_inner().is_empty());
+}
+
+#[test]
+fn policy_failure_retains_the_physically_accepted_rollback_phase() {
+    let mut phase = LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation;
+    let error = begin_output_topology_first_presentation_rollback(
+        &mut phase,
+        TransactionId::from_raw(43),
+        "export failed",
+        |_| Ok(()),
+        |_| Err("policy transport disconnected".into()),
+    )
+    .unwrap_err();
+
+    assert_eq!(phase, LiveOutputTopologyExecutionPhase::RollingBack);
+    assert_eq!(error.to_string(), "policy transport disconnected");
 }

@@ -1,6 +1,6 @@
 use sophia_protocol::{
     AuthorityKind, AuthorityLocalId, AuthoritySurface, BufferSource, NamespaceId, Rect, Region,
-    Size, SurfaceConstraints, SurfaceId, SurfacePresentationIntentKind, SurfacePresentationRole,
+    SurfaceConstraints, SurfaceId, SurfacePresentationIntentKind, SurfacePresentationRole,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId,
 };
 use sophia_x_authority::{

@@ -2,11 +2,12 @@ use sophia_engine::{
     HeadCompositionPlan, HeadCompositorCommand, compositor_border_bands,
     head_output_damage_snapshot,
 };
-use sophia_protocol::{BufferSource, Transform};
+use sophia_protocol::{BufferSource, Size, SurfaceId, Transform};
 
 use crate::{
     LiveCompositionPlacement, LiveCpuPresentationLayer, LiveOwnedMixedCompositionFrame,
-    LiveOwnedMixedCompositionLayer,
+    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame, LiveRendererImageId,
+    LiveSharedCpuBufferSource,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,6 +17,9 @@ pub enum LiveHeadCompositionLoweringError {
     SourceSizeMismatch(u64),
     DuplicateSurface,
     MissingPlannedSurface,
+    MissingSource(BufferSource),
+    SourceKindMismatch(BufferSource),
+    DmaBufCloneFailed(u64),
 }
 
 impl core::fmt::Display for LiveHeadCompositionLoweringError {
@@ -26,6 +30,32 @@ impl core::fmt::Display for LiveHeadCompositionLoweringError {
 
 impl std::error::Error for LiveHeadCompositionLoweringError {}
 
+#[derive(Debug)]
+pub enum LiveOwnedHeadCompositionSourceKind {
+    Cpu(LiveSharedCpuBufferSource),
+    DmaBuf {
+        image_id: LiveRendererImageId,
+        frame: LiveOwnedMultiPlaneDmaBufFrame,
+    },
+    RendererImage {
+        image_id: LiveRendererImageId,
+        size: Size,
+        format: u32,
+    },
+}
+
+/// One authority-owned source realization available to the per-head lowerer.
+///
+/// The logical source identity stays the committed `BufferSource`. DMA-BUF file
+/// descriptors are duplicated for each head plan, while retained renderer-image
+/// identities refer to independently initialized per-head exporter stores.
+#[derive(Debug)]
+pub struct LiveOwnedHeadCompositionSource {
+    pub surface: SurfaceId,
+    pub source: BufferSource,
+    pub kind: LiveOwnedHeadCompositionSourceKind,
+}
+
 /// Lowers one immutable Engine plan into an owned, head-native renderer frame.
 ///
 /// This first production consumer admits CPU-authority variants and Engine
@@ -35,6 +65,26 @@ impl std::error::Error for LiveHeadCompositionLoweringError {}
 pub fn lower_cpu_head_composition_plan(
     plan: &HeadCompositionPlan,
     sources: &[LiveCpuPresentationLayer],
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    let sources = sources
+        .iter()
+        .map(|source| LiveOwnedHeadCompositionSource {
+            surface: source.surface,
+            source: BufferSource::CpuBuffer {
+                handle: source.buffer.handle,
+            },
+            kind: LiveOwnedHeadCompositionSourceKind::Cpu(source.buffer.clone().into()),
+        })
+        .collect::<Vec<_>>();
+    lower_head_composition_plan(plan, &sources)
+}
+
+/// Lowers a complete immutable Engine plan using authority-owned source
+/// realizations. No geometry is inherited from a primary head: every placement,
+/// clip, compositor primitive, and damage snapshot comes from `plan`.
+pub fn lower_head_composition_plan(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveOwnedHeadCompositionSource],
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut layers = Vec::with_capacity(plan.compositor.len().saturating_mul(4));
     let mut emitted_surfaces = std::collections::BTreeSet::new();
@@ -55,27 +105,16 @@ pub fn lower_cpu_head_composition_plan(
                     .iter()
                     .find(|binding| binding.surface == *surface)
                     .ok_or(LiveHeadCompositionLoweringError::MissingPlannedSurface)?;
-                let BufferSource::CpuBuffer { handle } = binding.source else {
-                    return Err(LiveHeadCompositionLoweringError::UnsupportedSource(
-                        binding.source,
-                    ));
-                };
                 let source = sources
                     .iter()
-                    .find(|source| source.buffer.handle == handle)
-                    .ok_or(LiveHeadCompositionLoweringError::MissingCpuSource(handle))?;
-                if source.buffer.size != binding.source_pixel_size {
-                    return Err(LiveHeadCompositionLoweringError::SourceSizeMismatch(handle));
-                }
-                layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-                    buffer: source.buffer.clone().into(),
-                    placement: LiveCompositionPlacement {
-                        target: binding.native_geometry,
-                        clip: Some(binding.native_clip),
-                        transform: Transform::IDENTITY,
-                        alpha: f32::from(binding.opacity_millis) / 1_000.0,
-                    },
-                });
+                    .find(|source| source.surface == *surface && source.source == binding.source)
+                    .ok_or_else(|| match binding.source {
+                        BufferSource::CpuBuffer { handle } => {
+                            LiveHeadCompositionLoweringError::MissingCpuSource(handle)
+                        }
+                        source => LiveHeadCompositionLoweringError::MissingSource(source),
+                    })?;
+                layers.push(lower_surface_source(binding, source)?);
             }
             HeadCompositorCommand::Border(border) => {
                 for band in compositor_border_bands(sophia_engine::CompositorBorder {
@@ -96,27 +135,115 @@ pub fn lower_cpu_head_composition_plan(
         }
     }
     if let Some(cursor) = plan.cursor {
-        let BufferSource::CpuBuffer { handle } = cursor.source else {
-            return Err(LiveHeadCompositionLoweringError::UnsupportedSource(
-                cursor.source,
-            ));
-        };
         let source = sources
             .iter()
-            .find(|source| source.buffer.handle == handle)
-            .ok_or(LiveHeadCompositionLoweringError::MissingCpuSource(handle))?;
-        layers.push(LiveOwnedMixedCompositionLayer::Cpu {
-            buffer: source.buffer.clone().into(),
-            placement: LiveCompositionPlacement {
-                target: cursor.geometry,
-                clip: Some(cursor.geometry),
-                transform: Transform::IDENTITY,
-                alpha: 1.0,
-            },
-        });
+            .find(|source| source.source == cursor.source)
+            .ok_or_else(|| match cursor.source {
+                BufferSource::CpuBuffer { handle } => {
+                    LiveHeadCompositionLoweringError::MissingCpuSource(handle)
+                }
+                source => LiveHeadCompositionLoweringError::MissingSource(source),
+            })?;
+        let placement = LiveCompositionPlacement {
+            target: cursor.geometry,
+            clip: Some(cursor.geometry),
+            transform: Transform::IDENTITY,
+            alpha: 1.0,
+        };
+        layers.push(lower_owned_source(
+            cursor.source,
+            source,
+            placement,
+            source_size(source)?,
+        )?);
     }
     Ok(LiveOwnedMixedCompositionFrame {
         layers,
         output_damage_snapshot: Some(head_output_damage_snapshot(plan)),
     })
+}
+
+fn lower_surface_source(
+    binding: &sophia_engine::HeadLayerBinding,
+    source: &LiveOwnedHeadCompositionSource,
+) -> Result<LiveOwnedMixedCompositionLayer, LiveHeadCompositionLoweringError> {
+    lower_owned_source(
+        binding.source,
+        source,
+        LiveCompositionPlacement {
+            target: binding.native_geometry,
+            clip: Some(binding.native_clip),
+            transform: Transform::IDENTITY,
+            alpha: f32::from(binding.opacity_millis) / 1_000.0,
+        },
+        binding.source_pixel_size,
+    )
+}
+
+fn source_size(
+    source: &LiveOwnedHeadCompositionSource,
+) -> Result<Size, LiveHeadCompositionLoweringError> {
+    match &source.kind {
+        LiveOwnedHeadCompositionSourceKind::Cpu(buffer) => Ok(buffer.size),
+        LiveOwnedHeadCompositionSourceKind::DmaBuf { frame, .. } => Ok(Size {
+            width: i32::try_from(frame.width)
+                .map_err(|_| LiveHeadCompositionLoweringError::SourceKindMismatch(source.source))?,
+            height: i32::try_from(frame.height)
+                .map_err(|_| LiveHeadCompositionLoweringError::SourceKindMismatch(source.source))?,
+        }),
+        LiveOwnedHeadCompositionSourceKind::RendererImage { size, .. } => Ok(*size),
+    }
+}
+
+fn lower_owned_source(
+    expected: BufferSource,
+    source: &LiveOwnedHeadCompositionSource,
+    placement: LiveCompositionPlacement,
+    expected_size: Size,
+) -> Result<LiveOwnedMixedCompositionLayer, LiveHeadCompositionLoweringError> {
+    if source.source != expected {
+        return Err(LiveHeadCompositionLoweringError::MissingSource(expected));
+    }
+    let actual_size = source_size(source)?;
+    if actual_size != expected_size {
+        let handle = match expected {
+            BufferSource::CpuBuffer { handle } | BufferSource::DmaBuf { handle } => handle,
+            BufferSource::None | BufferSource::XPixmap { .. } => 0,
+        };
+        return Err(LiveHeadCompositionLoweringError::SourceSizeMismatch(handle));
+    }
+    match (&source.kind, expected) {
+        (LiveOwnedHeadCompositionSourceKind::Cpu(buffer), BufferSource::CpuBuffer { .. }) => {
+            Ok(LiveOwnedMixedCompositionLayer::Cpu {
+                buffer: buffer.clone(),
+                placement,
+            })
+        }
+        (
+            LiveOwnedHeadCompositionSourceKind::DmaBuf { image_id, frame },
+            BufferSource::DmaBuf { handle },
+        ) => Ok(LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id: *image_id,
+            frame: frame
+                .try_clone()
+                .map_err(|_| LiveHeadCompositionLoweringError::DmaBufCloneFailed(handle))?,
+            placement,
+        }),
+        (
+            LiveOwnedHeadCompositionSourceKind::RendererImage {
+                image_id,
+                size,
+                format,
+            },
+            BufferSource::DmaBuf { .. },
+        ) => Ok(LiveOwnedMixedCompositionLayer::RendererImage {
+            image_id: *image_id,
+            size: *size,
+            format: *format,
+            placement,
+        }),
+        _ => Err(LiveHeadCompositionLoweringError::SourceKindMismatch(
+            expected,
+        )),
+    }
 }

@@ -65,6 +65,16 @@ pub enum OutputHeadMapping {
     Exact,
 }
 
+impl OutputHeadMapping {
+    pub const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::Fit => "fit",
+            Self::Cover => "cover",
+            Self::Exact => "exact",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputTopologyIntent {
     ValidateOnly,

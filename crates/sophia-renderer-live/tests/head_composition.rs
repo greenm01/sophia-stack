@@ -11,9 +11,12 @@ use sophia_protocol::{
 };
 use sophia_renderer_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
-    LiveCpuPresentationLayer, LiveHeadCompositionLoweringError, LiveOwnedMixedCompositionLayer,
-    LiveProductionCpuScene, lower_cpu_head_composition_plan,
+    LiveCpuPresentationLayer, LiveHeadCompositionLoweringError, LiveOwnedDmaBufPlane,
+    LiveOwnedHeadCompositionSource, LiveOwnedHeadCompositionSourceKind,
+    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame, LiveProductionCpuScene,
+    LiveRendererImageId, lower_cpu_head_composition_plan, lower_head_composition_plan,
 };
+use std::os::fd::{AsRawFd, OwnedFd};
 
 fn plan() -> HeadCompositionPlan {
     let surface = SurfaceId::new(3, 1);
@@ -124,6 +127,81 @@ fn missing_selected_variant_never_falls_back_to_another_cpu_buffer() {
         lower_cpu_head_composition_plan(&plan(), &[source(41)]).unwrap_err(),
         LiveHeadCompositionLoweringError::MissingCpuSource(42)
     );
+}
+
+#[test]
+fn retained_renderer_image_uses_head_plan_geometry_instead_of_primary_geometry() {
+    let mut plan = plan();
+    plan.layers[0].source = BufferSource::DmaBuf { handle: 77 };
+    let source = LiveOwnedHeadCompositionSource {
+        surface: SurfaceId::new(3, 1),
+        source: BufferSource::DmaBuf { handle: 77 },
+        kind: LiveOwnedHeadCompositionSourceKind::RendererImage {
+            image_id: LiveRendererImageId::from_raw(9),
+            size: Size {
+                width: 600,
+                height: 450,
+            },
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        },
+    };
+
+    let frame = lower_head_composition_plan(&plan, &[source]).unwrap();
+    let LiveOwnedMixedCompositionLayer::RendererImage {
+        image_id,
+        placement,
+        ..
+    } = frame.layers[0]
+    else {
+        panic!("retained DMA-BUF did not lower to its per-head renderer image")
+    };
+    assert_eq!(image_id, LiveRendererImageId::from_raw(9));
+    assert_eq!(placement.target, plan.layers[0].native_geometry);
+    assert_eq!(placement.clip, Some(plan.layers[0].native_clip));
+}
+
+#[test]
+fn dma_buf_source_duplicates_its_affine_plane_for_each_head_frame() {
+    let mut plan = plan();
+    plan.layers[0].source = BufferSource::DmaBuf { handle: 88 };
+    let fd: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+    let source_fd = fd.as_raw_fd();
+    let source = LiveOwnedHeadCompositionSource {
+        surface: SurfaceId::new(3, 1),
+        source: BufferSource::DmaBuf { handle: 88 },
+        kind: LiveOwnedHeadCompositionSourceKind::DmaBuf {
+            image_id: LiveRendererImageId::from_raw(10),
+            frame: LiveOwnedMultiPlaneDmaBufFrame {
+                width: 600,
+                height: 450,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                modifier: 0,
+                plane_count: 1,
+                planes: [
+                    Some(LiveOwnedDmaBufPlane {
+                        fd,
+                        offset: 0,
+                        stride: 2_400,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+        },
+    };
+
+    let first = lower_head_composition_plan(&plan, std::slice::from_ref(&source)).unwrap();
+    let second = lower_head_composition_plan(&plan, std::slice::from_ref(&source)).unwrap();
+    let plane_fd = |frame: &sophia_renderer_live::LiveOwnedMixedCompositionFrame| {
+        let LiveOwnedMixedCompositionLayer::DmaBuf { frame, .. } = &frame.layers[0] else {
+            panic!("DMA-BUF source changed kind")
+        };
+        frame.planes[0].as_ref().unwrap().fd.as_raw_fd()
+    };
+    assert_ne!(plane_fd(&first), source_fd);
+    assert_ne!(plane_fd(&second), source_fd);
+    assert_ne!(plane_fd(&first), plane_fd(&second));
 }
 
 #[test]

@@ -1,4 +1,3 @@
-use sophia_protocol::SurfaceContentSet;
 use sophia_protocol::{
     AuthoritySurface, IpcCodecError, IpcMessageKind, PortalTransfer, SurfaceTransaction,
     TransactionId, decode_frame, encode_frame,

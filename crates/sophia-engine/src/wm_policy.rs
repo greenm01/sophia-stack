@@ -213,6 +213,67 @@ impl WmWorkspaceState {
         Ok(true)
     }
 
+    /// Replaces the complete logical-output set while preserving workspace and
+    /// focus ownership for surviving output identities. New outputs receive an
+    /// otherwise unassigned workspace in stable workspace order; the update is
+    /// validated completely before the current state changes.
+    pub fn replace_outputs(
+        &mut self,
+        outputs: impl IntoIterator<Item = (OutputId, Rect)>,
+    ) -> Result<bool, WmPolicyError> {
+        let requested = outputs.into_iter().collect::<Vec<_>>();
+        if requested.is_empty() || requested.len() > self.workspaces.len() {
+            return Err(WmPolicyError::InvalidOutput);
+        }
+        let mut identities = BTreeSet::new();
+        for (output, bounds) in &requested {
+            if !output.is_valid() {
+                return Err(WmPolicyError::InvalidOutput);
+            }
+            if bounds.is_empty() {
+                return Err(WmPolicyError::InvalidOutputBounds);
+            }
+            if !identities.insert(*output) {
+                return Err(WmPolicyError::DuplicateOutput);
+            }
+        }
+
+        let preserved_workspaces = requested
+            .iter()
+            .filter_map(|(output, _)| self.outputs.get(output).map(|state| state.workspace))
+            .collect::<BTreeSet<_>>();
+        let mut available = self
+            .workspaces
+            .iter()
+            .copied()
+            .filter(|workspace| !preserved_workspaces.contains(workspace));
+        let mut replacement = BTreeMap::new();
+        for (output, bounds) in requested {
+            let state = if let Some(current) = self.outputs.get(&output) {
+                WmOutputPolicyState {
+                    bounds,
+                    workspace: current.workspace,
+                    focus: current.focus,
+                }
+            } else {
+                let workspace = available
+                    .next()
+                    .ok_or(WmPolicyError::InvalidWorkspaceCount)?;
+                WmOutputPolicyState {
+                    bounds,
+                    workspace,
+                    focus: self.workspace_focus.get(&workspace).copied().flatten(),
+                }
+            };
+            replacement.insert(output, state);
+        }
+        if replacement == self.outputs {
+            return Ok(false);
+        }
+        self.outputs = replacement;
+        Ok(true)
+    }
+
     pub fn copy_output_bounds_from(&mut self, source: &Self) -> Result<bool, WmPolicyError> {
         if self.outputs.len() != source.outputs.len() {
             return Err(WmPolicyError::UnknownOutput);

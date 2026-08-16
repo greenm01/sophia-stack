@@ -2,25 +2,33 @@ sophia_mirror_group_gate schema=1 status=starting source_commit=0000000000000000
 sophia_live_native_head schema=2 status=ready output=1 head=1 connector=DP-1 connector_id=94 mode=2560x1440 refresh_millihz=59951 mirrored=true
 sophia_live_native_head schema=2 status=ready output=1 head=2 connector=DP-2 connector_id=102 mode=1920x1080 refresh_millihz=60000 mirrored=true
 sophia_live_outputs schema=2 status=ready discovered=2 presentation=1 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal
-sophia_live_mirror_bootstrap schema=2 status=direct_cpu output=1 head=1 exports=1
-sophia_live_mirror_bootstrap schema=2 status=worker_ready output=1 head=1 workers=1
-sophia_live_mirror_bootstrap schema=2 status=direct_cpu output=1 head=2 exports=1
-sophia_live_mirror_bootstrap schema=2 status=worker_ready output=1 head=2 workers=1
+sophia_live_head_composition_plan schema=1 status=ready output=1 head=1 scene_generation=1 target_generation=1 width=2560 height=1440 mapping=fit exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=10
+sophia_live_head_composition_plan schema=1 status=ready output=1 head=2 scene_generation=1 target_generation=1 width=1920 height=1080 mapping=fit exact=0 downsampled=1 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=10
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit width=2560 height=1440 logical_content_checksum=10 source=head_plan
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=2 frame=1 scene_generation=1 target_generation=1 mapping=fit width=1920 height=1080 logical_content_checksum=10 source=head_plan
+sophia_live_head_bootstrap schema=1 status=worker_ready output=1 head=1 workers=1
+sophia_live_head_bootstrap schema=1 status=worker_ready output=1 head=2 workers=1
+sophia_live_head_bootstrap schema=1 status=worker_composed output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit exports=1
+sophia_live_head_bootstrap schema=1 status=worker_composed output=1 head=2 frame=1 scene_generation=1 target_generation=1 mapping=fit exports=1
 sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440
 sophia_native_composition_sampling schema=2 status=active requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 output=1920x1080
 sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=0 target=2560x1440_0_0 region_pixels=3686400 region_nonzero_rgb_pixels=16000 region_red_pixels=0 region_green_pixels=0 region_blue_pixels=4000 region_yellow_pixels=0 region_cyan_pixels=0 region_magenta_pixels=0 region_gray_pixels=7200 region_other_pixels=4800 region_checksum=31
 sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=0 target=1920x1080_0_0 region_pixels=2073600 region_nonzero_rgb_pixels=9000 region_red_pixels=0 region_green_pixels=0 region_blue_pixels=2200 region_yellow_pixels=0 region_cyan_pixels=0 region_magenta_pixels=0 region_gray_pixels=4200 region_other_pixels=2600 region_checksum=32
 sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=1/1
-sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=2 content=Cpu frame=7
-sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=2 submission=2 content=Cpu frame=7
+sophia_live_head_composition_plan schema=1 status=ready output=1 head=1 scene_generation=23 target_generation=1 width=2560 height=1440 mapping=fit exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=111
+sophia_live_head_composition_plan schema=1 status=ready output=1 head=2 scene_generation=23 target_generation=1 width=1920 height=1080 mapping=fit exact=0 downsampled=1 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=111
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=7 scene_generation=23 target_generation=1 mapping=fit width=2560 height=1440 logical_content_checksum=111 source=head_plan
+sophia_live_head_composition_queue schema=1 status=queued output=1 head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit width=1920 height=1080 logical_content_checksum=111 source=head_plan
+sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=2 content=HeadComposition frame=7
+sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=2 submission=2 content=HeadComposition frame=7
 sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=1 callbacks=1 kernel_sequence=80 frame=7
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=7
 sophia_live_mirror_head_damage schema=2 status=presented output=1 head=1 frame=7 width=2560 height=1440 mode=full rects=1 pixels=3686400
 sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=2 callbacks=1 kernel_sequence=81 frame=7
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=2 submission=2 frame=7
 sophia_live_mirror_head_damage schema=2 status=presented output=1 head=2 frame=7 width=1920 height=1080 mode=full rects=1 pixels=2073600
-sophia_live_mirror_generation schema=2 status=presented output=1 frame=7 source=cpu logical_content_checksum=111
+sophia_live_mirror_generation schema=2 status=presented output=1 frame=7 source=head_composition logical_content_checksum=111
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_output_topology_health schema=1 status=clean quarantined=false
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none

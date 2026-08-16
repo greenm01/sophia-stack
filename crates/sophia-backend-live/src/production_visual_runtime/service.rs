@@ -118,6 +118,10 @@ impl LiveProductionVisualRuntime {
         self.outputs.output_count()
     }
 
+    pub fn logical_viewports(&self) -> Vec<(OutputId, Rect)> {
+        self.outputs.logical_viewports().collect()
+    }
+
     pub fn output_committed(&self, index: usize) -> Option<&[CommittedSurfaceState]> {
         self.outputs.output_committed(index)
     }
@@ -128,6 +132,7 @@ pub struct LiveProductionRetiredPresent {
     pub candidate: SurfaceTransactionKey,
     pub transaction: TransactionId,
     pub surface: SurfaceId,
+    pub outputs: Vec<OutputId>,
     pub source_size: Size,
     pub target: Rect,
     pub clip: Option<Rect>,
@@ -256,7 +261,7 @@ impl LiveProductionVisualRuntime {
                     primary: output == primary,
                     native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
                     pending_frame: native_scanout.pending_frame(output)
-                        || software_frame_waiting.is_some_and(|frame| frame.output == output),
+                        || software_frame_waiting.is_some(),
                 })
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;

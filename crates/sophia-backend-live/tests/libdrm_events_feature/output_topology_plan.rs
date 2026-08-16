@@ -287,10 +287,16 @@ fn topology_apply_plan(card_indices: &[usize]) -> sophia_backend_live::LiveProdu
                     previous_enabled: true,
                     previous_selection,
                     previous_target_generation: 1,
+                    previous_scale: 1,
+                    previous_refresh_millihz: 60_000,
+                    previous_transform: OutputTransform::Normal,
+                    previous_mapping: OutputHeadMapping::Exact,
+                    previous_vrr: OutputVrrPolicy::Disabled,
                     candidate_target_generation: 2,
                     disposition: LiveProductionNativeTopologyDisposition::Enabled {
                         output,
                         selection: previous_selection,
+                        scale: 1,
                         refresh_millihz: 60_000,
                         transform: OutputTransform::Normal,
                         mapping: OutputHeadMapping::Exact,
@@ -381,6 +387,68 @@ fn topology_apply_coordinator_retries_busy_and_distinguishes_unmutated_failure()
 }
 
 #[test]
+fn topology_apply_coordinator_can_rollback_after_full_apply_before_publication() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyApplyCoordinator as Coordinator,
+        LiveProductionNativeTopologyApplyPhase as Phase,
+        LiveProductionNativeTopologyApplyTransition as Transition, NativeTopologySubmitOutcome,
+    };
+
+    let mut coordinator = Coordinator::new(&topology_apply_plan(&[2, 5])).unwrap();
+    assert_eq!(coordinator.begin_apply(), Transition::Accepted);
+    assert!(matches!(
+        coordinator.observe_apply(2, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardApplied { card_index: 2, .. }
+    ));
+    assert!(matches!(
+        coordinator.observe_apply(5, NativeTopologySubmitOutcome::Accepted),
+        Transition::Applied { card_index: 5, .. }
+    ));
+    assert_eq!(coordinator.phase(), Phase::Applied);
+    assert_eq!(
+        coordinator.begin_rollback_after_apply(),
+        Transition::Accepted
+    );
+    assert_eq!(coordinator.current_card_index(), Some(5));
+    assert!(matches!(
+        coordinator.observe_rollback(5, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardRolledBack { card_index: 5, .. }
+    ));
+    assert!(matches!(
+        coordinator.observe_rollback(2, NativeTopologySubmitOutcome::Accepted),
+        Transition::RolledBack { card_index: 2, .. }
+    ));
+    assert_eq!(coordinator.phase(), Phase::RolledBack);
+}
+
+#[test]
+fn topology_apply_coordinator_can_abort_an_accepted_prefix_between_owner_turns() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyApplyCoordinator as Coordinator,
+        LiveProductionNativeTopologyApplyPhase as Phase,
+        LiveProductionNativeTopologyApplyTransition as Transition, NativeTopologySubmitOutcome,
+    };
+
+    let mut coordinator = Coordinator::new(&topology_apply_plan(&[2, 5, 8])).unwrap();
+    assert_eq!(coordinator.begin_apply(), Transition::Accepted);
+    assert!(matches!(
+        coordinator.observe_apply(2, NativeTopologySubmitOutcome::Accepted),
+        Transition::CardApplied { card_index: 2, .. }
+    ));
+    assert_eq!(
+        coordinator.begin_rollback_after_partial_apply(),
+        Transition::Accepted
+    );
+    assert_eq!(coordinator.phase(), Phase::RollingBack);
+    assert_eq!(coordinator.current_card_index(), Some(2));
+    assert!(matches!(
+        coordinator.observe_rollback(2, NativeTopologySubmitOutcome::Accepted),
+        Transition::RolledBack { card_index: 2, .. }
+    ));
+    assert_eq!(coordinator.phase(), Phase::RolledBack);
+}
+
+#[test]
 fn published_topology_projection_uses_published_viewports_and_live_native_targets() {
     use sophia_backend_live::{
         LibdrmNativeOutputTiming, LiveProductionNativeTopologyCurrentHead,
@@ -411,8 +479,8 @@ fn published_topology_projection_uses_published_viewports_and_live_native_target
         connected: true,
         enabled: true,
         current_mode: Some(DisplayModeId::from_raw(head.raw() * 10)),
-        transforms: OutputTransformSet::NORMAL,
-        vrr_capable: false,
+        transforms: OutputTransformSet::ALL,
+        vrr_capable: true,
         modes: vec![OutputModeDescriptor {
             mode: DisplayModeId::from_raw(head.raw() * 10),
             pixel_size: size,
@@ -459,19 +527,31 @@ fn published_topology_projection_uses_published_viewports_and_live_native_target
         ],
     };
     let current = [
-        LiveProductionNativeTopologyCurrentHead::new(
+        LiveProductionNativeTopologyCurrentHead::new_with_target(
             left_head,
+            true,
             0,
             left,
             topology_plan_selection(10, left_size),
             4,
+            1,
+            60_000,
+            sophia_protocol::OutputTransform::Normal,
+            OutputHeadMapping::Exact,
+            sophia_protocol::OutputVrrPolicy::Disabled,
         ),
-        LiveProductionNativeTopologyCurrentHead::new(
+        LiveProductionNativeTopologyCurrentHead::new_with_target(
             right_head,
+            true,
             1,
             right,
             topology_plan_selection(20, right_size),
             7,
+            1,
+            60_000,
+            sophia_protocol::OutputTransform::Rotate90,
+            OutputHeadMapping::Fit,
+            sophia_protocol::OutputVrrPolicy::Always,
         ),
     ];
 
@@ -495,6 +575,14 @@ fn published_topology_projection_uses_published_viewports_and_live_native_target
     assert_eq!(projected.targets[1].native_size, right_size);
     assert_eq!(projected.targets[1].target_generation, 7);
     assert_eq!(projected.targets[1].mapping, OutputHeadMapping::Fit);
+    assert_eq!(
+        projected.targets[1].transform,
+        sophia_protocol::OutputTransform::Rotate90
+    );
+    assert_eq!(
+        projected.targets[1].vrr,
+        sophia_protocol::OutputVrrPolicy::Always
+    );
 }
 
 #[test]
@@ -668,12 +756,18 @@ fn published_topology_projection_preserves_a_disabled_connected_head() {
         }],
     };
     let current = [
-        LiveProductionNativeTopologyCurrentHead::new(
+        LiveProductionNativeTopologyCurrentHead::new_with_target(
             enabled,
+            true,
             0,
             output,
             topology_plan_selection(31, size),
             3,
+            1,
+            60_000,
+            sophia_protocol::OutputTransform::Normal,
+            OutputHeadMapping::Exact,
+            sophia_protocol::OutputVrrPolicy::Disabled,
         ),
         LiveProductionNativeTopologyCurrentHead::new_with_enabled(
             disabled,
@@ -706,12 +800,50 @@ fn published_topology_projection_preserves_a_disabled_connected_head() {
 }
 
 fn topology_composition_frame(
+    plan: &sophia_backend_live::LiveProductionNativeTopologyPlan,
     head: RenderHeadId,
-    output: OutputId,
-    size: Size,
+    candidate: bool,
+    size_override: Option<Size>,
 ) -> sophia_backend_live::LiveProductionHeadCompositionFrame {
+    use sophia_backend_live::LiveProductionNativeTopologyDisposition as Disposition;
+
+    let head_plan = plan
+        .heads
+        .iter()
+        .find(|head_plan| head_plan.head == head)
+        .expect("test topology head exists");
+    let (output, size, scale, target_generation, mapping) = if candidate {
+        match head_plan.disposition {
+            Disposition::Enabled {
+                output,
+                selection,
+                scale,
+                mapping,
+                ..
+            } => (
+                output,
+                selection.size(),
+                scale,
+                head_plan.candidate_target_generation,
+                mapping,
+            ),
+            Disposition::Disabled => panic!("disabled candidate has no composition frame"),
+        }
+    } else {
+        (
+            head_plan.previous_output,
+            head_plan.previous_selection.size(),
+            head_plan.previous_scale,
+            head_plan.previous_target_generation,
+            head_plan.previous_mapping,
+        )
+    };
+    let size = size_override.unwrap_or(size);
     sophia_backend_live::LiveProductionHeadCompositionFrame {
         head,
+        scene_generation: 11,
+        target_generation,
+        mapping,
         logical_content_checksum: output.raw(),
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
             layers: Vec::new(),
@@ -719,11 +851,41 @@ fn topology_composition_frame(
                 output: sophia_engine::HeadlessOutput {
                     id: output,
                     size,
-                    scale: 1,
+                    scale,
                 },
                 surfaces: Vec::new(),
                 compositor_display_list: sophia_engine::CompositorDisplayList {
                     output,
+                    commands: Vec::new(),
+                },
+                software_cursor: None,
+            }),
+        },
+    }
+}
+
+fn identified_head_composition_frame(
+    target: sophia_engine::HeadRenderTarget,
+    scene_generation: u64,
+    checksum: u64,
+) -> sophia_backend_live::LiveProductionHeadCompositionFrame {
+    sophia_backend_live::LiveProductionHeadCompositionFrame {
+        head: target.head,
+        scene_generation,
+        target_generation: target.target_generation,
+        mapping: target.mapping,
+        logical_content_checksum: checksum,
+        frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+            layers: Vec::new(),
+            output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
+                output: sophia_engine::HeadlessOutput {
+                    id: target.output,
+                    size: target.native_size,
+                    scale: target.scale,
+                },
+                surfaces: Vec::new(),
+                compositor_display_list: sophia_engine::CompositorDisplayList {
+                    output: target.output,
                     commands: Vec::new(),
                 },
                 software_cursor: None,
@@ -742,13 +904,12 @@ fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
     let mut plan = topology_apply_plan(&[0, 1]);
     let enabled = plan.heads[0].head;
     let disabled = plan.heads[1].head;
-    let output = plan.primary_output;
     let size = plan.heads[0].previous_selection.size();
     plan.heads[1].disposition = Disposition::Disabled;
 
     let candidate = validate_live_production_topology_frames(
         &plan,
-        vec![topology_composition_frame(enabled, output, size)],
+        vec![topology_composition_frame(&plan, enabled, true, None)],
         true,
     )
     .unwrap();
@@ -757,7 +918,7 @@ fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
     assert!(
         validate_live_production_topology_frames(
             &plan,
-            vec![topology_composition_frame(enabled, output, size)],
+            vec![topology_composition_frame(&plan, enabled, false, None)],
             false,
         )
         .is_err(),
@@ -766,8 +927,8 @@ fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
     let rollback = validate_live_production_topology_frames(
         &plan,
         vec![
-            topology_composition_frame(enabled, output, size),
-            topology_composition_frame(disabled, output, size),
+            topology_composition_frame(&plan, enabled, false, None),
+            topology_composition_frame(&plan, disabled, false, None),
         ],
         false,
     )
@@ -778,16 +939,212 @@ fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
         validate_live_production_topology_frames(
             &plan,
             vec![topology_composition_frame(
+                &plan,
                 enabled,
-                output,
-                Size {
+                true,
+                Some(Size {
                     width: size.width - 1,
                     height: size.height,
-                },
+                }),
             )],
             true,
         )
         .is_err(),
         "candidate damage must name its exact native target"
+    );
+}
+
+#[test]
+fn current_heads_reduce_to_independent_committed_render_targets() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyCurrentHead, reduce_live_production_head_render_target,
+    };
+    use sophia_protocol::{
+        OutputHeadMapping, OutputId, OutputTransform, OutputVrrPolicy, Size,
+    };
+
+    let output = OutputId::from_raw(41);
+    let large = LiveProductionNativeTopologyCurrentHead::new_with_target(
+        RenderHeadId::from_raw(101),
+        true,
+        0,
+        output,
+        topology_plan_selection(
+            51,
+            Size {
+                width: 2_560,
+                height: 1_440,
+            },
+        ),
+        7,
+        1,
+        144_000,
+        OutputTransform::Normal,
+        OutputHeadMapping::Exact,
+        OutputVrrPolicy::Always,
+    );
+    let small = LiveProductionNativeTopologyCurrentHead::new_with_target(
+        RenderHeadId::from_raw(102),
+        true,
+        1,
+        output,
+        topology_plan_selection(
+            52,
+            Size {
+                width: 1_920,
+                height: 1_080,
+            },
+        ),
+        19,
+        2,
+        60_000,
+        OutputTransform::Rotate90,
+        OutputHeadMapping::Cover,
+        OutputVrrPolicy::Disabled,
+    );
+    let disabled = LiveProductionNativeTopologyCurrentHead {
+        enabled: false,
+        ..small
+    };
+
+    let large = reduce_live_production_head_render_target(large).unwrap();
+    let small = reduce_live_production_head_render_target(small).unwrap();
+    assert_eq!(large.target_generation, 7);
+    assert_eq!(large.mapping, OutputHeadMapping::Exact);
+    assert_eq!(large.refresh_millihz, 144_000);
+    assert_eq!(small.target_generation, 19);
+    assert_eq!(small.mapping, OutputHeadMapping::Cover);
+    assert_eq!(small.scale, 2);
+    assert_eq!(small.transform, OutputTransform::Rotate90);
+    assert!(reduce_live_production_head_render_target(disabled).is_none());
+}
+
+#[test]
+fn head_frame_batch_rejects_stale_generation_mapping_and_scene_identity() {
+    use sophia_backend_live::validate_live_head_composition_frame_batch;
+    use sophia_engine::HeadRenderTarget;
+    use sophia_protocol::{OutputHeadMapping, OutputId, OutputTransform, Size};
+
+    let output = OutputId::from_raw(51);
+    let large = HeadRenderTarget {
+        head: RenderHeadId::from_raw(201),
+        output,
+        target_generation: 7,
+        native_size: Size {
+            width: 2_560,
+            height: 1_440,
+        },
+        scale: 1,
+        refresh_millihz: 144_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Exact,
+    };
+    let small = HeadRenderTarget {
+        head: RenderHeadId::from_raw(202),
+        output,
+        target_generation: 19,
+        native_size: Size {
+            width: 1_920,
+            height: 1_080,
+        },
+        scale: 2,
+        refresh_millihz: 60_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Cover,
+    };
+    let expected = [large, small];
+    let frames = [
+        identified_head_composition_frame(large, 33, 77),
+        identified_head_composition_frame(small, 33, 77),
+    ];
+    assert_eq!(
+        validate_live_head_composition_frame_batch(output, &expected, &frames),
+        Ok(77)
+    );
+
+    let mut stale = identified_head_composition_frame(small, 33, 77);
+    stale.target_generation = 18;
+    assert_eq!(
+        validate_live_head_composition_frame_batch(
+            output,
+            &expected,
+            &[identified_head_composition_frame(large, 33, 77), stale],
+        ),
+        Err("head composition targets a stale native generation")
+    );
+    let mut wrong_mapping = identified_head_composition_frame(small, 33, 77);
+    wrong_mapping.mapping = OutputHeadMapping::Fit;
+    assert_eq!(
+        validate_live_head_composition_frame_batch(
+            output,
+            &expected,
+            &[
+                identified_head_composition_frame(large, 33, 77),
+                wrong_mapping,
+            ],
+        ),
+        Err("head composition mapping does not match its native target")
+    );
+    assert_eq!(
+        validate_live_head_composition_frame_batch(
+            output,
+            &expected,
+            &[
+                identified_head_composition_frame(large, 33, 77),
+                identified_head_composition_frame(small, 34, 77),
+            ],
+        ),
+        Err("head composition frames disagree on scene generation")
+    );
+}
+
+#[test]
+fn semantic_startup_requires_every_worker_and_prepared_head_before_kms() {
+    use sophia_backend_live::{
+        LiveProductionSemanticStartupBarrier as Barrier,
+        reduce_live_production_semantic_startup_barrier,
+    };
+    use std::collections::BTreeSet;
+
+    let head_one = RenderHeadId::from_raw(71);
+    let head_two = RenderHeadId::from_raw(72);
+    let required = [head_one, head_two];
+    let one = BTreeSet::from([head_one]);
+    let both = BTreeSet::from([head_one, head_two]);
+
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(&[head_one], &one, &one),
+        Barrier::Ready,
+        "single-head outputs use the same semantic startup transaction",
+    );
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(
+            &required,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        ),
+        Barrier::Waiting,
+    );
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(&required, &both, &one),
+        Barrier::Waiting,
+    );
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(&required, &both, &both),
+        Barrier::Ready,
+    );
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(&required, &one, &both),
+        Barrier::Invalid,
+        "a prepared owner cannot precede its renderer worker",
+    );
+    assert_eq!(
+        reduce_live_production_semantic_startup_barrier(
+            &required,
+            &BTreeSet::from([head_one, RenderHeadId::from_raw(99)]),
+            &one,
+        ),
+        Barrier::Invalid,
+        "a foreign head cannot enter the startup transaction",
     );
 }

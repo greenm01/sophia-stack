@@ -48,6 +48,54 @@ fn fixture() -> (Vec<LibdrmNativeOutputCapability>, OutputAuthoritySnapshot) {
     (capabilities, snapshot)
 }
 
+#[test]
+fn hardware_publication_replaces_the_baseline_only_at_a_fresh_epoch() {
+    let (_, snapshot) = fixture();
+    let mut owner = LiveOutputAuthorityOwner::new(3, snapshot.clone()).unwrap();
+    let mut replacement = snapshot.clone();
+    replacement.topology_epoch = 8;
+    replacement.heads[0].label = "Display 1 reconnected".to_owned();
+
+    owner
+        .replace_published_snapshot(replacement.clone())
+        .unwrap();
+    assert_eq!(owner.published(), &replacement);
+    assert_eq!(owner.connection_epoch(), 3);
+
+    let mut stale = replacement.clone();
+    stale.topology_epoch = 7;
+    assert!(matches!(
+        owner.replace_published_snapshot(stale),
+        Err(LiveOutputAuthorityOwnerError::StalePublishedSnapshot)
+    ));
+    let mut aliased = replacement.clone();
+    aliased.heads[0].label = "same epoch, different facts".to_owned();
+    assert!(matches!(
+        owner.replace_published_snapshot(aliased),
+        Err(LiveOutputAuthorityOwnerError::StalePublishedSnapshot)
+    ));
+    owner.replace_published_snapshot(replacement).unwrap();
+}
+
+#[test]
+fn hardware_publication_cannot_replace_an_active_protocol_candidate() {
+    let (capabilities, snapshot) = fixture();
+    let mut owner = LiveOutputAuthorityOwner::new(4, snapshot.clone()).unwrap();
+    owner
+        .admit(
+            TransactionId::from_raw(90),
+            &split_candidate(&snapshot, 4, OutputTopologyIntent::Apply),
+            &capabilities,
+        )
+        .unwrap();
+    let mut replacement = snapshot;
+    replacement.topology_epoch = 8;
+    assert!(matches!(
+        owner.replace_published_snapshot(replacement),
+        Err(LiveOutputAuthorityOwnerError::ActiveCandidate)
+    ));
+}
+
 fn mode(snapshot: &OutputAuthoritySnapshot, head: u64, width: i32) -> DisplayModeId {
     snapshot
         .heads
@@ -170,6 +218,11 @@ fn live_output_owner_publishes_split_outputs_only_after_every_first_presentation
     assert_eq!(effect.base_topology_epoch, 7);
     assert_eq!(effect.candidate_topology_epoch, 8);
     assert_eq!(effect.published_snapshot, snapshot);
+    assert_eq!(
+        effect.candidate_snapshot,
+        owner.active_candidate_snapshot().unwrap().clone()
+    );
+    assert_ne!(effect.candidate_snapshot, effect.published_snapshot);
     assert_eq!(effect.resolved.targets[0].target_generation, 2);
     assert_eq!(owner.published(), &snapshot);
     let resolved = owner.active_resolved().unwrap();

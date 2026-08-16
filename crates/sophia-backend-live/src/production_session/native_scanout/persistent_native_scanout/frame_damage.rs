@@ -10,7 +10,7 @@ pub fn project_mirror_output_damage_snapshot(
     snapshot: &sophia_engine::OutputFrameDamageSnapshot,
     source: sophia_protocol::Size,
     destination: sophia_engine::HeadlessOutput,
-    fit: crate::NativeMirrorFit,
+    fit: sophia_protocol::OutputHeadMapping,
 ) -> Result<sophia_engine::OutputFrameDamageSnapshot, &'static str> {
     if snapshot.output.id != destination.id
         || snapshot.compositor_display_list.output != destination.id

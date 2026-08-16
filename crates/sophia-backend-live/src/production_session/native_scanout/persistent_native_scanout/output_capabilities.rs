@@ -45,48 +45,42 @@ impl LiveProductionNativeScanout {
         let capabilities = self.output_capabilities().map_err(|error| {
             crate::LiveOutputAuthorityProjectionError::NativeCapability(error.to_string())
         })?;
-        crate::project_live_output_authority_snapshot(
+        let mut snapshot = crate::project_live_output_authority_snapshot(
             &capabilities,
             &self.outputs(),
             topology_epoch,
-        )
+        )?;
+        let mappings = self
+            .heads
+            .iter()
+            .map(|head| (head.head, head.mapping))
+            .collect();
+        crate::apply_live_output_authority_head_mappings(&mut snapshot, &mappings)?;
+        Ok(snapshot)
     }
 
     pub fn head_render_targets(
         &self,
         output: sophia_protocol::OutputId,
-        target_generation: u64,
     ) -> Vec<sophia_engine::HeadRenderTarget> {
-        let mapping = match self.mirror_fit {
-            crate::NativeMirrorFit::Fit => sophia_protocol::OutputHeadMapping::Fit,
-            crate::NativeMirrorFit::Cover => sophia_protocol::OutputHeadMapping::Cover,
-            crate::NativeMirrorFit::Exact => sophia_protocol::OutputHeadMapping::Exact,
-        };
-        let refresh_by_head = self
-            .output_capabilities()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|capability| {
-                Some((
-                    capability.head()?,
-                    capability.selected_mode().refresh_millihz,
-                ))
-            })
-            .collect::<BTreeMap<_, _>>();
         self.head_indices(output)
             .into_iter()
-            .map(|index| sophia_engine::HeadRenderTarget {
-                head: self.heads[index].head,
-                output,
-                target_generation,
-                native_size: self.heads[index].output.size,
-                scale: self.heads[index].output.scale,
-                refresh_millihz: refresh_by_head
-                    .get(&self.heads[index].head)
-                    .copied()
-                    .unwrap_or(0),
-                transform: sophia_protocol::OutputTransform::Normal,
-                mapping,
+            .filter_map(|index| {
+                reduce_live_production_head_render_target(
+                    LiveProductionNativeTopologyCurrentHead::new_with_target(
+                        self.heads[index].head,
+                        self.heads[index].enabled,
+                        self.heads[index].group,
+                        output,
+                        self.heads[index].selection,
+                        self.heads[index].target_generation,
+                        self.heads[index].scale,
+                        self.heads[index].refresh_millihz,
+                        self.heads[index].transform,
+                        self.heads[index].mapping,
+                        self.heads[index].vrr,
+                    ),
+                )
             })
             .collect()
     }

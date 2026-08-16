@@ -20,6 +20,9 @@ struct SessionLoopResources<'a> {
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
     mirror_grouping: &'a sophia_backend_live::NativeMirrorGrouping,
+    /// Neutral initial policy for heads reconstructed after VT/hotplug loss.
+    /// Output-authority commits may replace it independently on live heads.
+    initial_head_mapping: sophia_protocol::OutputHeadMapping,
 }
 
 struct SessionLoopStartup<'a> {
@@ -113,7 +116,54 @@ fn resume_native_scanout_from_scene(
     scene: &mut LiveProductionCpuScene,
     handoff: Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    runtime.resume_native_scanout(native, outputs, scene.frames_for_outputs(outputs)?, handoff)
+    runtime.resume_native_scanout(
+        native,
+        outputs,
+        scene,
+        handoff,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveOutputTopologyExecutionPhase {
+    Preparing,
+    Applying,
+    AwaitingFirstPresentation,
+    Reconciling,
+    RollingBack,
+}
+
+#[derive(Clone, Debug)]
+struct LiveOutputTopologyExecution {
+    effect: sophia_cli::live_output_authority::LiveOutputAuthorityEffect,
+    phase: LiveOutputTopologyExecutionPhase,
+    first_frames:
+        BTreeMap<sophia_protocol::OutputId, sophia_backend_live::LiveProductionNativeFrameId>,
+    frontend_candidate_published: bool,
+}
+
+fn begin_output_topology_first_presentation_rollback<NativeRollback, PolicyRollback>(
+    phase: &mut LiveOutputTopologyExecutionPhase,
+    transaction: sophia_protocol::TransactionId,
+    failure: &str,
+    request_native_rollback: NativeRollback,
+    reject_policy_candidate: PolicyRollback,
+) -> Result<bool, Box<dyn std::error::Error>>
+where
+    NativeRollback: FnOnce(String) -> Result<(), Box<dyn std::error::Error>>,
+    PolicyRollback:
+        FnOnce(sophia_protocol::TransactionId) -> Result<(), Box<dyn std::error::Error>>,
+{
+    if *phase != LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation {
+        return Ok(false);
+    }
+    request_native_rollback(format!("first topology presentation failed: {failure}"))?;
+    // Once the physical owner accepted reverse apply, retain that fact even if
+    // policy notification fails. Session completion can then finish rollback
+    // without mistaking the candidate for a merely queued transaction.
+    *phase = LiveOutputTopologyExecutionPhase::RollingBack;
+    reject_policy_candidate(transaction)?;
+    Ok(true)
 }
 
 fn run_session_loop(
@@ -140,6 +190,7 @@ fn run_session_loop(
         seat_controller,
         wm_session,
         mirror_grouping,
+        initial_head_mapping,
     } = resources;
     let SessionLoopStartup {
         xauthority,
@@ -185,6 +236,8 @@ fn run_session_loop(
         .then(sophia_backend_live::LiveDrmTopologyMonitor::open)
         .transpose()?;
     let mut output_topology_retry_at: Option<Instant> = None;
+    let mut deferred_output_topology_notice:
+        Option<sophia_backend_live::LiveDrmTopologyRescanNotice> = None;
     let mut output_topology_policy_commit_baseline = 0u64;
     let mut scene = LiveProductionCpuScene::new(output.size);
     if initialize_empty_runtime {
@@ -195,7 +248,11 @@ fn run_session_loop(
         output.size,
     );
     let mut pending_wm_update = None;
-    let mut active_output_topology_preparation: Option<sophia_protocol::TransactionId> = None;
+    let mut active_output_topology_preparation: Option<LiveOutputTopologyExecution> = None;
+    let mut pending_hardware_output_publication: Option<(
+        sophia_protocol::OutputAuthoritySnapshot,
+        Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+    )> = None;
     let mut floating_pointer_gesture = FloatingPointerGestureState::default();
     let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
     let mut layout_progress_deferred_reported = false;
@@ -209,19 +266,24 @@ fn run_session_loop(
         .and_then(|wm| wm.surface_chrome_style())
         .unwrap_or(config.surface_chrome_style);
     let mut runtime = if initialize_empty_runtime {
-        Some(
-            LiveProductionVisualRuntime::new(
-                &outputs,
-                native_scanout.as_mut(),
-                Some(scene.frames_for_outputs(&outputs)?),
-            )?
-            .with_m4_proof_controls(
-                config.m4_first_acquire_delay,
-                config.m4_reject_first_present,
-                config.m4_diagnose_first_mixed_export,
-            )
-            .with_surface_chrome_style(initial_border_style),
+        let mut initialized =
+            LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
+        .with_m4_proof_controls(
+            config.m4_first_acquire_delay,
+            config.m4_reject_first_present,
+            config.m4_diagnose_first_mixed_export,
         )
+        .with_surface_chrome_style(initial_border_style);
+        if let Some(native) = native_scanout.as_mut() {
+            let _ = initialized.run_cpu_repaint(
+                &mut scene,
+                None,
+                None,
+                &outputs,
+                native,
+            )?;
+        }
+        Some(initialized)
     } else {
         None
     };
