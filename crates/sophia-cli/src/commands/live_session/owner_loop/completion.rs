@@ -39,6 +39,55 @@
         presentations_shutdown: runtime.is_none(),
         ..Default::default()
     };
+    if let Some(native_scanout) = native_scanout.as_mut()
+        && native_scanout.output_topology_preparation_active()
+    {
+        native_scanout.request_abort_output_topology_preparation(
+            "session completion cancelled topology preparation",
+        );
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match native_scanout.service_output_topology_preparation() {
+                Ok(report)
+                    if report.phase
+                        == sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Failed =>
+                {
+                    match native_scanout.finish_failed_output_topology_preparation() {
+                        Ok((plan, reason)) => println!(
+                            "sophia_live_output_topology schema=1 status=completion_cancelled heads={} reason={reason:?} kms_submits=0",
+                            plan.heads.len(),
+                        ),
+                        Err(error) => cleanup_failures.push(format!(
+                            "topology preparation completion failed: {error}"
+                        )),
+                    }
+                    break;
+                }
+                Ok(_) if Instant::now() < deadline => std::thread::yield_now(),
+                Ok(_) => {
+                    cleanup_failures.push(
+                        "topology renderer preparation did not abort within two seconds"
+                            .to_owned(),
+                    );
+                    break;
+                }
+                Err(error) => {
+                    cleanup_failures.push(format!(
+                        "topology renderer preparation abort failed: {error}"
+                    ));
+                    break;
+                }
+            }
+        }
+        while native_scanout.output_topology_cleanup_pending() && Instant::now() < deadline {
+            native_scanout.retry_output_topology_cleanup();
+            std::thread::yield_now();
+        }
+        if native_scanout.output_topology_cleanup_pending() {
+            cleanup_failures
+                .push("topology resource cleanup remained pending at native suspension".to_owned());
+        }
+    }
     if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
         fatal_cleanup.native_suspend_attempted = true;
         fatal_cleanup.native_heads_in_flight_before =

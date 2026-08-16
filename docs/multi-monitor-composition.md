@@ -647,6 +647,14 @@ parallel multi-monitor subsystem.
   rejected insertions return their affine owner. Physical head/output
   observation batches advance protocol authority transactionally, so a bad
   member cannot leave a valid prefix recorded.
+- The native live owner now drives the candidate renderer workers to completion,
+  then drives a separately composed rollback frame through every head, while
+  ordinary presentation scheduling is quarantined. Preparation failure drains
+  in-flight worker leases and cancels partial affine owners; session completion
+  performs the same bounded abort. Until accepted-owner installation is wired,
+  the live path cancels a completely prepared dual pool and rejects before the
+  first KMS submit. This makes the remaining boundary apply/install, not an
+  unexercised rendering placeholder.
 
 ### Transitional Limitation
 
@@ -662,9 +670,10 @@ The native scheduler now has the prepare-all barrier, and live topology planning
 creates replacement selections for enabled heads while representing omitted
 connected heads as explicit disable effects. Candidate CPU frames and native
 resource owners can now be prepared, and the per-card apply request is defined,
-and the cross-card apply/rollback order is explicit. The live owner does not yet
-schedule the candidate-plus-rollback exporter pools or install/reconcile their
-accepted owners. The distinguished primary output also remains
+and the cross-card apply/rollback order is explicit. The live owner now schedules
+both candidate and rollback exporter pools and proves them complete without a
+KMS mutation; it does not yet install/reconcile accepted owners. The
+distinguished primary output also remains
 in retained scene and Present paths.
 Configuration currently maps `DesktopMirrorFit` manually to backend-owned
 `NativeMirrorFit`.

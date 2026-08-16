@@ -195,6 +195,7 @@ fn run_session_loop(
         output.size,
     );
     let mut pending_wm_update = None;
+    let mut active_output_topology_preparation: Option<sophia_protocol::TransactionId> = None;
     let mut floating_pointer_gesture = FloatingPointerGestureState::default();
     let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
     let mut layout_progress_deferred_reported = false;

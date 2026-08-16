@@ -261,6 +261,18 @@ where
             || matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }
 
+    /// Discards work that has not crossed into the renderer worker.
+    ///
+    /// An in-flight command must still be polled so its resulting lease can be
+    /// released. Returning false makes that ownership distinction explicit to
+    /// topology-abort code.
+    pub fn discard_pending_frame(&mut self) -> bool {
+        if self.worker_in_flight() {
+            return false;
+        }
+        self.pending_frame.take().is_some()
+    }
+
     pub const fn worker_in_flight(&self) -> bool {
         matches!(self.worker.as_ref(), Some(worker) if worker.in_flight())
     }

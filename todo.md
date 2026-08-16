@@ -1063,9 +1063,13 @@ is excluded; retained product behavior is not.
      sizes/generations rather than from the candidate. A typed cohort now blocks
      apply until every enabled/disabled candidate member and every rollback
      framebuffer is owned; protocol observations admit whole physical batches
-     or none. The remaining ownership work is to drive both exporter pools,
-     install/reconcile accepted owners, and publish only after the new outputs
-     present.
+     or none. The live owner now nonblockingly drives candidate workers first and
+     rollback workers second, quarantines ordinary scanout during preparation,
+     and drains/cancels partial owners on failure or session completion. It still
+     cancels a complete dual pool and rejects before KMS until accepted-owner
+     installation is wired. The remaining ownership work is to apply the prepared
+     card requests, install/reconcile accepted owners, and publish only after the
+     new outputs present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining

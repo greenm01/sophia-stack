@@ -73,6 +73,16 @@ mod persistent_native_scanout {
         /// Engine-owned prepare/submit/flip barrier for the active generation
         /// of each multi-head logical output.
         output_cohorts: BTreeMap<OutputId, sophia_engine::OutputPresentationCohort>,
+        /// Candidate and rollback owners for one live output-topology effect.
+        /// Ordinary frame scheduling is quarantined while this is present.
+        output_topology_preparation: Option<LiveProductionNativeTopologyPreparation>,
+        /// Cleanup owners may outnumber physical heads when candidate and
+        /// rollback pools are cancelled together, so they cannot share the
+        /// ordinary one-slot-per-head cleanup ledger.
+        output_topology_cleanup: Vec<(
+            sophia_engine::RenderHeadId,
+            crate::BoxedRenderedPrimaryPlaneScanoutCleanup,
+        )>,
         /// The only place a head's card, connector, and CRTC identity lives.
         pub head_table: crate::LiveProductionNativeHeadTable,
         next_frame_id: u64,
@@ -570,6 +580,8 @@ mod persistent_native_scanout {
                 output_callbacks,
                 output_lifecycles,
                 output_cohorts: BTreeMap::new(),
+                output_topology_preparation: None,
+                output_topology_cleanup: Vec::new(),
                 head_table,
                 next_frame_id: 1,
                 next_head_candidate_id: 1,
@@ -839,6 +851,13 @@ mod persistent_native_scanout {
             runtime: &mut crate::LiveBackendRuntimeAssembly,
             input: CompositorBackendTickInput,
         ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+            self.retry_output_topology_cleanup();
+            if self.output_topology_preparation_active() {
+                return Err(
+                    "ordinary native frame scheduling is quarantined during topology preparation"
+                        .into(),
+                );
+            }
             if self.head_indices(output).len() > 1 {
                 let report = self.run_mirror_group_scene_tick(output, runtime, input)?;
                 if self.mirror_poison_drained(output) {
@@ -2555,6 +2574,10 @@ mod persistent_native_scanout {
             self.head_indices(output)
                 .into_iter()
                 .any(|index| self.heads[index].scanout_cleanup.is_some())
+                || self.output_topology_cleanup.iter().any(|(head, _)| {
+                    self.head_index_for_head(*head)
+                        .is_some_and(|index| self.heads[index].output.id == output)
+                })
         }
 
         pub fn pending_frame(&self, output: OutputId) -> bool {
@@ -2606,7 +2629,8 @@ mod persistent_native_scanout {
         }
 
         pub fn any_head_cleanup_pending(&self) -> bool {
-            self.heads.iter().any(|head| head.scanout_cleanup.is_some())
+            !self.output_topology_cleanup.is_empty()
+                || self.heads.iter().any(|head| head.scanout_cleanup.is_some())
         }
 
         pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
@@ -2762,6 +2786,7 @@ pub use persistent_native_scanout::{
     LiveProductionNativeTopologyCandidateResource, LiveProductionNativeTopologyCurrentHead,
     LiveProductionNativeTopologyDisposition, LiveProductionNativeTopologyHeadPlan,
     LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
+    LiveProductionNativeTopologyPreparationPhase, LiveProductionNativeTopologyPreparationReport,
     LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
     LiveProductionNativeTopologyResourceTransition, LiveProductionPageFlipWatchdogStatus,
     LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
@@ -2769,7 +2794,7 @@ pub use persistent_native_scanout::{
     live_production_scanout_is_stable_present, plan_live_production_native_topology,
     project_live_production_published_topology, project_mirror_output_damage_snapshot,
     reduce_live_production_cpu_frame_queue, reduce_live_production_mirror_generation_queue_target,
-    reduce_live_production_page_flip_watchdog,
+    reduce_live_production_page_flip_watchdog, validate_live_production_topology_frames,
 };
 
 #[derive(Debug)]

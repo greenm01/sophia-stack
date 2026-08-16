@@ -577,7 +577,9 @@
                 service_runtime_deadline_key_drain!();
             }
         }
-        if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut()) {
+        if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut())
+            && !native_scanout.output_topology_preparation_active()
+        {
             if layout.pending.is_none() {
                 runtime.release_layout_deferred_presentations();
             }

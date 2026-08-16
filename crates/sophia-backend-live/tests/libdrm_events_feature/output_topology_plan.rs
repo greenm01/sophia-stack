@@ -560,3 +560,90 @@ fn topology_resource_cohort_requires_complete_candidate_and_rollback_owners() {
     assert_eq!(candidate.len(), 2);
     assert_eq!(rollback.len(), 2);
 }
+
+fn topology_composition_frame(
+    head: RenderHeadId,
+    output: OutputId,
+    size: Size,
+) -> sophia_backend_live::LiveProductionHeadCompositionFrame {
+    sophia_backend_live::LiveProductionHeadCompositionFrame {
+        head,
+        logical_content_checksum: output.raw(),
+        frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+            layers: Vec::new(),
+            output_damage_snapshot: Some(sophia_engine::OutputFrameDamageSnapshot {
+                output: sophia_engine::HeadlessOutput {
+                    id: output,
+                    size,
+                    scale: 1,
+                },
+                surfaces: Vec::new(),
+                compositor_display_list: sophia_engine::CompositorDisplayList {
+                    output,
+                    commands: Vec::new(),
+                },
+                software_cursor: None,
+            }),
+        },
+    }
+}
+
+#[test]
+fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyDisposition as Disposition,
+        validate_live_production_topology_frames,
+    };
+
+    let mut plan = topology_apply_plan(&[0, 1]);
+    let enabled = plan.heads[0].head;
+    let disabled = plan.heads[1].head;
+    let output = plan.primary_output;
+    let size = plan.heads[0].previous_selection.size();
+    plan.heads[1].disposition = Disposition::Disabled;
+
+    let candidate = validate_live_production_topology_frames(
+        &plan,
+        vec![topology_composition_frame(enabled, output, size)],
+        true,
+    )
+    .unwrap();
+    assert_eq!(candidate.keys().copied().collect::<Vec<_>>(), vec![enabled]);
+
+    assert!(
+        validate_live_production_topology_frames(
+            &plan,
+            vec![topology_composition_frame(enabled, output, size)],
+            false,
+        )
+        .is_err(),
+        "rollback requires an enabled owner for a candidate-disabled head"
+    );
+    let rollback = validate_live_production_topology_frames(
+        &plan,
+        vec![
+            topology_composition_frame(enabled, output, size),
+            topology_composition_frame(disabled, output, size),
+        ],
+        false,
+    )
+    .unwrap();
+    assert_eq!(rollback.len(), 2);
+
+    assert!(
+        validate_live_production_topology_frames(
+            &plan,
+            vec![topology_composition_frame(
+                enabled,
+                output,
+                Size {
+                    width: size.width - 1,
+                    height: size.height,
+                },
+            )],
+            true,
+        )
+        .is_err(),
+        "candidate damage must name its exact native target"
+    );
+}

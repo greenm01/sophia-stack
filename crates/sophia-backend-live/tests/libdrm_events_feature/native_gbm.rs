@@ -1,5 +1,20 @@
 #[cfg(feature = "gbm-probe")]
 #[test]
+fn pending_renderer_work_can_be_discarded_only_before_worker_ownership() {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        layers: Vec::new(),
+        output_damage_snapshot: None,
+    });
+
+    assert!(exporter.pending_frame());
+    assert!(exporter.discard_pending_frame());
+    assert!(!exporter.pending_frame());
+    assert!(!exporter.discard_pending_frame());
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
 fn live_runtime_tick_native_gbm_rendered_scanout_fails_closed_when_render_device_is_unavailable() {
     let root = ready_drm_sysfs_fixture("runtime-native-gbm-rendered-primary-plane-unavailable");
     let report = discover_live_backend(&LiveBackendConfig::new(&root));
