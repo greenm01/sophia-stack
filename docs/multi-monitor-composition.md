@@ -629,6 +629,13 @@ parallel multi-monitor subsystem.
   against the live DRM master, and retains per-head target generations without
   mutating the published topology. It still rejects at target preparation until
   replacement renderer/KMS and rollback ownership are wired.
+- Resolved output candidates retain root-space logical viewports as well as
+  `HeadlessOutput` extents. The visual runtime can therefore capture one
+  committed root scene and independently lower every provisional extended or
+  mirrored head at native size. Topology-specific renderer preparation creates
+  framebuffer/import/mode-blob owners without committing; those owners can join
+  one card-scoped atomic modeset containing both enabled and explicitly disabled
+  heads, then become ordinary retirement owners only after kernel acceptance.
 
 ### Transitional Limitation
 
@@ -642,9 +649,11 @@ lowerer rather than disappearing or being reported as native.
 
 The native scheduler now has the prepare-all barrier, and live topology planning
 creates replacement selections for enabled heads while representing omitted
-connected heads as explicit disable effects. It does not yet create replacement
-target pools or use that ownership for live modeset apply and rollback. The
-distinguished primary output also remains in retained scene and Present paths.
+connected heads as explicit disable effects. Candidate CPU frames and native
+resource owners can now be prepared, and the per-card apply request is defined,
+but the live owner does not yet schedule the candidate-plus-rollback pools or
+execute/reconcile those commits. The distinguished primary output also remains
+in retained scene and Present paths.
 Configuration currently maps `DesktopMirrorFit` manually to backend-owned
 `NativeMirrorFit`.
 

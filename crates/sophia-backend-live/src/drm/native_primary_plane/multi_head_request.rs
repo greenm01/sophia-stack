@@ -35,6 +35,35 @@ impl LibdrmNativeAtomicHead {
     }
 }
 
+/// One head removed from the active topology by a combined modeset.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug)]
+pub struct LibdrmNativeAtomicDisabledHead {
+    pub selection: LibdrmNativePrimaryPlaneSelection,
+    pub properties: LibdrmNativePrimaryPlanePropertyHandles,
+}
+
+#[cfg(feature = "libdrm-events")]
+impl LibdrmNativeAtomicDisabledHead {
+    pub const fn new(
+        selection: LibdrmNativePrimaryPlaneSelection,
+        properties: LibdrmNativePrimaryPlanePropertyHandles,
+    ) -> Self {
+        Self {
+            selection,
+            properties,
+        }
+    }
+}
+
+/// Complete per-card topology change after every enabled target owns a buffer.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug)]
+pub enum LibdrmNativeAtomicTopologyChange {
+    Enabled(LibdrmNativeAtomicHead),
+    Disabled(LibdrmNativeAtomicDisabledHead),
+}
+
 /// One head's contribution to a topology-only request: which connector a CRTC
 /// drives, at which mode. No plane and no framebuffer.
 ///
@@ -299,6 +328,161 @@ pub fn build_native_multi_head_atomic_request(
             }
         }),
         heads: count,
+    }
+}
+
+/// Builds one card-scoped modeset containing both enabled and disabled heads.
+///
+/// Enabled heads carry their independently rendered framebuffer. Disabled heads
+/// explicitly detach plane, connector, and CRTC state. The kernel therefore
+/// accepts or rejects the entire card transition; callers only need userspace
+/// rollback across cards, never between heads on one card.
+#[cfg(feature = "libdrm-events")]
+pub fn build_native_topology_change_atomic_request(
+    changes: &[LibdrmNativeAtomicTopologyChange],
+) -> LibdrmNativeMultiHeadRequestBuildResult {
+    let count = changes.len();
+    if changes.is_empty() {
+        return LibdrmNativeMultiHeadRequestBuildResult::rejected(
+            LibdrmNativeMultiHeadRequestBuildStatus::NoHeads,
+            count,
+        );
+    }
+    for (index, change) in changes.iter().enumerate() {
+        let (connector, crtc, plane) = topology_change_objects(*change);
+        if let LibdrmNativeAtomicTopologyChange::Enabled(head) = change
+            && let Some(status) = reject_invalid_heads(
+                core::slice::from_ref(head),
+                LibdrmNativeAtomicCommitRequestScope::Modeset,
+            )
+        {
+            return LibdrmNativeMultiHeadRequestBuildResult::rejected(status, count);
+        }
+        for peer in changes.iter().skip(index + 1).copied() {
+            let (peer_connector, peer_crtc, peer_plane) = topology_change_objects(peer);
+            if connector == peer_connector || crtc == peer_crtc || plane == peer_plane {
+                return LibdrmNativeMultiHeadRequestBuildResult::rejected(
+                    LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects,
+                    count,
+                );
+            }
+            if let (
+                LibdrmNativeAtomicTopologyChange::Enabled(head),
+                LibdrmNativeAtomicTopologyChange::Enabled(peer),
+            ) = (*change, peer)
+                && head.objects.framebuffer == peer.objects.framebuffer
+                && head.objects.size != peer.objects.size
+            {
+                return LibdrmNativeMultiHeadRequestBuildResult::rejected(
+                    LibdrmNativeMultiHeadRequestBuildStatus::MismatchedMirrorSize,
+                    count,
+                );
+            }
+        }
+    }
+
+    let mut request = drm::control::atomic::AtomicModeReq::new();
+    for change in changes.iter().copied() {
+        match change {
+            LibdrmNativeAtomicTopologyChange::Enabled(head) => {
+                let objects = head.objects;
+                let properties = head.properties;
+                let width = objects.size.width as u64;
+                let height = objects.size.height as u64;
+                request.add_property(
+                    objects.connector,
+                    properties.connector_crtc_id,
+                    drm::control::property::Value::CRTC(Some(objects.crtc)),
+                );
+                request.add_property(
+                    objects.crtc,
+                    properties.crtc_mode_id,
+                    drm::control::property::Value::Blob(
+                        objects
+                            .mode_blob
+                            .expect("validated topology head carries a mode blob"),
+                    ),
+                );
+                request.add_property(
+                    objects.crtc,
+                    properties.crtc_active,
+                    drm::control::property::Value::Boolean(true),
+                );
+                add_primary_plane_properties(&mut request, objects, properties, width, height);
+                if let (Some(enabled), Some(property)) =
+                    (head.vrr_enabled, properties.crtc_vrr_enabled())
+                {
+                    request.add_property(
+                        objects.crtc,
+                        property,
+                        drm::control::property::Value::Boolean(enabled),
+                    );
+                }
+            }
+            LibdrmNativeAtomicTopologyChange::Disabled(head) => {
+                let selection = head.selection;
+                let properties = head.properties;
+                request.add_property(
+                    selection.plane_handle(),
+                    properties.plane_fb_id,
+                    drm::control::property::Value::Framebuffer(None),
+                );
+                request.add_property(
+                    selection.plane_handle(),
+                    properties.plane_crtc_id,
+                    drm::control::property::Value::CRTC(None),
+                );
+                request.add_property(
+                    selection.connector_handle(),
+                    properties.connector_crtc_id,
+                    drm::control::property::Value::CRTC(None),
+                );
+                request.add_property(
+                    selection.crtc_handle(),
+                    properties.crtc_mode_id,
+                    drm::control::property::Value::Blob(0),
+                );
+                request.add_property(
+                    selection.crtc_handle(),
+                    properties.crtc_active,
+                    drm::control::property::Value::Boolean(false),
+                );
+                if let Some(property) = properties.crtc_vrr_enabled() {
+                    request.add_property(
+                        selection.crtc_handle(),
+                        property,
+                        drm::control::property::Value::Boolean(false),
+                    );
+                }
+            }
+        }
+    }
+    LibdrmNativeMultiHeadRequestBuildResult {
+        status: LibdrmNativeMultiHeadRequestBuildStatus::Built,
+        request: Some(LibdrmNativeAtomicCommitRequest::modeset(request)),
+        heads: count,
+    }
+}
+
+#[cfg(feature = "libdrm-events")]
+fn topology_change_objects(
+    change: LibdrmNativeAtomicTopologyChange,
+) -> (
+    drm::control::connector::Handle,
+    drm::control::crtc::Handle,
+    drm::control::plane::Handle,
+) {
+    match change {
+        LibdrmNativeAtomicTopologyChange::Enabled(head) => (
+            head.objects.connector,
+            head.objects.crtc,
+            head.objects.plane,
+        ),
+        LibdrmNativeAtomicTopologyChange::Disabled(head) => (
+            head.selection.connector_handle(),
+            head.selection.crtc_handle(),
+            head.selection.plane_handle(),
+        ),
     }
 }
 

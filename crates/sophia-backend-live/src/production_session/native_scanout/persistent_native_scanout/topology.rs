@@ -54,6 +54,7 @@ pub struct LiveProductionNativeTopologyHeadPlan {
 pub struct LiveProductionNativeTopologyPlan {
     pub primary_output: OutputId,
     pub outputs: Vec<sophia_engine::HeadlessOutput>,
+    pub logical_viewports: Vec<crate::LiveOutputAuthorityLogicalViewport>,
     pub heads: Vec<LiveProductionNativeTopologyHeadPlan>,
 }
 
@@ -112,6 +113,7 @@ pub fn plan_live_production_native_topology(
         .map(|output| output.id)
         .collect::<BTreeSet<_>>();
     if output_ids.len() != resolved.outputs.len()
+        || resolved.logical_viewports.len() != resolved.outputs.len()
         || !output_ids.contains(&resolved.primary_output)
         || resolved.outputs.iter().any(|output| {
             !output.id.is_valid()
@@ -123,6 +125,16 @@ pub fn plan_live_production_native_topology(
         return Err(LiveProductionNativeTopologyPlanError::InvalidOutput(
             resolved.primary_output,
         ));
+    }
+    for (output, viewport) in resolved.outputs.iter().zip(&resolved.logical_viewports) {
+        if viewport.output != output.id
+            || viewport.logical.width != output.size.width
+            || viewport.logical.height != output.size.height
+        {
+            return Err(LiveProductionNativeTopologyPlanError::InvalidOutput(
+                output.id,
+            ));
+        }
     }
 
     let enabled = resolved
@@ -254,6 +266,7 @@ pub fn plan_live_production_native_topology(
     Ok(LiveProductionNativeTopologyPlan {
         primary_output: resolved.primary_output,
         outputs: resolved.outputs.clone(),
+        logical_viewports: resolved.logical_viewports.clone(),
         heads,
     })
 }

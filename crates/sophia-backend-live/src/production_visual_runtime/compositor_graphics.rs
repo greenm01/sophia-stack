@@ -1,6 +1,92 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
+    /// Lowers one immutable committed scene into candidate native-size frames
+    /// for a provisional topology. This is read-only with respect to the live
+    /// runtime: the caller must not publish or install the candidate until its
+    /// KMS transaction and first-presentation barrier complete.
+    pub fn compose_output_topology_head_frames(
+        &self,
+        scene: &LiveProductionCpuScene,
+        resolved: &crate::LiveResolvedOutputTopology,
+        scene_generation: u64,
+    ) -> Result<Vec<crate::LiveProductionHeadCompositionFrame>, Box<dyn std::error::Error>> {
+        if scene_generation == 0 {
+            return Err("topology composition requires a valid scene generation".into());
+        }
+        let committed = self.production.committed_surfaces();
+        let cpu_layers = scene.presentation_variant_layers(committed, &self.presentation_order);
+        let targets = resolved.head_render_targets();
+        if targets.len() != resolved.targets.len() {
+            return Err("topology render-target projection is incomplete".into());
+        }
+        let mut frames = Vec::with_capacity(targets.len());
+        for viewport in &resolved.logical_viewports {
+            let mut display_list = surface_chrome_display_list_for_surfaces(
+                viewport.output,
+                &self.presentation_order,
+                &self.chrome_surfaces,
+                committed,
+                self.focused_surface,
+                self.surface_chrome_style,
+            )?;
+            if let Some(outline) = self.floating_outline {
+                if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
+                    return Err("topology display-list capacity exceeded".into());
+                }
+                let border = compositor_floating_outline(
+                    outline.surface,
+                    outline.geometry,
+                    self.surface_chrome_style.focus_ring.width.max(2),
+                    self.surface_chrome_style.focus_ring.color,
+                )
+                .ok_or("topology floating outline is invalid")?;
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::Border(border));
+            }
+            let snapshot = sophia_engine::output_scene_snapshot_from_committed_in_view(
+                viewport.output,
+                scene_generation,
+                viewport.logical,
+                committed,
+                display_list,
+                None,
+            )?;
+            let output_targets = targets
+                .iter()
+                .copied()
+                .filter(|target| target.output == viewport.output)
+                .collect::<Vec<_>>();
+            let plans = sophia_engine::build_output_head_plans(&snapshot, &output_targets)?;
+            for plan in &plans {
+                frames.push(crate::LiveProductionHeadCompositionFrame {
+                    head: plan.head,
+                    logical_content_checksum: plan.logical_content_checksum,
+                    frame: sophia_renderer_live::lower_cpu_head_composition_plan(
+                        plan,
+                        &cpu_layers,
+                    )?,
+                });
+            }
+        }
+        if frames.len() != targets.len() {
+            return Err("topology composition omitted an enabled head".into());
+        }
+        let actual = frames
+            .iter()
+            .map(|frame| frame.head)
+            .collect::<BTreeSet<_>>();
+        let expected = targets
+            .iter()
+            .map(|target| target.head)
+            .collect::<BTreeSet<_>>();
+        if actual != expected || actual.len() != frames.len() {
+            return Err("topology composition repeated or targeted an unknown head".into());
+        }
+        Ok(frames)
+    }
+
     pub(super) fn display_list(
         &self,
         committed_surfaces: &[CommittedSurfaceState],

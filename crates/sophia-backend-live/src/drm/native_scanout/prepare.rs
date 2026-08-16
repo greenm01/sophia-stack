@@ -17,8 +17,26 @@ pub struct LibdrmNativePrimaryPlanePreparedScanout {
     framebuffer: Option<LibdrmNativePrimaryPlaneFramebufferCreateDetail>,
     request_scope: LibdrmNativeAtomicCommitRequestScope,
     commit_flags: LibdrmNativeAtomicCommitFlagsReport,
+    selected: LibdrmNativePrimaryPlaneSelection,
+    property_handles: LibdrmNativePrimaryPlanePropertyHandles,
     resources: LibdrmNativePrimaryPlaneResourceBundle,
     request: LibdrmNativeAtomicCommitRequest,
+}
+
+/// One enabled head's complete resources for a card-scoped topology commit.
+///
+/// The framebuffer/imports/mode blob remain affine. After the combined request
+/// succeeds, adopt this owner into a scanout submission; otherwise cancel it.
+#[derive(Debug)]
+pub struct LibdrmNativePrimaryPlanePreparedTopologyHead {
+    atomic_head: LibdrmNativeAtomicHead,
+    resources: LibdrmNativePrimaryPlaneResourceBundle,
+}
+
+impl LibdrmNativePrimaryPlanePreparedTopologyHead {
+    pub const fn atomic_head(&self) -> LibdrmNativeAtomicHead {
+        self.atomic_head
+    }
 }
 
 #[derive(Debug)]
@@ -315,11 +333,55 @@ where
             framebuffer: resources.framebuffer,
             request_scope,
             commit_flags,
+            selected,
+            property_handles,
             resources: resource_bundle,
             request: request_owner,
         }),
         cleanup: None,
     }
+}
+
+pub fn prepare_native_topology_head_from_prepared_scanout(
+    prepared: LibdrmNativePrimaryPlanePreparedScanout,
+    vrr_enabled: Option<bool>,
+) -> Result<LibdrmNativePrimaryPlanePreparedTopologyHead, LibdrmNativePrimaryPlanePreparedScanout> {
+    if prepared.request_scope != LibdrmNativeAtomicCommitRequestScope::Modeset
+        || !prepared.resources.mode_blob.is_some_and(|blob| blob != 0)
+    {
+        return Err(prepared);
+    }
+    let mut atomic_head = LibdrmNativeAtomicHead::new(
+        prepared.resources.into_objects(prepared.selected),
+        prepared.property_handles,
+    );
+    if let Some(enabled) = vrr_enabled {
+        atomic_head = atomic_head.with_vrr(enabled);
+    }
+    Ok(LibdrmNativePrimaryPlanePreparedTopologyHead {
+        atomic_head,
+        resources: prepared.resources,
+    })
+}
+
+/// Transfers prepared resources into the ordinary page-flip retirement owner
+/// after the containing card-scoped topology request was accepted.
+pub fn adopt_prepared_native_topology_head_after_commit(
+    prepared: LibdrmNativePrimaryPlanePreparedTopologyHead,
+) -> LibdrmNativePrimaryPlaneScanoutSubmission {
+    LibdrmNativePrimaryPlaneScanoutSubmission {
+        resources: prepared.resources,
+    }
+}
+
+pub fn cancel_prepared_native_topology_head<D>(
+    device: &D,
+    prepared: LibdrmNativePrimaryPlanePreparedTopologyHead,
+) -> LibdrmNativePrimaryPlaneResourceDestroyReport
+where
+    D: LibdrmNativePrimaryPlaneResourceDevice,
+{
+    destroy_native_primary_plane_resources(device, prepared.resources)
 }
 
 pub fn submit_prepared_native_primary_plane_scanout<D>(

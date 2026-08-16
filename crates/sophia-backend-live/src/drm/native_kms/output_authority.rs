@@ -53,10 +53,20 @@ pub struct LiveOutputAuthorityDisabledHead {
     pub target_generation: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveOutputAuthorityLogicalViewport {
+    pub output: OutputId,
+    pub logical: Rect,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveResolvedOutputTopology {
     pub primary_output: OutputId,
     pub outputs: Vec<HeadlessOutput>,
+    /// Desktop-space origin and extent for each logical output. `HeadlessOutput`
+    /// intentionally has no position, so retaining only that value would make
+    /// an extended desktop indistinguishable from several overlapping outputs.
+    pub logical_viewports: Vec<LiveOutputAuthorityLogicalViewport>,
     /// Connected native heads omitted from the candidate's enabled target set.
     ///
     /// Disabling one of these is a physical KMS effect and therefore belongs to
@@ -329,6 +339,15 @@ pub fn resolve_live_output_topology_candidate(
             scale: 1,
         })
         .collect::<Vec<_>>();
+    let logical_viewports = candidate
+        .groups
+        .iter()
+        .enumerate()
+        .map(|(index, group)| LiveOutputAuthorityLogicalViewport {
+            output: output_ids[index],
+            logical: group.logical,
+        })
+        .collect::<Vec<_>>();
     let names = capabilities
         .values()
         .map(|capability| {
@@ -353,6 +372,7 @@ pub fn resolve_live_output_topology_candidate(
     Ok(LiveResolvedOutputTopology {
         primary_output,
         outputs,
+        logical_viewports,
         disabled_heads,
         targets,
         mirror_grouping,
@@ -378,6 +398,7 @@ pub fn project_live_output_authority_candidate_snapshot(
     if topology_epoch <= published.topology_epoch
         || resolved.outputs.len() != candidate.groups.len()
         || resolved.targets.len() != candidate.heads.len()
+        || resolved.logical_viewports.len() != candidate.groups.len()
     {
         return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
     }
@@ -414,6 +435,14 @@ pub fn project_live_output_authority_candidate_snapshot(
     let mut groups = Vec::with_capacity(candidate.groups.len());
     for (index, group) in candidate.groups.iter().enumerate() {
         let output = resolved.outputs[index].id;
+        if resolved.logical_viewports[index]
+            != (LiveOutputAuthorityLogicalViewport {
+                output,
+                logical: group.logical,
+            })
+        {
+            return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
+        }
         if resolved.outputs[index].size.width != group.logical.width
             || resolved.outputs[index].size.height != group.logical.height
             || resolved.outputs[index].scale != 1

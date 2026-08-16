@@ -3,6 +3,26 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-15: topology resources now join card-scoped apply requests
+
+`HeadlessOutput` has no origin, so retaining only its extent during candidate
+resolution erased the distinction between a real extended layout and several
+overlapping outputs. Resolved candidates now retain ordered root-space logical
+viewports. A read-only visual-runtime seam captures each viewport from one
+committed surface slice, selects per-head content variants, and lowers native-
+size frames; a deterministic spanning-surface test proves both halves of an
+extended desktop are produced from the same scene generation.
+
+Renderer topology preparation now uses blocking modeset policy and retains the
+renderer owner, framebuffer/imports, and mode blob without submitting. Prepared
+heads expose copied atomic contributions while keeping their resources affine.
+The new card request builder combines independently buffered enabled heads and
+explicit disabled heads, rejecting object overlap before adding properties. A
+successful combined commit can adopt prepared owners into ordinary scanout
+retirement; failed/unsubmitted work remains cancellable. The remaining live
+transaction must prepare a rollback pool, submit cards, roll back prior cards on
+failure, rebuild runtime targets, and wait for first presentation before publish.
+
 ## 2026-08-15: live output effects now resolve complete native head plans
 
 Tracing the first post-cohort apply boundary found that an omitted connected head

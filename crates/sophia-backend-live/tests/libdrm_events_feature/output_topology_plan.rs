@@ -61,6 +61,15 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
             size: large,
             scale: 1,
         }],
+        logical_viewports: vec![sophia_backend_live::LiveOutputAuthorityLogicalViewport {
+            output: output_one,
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: large.width,
+                height: large.height,
+            },
+        }],
         disabled_heads: vec![LiveOutputAuthorityDisabledHead {
             head: head_two,
             target_generation: 8,
@@ -110,6 +119,17 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
         size: small,
         scale: 1,
     });
+    split.logical_viewports.push(
+        sophia_backend_live::LiveOutputAuthorityLogicalViewport {
+            output: output_two,
+            logical: Rect {
+                x: large.width,
+                y: 0,
+                width: small.width,
+                height: small.height,
+            },
+        },
+    );
     split.disabled_heads.clear();
     split.targets.push(LiveOutputAuthorityHeadTarget {
         head: head_two,
@@ -172,6 +192,15 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
             id: output,
             size,
             scale: 1,
+        }],
+        logical_viewports: vec![sophia_backend_live::LiveOutputAuthorityLogicalViewport {
+            output,
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: size.height,
+            },
         }],
         disabled_heads: Vec::new(),
         targets: vec![LiveOutputAuthorityHeadTarget {

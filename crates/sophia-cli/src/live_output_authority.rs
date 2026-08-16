@@ -71,6 +71,7 @@ pub struct LiveOutputAuthorityEffect {
     pub transaction: TransactionId,
     pub base_topology_epoch: u64,
     pub candidate_topology_epoch: u64,
+    pub published_snapshot: OutputAuthoritySnapshot,
     pub resolved: LiveResolvedOutputTopology,
 }
 
@@ -239,6 +240,7 @@ impl LiveOutputAuthorityOwner {
             transaction: active.transaction,
             base_topology_epoch: active.transaction_state.base_topology_epoch(),
             candidate_topology_epoch: active.transaction_state.candidate_topology_epoch(),
+            published_snapshot: self.published.clone(),
             resolved: active.resolved.clone(),
         })
     }

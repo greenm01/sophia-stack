@@ -169,6 +169,7 @@ fn live_output_owner_publishes_split_outputs_only_after_every_first_presentation
     assert_eq!(effect.transaction, TransactionId::from_raw(5));
     assert_eq!(effect.base_topology_epoch, 7);
     assert_eq!(effect.candidate_topology_epoch, 8);
+    assert_eq!(effect.published_snapshot, snapshot);
     assert_eq!(effect.resolved.targets[0].target_generation, 2);
     assert_eq!(owner.published(), &snapshot);
     let resolved = owner.active_resolved().unwrap();

@@ -28,8 +28,90 @@ fn head(
     )
 }
 
+fn disabled_head(
+    connector: u32,
+    crtc: u32,
+    plane: u32,
+) -> sophia_backend_live::LibdrmNativeAtomicDisabledHead {
+    sophia_backend_live::LibdrmNativeAtomicDisabledHead::new(
+        LibdrmNativePrimaryPlaneSelection::new(
+            drm::control::from_u32(connector).unwrap(),
+            drm::control::from_u32(crtc).unwrap(),
+            drm::control::from_u32(plane).unwrap(),
+            scanout_size(1, 1),
+            None,
+        ),
+        primary_plane_properties(),
+    )
+}
+
 fn scanout_size(width: i32, height: i32) -> Size {
     Size { width, height }
+}
+
+#[test]
+fn topology_change_request_combines_enabled_and_disabled_heads_on_one_card() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicTopologyChange, LibdrmNativeMultiHeadRequestBuildStatus,
+        build_native_topology_change_atomic_request,
+    };
+
+    let mut build = build_native_topology_change_atomic_request(&[
+        LibdrmNativeAtomicTopologyChange::Enabled(head(
+            1,
+            11,
+            21,
+            31,
+            scanout_size(1920, 1080),
+        )),
+        LibdrmNativeAtomicTopologyChange::Disabled(disabled_head(2, 12, 22)),
+    ]);
+    assert_eq!(build.status, LibdrmNativeMultiHeadRequestBuildStatus::Built);
+    assert_eq!(build.heads, 2);
+    let request = build
+        .request
+        .take()
+        .expect("complete topology change should own one request")
+        .allow_modeset()
+        .without_page_flip_event()
+        .blocking();
+    assert_eq!(
+        request.reduced_flags(),
+        LibdrmNativeAtomicCommitFlagsReport {
+            page_flip_event: false,
+            nonblocking: false,
+            allow_modeset: true,
+            test_only: false,
+        }
+    );
+    assert_eq!(
+        request.reduced_scope(),
+        LibdrmNativeAtomicCommitRequestScope::Modeset
+    );
+}
+
+#[test]
+fn topology_change_request_rejects_object_overlap_before_building_properties() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicTopologyChange, LibdrmNativeMultiHeadRequestBuildStatus,
+        build_native_topology_change_atomic_request,
+    };
+
+    let build = build_native_topology_change_atomic_request(&[
+        LibdrmNativeAtomicTopologyChange::Enabled(head(
+            1,
+            11,
+            21,
+            31,
+            scanout_size(1920, 1080),
+        )),
+        LibdrmNativeAtomicTopologyChange::Disabled(disabled_head(1, 12, 22)),
+    ]);
+    assert_eq!(
+        build.status,
+        LibdrmNativeMultiHeadRequestBuildStatus::OverlappingObjects
+    );
+    assert!(build.request.is_none());
 }
 
 #[test]

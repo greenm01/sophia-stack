@@ -9,6 +9,20 @@ pub struct LivePreparedRenderedPrimaryPlaneScanout<Owner> {
 }
 
 #[cfg(feature = "libdrm-events")]
+#[derive(Debug)]
+pub struct LivePreparedRenderedTopologyHead<Owner> {
+    scanout_buffer: Owner,
+    primary_plane: LibdrmNativePrimaryPlanePreparedTopologyHead,
+}
+
+#[cfg(feature = "libdrm-events")]
+impl<Owner> LivePreparedRenderedTopologyHead<Owner> {
+    pub const fn atomic_head(&self) -> LibdrmNativeAtomicHead {
+        self.primary_plane.atomic_head()
+    }
+}
+
+#[cfg(feature = "libdrm-events")]
 pub struct LiveCancelledPreparedPrimaryPlaneScanout<Owner> {
     pub destroy: LibdrmNativePrimaryPlaneResourceDestroyStatus,
     pub cleanup: Option<LiveRenderedPrimaryPlaneScanoutCleanup<Owner>>,
@@ -93,6 +107,57 @@ where
     E: LiveRenderedScanoutBufferExporter,
     E::Owner: LiveRenderedScanoutBufferPrimeSource,
 {
+    prepare_rendered_primary_plane_scanout_from_target_and_selection_with_policy(
+        scanout_target,
+        target,
+        selection,
+        vrr_enabled,
+        device,
+        exporter,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+    )
+}
+
+#[cfg(feature = "libdrm-events")]
+pub fn prepare_rendered_primary_plane_topology_head_from_target_and_selection_with<D, E>(
+    scanout_target: LiveKmsScanoutTargetStatus,
+    target: Option<LiveGbmEglFrameTargetRecord>,
+    selection: LibdrmNativePrimaryPlaneSelectionResult,
+    vrr_enabled: Option<bool>,
+    device: &D,
+    exporter: &mut E,
+) -> LiveRenderedPrimaryPlaneScanoutPrepareResult<E::Owner>
+where
+    D: LibdrmNativePropertyLookupDevice + LibdrmNativePrimaryPlaneResourceDevice,
+    E: LiveRenderedScanoutBufferExporter,
+    E::Owner: LiveRenderedScanoutBufferPrimeSource,
+{
+    prepare_rendered_primary_plane_scanout_from_target_and_selection_with_policy(
+        scanout_target,
+        target,
+        selection,
+        vrr_enabled,
+        device,
+        exporter,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::blocking_modeset(),
+    )
+}
+
+#[cfg(feature = "libdrm-events")]
+fn prepare_rendered_primary_plane_scanout_from_target_and_selection_with_policy<D, E>(
+    scanout_target: LiveKmsScanoutTargetStatus,
+    target: Option<LiveGbmEglFrameTargetRecord>,
+    selection: LibdrmNativePrimaryPlaneSelectionResult,
+    vrr_enabled: Option<bool>,
+    device: &D,
+    exporter: &mut E,
+    policy: LibdrmNativePrimaryPlaneScanoutSubmitPolicy,
+) -> LiveRenderedPrimaryPlaneScanoutPrepareResult<E::Owner>
+where
+    D: LibdrmNativePropertyLookupDevice + LibdrmNativePrimaryPlaneResourceDevice,
+    E: LiveRenderedScanoutBufferExporter,
+    E::Owner: LiveRenderedScanoutBufferPrimeSource,
+{
     if scanout_target != LiveKmsScanoutTargetStatus::Ready {
         return LiveRenderedPrimaryPlaneScanoutPrepareResult::stopped(
             LiveRenderedPrimaryPlaneScanoutPrepareStatus::ScanoutTargetNotReady,
@@ -161,7 +226,7 @@ where
             device,
             selection,
             descriptor,
-            rendered_page_flip_policy(vrr_enabled),
+            rendered_policy(policy, vrr_enabled),
         )
     } else {
         prepare_native_primary_plane_scanout_from_selection_and_renderer_dma_bufs_with_policy(
@@ -171,7 +236,7 @@ where
             prime_fds
                 .expect("independent DRM files require PRIME transport")
                 .into_plane_fds(),
-            rendered_page_flip_policy(vrr_enabled),
+            rendered_policy(policy, vrr_enabled),
         )
     };
     let (prepared, cleanup) = match native.prepared.take() {
@@ -297,6 +362,63 @@ where
 }
 
 #[cfg(feature = "libdrm-events")]
+pub fn prepare_rendered_topology_head_from_prepared_scanout<Owner>(
+    prepared: LivePreparedRenderedPrimaryPlaneScanout<Owner>,
+    vrr_enabled: Option<bool>,
+) -> Result<LivePreparedRenderedTopologyHead<Owner>, LivePreparedRenderedPrimaryPlaneScanout<Owner>>
+{
+    let LivePreparedRenderedPrimaryPlaneScanout {
+        scanout_buffer,
+        primary_plane,
+    } = prepared;
+    let primary_plane =
+        match prepare_native_topology_head_from_prepared_scanout(primary_plane, vrr_enabled) {
+            Ok(primary_plane) => primary_plane,
+            Err(primary_plane) => {
+                return Err(LivePreparedRenderedPrimaryPlaneScanout {
+                    scanout_buffer,
+                    primary_plane,
+                });
+            }
+        };
+    Ok(LivePreparedRenderedTopologyHead {
+        scanout_buffer,
+        primary_plane,
+    })
+}
+
+#[cfg(feature = "libdrm-events")]
+pub fn adopt_prepared_rendered_topology_head_after_commit<Owner>(
+    prepared: LivePreparedRenderedTopologyHead<Owner>,
+) -> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
+    LiveRenderedPrimaryPlaneScanoutSubmission {
+        scanout_buffer: prepared.scanout_buffer,
+        primary_plane: adopt_prepared_native_topology_head_after_commit(prepared.primary_plane),
+        submitted_after_page_flip_serial: None,
+    }
+}
+
+#[cfg(feature = "libdrm-events")]
+pub fn cancel_prepared_rendered_topology_head<D, Owner>(
+    device: &D,
+    prepared: LivePreparedRenderedTopologyHead<Owner>,
+) -> LiveCancelledPreparedPrimaryPlaneScanout<Owner>
+where
+    D: LibdrmNativePrimaryPlaneResourceDevice,
+{
+    let destroy = cancel_prepared_native_topology_head(device, prepared.primary_plane);
+    LiveCancelledPreparedPrimaryPlaneScanout {
+        destroy: destroy.status,
+        cleanup: destroy
+            .cleanup
+            .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
+                scanout_buffer: prepared.scanout_buffer,
+                primary_plane,
+            }),
+    }
+}
+
+#[cfg(feature = "libdrm-events")]
 pub fn cancel_prepared_rendered_primary_plane_scanout<D, Owner>(
     device: &D,
     prepared: LivePreparedRenderedPrimaryPlaneScanout<Owner>,
@@ -317,13 +439,12 @@ where
 }
 
 #[cfg(feature = "libdrm-events")]
-const fn rendered_page_flip_policy(
+const fn rendered_policy(
+    policy: LibdrmNativePrimaryPlaneScanoutSubmitPolicy,
     vrr_enabled: Option<bool>,
 ) -> LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
     match vrr_enabled {
-        Some(enabled) => {
-            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().with_vrr_enabled(enabled)
-        }
-        None => LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        Some(enabled) => policy.with_vrr_enabled(enabled),
+        None => policy,
     }
 }

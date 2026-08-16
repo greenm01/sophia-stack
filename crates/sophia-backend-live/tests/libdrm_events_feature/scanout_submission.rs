@@ -155,12 +155,17 @@ fn rendered_head_preparation_retains_export_owner_without_committing() {
         LiveRenderedPrimaryPlaneScanoutPrepareStatus::Prepared
     );
     assert_eq!(device.commits.get(), 0);
+    let ordinary = prepared
+        .prepared
+        .take()
+        .expect("renderer preparation retains the complete head owner");
+    let ordinary = sophia_backend_live::prepare_rendered_topology_head_from_prepared_scanout(
+        ordinary, None,
+    )
+    .expect_err("page-flip resources have no mode blob and cannot enter topology apply");
     let cancelled = cancel_prepared_rendered_primary_plane_scanout(
         &device,
-        prepared
-            .prepared
-            .take()
-            .expect("renderer preparation retains the complete head owner"),
+        ordinary,
     );
     assert_eq!(
         cancelled.destroy,
@@ -168,6 +173,95 @@ fn rendered_head_preparation_retains_export_owner_without_committing() {
     );
     assert!(cancelled.cleanup.is_none());
     assert_eq!(device.commits.get(), 0);
+}
+
+#[test]
+fn rendered_topology_head_joins_one_card_commit_before_adoption() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicTopologyChange, LibdrmNativeMultiHeadRequestBuildStatus,
+        adopt_prepared_rendered_topology_head_after_commit,
+        build_native_topology_change_atomic_request,
+        prepare_rendered_primary_plane_topology_head_from_target_and_selection_with,
+        prepare_rendered_topology_head_from_prepared_scanout,
+    };
+
+    let device = full_primary_plane_scanout_device();
+    let size = Size {
+        width: 1280,
+        height: 720,
+    };
+    let selection = select_native_primary_plane_target(&device);
+    let mut exporter = FakeRenderedScanoutExporter::exported(size);
+    let mut prepared =
+        prepare_rendered_primary_plane_topology_head_from_target_and_selection_with(
+            LiveKmsScanoutTargetStatus::Ready,
+            Some(LiveGbmEglFrameTargetRecord::new(size)),
+            selection,
+            None,
+            &device,
+            &mut exporter,
+        );
+    assert_eq!(
+        prepared.status,
+        LiveRenderedPrimaryPlaneScanoutPrepareStatus::Prepared
+    );
+    assert_eq!(
+        prepared.request_scope,
+        Some(LibdrmNativeAtomicCommitRequestScope::Modeset)
+    );
+    assert_eq!(
+        prepared.commit_flags,
+        Some(LibdrmNativeAtomicCommitFlagsReport {
+            page_flip_event: false,
+            nonblocking: false,
+            allow_modeset: true,
+            test_only: false,
+        })
+    );
+    assert_eq!(device.commits(), 0);
+
+    let topology = prepare_rendered_topology_head_from_prepared_scanout(
+        prepared
+            .prepared
+            .take()
+            .expect("topology preparation retains the renderer and native resources"),
+        None,
+    )
+    .expect("modeset preparation should convert into a card-scoped head");
+    let mut build = build_native_topology_change_atomic_request(&[
+        LibdrmNativeAtomicTopologyChange::Enabled(topology.atomic_head()),
+    ]);
+    assert_eq!(build.status, LibdrmNativeMultiHeadRequestBuildStatus::Built);
+    let request = build
+        .request
+        .take()
+        .unwrap()
+        .allow_modeset()
+        .without_page_flip_event()
+        .blocking();
+    let mut committer = NativeLibdrmAtomicScanoutCommitter::new(device);
+    assert_eq!(
+        committer.submit_native_atomic_commit(request).status,
+        LibdrmNativeAtomicCommitSubmitStatus::Submitted
+    );
+    assert_eq!(committer.device().commits(), 1);
+
+    let submission = adopt_prepared_rendered_topology_head_after_commit(topology);
+    let retired = retire_rendered_primary_plane_scanout_after_page_flip(
+        committer.device(),
+        submission,
+        &LivePageFlipCallbackReport {
+            decision: LivePageFlipCallbackDecision::Accepted,
+            event: LivePageFlipEvent {
+                status: LivePageFlipEventStatus::Presented,
+                frame_serial: Some(1),
+            },
+        },
+    );
+    assert_eq!(
+        retired.destroy,
+        Some(LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed)
+    );
 }
 
 #[test]

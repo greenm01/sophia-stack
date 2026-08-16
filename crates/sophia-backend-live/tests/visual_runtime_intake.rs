@@ -136,6 +136,128 @@ fn initial_surface_cannot_seed_a_forged_generation() {
 }
 
 #[test]
+fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
+    use sophia_backend_live::{
+        LibdrmNativeOutputTiming, LiveOutputAuthorityHeadTarget,
+        LiveOutputAuthorityLogicalViewport, LiveResolvedOutputTopology, NativeMirrorGrouping,
+    };
+    use sophia_engine::RenderHeadId;
+    use sophia_protocol::{OutputHeadMapping, OutputTransform, OutputVrrPolicy};
+    use sophia_renderer_live::{
+        LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
+        LiveProductionCpuScene,
+    };
+
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None, None).expect("runtime");
+    runtime
+        .prepare_authority_transactions(TransactionId::from_raw(1), &[initial_transaction(0)], &[])
+        .expect("commit one spanning surface");
+    let mut scene = LiveProductionCpuScene::new(output().size);
+    scene
+        .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: 1,
+            size: output().size,
+            stride: 640 * 4,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: vec![0x7f; 640 * 480 * 4],
+        })])
+        .unwrap();
+
+    let left = OutputId::from_raw(1);
+    let right = OutputId::from_raw(2);
+    let half = Size {
+        width: 320,
+        height: 480,
+    };
+    let resolved = LiveResolvedOutputTopology {
+        primary_output: left,
+        outputs: vec![
+            HeadlessOutput {
+                id: left,
+                size: half,
+                scale: 1,
+            },
+            HeadlessOutput {
+                id: right,
+                size: half,
+                scale: 1,
+            },
+        ],
+        logical_viewports: vec![
+            LiveOutputAuthorityLogicalViewport {
+                output: left,
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 320,
+                    height: 480,
+                },
+            },
+            LiveOutputAuthorityLogicalViewport {
+                output: right,
+                logical: Rect {
+                    x: 320,
+                    y: 0,
+                    width: 320,
+                    height: 480,
+                },
+            },
+        ],
+        disabled_heads: Vec::new(),
+        targets: vec![
+            LiveOutputAuthorityHeadTarget {
+                head: RenderHeadId::from_raw(11),
+                target_generation: 2,
+                output: left,
+                timing: LibdrmNativeOutputTiming::new(320, 480, 60_000),
+                native_size: half,
+                transform: OutputTransform::Normal,
+                mapping: OutputHeadMapping::Exact,
+                vrr: OutputVrrPolicy::Disabled,
+            },
+            LiveOutputAuthorityHeadTarget {
+                head: RenderHeadId::from_raw(12),
+                target_generation: 2,
+                output: right,
+                timing: LibdrmNativeOutputTiming::new(320, 480, 60_000),
+                native_size: half,
+                transform: OutputTransform::Normal,
+                mapping: OutputHeadMapping::Exact,
+                vrr: OutputVrrPolicy::Disabled,
+            },
+        ],
+        mirror_grouping: NativeMirrorGrouping::none(),
+    };
+    let frames = runtime
+        .compose_output_topology_head_frames(&scene, &resolved, 9)
+        .expect("both extended viewports should lower independently");
+    assert_eq!(frames.len(), 2);
+    assert_eq!(
+        frames.iter().map(|frame| frame.head).collect::<Vec<_>>(),
+        vec![RenderHeadId::from_raw(11), RenderHeadId::from_raw(12)]
+    );
+    assert_eq!(
+        frames[0]
+            .frame
+            .output_damage_snapshot
+            .as_ref()
+            .unwrap()
+            .output,
+        resolved.outputs[0]
+    );
+    assert_eq!(
+        frames[1]
+            .frame
+            .output_damage_snapshot
+            .as_ref()
+            .unwrap()
+            .output,
+        resolved.outputs[1]
+    );
+}
+
+#[test]
 fn revoked_native_suspend_is_idempotent_without_active_scanout() {
     let output = output();
     let mut runtime =

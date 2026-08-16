@@ -1052,9 +1052,14 @@ is excluded; retained product behavior is not.
      apply. Accepted IPC effects now reach the visual/session owner, where every
      enabled and disabled head is bound to its current native objects and each
      requested mode is resolved without mutation. Disabled heads remain required
-     transaction members and all target generations advance explicitly. The
-     remaining ownership work is to build replacement target pools, execute live
-     card-scoped modesets/rollback, and publish only after the new outputs present.
+     transaction members and all target generations advance explicitly. Root-
+     space logical viewports survive resolution, so one committed scene now
+     lowers provisional mirror and extended heads independently. Topology
+     preparation owns each enabled framebuffer/import/mode blob without an early
+     submit, and one card-scoped atomic request combines enabled and disabled
+     heads. The remaining ownership work is to schedule candidate and rollback
+     pools, execute/reconcile those card commits, and publish only after the new
+     outputs present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining
