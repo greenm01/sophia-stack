@@ -252,6 +252,16 @@ impl LiveOutputAuthorityOwner {
         Ok(self.active_mut()?.transaction_state.mark_prepared(head))
     }
 
+    /// Applies a physical observation batch transactionally. A malformed card
+    /// report must not advance a prefix and leave protocol authority ahead of
+    /// the native resource owner.
+    pub fn mark_prepared_batch(
+        &mut self,
+        heads: &[RenderHeadId],
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        self.observe_head_batch(heads, OutputTopologyTransaction::mark_prepared)
+    }
+
     pub fn begin_apply(
         &mut self,
     ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
@@ -265,6 +275,13 @@ impl LiveOutputAuthorityOwner {
         Ok(self.active_mut()?.transaction_state.mark_applied(head))
     }
 
+    pub fn mark_applied_batch(
+        &mut self,
+        heads: &[RenderHeadId],
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        self.observe_head_batch(heads, OutputTopologyTransaction::mark_applied)
+    }
+
     pub fn mark_first_presented(
         &mut self,
         output: sophia_protocol::OutputId,
@@ -273,6 +290,24 @@ impl LiveOutputAuthorityOwner {
             .active_mut()?
             .transaction_state
             .mark_first_presented(output))
+    }
+
+    pub fn mark_first_presented_batch(
+        &mut self,
+        outputs: &[sophia_protocol::OutputId],
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        let active = self.active_mut()?;
+        let mut next = active.transaction_state.clone();
+        let mut final_transition = OutputTopologyTransactionTransition::Accepted;
+        for output in outputs.iter().copied() {
+            let transition = next.mark_first_presented(output);
+            if !valid_observation_transition(transition) {
+                return Err(LiveOutputAuthorityOwnerError::TransactionInvariant);
+            }
+            final_transition = transition;
+        }
+        active.transaction_state = next;
+        Ok(final_transition)
     }
 
     pub fn fail(
@@ -287,6 +322,13 @@ impl LiveOutputAuthorityOwner {
         head: RenderHeadId,
     ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
         Ok(self.active_mut()?.transaction_state.mark_rolled_back(head))
+    }
+
+    pub fn mark_rolled_back_batch(
+        &mut self,
+        heads: &[RenderHeadId],
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        self.observe_head_batch(heads, OutputTopologyTransaction::mark_rolled_back)
     }
 
     pub fn rollback_failed(
@@ -362,6 +404,36 @@ impl LiveOutputAuthorityOwner {
             .as_mut()
             .ok_or(LiveOutputAuthorityOwnerError::NoActiveCandidate)
     }
+
+    fn observe_head_batch(
+        &mut self,
+        heads: &[RenderHeadId],
+        observe: fn(
+            &mut OutputTopologyTransaction,
+            RenderHeadId,
+        ) -> OutputTopologyTransactionTransition,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        let active = self.active_mut()?;
+        let mut next = active.transaction_state.clone();
+        let mut final_transition = OutputTopologyTransactionTransition::Accepted;
+        for head in heads.iter().copied() {
+            let transition = observe(&mut next, head);
+            if !valid_observation_transition(transition) {
+                return Err(LiveOutputAuthorityOwnerError::TransactionInvariant);
+            }
+            final_transition = transition;
+        }
+        active.transaction_state = next;
+        Ok(final_transition)
+    }
+}
+
+const fn valid_observation_transition(transition: OutputTopologyTransactionTransition) -> bool {
+    matches!(
+        transition,
+        OutputTopologyTransactionTransition::Accepted
+            | OutputTopologyTransactionTransition::PhaseReady
+    )
 }
 
 const fn failure_reason(failure: OutputTopologyTransactionFailure) -> u16 {

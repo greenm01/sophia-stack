@@ -1060,9 +1060,12 @@ is excluded; retained product behavior is not.
      heads. Card commits are now ordered deterministically, an accepted prefix
      rolls back in reverse order after a later-card refusal, and rollback render
      targets are reconstructed from the published snapshot plus live physical
-     sizes/generations rather than from the candidate. The remaining ownership
-     work is to schedule both exporter pools, install/reconcile accepted owners,
-     and publish only after the new outputs present.
+     sizes/generations rather than from the candidate. A typed cohort now blocks
+     apply until every enabled/disabled candidate member and every rollback
+     framebuffer is owned; protocol observations admit whole physical batches
+     or none. The remaining ownership work is to drive both exporter pools,
+     install/reconcile accepted owners, and publish only after the new outputs
+     present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining

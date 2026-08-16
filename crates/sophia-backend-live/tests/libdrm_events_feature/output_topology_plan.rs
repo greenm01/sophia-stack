@@ -494,3 +494,69 @@ fn published_topology_projection_uses_published_viewports_and_live_native_target
     assert_eq!(projected.targets[1].target_generation, 7);
     assert_eq!(projected.targets[1].mapping, OutputHeadMapping::Fit);
 }
+
+#[test]
+fn topology_resource_cohort_requires_complete_candidate_and_rollback_owners() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyCandidateResource as Candidate,
+        LiveProductionNativeTopologyDisposition as Disposition,
+        LiveProductionNativeTopologyResourceCohort as Cohort,
+        LiveProductionNativeTopologyResourceTransition as Transition,
+    };
+
+    let mut plan = topology_apply_plan(&[0, 1]);
+    let enabled = plan.heads[0].head;
+    let disabled = plan.heads[1].head;
+    plan.heads[1].disposition = Disposition::Disabled;
+    let mut resources = Cohort::<String, String>::new(&plan).unwrap();
+
+    assert_eq!(
+        resources
+            .prepare_candidate_enabled(enabled, "candidate-enabled".into())
+            .unwrap(),
+        Transition::Accepted
+    );
+    assert_eq!(
+        resources
+            .prepare_candidate_disabled(disabled, "candidate-disabled".into())
+            .unwrap(),
+        Transition::Accepted
+    );
+    assert!(!resources.ready(), "candidate coverage alone must not permit apply");
+    assert_eq!(
+        resources
+            .prepare_rollback(enabled, "rollback-enabled".into())
+            .unwrap(),
+        Transition::Accepted
+    );
+    assert!(!resources.ready());
+    assert_eq!(
+        resources
+            .prepare_rollback(disabled, "rollback-disabled".into())
+            .unwrap(),
+        Transition::Ready
+    );
+    assert!(resources.ready());
+    assert_eq!(resources.card_heads(0), vec![enabled]);
+    assert_eq!(resources.card_heads(1), vec![disabled]);
+    assert!(matches!(resources.candidate(enabled), Some(Candidate::Enabled(_))));
+    assert!(matches!(
+        resources.candidate(disabled),
+        Some(Candidate::Disabled(_))
+    ));
+
+    let rejection = resources
+        .prepare_candidate_enabled(enabled, "duplicate".into())
+        .unwrap_err();
+    assert_eq!(rejection.transition, Transition::Duplicate);
+    assert_eq!(rejection.owner, "duplicate");
+    let rejection = resources
+        .prepare_candidate_enabled(disabled, "wrong-role".into())
+        .unwrap_err();
+    assert_eq!(rejection.transition, Transition::WrongDisposition);
+    assert_eq!(rejection.owner, "wrong-role");
+
+    let (candidate, rollback) = resources.into_remaining();
+    assert_eq!(candidate.len(), 2);
+    assert_eq!(rollback.len(), 2);
+}

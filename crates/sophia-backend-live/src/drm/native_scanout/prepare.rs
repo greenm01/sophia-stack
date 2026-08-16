@@ -33,9 +33,68 @@ pub struct LibdrmNativePrimaryPlanePreparedTopologyHead {
     resources: LibdrmNativePrimaryPlaneResourceBundle,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct LibdrmNativePreparedDisabledTopologyHead {
+    atomic_head: LibdrmNativeAtomicDisabledHead,
+}
+
+impl LibdrmNativePreparedDisabledTopologyHead {
+    pub const fn atomic_head(self) -> LibdrmNativeAtomicDisabledHead {
+        self.atomic_head
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibdrmNativeDisabledTopologyHeadPrepareStatus {
+    Prepared,
+    PropertyDiscoveryUnavailable,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LibdrmNativeDisabledTopologyHeadPrepareResult {
+    pub status: LibdrmNativeDisabledTopologyHeadPrepareStatus,
+    pub properties: LibdrmNativePrimaryPlanePropertyDiscoveryStatus,
+    pub prepared: Option<LibdrmNativePreparedDisabledTopologyHead>,
+}
+
 impl LibdrmNativePrimaryPlanePreparedTopologyHead {
     pub const fn atomic_head(&self) -> LibdrmNativeAtomicHead {
         self.atomic_head
+    }
+}
+
+/// Resolves the property handles needed to detach one disabled head.
+///
+/// Unlike an enabled head this owns no framebuffer or mode blob, but it is still
+/// a required prepared member: property discovery must succeed before any card
+/// applies, otherwise rollback could be required after a failure that was known
+/// in advance.
+pub fn prepare_native_disabled_topology_head<D>(
+    device: &D,
+    selection: LibdrmNativePrimaryPlaneSelection,
+) -> LibdrmNativeDisabledTopologyHeadPrepareResult
+where
+    D: LibdrmNativePropertyLookupDevice,
+{
+    let properties = discover_native_primary_plane_property_handles(
+        device,
+        selection.connector_handle(),
+        selection.crtc_handle(),
+        selection.plane_handle(),
+    );
+    let Some(handles) = properties.properties else {
+        return LibdrmNativeDisabledTopologyHeadPrepareResult {
+            status: LibdrmNativeDisabledTopologyHeadPrepareStatus::PropertyDiscoveryUnavailable,
+            properties: properties.status,
+            prepared: None,
+        };
+    };
+    LibdrmNativeDisabledTopologyHeadPrepareResult {
+        status: LibdrmNativeDisabledTopologyHeadPrepareStatus::Prepared,
+        properties: properties.status,
+        prepared: Some(LibdrmNativePreparedDisabledTopologyHead {
+            atomic_head: LibdrmNativeAtomicDisabledHead::new(selection, handles),
+        }),
     }
 }
 

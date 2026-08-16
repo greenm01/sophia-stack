@@ -123,6 +123,217 @@ pub struct LiveProductionNativeTopologyApplyCoordinator {
     rollback_remaining: usize,
 }
 
+#[derive(Debug)]
+pub enum LiveProductionNativeTopologyCandidateResource<Enabled, Disabled> {
+    Enabled(Enabled),
+    Disabled(Disabled),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeTopologyResourceTransition {
+    Accepted,
+    Ready,
+    Duplicate,
+    UnknownHead,
+    WrongDisposition,
+}
+
+#[derive(Debug)]
+pub struct LiveProductionNativeTopologyResourceRejection<Owner> {
+    pub transition: LiveProductionNativeTopologyResourceTransition,
+    pub owner: Owner,
+}
+
+/// Affine prepare-all owner for a topology transaction.
+///
+/// Every affected head needs a candidate resource (an enabled framebuffer or
+/// explicit disabled-head property set) and an enabled rollback framebuffer.
+/// `ready()` becomes true only after both complete sets exist. This is the
+/// safety boundary that prevents the cross-card coordinator from beginning an
+/// irreversible prefix with no resource capable of restoring it.
+#[derive(Debug)]
+pub struct LiveProductionNativeTopologyResourceCohort<Enabled, Disabled> {
+    expected:
+        BTreeMap<sophia_engine::RenderHeadId, (usize, LiveProductionNativeTopologyDisposition)>,
+    candidate: BTreeMap<
+        sophia_engine::RenderHeadId,
+        LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>,
+    >,
+    rollback: BTreeMap<sophia_engine::RenderHeadId, Enabled>,
+}
+
+impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disabled> {
+    pub fn new(plan: &LiveProductionNativeTopologyPlan) -> Option<Self> {
+        let expected = plan
+            .heads
+            .iter()
+            .map(|head| (head.head, (head.card_index, head.disposition)))
+            .collect::<BTreeMap<_, _>>();
+        (expected.len() == plan.heads.len() && !expected.is_empty()).then_some(Self {
+            expected,
+            candidate: BTreeMap::new(),
+            rollback: BTreeMap::new(),
+        })
+    }
+
+    pub fn prepare_candidate_enabled(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+        owner: Enabled,
+    ) -> Result<
+        LiveProductionNativeTopologyResourceTransition,
+        LiveProductionNativeTopologyResourceRejection<Enabled>,
+    > {
+        let Some((_, disposition)) = self.expected.get(&head) else {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
+                owner,
+            });
+        };
+        if !matches!(
+            disposition,
+            LiveProductionNativeTopologyDisposition::Enabled { .. }
+        ) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::WrongDisposition,
+                owner,
+            });
+        }
+        if self.candidate.contains_key(&head) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::Duplicate,
+                owner,
+            });
+        }
+        self.candidate.insert(
+            head,
+            LiveProductionNativeTopologyCandidateResource::Enabled(owner),
+        );
+        Ok(self.accepted_transition())
+    }
+
+    pub fn prepare_candidate_disabled(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+        owner: Disabled,
+    ) -> Result<
+        LiveProductionNativeTopologyResourceTransition,
+        LiveProductionNativeTopologyResourceRejection<Disabled>,
+    > {
+        let Some((_, disposition)) = self.expected.get(&head) else {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
+                owner,
+            });
+        };
+        if !matches!(
+            disposition,
+            LiveProductionNativeTopologyDisposition::Disabled
+        ) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::WrongDisposition,
+                owner,
+            });
+        }
+        if self.candidate.contains_key(&head) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::Duplicate,
+                owner,
+            });
+        }
+        self.candidate.insert(
+            head,
+            LiveProductionNativeTopologyCandidateResource::Disabled(owner),
+        );
+        Ok(self.accepted_transition())
+    }
+
+    pub fn prepare_rollback(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+        owner: Enabled,
+    ) -> Result<
+        LiveProductionNativeTopologyResourceTransition,
+        LiveProductionNativeTopologyResourceRejection<Enabled>,
+    > {
+        if !self.expected.contains_key(&head) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
+                owner,
+            });
+        }
+        if self.rollback.contains_key(&head) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::Duplicate,
+                owner,
+            });
+        }
+        self.rollback.insert(head, owner);
+        Ok(self.accepted_transition())
+    }
+
+    pub fn ready(&self) -> bool {
+        self.candidate.len() == self.expected.len() && self.rollback.len() == self.expected.len()
+    }
+
+    pub fn candidate_count(&self) -> usize {
+        self.candidate.len()
+    }
+
+    pub fn rollback_count(&self) -> usize {
+        self.rollback.len()
+    }
+
+    pub fn card_heads(&self, card_index: usize) -> Vec<sophia_engine::RenderHeadId> {
+        self.expected
+            .iter()
+            .filter_map(|(head, (card, _))| (*card == card_index).then_some(*head))
+            .collect()
+    }
+
+    pub fn candidate(
+        &self,
+        head: sophia_engine::RenderHeadId,
+    ) -> Option<&LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>> {
+        self.candidate.get(&head)
+    }
+
+    pub fn rollback(&self, head: sophia_engine::RenderHeadId) -> Option<&Enabled> {
+        self.rollback.get(&head)
+    }
+
+    pub fn take_candidate(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+    ) -> Option<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>> {
+        self.candidate.remove(&head)
+    }
+
+    pub fn take_rollback(&mut self, head: sophia_engine::RenderHeadId) -> Option<Enabled> {
+        self.rollback.remove(&head)
+    }
+
+    pub fn into_remaining(
+        self,
+    ) -> (
+        Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
+        Vec<Enabled>,
+    ) {
+        (
+            self.candidate.into_values().collect(),
+            self.rollback.into_values().collect(),
+        )
+    }
+
+    fn accepted_transition(&self) -> LiveProductionNativeTopologyResourceTransition {
+        if self.ready() {
+            LiveProductionNativeTopologyResourceTransition::Ready
+        } else {
+            LiveProductionNativeTopologyResourceTransition::Accepted
+        }
+    }
+}
+
 impl LiveProductionNativeTopologyApplyCoordinator {
     pub fn new(plan: &LiveProductionNativeTopologyPlan) -> Option<Self> {
         let mut by_card = BTreeMap::<usize, Vec<sophia_engine::RenderHeadId>>::new();

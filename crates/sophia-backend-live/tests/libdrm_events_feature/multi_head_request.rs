@@ -147,6 +147,53 @@ fn topology_change_submit_is_one_blocking_modeset_without_page_flip_event() {
 }
 
 #[test]
+fn disabled_topology_head_is_prepared_before_any_card_commit() {
+    use sophia_backend_live::{
+        LibdrmNativeDisabledTopologyHeadPrepareStatus, prepare_native_disabled_topology_head,
+    };
+
+    let selection = LibdrmNativePrimaryPlaneSelection::new(
+        connector_handle(),
+        crtc_handle(),
+        plane_handle(),
+        scanout_size(1920, 1080),
+        None,
+    );
+    let prepared = prepare_native_disabled_topology_head(&full_property_lookup_device(), selection);
+
+    assert_eq!(
+        prepared.status,
+        LibdrmNativeDisabledTopologyHeadPrepareStatus::Prepared
+    );
+    let atomic = prepared
+        .prepared
+        .expect("complete property discovery should prepare a disabled head")
+        .atomic_head();
+    assert_eq!(atomic.selection, selection);
+
+    let missing = prepare_native_disabled_topology_head(
+        &FakeNativePropertyLookupDevice {
+            connector: Err(io::Error::from(io::ErrorKind::NotFound)),
+            crtc: Ok(LibdrmNativePropertyHandleSet::new(Vec::<(
+                String,
+                drm::control::property::Handle,
+            )>::new())),
+            plane: Ok(LibdrmNativePropertyHandleSet::new(Vec::<(
+                String,
+                drm::control::property::Handle,
+            )>::new())),
+            connector_value: Ok(None),
+        },
+        selection,
+    );
+    assert_eq!(
+        missing.status,
+        LibdrmNativeDisabledTopologyHeadPrepareStatus::PropertyDiscoveryUnavailable
+    );
+    assert!(missing.prepared.is_none());
+}
+
+#[test]
 fn mirror_damage_projection_preserves_identity_and_targets_each_head() {
     use sophia_engine::{
         CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,

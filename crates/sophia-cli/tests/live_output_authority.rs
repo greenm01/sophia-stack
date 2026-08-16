@@ -301,3 +301,51 @@ fn disabled_connected_head_remains_required_through_apply_and_rollback() {
         sophia_engine::OutputTopologyTransactionTransition::PhaseReady
     );
 }
+
+#[test]
+fn physical_observation_batches_are_all_or_none_at_the_authority_boundary() {
+    let (capabilities, snapshot) = fixture();
+    let mut owner = LiveOutputAuthorityOwner::new(7, snapshot.clone()).unwrap();
+    let apply = split_candidate(&snapshot, 7, OutputTopologyIntent::Apply);
+    owner
+        .admit(TransactionId::from_raw(11), &apply, &capabilities)
+        .unwrap();
+
+    assert!(matches!(
+        owner.mark_prepared_batch(&[RenderHeadId::from_raw(11), RenderHeadId::from_raw(99),]),
+        Err(LiveOutputAuthorityOwnerError::TransactionInvariant)
+    ));
+    assert_eq!(
+        owner.active_phase(),
+        Some(sophia_engine::OutputTopologyTransactionPhase::Preparing),
+        "the valid prefix of a rejected batch must not be retained"
+    );
+    assert_eq!(
+        owner
+            .mark_prepared_batch(&[RenderHeadId::from_raw(11), RenderHeadId::from_raw(12),])
+            .unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+    );
+    owner.begin_apply().unwrap();
+    assert_eq!(
+        owner
+            .mark_applied_batch(&[RenderHeadId::from_raw(12), RenderHeadId::from_raw(11),])
+            .unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+    );
+    let outputs = owner
+        .active_resolved()
+        .unwrap()
+        .outputs
+        .iter()
+        .map(|output| output.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        owner.mark_first_presented_batch(&outputs).unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+    );
+    assert_eq!(
+        owner.settle_terminal().unwrap().outcome.kind,
+        OutputV1OutcomeKind::Committed
+    );
+}

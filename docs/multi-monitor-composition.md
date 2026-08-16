@@ -641,7 +641,12 @@ parallel multi-monitor subsystem.
   the candidate, the accepted prefix rolls back in reverse card order. The
   published snapshot is projected independently back into the live heads'
   current native sizes and generations, so rollback composition cannot inherit
-  a provisional viewport or mode.
+  a provisional viewport or mode. A typed resource cohort requires one
+  candidate owner (enabled framebuffer or explicit disabled-head properties)
+  and one rollback framebuffer for every affected head before apply can begin;
+  rejected insertions return their affine owner. Physical head/output
+  observation batches advance protocol authority transactionally, so a bad
+  member cannot leave a valid prefix recorded.
 
 ### Transitional Limitation
 

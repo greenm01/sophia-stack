@@ -11635,3 +11635,21 @@ acknowledgement ordering.
   snapshot and the live head generations/native sizes. Provisional candidate
   geometry never becomes rollback input. The next slice attaches affine
   candidate and rollback renderer owners to this coordinator.
+
+## 2026-08-15: rollback resources belong to the prepare-all barrier
+
+- Preparing only candidate framebuffers is insufficient. Once card zero accepts
+  a candidate, card one's refusal creates an immediate need for the old topology;
+  attempting to allocate rollback resources at that point introduces a failure
+  between mutation and recovery.
+- A typed live resource cohort now requires exactly one candidate member and one
+  rollback framebuffer for every affected opaque head before it reports ready.
+  Disabled candidates contribute a discovered connector/CRTC/plane property set
+  rather than a fake framebuffer. Duplicate, unknown, or wrong-disposition
+  insertions return the supplied owner instead of dropping it.
+- Card/head observations into `LiveOutputAuthorityOwner` now stage through a
+  cloned reducer and publish the batch only if every member is accepted. Native
+  execution therefore cannot partially advance protocol authority because of a
+  malformed later member. The remaining work is the nonblocking renderer-worker
+  driver that fills this cohort and transfers accepted owners into rebuilt live
+  targets.
