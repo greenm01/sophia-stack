@@ -1,0 +1,353 @@
+use sophia_backend_live::{
+    LibdrmNativeOutputCapability, LiveLogicalOutputAllocator, LiveOutputAuthorityProjectionError,
+    LiveResolvedOutputTopology, project_live_output_authority_candidate_snapshot,
+    resolve_live_output_topology_candidate,
+};
+use sophia_engine::{
+    OutputTopologyTransaction, OutputTopologyTransactionFailure, OutputTopologyTransactionPhase,
+    OutputTopologyTransactionTransition, RenderHeadId,
+};
+use sophia_protocol::{
+    OutputAuthoritySnapshot, OutputTopologyIntent, OutputV1Outcome, OutputV1OutcomeKind,
+    OutputV1Proposal, SOPHIA_OUTPUT_OUTCOME_REASON_APPLY,
+    SOPHIA_OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION, SOPHIA_OUTPUT_OUTCOME_REASON_HEAD_LOST,
+    SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT, SOPHIA_OUTPUT_OUTCOME_REASON_NONE,
+    SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION, SOPHIA_OUTPUT_OUTCOME_REASON_ROLLBACK,
+    SOPHIA_OUTPUT_OUTCOME_REASON_STALE, TransactionId,
+};
+
+pub const OUTPUT_OUTCOME_REASON_NONE: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_NONE;
+pub const OUTPUT_OUTCOME_REASON_STALE: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_STALE;
+pub const OUTPUT_OUTCOME_REASON_PREPARATION: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION;
+pub const OUTPUT_OUTCOME_REASON_APPLY: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_APPLY;
+pub const OUTPUT_OUTCOME_REASON_HEAD_LOST: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_HEAD_LOST;
+pub const OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION: u16 =
+    SOPHIA_OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION;
+pub const OUTPUT_OUTCOME_REASON_ROLLBACK: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_ROLLBACK;
+pub const OUTPUT_OUTCOME_REASON_INVARIANT: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT;
+
+#[derive(Debug)]
+pub enum LiveOutputAuthorityOwnerError {
+    InvalidConnectionEpoch,
+    InvalidTransaction,
+    ActiveCandidate,
+    NoActiveCandidate,
+    TopologyEpochExhausted,
+    Projection(LiveOutputAuthorityProjectionError),
+    TransactionInvariant,
+    NotTerminal,
+}
+
+impl core::fmt::Display for LiveOutputAuthorityOwnerError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for LiveOutputAuthorityOwnerError {}
+
+impl From<LiveOutputAuthorityProjectionError> for LiveOutputAuthorityOwnerError {
+    fn from(error: LiveOutputAuthorityProjectionError) -> Self {
+        Self::Projection(error)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveOutputAuthoritySettlement {
+    pub transaction: TransactionId,
+    pub outcome: OutputV1Outcome,
+    /// Present only when this settlement publishes a replacement topology.
+    pub published_snapshot: Option<OutputAuthoritySnapshot>,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveOutputCandidate {
+    transaction: TransactionId,
+    candidate_snapshot: OutputAuthoritySnapshot,
+    resolved: LiveResolvedOutputTopology,
+    candidate_allocator: LiveLogicalOutputAllocator,
+    transaction_state: OutputTopologyTransaction,
+}
+
+/// Session orchestration for one exclusive `sophia_output_v1` owner.
+///
+/// This type has no DRM handles and performs no effects. It joins the output
+/// protocol's complete proposal, backend-native resolution, and Engine's
+/// prepare/apply/first-presentation reducer while retaining the last published
+/// snapshot until the transaction commits. The live session remains the only
+/// owner allowed to execute the resulting renderer and KMS effects.
+#[derive(Clone, Debug)]
+pub struct LiveOutputAuthorityOwner {
+    connection_epoch: u64,
+    published: OutputAuthoritySnapshot,
+    allocator: LiveLogicalOutputAllocator,
+    active: Option<ActiveOutputCandidate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveOutputAuthorityAdmission {
+    Validated(LiveOutputAuthoritySettlement),
+    Prepared,
+}
+
+impl LiveOutputAuthorityOwner {
+    pub fn new(
+        connection_epoch: u64,
+        published: OutputAuthoritySnapshot,
+    ) -> Result<Self, LiveOutputAuthorityOwnerError> {
+        if connection_epoch == 0 {
+            return Err(LiveOutputAuthorityOwnerError::InvalidConnectionEpoch);
+        }
+        published
+            .validate()
+            .map_err(|error| LiveOutputAuthorityProjectionError::InvalidSnapshot(error))?;
+        let allocator =
+            LiveLogicalOutputAllocator::after(published.groups.iter().map(|group| group.output))
+                .ok_or(LiveOutputAuthorityOwnerError::TopologyEpochExhausted)?;
+        Ok(Self {
+            connection_epoch,
+            published,
+            allocator,
+            active: None,
+        })
+    }
+
+    pub const fn connection_epoch(&self) -> u64 {
+        self.connection_epoch
+    }
+
+    pub const fn published(&self) -> &OutputAuthoritySnapshot {
+        &self.published
+    }
+
+    pub fn replace_connection_epoch(
+        &mut self,
+        connection_epoch: u64,
+    ) -> Result<(), LiveOutputAuthorityOwnerError> {
+        if connection_epoch == 0 || connection_epoch <= self.connection_epoch {
+            return Err(LiveOutputAuthorityOwnerError::InvalidConnectionEpoch);
+        }
+        if self.active.is_some() {
+            return Err(LiveOutputAuthorityOwnerError::ActiveCandidate);
+        }
+        self.connection_epoch = connection_epoch;
+        Ok(())
+    }
+
+    pub fn admit(
+        &mut self,
+        transaction: TransactionId,
+        proposal: &OutputV1Proposal,
+        capabilities: &[LibdrmNativeOutputCapability],
+    ) -> Result<LiveOutputAuthorityAdmission, LiveOutputAuthorityOwnerError> {
+        if !transaction.is_valid() {
+            return Err(LiveOutputAuthorityOwnerError::InvalidTransaction);
+        }
+        if proposal.connection_epoch != self.connection_epoch {
+            return Err(LiveOutputAuthorityOwnerError::InvalidConnectionEpoch);
+        }
+        if self.active.is_some() {
+            return Err(LiveOutputAuthorityOwnerError::ActiveCandidate);
+        }
+        let candidate_epoch = self
+            .published
+            .topology_epoch
+            .checked_add(1)
+            .ok_or(LiveOutputAuthorityOwnerError::TopologyEpochExhausted)?;
+        let mut candidate_allocator = self.allocator.clone();
+        let resolved = resolve_live_output_topology_candidate(
+            &self.published,
+            capabilities,
+            &proposal.candidate,
+            &mut candidate_allocator,
+        )?;
+        let candidate_snapshot = project_live_output_authority_candidate_snapshot(
+            &self.published,
+            &proposal.candidate,
+            &resolved,
+            candidate_epoch,
+        )?;
+
+        if proposal.candidate.intent == OutputTopologyIntent::ValidateOnly {
+            return Ok(LiveOutputAuthorityAdmission::Validated(
+                LiveOutputAuthoritySettlement {
+                    transaction,
+                    outcome: OutputV1Outcome {
+                        connection_epoch: self.connection_epoch,
+                        topology_epoch: self.published.topology_epoch,
+                        kind: OutputV1OutcomeKind::Validated,
+                        reason: OUTPUT_OUTCOME_REASON_NONE,
+                    },
+                    published_snapshot: None,
+                },
+            ));
+        }
+        let transaction_state = OutputTopologyTransaction::new(
+            self.published.topology_epoch,
+            candidate_epoch,
+            resolved.targets.iter().map(|target| target.head),
+            resolved.outputs.iter().map(|output| output.id),
+        )
+        .ok_or(LiveOutputAuthorityOwnerError::TransactionInvariant)?;
+        self.active = Some(ActiveOutputCandidate {
+            transaction,
+            candidate_snapshot,
+            resolved,
+            candidate_allocator,
+            transaction_state,
+        });
+        Ok(LiveOutputAuthorityAdmission::Prepared)
+    }
+
+    pub fn active_transaction(&self) -> Option<TransactionId> {
+        self.active.as_ref().map(|active| active.transaction)
+    }
+
+    pub fn active_resolved(&self) -> Option<&LiveResolvedOutputTopology> {
+        self.active.as_ref().map(|active| &active.resolved)
+    }
+
+    pub fn active_candidate_snapshot(&self) -> Option<&OutputAuthoritySnapshot> {
+        self.active
+            .as_ref()
+            .map(|active| &active.candidate_snapshot)
+    }
+
+    pub fn active_phase(&self) -> Option<OutputTopologyTransactionPhase> {
+        self.active
+            .as_ref()
+            .map(|active| active.transaction_state.phase())
+    }
+
+    pub fn mark_prepared(
+        &mut self,
+        head: RenderHeadId,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.mark_prepared(head))
+    }
+
+    pub fn begin_apply(
+        &mut self,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.begin_apply())
+    }
+
+    pub fn mark_applied(
+        &mut self,
+        head: RenderHeadId,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.mark_applied(head))
+    }
+
+    pub fn mark_first_presented(
+        &mut self,
+        output: sophia_protocol::OutputId,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self
+            .active_mut()?
+            .transaction_state
+            .mark_first_presented(output))
+    }
+
+    pub fn fail(
+        &mut self,
+        failure: OutputTopologyTransactionFailure,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.fail(failure))
+    }
+
+    pub fn mark_rolled_back(
+        &mut self,
+        head: RenderHeadId,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.mark_rolled_back(head))
+    }
+
+    pub fn rollback_failed(
+        &mut self,
+    ) -> Result<OutputTopologyTransactionTransition, LiveOutputAuthorityOwnerError> {
+        Ok(self.active_mut()?.transaction_state.rollback_failed())
+    }
+
+    pub fn settle_terminal(
+        &mut self,
+    ) -> Result<LiveOutputAuthoritySettlement, LiveOutputAuthorityOwnerError> {
+        let phase = self
+            .active
+            .as_ref()
+            .ok_or(LiveOutputAuthorityOwnerError::NoActiveCandidate)?
+            .transaction_state
+            .phase();
+        if !matches!(
+            phase,
+            OutputTopologyTransactionPhase::Committed
+                | OutputTopologyTransactionPhase::RolledBack
+                | OutputTopologyTransactionPhase::Failed
+        ) {
+            return Err(LiveOutputAuthorityOwnerError::NotTerminal);
+        }
+        let active = self
+            .active
+            .take()
+            .expect("terminal candidate remains active until settlement");
+        let failure = active.transaction_state.failure();
+        let (kind, topology_epoch, published_snapshot) = match phase {
+            OutputTopologyTransactionPhase::Committed => {
+                self.published = active.candidate_snapshot;
+                self.allocator = active.candidate_allocator;
+                (
+                    OutputV1OutcomeKind::Committed,
+                    self.published.topology_epoch,
+                    Some(self.published.clone()),
+                )
+            }
+            OutputTopologyTransactionPhase::RolledBack => (
+                OutputV1OutcomeKind::RolledBack,
+                self.published.topology_epoch,
+                None,
+            ),
+            OutputTopologyTransactionPhase::Failed => (
+                if failure == Some(OutputTopologyTransactionFailure::Rollback) {
+                    OutputV1OutcomeKind::Failed
+                } else {
+                    OutputV1OutcomeKind::Rejected
+                },
+                self.published.topology_epoch,
+                None,
+            ),
+            _ => unreachable!("nonterminal phases were rejected"),
+        };
+        Ok(LiveOutputAuthoritySettlement {
+            transaction: active.transaction,
+            outcome: OutputV1Outcome {
+                connection_epoch: self.connection_epoch,
+                topology_epoch,
+                kind,
+                reason: failure
+                    .map(failure_reason)
+                    .unwrap_or(OUTPUT_OUTCOME_REASON_NONE),
+            },
+            published_snapshot,
+        })
+    }
+
+    fn active_mut(&mut self) -> Result<&mut ActiveOutputCandidate, LiveOutputAuthorityOwnerError> {
+        self.active
+            .as_mut()
+            .ok_or(LiveOutputAuthorityOwnerError::NoActiveCandidate)
+    }
+}
+
+const fn failure_reason(failure: OutputTopologyTransactionFailure) -> u16 {
+    match failure {
+        OutputTopologyTransactionFailure::Stale => OUTPUT_OUTCOME_REASON_STALE,
+        OutputTopologyTransactionFailure::Preparation => OUTPUT_OUTCOME_REASON_PREPARATION,
+        OutputTopologyTransactionFailure::Apply => OUTPUT_OUTCOME_REASON_APPLY,
+        OutputTopologyTransactionFailure::HeadLost(_) => OUTPUT_OUTCOME_REASON_HEAD_LOST,
+        OutputTopologyTransactionFailure::FirstPresentation => {
+            OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION
+        }
+        OutputTopologyTransactionFailure::Rollback => OUTPUT_OUTCOME_REASON_ROLLBACK,
+        OutputTopologyTransactionFailure::Invariant => OUTPUT_OUTCOME_REASON_INVARIANT,
+    }
+}

@@ -23,6 +23,7 @@ pub enum OutputTransportError {
     Codec(IpcCodecError),
     Io(String),
     NotConnected,
+    PeerDisconnected,
     ProposalRejected {
         transaction: TransactionId,
         error: OutputTransferError,
@@ -60,6 +61,8 @@ pub struct OutputSessionTransport {
     connection: OutputConnectionState,
     stream: Option<UnixStream>,
     peer: Option<PolicyPeerIdentity>,
+    read_buffer: Vec<u8>,
+    peer_closed: bool,
 }
 
 impl OutputSessionTransport {
@@ -69,6 +72,8 @@ impl OutputSessionTransport {
             connection: OutputConnectionState::default(),
             stream: None,
             peer: None,
+            read_buffer: Vec::new(),
+            peer_closed: false,
         }
     }
 
@@ -144,6 +149,8 @@ impl OutputSessionTransport {
         }
         self.stream = Some(stream);
         self.peer = Some(peer);
+        self.read_buffer.clear();
+        self.peer_closed = false;
         Ok(())
     }
 
@@ -182,6 +189,40 @@ impl OutputSessionTransport {
         }
     }
 
+    /// Polls one complete proposal without blocking on a partial local-stream
+    /// frame.
+    ///
+    /// The retained byte buffer is part of the transport, not the session
+    /// owner. This lets an optional supervised output client pause between
+    /// header and payload while the owner continues rendering, hotplug work,
+    /// and bounded shutdown.
+    pub fn try_receive_admitted_proposal(
+        &mut self,
+        snapshot: &OutputAuthoritySnapshot,
+    ) -> Result<Option<(AdmittedOutputProposal, OutputProposalAdmission)>, OutputTransportError>
+    {
+        self.read_available()?;
+        let Some(frame_len) = buffered_output_frame_len(&self.read_buffer)? else {
+            if self.peer_closed {
+                return Err(OutputTransportError::PeerDisconnected);
+            }
+            return Ok(None);
+        };
+        let frame = self.read_buffer.drain(..frame_len).collect::<Vec<_>>();
+        let (transaction, proposal) = decode_output_v1_proposal_frame(&frame)?;
+        let admitted = AdmittedOutputProposal {
+            transaction,
+            message: proposal.clone(),
+        };
+        match self
+            .connection
+            .admit_proposal(transaction, proposal, snapshot)
+        {
+            Ok(admission) => Ok(Some((admitted, admission))),
+            Err(error) => Err(OutputTransportError::ProposalRejected { transaction, error }),
+        }
+    }
+
     pub fn send_outcome(
         &mut self,
         transaction: TransactionId,
@@ -210,6 +251,8 @@ impl OutputSessionTransport {
             return Err(OutputTransportError::NotConnected);
         }
         let abandoned = self.connection.disconnect()?;
+        self.read_buffer.clear();
+        self.peer_closed = false;
         let peer = self
             .peer
             .take()
@@ -235,6 +278,64 @@ impl OutputSessionTransport {
             })
             .map_err(|error| OutputTransportError::Io(error.to_string()))
     }
+
+    fn read_available(&mut self) -> Result<(), OutputTransportError> {
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(OutputTransportError::NotConnected)?;
+        stream
+            .set_nonblocking(true)
+            .map_err(|error| OutputTransportError::Io(error.to_string()))?;
+        let mut result = Ok(());
+        let mut bytes = [0u8; 4096];
+        loop {
+            match stream.read(&mut bytes) {
+                Ok(0) => {
+                    self.peer_closed = true;
+                    break;
+                }
+                Ok(count) => {
+                    self.read_buffer.extend_from_slice(&bytes[..count]);
+                    if self.read_buffer.len()
+                        > SOPHIA_IPC_HEADER_LEN.saturating_add(SOPHIA_IPC_MAX_PAYLOAD_LEN)
+                    {
+                        result = Err(OutputTransportError::Codec(IpcCodecError::PayloadTooLarge(
+                            self.read_buffer.len().saturating_sub(SOPHIA_IPC_HEADER_LEN),
+                        )));
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => {
+                    result = Err(OutputTransportError::Io(error.to_string()));
+                    break;
+                }
+            }
+        }
+        if let Err(error) = stream.set_nonblocking(false) {
+            return Err(OutputTransportError::Io(error.to_string()));
+        }
+        result
+    }
+}
+
+fn buffered_output_frame_len(buffer: &[u8]) -> Result<Option<usize>, OutputTransportError> {
+    if buffer.len() < SOPHIA_IPC_HEADER_LEN {
+        return Ok(None);
+    }
+    let payload_len = u32::from_le_bytes(
+        buffer[16..20]
+            .try_into()
+            .expect("buffered frame payload range is present"),
+    ) as usize;
+    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
+        return Err(OutputTransportError::Codec(IpcCodecError::PayloadTooLarge(
+            payload_len,
+        )));
+    }
+    let frame_len = SOPHIA_IPC_HEADER_LEN + payload_len;
+    Ok((buffer.len() >= frame_len).then_some(frame_len))
 }
 
 fn read_output_frame(stream: &mut UnixStream) -> Result<Vec<u8>, OutputTransportError> {

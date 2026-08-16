@@ -80,6 +80,75 @@ fn output_transport_exchanges_snapshot_proposal_and_terminal_outcome() {
     transport.disconnect().unwrap();
 }
 
+#[test]
+fn output_transport_buffers_partial_proposal_without_blocking_owner() {
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-output-transport-partial-{}-{}",
+        std::process::id(),
+        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let mut transport = OutputSessionTransport::bind(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let snapshot = snapshot();
+    let expected = proposal(12);
+    let sent = expected.clone();
+    let (header_sent, header_observed) = std::sync::mpsc::sync_channel(1);
+    let (continue_sender, continue_receiver) = std::sync::mpsc::sync_channel(1);
+    let client = std::thread::spawn(move || {
+        let mut stream = UnixStream::connect(socket_path).unwrap();
+        stream
+            .write_all(
+                &encode_output_v1_client_hello_frame(OutputV1ClientHello {
+                    minimum_revision: 1,
+                    maximum_revision: 1,
+                    capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE
+                        | SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        decode_output_v1_server_welcome_frame(&read_frame(&mut stream)).unwrap();
+        decode_output_v1_snapshot_frame(&read_frame(&mut stream)).unwrap();
+        let frame = encode_output_v1_proposal_frame(TransactionId::from_raw(17), &sent).unwrap();
+        stream.write_all(&frame[..SOPHIA_IPC_HEADER_LEN]).unwrap();
+        header_sent.send(()).unwrap();
+        continue_receiver.recv().unwrap();
+        stream.write_all(&frame[SOPHIA_IPC_HEADER_LEN..]).unwrap();
+    });
+
+    transport
+        .accept_and_negotiate(12, Duration::from_secs(1))
+        .unwrap();
+    transport
+        .send_snapshot(TransactionId::from_raw(16), &snapshot)
+        .unwrap();
+    header_observed
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(
+        transport.try_receive_admitted_proposal(&snapshot).unwrap(),
+        None
+    );
+    continue_sender.send(()).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    let (admitted, admission) = loop {
+        if let Some(proposal) = transport.try_receive_admitted_proposal(&snapshot).unwrap() {
+            break proposal;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    assert_eq!(admitted.transaction, TransactionId::from_raw(17));
+    assert_eq!(admitted.message, expected);
+    assert_eq!(admission, OutputProposalAdmission::Active);
+    client.join().unwrap();
+    transport.disconnect().unwrap();
+}
+
 fn snapshot() -> OutputAuthoritySnapshot {
     OutputAuthoritySnapshot {
         topology_epoch: 4,

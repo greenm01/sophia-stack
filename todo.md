@@ -1094,10 +1094,16 @@ is excluded; retained product behavior is not.
   authenticated role transport, complete snapshots/proposals/outcomes, one active
   plus one complete latest successor, and candidate validation. Production DRM
   capabilities bind to opaque heads and resolve independently selected per-head
-  modes into mixed mirror/extended groups. The remaining critical path is to
-  grant the role from supervision, prepare renderer targets and first cohorts,
-  apply through the live DRM owner, rebuild Engine/runtime state, cross the
-  first-presentation barrier, and publish the new logical topology.
+  modes into mixed mirror/extended groups. `LiveOutputAuthorityOwner` now holds
+  the last published snapshot while a candidate passes Engine's prepare, apply,
+  rollback, and all-output first-presentation phases; validation and rejected
+  preparation do not consume fresh logical-output identities. The remaining
+  critical path is to grant the role from supervision, execute renderer-target
+  and KMS effects through the live owner, rebuild Engine/runtime state, and feed
+  real first-presentation observations into that publication barrier. The
+  optional transport service and partial-frame buffering are implemented, so an
+  absent or slow output client cannot block owner progress or shutdown; binding
+  that service to the selected supervised WM/shell lifecycle remains open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

@@ -20,6 +20,8 @@ pub enum LiveOutputAuthorityProjectionError {
     InvalidLogicalGeometry(OutputId),
     InvalidSnapshot(sophia_protocol::OutputTopologyCandidateError),
     InvalidCandidate(sophia_protocol::OutputTopologyCandidateError),
+    CandidateSnapshotMismatch,
+    GenerationExhausted,
     OutputIdentityExhausted,
     InvalidMirrorGrouping(crate::NativeMirrorGroupingError),
 }
@@ -316,6 +318,97 @@ pub fn resolve_live_output_topology_candidate(
         targets,
         mirror_grouping,
     })
+}
+
+/// Builds the protocol-visible topology that becomes authoritative only after
+/// the candidate's first-presentation barrier completes.
+///
+/// This is intentionally separate from native resolution. Resolution may
+/// prepare modes, targets, and output identities, but the session must retain
+/// the old snapshot until Engine settles the corresponding topology
+/// transaction as committed.
+pub fn project_live_output_authority_candidate_snapshot(
+    published: &OutputAuthoritySnapshot,
+    candidate: &OutputTopologyCandidate,
+    resolved: &LiveResolvedOutputTopology,
+    topology_epoch: u64,
+) -> Result<OutputAuthoritySnapshot, LiveOutputAuthorityProjectionError> {
+    candidate
+        .validate_against(published)
+        .map_err(LiveOutputAuthorityProjectionError::InvalidCandidate)?;
+    if topology_epoch <= published.topology_epoch
+        || resolved.outputs.len() != candidate.groups.len()
+        || resolved.targets.len() != candidate.heads.len()
+    {
+        return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
+    }
+
+    let targets = candidate
+        .heads
+        .iter()
+        .map(|target| (target.head, target))
+        .collect::<BTreeMap<_, _>>();
+    let mut heads = published.heads.clone();
+    for descriptor in &mut heads {
+        let enabled = targets.get(&descriptor.head).copied();
+        if let Some(target) = enabled {
+            descriptor.current_mode = Some(target.mode);
+            descriptor.enabled = true;
+        } else {
+            descriptor.current_mode = None;
+            descriptor.enabled = false;
+        }
+        // A committed candidate creates a new physical target contract even
+        // when its selected timing is unchanged: group membership, mapping,
+        // transform, or VRR may have changed outside this capability record.
+        descriptor.generation = descriptor
+            .generation
+            .checked_add(1)
+            .ok_or(LiveOutputAuthorityProjectionError::GenerationExhausted)?;
+    }
+
+    let published_groups = published
+        .groups
+        .iter()
+        .map(|group| (group.output, group))
+        .collect::<BTreeMap<_, _>>();
+    let mut groups = Vec::with_capacity(candidate.groups.len());
+    for (index, group) in candidate.groups.iter().enumerate() {
+        let output = resolved.outputs[index].id;
+        if resolved.outputs[index].size.width != group.logical.width
+            || resolved.outputs[index].size.height != group.logical.height
+            || resolved.outputs[index].scale != 1
+        {
+            return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
+        }
+        let generation = published_groups
+            .get(&output)
+            .map(|published| published.generation.checked_add(1))
+            .unwrap_or(Some(1))
+            .ok_or(LiveOutputAuthorityProjectionError::GenerationExhausted)?;
+        groups.push(OutputLogicalGroupState {
+            output,
+            generation,
+            logical: group.logical,
+            members: group.members.clone(),
+        });
+    }
+    if !groups
+        .iter()
+        .any(|group| group.output == resolved.primary_output)
+    {
+        return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
+    }
+    let snapshot = OutputAuthoritySnapshot {
+        topology_epoch,
+        primary_output: resolved.primary_output,
+        heads,
+        groups,
+    };
+    snapshot
+        .validate()
+        .map_err(LiveOutputAuthorityProjectionError::InvalidSnapshot)?;
+    Ok(snapshot)
 }
 
 impl LiveResolvedOutputTopology {

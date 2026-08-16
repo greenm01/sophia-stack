@@ -605,8 +605,17 @@ parallel multi-monitor subsystem.
 - The exclusive `sophia_output_v1` Rust wire and authenticated transport exist
   with bounded capability snapshots and complete topology proposals. Backend
   projection binds capabilities to opaque heads and resolves independently
-  selected modes into mixed mirror and extended groups. Live-session supervision
-  and generated language-neutral conformance remain cutover work.
+  selected modes into mixed mirror and extended groups. A session-side candidate
+  owner now joins that projection to `OutputTopologyTransaction`: validation is
+  nonmutating, fresh identities remain provisional through preparation and
+  rollback, and the replacement snapshot stays private until every new logical
+  output presents. Live-session supervision, physical effect execution, and
+  generated language-neutral conformance remain cutover work.
+- The output transport also has an optional cancellable service loop and
+  incrementally buffered proposal intake. No-client startup and shutdown are
+  bounded, and a client may pause between frame header and payload without
+  blocking the visual owner. The service is not yet granted to a live WM or
+  shell process.
 
 ### Transitional Limitation
 
