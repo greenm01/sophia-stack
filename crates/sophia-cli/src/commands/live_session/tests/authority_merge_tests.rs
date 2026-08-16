@@ -162,3 +162,71 @@ fn a_single_batch_run_reproduces_the_historical_cadence() {
         "a limit of one is exactly today's behavior"
     );
 }
+
+#[test]
+fn a_run_stays_within_the_runtime_observation_budget() {
+    // Every commit contributes one runtime observation, and the session
+    // runtime rejects a tick whose batch exceeds its maximum. A physical run
+    // failed in KmsSubmit with exactly that error when the run was bounded by
+    // batch count instead, so the budget is counted in transactions.
+    let head = content_batch(1);
+    let queued = (2..=200).map(content_batch).collect::<Vec<_>>();
+    let len = authority_merge_run_len(&head, queued.iter(), true, AUTHORITY_MERGE_RUN_LIMIT);
+
+    let committed = std::iter::once(&head)
+        .chain(queued.iter().take(len - 1))
+        .map(|batch| batch.transactions.len())
+        .sum::<usize>();
+    assert!(
+        committed < sophia_runtime::MAX_SESSION_RUNTIME_OBSERVATION_BATCH,
+        "a merged run must leave room for the fixed per-tick observations, \
+         got {committed} commits"
+    );
+}
+
+#[test]
+fn a_transaction_heavy_batch_ends_the_run_early() {
+    let head = content_batch(1);
+    let mut heavy = content_batch(2);
+    for index in 0..=AUTHORITY_MERGE_TRANSACTION_LIMIT {
+        heavy
+            .transactions
+            .push(merge_surface_transaction(index as u64));
+    }
+    assert_eq!(
+        authority_merge_run_len(
+            &head,
+            vec![heavy, content_batch(3)].iter(),
+            true,
+            AUTHORITY_MERGE_RUN_LIMIT,
+        ),
+        1,
+        "one oversized batch must not drag the run past the observation budget"
+    );
+}
+
+fn merge_surface_transaction(index: u64) -> SurfaceTransaction {
+    SurfaceTransaction {
+        transaction: TransactionId::from_raw(9_000 + index),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(50 + u32::try_from(index).unwrap_or(0), 1),
+        namespace: None,
+        target_geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 1 },
+            Size {
+                width: 4,
+                height: 4,
+            },
+        ),
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    }
+}

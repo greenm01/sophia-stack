@@ -250,6 +250,18 @@ const AUTHORITY_DRAIN_CAPACITY: usize = 64;
 /// handful of cycles rather than one per frame.
 const AUTHORITY_MERGE_RUN_LIMIT: usize = 64;
 
+/// Committed transactions a merged run may add beyond its head.
+///
+/// Every commit contributes one runtime observation, and the session runtime
+/// refuses a tick whose batch exceeds `MAX_SESSION_RUNTIME_OBSERVATION_BATCH`.
+/// The real budget is therefore transactions, not batches: one batch can carry
+/// several. The reserve leaves room for the fixed per-tick observations — tick
+/// start and end, event polling, frame scheduling, scanout state — that share
+/// the same batch.
+const AUTHORITY_MERGE_OBSERVATION_RESERVE: usize = 16;
+const AUTHORITY_MERGE_TRANSACTION_LIMIT: usize =
+    sophia_runtime::MAX_SESSION_RUNTIME_OBSERVATION_BATCH - AUTHORITY_MERGE_OBSERVATION_RESERVE;
+
 /// Whether a batch carries only client content: pixels and geometry for
 /// surfaces the layout already knows, with no lifecycle, reservation, or
 /// resource edge that a later batch in the same cycle could reorder.
@@ -308,8 +320,15 @@ fn authority_merge_run_len<'a>(
     let mut identities = BTreeSet::new();
     authority_batch_transaction_identities(head, &mut identities);
     let mut len = 1;
+    // The head commits regardless of its size, exactly as it did before
+    // merging; only the batches joining it are held to the observation budget.
+    let mut transactions = head.transactions.len();
     for batch in queued {
         if len >= limit || !authority_batch_may_follow_merge(batch) {
+            break;
+        }
+        let joined = transactions.saturating_add(batch.transactions.len());
+        if joined > AUTHORITY_MERGE_TRANSACTION_LIMIT {
             break;
         }
         let mut candidate = identities.clone();
@@ -319,6 +338,7 @@ fn authority_merge_run_len<'a>(
             break;
         }
         identities = candidate;
+        transactions = joined;
         len = len.saturating_add(1);
     }
     len

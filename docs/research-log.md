@@ -12095,3 +12095,24 @@ acknowledgement ordering.
   that worked from the outset logged nothing — attempt `0022` showed 70
   rejections and no evidence the authority had started answering. The first
   satisfied requirement per surface now always reports.
+
+## 2026-08-16: merging must be bounded in transactions, not batches
+
+- Attempt `0023` on `6bdb42b4` failed at `KmsSubmit` with `session runtime
+  observation batch exceeds 64 events`. Merging worked, and then overran a
+  bound downstream of it.
+- Cause: every committed transaction contributes one
+  `AuthorityTransactionObserved` to the tick's runtime observation batch, and
+  `MAX_SESSION_RUNTIME_OBSERVATION_BATCH` is 64. The merge run was bounded at
+  64 *batches*, which is the wrong unit twice over — a batch may carry several
+  transactions, and the fixed per-tick observations share the same budget.
+- Fix: the run is now bounded by committed transactions, at the runtime
+  maximum less a reserve for the fixed per-tick observations, and the constant
+  is derived from `MAX_SESSION_RUNTIME_OBSERVATION_BATCH` rather than repeated
+  so the two cannot drift. The head batch is exempt: it commits regardless of
+  size, exactly as it did before merging existed, so the change can never make
+  a previously working single-batch cycle fail. The batch cap remains as a
+  second bound on owner-turn duration.
+- Retained as a regression: a run assembled from many queued batches must stay
+  under the runtime maximum, and one oversized batch must end the run rather
+  than drag it past the budget.
