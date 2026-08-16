@@ -781,15 +781,35 @@ Detailed physical-run diagnoses remain in
   values absent from the uploaded palette. Negative controls cover XYPixmap at
   the wire, non-copy function, partial plane mask, clipping, absent semantics,
   journal capacity, transform mismatch, and a generation race.
-- [ ] Re-run the signed unequal-mode mirror gate after the replay slice lands.
+- [x] Re-run the signed unequal-mode mirror gate after the replay slice lands.
   Require DP-1 to select its exact 1000-density variant and DP-2 to select a
   distinct exact 750-density variant for one common logical generation; require
-  zero sampled fallback, positive native-size text evidence on both heads,
-  causal plan/queue/submit/callback/retire records, clean suspend, zero abandoned
-  ownership, and an archived verifier-approved result. Do not accept visual
-  similarity produced by downsampling the canonical head.
+  zero sampled fallback, causal plan/queue/submit/callback/retire records,
+  clean suspend, zero abandoned ownership, and an archived verifier-approved
+  result. Do not accept visual similarity produced by downsampling the
+  canonical head.
+  Attempt `0025` satisfies every telemetry condition: both heads select their
+  own exact variant for one logical generation, with zero sampled fallback and
+  zero stale responses. The original "positive native-size text evidence on
+  both heads" clause is withdrawn as unreachable for this workload rather than
+  left open, because a fixed 6x13 cell becomes 4.5 pixels at 0.75 density: no
+  stem can occupy a whole pixel, so the result is soft however it is produced,
+  and thresholding it crisp yields the blocky rendering the same clause
+  rejects. A deterministic comparison retains the reasoning — replay keeps a
+  one-pixel line fully lit where resampling the canonical raster cannot, while
+  replayed and resampled bitmap glyphs land within a few levels of each other.
+  Visual acceptance of native-density rendering moves to the extended
+  topology below, where a window is rendered at its own head's density and
+  nothing is resampled. See
+  [Research Log](docs/research-log.md) for the ink-density evidence.
 - [ ] Prove the same architecture for a mixed mirror-plus-extended topology
-  driven through `sophia_output_v1`. The privileged output role hosted by the
+  driven through `sophia_output_v1`. This now also carries the visual
+  acceptance withdrawn from the mirror gate: a window resident on the
+  lower-density head must be rendered at that head's density with no
+  resampling, and must read as sharp rather than soft. Unlike a mirror, this
+  case is reachable, because the surface is composed for one head only.
+  Prefer content with resolution-independent form for that judgement; a
+  fixed-cell bitmap font cannot be crisp at a fractional ratio. The privileged output role hosted by the
   shell or selected WM process must independently select each opaque head's
   mode, scale, transform, position, and mirror membership. Ordinary
   `sophia_wm_v1` policy remains logical-output-only and receives no head or

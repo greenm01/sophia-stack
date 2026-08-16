@@ -66,6 +66,29 @@ that produced them. Native-sharp client content therefore requires another
 ready content variant from its owning authority. Sophia must report a fallback
 as resampled rather than disguising it as per-head rasterization.
 
+Two limits follow from that, and neither is a defect to be fixed:
+
+- A mirror always resamples for at least one head. One client renders one
+  raster at one size, so heads of differing density cannot all receive natively
+  rendered content however faithful the authority is. Per-head composition is
+  therefore proven visually on extended topologies, where a window lives on one
+  head and is rendered at that head's density with nothing resampled. A mirror
+  proves the plan, cohort, variant, and retirement contracts, not visual
+  sharpness.
+- Exact per-head rendering requires semantic content to replay. That holds for
+  server-side core drawing — core-font text, lines, rectangles — and not for
+  clients that rasterize their own text and upload finished pixels, which is
+  what modern toolkits do. For those surfaces the authority holds a raster and
+  can only resample it more faithfully, never re-render it.
+
+Fidelity also depends on the ratio and the content. A fixed-cell bitmap font at
+a fractional density has no crisp rendering at all: at 0.75 a six-pixel cell
+becomes 4.5 pixels, alternate characters straddle pixel boundaries, and every
+one-pixel stem covers three quarters of a pixel. Semantic replay and faithful
+resampling converge there. They diverge on content whose form is
+resolution-independent, where replay rasterizes a one-pixel line as a solid
+one-pixel line at the target density and resampling cannot.
+
 ## Ownership
 
 ### Sophia Engine
