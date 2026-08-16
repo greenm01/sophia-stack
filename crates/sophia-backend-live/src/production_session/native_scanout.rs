@@ -25,6 +25,10 @@ mod persistent_native_scanout {
     pub struct LiveProductionNativeScanout {
         pub groups: Vec<LiveProductionNativeGroup>,
         pub heads: Vec<LiveProductionNativeHead>,
+        /// Logical output descriptors are independent of physical head extents.
+        /// A mirrored head keeps its native size in `head.output`, while this
+        /// table is what Engine/session policy publishes.
+        logical_outputs: Vec<sophia_engine::HeadlessOutput>,
         pub discovered_outputs: usize,
         pub presentation_outputs: usize,
         pub submissions: usize,
@@ -118,6 +122,7 @@ mod persistent_native_scanout {
 
     pub struct LiveProductionNativeHead {
         pub head: sophia_engine::RenderHeadId,
+        pub enabled: bool,
         pub group: usize,
         pub selection: crate::LibdrmNativePrimaryPlaneSelection,
         /// Feeds this head's logical output. Every head of a mirror group holds a
@@ -470,6 +475,7 @@ mod persistent_native_scanout {
                         .clone();
                     heads.push(LiveProductionNativeHead {
                         head: head_id,
+                        enabled: true,
                         group,
                         selection,
                         sender,
@@ -544,6 +550,16 @@ mod persistent_native_scanout {
             }
             let heads = sorted_heads;
             let exporters = sorted_exporters;
+            let mut logical_outputs = Vec::new();
+            for head in &heads {
+                if logical_outputs
+                    .iter()
+                    .any(|output: &sophia_engine::HeadlessOutput| output.id == head.output.id)
+                {
+                    continue;
+                }
+                logical_outputs.push(head.output);
+            }
             let mut output_lifecycles = BTreeMap::new();
             for output in heads
                 .iter()
@@ -561,6 +577,7 @@ mod persistent_native_scanout {
             Ok(Self {
                 groups,
                 heads,
+                logical_outputs,
                 discovered_outputs: connector_records.len(),
                 presentation_outputs: presentation_output_count,
                 submissions: 0,
@@ -618,12 +635,7 @@ mod persistent_native_scanout {
         /// two outputs side by side. Everything above this is a topology, and a
         /// topology counts screens rather than cables.
         pub fn outputs(&self) -> Vec<sophia_engine::HeadlessOutput> {
-            let mut seen = BTreeSet::new();
-            self.heads
-                .iter()
-                .filter(|head| seen.insert(head.output.id))
-                .map(|head| head.output)
-                .collect()
+            self.logical_outputs.clone()
         }
 
         /// The first head driving a logical output.
@@ -637,7 +649,9 @@ mod persistent_native_scanout {
         /// releases per head must use `head_indices` instead, or it will address
         /// head zero and silently ignore the rest of a mirror group.
         pub fn primary_head_index(&self, output: OutputId) -> Option<usize> {
-            self.heads.iter().position(|head| head.output.id == output)
+            self.heads
+                .iter()
+                .position(|head| head.enabled && head.output.id == output)
         }
 
         /// The head driving a named connector.
@@ -652,7 +666,7 @@ mod persistent_native_scanout {
         ) -> Option<usize> {
             self.heads
                 .iter()
-                .position(|head| head.output.id == output && head.head == head_id)
+                .position(|head| head.enabled && head.output.id == output && head.head == head_id)
         }
 
         /// Resolves a connector id when the caller has already established that
@@ -683,7 +697,7 @@ mod persistent_native_scanout {
             self.heads
                 .iter()
                 .enumerate()
-                .filter(|(_, head)| head.output.id == output)
+                .filter(|(_, head)| head.enabled && head.output.id == output)
                 .map(|(index, _)| index)
                 .collect()
         }
@@ -695,7 +709,7 @@ mod persistent_native_scanout {
         /// on outputs alone would call that no change at all.
         pub fn head_fingerprint(&self) -> Vec<(OutputId, usize)> {
             let mut counts: BTreeMap<OutputId, usize> = BTreeMap::new();
-            for head in &self.heads {
+            for head in self.heads.iter().filter(|head| head.enabled) {
                 *counts.entry(head.output.id).or_default() += 1;
             }
             counts.into_iter().collect()

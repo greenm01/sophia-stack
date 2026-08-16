@@ -3,6 +3,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveProductionNativeTopologyCurrentHead {
     pub head: sophia_engine::RenderHeadId,
+    pub enabled: bool,
     pub card_index: usize,
     pub output: OutputId,
     pub selection: crate::LibdrmNativePrimaryPlaneSelection,
@@ -17,8 +18,20 @@ impl LiveProductionNativeTopologyCurrentHead {
         selection: crate::LibdrmNativePrimaryPlaneSelection,
         target_generation: u64,
     ) -> Self {
+        Self::new_with_enabled(head, true, card_index, output, selection, target_generation)
+    }
+
+    pub const fn new_with_enabled(
+        head: sophia_engine::RenderHeadId,
+        enabled: bool,
+        card_index: usize,
+        output: OutputId,
+        selection: crate::LibdrmNativePrimaryPlaneSelection,
+        target_generation: u64,
+    ) -> Self {
         Self {
             head,
+            enabled,
             card_index,
             output,
             selection,
@@ -32,6 +45,7 @@ pub enum LiveProductionNativeTopologyDisposition {
     Enabled {
         output: OutputId,
         selection: crate::LibdrmNativePrimaryPlaneSelection,
+        refresh_millihz: u32,
         transform: sophia_protocol::OutputTransform,
         mapping: sophia_protocol::OutputHeadMapping,
         vrr: sophia_protocol::OutputVrrPolicy,
@@ -44,6 +58,7 @@ pub struct LiveProductionNativeTopologyHeadPlan {
     pub head: sophia_engine::RenderHeadId,
     pub card_index: usize,
     pub previous_output: OutputId,
+    pub previous_enabled: bool,
     pub previous_selection: crate::LibdrmNativePrimaryPlaneSelection,
     pub previous_target_generation: u64,
     pub candidate_target_generation: u64,
@@ -153,13 +168,18 @@ pub struct LiveProductionNativeTopologyResourceRejection<Owner> {
 /// irreversible prefix with no resource capable of restoring it.
 #[derive(Debug)]
 pub struct LiveProductionNativeTopologyResourceCohort<Enabled, Disabled> {
-    expected:
-        BTreeMap<sophia_engine::RenderHeadId, (usize, LiveProductionNativeTopologyDisposition)>,
+    expected: BTreeMap<
+        sophia_engine::RenderHeadId,
+        (usize, LiveProductionNativeTopologyDisposition, bool),
+    >,
     candidate: BTreeMap<
         sophia_engine::RenderHeadId,
         LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>,
     >,
-    rollback: BTreeMap<sophia_engine::RenderHeadId, Enabled>,
+    rollback: BTreeMap<
+        sophia_engine::RenderHeadId,
+        LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>,
+    >,
 }
 
 type LiveProductionPreparedTopologyHead =
@@ -202,7 +222,12 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         let expected = plan
             .heads
             .iter()
-            .map(|head| (head.head, (head.card_index, head.disposition)))
+            .map(|head| {
+                (
+                    head.head,
+                    (head.card_index, head.disposition, head.previous_enabled),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         (expected.len() == plan.heads.len() && !expected.is_empty()).then_some(Self {
             expected,
@@ -219,7 +244,7 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         LiveProductionNativeTopologyResourceTransition,
         LiveProductionNativeTopologyResourceRejection<Enabled>,
     > {
-        let Some((_, disposition)) = self.expected.get(&head) else {
+        let Some((_, disposition, _)) = self.expected.get(&head) else {
             return Err(LiveProductionNativeTopologyResourceRejection {
                 transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
                 owner,
@@ -255,7 +280,7 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         LiveProductionNativeTopologyResourceTransition,
         LiveProductionNativeTopologyResourceRejection<Disabled>,
     > {
-        let Some((_, disposition)) = self.expected.get(&head) else {
+        let Some((_, disposition, _)) = self.expected.get(&head) else {
             return Err(LiveProductionNativeTopologyResourceRejection {
                 transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
                 owner,
@@ -291,9 +316,26 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         LiveProductionNativeTopologyResourceTransition,
         LiveProductionNativeTopologyResourceRejection<Enabled>,
     > {
-        if !self.expected.contains_key(&head) {
+        self.prepare_rollback_enabled(head, owner)
+    }
+
+    pub fn prepare_rollback_enabled(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+        owner: Enabled,
+    ) -> Result<
+        LiveProductionNativeTopologyResourceTransition,
+        LiveProductionNativeTopologyResourceRejection<Enabled>,
+    > {
+        let Some((_, _, previous_enabled)) = self.expected.get(&head) else {
             return Err(LiveProductionNativeTopologyResourceRejection {
                 transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
+                owner,
+            });
+        };
+        if !previous_enabled {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::WrongDisposition,
                 owner,
             });
         }
@@ -303,7 +345,43 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
                 owner,
             });
         }
-        self.rollback.insert(head, owner);
+        self.rollback.insert(
+            head,
+            LiveProductionNativeTopologyCandidateResource::Enabled(owner),
+        );
+        Ok(self.accepted_transition())
+    }
+
+    pub fn prepare_rollback_disabled(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+        owner: Disabled,
+    ) -> Result<
+        LiveProductionNativeTopologyResourceTransition,
+        LiveProductionNativeTopologyResourceRejection<Disabled>,
+    > {
+        let Some((_, _, previous_enabled)) = self.expected.get(&head) else {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::UnknownHead,
+                owner,
+            });
+        };
+        if *previous_enabled {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::WrongDisposition,
+                owner,
+            });
+        }
+        if self.rollback.contains_key(&head) {
+            return Err(LiveProductionNativeTopologyResourceRejection {
+                transition: LiveProductionNativeTopologyResourceTransition::Duplicate,
+                owner,
+            });
+        }
+        self.rollback.insert(
+            head,
+            LiveProductionNativeTopologyCandidateResource::Disabled(owner),
+        );
         Ok(self.accepted_transition())
     }
 
@@ -322,7 +400,7 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
     pub fn card_heads(&self, card_index: usize) -> Vec<sophia_engine::RenderHeadId> {
         self.expected
             .iter()
-            .filter_map(|(head, (card, _))| (*card == card_index).then_some(*head))
+            .filter_map(|(head, (card, _, _))| (*card == card_index).then_some(*head))
             .collect()
     }
 
@@ -333,7 +411,10 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         self.candidate.get(&head)
     }
 
-    pub fn rollback(&self, head: sophia_engine::RenderHeadId) -> Option<&Enabled> {
+    pub fn rollback(
+        &self,
+        head: sophia_engine::RenderHeadId,
+    ) -> Option<&LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>> {
         self.rollback.get(&head)
     }
 
@@ -344,7 +425,10 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         self.candidate.remove(&head)
     }
 
-    pub fn take_rollback(&mut self, head: sophia_engine::RenderHeadId) -> Option<Enabled> {
+    pub fn take_rollback(
+        &mut self,
+        head: sophia_engine::RenderHeadId,
+    ) -> Option<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>> {
         self.rollback.remove(&head)
     }
 
@@ -352,7 +436,7 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         self,
     ) -> (
         Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
-        Vec<Enabled>,
+        Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
     ) {
         (
             self.candidate.into_values().collect(),
@@ -709,6 +793,7 @@ pub fn plan_live_production_native_topology(
                     LiveProductionNativeTopologyDisposition::Enabled {
                         output: target.output,
                         selection,
+                        refresh_millihz: target.timing.refresh_millihz,
                         transform: target.transform,
                         mapping: target.mapping,
                         vrr: target.vrr,
@@ -733,6 +818,7 @@ pub fn plan_live_production_native_topology(
             head: current.head,
             card_index: current.card_index,
             previous_output: current.output,
+            previous_enabled: current.enabled,
             previous_selection: current.selection,
             previous_target_generation: current.target_generation,
             candidate_target_generation,
@@ -789,19 +875,33 @@ pub fn project_live_production_published_topology(
     }
 
     let mut targets = Vec::with_capacity(current.len());
+    let mut disabled_heads = Vec::new();
     for native in current.iter().copied() {
         let descriptor = descriptor_by_head
             .get(&native.head)
             .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
+        if !descriptor.connected
+            || descriptor.enabled != native.enabled
+            || descriptor.generation != native.target_generation
+        {
+            return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
+        }
+        if !native.enabled {
+            if output_by_head.contains_key(&native.head) || descriptor.current_mode.is_some() {
+                return Err(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch);
+            }
+            disabled_heads.push(crate::LiveOutputAuthorityDisabledHead {
+                head: native.head,
+                target_generation: native.target_generation,
+            });
+            continue;
+        }
         let output = output_by_head
             .get(&native.head)
             .copied()
             .ok_or(LiveProductionNativeTopologyPlanError::PublishedSnapshotMismatch)?;
         let timing = selected_timing(native)?;
-        if !descriptor.connected
-            || !descriptor.enabled
-            || descriptor.generation != native.target_generation
-            || output != native.output
+        if output != native.output
             || u32::try_from(native.selection.size().width).ok() != Some(timing.width)
             || u32::try_from(native.selection.size().height).ok() != Some(timing.height)
         {
@@ -842,7 +942,7 @@ pub fn project_live_production_published_topology(
         primary_output: snapshot.primary_output,
         outputs,
         logical_viewports,
-        disabled_heads: Vec::new(),
+        disabled_heads,
         targets,
         // Connector grouping is a discovery/configuration input. Rendering
         // rollback targets needs only the already-resolved opaque members.
@@ -861,8 +961,9 @@ impl LiveProductionNativeScanout {
             .heads
             .iter()
             .map(|head| {
-                LiveProductionNativeTopologyCurrentHead::new(
+                LiveProductionNativeTopologyCurrentHead::new_with_enabled(
                     head.head,
+                    head.enabled,
                     head.group,
                     head.output.id,
                     head.selection,
@@ -899,8 +1000,9 @@ impl LiveProductionNativeScanout {
             .heads
             .iter()
             .map(|head| {
-                LiveProductionNativeTopologyCurrentHead::new(
+                LiveProductionNativeTopologyCurrentHead::new_with_enabled(
                     head.head,
+                    head.enabled,
                     head.group,
                     head.output.id,
                     head.selection,
@@ -1021,6 +1123,31 @@ impl LiveProductionNativeScanout {
                     )
                 })?;
         }
+        for head_plan in &plan.heads {
+            if head_plan.previous_enabled {
+                continue;
+            }
+            let prepared = crate::prepare_native_disabled_topology_head(
+                self.groups[head_plan.card_index].session.card(),
+                head_plan.previous_selection,
+            );
+            let owner = prepared.prepared.ok_or_else(|| {
+                format!(
+                    "native rollback-disabled head {} property preparation failed: {:?}",
+                    head_plan.head.raw(),
+                    prepared.status,
+                )
+            })?;
+            resources
+                .prepare_rollback_disabled(head_plan.head, owner)
+                .map_err(|rejected| {
+                    format!(
+                        "native rollback-disabled head {} was rejected: {:?}",
+                        head_plan.head.raw(),
+                        rejected.transition,
+                    )
+                })?;
+        }
 
         for head_plan in &plan.heads {
             let LiveProductionNativeTopologyDisposition::Enabled { .. } = head_plan.disposition
@@ -1128,18 +1255,21 @@ impl LiveProductionNativeScanout {
                     LiveProductionNativeTopologyCandidateResource::Disabled(_) => {}
                 }
             }
-            if let Some(owner) = state.resources.take_rollback(head_plan.head) {
-                let cancelled = crate::cancel_prepared_rendered_topology_head(
-                    self.groups[head_plan.card_index].session.card(),
-                    owner,
-                );
-                if let Some(cleanup) = cancelled.cleanup {
-                    self.output_topology_cleanup.push((
-                        head_plan.head,
-                        cleanup
-                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                    ));
-                    cleanup_pending = cleanup_pending.saturating_add(1);
+            if let Some(rollback) = state.resources.take_rollback(head_plan.head) {
+                if let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback {
+                    let cancelled = crate::cancel_prepared_rendered_topology_head(
+                        self.groups[head_plan.card_index].session.card(),
+                        owner,
+                    );
+                    if let Some(cleanup) = cancelled.cleanup {
+                        self.output_topology_cleanup.push((
+                            head_plan.head,
+                            cleanup.map_scanout_buffer(|owner| {
+                                Box::new(owner) as Box<dyn std::any::Any>
+                            }),
+                        ));
+                        cleanup_pending = cleanup_pending.saturating_add(1);
+                    }
                 }
             }
         }
@@ -1206,6 +1336,9 @@ impl LiveProductionNativeScanout {
                 }
                 if state.resources.candidate_count() == state.plan.heads.len() {
                     for head_plan in &state.plan.heads {
+                        if !head_plan.previous_enabled {
+                            continue;
+                        }
                         let index = self
                             .head_index_for_head(head_plan.head)
                             .ok_or("rollback topology preparation lost a live head")?;
@@ -1227,6 +1360,9 @@ impl LiveProductionNativeScanout {
                 for head_plan in &state.plan.heads {
                     if state.resources.rollback(head_plan.head).is_some() {
                         continue;
+                    }
+                    if !head_plan.previous_enabled {
+                        return Err("disabled rollback head lost its prepared detach owner".into());
                     }
                     let Some(owner) = self.prepare_output_topology_head(
                         head_plan.head,
@@ -1336,17 +1472,20 @@ impl LiveProductionNativeScanout {
                     LiveProductionNativeTopologyCandidateResource::Disabled(_) => {}
                 }
             }
-            if let Some(owner) = state.resources.take_rollback(head_plan.head) {
-                let cancelled = crate::cancel_prepared_rendered_topology_head(
-                    self.groups[head_plan.card_index].session.card(),
-                    owner,
-                );
-                if let Some(cleanup) = cancelled.cleanup {
-                    self.output_topology_cleanup.push((
-                        head_plan.head,
-                        cleanup
-                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                    ));
+            if let Some(rollback) = state.resources.take_rollback(head_plan.head) {
+                if let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback {
+                    let cancelled = crate::cancel_prepared_rendered_topology_head(
+                        self.groups[head_plan.card_index].session.card(),
+                        owner,
+                    );
+                    if let Some(cleanup) = cancelled.cleanup {
+                        self.output_topology_cleanup.push((
+                            head_plan.head,
+                            cleanup.map_scanout_buffer(|owner| {
+                                Box::new(owner) as Box<dyn std::any::Any>
+                            }),
+                        ));
+                    }
                 }
             }
         }
@@ -1449,11 +1588,14 @@ pub fn validate_live_production_topology_frames(
         .heads
         .iter()
         .filter(|head| {
-            !candidate
-                || matches!(
+            if candidate {
+                matches!(
                     head.disposition,
                     LiveProductionNativeTopologyDisposition::Enabled { .. }
                 )
+            } else {
+                head.previous_enabled
+            }
         })
         .collect::<Vec<_>>();
     if by_head.len() != expected.len() {

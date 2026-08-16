@@ -1066,10 +1066,13 @@ is excluded; retained product behavior is not.
      or none. The live owner now nonblockingly drives candidate workers first and
      rollback workers second, quarantines ordinary scanout during preparation,
      and drains/cancels partial owners on failure or session completion. It still
-     cancels a complete dual pool and rejects before KMS until accepted-owner
-     installation is wired. The remaining ownership work is to apply the prepared
-     card requests, install/reconcile accepted owners, and publish only after the
-     new outputs present.
+     cancels a complete dual pool and rejects before KMS. Previously disabled
+     connected heads are now retained in the native model and contribute an
+     explicit rollback-disable property owner instead of an impossible rollback
+     framebuffer. The remaining ownership work is to drive the already-defined
+     per-card coordinator, install/reconcile accepted owners while retaining
+     rollback resources through runtime rebuild, and publish only after the new
+     outputs present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining

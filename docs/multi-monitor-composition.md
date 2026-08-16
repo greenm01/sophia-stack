@@ -643,7 +643,8 @@ parallel multi-monitor subsystem.
   current native sizes and generations, so rollback composition cannot inherit
   a provisional viewport or mode. A typed resource cohort requires one
   candidate owner (enabled framebuffer or explicit disabled-head properties)
-  and one rollback framebuffer for every affected head before apply can begin;
+  and one rollback owner (framebuffer or explicit disabled-head properties)
+  for every affected head before apply can begin;
   rejected insertions return their affine owner. Physical head/output
   observation batches advance protocol authority transactionally, so a bad
   member cannot leave a valid prefix recorded.
@@ -672,7 +673,10 @@ connected heads as explicit disable effects. Candidate CPU frames and native
 resource owners can now be prepared, and the per-card apply request is defined,
 and the cross-card apply/rollback order is explicit. The live owner now schedules
 both candidate and rollback exporter pools and proves them complete without a
-KMS mutation; it does not yet install/reconcile accepted owners. The
+KMS mutation. A previously disabled connected head remains in the native model
+and has an explicit rollback-disable owner rather than a fabricated framebuffer.
+The production WM path still stops before driving the already-defined card
+coordinator, and it does not yet install/reconcile accepted owners. The
 distinguished primary output also remains
 in retained scene and Present paths.
 Configuration currently maps `DesktopMirrorFit` manually to backend-owned

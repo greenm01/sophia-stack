@@ -284,12 +284,14 @@ fn topology_apply_plan(card_indices: &[usize]) -> sophia_backend_live::LiveProdu
                     head,
                     card_index,
                     previous_output: output,
+                    previous_enabled: true,
                     previous_selection,
                     previous_target_generation: 1,
                     candidate_target_generation: 2,
                     disposition: LiveProductionNativeTopologyDisposition::Enabled {
                         output,
                         selection: previous_selection,
+                        refresh_millihz: 60_000,
                         transform: OutputTransform::Normal,
                         mapping: OutputHeadMapping::Exact,
                         vrr: OutputVrrPolicy::Disabled,
@@ -559,6 +561,148 @@ fn topology_resource_cohort_requires_complete_candidate_and_rollback_owners() {
     let (candidate, rollback) = resources.into_remaining();
     assert_eq!(candidate.len(), 2);
     assert_eq!(rollback.len(), 2);
+}
+
+#[test]
+fn topology_resource_cohort_restores_a_previously_disabled_head_without_a_framebuffer() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyCandidateResource as Candidate,
+        LiveProductionNativeTopologyResourceCohort as Cohort,
+        LiveProductionNativeTopologyResourceTransition as Transition,
+    };
+
+    let mut plan = topology_apply_plan(&[0]);
+    let head = plan.heads[0].head;
+    plan.heads[0].previous_enabled = false;
+    let mut resources = Cohort::<String, String>::new(&plan).unwrap();
+
+    assert_eq!(
+        resources
+            .prepare_candidate_enabled(head, "candidate-enabled".into())
+            .unwrap(),
+        Transition::Accepted
+    );
+    let rejection = resources
+        .prepare_rollback_enabled(head, "wrong-rollback-owner".into())
+        .unwrap_err();
+    assert_eq!(rejection.transition, Transition::WrongDisposition);
+    assert_eq!(rejection.owner, "wrong-rollback-owner");
+    assert_eq!(
+        resources
+            .prepare_rollback_disabled(head, "rollback-disabled".into())
+            .unwrap(),
+        Transition::Ready
+    );
+    assert!(matches!(resources.rollback(head), Some(Candidate::Disabled(_))));
+}
+
+#[test]
+fn published_topology_projection_preserves_a_disabled_connected_head() {
+    use sophia_backend_live::{
+        LiveProductionNativeTopologyCurrentHead, project_live_production_published_topology,
+    };
+    use sophia_protocol::{
+        DisplayHeadId, DisplayModeId, OutputAuthoritySnapshot, OutputGroupMember,
+        OutputHeadDescriptor, OutputHeadMapping, OutputLogicalGroupState, OutputModeDescriptor,
+        OutputTransformSet,
+    };
+
+    let output = OutputId::from_raw(1);
+    let enabled = RenderHeadId::from_raw(41);
+    let disabled = RenderHeadId::from_raw(42);
+    let size = Size {
+        width: 1_920,
+        height: 1_080,
+    };
+    let mode = DisplayModeId::from_raw(410);
+    let snapshot = OutputAuthoritySnapshot {
+        topology_epoch: 9,
+        primary_output: output,
+        heads: vec![
+            OutputHeadDescriptor {
+                head: DisplayHeadId::from_raw(enabled.raw()),
+                generation: 3,
+                label: "enabled".into(),
+                connected: true,
+                enabled: true,
+                current_mode: Some(mode),
+                transforms: OutputTransformSet::NORMAL,
+                vrr_capable: false,
+                modes: vec![OutputModeDescriptor {
+                    mode,
+                    pixel_size: size,
+                    refresh_millihz: 60_000,
+                    preferred: true,
+                }],
+            },
+            OutputHeadDescriptor {
+                head: DisplayHeadId::from_raw(disabled.raw()),
+                generation: 7,
+                label: "disabled".into(),
+                connected: true,
+                enabled: false,
+                current_mode: None,
+                transforms: OutputTransformSet::NORMAL,
+                vrr_capable: false,
+                modes: vec![OutputModeDescriptor {
+                    mode: DisplayModeId::from_raw(420),
+                    pixel_size: size,
+                    refresh_millihz: 60_000,
+                    preferred: true,
+                }],
+            },
+        ],
+        groups: vec![OutputLogicalGroupState {
+            output,
+            generation: 2,
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: size.width,
+                height: size.height,
+            },
+            members: vec![OutputGroupMember {
+                head: DisplayHeadId::from_raw(enabled.raw()),
+                mapping: OutputHeadMapping::Exact,
+            }],
+        }],
+    };
+    let current = [
+        LiveProductionNativeTopologyCurrentHead::new(
+            enabled,
+            0,
+            output,
+            topology_plan_selection(31, size),
+            3,
+        ),
+        LiveProductionNativeTopologyCurrentHead::new_with_enabled(
+            disabled,
+            false,
+            0,
+            output,
+            topology_plan_selection(32, size),
+            7,
+        ),
+    ];
+
+    let projected = project_live_production_published_topology(&current, &snapshot, |head| {
+        Ok(sophia_backend_live::LibdrmNativeOutputTiming::new(
+            head.selection.size().width as u32,
+            head.selection.size().height as u32,
+            60_000,
+        ))
+    })
+    .unwrap();
+
+    assert_eq!(projected.targets.len(), 1);
+    assert_eq!(projected.targets[0].head, enabled);
+    assert_eq!(
+        projected.disabled_heads,
+        vec![sophia_backend_live::LiveOutputAuthorityDisabledHead {
+            head: disabled,
+            target_generation: 7,
+        }]
+    );
 }
 
 fn topology_composition_frame(

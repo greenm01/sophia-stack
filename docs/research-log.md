@@ -11643,9 +11643,10 @@ acknowledgement ordering.
   attempting to allocate rollback resources at that point introduces a failure
   between mutation and recovery.
 - A typed live resource cohort now requires exactly one candidate member and one
-  rollback framebuffer for every affected opaque head before it reports ready.
+  rollback owner for every affected opaque head before it reports ready.
   Disabled candidates contribute a discovered connector/CRTC/plane property set
-  rather than a fake framebuffer. Duplicate, unknown, or wrong-disposition
+  rather than a fake framebuffer; previously disabled heads do the same on the
+  rollback side. Duplicate, unknown, or wrong-disposition
   insertions return the supplied owner instead of dropping it.
 - Card/head observations into `LiveOutputAuthorityOwner` now stage through a
   cloned reducer and publish the batch only if every member is accepted. Native
@@ -11662,7 +11663,8 @@ acknowledgement ordering.
   persistent renderer workers, then queues and polls every rollback head. Normal
   frame scheduling is quarantined while either pool is active.
 - A frame set is admitted only with exact enabled-head candidate coverage, exact
-  all-head rollback coverage, and damage extents matching each native selection.
+  previously-enabled-head rollback coverage, and damage extents matching each
+  native selection.
   A candidate-disabled head has no candidate raster but still has a rollback
   raster and prepared detach properties.
 - Failures enter an abort phase: unsubmitted frames are discarded, in-flight
@@ -11675,3 +11677,18 @@ acknowledgement ordering.
   expose a physically changed topology with no authoritative owner. The next
   slice is therefore accepted-owner installation plus card apply/rollback, not
   more renderer scaffolding.
+
+## 2026-08-15: rollback pools cover previously disabled heads
+
+- Published rollback projection now represents connected-but-disabled heads as
+  disabled members. Their rollback side owns prepared detach properties instead
+  of requiring an impossible framebuffer. Candidate enable, candidate disable,
+  rollback enable, and rollback disable are all checked against the head's prior
+  state before the cohort can become ready.
+- The live head record now distinguishes connected-but-disabled heads from active
+  logical-output members, while `outputs()` remains a separate logical-output
+  table. Startup behavior is unchanged because every discovered startup head
+  begins enabled. The production WM path still cancels before KMS: the next slice
+  must retain rollback owners across physical apply, output-runtime
+  reconstruction, and the first-presentation barrier rather than adding a
+  premature finalize operation.
