@@ -55,6 +55,30 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         plan.repaint.rects.len(),
         plan.logical_content_checksum,
     );
+    for layer in &plan.layers {
+        if let BufferSource::CpuBuffer { handle } = layer.source {
+            tracing::info!(
+                "sophia_live_head_content schema=1 status=selected output={} head={} scene_generation={} surface={} committed_generation={} variant={} source=cpu handle={} density_millis={} sampling={} fidelity={}",
+                plan.output.raw(),
+                plan.head.raw(),
+                plan.scene_generation,
+                layer.surface.index(),
+                layer.committed_generation,
+                layer.variant,
+                handle,
+                layer.density_millis,
+                match layer.requested_sampling {
+                    sophia_engine::HeadSamplingClass::Exact => "exact",
+                    sophia_engine::HeadSamplingClass::Downsampled => "downsampled",
+                    sophia_engine::HeadSamplingClass::Upsampled => "upsampled",
+                },
+                match layer.outcome {
+                    sophia_engine::HeadBindingOutcome::Active => "authority_raster",
+                    sophia_engine::HeadBindingOutcome::Fallback => "sampled_fallback",
+                },
+            );
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -144,6 +168,7 @@ pub struct LiveProductionVisualRuntime {
     shutdown_present_rejections: usize,
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
+    raster_requirements: sophia_engine::SurfaceRasterRequirementTracker,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -224,7 +249,48 @@ impl LiveProductionVisualRuntime {
             shutdown_present_rejections: 0,
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
+            raster_requirements: Default::default(),
         })
+    }
+
+    /// Derives the union of native-density classes required by every visible
+    /// physical head. This is an Engine reducer; the backend merely supplies
+    /// current targets and retains no X11 identity.
+    pub fn reconcile_surface_raster_requirements(
+        &mut self,
+        native_scanout: &LiveProductionNativeScanout,
+    ) -> Result<Vec<SurfaceRasterRequirements>, Box<dyn std::error::Error>> {
+        let committed = self.production.committed_surfaces();
+        let display_list = self.display_list(committed, &self.presentation_order)?;
+        let scene_generation = committed
+            .iter()
+            .map(|state| state.committed_generation)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let mut snapshots = Vec::new();
+        let mut targets = Vec::new();
+        for (output, logical_viewport) in self.outputs.logical_viewports() {
+            snapshots.push(sophia_engine::output_scene_snapshot_from_committed_in_view(
+                output,
+                scene_generation,
+                logical_viewport,
+                committed,
+                display_list.clone(),
+                None,
+            )?);
+            targets.extend(native_scanout.head_render_targets(output));
+        }
+        self.raster_requirements
+            .reconcile(&snapshots, &targets)
+            .map_err(Into::into)
+    }
+
+    pub fn accept_surface_raster_response(
+        &mut self,
+        identity: SurfaceRasterResponseIdentity,
+    ) -> bool {
+        self.raster_requirements.accept_response(identity)
     }
 
     pub fn stable_present(

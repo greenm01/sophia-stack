@@ -53,6 +53,8 @@ pub enum X11ObservedDispatchFailure {
 /// Raw request strings and protocol object values remain inside the authority.
 #[derive(Debug)]
 pub struct X11DispatchObservation {
+    /// Global authority order, distinct from the client-local X11 sequence.
+    pub transaction: TransactionId,
     pub client: XServerFrontendClientId,
     pub admission: Option<sophia_protocol::ClientAdmissionContext>,
     pub resource_id_range: XWireClientResourceRange,
@@ -65,7 +67,7 @@ pub struct X11DispatchObservation {
     /// Complete, protocol-neutral reservation snapshots changed by this
     /// dispatch. Protocol property IDs and bytes remain authority-private.
     pub surface_output_reservations: Vec<SurfaceOutputReservations>,
-    pub cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
+    pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     pub received_fd_count: usize,
     pub received_fds: Vec<OwnedFd>,
     pub dri3_pixmap_import: Option<XAuthorityDri3PixmapImport>,
@@ -112,4 +114,14 @@ pub struct XAuthoritySoftwarePresentSubmission {
     pub surface: SurfaceId,
     pub acquire_fence: Option<sophia_protocol::FenceHandle>,
     pub idle_fence: Option<sophia_protocol::FenceHandle>,
+}
+
+/// One authority-generated content-set replacement answering Engine raster
+/// demand. The response retains exact causal identity separately from its
+/// ordinary surface transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityRasterRequirementResponse {
+    pub identity: sophia_protocol::SurfaceRasterResponseIdentity,
+    pub transaction: sophia_protocol::SurfaceTransaction,
+    pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
 }

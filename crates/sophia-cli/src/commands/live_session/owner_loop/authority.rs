@@ -74,6 +74,23 @@
         }
         match authority_batch {
             Ok(batch) => {
+                if !batch.raster_responses.is_empty()
+                    && (batch.raster_responses.len() != batch.transactions.len()
+                        || runtime.as_mut().is_none_or(|runtime| {
+                            !batch
+                                .raster_responses
+                                .iter()
+                                .copied()
+                                .all(|identity| runtime.accept_surface_raster_response(identity))
+                        }))
+                {
+                    tracing::warn!(
+                        "sophia_live_surface_raster schema=1 status=stale_response transaction={} responses={}",
+                        batch.transaction.raw(),
+                        batch.raster_responses.len(),
+                    );
+                    continue;
+                }
                 let drain_started = Instant::now();
                 while pending_authority_batches.len() < 64
                     && drain_started.elapsed() < Duration::from_millis(2)
@@ -694,6 +711,28 @@
                 );
                 metrics.runtime_surfaces =
                     u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
+                if let Some(native_scanout) = native_scanout.as_ref() {
+                    for requirements in
+                        runtime.reconcile_surface_raster_requirements(native_scanout)?
+                    {
+                        pending_surface_raster_requirements
+                            .insert(requirements.surface, requirements);
+                    }
+                }
+                while let Some((surface, requirements)) =
+                    pending_surface_raster_requirements.pop_first()
+                {
+                    match raster_sender.try_route(requirements) {
+                        Ok(()) => {}
+                        Err(std::sync::mpsc::TrySendError::Full(requirements)) => {
+                            pending_surface_raster_requirements.insert(surface, requirements);
+                            break;
+                        }
+                        Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                            return Err("X Authority raster route disconnected".into());
+                        }
+                    }
+                }
                 for surface in removed_surfaces {
                     if keyboard_focus_handoff.target() == Some(surface) {
                         keyboard_focus_handoff = KeyboardFocusHandoffState::default();

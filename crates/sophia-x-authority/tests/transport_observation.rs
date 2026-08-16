@@ -12,6 +12,7 @@ use sophia_x_authority::{
 
 fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
     X11DispatchObservation {
+        transaction: TransactionId::from_raw(1),
         client: XServerFrontendClientId::from_raw(1),
         admission: None,
         resource_id_range: XWireClientResourceRange {
@@ -29,7 +30,7 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
             metadata_candidates: Vec::new(),
         },
         surface_output_reservations: Vec::new(),
-        cpu_buffer_update: None,
+        cpu_buffer_updates: Vec::new(),
         received_fd_count: 0,
         received_fds: Vec::new(),
         dri3_pixmap_import: None,

@@ -29,9 +29,10 @@ use std::{
 #[cfg(unix)]
 use crate::{
     X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_DELETE_WINDOW,
-    X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK,
-    X_SETUP_DEFAULT_ROOT, X11DispatchObservation, X11ObservedDispatchFailure,
-    X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureTelemetry,
+    X_ATOM_NAME_WM_PROTOCOLS, X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY,
+    X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT,
+    X11DispatchObservation, X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable,
+    XAuthorityBackpressureFailure, XAuthorityBackpressureTelemetry,
     XAuthorityBackpressureTelemetryKind, XAuthorityClientControlAck,
     XAuthorityClientControlCommand, XAuthorityClientInputDelivery, XAuthorityClientInputEvent,
     XAuthorityControlAck, XAuthorityControlCommand, XAuthorityControlOutcome,
@@ -48,10 +49,9 @@ use crate::{
     XServerFrontendRouteError, XServerFrontendServiceCommand, XServerFrontendSetupAuthorization,
     XSetupFailure, XSetupRequest, XSetupSuccess, XWireClientContext,
     apply_engine_presentation_state, decode_x11_core_request, dispatch_x11_parse_error,
-    dispatch_x11_wire_request, emit_x_authority_observation_with_backpressure,
-    encode_x_client_event, encode_x11_setup_failure, encode_x11_setup_success,
-    parse_x11_setup_request, try_emit_x_authority_observation, x_output_reservations_for_window,
-    x11_setup_request_total_len,
+    dispatch_x11_wire_request, encode_x_client_event, encode_x11_setup_failure,
+    encode_x11_setup_success, parse_x11_setup_request, try_emit_x_authority_observation,
+    x_output_reservations_for_window, x11_setup_request_total_len,
 };
 #[cfg(all(unix, test))]
 use sophia_protocol::RoutedInputRequest;

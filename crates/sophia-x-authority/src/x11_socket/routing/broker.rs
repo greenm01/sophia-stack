@@ -25,6 +25,8 @@ pub struct XServerFrontendRouteBroker {
     control_receiver: Receiver<XAuthorityClientControlCommand>,
     acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
     source_payload_receiver: Receiver<crate::ClipboardSourcePayload>,
+    raster_sender: SyncSender<sophia_protocol::SurfaceRasterRequirements>,
+    raster_receiver: Receiver<sophia_protocol::SurfaceRasterRequirements>,
 }
 
 #[cfg(unix)]
@@ -105,6 +107,26 @@ pub struct XServerFrontendProtocolRouter {
 #[derive(Clone)]
 pub struct XServerFrontendControlRouter {
     registry: XServerFrontendRouteRegistry,
+}
+
+/// Protocol-neutral route for Engine-owned native-density raster demand.
+/// The payload contains only `SurfaceId`, generation, logical extent, and
+/// bounded density classes; X11 resource and physical-head identity stay in
+/// the frontend.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct XServerFrontendRasterRouter {
+    sender: SyncSender<sophia_protocol::SurfaceRasterRequirements>,
+}
+
+#[cfg(unix)]
+impl XServerFrontendRasterRouter {
+    pub fn try_route(
+        &self,
+        requirements: sophia_protocol::SurfaceRasterRequirements,
+    ) -> Result<(), TrySendError<sophia_protocol::SurfaceRasterRequirements>> {
+        self.sender.try_send(requirements)
+    }
 }
 
 /// Independent bounds for routes whose payloads have different expansion
@@ -300,6 +322,7 @@ impl XServerFrontendRouteBroker {
         let (control_sender, control_receiver) = sync_channel(capacities.control.get());
         let (source_payload_sender, source_payload_receiver) =
             sync_channel(capacities.input.get());
+        let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
         Self {
             registry: XServerFrontendRouteRegistry {
                 clients: Arc::new(Mutex::new(BTreeMap::new())),
@@ -336,6 +359,8 @@ impl XServerFrontendRouteBroker {
             control_receiver,
             acknowledgement_receiver,
             source_payload_receiver,
+            raster_sender,
+            raster_receiver,
         }
     }
 
@@ -362,6 +387,21 @@ impl XServerFrontendRouteBroker {
         XServerFrontendControlRouter {
             registry: self.registry.clone(),
         }
+    }
+
+    pub fn raster_router(&self) -> XServerFrontendRasterRouter {
+        XServerFrontendRasterRouter {
+            sender: self.raster_sender.clone(),
+        }
+    }
+
+    pub(crate) fn try_recv_raster_requirements(
+        &self,
+    ) -> Result<
+        sophia_protocol::SurfaceRasterRequirements,
+        std::sync::mpsc::TryRecvError,
+    > {
+        self.raster_receiver.try_recv()
     }
 
     pub fn recv_control_ack_timeout(

@@ -2,6 +2,7 @@ struct SessionLoopChannels<'a> {
     authority: &'a Receiver<XAuthorityObservedTransactionBatch>,
     input: &'a XAuthorityRoutedInputSender,
     control: &'a XServerFrontendControlRouter,
+    raster: &'a sophia_x_authority::XServerFrontendRasterRouter,
     control_acknowledgements: &'a Receiver<XAuthorityClientControlAck>,
     input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
     route_lease_updates: &'a Receiver<XAuthorityRouteLeaseUpdate>,
@@ -176,6 +177,7 @@ fn run_session_loop(
         authority: authority_receiver,
         input: input_sender,
         control: control_sender,
+        raster: raster_sender,
         control_acknowledgements: control_ack_receiver,
         input_deliveries: input_delivery_receiver,
         route_lease_updates: route_lease_update_receiver,
@@ -419,6 +421,10 @@ fn run_session_loop(
     let mut startup_topology_recovery_pending = false;
     let mut startup_outputs_ready_reported = false;
     let mut pending_authority_batches = VecDeque::new();
+    // Advisory raster demand is latest-wins per protocol-neutral SurfaceId.
+    // A busy client must not turn an authority-route stall into an unbounded
+    // generation queue.
+    let mut pending_surface_raster_requirements = BTreeMap::new();
     let mut seat_state = sophia_backend_live::LiveSeatState::Active;
     let mut pending_virtual_terminal: Option<(u8, Instant)> = None;
     let mut requested_virtual_terminal = None;

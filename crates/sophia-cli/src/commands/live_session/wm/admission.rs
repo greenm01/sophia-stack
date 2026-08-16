@@ -30,10 +30,12 @@ impl LiveAdmissionAuthorityGroup {
                 .transactions
                 .iter()
                 .filter(|transaction| {
-                    matches!(
-                        transaction.target_buffer(),
-                        BufferSource::CpuBuffer { handle } if handle == update.handle()
-                    )
+                    transaction.content.variants().iter().any(|variant| {
+                        matches!(
+                            variant.source,
+                            BufferSource::CpuBuffer { handle } if handle == update.handle()
+                        )
+                    })
                 })
                 .count();
             if matches != 1 {
@@ -231,7 +233,8 @@ impl PersistentLiveLayout {
             .collect::<Vec<_>>();
         let cpu_handles = transactions
             .iter()
-            .filter_map(|transaction| match transaction.target_buffer() {
+            .flat_map(|transaction| transaction.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })
@@ -574,7 +577,8 @@ impl PersistentLiveLayout {
                 .iter()
                 .chain(self.released_admission_groups.iter())
                 .flat_map(|group| group.transactions.iter())
-                .filter_map(|transaction| match transaction.target_buffer() {
+                .flat_map(|transaction| transaction.content.variants())
+                .filter_map(|variant| match variant.source {
                     BufferSource::CpuBuffer { handle } => Some(handle),
                     _ => None,
                 }),

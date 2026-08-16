@@ -112,7 +112,7 @@ fn run_x_authority_external_probe_smoke(
                         response.transactions.clone(),
                     ));
                 }
-                if let Some(buffer) = &trace.cpu_buffer_update {
+                for buffer in &trace.cpu_buffer_updates {
                     let _ =
                         sender.try_send(ExternalProbeObservation::CpuBufferUpdate(buffer.clone()));
                 }
@@ -131,7 +131,10 @@ fn run_x_authority_external_probe_smoke(
                             .as_ref()
                             .map(|response| response.removed_surfaces.clone())
                             .unwrap_or_default(),
-                        cpu_buffer_handle: trace.cpu_buffer_update.as_ref().map(|update| update.handle()),
+                        cpu_buffer_handle: trace
+                            .cpu_buffer_updates
+                            .first()
+                            .map(|update| update.handle()),
                     },
                 ));
                 Ok(())

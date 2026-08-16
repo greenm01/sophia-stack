@@ -314,10 +314,12 @@ fn production_authority_batch(
             .transactions
             .iter()
             .find(|transaction| {
-                matches!(
-                    transaction.target_buffer(),
-                    BufferSource::CpuBuffer { handle } if handle == update.handle()
-                )
+                transaction.content.variants().iter().any(|variant| {
+                    matches!(
+                        variant.source,
+                        BufferSource::CpuBuffer { handle } if handle == update.handle()
+                    )
+                })
             })
             .ok_or("CPU update has no surface transaction")?;
         let index = production_authority_group_index(&mut groups, transaction.transaction);

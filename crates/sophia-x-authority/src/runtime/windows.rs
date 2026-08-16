@@ -458,6 +458,7 @@ impl XAuthorityRuntime {
              .apply(XWindowLifecycleEvent::Destroyed { id: window })?;
          self.resources.remove(window);
          self.software_buffers.remove(window);
+         self.raster_store.remove(window);
          self.window_background_pixels.remove(&window);
          self.window_visuals.remove(&window);
          self.glx_windows

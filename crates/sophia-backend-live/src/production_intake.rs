@@ -108,11 +108,13 @@ impl LiveProductionAuthorityGroup {
                 .transactions
                 .iter()
                 .filter(|transaction| {
-                    matches!(
-                        transaction.target_buffer(),
-                        sophia_protocol::BufferSource::CpuBuffer { handle }
-                            if handle == update.handle()
-                    )
+                    transaction.content.variants().iter().any(|variant| {
+                        matches!(
+                            variant.source,
+                            sophia_protocol::BufferSource::CpuBuffer { handle }
+                                if handle == update.handle()
+                        )
+                    })
                 })
                 .count();
             if matches != 1 {

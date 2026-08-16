@@ -277,6 +277,7 @@ fn x11_dispatch_accepts_destroy_window_for_known_namespace_window() {
             removed_surfaces: vec![surface],
             surface_output_reservations: Vec::new(),
             cpu_buffer_updates: Vec::new(),
+            raster_responses: Vec::new(),
             dma_buf_registrations: Vec::new(),
             fence_registrations: Vec::new(),
             present_submissions: Vec::new(),

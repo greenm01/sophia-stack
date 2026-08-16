@@ -4,8 +4,12 @@ use sophia_protocol::{Rect, Size};
 
 use crate::{XFontFace, XGraphicsContextValues, XPoint, XResourceId};
 
+mod raster_variants;
 mod update;
 
+pub(crate) use raster_variants::{
+    XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
+};
 pub use update::{
     X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
     XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
@@ -23,6 +27,12 @@ pub(crate) struct XSoftwareBufferStore {
 }
 
 impl XSoftwareBufferStore {
+    pub(crate) fn presentation_snapshot(
+        &self,
+        drawable: XResourceId,
+    ) -> Option<&XAuthorityCpuBufferSnapshot> {
+        self.presentations.get(&drawable)
+    }
     pub fn remove(&mut self, drawable: XResourceId) -> Option<XAuthorityCpuBufferSnapshot> {
         self.presentations.remove(&drawable);
         self.buffers.remove(&drawable)

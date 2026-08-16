@@ -536,6 +536,7 @@ pub(crate) fn run_persistent_xterm_session(
     let input_sender = broker.routed_input_sender();
     let route_lease_release_sender = broker.route_lease_release_sender();
     let control_sender = broker.control_router();
+    let raster_sender = broker.raster_router();
     let protocol_router = broker.protocol_router();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
     let mut server = Some(std::thread::spawn(move || {
@@ -825,6 +826,7 @@ pub(crate) fn run_persistent_xterm_session(
             authority: &authority_receiver,
             input: &input_sender,
             control: &control_sender,
+            raster: &raster_sender,
             control_acknowledgements: &control_ack_receiver,
             input_deliveries: &input_delivery_receiver,
             route_lease_updates: &route_lease_update_receiver,

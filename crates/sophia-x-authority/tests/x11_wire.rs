@@ -6,7 +6,8 @@ use sophia_protocol::{
     PolicyPresentationState, PortalBrokerRequestPacket, PortalDecision, PortalGrant,
     PortalGrantState, PortalRequest, PortalTransfer, PortalTransferKind, Rect, Region,
     RoutedInputRequest, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePlacementPreference,
-    SurfacePresentationRole, TransactionId,
+    SurfacePresentationRole, SurfaceRasterClass, SurfaceRasterRequirements, SurfaceRasterTransform,
+    TransactionId,
 };
 use sophia_x_authority::*;
 include!("x11_wire/transport_events.rs");

@@ -13,13 +13,13 @@ use crate::{
     ClipboardSelectionHandoff, ClipboardSelectionNotify, ClipboardSelectionProxy,
     ClipboardSourcePayload, ClipboardTextProperty, PendingClipboardSelection, X_ATOM_ATOM,
     X_ATOM_NONE, XAtomTable, XAuthorityCpuBufferUpdate, XAuthorityPortalCommand,
-    XAuthorityRequestKind, XAuthorityRequestPacket, XAuthorityResponsePacket,
-    XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder, XDrawingUpdate, XFontFace,
-    XGraphicsContextTable, XGraphicsContextValues, XPoint, XPropertyChange, XPropertyMode,
-    XPropertyTable, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
-    XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
-    clipboard_selection_failure_notify, dispatch_clipboard_selection_request,
-    surface_transaction_from_drawing_update,
+    XAuthorityRasterCommand, XAuthorityRasterStore, XAuthorityRequestKind, XAuthorityRequestPacket,
+    XAuthorityResponsePacket, XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder,
+    XDrawingUpdate, XFontFace, XGraphicsContextTable, XGraphicsContextValues, XOwnedTextDraw,
+    XPoint, XPropertyChange, XPropertyMode, XPropertyTable, XRasterPoint, XResourceKind,
+    XResourceTable, XSelectionEvent, XSelectionMonitor, XShmSegmentTable, XSoftwareBufferStore,
+    XTextDraw, XWindowLifecycleEvent, XWindowTable, clipboard_selection_failure_notify,
+    dispatch_clipboard_selection_request, surface_transaction_from_drawing_update,
 };
 
 include!("runtime/clipboard.rs");
@@ -80,6 +80,8 @@ pub struct XAuthorityRuntime {
     clipboard_proxies: BTreeMap<crate::XResourceId, ClipboardSelectionProxy>,
     next_clipboard_proxy: u32,
     software_buffers: XSoftwareBufferStore,
+    raster_store: XAuthorityRasterStore,
+    pending_raster_command: Option<XAuthorityRasterCommand>,
     pixmaps: BTreeMap<crate::XResourceId, XPixmapRecord>,
     fonts: BTreeMap<crate::XResourceId, XFontRecord>,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
@@ -96,7 +98,7 @@ pub struct XAuthorityRuntime {
     colormaps: BTreeMap<crate::XResourceId, u32>,
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
     glx_windows: BTreeMap<crate::XResourceId, (NamespaceId, crate::XResourceId, u32)>,
-    last_cpu_buffer_update: Option<XAuthorityCpuBufferUpdate>,
+    last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
     defer_policy_maps: bool,
@@ -116,6 +118,8 @@ impl Default for XAuthorityRuntime {
             clipboard_proxies: Default::default(),
             next_clipboard_proxy: 0,
             software_buffers: Default::default(),
+            raster_store: Default::default(),
+            pending_raster_command: None,
             pixmaps: Default::default(),
             fonts: Default::default(),
             shm_pixmaps: Default::default(),
@@ -132,7 +136,7 @@ impl Default for XAuthorityRuntime {
             colormaps: Default::default(),
             glx_contexts: Default::default(),
             glx_windows: Default::default(),
-            last_cpu_buffer_update: None,
+            last_cpu_buffer_updates: Vec::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
             defer_policy_maps: false,
@@ -243,11 +247,26 @@ impl XAuthorityRuntime {
     }
 
     pub fn begin_dispatch(&mut self) {
-        self.last_cpu_buffer_update = None;
+        self.last_cpu_buffer_updates.clear();
+        self.pending_raster_command = None;
     }
 
+    /// Takes every immutable CPU-buffer mutation produced by one authority
+    /// dispatch. A surface transaction may publish multiple density variants,
+    /// so dispatch ownership is a bounded ordered collection rather than a
+    /// singleton side channel.
+    pub fn take_cpu_buffer_updates(&mut self) -> Vec<XAuthorityCpuBufferUpdate> {
+        core::mem::take(&mut self.last_cpu_buffer_updates)
+    }
+
+    /// Compatibility accessor for direct runtime tests and single-buffer
+    /// callers. Production dispatch uses [`Self::take_cpu_buffer_updates`].
     pub fn take_cpu_buffer_update(&mut self) -> Option<XAuthorityCpuBufferUpdate> {
-        self.last_cpu_buffer_update.take()
+        if self.last_cpu_buffer_updates.is_empty() {
+            None
+        } else {
+            Some(self.last_cpu_buffer_updates.remove(0))
+        }
     }
 
     pub fn apply(&mut self, request: XAuthorityRequestPacket) -> XAuthorityResponsePacket {

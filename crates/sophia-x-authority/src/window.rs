@@ -266,6 +266,12 @@ impl XWindowTable {
         self.windows.get(&id)
     }
 
+    pub(crate) fn presentation_for_surface(&self, surface: SurfaceId) -> Option<&XWindowRecord> {
+        self.windows
+            .values()
+            .find(|record| record.surface == surface)
+    }
+
     pub fn set_override_redirect(
         &mut self,
         id: XResourceId,

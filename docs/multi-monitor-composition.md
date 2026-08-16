@@ -582,9 +582,34 @@ parallel multi-monitor subsystem.
   reports requested/effective paths and fallback outcomes.
 - Content crosses the authority boundary as a bounded `SurfaceContentSet` of
   density-deduplicated `SurfaceContentVariant` records with a dedicated named
-  capacity; every current producer normalizes into a one-variant set and the
-  committed state retains the whole set. Sets contain ready-only variants;
+  capacity; non-X producers currently normalize into a one-variant set while
+  X Authority may publish its bounded density set, and committed state retains
+  the whole set. Sets contain ready-only variants;
   per-variant damage, fidelity, and transform class are validated and consumed.
+- Engine reduces all visible physical-head targets into one bounded,
+  `SurfaceId`-keyed `SurfaceRasterRequirements` union. The edge-triggered
+  tracker emits only missing or changed density classes, prioritizes an
+  already-exact authority raster and classes serving the most heads, and
+  rejects late responses by source-content and requirement generation before
+  transaction admission. Connector, CRTC, output-protocol object, and XID
+  identities do not enter this route.
+- X Authority retains its canonical 1x drawable and owns stable derived
+  presentation stores for requested density classes. A bounded semantic
+  journal (4096 commands, 4 MiB owned payload, four total variants including
+  the canonical store, and 64 MiB total canonical-plus-derived backing) replays
+  clear/fill, line, rectangle,
+  ImageText8/PolyText8, and same-drawable CopyArea operations when demand
+  arrives after the original request. Full opaque clears reset the journal;
+  unsupported or over-budget replay is reported as sampled fallback rather
+  than impersonating a native authority raster.
+- Fixed 6x13 text remains bit-exact at canonical density. Fractional derived
+  stores use one integer rational-edge projector and deterministic 8-bit area
+  coverage for GXcopy glyphs; non-copy raster operations use a binary coverage
+  decision. One authority transaction carries every immutable CPU mutation and
+  content variant, while production intake validates each update against
+  exactly one member of the set. Authority request publication and late raster
+  responses share a lossless ordered egress boundary, with bounded waits held
+  outside runtime, atom, and property locks.
 - Head identity is opaque end to end: the backend mints session-scoped
   `RenderHeadId`s, Engine's `EngineHeadRegistry` holds generation-stamped
   `HeadRenderTarget` records grouped by logical output, and mirror
@@ -715,10 +740,11 @@ prepared before mutation; the live owner drives the per-card coordinator,
 installs the accepted side, rebuilds logical runtimes, and rolls an accepted
 prefix back in reverse order on failure. A previously disabled connected head
 remains in the native model and has an explicit rollback-disable owner rather
-than a fabricated framebuffer. Remaining limits are singleton client rasters
-that must honestly report resampling until their authority supplies a
-native-density variant, and signed physical evidence of the complete mixed
-mirror-plus-extended IPC cutover.
+than a fabricated framebuffer. Remaining limits are protocol drawing
+operations outside the bounded semantic journal (notably arbitrary PutImage
+and cross-drawable CopyArea), which must honestly retain sampled compatibility
+content, and signed physical evidence of the authority-raster plus complete
+mixed mirror-and-extended IPC cutover.
 
 ### Target
 
@@ -727,7 +753,7 @@ mirror-plus-extended IPC cutover.
   work before rendering.
 - Replace all primary-derived and flat-output mirror composition paths with the
   common per-head planner used by mirrored and extended outputs.
-- Add authority-owned native variants for server-rendered X11 core content
-  without moving X semantics into Engine.
+- Extend authority-owned native variants to the remaining server-rendered X11
+  operations without moving X semantics into Engine.
 - Enforce prepare-all mirror cohorts, joined retirement, and explicit sampling
   evidence in deterministic and physical acceptance gates.

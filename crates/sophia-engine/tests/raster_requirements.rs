@@ -1,0 +1,192 @@
+use sophia_engine::*;
+use sophia_protocol::*;
+
+fn scene(content: SurfaceContentSet) -> OutputSceneSnapshot {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(7, 1);
+    let geometry = Rect {
+        x: 100,
+        y: 100,
+        width: 800,
+        height: 600,
+    };
+    OutputSceneSnapshot {
+        output,
+        scene_generation: 9,
+        logical_viewport: Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        },
+        surfaces: vec![OutputSceneSurface {
+            surface,
+            committed_generation: 4,
+            geometry,
+            clip: geometry,
+            opacity_millis: 1_000,
+            content,
+            damage: Region::single(geometry),
+        }],
+        display_list: CompositorDisplayList {
+            output,
+            commands: vec![CompositorDisplayCommand::Surface { surface }],
+        },
+        cursor: None,
+        logical_damage: Region::single(geometry),
+        logical_content_checksum: 1,
+    }
+}
+
+fn target(head: u64, size: Size) -> HeadRenderTarget {
+    HeadRenderTarget {
+        head: RenderHeadId::from_raw(head),
+        output: OutputId::from_raw(1),
+        target_generation: 1,
+        native_size: size,
+        scale: 1,
+        refresh_millihz: 60_000,
+        transform: OutputTransform::Normal,
+        mapping: OutputHeadMapping::Fit,
+    }
+}
+
+#[test]
+fn unequal_mirror_heads_emit_one_deduplicated_density_union() {
+    let logical = Size {
+        width: 800,
+        height: 600,
+    };
+    let snapshot = scene(SurfaceContentSet::singleton(
+        BufferSource::CpuBuffer { handle: 11 },
+        logical,
+    ));
+    let targets = [
+        target(
+            1,
+            Size {
+                width: 2560,
+                height: 1440,
+            },
+        ),
+        target(
+            2,
+            Size {
+                width: 1920,
+                height: 1080,
+            },
+        ),
+    ];
+    let mut tracker = SurfaceRasterRequirementTracker::new();
+    let first = tracker.reconcile(&[snapshot.clone()], &targets).unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].logical_extent, logical);
+    assert_eq!(
+        first[0].classes,
+        vec![
+            SurfaceRasterClass {
+                density_millis: 750,
+                transform: SurfaceRasterTransform::Normal,
+            },
+            SurfaceRasterClass {
+                density_millis: 1_000,
+                transform: SurfaceRasterTransform::Normal,
+            },
+        ]
+    );
+    assert!(tracker.reconcile(&[snapshot], &targets).unwrap().is_empty());
+}
+
+#[test]
+fn stale_raster_response_cannot_consume_current_requirement() {
+    let logical = Size {
+        width: 800,
+        height: 600,
+    };
+    let snapshot = scene(SurfaceContentSet::singleton(
+        BufferSource::CpuBuffer { handle: 11 },
+        logical,
+    ));
+    let mut tracker = SurfaceRasterRequirementTracker::new();
+    let requirement = tracker
+        .reconcile(
+            &[snapshot],
+            &[target(
+                2,
+                Size {
+                    width: 1920,
+                    height: 1080,
+                },
+            )],
+        )
+        .unwrap()
+        .remove(0);
+    assert!(!tracker.accept_response(SurfaceRasterResponseIdentity {
+        transaction: TransactionId::from_raw(50),
+        surface: requirement.surface,
+        source_content_generation: requirement.committed_content_generation + 1,
+        requirement_generation: requirement.requirement_generation,
+    }));
+    assert!(tracker.accept_response(SurfaceRasterResponseIdentity {
+        transaction: TransactionId::from_raw(51),
+        surface: requirement.surface,
+        source_content_generation: requirement.committed_content_generation,
+        requirement_generation: requirement.requirement_generation,
+    }));
+}
+
+#[test]
+fn canonical_variant_reserves_one_slot_across_many_density_classes() {
+    let snapshot = scene(SurfaceContentSet::singleton(
+        BufferSource::CpuBuffer { handle: 11 },
+        Size {
+            width: 800,
+            height: 600,
+        },
+    ));
+    let targets = [
+        target(
+            1,
+            Size {
+                width: 1536,
+                height: 864,
+            },
+        ),
+        target(
+            2,
+            Size {
+                width: 1792,
+                height: 1008,
+            },
+        ),
+        target(
+            3,
+            Size {
+                width: 2048,
+                height: 1152,
+            },
+        ),
+        target(
+            4,
+            Size {
+                width: 2304,
+                height: 1296,
+            },
+        ),
+    ];
+    let mut tracker = SurfaceRasterRequirementTracker::new();
+    let requirements = tracker.reconcile(&[snapshot], &targets).unwrap();
+    assert_eq!(requirements.len(), 1);
+    assert_eq!(
+        requirements[0].classes.len(),
+        MAX_SURFACE_CONTENT_VARIANTS - 1
+    );
+    assert_eq!(
+        requirements[0]
+            .classes
+            .iter()
+            .map(|class| class.density_millis)
+            .collect::<Vec<_>>(),
+        vec![600, 700, 800]
+    );
+}

@@ -328,7 +328,10 @@ impl XAuthorityRuntime {
             );
         };
         let handle = buffer.handle();
-        self.last_cpu_buffer_update = Some(buffer);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Paint {
+            rects: damage.rects.clone(),
+            gc: gc.clone(),
+        });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -426,7 +429,21 @@ impl XAuthorityRuntime {
             return XAuthorityResponsePacket::accepted(transaction);
         };
         let handle = update.handle();
-        self.last_cpu_buffer_update = Some(update);
+        self.pending_raster_command = Some(if source == destination {
+            XAuthorityRasterCommand::CopyArea {
+                source: Rect {
+                    x: i32::from(src_x),
+                    y: i32::from(src_y),
+                    width: i32::from(width),
+                    height: i32::from(height),
+                },
+                destination_x: i32::from(dst_x),
+                destination_y: i32::from(dst_y),
+                gc: gc.clone(),
+            }
+        } else {
+            XAuthorityRasterCommand::Unsupported
+        });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -502,7 +519,16 @@ impl XAuthorityRuntime {
                 .saturating_add(i32::from(gc.line_width.max(1))),
         });
         let handle = update.handle();
-        self.last_cpu_buffer_update = Some(update);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Lines {
+            points: points
+                .iter()
+                .map(|point| XRasterPoint {
+                    x: i32::from(point.x),
+                    y: i32::from(point.y),
+                })
+                .collect(),
+            gc: gc.clone(),
+        });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -540,7 +566,10 @@ impl XAuthorityRuntime {
             return XAuthorityResponsePacket::accepted(transaction);
         };
         let handle = update.handle();
-        self.last_cpu_buffer_update = Some(update);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Rectangles {
+            rectangles: rectangles.to_vec(),
+            gc: gc.clone(),
+        });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -610,7 +639,7 @@ impl XAuthorityRuntime {
             );
         };
         let handle = buffer.handle();
-        self.last_cpu_buffer_update = Some(buffer);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported);
         self.finish_drawing_update(XDrawingUpdate::shm_put_image(
             transaction,
             namespace,
@@ -700,7 +729,19 @@ impl XAuthorityRuntime {
             return XAuthorityResponsePacket::accepted(transaction);
         };
         let handle = buffer.handle();
-        self.last_cpu_buffer_update = Some(buffer);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Text {
+            draws: draws
+                .iter()
+                .map(|draw| XOwnedTextDraw {
+                    x: draw.x,
+                    baseline: draw.baseline,
+                    text: draw.text.to_vec(),
+                    image: draw.image,
+                    font: draw.font,
+                })
+                .collect(),
+            gc: gc.clone(),
+        });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -754,7 +795,7 @@ impl XAuthorityRuntime {
             );
         };
         let handle = buffer.handle();
-        self.last_cpu_buffer_update = Some(buffer);
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Clear { rect, pixel });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
             namespace,
@@ -769,6 +810,8 @@ impl XAuthorityRuntime {
     fn finish_drawing_update(&mut self, mut update: XDrawingUpdate) -> XAuthorityResponsePacket {
         let transaction_id = update.transaction;
         let source_window = update.target_window;
+        let semantic_command = self.pending_raster_command.take();
+        let mut cpu_buffer_updates = Vec::new();
         if matches!(
             update.buffer,
             sophia_protocol::BufferSource::CpuBuffer { .. }
@@ -823,11 +866,18 @@ impl XAuthorityRuntime {
                     })
                     .collect(),
             };
-            self.last_cpu_buffer_update = Some(presentation_update);
+            cpu_buffer_updates.push(presentation_update.clone());
+            if let Some(command) = semantic_command {
+                cpu_buffer_updates.extend(self.raster_store.record(
+                    presentation_window,
+                    presentation_size,
+                    command.translated(offset_x, offset_y),
+                ));
+            }
         }
         let window = update.target_window;
         let previous_generation = update.previous_committed_generation;
-        let transaction = match surface_transaction_from_drawing_update(&self.windows, update) {
+        let mut transaction = match surface_transaction_from_drawing_update(&self.windows, update) {
             Ok(transaction) => transaction,
             Err(error) => {
                 return XAuthorityResponsePacket::rejected(transaction_id, error.into());
@@ -836,8 +886,90 @@ impl XAuthorityRuntime {
         if let Err(error) = self.windows.advance_generation(window, previous_generation) {
             return XAuthorityResponsePacket::rejected(transaction_id, error.into());
         }
+        if let Some(canonical) = self.software_buffers.presentation_snapshot(window) {
+            transaction.content = self.raster_store.content_set(window, canonical);
+        }
+        self.last_cpu_buffer_updates.extend(cpu_buffer_updates);
         let mut response = XAuthorityResponsePacket::accepted(transaction_id);
         response.transactions.push(transaction);
         response
+    }
+
+    /// Applies one protocol-neutral Engine raster requirement to the
+    /// presentation surface currently owning that `SurfaceId`. Late or stale
+    /// requirements fail closed before allocating or publishing pixels.
+    pub fn apply_surface_raster_requirements(
+        &mut self,
+        transaction: TransactionId,
+        requirements: &sophia_protocol::SurfaceRasterRequirements,
+    ) -> Result<Option<crate::XAuthorityRasterRequirementResponse>, XAuthorityRuntimeError> {
+        requirements
+            .validate()
+            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+        if !transaction.is_valid() {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        let record = self
+            .windows
+            .presentation_for_surface(requirements.surface)
+            .cloned()
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        if record.generation != requirements.committed_content_generation {
+            return Ok(None);
+        }
+        let canonical = self
+            .software_buffers
+            .presentation_snapshot(record.id)
+            .cloned()
+            .ok_or(XAuthorityRuntimeError::InvalidResource)?;
+        if canonical.size != requirements.logical_extent {
+            return Ok(None);
+        }
+        let updates = self
+            .raster_store
+            .satisfy(record.id, requirements, canonical.bytes.len())
+            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+        let content = self.raster_store.content_set(record.id, &canonical);
+        let all_satisfied = requirements.classes.iter().all(|class| {
+            content.variants().iter().any(|variant| {
+                variant.density_millis == class.density_millis
+                    && variant.transform == class.transform
+                    && variant.fidelity
+                        == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
+            })
+        });
+        if !all_satisfied {
+            return Ok(None);
+        }
+        let surface_transaction = sophia_protocol::SurfaceTransaction {
+            transaction,
+            authority: sophia_protocol::AuthorityKind::SophiaX,
+            surface: record.surface,
+            namespace: Some(record.namespace),
+            target_geometry: record.geometry,
+            content,
+            damage: Region::single(Rect {
+                x: 0,
+                y: 0,
+                width: requirements.logical_extent.width,
+                height: requirements.logical_extent.height,
+            }),
+            readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: record.generation,
+        };
+        self.windows
+            .advance_generation(record.id, record.generation)
+            .map_err(XAuthorityRuntimeError::from)?;
+        Ok(Some(crate::XAuthorityRasterRequirementResponse {
+            identity: sophia_protocol::SurfaceRasterResponseIdentity {
+                transaction,
+                surface: record.surface,
+                source_content_generation: requirements.committed_content_generation,
+                requirement_generation: requirements.requirement_generation,
+            },
+            transaction: surface_transaction,
+            cpu_buffer_updates: updates,
+        }))
     }
 }

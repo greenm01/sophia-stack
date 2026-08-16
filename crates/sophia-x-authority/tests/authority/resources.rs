@@ -571,6 +571,197 @@ fn cpu_buffer_submissions_use_stable_damage_generations_and_resize_replacement()
 }
 
 #[test]
+fn late_density_requirement_replays_into_stable_multi_variant_content() {
+    let namespace = NamespaceId::from_raw(119);
+    let window = XResourceId::new(0x163, 1);
+    let surface = SurfaceId::new(119, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(120),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 40,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime.begin_dispatch();
+    let first = runtime.apply_core_draw(
+        TransactionId::from_raw(121),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 2,
+            y: 2,
+            width: 20,
+            height: 10,
+        }),
+    );
+    assert_eq!(first.transactions[0].content.variants().len(), 1);
+    assert_eq!(runtime.take_cpu_buffer_updates().len(), 1);
+
+    let requirements = SurfaceRasterRequirements {
+        surface,
+        committed_content_generation: 2,
+        requirement_generation: 7,
+        logical_extent: Size {
+            width: 80,
+            height: 40,
+        },
+        classes: vec![
+            SurfaceRasterClass {
+                density_millis: 750,
+                transform: SurfaceRasterTransform::Normal,
+            },
+            SurfaceRasterClass {
+                density_millis: 1_000,
+                transform: SurfaceRasterTransform::Normal,
+            },
+        ],
+    };
+    let response = runtime
+        .apply_surface_raster_requirements(TransactionId::from_raw(122), &requirements)
+        .unwrap()
+        .expect("the bounded semantic journal should satisfy 0.75x demand");
+    assert_eq!(response.identity.source_content_generation, 2);
+    assert_eq!(response.transaction.content.variants().len(), 2);
+    let canonical = response.transaction.content.canonical_variant();
+    let derived = response
+        .transaction
+        .content
+        .variants()
+        .iter()
+        .find(|variant| variant.density_millis == 750)
+        .unwrap();
+    assert_eq!(canonical.pixel_size, Size { width: 80, height: 40 });
+    assert_eq!(derived.pixel_size, Size { width: 60, height: 30 });
+    assert_ne!(canonical.source, derived.source);
+    assert_eq!(response.cpu_buffer_updates.len(), 1);
+
+    runtime.begin_dispatch();
+    let next = runtime.apply_core_draw(
+        TransactionId::from_raw(123),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 30,
+            y: 5,
+            width: 4,
+            height: 4,
+        }),
+    );
+    assert_eq!(next.transactions[0].content.variants().len(), 2);
+    let updates = runtime.take_cpu_buffer_updates();
+    assert_eq!(updates.len(), 2);
+    assert!(requirements.classes.iter().all(|class| {
+        next.transactions[0].content.variants().iter().any(|variant| {
+            variant.density_millis == class.density_millis
+                && variant.transform == class.transform
+        })
+    }));
+
+    assert!(
+        runtime
+            .apply_surface_raster_requirements(TransactionId::from_raw(124), &requirements)
+            .unwrap()
+            .is_none(),
+        "a response for content generation 2 must be stale after generation 3 committed"
+    );
+}
+
+#[test]
+fn over_capacity_density_requirement_falls_back_without_partial_publication() {
+    let namespace = NamespaceId::from_raw(120);
+    let window = XResourceId::new(0x164, 1);
+    let surface = SurfaceId::new(120, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(125),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 40,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(126),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 2,
+            y: 2,
+            width: 20,
+            height: 10,
+        }),
+    );
+    runtime.take_cpu_buffer_updates();
+
+    let requirement = |requirement_generation, densities: &[u32]| SurfaceRasterRequirements {
+        surface,
+        committed_content_generation: 2,
+        requirement_generation,
+        logical_extent: Size {
+            width: 80,
+            height: 40,
+        },
+        classes: densities
+            .iter()
+            .copied()
+            .map(|density_millis| SurfaceRasterClass {
+                density_millis,
+                transform: SurfaceRasterTransform::Normal,
+            })
+            .collect(),
+    };
+    assert!(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(127),
+                &requirement(8, &[600, 700, 800, 900]),
+            )
+            .unwrap()
+            .is_none(),
+        "canonical 1x plus four derived stores exceeds the protocol capacity"
+    );
+
+    let response = runtime
+        .apply_surface_raster_requirements(
+            TransactionId::from_raw(128),
+            &requirement(9, &[750, 1_000]),
+        )
+        .unwrap()
+        .expect("a later bounded requirement must remain satisfiable");
+    assert_eq!(response.cpu_buffer_updates.len(), 1);
+    assert_eq!(response.transaction.content.variants().len(), 2);
+    assert!(response.transaction.content.variants().iter().any(|variant| {
+        variant.density_millis == 750
+            && variant.fidelity == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
+    }));
+}
+
+#[test]
 fn descendant_software_drawing_reduces_to_its_toplevel_surface() {
     let namespace = NamespaceId::from_raw(20);
     let toplevel = XResourceId::new(0x70, 1);

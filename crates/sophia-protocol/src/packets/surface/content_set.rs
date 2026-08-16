@@ -290,6 +290,27 @@ pub struct SurfaceRasterRequirements {
     pub classes: Vec<SurfaceRasterClass>,
 }
 
+/// Exact causal identity returned by a protocol authority after satisfying a
+/// raster requirement. Engine uses all four fields before admitting the
+/// accompanying surface transaction, so late work cannot be relabelled as a
+/// newer content generation or requirement.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SurfaceRasterResponseIdentity {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub source_content_generation: u64,
+    pub requirement_generation: u64,
+}
+
+impl SurfaceRasterResponseIdentity {
+    pub const fn is_valid(self) -> bool {
+        self.transaction.is_valid()
+            && self.surface.is_valid()
+            && self.source_content_generation != 0
+            && self.requirement_generation != 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SurfaceRasterRequirementsError {
     InvalidIdentity,

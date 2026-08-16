@@ -274,6 +274,174 @@ pub fn run_x_server_frontend_routed_until_stopped(
 /// transition before exercising shutdown without inferring worker state from
 /// socket timing.
 #[cfg(unix)]
+struct XAuthorityEgressEnvelope {
+    transaction: TransactionId,
+    batch: Option<XAuthorityObservedTransactionBatch>,
+}
+
+#[cfg(unix)]
+fn send_x_authority_egress_envelope(
+    sender: &SyncSender<XAuthorityEgressEnvelope>,
+    mut envelope: XAuthorityEgressEnvelope,
+    cancellation: &AtomicBool,
+) -> Result<(), X11SetupSocketError> {
+    loop {
+        if cancellation.load(Ordering::Acquire) {
+            return Err(X11SetupSocketError::service_shutdown(
+                "authority egress enqueue cancelled",
+            ));
+        }
+        match sender.try_send(envelope) {
+            Ok(()) => return Ok(()),
+            Err(TrySendError::Full(pending)) => envelope = pending,
+            Err(TrySendError::Disconnected(_)) => {
+                return Err(X11SetupSocketError::new(
+                    "authority egress sequencer disconnected",
+                ));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(unix)]
+fn run_x_authority_egress_sequencer(
+    receiver: Receiver<XAuthorityEgressEnvelope>,
+    sender: SyncSender<XAuthorityObservedTransactionBatch>,
+    cancellation: Arc<AtomicBool>,
+    telemetry: Arc<XAuthorityBackpressureObserver>,
+) -> Result<(), X11SetupSocketError> {
+    let mut expected = 1_u64;
+    let mut input_disconnected = false;
+    let mut pending = BTreeMap::<u64, Option<XAuthorityObservedTransactionBatch>>::new();
+    let mut output = None::<(XAuthorityObservedTransactionBatch, Instant)>;
+    let mut waiting = BTreeSet::<u64>::new();
+    loop {
+        loop {
+            match receiver.try_recv() {
+                Ok(envelope) => {
+                    let ticket = envelope.transaction.raw();
+                    if ticket < expected || pending.insert(ticket, envelope.batch).is_some() {
+                        return Err(X11SetupSocketError::new(
+                            "authority egress received a duplicate or stale ticket",
+                        ));
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    input_disconnected = true;
+                    break;
+                }
+            }
+        }
+
+        while output.is_none() {
+            let Some(batch) = pending.remove(&expected) else { break };
+            expected = expected.saturating_add(1);
+            if let Some(batch) = batch {
+                output = Some((batch, Instant::now()));
+            }
+        }
+
+        if cancellation.load(Ordering::Acquire) {
+            if let Some((batch, started)) = output.take() {
+                telemetry(XAuthorityBackpressureTelemetry {
+                    kind: XAuthorityBackpressureTelemetryKind::Shutdown,
+                    client: batch.client,
+                    transaction: batch.transaction,
+                    waited: started.elapsed(),
+                    failure: Some(XAuthorityBackpressureFailure::Cancelled),
+                });
+            }
+            for batch in pending.values().flatten() {
+                telemetry(XAuthorityBackpressureTelemetry {
+                    kind: XAuthorityBackpressureTelemetryKind::Shutdown,
+                    client: batch.client,
+                    transaction: batch.transaction,
+                    waited: Duration::ZERO,
+                    failure: Some(XAuthorityBackpressureFailure::Cancelled),
+                });
+            }
+            return Ok(());
+        }
+
+        if let Some((batch, started)) = output.take() {
+            let client = batch.client;
+            let transaction = batch.transaction;
+            match sender.try_send(batch) {
+                Ok(()) => {
+                    if waiting.remove(&transaction.raw()) {
+                        telemetry(XAuthorityBackpressureTelemetry {
+                            kind: XAuthorityBackpressureTelemetryKind::Resume,
+                            client,
+                            transaction,
+                            waited: started.elapsed(),
+                            failure: None,
+                        });
+                    }
+                }
+                Err(TrySendError::Full(batch)) => {
+                    if waiting.insert(transaction.raw()) {
+                        telemetry(XAuthorityBackpressureTelemetry {
+                            kind: XAuthorityBackpressureTelemetryKind::Wait,
+                            client,
+                            transaction,
+                            waited: Duration::ZERO,
+                            failure: None,
+                        });
+                    }
+                    output = Some((batch, started));
+                    // Later consecutive batches are causally waiting behind
+                    // this full boundary even though they cannot overtake it.
+                    for batch in pending.values().flatten() {
+                        if waiting.insert(batch.transaction.raw()) {
+                            telemetry(XAuthorityBackpressureTelemetry {
+                                kind: XAuthorityBackpressureTelemetryKind::Wait,
+                                client: batch.client,
+                                transaction: batch.transaction,
+                                waited: Duration::ZERO,
+                                failure: None,
+                            });
+                        }
+                    }
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    telemetry(XAuthorityBackpressureTelemetry {
+                        kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
+                        client,
+                        transaction,
+                        waited: started.elapsed(),
+                        failure: Some(XAuthorityBackpressureFailure::Disconnected),
+                    });
+                    for batch in pending.values().flatten() {
+                        telemetry(XAuthorityBackpressureTelemetry {
+                            kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
+                            client: batch.client,
+                            transaction: batch.transaction,
+                            waited: Duration::ZERO,
+                            failure: Some(XAuthorityBackpressureFailure::Disconnected),
+                        });
+                    }
+                    return Err(X11SetupSocketError::new(
+                        "X authority observed transaction channel is disconnected",
+                    ));
+                }
+            }
+        }
+
+        if input_disconnected && output.is_none() && pending.is_empty() {
+            return Ok(());
+        }
+        if input_disconnected && output.is_none() && !pending.contains_key(&expected) {
+            return Err(X11SetupSocketError::new(
+                "authority egress closed with a missing transaction ticket",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[cfg(unix)]
 pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
     config: XServerFrontendConfig,
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
@@ -290,20 +458,67 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         .set_input_authority(broker.registry.input_authority.clone());
     let observation_cancellation = Arc::new(AtomicBool::new(false));
     let worker_observation_cancellation = observation_cancellation.clone();
+    let (egress_sender, egress_receiver) =
+        sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    let egress_cancellation = observation_cancellation.clone();
+    let egress_backpressure_observer = backpressure_observer.clone();
+    let (egress_completion_sender, egress_completion_receiver) =
+        std::sync::mpsc::sync_channel(1);
+    let egress_thread = std::thread::spawn(move || {
+        let result = run_x_authority_egress_sequencer(
+            egress_receiver,
+            transaction_sender,
+            egress_cancellation,
+            egress_backpressure_observer,
+        );
+        let _ = egress_completion_sender.send(
+            result
+                .as_ref()
+                .map(|_| ())
+                .map_err(std::string::ToString::to_string),
+        );
+        result
+    });
+    let dispatch_egress_sender = egress_sender.clone();
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-        let backpressure_observer = backpressure_observer.clone();
-        emit_x_authority_observation_with_backpressure(
-            &transaction_sender,
-            &trace,
+        let envelope = XAuthorityEgressEnvelope {
+            transaction: trace.transaction,
+            batch: XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace),
+        };
+        send_x_authority_egress_envelope(
+            &dispatch_egress_sender,
+            envelope,
             &worker_observation_cancellation,
-            move |event| backpressure_observer(event),
         )
-        .map_err(x_authority_observation_client_error)
     });
     let mut accepting = true;
+    let mut pending_raster_egress = None::<XAuthorityEgressEnvelope>;
+    let mut egress_finished = false;
     let service_result: Result<(), X11SetupSocketError> = (|| {
         loop {
             let mut progressed = false;
+            match (!egress_finished).then(|| egress_completion_receiver.try_recv()) {
+                None => {}
+                Some(Ok(Err(error))) => {
+                    return Err(X11SetupSocketError::new(format!(
+                        "authority egress failed: {error}"
+                    )));
+                }
+                Some(Ok(Ok(()))) if observation_cancellation.load(Ordering::Acquire) => {
+                    egress_finished = true;
+                }
+                Some(Ok(Ok(()))) => {
+                    return Err(X11SetupSocketError::new(
+                        "authority egress stopped before the frontend",
+                    ));
+                }
+                Some(Err(TryRecvError::Empty)) => {}
+                Some(Err(TryRecvError::Disconnected)) => {
+                    return Err(X11SetupSocketError::new(
+                        "authority egress completion channel disconnected",
+                    ));
+                }
+            }
             match service_commands.try_recv() {
                 Ok(XServerFrontendServiceCommand::StopAccepting)
                 | Err(TryRecvError::Disconnected) => accepting = false,
@@ -344,6 +559,65 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                 Err(TryRecvError::Empty) => {}
             }
 
+            if observation_cancellation.load(Ordering::Acquire) {
+                pending_raster_egress = None;
+            }
+            if pending_raster_egress.is_none() {
+                match broker.try_recv_raster_requirements() {
+                    Ok(requirements) => {
+                        let transaction = frontend.state.allocate_transaction()?;
+                        let response = frontend
+                            .state
+                            .runtime
+                            .lock()
+                            .map_err(|_| {
+                                X11SetupSocketError::new("X11 authority runtime lock poisoned")
+                            })?
+                            .apply_surface_raster_requirements(transaction, &requirements)
+                            .map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to satisfy surface raster requirements: {error:?}"
+                                ))
+                            })?;
+                        if let Some(response) = response {
+                            let batch =
+                                XAuthorityObservedTransactionBatch::from_raster_response(response);
+                            pending_raster_egress = Some(XAuthorityEgressEnvelope {
+                                transaction,
+                                batch: Some(batch),
+                            });
+                        } else {
+                            pending_raster_egress = Some(XAuthorityEgressEnvelope {
+                                transaction,
+                                batch: None,
+                            });
+                            tracing::warn!(
+                                "sophia_x11_raster_requirement schema=1 status=sampled_fallback surface={:?} content_generation={} requirement_generation={} classes={}",
+                                requirements.surface,
+                                requirements.committed_content_generation,
+                                requirements.requirement_generation,
+                                requirements.classes.len(),
+                            );
+                        }
+                        progressed = true;
+                    }
+                    Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
+                }
+            }
+            if let Some(envelope) = pending_raster_egress.take() {
+                match egress_sender.try_send(envelope) {
+                    Ok(()) => progressed = true,
+                    Err(TrySendError::Full(envelope)) => {
+                        pending_raster_egress = Some(envelope);
+                    }
+                    Err(TrySendError::Disconnected(_)) => {
+                        return Err(X11SetupSocketError::new(
+                            "authority egress sequencer disconnected",
+                        ));
+                    }
+                }
+            }
+
             if accepting {
                 while frontend.active_client_worker_count()
                     < frontend.config().max_concurrent_clients().get()
@@ -364,7 +638,10 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
             frontend.poll_client_workers()?;
             progressed |= workers_before_reap != frontend.active_client_worker_count();
 
-            if !accepting && frontend.active_client_worker_count() == 0 {
+            if !accepting
+                && frontend.active_client_worker_count() == 0
+                && pending_raster_egress.is_none()
+            {
                 return Ok(());
             }
             if !progressed {
@@ -372,19 +649,32 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
             }
         }
     })();
-    let Err(original) = service_result else {
-        return Ok(());
-    };
-
-    observation_cancellation.store(true, Ordering::Release);
     let mut cleanup_failures = Vec::new();
-    if let Err(error) = frontend.shutdown_all_client_workers() {
-        cleanup_failures.push(format!("worker shutdown failed: {error}"));
+    if service_result.is_err() {
+        observation_cancellation.store(true, Ordering::Release);
+        if let Err(error) = frontend.shutdown_all_client_workers() {
+            cleanup_failures.push(format!("worker shutdown failed: {error}"));
+        }
+        if let Err(error) = frontend.wait_for_clients() {
+            cleanup_failures.push(format!("worker reap failed: {error}"));
+        }
     }
-    if let Err(error) = frontend.wait_for_clients() {
-        cleanup_failures.push(format!("worker reap failed: {error}"));
+    drop(observer);
+    drop(egress_sender);
+    let egress_result = egress_thread.join().unwrap_or_else(|_| {
+        Err(X11SetupSocketError::new(
+            "authority egress sequencer panicked",
+        ))
+    });
+    match service_result {
+        Ok(()) => egress_result,
+        Err(original) => {
+            if let Err(error) = egress_result {
+                cleanup_failures.push(format!("authority egress failed: {error}"));
+            }
+            Err(original.with_cleanup_failures(cleanup_failures))
+        }
     }
-    Err(original.with_cleanup_failures(cleanup_failures))
 }
 
 #[cfg(unix)]

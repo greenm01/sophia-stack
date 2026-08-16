@@ -1,5 +1,133 @@
 #[cfg(unix)]
 #[test]
+fn routed_surface_density_requirement_publishes_exact_derived_text_variant() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-raster-route-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceId::from_raw(951);
+    let config = XServerFrontendConfig::new(&socket_path, namespace)
+        .unwrap()
+        .with_max_concurrent_clients(NonZeroUsize::new(1).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(8);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let raster = broker.raster_router();
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(2);
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut client = connect_x_socket(&socket_path);
+    client
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut client, XByteOrder::LittleEndian);
+    let window = 0x0020_0d01;
+    let gc = 0x0020_0d02;
+    client
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            window,
+            0,
+            0,
+            80,
+            40,
+        ))
+        .unwrap();
+    client
+        .write_all(&create_gc_values_request(
+            XByteOrder::LittleEndian,
+            gc,
+            window,
+            3,
+            u32::MAX,
+            0x00ff_ffff,
+            0,
+            0,
+            0,
+        ))
+        .unwrap();
+    client
+        .write_all(&image_text8_request(
+            XByteOrder::LittleEndian,
+            window,
+            gc,
+            4,
+            16,
+            b"AaZz",
+        ))
+        .unwrap();
+
+    let drawn = loop {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch.cpu_buffer_updates.len() == 1 && batch.transactions.len() == 1 {
+            break batch;
+        }
+    };
+    let surface = drawn.transactions[0].surface;
+    raster
+        .try_route(SurfaceRasterRequirements {
+            surface,
+            committed_content_generation: 2,
+            requirement_generation: 1,
+            logical_extent: Size {
+                width: 80,
+                height: 40,
+            },
+            classes: vec![
+                SurfaceRasterClass {
+                    density_millis: 750,
+                    transform: SurfaceRasterTransform::Normal,
+                },
+                SurfaceRasterClass {
+                    density_millis: 1_000,
+                    transform: SurfaceRasterTransform::Normal,
+                },
+            ],
+        })
+        .unwrap();
+    let response = transaction_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(response.raster_responses.len(), 1);
+    assert_eq!(response.raster_responses[0].surface, surface);
+    assert_eq!(response.transactions[0].content.variants().len(), 2);
+    assert!(response.transactions[0].content.variants().iter().any(|variant| {
+        variant.density_millis == 750
+            && variant.pixel_size == Size { width: 60, height: 30 }
+            && variant.fidelity == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
+    }));
+    assert_eq!(response.cpu_buffer_updates.len(), 1);
+
+    drop(client);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;

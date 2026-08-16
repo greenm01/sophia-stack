@@ -7,7 +7,8 @@ use sophia_engine::{
     SurfaceContentAdmission, SurfaceContentStream,
 };
 use sophia_protocol::{
-    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, SurfaceId,
+    AuthorityKind, BufferSource, CommittedSurfaceState, Rect, Region, Size, SurfaceContentFidelity,
+    SurfaceContentSet, SurfaceContentVariant, SurfaceId, SurfaceRasterTransform,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
 
@@ -46,6 +47,78 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
         present_submissions: Vec::new(),
         software_present_submissions: Vec::new(),
     }
+}
+
+#[test]
+fn production_group_matches_cpu_updates_to_every_content_variant() {
+    let surface = SurfaceId::new(79, 1);
+    let transaction = TransactionId::from_raw(798);
+    let logical = Size {
+        width: 80,
+        height: 40,
+    };
+    let mut authority = group(transaction.raw(), surface);
+    authority.transactions[0].target_geometry.width = logical.width;
+    authority.transactions[0].target_geometry.height = logical.height;
+    authority.transactions[0].content = SurfaceContentSet::new(
+        logical,
+        vec![
+            SurfaceContentVariant {
+                variant: 1,
+                source: BufferSource::CpuBuffer { handle: 41 },
+                pixel_size: logical,
+                density_millis: 1_000,
+                transform: SurfaceRasterTransform::Normal,
+                fidelity: SurfaceContentFidelity::AuthorityRaster,
+                damage: Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 40,
+                }),
+            },
+            SurfaceContentVariant {
+                variant: 2,
+                source: BufferSource::CpuBuffer { handle: 42 },
+                pixel_size: Size {
+                    width: 60,
+                    height: 30,
+                },
+                density_millis: 750,
+                transform: SurfaceRasterTransform::Normal,
+                fidelity: SurfaceContentFidelity::AuthorityRaster,
+                damage: Region::single(Rect {
+                    x: 0,
+                    y: 0,
+                    width: 60,
+                    height: 30,
+                }),
+            },
+        ],
+    )
+    .unwrap();
+    for (handle, size) in [
+        (41, logical),
+        (
+            42,
+            Size {
+                width: 60,
+                height: 30,
+            },
+        ),
+    ] {
+        authority
+            .cpu_buffer_updates
+            .push(LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle,
+                size,
+                stride: u32::try_from(size.width * 4).unwrap(),
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: vec![0; usize::try_from(size.width * size.height * 4).unwrap()],
+            }));
+    }
+    authority.validate().unwrap();
 }
 
 #[test]

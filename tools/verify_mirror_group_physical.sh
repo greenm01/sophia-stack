@@ -242,7 +242,7 @@ mirror_frame_has_head_composition_plan() {
     local -a records
     for head_and_mode in \
         "$dp1_head:2560:1440:exact" \
-        "$dp2_head:1920:1080:downsampled"; do
+        "$dp2_head:1920:1080:exact"; do
         head="${head_and_mode%%:*}"
         size="${head_and_mode#*:}"
         width="${size%%:*}"
@@ -317,6 +317,24 @@ done < <(
     fail "no final-checksum per-head composition frame completed causally with positive projected damage on both heads"
 [[ "$common_frame" == "$dp1_scene_generation" ]] ||
     fail "completed head evidence does not name the causally proven logical generation"
+
+common_scene="$(
+    grep -Em1 "^sophia_live_head_composition_queue schema=1 status=queued output=$dp1_output head=$dp1_head frame=$common_frame " "$evidence" \
+        | sed -n 's/.* scene_generation=\([0-9][0-9]*\) .*/\1/p'
+)"
+[[ -n "$common_scene" ]] || fail "final native-density frame omitted its scene generation"
+dp1_content="$(grep -Em1 "^sophia_live_head_content schema=1 status=selected output=$dp1_output head=$dp1_head scene_generation=$common_scene .* source=cpu handle=[0-9]+ density_millis=1000 sampling=exact fidelity=authority_raster$" "$evidence" || true)"
+dp2_content="$(grep -Em1 "^sophia_live_head_content schema=1 status=selected output=$dp1_output head=$dp2_head scene_generation=$common_scene .* source=cpu handle=[0-9]+ density_millis=750 sampling=exact fidelity=authority_raster$" "$evidence" || true)"
+[[ -n "$dp1_content" && -n "$dp2_content" ]] ||
+    fail "final mirrored xterm scene did not select exact authority rasters at 1000/750 density"
+require_field "$dp2_content" surface "$(field "$dp1_content" surface)"
+dp1_content_handle="$(field "$dp1_content" handle)"
+dp2_content_handle="$(field "$dp2_content" handle)"
+[[ "$dp1_content_handle" != "$dp2_content_handle" ]] ||
+    fail "both heads selected one shared CPU raster instead of density-specific backing stores"
+if grep -Eq '^sophia_x11_raster_requirement schema=1 status=sampled_fallback ' "$evidence"; then
+    fail "X Authority reported a sampled fallback for native-density demand"
+fi
 
 # A shared logical snapshot is not valid evidence for different physical modes:
 # each head must accept and present its own projected geometry for the exact

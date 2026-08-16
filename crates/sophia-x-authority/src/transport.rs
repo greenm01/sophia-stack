@@ -144,6 +144,9 @@ pub struct XAuthorityObservedTransactionBatch {
     /// batch. Empty reservations explicitly clear a previous snapshot.
     pub surface_output_reservations: Vec<SurfaceOutputReservations>,
     pub cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
+    /// Exact identities for authority-generated raster responses in this
+    /// batch. Ordinary client request batches leave this empty.
+    pub raster_responses: Vec<sophia_protocol::SurfaceRasterResponseIdentity>,
     pub dma_buf_registrations: Vec<XAuthorityDmaBufRegistration>,
     pub fence_registrations: Vec<XAuthorityFenceRegistration>,
     pub present_submissions: Vec<crate::XAuthorityPresentSubmission>,
@@ -195,6 +198,7 @@ impl XAuthorityObservedTransactionBatch {
             removed_surfaces: response.removed_surfaces.clone(),
             surface_output_reservations: Vec::new(),
             cpu_buffer_updates: Vec::new(),
+            raster_responses: Vec::new(),
             dma_buf_registrations: Vec::new(),
             fence_registrations: Vec::new(),
             present_submissions: Vec::new(),
@@ -350,16 +354,14 @@ impl XAuthorityObservedTransactionBatch {
         Some(Self {
             client: Some(trace.client),
             admission: trace.admission,
-            transaction: response.map_or(
-                TransactionId::from_raw(u64::from(trace.sequence)),
-                |response| response.transaction,
-            ),
+            transaction: trace.transaction,
             transactions,
             surface_presentations,
             presentation_intents,
             removed_surfaces,
             surface_output_reservations: trace.surface_output_reservations.clone(),
-            cpu_buffer_updates: trace.cpu_buffer_update.clone().into_iter().collect(),
+            cpu_buffer_updates: trace.cpu_buffer_updates.clone(),
+            raster_responses: Vec::new(),
             dma_buf_registrations,
             fence_registrations,
             present_submissions: trace.present_submission.into_iter().collect(),
@@ -372,6 +374,32 @@ impl XAuthorityObservedTransactionBatch {
             selection_owner_change,
             selection_conversion,
         })
+    }
+
+    pub fn from_raster_response(response: crate::XAuthorityRasterRequirementResponse) -> Self {
+        Self {
+            client: None,
+            admission: None,
+            transaction: response.identity.transaction,
+            transactions: vec![response.transaction],
+            surface_presentations: Vec::new(),
+            presentation_intents: Vec::new(),
+            removed_surfaces: Vec::new(),
+            surface_output_reservations: Vec::new(),
+            cpu_buffer_updates: response.cpu_buffer_updates,
+            raster_responses: vec![response.identity],
+            dma_buf_registrations: Vec::new(),
+            fence_registrations: Vec::new(),
+            present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
+            released_dma_bufs: Vec::new(),
+            released_fences: Vec::new(),
+            protocol_errors: Vec::new(),
+            expected_protocol_errors: Vec::new(),
+            metadata: Vec::new(),
+            selection_owner_change: false,
+            selection_conversion: false,
+        }
     }
 }
 

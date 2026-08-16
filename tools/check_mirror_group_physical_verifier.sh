@@ -81,6 +81,10 @@ reject_mutation 's/pending=0 release_barrier_pending=0/pending=0 release_barrier
 reject_mutation 's/head=2 scene_generation=7/head=2 scene_generation=8/' 'divergent mirror generations'
 reject_mutation 's/head=2 scene_generation=7 logical_content_checksum=111/head=2 scene_generation=7 logical_content_checksum=222/' 'divergent logical-content checksums'
 reject_mutation '/sophia_live_head_composition_plan.*head=2/d' 'missing secondary per-head composition plan'
+reject_mutation '/sophia_live_head_content.*head=2/d' 'missing secondary authority-raster selection'
+reject_mutation 's/handle=402 density_millis=750/handle=402 density_millis=1000/' 'secondary content at the wrong density'
+reject_mutation 's/handle=402 density_millis=750/handle=401 density_millis=750/' 'one shared CPU raster selected on both heads'
+reject_mutation 's/head=2 scene_generation=23 target_generation=1 width=1920 height=1080 mapping=fit exact=1 downsampled=0/head=2 scene_generation=23 target_generation=1 width=1920 height=1080 mapping=fit exact=0 downsampled=1/' 'sampled final secondary content'
 reject_mutation '/sophia_live_head_composition_queue.*head=2/d' 'missing secondary per-head composition queue evidence'
 reject_mutation 's/head=2 frame=7 scene_generation=23 target_generation=1/head=2 frame=7 scene_generation=23 target_generation=2/' 'a queued stale target generation'
 reject_mutation 's/head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit/head=2 frame=7 scene_generation=23 target_generation=1 mapping=exact/' 'a queued frame with the wrong mapping'
@@ -111,6 +115,15 @@ printf '%s\n' \
     >>"$work/rejected.log"
 if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/rejected.log" >/dev/null 2>&1; then
     echo "mirror-group verifier accepted OutputMismatch damage" >&2
+    exit 1
+fi
+
+cp "$fixture" "$work/rejected.log"
+printf '%s\n' \
+    'sophia_x11_raster_requirement schema=1 status=sampled_fallback surface=SurfaceId(1:1) content_generation=9 requirement_generation=2 classes=2' \
+    >>"$work/rejected.log"
+if "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/rejected.log" >/dev/null 2>&1; then
+    echo "mirror-group verifier accepted an X Authority sampled raster fallback" >&2
     exit 1
 fi
 

@@ -440,7 +440,7 @@ impl XAuthorityRuntime {
                     );
                 };
                 let handle = update.handle();
-                self.last_cpu_buffer_update = Some(update);
+                self.last_cpu_buffer_updates.push(update);
                 (
                     window,
                     record.generation,

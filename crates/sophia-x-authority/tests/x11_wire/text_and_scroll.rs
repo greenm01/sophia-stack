@@ -33,6 +33,96 @@ fn xrgb_pixels(bytes: &[u8]) -> Vec<u32> {
 }
 
 #[test]
+fn fixed_text_late_density_replay_produces_distinct_coverage_raster() {
+    let namespace = NamespaceId::from_raw(146);
+    let window = 0x220a01;
+    let gc = 0x220a02;
+    let surface = SurfaceId::new(window, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    text_contract_dispatch(
+        namespace,
+        1,
+        1,
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 80, 40),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    text_contract_dispatch(
+        namespace,
+        2,
+        55,
+        &create_gc_values_request(
+            XByteOrder::LittleEndian,
+            gc,
+            window,
+            0,
+            u32::MAX,
+            0x00ff_ffff,
+            0,
+            0,
+            0,
+        ),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let draw = text_contract_dispatch(
+        namespace,
+        3,
+        76,
+        &image_text8_request(XByteOrder::LittleEndian, window, gc, 4, 16, b"AaZz"),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let transaction = draw.response.unwrap().transactions.remove(0);
+    assert_eq!(transaction.content.variants().len(), 1);
+    assert_eq!(runtime.take_cpu_buffer_updates().len(), 1);
+
+    let response = runtime
+        .apply_surface_raster_requirements(
+            TransactionId::from_raw(9_100),
+            &SurfaceRasterRequirements {
+                surface,
+                committed_content_generation: 2,
+                requirement_generation: 1,
+                logical_extent: Size {
+                    width: 80,
+                    height: 40,
+                },
+                classes: vec![
+                    SurfaceRasterClass {
+                        density_millis: 750,
+                        transform: SurfaceRasterTransform::Normal,
+                    },
+                    SurfaceRasterClass {
+                        density_millis: 1_000,
+                        transform: SurfaceRasterTransform::Normal,
+                    },
+                ],
+            },
+        )
+        .unwrap()
+        .expect("fixed text journal should replay at 0.75 density");
+    assert_eq!(response.transaction.content.variants().len(), 2);
+    let [XAuthorityCpuBufferUpdate::Replace(derived)] = response.cpu_buffer_updates.as_slice()
+    else {
+        panic!("late density must publish one immutable derived replacement");
+    };
+    assert_eq!(derived.size, Size { width: 60, height: 30 });
+    let pixels = xrgb_pixels(&derived.bytes);
+    assert!(pixels.iter().any(|pixel| *pixel != 0));
+    assert!(pixels.iter().any(|pixel| {
+        let intensity = pixel & 0xff;
+        intensity != 0 && intensity != 0xff
+    }));
+}
+
+#[test]
 fn x11_fixed_6x13_gc_survives_font_close_and_image_text_forces_copy_solid() {
     let namespace = NamespaceId::from_raw(46);
     let window = 0x220901;

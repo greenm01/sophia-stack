@@ -17,7 +17,9 @@ sophia_native_composition_region schema=1 status=read composition=final source_s
 sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=1/1
 sophia_live_head_composition_plan schema=1 status=ready output=1 head=1 scene_generation=23 target_generation=1 width=2560 height=1440 mapping=fit exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=111
-sophia_live_head_composition_plan schema=1 status=ready output=1 head=2 scene_generation=23 target_generation=1 width=1920 height=1080 mapping=fit exact=0 downsampled=1 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=111
+sophia_live_head_composition_plan schema=1 status=ready output=1 head=2 scene_generation=23 target_generation=1 width=1920 height=1080 mapping=fit exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 compositor_primitives=3 damage_rects=1 logical_content_checksum=111
+sophia_live_head_content schema=1 status=selected output=1 head=1 scene_generation=23 surface=1 committed_generation=9 variant=1 source=cpu handle=401 density_millis=1000 sampling=exact fidelity=authority_raster
+sophia_live_head_content schema=1 status=selected output=1 head=2 scene_generation=23 surface=1 committed_generation=9 variant=2 source=cpu handle=402 density_millis=750 sampling=exact fidelity=authority_raster
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=7 scene_generation=23 target_generation=1 mapping=fit width=2560 height=1440 logical_content_checksum=111 source=head_plan
 sophia_live_head_composition_queue schema=1 status=queued output=1 head=2 frame=7 scene_generation=23 target_generation=1 mapping=fit width=1920 height=1080 logical_content_checksum=111 source=head_plan
 sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=2 content=HeadComposition frame=7

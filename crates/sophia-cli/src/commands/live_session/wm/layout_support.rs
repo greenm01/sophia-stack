@@ -28,6 +28,7 @@ fn wm_update_coordinator_batch(
         removed_surfaces: Vec::new(),
         surface_output_reservations: Vec::new(),
         cpu_buffer_updates: Vec::new(),
+        raster_responses: Vec::new(),
         dma_buf_registrations: Vec::new(),
         fence_registrations: Vec::new(),
         present_submissions: Vec::new(),

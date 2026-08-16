@@ -276,7 +276,8 @@ impl PersistentLiveLayout {
         let projected_cpu_handles = projected
             .transactions
             .iter()
-            .filter_map(|transaction| match transaction.target_buffer() {
+            .flat_map(|transaction| transaction.content.variants())
+            .filter_map(|variant| match variant.source {
                 BufferSource::CpuBuffer { handle } => Some(handle),
                 _ => None,
             })
