@@ -548,6 +548,18 @@ impl LiveProductionPresentScheduler {
         }
     }
 
+    /// Returns the frame reserved for an output even before that output has
+    /// submitted. This is an ownership check, not presentation evidence.
+    pub fn in_flight_frame(
+        &self,
+        output: sophia_protocol::OutputId,
+    ) -> Option<LiveProductionNativeFrameId> {
+        match self.in_flight.as_ref()? {
+            LiveProductionInFlightPresent::Rendering(present)
+            | LiveProductionInFlightPresent::Submitted(present) => present.frame(output),
+        }
+    }
+
     pub fn in_flight_displayed_layer(
         &self,
     ) -> Option<(SurfaceId, &crate::LiveRetainedRendererImageLayer)> {

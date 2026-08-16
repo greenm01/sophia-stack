@@ -6,9 +6,10 @@ use std::time::{Duration, Instant};
 
 use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LivePresentationResourceSession,
-    LiveProductionAuthorityBatch, LiveProductionAuthorityGroup, LiveProductionPresentDisposition,
-    LiveProductionPresentGate, LiveProductionPresentScheduler, LiveProductionPresentSubmission,
-    LiveProductionSubmittedPresent, LiveRetainedRendererImageLayer,
+    LiveProductionAuthorityBatch, LiveProductionAuthorityGroup, LiveProductionNativeFrameId,
+    LiveProductionPresentDisposition, LiveProductionPresentGate, LiveProductionPresentScheduler,
+    LiveProductionPresentSubmission, LiveProductionSubmittedPresent,
+    LiveRetainedRendererImageLayer,
 };
 use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
@@ -209,6 +210,15 @@ fn submitted_present_joins_outputs_after_independent_submission_and_retirement()
         [output_a, output_b],
     ));
 
+    assert_eq!(
+        scheduler.in_flight_frame(output_a),
+        Some(LiveProductionNativeFrameId::from_raw(1))
+    );
+    assert_eq!(
+        scheduler.in_flight_frame(output_b),
+        Some(LiveProductionNativeFrameId::from_raw(2))
+    );
+    assert_eq!(scheduler.in_flight_frame(OutputId::from_raw(99)), None);
     assert_eq!(scheduler.mark_output_submitted(output_a).unwrap(), None);
     assert!(scheduler.submitted_frame(output_a).is_some());
     assert_eq!(scheduler.submitted_frame(output_b), None);

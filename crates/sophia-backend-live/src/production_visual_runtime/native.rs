@@ -147,6 +147,39 @@ pub enum LiveProductionNativeRetirementOwner {
     InvalidDmaOwnership,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionNativeSubmissionOwner {
+    IndependentFrame,
+    SubmittedDmaPresent,
+    InvalidDmaOwnership,
+}
+
+/// Classifies a physical submission before any Present state advances.
+///
+/// Ordinary compositor frames and DMA-BUF Presents share the same native
+/// scheduler. The content tag and the output-scoped Present reservation must
+/// therefore agree; the mere fact that KMS accepted a frame does not make it a
+/// Present submission.
+pub fn reduce_live_production_native_submission_owner(
+    submitted_content: LiveProductionScanoutContent,
+    expected_present: Option<(LiveProductionNativeFrameId, TransactionId)>,
+) -> LiveProductionNativeSubmissionOwner {
+    match (submitted_content, expected_present) {
+        (
+            LiveProductionScanoutContent::MixedPresent {
+                frame, transaction, ..
+            },
+            Some((expected_frame, expected_transaction)),
+        ) if frame == expected_frame && transaction == expected_transaction => {
+            LiveProductionNativeSubmissionOwner::SubmittedDmaPresent
+        }
+        (LiveProductionScanoutContent::MixedPresent { .. }, _) | (_, Some(_)) => {
+            LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
+        }
+        (_, None) => LiveProductionNativeSubmissionOwner::IndependentFrame,
+    }
+}
+
 pub fn reduce_live_production_native_retirement_owner(
     retired_frame: LiveProductionNativeFrameId,
     retired_content: LiveProductionScanoutContent,
@@ -487,14 +520,34 @@ impl LiveProductionVisualRuntime {
             .map(|submit| submit.status)
         {
             Some(Status::SubmittedWaitingForPageFlip) => {
-                if let Some(transaction) = self
+                let submitted_content = native_scanout
+                    .submitted_content(selected_output)
+                    .ok_or("native submit did not retain its content identity")?;
+                let expected_present = self
                     .present_scheduler
-                    .mark_output_submitted(selected_output)?
-                {
-                    native_scanout.discard_presentation_feedback(Some(selected_output));
-                    self.presentation_feedback
-                        .resources_mut()
-                        .mark_submitted(transaction)?;
+                    .in_flight_frame(selected_output)
+                    .zip(self.present_scheduler.in_flight_transaction());
+                match reduce_live_production_native_submission_owner(
+                    submitted_content,
+                    expected_present,
+                ) {
+                    LiveProductionNativeSubmissionOwner::IndependentFrame => {}
+                    LiveProductionNativeSubmissionOwner::SubmittedDmaPresent => {
+                        if let Some(transaction) = self
+                            .present_scheduler
+                            .mark_output_submitted(selected_output)?
+                        {
+                            native_scanout.discard_presentation_feedback(Some(selected_output));
+                            self.presentation_feedback
+                                .resources_mut()
+                                .mark_submitted(transaction)?;
+                        }
+                    }
+                    LiveProductionNativeSubmissionOwner::InvalidDmaOwnership => {
+                        return Err(
+                            "native output submission does not match its Present ownership".into(),
+                        );
+                    }
                 }
                 let submitted = native_scanout
                     .submitted_frame(selected_output)

@@ -4,11 +4,12 @@ use sophia_backend_live::{
     LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
     LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
     LiveProductionDmaBufRegistration, LiveProductionFenceRegistration, LiveProductionNativeFrameId,
-    LiveProductionNativeRetirementOwner, LiveProductionPresentDisposition,
-    LiveProductionPresentSubmission, LiveProductionScanoutContent,
-    LiveProductionSoftwarePresentFrameObservation, LiveProductionSoftwarePresentFramePhase,
-    LiveProductionSoftwarePresentFrameTransition, LiveProductionSoftwarePresentSubmission,
-    LiveProductionVisualRuntime, reduce_live_production_native_retirement_owner,
+    LiveProductionNativeRetirementOwner, LiveProductionNativeSubmissionOwner,
+    LiveProductionPresentDisposition, LiveProductionPresentSubmission,
+    LiveProductionScanoutContent, LiveProductionSoftwarePresentFrameObservation,
+    LiveProductionSoftwarePresentFramePhase, LiveProductionSoftwarePresentFrameTransition,
+    LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
+    reduce_live_production_native_retirement_owner, reduce_live_production_native_submission_owner,
     reduce_software_present_frame_observation,
 };
 use sophia_engine::HeadlessOutput;
@@ -105,6 +106,39 @@ fn older_software_frame_may_retire_after_next_dma_frame_submits() {
             Some(successor),
         ),
         LiveProductionNativeRetirementOwner::InvalidDmaOwnership
+    );
+}
+
+#[test]
+fn ordinary_head_composition_submission_does_not_advance_a_present_cohort() {
+    let frame = LiveProductionNativeFrameId::from_raw(43);
+    let transaction = TransactionId::from_raw(700);
+    let ordinary = LiveProductionScanoutContent::HeadComposition {
+        frame,
+        logical_content_checksum: 91,
+        nonzero_rgb_pixels: 1_024,
+    };
+    let present = LiveProductionScanoutContent::MixedPresent {
+        frame,
+        transaction,
+        nonzero_rgb_pixels: 1_024,
+    };
+
+    assert_eq!(
+        reduce_live_production_native_submission_owner(ordinary, None),
+        LiveProductionNativeSubmissionOwner::IndependentFrame
+    );
+    assert_eq!(
+        reduce_live_production_native_submission_owner(present, Some((frame, transaction))),
+        LiveProductionNativeSubmissionOwner::SubmittedDmaPresent
+    );
+    assert_eq!(
+        reduce_live_production_native_submission_owner(ordinary, Some((frame, transaction))),
+        LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
+    );
+    assert_eq!(
+        reduce_live_production_native_submission_owner(present, None),
+        LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
     );
 }
 

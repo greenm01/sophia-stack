@@ -894,6 +894,11 @@ pub(crate) fn run_persistent_xterm_session(
     if let Err(error) = xauthority.remove() {
         outer_cleanup_failures.push(format!("X authority cleanup failed: {error}"));
     }
+    if outer_cleanup_failures.is_empty() {
+        println!(
+            "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
+        );
+    }
     if let Some(original) = session_error {
         if outer_cleanup_failures.is_empty() {
             return Err(original.into());
@@ -907,9 +912,6 @@ pub(crate) fn run_persistent_xterm_session(
     if let Some(error) = outer_cleanup_failures.into_iter().next() {
         return Err(error.into());
     }
-    println!(
-        "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
-    );
     Ok(())
 }
 
