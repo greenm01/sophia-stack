@@ -51,6 +51,7 @@ struct LivePublicPolicyState {
     worker: Option<PolicyTransportWorker>,
     output_service: Option<sophia_runtime::OutputTransportService>,
     output_authority: Option<sophia_cli::live_output_authority::LiveOutputAuthorityOwner>,
+    output_effect_dispatched: bool,
     output_capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     _profile_fragments: sophia_config::DesktopProfileFragments,
     _profile_slot: PreparedAuthorityFragment,
@@ -522,29 +523,39 @@ impl LivePublicPolicyState {
         &mut self,
         proposal: sophia_runtime::AdmittedOutputProposal,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let settlement = {
+        let admission = {
             let authority = self
                 .output_authority
                 .as_mut()
                 .ok_or("output proposal has no authority owner")?;
-            match authority.admit(
+            authority.admit(
                 proposal.transaction,
                 &proposal.message,
                 &self.output_capabilities,
-            ) {
-                Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Validated(
-                    settlement,
-                )) => settlement,
-                Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Prepared) => {
-                    // Effect execution is the next cutover. Until renderer
-                    // targets and rollback owners are wired, an Apply request
-                    // must settle explicitly instead of mutating only a subset.
-                    authority.fail(
-                        sophia_engine::OutputTopologyTransactionFailure::Preparation,
-                    )?;
-                    authority.settle_terminal()?
-                }
-                Err(_error) => sophia_cli::live_output_authority::LiveOutputAuthoritySettlement {
+            )
+        };
+        let settlement = match admission {
+            Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Validated(
+                settlement,
+            )) => settlement,
+            Ok(sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Prepared) => {
+                self.output_effect_dispatched = false;
+                println!(
+                    "sophia_live_output_authority schema=1 status=effect_pending transaction={} preserved_topology=true",
+                    proposal.transaction.raw(),
+                );
+                return Ok(());
+            }
+            Err(error) => {
+                let authority = self
+                    .output_authority
+                    .as_ref()
+                    .ok_or("output admission failure lost its authority owner")?;
+                tracing::warn!(
+                    "sophia_live_output_authority schema=1 status=rejected transaction={} phase=admission error={error}",
+                    proposal.transaction.raw(),
+                );
+                sophia_cli::live_output_authority::LiveOutputAuthoritySettlement {
                     transaction: proposal.transaction,
                     outcome: sophia_protocol::OutputV1Outcome {
                         connection_epoch: authority.connection_epoch(),
@@ -553,9 +564,16 @@ impl LivePublicPolicyState {
                         reason: sophia_protocol::SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT,
                     },
                     published_snapshot: None,
-                },
+                }
             }
         };
+        self.send_output_settlement(settlement)
+    }
+
+    fn send_output_settlement(
+        &self,
+        settlement: sophia_cli::live_output_authority::LiveOutputAuthoritySettlement,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.output_service
             .as_ref()
             .ok_or("output settlement lost its transport service")?
@@ -573,6 +591,57 @@ impl LivePublicPolicyState {
         Ok(())
     }
 
+    fn take_output_topology_effect(
+        &mut self,
+    ) -> Option<sophia_cli::live_output_authority::LiveOutputAuthorityEffect> {
+        if self.output_effect_dispatched {
+            return None;
+        }
+        let effect = self.output_authority.as_ref()?.active_effect()?;
+        self.output_effect_dispatched = true;
+        Some(effect)
+    }
+
+    fn reject_output_topology_effect(
+        &mut self,
+        transaction: TransactionId,
+        failure: sophia_engine::OutputTopologyTransactionFailure,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let authority = self
+            .output_authority
+            .as_mut()
+            .ok_or("output effect observation has no authority owner")?;
+        if authority.active_transaction() != Some(transaction) {
+            return Err("output effect observation targets a stale transaction".into());
+        }
+        let transition = authority.fail(failure)?;
+        if matches!(
+            transition,
+            sophia_engine::OutputTopologyTransactionTransition::OutOfOrder
+                | sophia_engine::OutputTopologyTransactionTransition::UnknownHead
+                | sophia_engine::OutputTopologyTransactionTransition::UnknownOutput
+                | sophia_engine::OutputTopologyTransactionTransition::Terminal
+        ) {
+            return Err(format!(
+                "output effect observation violated transaction order: {transition:?}"
+            )
+            .into());
+        }
+        if matches!(
+            authority.active_phase(),
+            Some(
+                sophia_engine::OutputTopologyTransactionPhase::Committed
+                    | sophia_engine::OutputTopologyTransactionPhase::RolledBack
+                    | sophia_engine::OutputTopologyTransactionPhase::Failed
+            )
+        ) {
+            let settlement = authority.settle_terminal()?;
+            self.output_effect_dispatched = false;
+            self.send_output_settlement(settlement)?;
+        }
+        Ok(())
+    }
+
     fn abandon_output_candidate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let Some(authority) = self.output_authority.as_mut() else {
             return Ok(());
@@ -580,6 +649,7 @@ impl LivePublicPolicyState {
         if authority.active_transaction().is_some() {
             authority.fail(sophia_engine::OutputTopologyTransactionFailure::Stale)?;
             let _ = authority.settle_terminal()?;
+            self.output_effect_dispatched = false;
         }
         Ok(())
     }
@@ -913,6 +983,25 @@ fn public_policy_surface_snapshots(
     Ok(surfaces)
 }
 
+impl LiveWmSession {
+    fn take_output_topology_effect(
+        &mut self,
+    ) -> Option<sophia_cli::live_output_authority::LiveOutputAuthorityEffect> {
+        self.public.as_mut()?.take_output_topology_effect()
+    }
+
+    fn reject_output_topology_effect(
+        &mut self,
+        transaction: TransactionId,
+        failure: sophia_engine::OutputTopologyTransactionFailure,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.public
+            .as_mut()
+            .ok_or("output effect observation requires the public policy owner")?
+            .reject_output_topology_effect(transaction, failure)
+    }
+}
+
 impl Drop for LivePublicPolicyState {
     fn drop(&mut self) {
         // The checkpoint parent outlives each peer endpoint so supervised
@@ -1129,6 +1218,7 @@ impl LiveWmSession {
             worker: Some(worker),
             output_service,
             output_authority,
+            output_effect_dispatched: false,
             output_capabilities,
             reducer,
             connection_epoch: 1,

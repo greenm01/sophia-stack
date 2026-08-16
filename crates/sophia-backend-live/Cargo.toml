@@ -18,6 +18,7 @@ udev = { version = "0.9.3", optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
+drm-ffi = "0.9.1"
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]

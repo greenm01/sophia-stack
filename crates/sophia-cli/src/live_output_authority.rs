@@ -60,6 +60,20 @@ pub struct LiveOutputAuthoritySettlement {
     pub published_snapshot: Option<OutputAuthoritySnapshot>,
 }
 
+/// Immutable physical-effect contract handed from protocol admission to the
+/// live session owner.
+///
+/// The authority keeps the candidate private while this value is in flight.
+/// Owning or cloning this record does not publish topology and cannot advance
+/// the reducer; only explicit owner observations below may do that.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveOutputAuthorityEffect {
+    pub transaction: TransactionId,
+    pub base_topology_epoch: u64,
+    pub candidate_topology_epoch: u64,
+    pub resolved: LiveResolvedOutputTopology,
+}
+
 #[derive(Clone, Debug)]
 struct ActiveOutputCandidate {
     transaction: TransactionId,
@@ -185,7 +199,7 @@ impl LiveOutputAuthorityOwner {
         let transaction_state = OutputTopologyTransaction::new(
             self.published.topology_epoch,
             candidate_epoch,
-            resolved.targets.iter().map(|target| target.head),
+            resolved.affected_heads(),
             resolved.outputs.iter().map(|output| output.id),
         )
         .ok_or(LiveOutputAuthorityOwnerError::TransactionInvariant)?;
@@ -217,6 +231,16 @@ impl LiveOutputAuthorityOwner {
         self.active
             .as_ref()
             .map(|active| active.transaction_state.phase())
+    }
+
+    pub fn active_effect(&self) -> Option<LiveOutputAuthorityEffect> {
+        let active = self.active.as_ref()?;
+        Some(LiveOutputAuthorityEffect {
+            transaction: active.transaction,
+            base_topology_epoch: active.transaction_state.base_topology_epoch(),
+            candidate_topology_epoch: active.transaction_state.candidate_topology_epoch(),
+            resolved: active.resolved.clone(),
+        })
     }
 
     pub fn mark_prepared(

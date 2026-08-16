@@ -14,6 +14,39 @@
     }
     if let Some(wm) = wm_session.as_mut() {
         let _ = wm.poll_restart(&mut layout, output)?;
+        if let Some(effect) = wm.take_output_topology_effect() {
+            let native = native_scanout
+                .as_ref()
+                .ok_or("output authority effect has no native scanout owner")?;
+            let plan = native.plan_output_topology(&effect.resolved);
+            match &plan {
+                Ok(plan) => tracing::info!(
+                    "sophia_live_output_authority schema=1 status=native_plan_ready transaction={} base_epoch={} candidate_epoch={} heads={} outputs={} preserved_topology=true",
+                    effect.transaction.raw(),
+                    effect.base_topology_epoch,
+                    effect.candidate_topology_epoch,
+                    plan.heads.len(),
+                    plan.outputs.len(),
+                ),
+                Err(error) => tracing::warn!(
+                    "sophia_live_output_authority schema=1 status=native_plan_failed transaction={} error={error} preserved_topology=true",
+                    effect.transaction.raw(),
+                ),
+            }
+            // The proposal now crosses into the visual/session owner before it
+            // can settle. Until the native replacement transaction below is
+            // wired, fail at this owner boundary without mutating KMS or
+            // publishing the provisional topology.
+            wm.reject_output_topology_effect(
+                effect.transaction,
+                sophia_engine::OutputTopologyTransactionFailure::Preparation,
+            )?;
+            tracing::info!(
+                "sophia_live_output_authority schema=1 status=effect_refused transaction={} phase={} preserved_topology=true",
+                effect.transaction.raw(),
+                if plan.is_ok() { "target_preparation" } else { "native_plan" },
+            );
+        }
     }
     synchronize_wm_pointer_epoch!();
     if let Some(runtime) = runtime.as_mut() {

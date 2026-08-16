@@ -497,6 +497,7 @@ name = "sophia-backend-live"
 version = "0.1.0"
 dependencies = [
  "drm",
+ "drm-ffi",
  "input",
  "libseat",
  "rustix",

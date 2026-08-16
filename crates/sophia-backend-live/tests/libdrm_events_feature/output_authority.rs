@@ -154,9 +154,29 @@ fn output_authority_resolves_independent_modes_with_mirror_and_extended_groups()
     assert_ne!(resolved.targets[1].output, resolved.targets[2].output);
     assert!(resolved.mirror_grouping.is_mirrored("DP-1"));
     assert!(!resolved.mirror_grouping.is_mirrored("HDMI-A-1"));
-    let render_targets = resolved.head_render_targets(8);
+    let render_targets = resolved.head_render_targets();
     assert_eq!(render_targets[1].native_size.width, 1_920);
     assert_eq!(render_targets[1].mapping, OutputHeadMapping::Fit);
+    assert_eq!(render_targets[1].target_generation, 2);
+
+    let mut disabled_candidate = candidate;
+    disabled_candidate.heads.pop();
+    disabled_candidate.groups.pop();
+    let disabled = sophia_backend_live::resolve_live_output_topology_candidate(
+        &snapshot,
+        &capabilities,
+        &disabled_candidate,
+        &mut allocator,
+    )
+    .unwrap();
+    assert_eq!(
+        disabled.disabled_heads,
+        vec![sophia_backend_live::LiveOutputAuthorityDisabledHead {
+            head: sophia_engine::RenderHeadId::from_raw(13),
+            target_generation: 2,
+        }]
+    );
+    assert_eq!(disabled.affected_heads().count(), 3);
 }
 
 #[test]

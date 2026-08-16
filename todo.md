@@ -1049,9 +1049,12 @@ is excluded; retained product behavior is not.
      Preparation failure cancels the complete prepared set; partial submission
      still poisons and drains. `OutputTopologyTransaction` enforces
      prepare/apply/first-presentation publication and rollback after partial
-     apply. The remaining ownership work is to build replacement mode selections
-     and target pools, execute their live modesets/rollback, and publish only
-     after the new outputs present.
+     apply. Accepted IPC effects now reach the visual/session owner, where every
+     enabled and disabled head is bound to its current native objects and each
+     requested mode is resolved without mutation. Disabled heads remain required
+     transaction members and all target generations advance explicitly. The
+     remaining ownership work is to build replacement target pools, execute live
+     card-scoped modesets/rollback, and publish only after the new outputs present.
   4. Extend the plan lowerer from CPU/solid content to DMA-BUF and retained
      renderer-image affine leases. Share immutable sources and renderer caches,
      never final head framebuffers or scanout leases; remove the remaining
@@ -1110,9 +1113,11 @@ is excluded; retained product behavior is not.
   is advertised through `SOPHIA_OUTPUT_SOCKET`, proposals are polled without
   blocking visual progress, and a supervised restart disconnects the old peer
   and advances the role epoch before authorizing the replacement. Validate-only
-  proposals reach and settle through the live authority owner. Apply remains an
-  explicit preparation rejection until the replacement renderer targets and
-  rollback owners exist; no partial KMS mutation is performed.
+  proposals reach and settle through the live authority owner. Apply now becomes
+  an immutable effect contract consumed by the visual owner and is resolved into
+  a complete native head plan, including explicit disable operations. It remains
+  an explicit target-preparation rejection until replacement renderer targets
+  and rollback owners exist; no partial KMS mutation is performed.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

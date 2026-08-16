@@ -6,6 +6,7 @@ use sophia_protocol::{
     OutputGroupMember, OutputHeadDescriptor, OutputHeadMapping, OutputLogicalGroupState,
     OutputModeDescriptor, OutputTopologyCandidate, OutputTransformSet, OutputVrrPolicy, Rect,
 };
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LiveOutputAuthorityProjectionError {
@@ -37,6 +38,7 @@ impl std::error::Error for LiveOutputAuthorityProjectionError {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveOutputAuthorityHeadTarget {
     pub head: RenderHeadId,
+    pub target_generation: u64,
     pub output: OutputId,
     pub timing: LibdrmNativeOutputTiming,
     pub native_size: Size,
@@ -45,10 +47,22 @@ pub struct LiveOutputAuthorityHeadTarget {
     pub vrr: OutputVrrPolicy,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveOutputAuthorityDisabledHead {
+    pub head: RenderHeadId,
+    pub target_generation: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveResolvedOutputTopology {
     pub primary_output: OutputId,
     pub outputs: Vec<HeadlessOutput>,
+    /// Connected native heads omitted from the candidate's enabled target set.
+    ///
+    /// Disabling one of these is a physical KMS effect and therefore belongs to
+    /// the same prepare/apply/rollback transaction as every enabled target. It
+    /// must not disappear merely because it has no replacement render target.
+    pub disabled_heads: Vec<LiveOutputAuthorityDisabledHead>,
     pub targets: Vec<LiveOutputAuthorityHeadTarget>,
     pub mirror_grouping: NativeMirrorGrouping,
 }
@@ -234,7 +248,11 @@ pub fn resolve_live_output_topology_candidate(
             if !capability.modes().contains(&timing) {
                 return Err(LiveOutputAuthorityProjectionError::MissingMode(target.head));
             }
-            Ok((target, head, timing, mode.pixel_size))
+            let target_generation = descriptor
+                .generation
+                .checked_add(1)
+                .ok_or(LiveOutputAuthorityProjectionError::GenerationExhausted)?;
+            Ok((target, head, target_generation, timing, mode.pixel_size))
         })
         .collect::<Result<Vec<_>, LiveOutputAuthorityProjectionError>>()?;
 
@@ -265,10 +283,11 @@ pub fn resolve_live_output_topology_candidate(
         .collect::<BTreeMap<_, _>>();
     let targets = targets
         .into_iter()
-        .map(|(proposal, head, timing, native_size)| {
+        .map(|(proposal, head, target_generation, timing, native_size)| {
             let (group, mapping) = group_for_head[&proposal.head];
             LiveOutputAuthorityHeadTarget {
                 head,
+                target_generation,
                 output: output_ids[group],
                 timing,
                 native_size,
@@ -278,6 +297,25 @@ pub fn resolve_live_output_topology_candidate(
             }
         })
         .collect::<Vec<_>>();
+    let enabled_heads = targets
+        .iter()
+        .map(|target| target.head)
+        .collect::<BTreeSet<_>>();
+    let disabled_heads = capabilities
+        .keys()
+        .copied()
+        .filter(|head| !enabled_heads.contains(head))
+        .map(|head| {
+            let descriptor = snapshot_heads[&DisplayHeadId::from_raw(head.raw())];
+            Ok(LiveOutputAuthorityDisabledHead {
+                head,
+                target_generation: descriptor
+                    .generation
+                    .checked_add(1)
+                    .ok_or(LiveOutputAuthorityProjectionError::GenerationExhausted)?,
+            })
+        })
+        .collect::<Result<Vec<_>, LiveOutputAuthorityProjectionError>>()?;
     let outputs = candidate
         .groups
         .iter()
@@ -315,6 +353,7 @@ pub fn resolve_live_output_topology_candidate(
     Ok(LiveResolvedOutputTopology {
         primary_output,
         outputs,
+        disabled_heads,
         targets,
         mirror_grouping,
     })
@@ -412,13 +451,22 @@ pub fn project_live_output_authority_candidate_snapshot(
 }
 
 impl LiveResolvedOutputTopology {
-    pub fn head_render_targets(&self, target_generation: u64) -> Vec<HeadRenderTarget> {
+    /// Every physical head whose KMS state changes in this candidate, including
+    /// heads that transition to disabled and therefore have no render target.
+    pub fn affected_heads(&self) -> impl Iterator<Item = RenderHeadId> + '_ {
+        self.targets
+            .iter()
+            .map(|target| target.head)
+            .chain(self.disabled_heads.iter().map(|disabled| disabled.head))
+    }
+
+    pub fn head_render_targets(&self) -> Vec<HeadRenderTarget> {
         self.targets
             .iter()
             .map(|target| HeadRenderTarget {
                 head: target.head,
                 output: target.output,
-                target_generation,
+                target_generation: target.target_generation,
                 native_size: target.native_size,
                 scale: 1,
                 refresh_millihz: target.timing.refresh_millihz,

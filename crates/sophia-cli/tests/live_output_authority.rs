@@ -120,6 +120,40 @@ fn split_candidate(
     }
 }
 
+fn disable_secondary_candidate(
+    snapshot: &OutputAuthoritySnapshot,
+    connection_epoch: u64,
+) -> OutputV1Proposal {
+    OutputV1Proposal {
+        connection_epoch,
+        candidate: OutputTopologyCandidate {
+            base_topology_epoch: snapshot.topology_epoch,
+            intent: OutputTopologyIntent::Apply,
+            primary_group_index: 0,
+            heads: vec![OutputHeadTargetProposal {
+                head: DisplayHeadId::from_raw(11),
+                head_generation: snapshot.heads[0].generation,
+                mode: mode(snapshot, 11, 2_560),
+                transform: OutputTransform::Normal,
+                vrr: OutputVrrPolicy::Disabled,
+            }],
+            groups: vec![OutputLogicalGroupProposal {
+                output: OutputId::from_raw(1),
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2_560,
+                    height: 1_440,
+                },
+                members: vec![OutputGroupMember {
+                    head: DisplayHeadId::from_raw(11),
+                    mapping: OutputHeadMapping::Exact,
+                }],
+            }],
+        },
+    }
+}
+
 #[test]
 fn live_output_owner_publishes_split_outputs_only_after_every_first_presentation() {
     let (capabilities, snapshot) = fixture();
@@ -131,6 +165,12 @@ fn live_output_owner_publishes_split_outputs_only_after_every_first_presentation
             .unwrap(),
         LiveOutputAuthorityAdmission::Prepared
     );
+    let effect = owner.active_effect().unwrap();
+    assert_eq!(effect.transaction, TransactionId::from_raw(5));
+    assert_eq!(effect.base_topology_epoch, 7);
+    assert_eq!(effect.candidate_topology_epoch, 8);
+    assert_eq!(effect.resolved.targets[0].target_generation, 2);
+    assert_eq!(owner.published(), &snapshot);
     let resolved = owner.active_resolved().unwrap();
     assert_eq!(resolved.outputs.len(), 2);
     assert_eq!(resolved.outputs[1].id, OutputId::from_raw(2));
@@ -225,4 +265,38 @@ fn partial_apply_failure_rolls_back_without_publishing_candidate() {
     assert_eq!(settlement.outcome.reason, OUTPUT_OUTCOME_REASON_APPLY);
     assert!(settlement.published_snapshot.is_none());
     assert_eq!(owner.published(), &snapshot);
+}
+
+#[test]
+fn disabled_connected_head_remains_required_through_apply_and_rollback() {
+    let (capabilities, snapshot) = fixture();
+    let mut owner = LiveOutputAuthorityOwner::new(6, snapshot.clone()).unwrap();
+    let proposal = disable_secondary_candidate(&snapshot, 6);
+    owner
+        .admit(TransactionId::from_raw(10), &proposal, &capabilities)
+        .unwrap();
+    assert_eq!(
+        owner.active_resolved().unwrap().disabled_heads,
+        vec![sophia_backend_live::LiveOutputAuthorityDisabledHead {
+            head: RenderHeadId::from_raw(12),
+            target_generation: 2,
+        }]
+    );
+    assert_eq!(
+        owner.mark_prepared(RenderHeadId::from_raw(11)).unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::Accepted
+    );
+    assert_eq!(
+        owner.mark_prepared(RenderHeadId::from_raw(12)).unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+    );
+    owner.begin_apply().unwrap();
+    assert_eq!(
+        owner.mark_applied(RenderHeadId::from_raw(11)).unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::Accepted
+    );
+    assert_eq!(
+        owner.mark_applied(RenderHeadId::from_raw(12)).unwrap(),
+        sophia_engine::OutputTopologyTransactionTransition::PhaseReady
+    );
 }

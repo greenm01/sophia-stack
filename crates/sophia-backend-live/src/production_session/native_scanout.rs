@@ -12,6 +12,7 @@ mod persistent_native_scanout {
     mod output_capabilities;
     mod renderer_images;
     mod state;
+    mod topology;
     pub use frame_damage::project_mirror_output_damage_snapshot;
     use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
     use renderer_images::LiveProductionQueuedMirrorGeneration;
@@ -19,6 +20,7 @@ mod persistent_native_scanout {
         LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
     };
     pub use state::*;
+    pub use topology::*;
 
     pub struct LiveProductionNativeScanout {
         pub groups: Vec<LiveProductionNativeGroup>,
@@ -2755,10 +2757,13 @@ pub use persistent_native_scanout::{
     LiveProductionMirrorGenerationQueueTarget, LiveProductionMirrorGroupBegin,
     LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
     LiveProductionNativeFrameId, LiveProductionNativeFrameRetirement, LiveProductionNativeHead,
-    LiveProductionNativeScanout, LiveProductionPageFlipWatchdogStatus,
-    LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, project_mirror_output_damage_snapshot,
+    LiveProductionNativeScanout, LiveProductionNativeTopologyCurrentHead,
+    LiveProductionNativeTopologyDisposition, LiveProductionNativeTopologyHeadPlan,
+    LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
+    LiveProductionScanoutContent, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    plan_live_production_native_topology, project_mirror_output_damage_snapshot,
     reduce_live_production_cpu_frame_queue, reduce_live_production_mirror_generation_queue_target,
     reduce_live_production_page_flip_watchdog,
 };

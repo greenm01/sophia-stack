@@ -623,8 +623,12 @@ parallel multi-monitor subsystem.
   supervised PID, advertises it through `SOPHIA_OUTPUT_SOCKET`, and replaces
   the assignee and connection epoch on a supervised restart. Complete
   proposals reach the session-side authority owner. Validate-only proposals
-  settle normally; apply proposals still reject at the preparation boundary
-  until replacement renderer/KMS ownership is wired.
+  settle normally. Apply proposals now cross into the visual/session owner as
+  immutable effect contracts; that owner binds every enabled and disabled head
+  to its existing card/connector/CRTC/plane, resolves each requested mode
+  against the live DRM master, and retains per-head target generations without
+  mutating the published topology. It still rejects at target preparation until
+  replacement renderer/KMS and rollback ownership are wired.
 
 ### Transitional Limitation
 
@@ -636,11 +640,13 @@ because their affine image leases do not yet have the per-head source resolver
 needed by the common lowerer. They fail closed if routed through the CPU-only
 lowerer rather than disappearing or being reported as native.
 
-The native scheduler now has the prepare-all barrier, but topology replacement
-does not yet create replacement selections/target pools or use that prepared
-ownership for live modeset apply and rollback. The distinguished primary output
-also remains in retained scene and Present paths. Configuration currently maps
-`DesktopMirrorFit` manually to backend-owned `NativeMirrorFit`.
+The native scheduler now has the prepare-all barrier, and live topology planning
+creates replacement selections for enabled heads while representing omitted
+connected heads as explicit disable effects. It does not yet create replacement
+target pools or use that ownership for live modeset apply and rollback. The
+distinguished primary output also remains in retained scene and Present paths.
+Configuration currently maps `DesktopMirrorFit` manually to backend-owned
+`NativeMirrorFit`.
 
 ### Target
 
