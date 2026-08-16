@@ -304,7 +304,7 @@ fn put_image_replay_keeps_fully_covered_pixels_exact() {
 }
 
 #[test]
-fn a_later_commit_makes_the_previous_requirement_stale() {
+fn a_requirement_reissued_after_a_later_commit_tracks_current_content() {
     let namespace = NamespaceId::from_raw(149);
     let window = 0x220d01;
     let gc = 0x220d02;
@@ -313,7 +313,7 @@ fn a_later_commit_makes_the_previous_requirement_stale() {
     let (mut runtime, generation) = xterm_startup_sequence(namespace, window, gc, &image);
 
     let requirement = density_requirement(surface, generation, &[750]);
-    expect_satisfied_raster(
+    let first = expect_satisfied_raster(
         runtime
             .apply_surface_raster_requirements(TransactionId::from_raw(9_800), &requirement)
             .unwrap(),
@@ -332,15 +332,20 @@ fn a_later_commit_makes_the_previous_requirement_stale() {
         &mut properties,
     );
 
-    assert_eq!(
-        expect_raster_fallback(
-            runtime
-                .apply_surface_raster_requirements(TransactionId::from_raw(9_801), &requirement)
-                .unwrap(),
-            "a requirement built against superseded content must fail closed",
-        ),
-        XRasterFallbackCause::StaleContentGeneration,
+    // The identical requirement, now naming superseded content, is answered
+    // from the newer state instead of refused. Under a drawing client this is
+    // the ordinary case, not an exception.
+    let second = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(TransactionId::from_raw(9_801), &requirement)
+            .unwrap(),
+        "a requirement outrun by the client is still advisory demand",
     );
+    assert!(
+        second.identity.source_content_generation > first.identity.source_content_generation,
+        "the second reply must describe the newer content it carries"
+    );
+    assert_eq!(second.transaction.content.variants().len(), 2);
 }
 
 #[test]

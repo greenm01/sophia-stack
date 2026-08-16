@@ -161,7 +161,14 @@ impl SurfaceRasterRequirementTracker {
         let Some(tracked) = self.tracked.get(&response.surface) else {
             return false;
         };
-        if tracked.content_generation != response.source_content_generation
+        // The requirement generation is the edge's identity and must match
+        // exactly, so a response can only retire the demand it answers. The
+        // content generation may lead the request: an authority answers from
+        // its current state, and its reply commits through the ordinary
+        // ordered chain. A reply describing content older than the demand is
+        // still rejected, because it cannot carry the classes that were asked
+        // for at the generation they were asked about.
+        if response.source_content_generation < tracked.content_generation
             || tracked.requirement_generation != response.requirement_generation
         {
             return false;

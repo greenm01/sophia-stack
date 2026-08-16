@@ -672,14 +672,20 @@ fn late_density_requirement_replays_into_stable_multi_variant_content() {
         })
     }));
 
+    // A requirement built against generation 2 after generation 3 committed is
+    // answered from current state rather than refused. The reply names the
+    // generation it was produced from and anchors there, so it commits once
+    // Engine's ordered chain reaches it.
+    let later = expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(TransactionId::from_raw(124), &requirements)
+            .unwrap(),
+        "a lagging requirement is advisory demand, not a stale contract",
+    );
+    assert!(later.identity.source_content_generation > 2);
     assert_eq!(
-        expect_raster_fallback(
-            runtime
-                .apply_surface_raster_requirements(TransactionId::from_raw(124), &requirements)
-                .unwrap(),
-            "a response for content generation 2 must be stale after generation 3 committed",
-        ),
-        XRasterFallbackCause::StaleContentGeneration,
+        later.transaction.previous_committed_generation,
+        later.identity.source_content_generation,
     );
 }
 

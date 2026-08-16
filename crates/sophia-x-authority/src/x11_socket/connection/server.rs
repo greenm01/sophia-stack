@@ -582,6 +582,10 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                             })?;
                         match response {
                             crate::XSurfaceRasterOutcome::Satisfied(response) => {
+                                raster_fallbacks.report_satisfied(
+                                    &requirements,
+                                    response.identity.source_content_generation,
+                                );
                                 let batch = XAuthorityObservedTransactionBatch::from_raster_response(
                                     *response,
                                 );

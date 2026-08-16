@@ -121,16 +121,30 @@ fn stale_raster_response_cannot_consume_current_requirement() {
         )
         .unwrap()
         .remove(0);
+    // Content older than the demand cannot answer it: those pixels predate the
+    // classes that were asked about.
     assert!(!tracker.accept_response(SurfaceRasterResponseIdentity {
         transaction: TransactionId::from_raw(50),
         surface: requirement.surface,
-        source_content_generation: requirement.committed_content_generation + 1,
+        source_content_generation: requirement.committed_content_generation - 1,
         requirement_generation: requirement.requirement_generation,
     }));
-    assert!(tracker.accept_response(SurfaceRasterResponseIdentity {
+    // A response must still name the exact edge it answers, whatever content
+    // generation it carries.
+    assert!(!tracker.accept_response(SurfaceRasterResponseIdentity {
         transaction: TransactionId::from_raw(51),
         surface: requirement.surface,
         source_content_generation: requirement.committed_content_generation,
+        requirement_generation: requirement.requirement_generation + 1,
+    }));
+    // Content newer than the demand does answer it. An authority replies from
+    // its current state, which leads the committed generation Engine asked
+    // from whenever the client kept drawing, and that reply commits through the
+    // ordinary ordered chain.
+    assert!(tracker.accept_response(SurfaceRasterResponseIdentity {
+        transaction: TransactionId::from_raw(52),
+        surface: requirement.surface,
+        source_content_generation: requirement.committed_content_generation + 1,
         requirement_generation: requirement.requirement_generation,
     }));
 }

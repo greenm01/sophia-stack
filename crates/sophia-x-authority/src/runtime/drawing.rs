@@ -709,11 +709,19 @@ impl XAuthorityRuntime {
             .presentation_for_surface(requirements.surface)
             .cloned()
             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
-        // Engine builds requirements from its committed scene, so a client
-        // that drew again before the requirement arrived leaves the authority
-        // ahead. The observed generation travels with the cause so a run shows
-        // the size of that lag instead of only its existence.
-        if record.generation != requirements.committed_content_generation {
+        // A requirement is advisory demand, not a contract pinned to the
+        // generation Engine had committed when it asked. Engine builds
+        // requirements from its committed scene and commits authority
+        // transactions as an ordered chain, so under a drawing client it names
+        // a generation this authority already passed. Answering from current
+        // state is correct because this call publishes a complete replacement
+        // transaction rather than amending committed content, and the response
+        // travels the same ordered egress as ordinary draws, so it commits
+        // once Engine's chain reaches the generation it is anchored at.
+        //
+        // The authority running *behind* the request is the genuine error: it
+        // names content that was never produced.
+        if record.generation < requirements.committed_content_generation {
             return Ok(XSurfaceRasterOutcome::SampledFallback {
                 cause: crate::XRasterFallbackCause::StaleContentGeneration,
                 observed_content_generation: record.generation,
@@ -785,7 +793,10 @@ impl XAuthorityRuntime {
                 identity: sophia_protocol::SurfaceRasterResponseIdentity {
                     transaction,
                     surface: record.surface,
-                    source_content_generation: requirements.committed_content_generation,
+                    // The generation this content was actually produced from,
+                    // which may lead the one requested. Reporting the request
+                    // back would misdescribe the pixels.
+                    source_content_generation: record.generation,
                     requirement_generation: requirements.requirement_generation,
                 },
                 transaction: surface_transaction,

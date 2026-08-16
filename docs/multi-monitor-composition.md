@@ -607,8 +607,17 @@ parallel multi-monitor subsystem.
   tracker emits only missing or changed density classes, prioritizes an
   already-exact authority raster and classes serving the most heads, and
   rejects late responses by source-content and requirement generation before
-  transaction admission. Connector, CRTC, output-protocol object, and XID
-  identities do not enter this route.
+  transaction admission. A requirement is advisory demand rather than a
+  contract pinned to the generation it was built from: an authority answers
+  from its current state, reports the generation those pixels were produced
+  from, and anchors the reply there, so it commits when Engine's ordered
+  transaction chain reaches it. Admission therefore refuses a reply describing
+  content *older* than the demand, or one naming a different requirement edge,
+  while accepting one that leads it. Exact-generation equality is not
+  achievable in practice, because the authority advances a generation per draw
+  while Engine commits at frame cadence, so a drawing client leaves every
+  requirement naming a generation the authority has already passed. Connector,
+  CRTC, output-protocol object, and XID identities do not enter this route.
 - X Authority retains its canonical 1x drawable and owns stable derived
   presentation stores for requested density classes. A bounded semantic
   journal (4096 commands, 4 MiB owned payload, four total variants including

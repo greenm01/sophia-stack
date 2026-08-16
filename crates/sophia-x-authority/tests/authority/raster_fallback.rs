@@ -496,7 +496,7 @@ fn fallback_coalescer_separates_surfaces_and_causes() {
 }
 
 #[test]
-fn a_requirement_built_against_a_lagging_committed_generation_reports_the_gap() {
+fn a_lagging_requirement_is_answered_from_current_state() {
     let namespace = NamespaceId::from_raw(229);
     let window = XResourceId::new(0x229, 1);
     let surface = SurfaceId::new(229, 1);
@@ -505,7 +505,7 @@ fn a_requirement_built_against_a_lagging_committed_generation_reports_the_gap() 
 
     // Reproduces the live condition: Engine builds a requirement from the scene
     // it last committed, while the client keeps drawing. The authority advances
-    // its generation per draw, so by arrival it sits ahead of the request.
+    // its generation per draw, so by arrival it sits well ahead of the request.
     let committed_by_engine = 2;
     for index in 0..5 {
         runtime.begin_dispatch();
@@ -522,33 +522,73 @@ fn a_requirement_built_against_a_lagging_committed_generation_reports_the_gap() 
         );
     }
 
-    let (cause, observed) = expect_raster_fallback_detail(
+    let response = expect_satisfied_raster(
         runtime
             .apply_surface_raster_requirements(
                 TransactionId::from_raw(290),
                 &fallback_requirement(surface, committed_by_engine, &[750]),
             )
             .unwrap(),
-        "a lagging requirement cannot be satisfied",
-    );
-    assert_eq!(cause, XRasterFallbackCause::StaleContentGeneration);
-    assert!(
-        observed > committed_by_engine,
-        "the authority must report running ahead of the requested generation, \
-         got observed={observed} requested={committed_by_engine}"
+        "a requirement is advisory demand, so a lagging one is still answerable",
     );
 
-    // The same requirement rebuilt against the authority's current generation
-    // is satisfiable, which isolates the lag as the whole cause.
-    expect_satisfied_raster(
+    // The reply describes the pixels it actually carries rather than echoing
+    // the request, and anchors at that same generation so it commits when
+    // Engine's ordered chain arrives there.
+    assert!(
+        response.identity.source_content_generation > committed_by_engine,
+        "the reply must report the generation it was produced from"
+    );
+    assert_eq!(
+        response.transaction.previous_committed_generation,
+        response.identity.source_content_generation,
+    );
+    assert_eq!(response.transaction.content.variants().len(), 2);
+    assert!(
+        response
+            .transaction
+            .content
+            .variants()
+            .iter()
+            .all(|variant| variant.fidelity
+                == sophia_protocol::SurfaceContentFidelity::AuthorityRaster)
+    );
+}
+
+#[test]
+fn a_requirement_ahead_of_the_authority_still_fails_closed() {
+    let namespace = NamespaceId::from_raw(231);
+    let window = XResourceId::new(0x232, 1);
+    let surface = SurfaceId::new(231, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 310);
+
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(311),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 1,
+            y: 1,
+            width: 4,
+            height: 4,
+        }),
+    );
+
+    // Naming content the authority has never produced is the genuine error the
+    // relaxed admission still refuses.
+    let (cause, observed) = expect_raster_fallback_detail(
         runtime
             .apply_surface_raster_requirements(
-                TransactionId::from_raw(291),
-                &fallback_requirement(surface, observed, &[750]),
+                TransactionId::from_raw(312),
+                &fallback_requirement(surface, 500, &[750]),
             )
             .unwrap(),
-        "the identical requirement must succeed once its generation matches",
+        "a requirement ahead of the authority names content that does not exist",
     );
+    assert_eq!(cause, XRasterFallbackCause::StaleContentGeneration);
+    assert!(observed < 500);
 }
 
 #[test]
