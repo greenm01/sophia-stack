@@ -709,9 +709,14 @@ impl XAuthorityRuntime {
             .presentation_for_surface(requirements.surface)
             .cloned()
             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        // Engine builds requirements from its committed scene, so a client
+        // that drew again before the requirement arrived leaves the authority
+        // ahead. The observed generation travels with the cause so a run shows
+        // the size of that lag instead of only its existence.
         if record.generation != requirements.committed_content_generation {
             return Ok(XSurfaceRasterOutcome::SampledFallback {
-                cause: crate::XRasterFallbackCause::StaleDependency,
+                cause: crate::XRasterFallbackCause::StaleContentGeneration,
+                observed_content_generation: record.generation,
             });
         }
         let canonical = self
@@ -721,7 +726,8 @@ impl XAuthorityRuntime {
             .ok_or(XAuthorityRuntimeError::InvalidResource)?;
         if canonical.size != requirements.logical_extent {
             return Ok(XSurfaceRasterOutcome::SampledFallback {
-                cause: crate::XRasterFallbackCause::StaleDependency,
+                cause: crate::XRasterFallbackCause::LogicalExtentMismatch,
+                observed_content_generation: record.generation,
             });
         }
         let updates = match self
@@ -731,7 +737,10 @@ impl XAuthorityRuntime {
         {
             crate::XRasterSatisfyOutcome::Satisfied(updates) => updates,
             crate::XRasterSatisfyOutcome::Fallback(cause) => {
-                return Ok(XSurfaceRasterOutcome::SampledFallback { cause });
+                return Ok(XSurfaceRasterOutcome::SampledFallback {
+                    cause,
+                    observed_content_generation: record.generation,
+                });
             }
         };
         let content = self.raster_store.content_set(record.id, &canonical);
@@ -748,6 +757,7 @@ impl XAuthorityRuntime {
             // requirement, but publication could not carry every class.
             return Ok(XSurfaceRasterOutcome::SampledFallback {
                 cause: crate::XRasterFallbackCause::BackingCapacity,
+                observed_content_generation: record.generation,
             });
         }
         let surface_transaction = sophia_protocol::SurfaceTransaction {

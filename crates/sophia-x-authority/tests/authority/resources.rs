@@ -679,7 +679,7 @@ fn late_density_requirement_replays_into_stable_multi_variant_content() {
                 .unwrap(),
             "a response for content generation 2 must be stale after generation 3 committed",
         ),
-        XRasterFallbackCause::StaleDependency,
+        XRasterFallbackCause::StaleContentGeneration,
     );
 }
 

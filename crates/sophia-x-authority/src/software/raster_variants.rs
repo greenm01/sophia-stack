@@ -32,9 +32,13 @@ pub enum XRasterFallbackCause {
     UnsupportedCrossDrawableCopy,
     /// Some other drawing operation has no journal representation.
     UnsupportedCommand,
-    /// The requirement no longer matches the committed content it was built
-    /// against.
-    StaleDependency,
+    /// The requirement named a content generation the authority has already
+    /// advanced past. Engine builds requirements from its committed scene, so
+    /// this fires whenever the client drew again before the requirement
+    /// arrived.
+    StaleContentGeneration,
+    /// The requirement's logical extent disagrees with the canonical drawable.
+    LogicalExtentMismatch,
     /// The semantic journal exceeded its command or payload bound.
     JournalCapacity,
     /// The derived stores would exceed the variant or backing-byte bound.
@@ -50,7 +54,8 @@ impl XRasterFallbackCause {
             Self::UnsupportedPutImage => "unsupported_put_image",
             Self::UnsupportedCrossDrawableCopy => "unsupported_cross_drawable_copy",
             Self::UnsupportedCommand => "unsupported_command",
-            Self::StaleDependency => "stale_dependency",
+            Self::StaleContentGeneration => "stale_content_generation",
+            Self::LogicalExtentMismatch => "logical_extent_mismatch",
             Self::JournalCapacity => "journal_capacity",
             Self::BackingCapacity => "backing_capacity",
             Self::TransformMismatch => "transform_mismatch",

@@ -631,7 +631,10 @@ parallel multi-monitor subsystem.
   later text and copy commands is preserved.
 - Sampled fallback is cause-classified. X Authority reports unsupported
   `PutImage`, unsupported cross-drawable copy, unsupported command, stale
-  dependency, journal capacity, backing capacity, and transform mismatch, and a
+  content generation, logical extent mismatch, journal capacity, backing
+  capacity, and transform mismatch. A stale generation carries the authority's
+  own observed generation beside the requested one, so a run shows the size of
+  the lag rather than only its existence. A
   bounded per-surface coalescer emits the first occurrence and each subsequent
   power of two with a cumulative count, so repeated warnings never hide their
   volume. The cause stays authority-private; Engine continues to observe only

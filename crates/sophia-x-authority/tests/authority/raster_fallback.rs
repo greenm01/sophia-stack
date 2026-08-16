@@ -440,7 +440,7 @@ fn fallback_causes_have_distinct_stable_log_tokens() {
         XRasterFallbackCause::UnsupportedPutImage,
         XRasterFallbackCause::UnsupportedCrossDrawableCopy,
         XRasterFallbackCause::UnsupportedCommand,
-        XRasterFallbackCause::StaleDependency,
+        XRasterFallbackCause::StaleContentGeneration,
         XRasterFallbackCause::JournalCapacity,
         XRasterFallbackCause::BackingCapacity,
         XRasterFallbackCause::TransformMismatch,
@@ -492,5 +492,98 @@ fn fallback_coalescer_separates_surfaces_and_causes() {
     assert_eq!(
         coalescer.occurrences(first, XRasterFallbackCause::UnsupportedCommand),
         0
+    );
+}
+
+#[test]
+fn a_requirement_built_against_a_lagging_committed_generation_reports_the_gap() {
+    let namespace = NamespaceId::from_raw(229);
+    let window = XResourceId::new(0x229, 1);
+    let surface = SurfaceId::new(229, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 280);
+
+    // Reproduces the live condition: Engine builds a requirement from the scene
+    // it last committed, while the client keeps drawing. The authority advances
+    // its generation per draw, so by arrival it sits ahead of the request.
+    let committed_by_engine = 2;
+    for index in 0..5 {
+        runtime.begin_dispatch();
+        runtime.apply_core_draw(
+            TransactionId::from_raw(281 + index),
+            namespace,
+            window,
+            Region::single(Rect {
+                x: 1,
+                y: 1,
+                width: 4,
+                height: 4,
+            }),
+        );
+    }
+
+    let (cause, observed) = expect_raster_fallback_detail(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(290),
+                &fallback_requirement(surface, committed_by_engine, &[750]),
+            )
+            .unwrap(),
+        "a lagging requirement cannot be satisfied",
+    );
+    assert_eq!(cause, XRasterFallbackCause::StaleContentGeneration);
+    assert!(
+        observed > committed_by_engine,
+        "the authority must report running ahead of the requested generation, \
+         got observed={observed} requested={committed_by_engine}"
+    );
+
+    // The same requirement rebuilt against the authority's current generation
+    // is satisfiable, which isolates the lag as the whole cause.
+    expect_satisfied_raster(
+        runtime
+            .apply_surface_raster_requirements(
+                TransactionId::from_raw(291),
+                &fallback_requirement(surface, observed, &[750]),
+            )
+            .unwrap(),
+        "the identical requirement must succeed once its generation matches",
+    );
+}
+
+#[test]
+fn a_requirement_naming_the_wrong_extent_is_distinguished_from_a_stale_generation() {
+    let namespace = NamespaceId::from_raw(230);
+    let window = XResourceId::new(0x231, 1);
+    let surface = SurfaceId::new(230, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 300);
+
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(301),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 20,
+        }),
+    );
+
+    let mut requirements = fallback_requirement(surface, 2, &[750]);
+    requirements.logical_extent = Size {
+        width: 41,
+        height: 20,
+    };
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(TransactionId::from_raw(302), &requirements)
+                .unwrap(),
+            "an extent disagreement must not be reported as a stale generation",
+        ),
+        XRasterFallbackCause::LogicalExtentMismatch,
     );
 }

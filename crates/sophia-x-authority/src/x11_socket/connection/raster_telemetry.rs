@@ -39,16 +39,18 @@ impl XRasterFallbackCoalescer {
         &mut self,
         requirements: &sophia_protocol::SurfaceRasterRequirements,
         cause: XRasterFallbackCause,
+        observed_content_generation: u64,
     ) {
         let Some(occurrences) = self.observe(requirements.surface, cause) else {
             return;
         };
         tracing::warn!(
-            "sophia_x11_raster_requirement schema=1 status=sampled_fallback cause={} occurrences={} surface={:?} content_generation={} requirement_generation={} classes={}",
+            "sophia_x11_raster_requirement schema=1 status=sampled_fallback cause={} occurrences={} surface={:?} content_generation={} observed_content_generation={} requirement_generation={} classes={}",
             cause.as_str(),
             occurrences,
             requirements.surface,
             requirements.committed_content_generation,
+            observed_content_generation,
             requirements.requirement_generation,
             requirements.classes.len(),
         );

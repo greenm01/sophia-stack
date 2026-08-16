@@ -757,14 +757,16 @@ Detailed physical-run diagnoses remain in
   and allocation failure. Classify fallback telemetry by cause (including
   unsupported `PutImage`, unsupported cross-drawable copy, stale dependency,
   journal capacity, backing capacity, and transform mismatch) and coalesce
-  repeated warnings without hiding counts.
+  repeated warnings without hiding counts. Requirement-admission staleness is
+  reported as two distinct causes, stale content generation and logical extent
+  mismatch, because collapsing them hid which check a physical run had hit.
   Cause classification and coalescing are implemented: an authority-private
   cause accompanies every sampled-fallback outcome, and a bounded per-surface
   coalescer emits the first occurrence and each subsequent power of two with a
   cumulative count. Deterministic coverage exists for unsupported `PutImage`,
   unsupported cross-drawable copy, stale dependency, journal capacity, backing
-  capacity, and transform mismatch. Source destruction and allocation failure
-  remain open.
+  capacity, stale content generation, logical extent mismatch, and transform
+  mismatch. Source destruction and allocation failure remain open.
 - [x] Add deterministic authority regressions for the real xterm sequence:
   startup `PutImage`, later ImageText8/PolyText8 and line drawing, same-drawable
   scrolling, late 750-density demand, canonical plus derived publication, and

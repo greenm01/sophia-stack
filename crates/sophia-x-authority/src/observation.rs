@@ -134,5 +134,11 @@ pub struct XAuthorityRasterRequirementResponse {
 #[derive(Clone, Debug)]
 pub enum XSurfaceRasterOutcome {
     Satisfied(Box<XAuthorityRasterRequirementResponse>),
-    SampledFallback { cause: crate::XRasterFallbackCause },
+    SampledFallback {
+        cause: crate::XRasterFallbackCause,
+        /// The authority's own content generation when the requirement was
+        /// evaluated. Logged beside the requested generation so a run shows
+        /// requested-versus-observed directly instead of implying it.
+        observed_content_generation: u64,
+    },
 }

@@ -912,7 +912,7 @@ fn expect_satisfied_raster(
 ) -> XAuthorityRasterRequirementResponse {
     match outcome {
         XSurfaceRasterOutcome::Satisfied(response) => *response,
-        XSurfaceRasterOutcome::SampledFallback { cause } => {
+        XSurfaceRasterOutcome::SampledFallback { cause, .. } => {
             panic!("{message}: sampled fallback with cause {}", cause.as_str())
         }
     }
@@ -921,7 +921,7 @@ fn expect_satisfied_raster(
 /// Asserts sampled fallback and returns its classified cause.
 fn expect_raster_fallback(outcome: XSurfaceRasterOutcome, message: &str) -> XRasterFallbackCause {
     match outcome {
-        XSurfaceRasterOutcome::SampledFallback { cause } => cause,
+        XSurfaceRasterOutcome::SampledFallback { cause, .. } => cause,
         XSurfaceRasterOutcome::Satisfied(_) => panic!("{message}: unexpectedly satisfied"),
     }
 }

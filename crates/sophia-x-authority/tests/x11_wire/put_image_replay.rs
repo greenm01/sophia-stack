@@ -339,7 +339,7 @@ fn a_later_commit_makes_the_previous_requirement_stale() {
                 .unwrap(),
             "a requirement built against superseded content must fail closed",
         ),
-        XRasterFallbackCause::StaleDependency,
+        XRasterFallbackCause::StaleContentGeneration,
     );
 }
 

@@ -590,12 +590,19 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     batch: Some(batch),
                                 });
                             }
-                            crate::XSurfaceRasterOutcome::SampledFallback { cause } => {
+                            crate::XSurfaceRasterOutcome::SampledFallback {
+                                cause,
+                                observed_content_generation,
+                            } => {
                                 pending_raster_egress = Some(XAuthorityEgressEnvelope {
                                     transaction,
                                     batch: None,
                                 });
-                                raster_fallbacks.report(&requirements, cause);
+                                raster_fallbacks.report(
+                                    &requirements,
+                                    cause,
+                                    observed_content_generation,
+                                );
                             }
                         }
                         progressed = true;
