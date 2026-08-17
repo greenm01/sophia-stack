@@ -51,7 +51,12 @@ fn authority_wait_timeout(
 }
 
 fn native_frame_service_requires_owner_progress(request: &OutputFrameServiceRequest) -> bool {
+    // A waiting software present is owed work too. It stopped being visible in
+    // the per-output flags once those became native-only, and without it here
+    // the owner would drop to its idle pacing while a present still needed
+    // lowering.
     request.presentation_queued
+        || request.software_frame_waiting
         || request.outputs.iter().any(|output| {
             output.pending_frame || output.native_phase != OutputNativeFramePhase::Idle
         })

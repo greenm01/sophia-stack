@@ -14,6 +14,10 @@ pub struct OutputFrameServiceObservation {
     pub output: OutputId,
     pub primary: bool,
     pub native_phase: OutputNativeFramePhase,
+    /// Native scanout work owed to this output alone. A waiting software
+    /// present is request-global rather than per-output, so it belongs to
+    /// `software_frame_waiting` and not here: folding it in made every output
+    /// look busy and hid which one actually owed a frame.
     pub pending_frame: bool,
 }
 
@@ -21,6 +25,10 @@ pub struct OutputFrameServiceObservation {
 pub struct OutputFrameServiceRequest {
     pub outputs: Vec<OutputFrameServiceObservation>,
     pub presentation_queued: bool,
+    /// A composed software present is waiting to be lowered onto head frames.
+    /// Staging it requires every output to be natively idle, so it is a
+    /// property of the request rather than of any one output.
+    pub software_frame_waiting: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,8 +134,14 @@ impl OutputFrameServiceReducer {
             .iter()
             .find(|output| output.output == self.primary)
             .expect("stable validated output set contains its primary");
+        // A present is emitted only when its handler can actually execute it.
+        // The handler refuses while the primary owes a native frame, and it
+        // used to do so silently, leaving the present queued forever; the
+        // effect that drains that frame was in turn withheld while a present
+        // was queued, so the two waited on each other permanently.
         if request.presentation_queued
             && primary.native_phase == OutputNativeFramePhase::Idle
+            && !primary.pending_frame
             && !self.presentation_attempted
         {
             self.presentation_attempted = true;
@@ -140,9 +154,7 @@ impl OutputFrameServiceReducer {
             .outputs
             .iter()
             .filter(|output| {
-                output.native_phase == OutputNativeFramePhase::Idle
-                    && output.pending_frame
-                    && !(request.presentation_queued && output.primary)
+                output.native_phase == OutputNativeFramePhase::Idle && output.pending_frame
             })
             .map(|output| output.output)
             .filter(|output| !self.pending_frame_attempted.contains(output))
@@ -150,6 +162,23 @@ impl OutputFrameServiceReducer {
         {
             self.pending_frame_attempted.insert(output);
             return self.emit(OutputFrameServiceEffect::SubmitPendingFrame { output });
+        }
+
+        // Lowering a waiting software present onto head frames requires every
+        // output to be natively idle, not merely the one it targets, and its
+        // handler fails the session outright rather than deferring when that
+        // does not hold. Emitting it only under the stronger condition is what
+        // keeps that failure unreachable from here.
+        if request.software_frame_waiting
+            && !self.pending_frame_attempted.contains(&self.primary)
+            && request.outputs.iter().all(|output| {
+                output.native_phase == OutputNativeFramePhase::Idle && !output.pending_frame
+            })
+        {
+            self.pending_frame_attempted.insert(self.primary);
+            return self.emit(OutputFrameServiceEffect::SubmitPendingFrame {
+                output: self.primary,
+            });
         }
 
         Ok(None)

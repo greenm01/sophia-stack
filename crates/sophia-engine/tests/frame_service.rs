@@ -23,6 +23,15 @@ fn request(
     OutputFrameServiceRequest {
         outputs,
         presentation_queued,
+        software_frame_waiting: false,
+    }
+}
+
+fn software_request(outputs: Vec<OutputFrameServiceObservation>) -> OutputFrameServiceRequest {
+    OutputFrameServiceRequest {
+        outputs,
+        presentation_queued: false,
+        software_frame_waiting: true,
     }
 }
 
@@ -66,6 +75,9 @@ fn retirement_precedes_primary_presentation_and_secondary_pending_frame() {
         }))
     );
     request.outputs[1].native_phase = OutputNativeFramePhase::Idle;
+    // Retirement drained the primary's own frame; a present is admitted only
+    // once the primary owes nothing, which is what this test is about.
+    request.outputs[0].pending_frame = false;
     assert_eq!(
         reducer.next_effect(&request),
         Ok(Some(OutputFrameServiceEffect::SubmitQueuedPresentation {
@@ -115,11 +127,57 @@ fn secondary_retirement_does_not_starve_idle_primary_presentation() {
     assert_eq!(reducer.next_effect(&request), Ok(None));
 }
 
+/// The deadlock this file used to assert as correct.
+///
+/// Reserving the primary away from `SubmitPendingFrame` while a present was
+/// queued left the present waiting on a frame that nothing would drain, and
+/// the handler refused the present silently, so a live session stalled with no
+/// kernel submissions at all. The drain now goes first.
+///
+/// `validation/tla/FrameServiceArbitration.tla` violates `PresentSettles` when
+/// the old reservation is restored.
 #[test]
-fn queued_presentation_reserves_primary_but_not_secondary() {
-    let request = request(
+fn queued_presentation_waits_for_primary_pending_frame_drain() {
+    let mut request = request(
         vec![
             output(1, true, OutputNativeFramePhase::Idle, true),
+            output(2, false, OutputNativeFramePhase::Idle, true),
+        ],
+        true,
+    );
+    let mut reducer = OutputFrameServiceReducer::begin(&request).unwrap();
+
+    assert_eq!(
+        reducer.next_effect(&request),
+        Ok(Some(OutputFrameServiceEffect::SubmitPendingFrame {
+            output: OutputId::from_raw(1),
+        }))
+    );
+    assert_eq!(
+        reducer.next_effect(&request),
+        Ok(Some(OutputFrameServiceEffect::SubmitPendingFrame {
+            output: OutputId::from_raw(2),
+        }))
+    );
+    assert_eq!(reducer.next_effect(&request), Ok(None));
+
+    // Once the drain lands, the present is admitted on a later pass.
+    request.outputs[0].pending_frame = false;
+    request.outputs[1].pending_frame = false;
+    let mut reducer = OutputFrameServiceReducer::begin(&request).unwrap();
+    assert_eq!(
+        reducer.next_effect(&request),
+        Ok(Some(OutputFrameServiceEffect::SubmitQueuedPresentation {
+            output: OutputId::from_raw(1),
+        }))
+    );
+}
+
+#[test]
+fn presentation_submits_when_primary_is_idle_and_clean() {
+    let request = request(
+        vec![
+            output(1, true, OutputNativeFramePhase::Idle, false),
             output(2, false, OutputNativeFramePhase::Idle, true),
         ],
         true,
@@ -132,10 +190,45 @@ fn queued_presentation_reserves_primary_but_not_secondary() {
             output: OutputId::from_raw(1),
         }))
     );
+    // A secondary owing a frame never held the present back and still does not.
     assert_eq!(
         reducer.next_effect(&request),
         Ok(Some(OutputFrameServiceEffect::SubmitPendingFrame {
             output: OutputId::from_raw(2),
+        }))
+    );
+    assert_eq!(reducer.next_effect(&request), Ok(None));
+}
+
+/// Staging a waiting software present fails the session outright when any
+/// output is still busy, so it is emitted only once every output is idle and
+/// owes nothing.
+///
+/// `validation/tla/FrameServiceArbitration.tla` violates `ServiceNeverCrashes`
+/// when the global-idle requirement is dropped from that gate.
+#[test]
+fn software_staging_requires_global_native_idle() {
+    let mut request = software_request(vec![
+        output(1, true, OutputNativeFramePhase::Idle, false),
+        output(2, false, OutputNativeFramePhase::Idle, true),
+    ]);
+    let mut reducer = OutputFrameServiceReducer::begin(&request).unwrap();
+
+    // The busy secondary is drained first; no staging while it owes a frame.
+    assert_eq!(
+        reducer.next_effect(&request),
+        Ok(Some(OutputFrameServiceEffect::SubmitPendingFrame {
+            output: OutputId::from_raw(2),
+        }))
+    );
+    assert_eq!(reducer.next_effect(&request), Ok(None));
+
+    request.outputs[1].pending_frame = false;
+    let mut reducer = OutputFrameServiceReducer::begin(&request).unwrap();
+    assert_eq!(
+        reducer.next_effect(&request),
+        Ok(Some(OutputFrameServiceEffect::SubmitPendingFrame {
+            output: OutputId::from_raw(1),
         }))
     );
     assert_eq!(reducer.next_effect(&request), Ok(None));

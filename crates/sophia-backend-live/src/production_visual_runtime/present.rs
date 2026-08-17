@@ -80,16 +80,26 @@ impl LiveProductionVisualRuntime {
                 .outputs
                 .output_index(*output)
                 .ok_or("Present cohort targets an unknown logical output")?;
-            if self
+            let in_flight = self
                 .outputs
                 .output_native_scanout_in_flight(index)
-                .ok_or("Present output in-flight state was not registered")?
-                || self
-                    .outputs
-                    .output_native_cleanup_pending(index)
-                    .ok_or("Present output cleanup state was not registered")?
-                || native_scanout.pending_frame(*output)
-            {
+                .ok_or("Present output in-flight state was not registered")?;
+            let cleanup_pending = self
+                .outputs
+                .output_native_cleanup_pending(index)
+                .ok_or("Present output cleanup state was not registered")?;
+            let pending_frame = native_scanout.pending_frame(*output);
+            if in_flight || cleanup_pending || pending_frame {
+                // The primary can no longer reach this: the reducer withholds
+                // the presentation effect while it owes a native frame. A
+                // cohort spanning outputs can still find a secondary busy, and
+                // that one is drained by this same pass. Deferring silently is
+                // what let the earlier deadlock hide, so it is said out loud.
+                tracing::debug!(
+                    "sophia_live_present_defer schema=1 status=output_busy transaction={} output={} in_flight={in_flight} cleanup_pending={cleanup_pending} pending_frame={pending_frame}",
+                    transaction.raw(),
+                    output.raw(),
+                );
                 return self.run_observation_tick();
             }
         }

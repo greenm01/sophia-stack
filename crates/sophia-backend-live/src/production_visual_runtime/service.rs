@@ -260,8 +260,11 @@ impl LiveProductionVisualRuntime {
                     output,
                     primary: output == primary,
                     native_phase: reduce_output_native_frame_phase(in_flight, cleanup_pending),
-                    pending_frame: native_scanout.pending_frame(output)
-                        || software_frame_waiting.is_some(),
+                    // Native work owed to this output only. A waiting software
+                    // present is reported once on the request instead, so the
+                    // reducer can tell "this output owes a frame" apart from
+                    // "something global is pending".
+                    pending_frame: native_scanout.pending_frame(output),
                 })
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
@@ -270,6 +273,7 @@ impl LiveProductionVisualRuntime {
             presentation_queued: software_frame_waiting.is_none()
                 && self.diagnostics().present_queued
                 && !self.diagnostics().present_scheduling_blocked,
+            software_frame_waiting: software_frame_waiting.is_some(),
         })
     }
 

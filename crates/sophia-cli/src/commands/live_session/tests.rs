@@ -137,6 +137,7 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
             pending_frame: true,
         }],
         presentation_queued: false,
+        software_frame_waiting: false,
     };
 
     assert!(native_frame_service_requires_owner_progress(&request));
@@ -154,8 +155,17 @@ fn native_frame_progress_preempts_metadata_only_authority_batches() {
             pending_frame: false,
         }],
         presentation_queued: false,
+        software_frame_waiting: false,
     };
     assert!(!native_frame_service_requires_owner_progress(&idle));
+
+    // A waiting software present is owed work even though no output reports a
+    // native frame of its own, so the owner must keep its fast pacing.
+    let mut software_waiting = idle;
+    software_waiting.software_frame_waiting = true;
+    assert!(native_frame_service_requires_owner_progress(
+        &software_waiting
+    ));
 }
 
 #[test]
@@ -184,6 +194,7 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
             pending_frame: true,
         }],
         presentation_queued: false,
+        software_frame_waiting: false,
     };
 
     assert!(native_frame_service_should_preempt_authority(
@@ -210,6 +221,7 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
             pending_frame: false,
         }],
         presentation_queued: false,
+        software_frame_waiting: false,
     };
     assert!(!native_frame_service_should_preempt_authority(
         &idle, false, false, 0, false
