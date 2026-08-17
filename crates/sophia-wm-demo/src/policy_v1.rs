@@ -57,12 +57,20 @@ pub const fn stateless_reference_projection_decision(
 ) -> StatelessReferenceProjectionDecision {
     match outcome {
         PolicyProjectionOutcome::Committed => StatelessReferenceProjectionDecision::Settled,
-        PolicyProjectionOutcome::RejectedStale => {
+        // A stale generation and a timeout are both "the scene moved on",
+        // differing only in what moved it. A timeout means some client was slow
+        // to adopt its new geometry; the session preserves the committed layout
+        // and rolls the proposal back, so re-proposing from a fresh snapshot is
+        // the whole recovery. Treating it as fatal makes a slow client kill the
+        // window manager, and a window manager that exits repeatedly for a
+        // recoverable reason exhausts its restart budget and takes the session
+        // with it.
+        PolicyProjectionOutcome::RejectedStale | PolicyProjectionOutcome::TimedOut => {
             StatelessReferenceProjectionDecision::RetryFreshSnapshot
         }
-        PolicyProjectionOutcome::RejectedInvalid
-        | PolicyProjectionOutcome::TimedOut
-        | PolicyProjectionOutcome::Disconnected => StatelessReferenceProjectionDecision::Fatal,
+        PolicyProjectionOutcome::RejectedInvalid | PolicyProjectionOutcome::Disconnected => {
+            StatelessReferenceProjectionDecision::Fatal
+        }
     }
 }
 

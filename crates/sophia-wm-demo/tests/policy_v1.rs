@@ -25,22 +25,31 @@ use sophia_wm_demo::{
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 #[test]
-fn stateless_reference_reuses_its_connection_only_for_a_stale_generation() {
-    assert_eq!(
-        stateless_reference_projection_decision(
-            sophia_protocol::PolicyProjectionOutcome::RejectedStale,
-        ),
-        StatelessReferenceProjectionDecision::RetryFreshSnapshot
-    );
+fn stateless_reference_recovers_from_a_moved_scene_and_fails_only_on_its_own_faults() {
+    // A stale generation and a timeout both mean the scene moved on; the
+    // session preserves the committed layout either way, so re-proposing from
+    // a fresh snapshot is the entire recovery. A physical run treated the
+    // timeout as fatal, which let one slow client exit the window manager
+    // three times over and exhaust its restart budget.
+    for outcome in [
+        sophia_protocol::PolicyProjectionOutcome::RejectedStale,
+        sophia_protocol::PolicyProjectionOutcome::TimedOut,
+    ] {
+        assert_eq!(
+            stateless_reference_projection_decision(outcome),
+            StatelessReferenceProjectionDecision::RetryFreshSnapshot
+        );
+    }
     assert_eq!(
         stateless_reference_projection_decision(
             sophia_protocol::PolicyProjectionOutcome::Committed,
         ),
         StatelessReferenceProjectionDecision::Settled
     );
+    // These name a fault in the proposal or the connection itself, which
+    // retrying cannot repair.
     for outcome in [
         sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
-        sophia_protocol::PolicyProjectionOutcome::TimedOut,
         sophia_protocol::PolicyProjectionOutcome::Disconnected,
     ] {
         assert_eq!(
