@@ -97,6 +97,14 @@ impl PhysicalKeyTimingRejects {
 const ROUTED_INPUT_INGRESS: sophia_protocol::CapacityResourceId =
     sophia_protocol::CapacityResourceId("cli.live_session.routed_input_ingress");
 
+/// Keys one client is believed to be holding.
+///
+/// Reaching this bound means releases were already lost upstream, since no
+/// hand holds 256 keys. The epoch close both reports that and flushes what is
+/// held, which is the only thing that lets the ledger drain again.
+const PRESSED_KEY_LEDGER: sophia_protocol::CapacityResourceId =
+    sophia_protocol::CapacityResourceId("cli.live_session.pressed_key_ledger");
+
 /// How long a terminating boundary waits for room before it is abandoned.
 ///
 /// Ordered input is refused immediately, because a queue this full is already
@@ -156,11 +164,12 @@ impl sophia_protocol::CapacityWait for OwnerLoopWait {
 struct RoutedInputIngressSaturation {
     ordered_discarded: usize,
     boundary_discarded: usize,
+    ledger_discarded: usize,
 }
 
 impl RoutedInputIngressSaturation {
     const fn is_empty(self) -> bool {
-        self.ordered_discarded == 0 && self.boundary_discarded == 0
+        self.ordered_discarded == 0 && self.boundary_discarded == 0 && self.ledger_discarded == 0
     }
 
     fn merge(&mut self, other: Self) {
@@ -168,6 +177,7 @@ impl RoutedInputIngressSaturation {
         self.boundary_discarded = self
             .boundary_discarded
             .saturating_add(other.boundary_discarded);
+        self.ledger_discarded = self.ledger_discarded.saturating_add(other.ledger_discarded);
     }
 
     /// Reports through the shared coalescer so sustained pressure does not
@@ -178,6 +188,22 @@ impl RoutedInputIngressSaturation {
         capacity: usize,
         ledger: &mut sophia_protocol::CapacityReportLedger,
     ) {
+        if self.ledger_discarded != 0
+            && let Some(occurrences) = ledger.observe(
+                PRESSED_KEY_LEDGER,
+                sophia_protocol::CapacitySaturationCause::DepthExhausted,
+            )
+        {
+            print_capacity_saturation(&sophia_protocol::CapacitySaturationReport {
+                resource: PRESSED_KEY_LEDGER,
+                cause: sophia_protocol::CapacitySaturationCause::DepthExhausted,
+                disposition: sophia_protocol::CapacitySaturationDisposition::EndpointEpochClosed,
+                depth: SESSION_CLIENT_PRESSED_KEY_CAPACITY,
+                capacity: SESSION_CLIENT_PRESSED_KEY_CAPACITY,
+                discarded: usize::try_from(occurrences).unwrap_or(usize::MAX),
+                waited_msec: 0,
+            });
+        }
         for (discarded, class) in [
             (
                 self.ordered_discarded,

@@ -663,7 +663,12 @@ macro_rules! drain_physical_input {
             revoke_floating_pointer_interaction!("routed_input_saturation");
             pointer_focus_handoff = PointerFocusHandoffState::default();
             keyboard_focus_handoff = KeyboardFocusHandoffState::default();
-            key_repeat.cancel_seat(seat);
+            // Flushing is what makes the close a terminating boundary rather
+            // than an amnesty: every key the ledger still holds is released,
+            // which both keeps clients from latching one down and lets the
+            // ledger drain, so the next press is not refused for the same
+            // reason forever.
+            flush_all_client_keys!("routed_input_saturation");
             println!(
                 "sophia_live_input_epoch schema=1 reason=routed_input_saturation epoch={} revoked_leases={revoked_input_leases}",
                 application_route_leases.control_epoch(),

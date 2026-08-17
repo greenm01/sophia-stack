@@ -10,6 +10,22 @@ const SHIFTED_PRINTABLE_KEYCODES: [u32; 21] = [
     41, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 26, 27, 43, 39, 40, 51, 52, 53,
 ];
 pub const SESSION_CLIENT_PRESSED_KEY_CAPACITY: usize = 256;
+
+/// What one `record_routed` call did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionPressedKeyAdmission {
+    Recorded,
+    AlreadyPressed,
+    /// The ledger is full, so this press is not tracked and its release cannot
+    /// be synthesized later. The endpoint epoch must close.
+    Saturated,
+}
+
+impl SessionPressedKeyAdmission {
+    pub const fn is_saturated(self) -> bool {
+        matches!(self, Self::Saturated)
+    }
+}
 pub const RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC: u64 = 500;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -96,17 +112,24 @@ impl SessionClientKeyState {
         self.is_pressed(key)
     }
 
+    /// Records what a client now believes about one key.
+    ///
+    /// A full ledger used to fail the session. It cannot: the ledger exists so
+    /// held keys can be released later, and reaching its bound means releases
+    /// were already lost, which is a reason to close the endpoint epoch and
+    /// flush what is held rather than to take the desktop down. The caller
+    /// decides that; this only reports which happened.
     pub fn record_routed(
         &mut self,
         key: SessionClientPressedKey,
         pressed: bool,
-    ) -> Result<(), &'static str> {
+    ) -> SessionPressedKeyAdmission {
         if pressed {
             if self.pressed.contains(&key) {
-                return Ok(());
+                return SessionPressedKeyAdmission::AlreadyPressed;
             }
             if self.pressed.len() >= SESSION_CLIENT_PRESSED_KEY_CAPACITY {
-                return Err("client pressed-key ledger is full");
+                return SessionPressedKeyAdmission::Saturated;
             }
             self.pressed.push(key);
             self.metrics.peak_pressed = self.metrics.peak_pressed.max(self.pressed.len());
@@ -116,7 +139,7 @@ impl SessionClientKeyState {
             self.metrics.orphan_releases_suppressed =
                 self.metrics.orphan_releases_suppressed.saturating_add(1);
         }
-        Ok(())
+        SessionPressedKeyAdmission::Recorded
     }
 
     pub fn copy_surface_keys(

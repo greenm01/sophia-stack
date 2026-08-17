@@ -1,7 +1,7 @@
 use sophia_cli::session_keyboard::{
     PhysicalKeyboardCoverage, RuntimeDeadlineKeyDrain, RuntimeDeadlineKeyDrainDecision,
     SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
-    VirtualTerminalChordAction, VirtualTerminalChordState,
+    SessionPressedKeyAdmission, VirtualTerminalChordAction, VirtualTerminalChordState,
 };
 use sophia_protocol::{DeviceId, SeatId, SurfaceId};
 
@@ -131,9 +131,9 @@ fn client_key_state_drains_one_surface_without_touching_another() {
     let old_super = pressed_key(1, 125);
     let old_letter = pressed_key(1, 30);
     let new_letter = pressed_key(2, 31);
-    state.record_routed(old_super, true).unwrap();
-    state.record_routed(old_letter, true).unwrap();
-    state.record_routed(new_letter, true).unwrap();
+    state.record_routed(old_super, true);
+    state.record_routed(old_letter, true);
+    state.record_routed(new_letter, true);
 
     let mut releases = Vec::new();
     state.copy_surface_keys(old_super.surface, &mut releases);
@@ -152,8 +152,8 @@ fn client_key_state_copies_all_surfaces_for_session_shutdown() {
     let mut state = SessionClientKeyState::default();
     let first = pressed_key(1, 29);
     let second = pressed_key(2, 56);
-    state.record_routed(first, true).unwrap();
-    state.record_routed(second, true).unwrap();
+    state.record_routed(first, true);
+    state.record_routed(second, true);
 
     let mut snapshot = Vec::new();
     state.copy_all_keys(&mut snapshot);
@@ -167,22 +167,34 @@ fn client_key_state_suppresses_orphan_release_and_is_bounded() {
     let mut state = SessionClientKeyState::default();
     let orphan = pressed_key(1, 30);
     assert!(!state.release_is_routable(orphan));
-    state.record_routed(orphan, false).unwrap();
+    state.record_routed(orphan, false);
     assert_eq!(state.metrics().orphan_releases_suppressed, 1);
 
     for keycode in 1..=SESSION_CLIENT_PRESSED_KEY_CAPACITY {
-        state
-            .record_routed(pressed_key(1, keycode as u32), true)
-            .unwrap();
+        assert_eq!(
+            state.record_routed(pressed_key(1, keycode as u32), true),
+            SessionPressedKeyAdmission::Recorded
+        );
     }
-    assert!(state.record_routed(pressed_key(2, 999), true).is_err());
+    // Saturation is reported rather than raised. No hand holds this many keys,
+    // so reaching the bound means releases were already lost, and the caller
+    // answers that by closing the endpoint epoch and flushing what is held.
+    assert_eq!(
+        state.record_routed(pressed_key(2, 999), true),
+        SessionPressedKeyAdmission::Saturated
+    );
+    // A key already recorded is not a new occupant, so it never saturates.
+    assert_eq!(
+        state.record_routed(pressed_key(1, 1), true),
+        SessionPressedKeyAdmission::AlreadyPressed
+    );
 }
 
 #[test]
 fn state_only_release_retires_key_from_a_removed_surface() {
     let mut state = SessionClientKeyState::default();
     let key = pressed_key(4, 28);
-    state.record_routed(key, true).unwrap();
+    state.record_routed(key, true);
     state.record_state_only_release(key);
     assert_eq!(state.pending_len(), 0);
     assert_eq!(state.metrics().state_only_releases, 1);

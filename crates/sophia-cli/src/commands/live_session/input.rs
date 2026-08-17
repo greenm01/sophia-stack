@@ -726,7 +726,7 @@ fn route_input_events_with_pointer_focus(
                                     keycode: modifier_keycode,
                                 },
                                 false,
-                            )?;
+                            );
                             report.keys_routed = report.keys_routed.saturating_add(1);
                             report.key_targets.push(target_surface);
                             report.virtual_terminal_modifier_releases = report
@@ -834,7 +834,7 @@ fn route_input_events_with_pointer_focus(
                     keycode,
                 };
                 if !pressed && !client_keys.release_is_routable(key) {
-                    client_keys.record_routed(key, false)?;
+                    client_keys.record_routed(key, false);
                     continue;
                 }
                 let evdev_keycode = keycode;
@@ -896,7 +896,11 @@ fn route_input_events_with_pointer_focus(
                 )? {
                     continue;
                 }
-                client_keys.record_routed(key, pressed)?;
+                if client_keys.record_routed(key, pressed).is_saturated() {
+                    report.ingress_saturation.ledger_discarded =
+                        report.ingress_saturation.ledger_discarded.saturating_add(1);
+                    continue;
+                }
                 if pressed {
                     match key_repeat.arm(
                         KeyRepeatTarget {

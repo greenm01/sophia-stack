@@ -981,7 +981,7 @@ fn closing_surface_clears_pressed_keys_without_client_delivery_barrier() {
         keycode: 125,
     };
     let mut client_keys = SessionClientKeyState::default();
-    client_keys.record_routed(key, true).unwrap();
+    client_keys.record_routed(key, true);
     let mut scratch = Vec::new();
     let mut modifiers = XCoreKeyboardMapper::new();
     let (input_sender, input_receiver) = sync_channel(1);
