@@ -21,8 +21,10 @@ use sophia_wm_demo::{PolicyV1Client, partition_policy_scene_across_outputs, tile
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 #[test]
-fn reference_policy_tiles_only_the_complete_affected_output() {
+fn reference_policy_adopts_unassigned_surfaces_on_the_active_affected_output() {
     let output = OutputId::from_raw(1);
+    let mut minimized = surface(4, None);
+    minimized.current_state.minimized = true;
     let scene = PolicySceneSnapshot {
         generation: 4,
         active_output: output,
@@ -47,6 +49,7 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
             surface(1, Some(output)),
             surface(2, Some(output)),
             surface(3, None),
+            minimized,
         ],
         session_operations: Vec::new(),
     };
@@ -62,10 +65,80 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
     let proposal = tile_policy_scene(TransactionId::from_raw(9), &scene, &request).unwrap();
 
     assert_eq!(proposal.outputs.len(), 1);
-    assert_eq!(proposal.outputs[0].placements.len(), 2);
-    assert_eq!(proposal.outputs[0].placements[0].geometry.width, 50);
-    assert_eq!(proposal.outputs[0].placements[1].geometry.width, 51);
+    assert_eq!(proposal.outputs[0].placements.len(), 3);
+    assert_eq!(proposal.outputs[0].placements[0].geometry.width, 33);
+    assert_eq!(proposal.outputs[0].placements[1].geometry.width, 33);
+    assert_eq!(proposal.outputs[0].placements[2].geometry.width, 35);
     assert_eq!(proposal.outputs[0].focus, Some(SurfaceId::new(1, 1)));
+}
+
+#[test]
+fn reference_policy_never_duplicates_unassigned_surfaces_across_outputs() {
+    let left = OutputId::from_raw(1);
+    let right = OutputId::from_raw(2);
+    let scene = PolicySceneSnapshot {
+        generation: 4,
+        active_output: right,
+        outputs: vec![
+            PolicyOutputSnapshot {
+                output: left,
+                generation: 1,
+                focus: None,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 80,
+                },
+                work_area: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 80,
+                },
+            },
+            PolicyOutputSnapshot {
+                output: right,
+                generation: 1,
+                focus: None,
+                bounds: Rect {
+                    x: 100,
+                    y: 0,
+                    width: 100,
+                    height: 80,
+                },
+                work_area: Rect {
+                    x: 100,
+                    y: 0,
+                    width: 100,
+                    height: 80,
+                },
+            },
+        ],
+        surfaces: vec![surface(1, Some(left)), surface(2, None)],
+        session_operations: Vec::new(),
+    };
+    let request = PolicyProjectionRequest {
+        connection_epoch: 7,
+        request_id: 8,
+        scene_generation: 4,
+        policy_generation: 1,
+        affected_outputs: vec![left, right],
+        cause: PolicyRequestCause::SceneChanged,
+    };
+
+    let proposal = tile_policy_scene(TransactionId::from_raw(9), &scene, &request).unwrap();
+
+    assert_eq!(proposal.outputs[0].placements.len(), 1);
+    assert_eq!(
+        proposal.outputs[0].placements[0].surface,
+        SurfaceId::new(1, 1)
+    );
+    assert_eq!(proposal.outputs[1].placements.len(), 1);
+    assert_eq!(
+        proposal.outputs[1].placements[0].surface,
+        SurfaceId::new(2, 1)
+    );
 }
 
 #[test]

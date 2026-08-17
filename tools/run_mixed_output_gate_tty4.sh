@@ -129,6 +129,8 @@ set +e
         --session-app-arg=mirror=NONE \
         --session-app-arg=mirror=--override \
         --session-app-arg=mirror=linux_display_server=x11 \
+        --session-app-arg=mirror=--override \
+        --session-app-arg=mirror=cursor_blink_interval=0 \
         --session-app-arg=mirror=sh \
         --session-app-arg=mirror=-lc \
         --session-app-arg=mirror='printf "SOPHIA MIXED NATIVE SHARP AaZz 0123456789\n"; exec sh -i' \
@@ -139,6 +141,8 @@ set +e
         --session-app-arg=proof=NONE \
         --session-app-arg=proof=--override \
         --session-app-arg=proof=linux_display_server=x11 \
+        --session-app-arg=proof=--override \
+        --session-app-arg=proof=cursor_blink_interval=0 \
         --session-app-arg=proof=sh \
         --session-app-arg=proof=-lc \
         --session-app-arg=proof='printf "SOPHIA MIXED NATIVE SHARP AaZz 0123456789\n"; exec sh -i' \
@@ -161,6 +165,7 @@ fi
 
 for required in \
     '^sophia_output_v1_reference schema=1 status=settled kind=Committed topology_epoch=[0-9]+ heads=3 groups=2$' \
+    '^sophia_wm_v1_reference schema=1 status=settled outputs=2 surfaces=2 placement=1,1$' \
     'sophia_live_output_authority schema=2 status=committed .* outputs=2 ' \
     '^sophia_live_output_topology_health schema=1 status=clean quarantined=false$' \
     '^sophia_live_session_health schema=1 status=clean '; do

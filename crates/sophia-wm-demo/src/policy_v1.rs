@@ -300,7 +300,10 @@ impl PolicyV1Client {
     }
 }
 
-/// Places each affected output's currently assigned surfaces in equal columns.
+/// Places each affected output's surfaces in equal columns. Newly mapped
+/// surfaces are adopted by the active affected output exactly once, so a
+/// policy client cannot leave them permanently unassigned while repeatedly
+/// committing an empty layout.
 pub fn tile_policy_scene(
     transaction: TransactionId,
     scene: &PolicySceneSnapshot,
@@ -316,6 +319,12 @@ pub fn tile_policy_scene(
     {
         return Err(PolicyV1ClientError::InvalidScene);
     }
+    let adoption_output = request
+        .affected_outputs
+        .iter()
+        .copied()
+        .find(|output| *output == scene.active_output)
+        .unwrap_or(request.affected_outputs[0]);
     let mut outputs = Vec::with_capacity(request.affected_outputs.len());
     for output_id in &request.affected_outputs {
         let output = scene
@@ -326,7 +335,12 @@ pub fn tile_policy_scene(
         let surfaces = scene
             .surfaces
             .iter()
-            .filter(|surface| surface.current_output == Some(*output_id))
+            .filter(|surface| {
+                surface.current_output == Some(*output_id)
+                    || (surface.current_output.is_none()
+                        && !surface.current_state.minimized
+                        && *output_id == adoption_output)
+            })
             .collect::<Vec<_>>();
         let mut placements = Vec::with_capacity(surfaces.len());
         let mut focus = output.focus;

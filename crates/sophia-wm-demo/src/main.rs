@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .spawn(move || {
                 let result = (|| -> Result<_, sophia_wm_demo::OutputV1ClientError> {
                     output_start_receiver
-                        .recv_timeout(std::time::Duration::from_secs(4))
+                        .recv_timeout(std::time::Duration::from_secs(10))
                         .map_err(|_| {
                             sophia_wm_demo::OutputV1ClientError::InvalidProofTopology(
                                 "proof surfaces did not become ready",
@@ -45,46 +45,78 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::time::Duration::from_secs(4),
         )?;
         policy.activate_profile_and_configure()?;
-        let mut output_settled = false;
         let mut output_started = false;
+        let mut output_settled = false;
         loop {
             let snapshot = policy.receive_snapshot()?;
-            if !output_started && snapshot.scene.surfaces.len() >= 2 {
-                output_start_sender
-                    .send(())
-                    .map_err(|_| "output reference client start barrier disconnected")?;
-                output_started = true;
-            }
+            let proof_surfaces_placed = snapshot
+                .scene
+                .surfaces
+                .iter()
+                .filter(|surface| surface.current_output.is_some())
+                .count()
+                >= 2;
             let request = policy.receive_projection_request()?;
             // Once the physical role has formed two logical groups, partition
             // proof surfaces through policy-visible geometry alone. Connector
             // labels used by the output role never enter blind policy.
             let mut scene = snapshot.scene;
-            if scene.outputs.len() == 2 {
+            let partitioned = scene.outputs.len() == 2
+                && scene
+                    .outputs
+                    .iter()
+                    .all(|output| request.affected_outputs.contains(&output.output));
+            if partitioned {
                 let mut relocated = scene.clone();
-                let rightmost =
-                    sophia_wm_demo::partition_policy_scene_across_outputs(&mut relocated)?;
-                if request.affected_outputs.contains(&rightmost) {
-                    scene = relocated;
-                }
+                sophia_wm_demo::partition_policy_scene_across_outputs(&mut relocated)?;
+                scene = relocated;
             }
             let proposal = policy.tile_once(&scene, &request)?;
             policy.send_projection(&proposal)?;
-            let _ = policy.receive_projection_outcome(&proposal)?;
-            if !output_settled {
-                match output_result_receiver.try_recv() {
-                    Ok(Ok(outcome)) => {
-                        debug_assert_eq!(
-                            outcome.kind,
-                            sophia_protocol::OutputV1OutcomeKind::Committed
-                        );
-                        output_settled = true;
-                    }
-                    Ok(Err(error)) => return Err(error.into()),
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        return Err("output reference client disconnected without a result".into());
-                    }
+            let projection_outcome = policy.receive_projection_outcome(&proposal)?;
+            if projection_outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
+                return Err(format!(
+                    "policy reference projection did not commit: {projection_outcome:?}"
+                )
+                .into());
+            }
+            if !output_started && proof_surfaces_placed {
+                output_start_sender
+                    .send(())
+                    .map_err(|_| "output reference client start barrier disconnected")?;
+                output_started = true;
+                // Do not generate another layout commit while native scanout
+                // drains and the output transaction prepares its first frames.
+                // The output role has bounded socket and retry timeouts, so this
+                // pause cannot strand the policy client indefinitely.
+                let outcome = output_result_receiver
+                    .recv_timeout(std::time::Duration::from_secs(8))
+                    .map_err(|_| "output reference client did not settle before its deadline")??;
+                debug_assert_eq!(
+                    outcome.kind,
+                    sophia_protocol::OutputV1OutcomeKind::Committed
+                );
+                output_settled = true;
+            }
+            if output_settled && partitioned {
+                let placement_counts = proposal
+                    .outputs
+                    .iter()
+                    .map(|output| output.placements.len())
+                    .collect::<Vec<_>>();
+                if placement_counts != [1, 1] {
+                    return Err(format!(
+                        "mixed proof did not place one surface on each logical output: {placement_counts:?}"
+                    )
+                    .into());
+                }
+                println!(
+                    "sophia_wm_v1_reference schema=1 status=settled outputs=2 surfaces=2 placement=1,1"
+                );
+                // The proof policy is now stable. Leave the process alive for
+                // visual inspection without creating no-op projection traffic.
+                loop {
+                    std::thread::park();
                 }
             }
         }
