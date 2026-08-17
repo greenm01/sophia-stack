@@ -1,0 +1,8 @@
+schema 1
+
+// This physical proof exercises output authority, not desktop bindings. An
+// empty named shortcut profile lets the reference WM install its deliberately
+// empty action catalog without weakening the production profile.
+shortcut {
+  profile "mixed-output-proof"
+}

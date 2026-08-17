@@ -690,9 +690,13 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
 }
 
 #[test]
-fn mixed_output_gate_apps_satisfy_compiled_shortcut_capabilities() {
+fn mixed_output_gate_apps_satisfy_probe_profile() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let core = root.join("tools/config/sophia-xmonad/core.kdl");
+    let desktop = root.join("tools/fixtures/mixed_output_probe.kdl");
     let config = PersistentXtermSessionConfig::from_args(&[
-        "--no-config".to_owned(),
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", desktop.display()),
         "--session-mode=normal".to_owned(),
         "--session-app=mirror=/usr/bin/kitty".to_owned(),
         "--session-start=mirror".to_owned(),
@@ -706,6 +710,7 @@ fn mixed_output_gate_apps_satisfy_compiled_shortcut_capabilities() {
     ])
     .unwrap();
 
+    assert!(config.shortcut_profile_candidate.bindings.is_empty());
     assert_eq!(
         config
             .application_for_action(WmSessionAction::LaunchApplication {

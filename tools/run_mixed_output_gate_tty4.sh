@@ -16,6 +16,8 @@ RUNTIME_MSEC="${SOPHIA_MIXED_RUNTIME_MSEC:-30000}"
 DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
 EVIDENCE="${SOPHIA_MIXED_EVIDENCE:-/tmp/sophia-mixed-output.log}"
 TTY_REQUIRED="${SOPHIA_MIXED_TTY:-/dev/tty4}"
+CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
+DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl"
 
 # shellcheck source=tools/lib/drm_master_guard.sh
 . "$ROOT_DIR/tools/lib/drm_master_guard.sh"
@@ -28,6 +30,10 @@ if [[ "$MIRROR_PRIMARY" == "$MIRROR_MEMBER" \
 fi
 if [[ "$KITTY_BIN" != /* || ! -x "$KITTY_BIN" ]]; then
     echo "Set SOPHIA_MIXED_KITTY to an absolute executable Kitty path." >&2
+    exit 2
+fi
+if [[ ! -r "$CORE_CONFIG" || ! -r "$DESKTOP_PROFILE" ]]; then
+    echo "The mixed-output proof configuration is missing from the signed tree." >&2
     exit 2
 fi
 if [[ ! "$RUNTIME_MSEC" =~ ^[0-9]+$ ]] || (( RUNTIME_MSEC < 15000 )); then
@@ -108,7 +114,8 @@ set +e
         "$sophia_bin" sophia-live-session \
         --display="$DISPLAY_NAME" \
         --native-scanout \
-        --no-config \
+        --config="$CORE_CONFIG" \
+        --desktop-profile="$DESKTOP_PROFILE" \
         --session-mode=normal \
         --session-app=mirror="$KITTY_BIN" \
         --session-start=mirror \
