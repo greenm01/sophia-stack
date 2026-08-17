@@ -10,10 +10,10 @@ use sophia_protocol::{
     OutputTopologyIntent, OutputTransform, OutputV1ClientHello, OutputV1Outcome,
     OutputV1OutcomeKind, OutputV1Proposal, OutputVrrPolicy, Rect, SOPHIA_IPC_HEADER_LEN,
     SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION, TransactionId,
-    decode_output_v1_outcome_frame, decode_output_v1_server_welcome_frame,
-    decode_output_v1_snapshot_frame, encode_output_v1_client_hello_frame,
-    encode_output_v1_proposal_frame,
+    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION,
+    SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION, TransactionId, decode_output_v1_outcome_frame,
+    decode_output_v1_server_welcome_frame, decode_output_v1_snapshot_frame,
+    encode_output_v1_client_hello_frame, encode_output_v1_proposal_frame,
 };
 
 #[derive(Debug)]
@@ -167,6 +167,31 @@ impl OutputV1Client {
             return Err(OutputV1ClientError::ConnectionEpochMismatch);
         }
         Ok(outcome)
+    }
+
+    /// Retries only the typed preparation rejection used when startup frames
+    /// still own scanout resources. Every other terminal outcome is final.
+    pub fn submit_with_preparation_retry(
+        &mut self,
+        candidate: OutputTopologyCandidate,
+        snapshot: &OutputAuthoritySnapshot,
+    ) -> Result<OutputV1Outcome, OutputV1ClientError> {
+        const MAX_ATTEMPTS: usize = 16;
+        const RETRY_DELAY: Duration = Duration::from_millis(100);
+
+        for attempt in 0..MAX_ATTEMPTS {
+            let outcome = self.submit(candidate.clone(), snapshot)?;
+            if outcome.kind == OutputV1OutcomeKind::Committed {
+                return Ok(outcome);
+            }
+            let retryable = outcome.kind == OutputV1OutcomeKind::Rejected
+                && outcome.reason == SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION;
+            if !retryable || attempt + 1 == MAX_ATTEMPTS {
+                return Err(OutputV1ClientError::NonCommittedOutcome(outcome.kind));
+            }
+            std::thread::sleep(RETRY_DELAY);
+        }
+        unreachable!("bounded output submission loop returns on every attempt")
     }
 
     pub const fn connection_epoch(&self) -> u64 {

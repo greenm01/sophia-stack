@@ -8,7 +8,8 @@ use sophia_protocol::{
     OutputHeadMapping, OutputLogicalGroupState, OutputModeDescriptor, OutputTransformSet,
     OutputV1Outcome, OutputV1OutcomeKind, OutputV1ServerWelcome, OutputV1Snapshot, OutputVrrPolicy,
     Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION, Size, TransactionId,
+    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION,
+    SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION, Size, TransactionId,
     decode_output_v1_client_hello_frame, decode_output_v1_proposal_frame,
     encode_output_v1_outcome_frame, encode_output_v1_server_welcome_frame,
     encode_output_v1_snapshot_frame,
@@ -114,27 +115,38 @@ fn output_client_negotiates_snapshot_and_committed_candidate() {
                 .unwrap(),
             )
             .unwrap();
-        let (transaction, proposal) =
-            decode_output_v1_proposal_frame(&read_frame(&mut stream)).unwrap();
-        proposal
-            .candidate
-            .validate_against(&served_snapshot)
-            .unwrap();
-        assert_eq!(proposal.candidate.groups.len(), 2);
-        stream
-            .write_all(
-                &encode_output_v1_outcome_frame(
-                    transaction,
-                    OutputV1Outcome {
-                        connection_epoch: 9,
-                        topology_epoch: 5,
-                        kind: OutputV1OutcomeKind::Committed,
-                        reason: 0,
-                    },
+        for attempt in 0..2 {
+            let (transaction, proposal) =
+                decode_output_v1_proposal_frame(&read_frame(&mut stream)).unwrap();
+            proposal
+                .candidate
+                .validate_against(&served_snapshot)
+                .unwrap();
+            assert_eq!(proposal.candidate.groups.len(), 2);
+            let (kind, reason, topology_epoch) = if attempt == 0 {
+                (
+                    OutputV1OutcomeKind::Rejected,
+                    SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION,
+                    4,
                 )
-                .unwrap(),
-            )
-            .unwrap();
+            } else {
+                (OutputV1OutcomeKind::Committed, 0, 5)
+            };
+            stream
+                .write_all(
+                    &encode_output_v1_outcome_frame(
+                        transaction,
+                        OutputV1Outcome {
+                            connection_epoch: 9,
+                            topology_epoch,
+                            kind,
+                            reason,
+                        },
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
     });
 
     let mut client = OutputV1Client::connect(&socket, Duration::from_secs(1)).unwrap();
@@ -143,7 +155,9 @@ fn output_client_negotiates_snapshot_and_committed_candidate() {
     assert_eq!(snapshot, expected_snapshot);
     let candidate =
         mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3").unwrap();
-    let outcome = client.submit(candidate, &snapshot).unwrap();
+    let outcome = client
+        .submit_with_preparation_retry(candidate, &snapshot)
+        .unwrap();
     assert_eq!(outcome.kind, OutputV1OutcomeKind::Committed);
     assert_eq!(outcome.topology_epoch, 5);
 

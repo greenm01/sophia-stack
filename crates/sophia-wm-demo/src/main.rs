@@ -11,10 +11,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let output_socket = std::env::var("SOPHIA_OUTPUT_SOCKET")?;
         let labels = [args[1].clone(), args[2].clone(), args[3].clone()];
         let (output_result_sender, output_result_receiver) = std::sync::mpsc::sync_channel(1);
+        let (output_start_sender, output_start_receiver) = std::sync::mpsc::sync_channel(1);
         let _output_thread = std::thread::Builder::new()
             .name("sophia-output-v1-reference".to_owned())
             .spawn(move || {
                 let result = (|| -> Result<_, sophia_wm_demo::OutputV1ClientError> {
+                    output_start_receiver
+                        .recv_timeout(std::time::Duration::from_secs(4))
+                        .map_err(|_| {
+                            sophia_wm_demo::OutputV1ClientError::InvalidProofTopology(
+                                "proof surfaces did not become ready",
+                            )
+                        })?;
                     let mut client = sophia_wm_demo::OutputV1Client::connect(
                         output_socket,
                         std::time::Duration::from_secs(4),
@@ -23,12 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let candidate = sophia_wm_demo::mixed_mirror_extended_candidate(
                         &snapshot, &labels[0], &labels[1], &labels[2],
                     )?;
-                    let outcome = client.submit(candidate, &snapshot)?;
-                    if outcome.kind != sophia_protocol::OutputV1OutcomeKind::Committed {
-                        return Err(sophia_wm_demo::OutputV1ClientError::NonCommittedOutcome(
-                            outcome.kind,
-                        ));
-                    }
+                    let outcome = client.submit_with_preparation_retry(candidate, &snapshot)?;
                     println!(
                         "sophia_output_v1_reference schema=1 status=settled kind={:?} topology_epoch={} heads=3 groups=2",
                         outcome.kind, outcome.topology_epoch,
@@ -43,8 +46,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         policy.activate_profile_and_configure()?;
         let mut output_settled = false;
+        let mut output_started = false;
         loop {
             let snapshot = policy.receive_snapshot()?;
+            if !output_started && snapshot.scene.surfaces.len() >= 2 {
+                output_start_sender
+                    .send(())
+                    .map_err(|_| "output reference client start barrier disconnected")?;
+                output_started = true;
+            }
             let request = policy.receive_projection_request()?;
             // Once the physical role has formed two logical groups, partition
             // proof surfaces through policy-visible geometry alone. Connector

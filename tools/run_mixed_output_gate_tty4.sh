@@ -190,14 +190,15 @@ if (( ${#extended_ready[@]} != 1 )); then
     exit 1
 fi
 extended_head="$(sed -n 's/.* head=\([0-9][0-9]*\) .*/\1/p' <<<"${extended_ready[0]}")"
-preparation_line="$(grep -nEm1 'sophia_live_output_authority schema=2 status=resource_preparation_started ' "$EVIDENCE" | cut -d: -f1)"
-first_presented_line="$(grep -nEm1 'sophia_live_output_authority schema=2 status=first_presented ' "$EVIDENCE" | cut -d: -f1)"
-if [[ -z "$extended_head" || -z "$preparation_line" || -z "$first_presented_line" \
-    || "$preparation_line" -ge "$first_presented_line" ]]; then
+committed_transaction="$(sed -n 's/.*sophia_live_output_authority schema=2 status=committed transaction=\([0-9][0-9]*\) .*/\1/p' "$EVIDENCE" | tail -n1)"
+effect_line="$(grep -nE "sophia_live_output_authority schema=1 status=effect_pending transaction=$committed_transaction " "$EVIDENCE" | tail -n1 | cut -d: -f1)"
+first_presented_line="$(grep -nEm1 "sophia_live_output_authority schema=2 status=first_presented transaction=$committed_transaction " "$EVIDENCE" | cut -d: -f1)"
+if [[ -z "$extended_head" || -z "$committed_transaction" || -z "$effect_line" \
+    || -z "$first_presented_line" || "$effect_line" -ge "$first_presented_line" ]]; then
     echo "Mixed-output first-presentation ordering is incomplete." >&2
     exit 1
 fi
-sed -n "${preparation_line},${first_presented_line}p" "$EVIDENCE" \
+sed -n "${effect_line},${first_presented_line}p" "$EVIDENCE" \
     | grep -Eq "sophia_live_head_composition_plan schema=1 status=ready .* head=$extended_head .* mapping=exact exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 " || {
         echo "The extended head did not prepare an exact, unsampled first frame." >&2
         exit 1
