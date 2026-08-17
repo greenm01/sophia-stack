@@ -825,9 +825,14 @@ Detailed physical-run diagnoses remain in
   configuration, then partitions two proof surfaces across the resulting logical
   outputs using only policy-visible geometry; connector labels never cross into
   blind policy. `tools/run_mixed_output_gate_tty4.sh` retains signed source and
-  binary identity and arms the real modeset only from a recovery-safe TTY. The
-  physical run, archive verifier, head-loss phase, and visible-pixel acceptance
-  remain open; the present host has only two connected heads.
+  binary identity and arms the real modeset only from a recovery-safe TTY. One
+  client proposal now waits behind an owner-local two-second frame-quiescence
+  barrier; ordinary authority and policy intake remain queued while the native
+  owner drains existing frames. The evidence verifier accepts an empty first
+  DP-2 topology frame, then requires the later exact active DP-2 frame after
+  blind policy partitions the two surfaces, correlated through queue, submit,
+  callback, and retirement. The physical rerun, archive verifier, head-loss
+  phase, and visible-pixel acceptance remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

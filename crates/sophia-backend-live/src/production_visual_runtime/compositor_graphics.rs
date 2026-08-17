@@ -104,8 +104,10 @@ impl LiveProductionVisualRuntime {
             .in_flight_candidate()
             .unwrap_or_else(|| self.production.committed_surfaces())
             .to_vec();
-        let display_list = self.display_list(&committed, &self.presentation_order)?;
-        let cpu_layers = scene.presentation_variant_layers(&committed, &self.presentation_order);
+        let retained_order =
+            live_production_retained_surface_order(&self.presentation_order, &committed);
+        let display_list = self.display_list(&committed, &retained_order)?;
+        let cpu_layers = scene.presentation_variant_layers(&committed, &retained_order);
         let in_flight = self.present_scheduler.in_flight_displayed_layer();
         let mut sources = Vec::new();
         for command in &display_list.commands {
@@ -116,7 +118,7 @@ impl LiveProductionVisualRuntime {
                 .iter()
                 .find(|state| state.surface == *surface)
                 .map(CommittedSurfaceState::buffer)
-                .ok_or("retained head plan lost a displayed surface")?;
+                .ok_or("retained display list escaped committed Engine membership")?;
             if let Some((_, displayed)) =
                 in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == *surface)
             {

@@ -1,5 +1,9 @@
 {
-    if layout.constraint_relayout_required()
+    if active_output_topology_preparation.is_none()
+        && wm_session
+            .as_ref()
+            .is_none_or(|wm| !wm.output_topology_effect_pending())
+        && layout.constraint_relayout_required()
         && layout.pending.is_none()
         && let Some(wm) = wm_session.as_mut()
     {
@@ -14,6 +18,7 @@
     }
     if let Some(wm) = wm_session.as_mut() {
         let _ = wm.poll_restart(&mut layout, output)?;
+        wm.poll_output_authority()?;
         if let Some(mut execution) = active_output_topology_preparation.take() {
             // Keep a recovery copy in owner state across every fallible effect.
             // Normal progress overwrites or clears it below; an early `?`
@@ -24,8 +29,14 @@
                 .as_mut()
                 .ok_or("output topology preparation lost its native owner")?;
             let mut retain_execution = true;
-            if let Some(reason) = wm.output_topology_cancellation_reason(transaction) {
+            let cancellation_reason = wm.output_topology_cancellation_reason(transaction);
+            if let Some(reason) = cancellation_reason.as_ref()
+                && execution.phase != LiveOutputTopologyExecutionPhase::WaitingForQuiescence
+            {
                 match execution.phase {
+                    LiveOutputTopologyExecutionPhase::WaitingForQuiescence => {
+                        unreachable!("waiting cancellation is reduced below")
+                    }
                     LiveOutputTopologyExecutionPhase::Preparing => {
                         if !native.request_abort_output_topology_preparation(reason.clone()) {
                             return Err("output cancellation lost native preparation state".into());
@@ -81,6 +92,109 @@
                 );
             }
             match execution.phase {
+                LiveOutputTopologyExecutionPhase::WaitingForQuiescence => {
+                    use sophia_cli::live_output_authority::{
+                        OutputTopologyPreparationWaitDecision as Decision,
+                        OutputTopologyPreparationWaitObservation as Observation,
+                        reduce_output_topology_preparation_wait,
+                    };
+                    let ordinary_settlement_idle = pending_wm_update.is_none()
+                        && layout.pending.is_none()
+                        && wm.ordinary_policy_settlement_idle();
+                    let decision = reduce_output_topology_preparation_wait(Observation {
+                        cancellation_requested: cancellation_reason.is_some(),
+                        ordinary_settlement_idle,
+                        native_quiescent: native.output_topology_preparation_quiescent(),
+                        deadline_reached: Instant::now() >= execution.preparation_deadline,
+                    });
+                    match decision {
+                        Decision::Cancel => {
+                            wm.reject_output_topology_effect(
+                                transaction,
+                                sophia_engine::OutputTopologyTransactionFailure::Stale,
+                            )?;
+                            output_topology_owner.cancel_policy_change()?;
+                            retain_execution = false;
+                            tracing::warn!(
+                                "sophia_live_output_authority schema=2 status=cancellation_observed transaction={} phase=WaitingForQuiescence reason={:?} published=false",
+                                transaction.raw(),
+                                cancellation_reason.as_deref().unwrap_or("cancelled"),
+                            );
+                        }
+                        Decision::Begin => {
+                            let preparation = (|| -> Result<_, Box<dyn std::error::Error>> {
+                                let plan = native.plan_output_topology(&execution.effect.resolved)?;
+                                let rollback = native.published_output_topology(
+                                    &execution.effect.published_snapshot,
+                                )?;
+                                let runtime = runtime.as_ref().ok_or(
+                                    "output authority effect has no visual runtime",
+                                )?;
+                                let candidate_frames = runtime.compose_output_topology_head_frames(
+                                    &scene,
+                                    &execution.effect.resolved,
+                                    execution.effect.candidate_topology_epoch,
+                                )?;
+                                let rollback_frames = runtime.compose_output_topology_head_frames(
+                                    &scene,
+                                    &rollback,
+                                    execution.effect.candidate_topology_epoch,
+                                )?;
+                                let heads = plan.heads.len();
+                                let outputs = plan.outputs.len();
+                                let report = native.begin_output_topology_preparation(
+                                    plan,
+                                    rollback,
+                                    candidate_frames,
+                                    rollback_frames,
+                                )?;
+                                Ok((heads, outputs, report))
+                            })();
+                            match preparation {
+                                Ok((heads, outputs, report)) => {
+                                    execution.phase = LiveOutputTopologyExecutionPhase::Preparing;
+                                    tracing::info!(
+                                        "sophia_live_output_authority schema=2 status=resource_preparation_started transaction={} base_epoch={} candidate_epoch={} heads={} outputs={} phase={:?} candidate_prepared={} rollback_prepared={} kms_submits=0 published=false input=quarantined",
+                                        transaction.raw(),
+                                        execution.effect.base_topology_epoch,
+                                        execution.effect.candidate_topology_epoch,
+                                        heads,
+                                        outputs,
+                                        report.phase,
+                                        report.candidate_prepared,
+                                        report.rollback_prepared,
+                                    );
+                                }
+                                Err(error) => {
+                                    wm.reject_output_topology_effect(
+                                        transaction,
+                                        sophia_engine::OutputTopologyTransactionFailure::Preparation,
+                                    )?;
+                                    output_topology_owner.cancel_policy_change()?;
+                                    retain_execution = false;
+                                    tracing::warn!(
+                                        "sophia_live_output_authority schema=2 status=resource_preparation_rejected transaction={} error={error} kms_submits=0 published=false",
+                                        transaction.raw(),
+                                    );
+                                }
+                            }
+                        }
+                        Decision::TimedOut => {
+                            wm.reject_output_topology_effect(
+                                transaction,
+                                sophia_engine::OutputTopologyTransactionFailure::Preparation,
+                            )?;
+                            output_topology_owner.cancel_policy_change()?;
+                            retain_execution = false;
+                            tracing::warn!(
+                                "sophia_live_output_authority schema=2 status=quiescence_timed_out transaction={} timeout_msec={} kms_submits=0 preserved_topology=true",
+                                transaction.raw(),
+                                OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT.as_millis(),
+                            );
+                        }
+                        Decision::Wait => {}
+                    }
+                }
                 LiveOutputTopologyExecutionPhase::Preparing => {
                     let report = native.service_output_topology_preparation()?;
                     tracing::info!(
@@ -511,6 +625,9 @@
             }
         }
         if active_output_topology_preparation.is_none()
+            && pending_wm_update.is_none()
+            && layout.pending.is_none()
+            && wm.ordinary_policy_settlement_idle()
             && let Some(effect) = wm.take_output_topology_effect()
         {
             if output_topology_owner.begin_policy_change()? {
@@ -551,67 +668,18 @@
                     application_route_leases.control_epoch(),
                 );
             }
-            let preparation = (|| -> Result<_, Box<dyn std::error::Error>> {
-                let native = native_scanout
-                    .as_mut()
-                    .ok_or("output authority effect has no native scanout owner")?;
-                let plan = native.plan_output_topology(&effect.resolved)?;
-                let rollback = native.published_output_topology(&effect.published_snapshot)?;
-                let runtime = runtime
-                    .as_ref()
-                    .ok_or("output authority effect has no visual runtime")?;
-                let candidate_frames = runtime.compose_output_topology_head_frames(
-                    &scene,
-                    &effect.resolved,
-                    effect.candidate_topology_epoch,
-                )?;
-                let rollback_frames = runtime.compose_output_topology_head_frames(
-                    &scene,
-                    &rollback,
-                    effect.candidate_topology_epoch,
-                )?;
-                let heads = plan.heads.len();
-                let outputs = plan.outputs.len();
-                let report = native.begin_output_topology_preparation(
-                    plan,
-                    rollback,
-                    candidate_frames,
-                    rollback_frames,
-                )?;
-                Ok((heads, outputs, report))
-            })();
-            match preparation {
-                Ok((heads, outputs, report)) => {
-                    active_output_topology_preparation = Some(LiveOutputTopologyExecution {
-                        effect: effect.clone(),
-                        phase: LiveOutputTopologyExecutionPhase::Preparing,
-                        first_frames: BTreeMap::new(),
-                        frontend_candidate_published: false,
-                    });
-                    tracing::info!(
-                        "sophia_live_output_authority schema=2 status=resource_preparation_started transaction={} base_epoch={} candidate_epoch={} heads={} outputs={} phase={:?} candidate_prepared={} rollback_prepared={} kms_submits=0 published=false input=quarantined",
-                        effect.transaction.raw(),
-                        effect.base_topology_epoch,
-                        effect.candidate_topology_epoch,
-                        heads,
-                        outputs,
-                        report.phase,
-                        report.candidate_prepared,
-                        report.rollback_prepared,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        "sophia_live_output_authority schema=1 status=resource_preparation_failed transaction={} error={error} kms_submits=0 preserved_topology=true",
-                        effect.transaction.raw(),
-                    );
-                    wm.reject_output_topology_effect(
-                        effect.transaction,
-                        sophia_engine::OutputTopologyTransactionFailure::Preparation,
-                    )?;
-                    output_topology_owner.cancel_policy_change()?;
-                }
-            }
+            active_output_topology_preparation = Some(LiveOutputTopologyExecution {
+                effect: effect.clone(),
+                phase: LiveOutputTopologyExecutionPhase::WaitingForQuiescence,
+                preparation_deadline: Instant::now() + OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT,
+                first_frames: BTreeMap::new(),
+                frontend_candidate_published: false,
+            });
+            tracing::info!(
+                "sophia_live_output_authority schema=2 status=waiting_for_quiescence transaction={} timeout_msec={} input=quarantined",
+                effect.transaction.raw(),
+                OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT.as_millis(),
+            );
         }
     }
     synchronize_wm_pointer_epoch!();
@@ -622,26 +690,29 @@
             .unwrap_or(config.surface_chrome_style);
         synchronize_runtime_surface_chrome_style(runtime, style);
     }
-    if pending_wm_update.is_none()
+    if active_output_topology_preparation.is_none()
+        && pending_wm_update.is_none()
         && layout.pending.is_none()
         && let Some(wm) = wm_session.as_mut()
-        && let Some(proposal) = wm.poll_request(&mut layout, output)?
     {
-        let public_projection = proposal
-            .policy_settlement
-            .is_some_and(|settlement| !settlement.session_operation);
-        if public_projection
-            && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::ProposalStaged)
-        {
-            let _ = wm.poll_restart(&mut layout, output)?;
-        } else {
-            let previous_focus = focus.focused_surface(seat);
-            if let Some(result) = layout.stage(proposal, &mut session_controls)? {
-                pending_wm_update = Some(apply_wm_commit_result!(result, previous_focus));
-            } else if public_projection
-                && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::FrontendPending)
+        let allow_new_cycle = !wm.output_topology_effect_pending();
+        if let Some(proposal) = wm.poll_request(&mut layout, output, allow_new_cycle)? {
+            let public_projection = proposal
+                .policy_settlement
+                .is_some_and(|settlement| !settlement.session_operation);
+            if public_projection
+                && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::ProposalStaged)
             {
                 let _ = wm.poll_restart(&mut layout, output)?;
+            } else {
+                let previous_focus = focus.focused_surface(seat);
+                if let Some(result) = layout.stage(proposal, &mut session_controls)? {
+                    pending_wm_update = Some(apply_wm_commit_result!(result, previous_focus));
+                } else if public_projection
+                    && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::FrontendPending)
+                {
+                    let _ = wm.poll_restart(&mut layout, output)?;
+                }
             }
         }
     }

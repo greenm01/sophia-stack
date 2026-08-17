@@ -177,6 +177,11 @@ already applied that request to its private model, so the owner reconciles any
 removed committed surfaces, stops the peer before sending later queued work,
 and reseeds a fresh process from committed Engine state. It never tries to
 continue against the speculative peer state represented by the rejected reply.
+The bundled Rust proof policy is the narrow exception: it is a stateless pure
+projection of each received snapshot and therefore has no speculative model to
+discard. It may consume a fresh snapshot on the same connection after
+`RejectedStale`; this does not relax restart semantics for Hagia, xmonad, or any
+other stateful policy peer.
 
 Owner completion evidence separates child-reap and physical-input phase maxima
 from WM transport round-trip and queue-dwell measurements. A slow policy

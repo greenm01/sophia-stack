@@ -72,6 +72,10 @@ bash -n tools/run_mirror_group_gate_tty4.sh \
     tools/archive_mirror_group_physical_run.sh \
     tools/check_mirror_group_physical_verifier.sh
 tools/check_mirror_group_physical_verifier.sh
+bash -n tools/run_mixed_output_gate_tty4.sh \
+    tools/verify_mixed_output_evidence.sh \
+    tools/test_verify_mixed_output_evidence.sh
+bash tools/test_verify_mixed_output_evidence.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh

@@ -26,6 +26,38 @@ pub const OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION: u16 =
 pub const OUTPUT_OUTCOME_REASON_ROLLBACK: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_ROLLBACK;
 pub const OUTPUT_OUTCOME_REASON_INVARIANT: u16 = SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OutputTopologyPreparationWaitObservation {
+    pub cancellation_requested: bool,
+    pub ordinary_settlement_idle: bool,
+    pub native_quiescent: bool,
+    pub deadline_reached: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OutputTopologyPreparationWaitDecision {
+    Cancel,
+    Begin,
+    TimedOut,
+    Wait,
+}
+
+/// Reduces owner-observed readiness without granting the protocol client any
+/// knowledge of renderer or KMS resource lifetime.
+pub const fn reduce_output_topology_preparation_wait(
+    observation: OutputTopologyPreparationWaitObservation,
+) -> OutputTopologyPreparationWaitDecision {
+    if observation.cancellation_requested {
+        OutputTopologyPreparationWaitDecision::Cancel
+    } else if observation.ordinary_settlement_idle && observation.native_quiescent {
+        OutputTopologyPreparationWaitDecision::Begin
+    } else if observation.deadline_reached {
+        OutputTopologyPreparationWaitDecision::TimedOut
+    } else {
+        OutputTopologyPreparationWaitDecision::Wait
+    }
+}
+
 #[derive(Debug)]
 pub enum LiveOutputAuthorityOwnerError {
     InvalidConnectionEpoch,

@@ -739,6 +739,11 @@ parallel multi-monitor subsystem.
   to its existing card/connector/CRTC/plane, resolves each requested mode
   against the live DRM master, and retains per-head target generations without
   mutating the published topology.
+- Retained native composition intersects policy presentation order with the
+  Engine-owned committed surface table before resolving sources. A policy-
+  admitted surface with no committed pixels is temporarily absent, matching
+  the canonical output-scene projection. Once a surface is committed, absence
+  of an authority-owned CPU or renderer source remains fatal.
 - Resolved output candidates retain root-space logical viewports as well as
   `HeadlessOutput` extents. The visual runtime can therefore capture one
   committed root scene and independently lower every provisional extended or
@@ -759,7 +764,15 @@ parallel multi-monitor subsystem.
   observation batches advance protocol authority transactionally, so a bad
   member cannot leave a valid prefix recorded.
 - The native live owner drives candidate and rollback renderer workers to
-  completion while ordinary presentation scheduling is quarantined. It applies
+  completion while ordinary presentation scheduling is quarantined. Before
+  creating topology-specific resources, the owner enters a bounded quiescence
+  phase: it stops ordinary policy and authority intake, retains those packets at
+  their existing bounded queues, and continues native frame service until every
+  ordinary renderer, exporter, scanout, and lifecycle owner retires. Only the
+  session owner can observe that condition. The output client submits one
+  proposal and awaits one terminal result; it neither polls renderer lifetime
+  nor retries preparation failures. Cancellation wins over readiness, readiness
+  wins at the deadline, and a timeout rejects without KMS mutation. It applies
   cards in deterministic order, installs accepted owners into rebuilt output
   runtimes without a second modeset, queues one native-size cohort for every
   replacement logical output, and keeps the published authority private until

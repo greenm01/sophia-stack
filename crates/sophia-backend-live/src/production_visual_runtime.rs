@@ -121,6 +121,24 @@ pub struct LivePresentedInputProjection {
     pub layers: Vec<LayerSnapshot>,
 }
 
+/// Retains policy order only for surfaces present in Engine's committed scene.
+/// Policy may name a newly admitted surface before matching pixels commit; it
+/// is absent from native composition until the ordinary visual commit lands.
+pub fn live_production_retained_surface_order(
+    presentation_order: &[SurfaceId],
+    committed: &[CommittedSurfaceState],
+) -> Vec<SurfaceId> {
+    let committed = committed
+        .iter()
+        .map(|state| state.surface)
+        .collect::<BTreeSet<_>>();
+    presentation_order
+        .iter()
+        .copied()
+        .filter(|surface| committed.contains(surface))
+        .collect()
+}
+
 fn replace_displayed_surface(
     displayed_surfaces: &mut BTreeMap<SurfaceId, LiveDisplayedSurface>,
     surface: SurfaceId,

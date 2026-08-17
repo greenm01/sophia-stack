@@ -7,8 +7,8 @@ use sophia_backend_live::{
     LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
     LiveProductionVisualRuntime, finish_live_production_native_suspend,
     live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_retained_projection_admitted, live_production_should_preserve_gpu_output,
-    live_production_transactions_require_gpu_scanout,
+    live_production_retained_projection_admitted, live_production_retained_surface_order,
+    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
 };
@@ -133,6 +133,26 @@ fn initial_surface_cannot_seed_a_forged_generation() {
         TransactionOutcome::RejectedStaleSurface
     );
     assert!(runtime.committed_surfaces().is_empty());
+}
+
+#[test]
+fn retained_order_omits_policy_surfaces_without_a_committed_engine_state() {
+    let committed_surface = SurfaceId::new(1, 1);
+    let pending_surface = SurfaceId::new(2, 1);
+    let mut committed = initial_transaction(0);
+    committed.surface = committed_surface;
+    let mut runtime = LiveProductionVisualRuntime::new(&[output()], None).expect("runtime");
+    runtime
+        .prepare_authority_transactions(TransactionId::from_raw(1), &[committed], &[])
+        .expect("commit retained surface");
+
+    assert_eq!(
+        live_production_retained_surface_order(
+            &[pending_surface, committed_surface],
+            runtime.committed_surfaces(),
+        ),
+        vec![committed_surface]
+    );
 }
 
 #[test]

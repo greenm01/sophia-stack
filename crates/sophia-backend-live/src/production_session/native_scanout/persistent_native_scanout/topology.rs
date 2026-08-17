@@ -1524,6 +1524,31 @@ impl LiveProductionNativeScanout {
         self.output_topology_preparation.is_some()
     }
 
+    /// Reports whether every ordinary frame/resource owner has retired. The
+    /// session owner uses this before transferring scheduling authority to an
+    /// output-topology transaction.
+    pub fn output_topology_preparation_quiescent(&self) -> bool {
+        self.output_topology_preparation.is_none()
+            && self.queued_mirror_successors.is_empty()
+            && self.output_cohorts.is_empty()
+            && self.heads.iter().all(|head| {
+                head.pending_content.is_none()
+                    && head.rendering_content.is_none()
+                    && head.submitted_content.is_none()
+                    && head.scanout_submission.is_none()
+                    && head.prepared_scanout.is_none()
+                    && head.scanout_cleanup.is_none()
+            })
+            && self
+                .exporters
+                .iter()
+                .all(|exporter| !exporter.pending_frame())
+            && self
+                .output_lifecycles
+                .values()
+                .all(|lifecycle| lifecycle.active_frame().is_none())
+    }
+
     pub fn output_topology_preparation_phase(
         &self,
     ) -> Option<LiveProductionNativeTopologyPreparationPhase> {
@@ -1635,25 +1660,7 @@ impl LiveProductionNativeScanout {
         if self.output_topology_preparation.is_some() {
             return Err("native output topology preparation is already active".into());
         }
-        if !self.queued_mirror_successors.is_empty()
-            || !self.output_cohorts.is_empty()
-            || self.heads.iter().any(|head| {
-                head.pending_content.is_some()
-                    || head.rendering_content.is_some()
-                    || head.submitted_content.is_some()
-                    || head.scanout_submission.is_some()
-                    || head.prepared_scanout.is_some()
-                    || head.scanout_cleanup.is_some()
-            })
-            || self
-                .exporters
-                .iter()
-                .any(|exporter| exporter.pending_frame())
-            || self
-                .output_lifecycles
-                .values()
-                .any(|lifecycle| lifecycle.active_frame().is_some())
-        {
+        if !self.output_topology_preparation_quiescent() {
             return Err(
                 "native output topology preparation requires quiescent frame ownership".into(),
             );

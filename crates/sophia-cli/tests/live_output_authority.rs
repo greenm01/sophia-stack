@@ -27,6 +27,36 @@ fn capability(head: u64, connector: &str, selected: (u32, u32)) -> LibdrmNativeO
     .unwrap()
 }
 
+#[test]
+fn preparation_wait_prioritizes_cancellation_then_readiness_then_timeout() {
+    let observation =
+        |cancellation_requested, ordinary_settlement_idle, native_quiescent, deadline_reached| {
+            OutputTopologyPreparationWaitObservation {
+                cancellation_requested,
+                ordinary_settlement_idle,
+                native_quiescent,
+                deadline_reached,
+            }
+        };
+
+    assert_eq!(
+        reduce_output_topology_preparation_wait(observation(true, true, true, true)),
+        OutputTopologyPreparationWaitDecision::Cancel
+    );
+    assert_eq!(
+        reduce_output_topology_preparation_wait(observation(false, true, true, true)),
+        OutputTopologyPreparationWaitDecision::Begin
+    );
+    assert_eq!(
+        reduce_output_topology_preparation_wait(observation(false, true, false, true)),
+        OutputTopologyPreparationWaitDecision::TimedOut
+    );
+    assert_eq!(
+        reduce_output_topology_preparation_wait(observation(false, false, true, false)),
+        OutputTopologyPreparationWaitDecision::Wait
+    );
+}
+
 fn fixture() -> (Vec<LibdrmNativeOutputCapability>, OutputAuthoritySnapshot) {
     let capabilities = vec![
         capability(11, "DP-1", (2_560, 1_440)),

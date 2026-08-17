@@ -790,6 +790,23 @@ impl LivePublicPolicyState {
         Some(effect)
     }
 
+    fn output_topology_effect_pending(&self) -> bool {
+        !self.output_effect_dispatched
+            && self
+                .output_authority
+                .as_ref()
+                .is_some_and(|authority| authority.active_effect().is_some())
+    }
+
+    fn ordinary_policy_settlement_idle(&self) -> bool {
+        !self.cycle_submitted
+            && self.in_flight_request.is_none()
+            && self.staged.is_none()
+            && self.prepared.is_none()
+            && self.pending_operation.is_none()
+            && self.deferred_command.is_none()
+    }
+
     fn reject_output_topology_effect(
         &mut self,
         transaction: TransactionId,
@@ -1287,6 +1304,25 @@ fn public_policy_surface_snapshots(
 }
 
 impl LiveWmSession {
+    fn poll_output_authority(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(public) = self.public.as_mut() {
+            public.poll_output_authority()?;
+        }
+        Ok(())
+    }
+
+    fn output_topology_effect_pending(&self) -> bool {
+        self.public
+            .as_ref()
+            .is_some_and(LivePublicPolicyState::output_topology_effect_pending)
+    }
+
+    fn ordinary_policy_settlement_idle(&self) -> bool {
+        self.public
+            .as_ref()
+            .is_none_or(LivePublicPolicyState::ordinary_policy_settlement_idle)
+    }
+
     fn take_output_topology_effect(
         &mut self,
     ) -> Option<sophia_cli::live_output_authority::LiveOutputAuthorityEffect> {
@@ -1699,6 +1735,7 @@ impl LiveWmSession {
         &mut self,
         layout: &mut PersistentLiveLayout,
         _output: sophia_engine::HeadlessOutput,
+        allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;
@@ -1921,6 +1958,7 @@ impl LiveWmSession {
         if proposal.is_none()
             && transport_failed.is_none()
             && !defer_cycle
+            && allow_new_cycle
             && public.configured
             && !public.cycle_submitted
             && public.transport_ready

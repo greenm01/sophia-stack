@@ -163,59 +163,10 @@ if (( status != 0 )); then
     exit "$status"
 fi
 
-for required in \
-    '^sophia_output_v1_reference schema=1 status=settled kind=Committed topology_epoch=[0-9]+ heads=3 groups=2$' \
-    '^sophia_wm_v1_reference schema=1 status=settled outputs=2 surfaces=2 placement=1,1$' \
-    'sophia_live_output_authority schema=2 status=committed .* outputs=2 ' \
-    '^sophia_live_output_topology_health schema=1 status=clean quarantined=false$' \
-    '^sophia_live_session_health schema=1 status=clean '; do
-    grep -Eq "$required" "$EVIDENCE" || {
-        printf 'sophia_mixed_output_gate schema=1 status=failed stage=telemetry exit=1\n' \
-            | tee -a "$EVIDENCE"
-        echo "Mixed-output telemetry requirement is missing: $required" >&2
-        exit 1
-    }
-done
-if grep -Eq '(^Error:|panicked at|status=(failed|degraded|rolled_back)([[:space:]]|$))' \
-    "$EVIDENCE"; then
-    echo "Mixed-output evidence contains a failure, degradation, or rollback." >&2
-    exit 1
-fi
-if grep -Eq 'sophia_native_composition_sampling schema=2 status=(fallback|unavailable)([[:space:]]|$)' \
-    "$EVIDENCE"; then
-    echo "Mixed-output evidence contains a composition sampling fallback." >&2
-    exit 1
-fi
-
-mapfile -t extended_ready < <(
-    grep -E "sophia_live_native_head schema=2 status=ready .* connector=$EXTENDED " "$EVIDENCE"
-)
-if (( ${#extended_ready[@]} != 1 )); then
-    echo "The extended connector did not map to exactly one opaque head." >&2
-    exit 1
-fi
-extended_head="$(sed -n 's/.* head=\([0-9][0-9]*\) .*/\1/p' <<<"${extended_ready[0]}")"
-committed_transaction="$(sed -n 's/.*sophia_live_output_authority schema=2 status=committed transaction=\([0-9][0-9]*\) .*/\1/p' "$EVIDENCE" | tail -n1)"
-effect_line="$(grep -nE "sophia_live_output_authority schema=1 status=effect_pending transaction=$committed_transaction " "$EVIDENCE" | tail -n1 | cut -d: -f1)"
-first_presented_line="$(grep -nEm1 "sophia_live_output_authority schema=2 status=first_presented transaction=$committed_transaction " "$EVIDENCE" | cut -d: -f1)"
-if [[ -z "$extended_head" || -z "$committed_transaction" || -z "$effect_line" \
-    || -z "$first_presented_line" || "$effect_line" -ge "$first_presented_line" ]]; then
-    echo "Mixed-output first-presentation ordering is incomplete." >&2
-    exit 1
-fi
-sed -n "${effect_line},${first_presented_line}p" "$EVIDENCE" \
-    | grep -Eq "sophia_live_head_composition_plan schema=1 status=ready .* head=$extended_head .* mapping=exact exact=1 downsampled=0 upsampled=0 active=1 fallback=0 unavailable=0 " || {
-        echo "The extended head did not prepare an exact, unsampled first frame." >&2
-        exit 1
-    }
-
-mapfile -t completed_outputs < <(
-    grep -E 'sophia_live_native_head schema=3 status=complete ' "$EVIDENCE" \
-        | sed -n 's/.* output=\([0-9][0-9]*\) .*/\1/p' \
-        | sort | uniq -c | awk '{ print $1 }' | sort -n
-)
-if [[ "${completed_outputs[*]}" != "1 2" ]]; then
-    echo "Completed heads do not prove one singleton and one two-head logical output." >&2
+if ! bash "$ROOT_DIR/tools/verify_mixed_output_evidence.sh" "$EVIDENCE" "$EXTENDED" \
+    | tee -a "$EVIDENCE"; then
+    printf 'sophia_mixed_output_gate schema=1 status=failed stage=telemetry exit=1\n' \
+        | tee -a "$EVIDENCE"
     exit 1
 fi
 

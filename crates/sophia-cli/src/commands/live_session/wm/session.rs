@@ -1020,9 +1020,10 @@ impl LiveWmSession {
         &mut self,
         layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
+        allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
         if self.public.is_some() {
-            return self.poll_public_request(layout, output);
+            return self.poll_public_request(layout, output, allow_new_cycle);
         }
         if self.work_area_relayout_required {
             match self.enqueue_relayout(layout, output)? {

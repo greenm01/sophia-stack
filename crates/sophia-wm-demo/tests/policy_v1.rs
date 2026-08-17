@@ -16,9 +16,38 @@ use sophia_protocol::{
     encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_profile_activate,
     encode_wm_v1_profile_prepare, encode_wm_v1_server_welcome_frame,
 };
-use sophia_wm_demo::{PolicyV1Client, partition_policy_scene_across_outputs, tile_policy_scene};
+use sophia_wm_demo::{
+    PolicyV1Client, StatelessReferenceProjectionDecision, partition_policy_scene_across_outputs,
+    stateless_reference_projection_decision, tile_policy_scene,
+};
 
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
+
+#[test]
+fn stateless_reference_reuses_its_connection_only_for_a_stale_generation() {
+    assert_eq!(
+        stateless_reference_projection_decision(
+            sophia_protocol::PolicyProjectionOutcome::RejectedStale,
+        ),
+        StatelessReferenceProjectionDecision::RetryFreshSnapshot
+    );
+    assert_eq!(
+        stateless_reference_projection_decision(
+            sophia_protocol::PolicyProjectionOutcome::Committed,
+        ),
+        StatelessReferenceProjectionDecision::Settled
+    );
+    for outcome in [
+        sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
+        sophia_protocol::PolicyProjectionOutcome::TimedOut,
+        sophia_protocol::PolicyProjectionOutcome::Disconnected,
+    ] {
+        assert_eq!(
+            stateless_reference_projection_decision(outcome),
+            StatelessReferenceProjectionDecision::Fatal
+        );
+    }
+}
 
 #[test]
 fn reference_policy_adopts_unassigned_surfaces_on_the_active_affected_output() {

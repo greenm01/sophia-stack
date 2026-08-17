@@ -42,6 +42,30 @@ pub enum PolicyV1ClientError {
     TransactionExhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatelessReferenceProjectionDecision {
+    Settled,
+    RetryFreshSnapshot,
+    Fatal,
+}
+
+/// The bundled reference policy has no state beyond one received cycle, so a
+/// stale outcome can safely return to snapshot intake on the same connection.
+/// Stateful policy peers must instead discard their speculative process state.
+pub const fn stateless_reference_projection_decision(
+    outcome: PolicyProjectionOutcome,
+) -> StatelessReferenceProjectionDecision {
+    match outcome {
+        PolicyProjectionOutcome::Committed => StatelessReferenceProjectionDecision::Settled,
+        PolicyProjectionOutcome::RejectedStale => {
+            StatelessReferenceProjectionDecision::RetryFreshSnapshot
+        }
+        PolicyProjectionOutcome::RejectedInvalid
+        | PolicyProjectionOutcome::TimedOut
+        | PolicyProjectionOutcome::Disconnected => StatelessReferenceProjectionDecision::Fatal,
+    }
+}
+
 impl core::fmt::Display for PolicyV1ClientError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(formatter, "{self:?}")

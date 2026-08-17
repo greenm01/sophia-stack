@@ -127,6 +127,7 @@ fn resume_native_scanout_from_scene(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveOutputTopologyExecutionPhase {
+    WaitingForQuiescence,
     Preparing,
     Applying,
     AwaitingFirstPresentation,
@@ -138,10 +139,13 @@ enum LiveOutputTopologyExecutionPhase {
 struct LiveOutputTopologyExecution {
     effect: sophia_cli::live_output_authority::LiveOutputAuthorityEffect,
     phase: LiveOutputTopologyExecutionPhase,
+    preparation_deadline: Instant,
     first_frames:
         BTreeMap<sophia_protocol::OutputId, sophia_backend_live::LiveProductionNativeFrameId>,
     frontend_candidate_published: bool,
 }
+
+const OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn begin_output_topology_first_presentation_rollback<NativeRollback, PolicyRollback>(
     phase: &mut LiveOutputTopologyExecutionPhase,

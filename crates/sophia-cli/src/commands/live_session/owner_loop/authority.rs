@@ -27,7 +27,13 @@
         let wm_only_cycle = initial_authority_batch.is_none()
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
-        let authority_batch = if native_frame_service_preemption {
+        let output_topology_quarantined = active_output_topology_preparation.is_some();
+        let authority_batch = if output_topology_quarantined {
+            // The owner alone can observe frame retirement. Preserve authority
+            // batches at their existing bounded queues until topology either
+            // commits or rolls back.
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        } else if native_frame_service_preemption {
             // Renderer completion and KMS retirement are not X Authority
             // events. Give their bounded polling path a turn even when queued
             // or newly arriving metadata-only X batches keep the authority
@@ -562,32 +568,35 @@
                 // actually gets ahead. Buffering here lets the next authority
                 // turn see the whole backlog and merge it, instead of
                 // discovering one batch at a time.
-                drain_queued_authority_batches(
-                    &authority_receiver,
-                    &mut pending_authority_batches,
-                    AUTHORITY_DRAIN_CAPACITY,
-                    Duration::from_millis(2),
-                )?;
-                let expired = layout.expire_pending(&mut session_controls)?;
-                if let Some(result) = expired {
-                    pending_wm_update = Some(apply_wm_commit_result!(
-                        result,
-                        focus.focused_surface(seat)
-                    ));
-                }
-                if layout.pending.is_none()
-                    && let Some(surface) = layout.next_unmanaged_surface()
-                    && let Some(wm_session) = wm_session.as_mut()
-                {
-                    require_wm_request_admission(
-                        wm_session.enqueue_manage(surface, &layout, output)?,
-                        "manage",
+                if !output_topology_quarantined {
+                    drain_queued_authority_batches(
+                        &authority_receiver,
+                        &mut pending_authority_batches,
+                        AUTHORITY_DRAIN_CAPACITY,
+                        Duration::from_millis(2),
                     )?;
+                    let expired = layout.expire_pending(&mut session_controls)?;
+                    if let Some(result) = expired {
+                        pending_wm_update = Some(apply_wm_commit_result!(
+                            result,
+                            focus.focused_surface(seat)
+                        ));
+                    }
+                    if layout.pending.is_none()
+                        && let Some(surface) = layout.next_unmanaged_surface()
+                        && let Some(wm_session) = wm_session.as_mut()
+                    {
+                        require_wm_request_admission(
+                            wm_session.enqueue_manage(surface, &layout, output)?,
+                            "manage",
+                        )?;
+                    }
                 }
                 if let (Some(runtime), Some(native_scanout)) =
                     (runtime.as_mut(), native_scanout.as_mut())
+                    && native_scanout.output_topology_allows_frame_service()
                 {
-                    if layout.pending.is_none() {
+                    if !output_topology_quarantined && layout.pending.is_none() {
                         runtime.release_layout_deferred_presentations();
                     }
                     let service = runtime.service_native(native_scanout)?;

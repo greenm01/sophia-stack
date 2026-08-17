@@ -25,13 +25,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })?;
                     let mut client = sophia_wm_demo::OutputV1Client::connect(
                         output_socket,
-                        std::time::Duration::from_secs(4),
+                        std::time::Duration::from_secs(8),
                     )?;
                     let (_, snapshot) = client.receive_snapshot()?;
                     let candidate = sophia_wm_demo::mixed_mirror_extended_candidate(
                         &snapshot, &labels[0], &labels[1], &labels[2],
                     )?;
-                    let outcome = client.submit_with_preparation_retry(candidate, &snapshot)?;
+                    let outcome = client.submit(candidate, &snapshot)?;
+                    if outcome.kind != sophia_protocol::OutputV1OutcomeKind::Committed {
+                        return Err(sophia_wm_demo::OutputV1ClientError::NonCommittedOutcome(
+                            outcome.kind,
+                        ));
+                    }
                     println!(
                         "sophia_output_v1_reference schema=1 status=settled kind={:?} topology_epoch={} heads=3 groups=2",
                         outcome.kind, outcome.topology_epoch,
@@ -74,11 +79,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let proposal = policy.tile_once(&scene, &request)?;
             policy.send_projection(&proposal)?;
             let projection_outcome = policy.receive_projection_outcome(&proposal)?;
-            if projection_outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
-                return Err(format!(
-                    "policy reference projection did not commit: {projection_outcome:?}"
-                )
-                .into());
+            match sophia_wm_demo::stateless_reference_projection_decision(projection_outcome) {
+                sophia_wm_demo::StatelessReferenceProjectionDecision::Settled => {}
+                sophia_wm_demo::StatelessReferenceProjectionDecision::RetryFreshSnapshot => {
+                    // This bundled proof policy is a pure projection of the
+                    // received snapshot. It has no speculative private model
+                    // to discard when Engine advances the scene generation.
+                    continue;
+                }
+                sophia_wm_demo::StatelessReferenceProjectionDecision::Fatal => {
+                    return Err(format!(
+                        "policy reference projection did not commit: {projection_outcome:?}"
+                    )
+                    .into());
+                }
             }
             if !output_started && proof_surfaces_placed {
                 output_start_sender
@@ -87,10 +101,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output_started = true;
                 // Do not generate another layout commit while native scanout
                 // drains and the output transaction prepares its first frames.
-                // The output role has bounded socket and retry timeouts, so this
-                // pause cannot strand the policy client indefinitely.
+                // The output role has a bounded socket timeout, so this pause
+                // cannot strand the policy client indefinitely.
                 let outcome = output_result_receiver
-                    .recv_timeout(std::time::Duration::from_secs(8))
+                    .recv_timeout(std::time::Duration::from_secs(10))
                     .map_err(|_| "output reference client did not settle before its deadline")??;
                 debug_assert_eq!(
                     outcome.kind,
