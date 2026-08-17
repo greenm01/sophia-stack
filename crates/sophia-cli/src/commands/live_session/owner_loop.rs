@@ -261,6 +261,9 @@ fn run_session_loop(
         sophia_protocol::OutputAuthoritySnapshot,
         Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
     )> = None;
+    // Whether the parked hardware snapshot's topology has presented, which is
+    // the first of the two conditions its publication waits on.
+    let mut hardware_output_publication_presented = false;
     let mut floating_pointer_gesture = FloatingPointerGestureState::default();
     let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
     let mut layout_progress_deferred_reported = false;

@@ -773,6 +773,15 @@ impl LivePublicPolicyState {
         Ok(())
     }
 
+    /// Whether an output policy candidate is dispatched or being cancelled.
+    ///
+    /// Publishing a hardware snapshot in either state is the race that
+    /// `publish_output_authority_snapshot` refuses, so callers holding one ask
+    /// here rather than discovering it as a session-ending error.
+    fn output_candidate_active(&self) -> bool {
+        self.output_effect_dispatched || self.output_cancel_requested.is_some()
+    }
+
     fn output_candidate_cancellation_reason(
         &self,
         transaction: TransactionId,
@@ -1393,6 +1402,12 @@ impl LiveWmSession {
             .as_ref()?
             .output_candidate_cancellation_reason(transaction)
             .map(str::to_owned)
+    }
+
+    fn output_candidate_active(&self) -> bool {
+        self.public
+            .as_ref()
+            .is_some_and(LivePublicPolicyState::output_candidate_active)
     }
 
     fn publish_output_authority_snapshot(

@@ -182,6 +182,9 @@
                     .mark_published(presentation_baseline, policy_required)?;
                 pending_hardware_output_publication =
                     Some((replacement_authority, replacement_capabilities));
+                // A replacement snapshot owes its own presentation before it
+                // may be published, so it does not inherit the previous one's.
+                hardware_output_publication_presented = false;
                 *native_scanout = Some(replacement);
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",
@@ -214,11 +217,12 @@
     if let Some(retirements) = native_scanout.as_ref().map(|native| native.retirements)
         && output_topology_owner.observe_presentation(retirements)
     {
-        if let Some((snapshot, capabilities)) = pending_hardware_output_publication.take()
-            && let Some(wm) = wm_session.as_mut()
-        {
-            let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
-        }
+        // Arm rather than publish. A snapshot must not reach policy before the
+        // topology it describes has presented, but it must also not reach a
+        // live candidate, and those two conditions do not become true in the
+        // same pass. `observe_presentation` reports the edge exactly once, so
+        // publishing from here is the only chance the snapshot ever gets.
+        hardware_output_publication_presented = true;
         if startup_topology_recovery_pending {
             let _ = reduce_session_startup(
                 &mut startup_readiness,
@@ -230,5 +234,16 @@
             "sophia_live_output_topology schema=1 status=settled transition={} retirements={retirements} input=enabled",
             output_topology_owner.transition,
         );
+    }
+    // Retried every pass, because the candidate that blocks publication clears
+    // on its own schedule. One slot is enough: a newer hardware snapshot
+    // supersedes an older unpublished one rather than queueing behind it.
+    if hardware_output_publication_presented
+        && let Some(wm) = wm_session.as_mut()
+        && !wm.output_candidate_active()
+        && let Some((snapshot, capabilities)) = pending_hardware_output_publication.take()
+    {
+        hardware_output_publication_presented = false;
+        let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
     }
 }
