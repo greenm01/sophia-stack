@@ -1118,11 +1118,52 @@ where the types cannot be made to carry the agreement.
   pre-apply wait is unpinned. `native.rs` has roughly eighty lines of headroom
   before it becomes a twenty-seventh audit error, so new code belongs beside the
   tests rather than in it.
+- [x] Drop a queued policy cause whose surface was withdrawn under it. The
+  outputs fix was half of the instance: `Focus` and `Interaction` causes also
+  name a surface, the projection reducer refuses one that is gone, and that
+  refusal ends the session. A cause is queued long enough for this to matter
+  only because ordinary cycles are held for the whole of a candidate, which is
+  exactly the window in which a surface can vanish.
+- [ ] Decide whether a topology commit forces a primary-plane page flip, and
+  make it do so if it does not. With `policy_required` set, `mark_policy_committed`
+  replaces the presentation baseline with the live retirement counter, so
+  `observe_presentation` then needs a strictly *new* flip -- and neither of the
+  two things the commit touches produces one. `scene.reconfigure_output_size`
+  is conditional on the primary's own size changing, which a three-to-two output
+  change need not do, and `cursor_updates.dirty` drives the cursor plane. If the
+  relayout's flip lands before the pass that snapshots the baseline, the owner
+  parks in `AwaitingPresentation` with no watchdog, deadline, or retry, and
+  `input_quarantined()` holds routing at `ShortcutsOnly` for the duration:
+  pointer motion dropped, cursor frozen, every non-shortcut key discarded. The
+  baseline overwrite is deliberate and the invariant behind it is right -- a
+  presentation that retired before the projection committed cannot release the
+  quarantine -- so the fix must make the flip happen rather than weaken the
+  requirement. This is the worst remaining symptom on the path: a hung desktop
+  rather than a clean exit.
+- [ ] Give `pending_hardware_output_publication` the same treatment as the
+  policy cause. It is parked across a candidate by design and its topology-epoch
+  check is a hard error (`StalePublishedSnapshot`), so a snapshot parked before
+  a commit that advances the epoch ends the session rather than being resolved
+  or dropped.
+- [ ] Guard `begin_policy_change` at its call site on the owner being `Stable`.
+  There is no phase check there, so a second `sophia_output_v1` proposal
+  promoted while the owner is `Published` or `AwaitingPresentation` fails with
+  "live policy topology change overlaps another transition". Only reachable for
+  back-to-back topology changes, not a single-change gate run.
+- [ ] Re-derive `startup_required_submissions` when the scanout is replaced. It
+  is positional over head indices with absolute submission counters, and only a
+  length check guards it, so a same-count reordering compares against the wrong
+  head and a replacement scanout makes the requirement permanently unsatisfiable.
 - [ ] Stamp work queued across a topology transition with the epoch it was built
-  in, and revalidate or rebuild it on mismatch. `affected_outputs` was one
-  instance of the class; the fix there resolves outputs at submission, which
-  closes the instance rather than the class. Follow whatever epoch-validation
-  precedent the codebase already has instead of inventing a second one.
+  in, and revalidate or rebuild it on mismatch, rather than fixing instances.
+  An inventory found the class runs wider than the two already fixed: absolute
+  geometry in `session_controls` configure packets and in `Interaction` causes,
+  pre-transition pointer coordinates released from `pointer_focus_handoff`, and
+  the legacy WM's `queued_requests` carrying enqueue-time output and bounds --
+  all of which produce a wrong result silently rather than an error. Follow the
+  precedent already in the tree: `ApplicationRouteLease` stamps output,
+  presentation epoch, authority session epoch, and control epoch, and validates
+  all four at use with typed refusals instead of a session error.
 - [ ] Bound the page-flip callback *read* rather than its write, the last
   session-killing site. The event is already consumed from the DRM fd when the
   queue is examined, so a write-side degrade would lose a retirement outright.
