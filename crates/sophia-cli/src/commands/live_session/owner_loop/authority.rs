@@ -596,7 +596,18 @@
                     (runtime.as_mut(), native_scanout.as_mut())
                     && native_scanout.output_topology_allows_frame_service()
                 {
-                    if !output_topology_quarantined && layout.pending.is_none() {
+                    // Releasing is what lets a topology quiescence wait finish:
+                    // that wait blocks until no head holds pending content, and
+                    // this is the step that drains it. Gating it on the owner's
+                    // quarantine deadlocked the two against each other, because
+                    // the quarantine is set for the whole wait, so the wait
+                    // could only ever end by expiring. Once the backend really
+                    // holds a preparation the original guard still applies:
+                    // releasing then would present content composed for the
+                    // outgoing topology.
+                    if native_scanout.output_topology_preparation_phase().is_none()
+                        && layout.pending.is_none()
+                    {
                         runtime.release_layout_deferred_presentations();
                     }
                     let service = runtime.service_native(native_scanout)?;
