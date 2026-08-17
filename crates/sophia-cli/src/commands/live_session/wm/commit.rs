@@ -202,9 +202,7 @@ impl LiveWmSession {
                 outcome,
                 expect_session_operation: settlement.expect_session_operation,
             })?;
-        public.cycle_submitted = false;
-        public.in_flight_request = None;
-        public.in_flight_source = None;
+        public.settle_public_projection(outcome);
         if outcome != sophia_protocol::PolicyProjectionOutcome::Committed
             || !settlement.expect_session_operation
         {

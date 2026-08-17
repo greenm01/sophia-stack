@@ -317,6 +317,18 @@ outcomes. Rejection, malformed input, transport failure, or policy restart
 preserves the last committed projection. A replacement policy receives a full
 Engine snapshot; it never receives its predecessor's private state.
 
+The owner re-offers a cycle for exactly the outcomes a stateless policy client
+recovers from by re-reading a snapshot: a stale rejection and a timeout. Both
+mean the scene moved rather than that the proposal was wrong, and the owner is
+the party that observed the move, so the obligation to re-arm is the owner's
+and not a client's to work around. An invalid rejection and a disconnection are
+terminal in the other direction: the scene did not move, so re-offering the
+cycle would spin on the same faulty proposal, and ending the connection lets
+the supervisor install a replacement. These two halves are one contract — a
+client that recovers by waiting for a snapshot the owner never sends blocks
+until its socket deadline and dies, and repeated deaths exhaust the supervisor
+restart budget.
+
 Registered shortcuts and session operations use advertised opaque tokens.
 Engine matches physical input and sends only the action token plus reduced
 policy context. A client cannot provide executable paths, arguments, signals,

@@ -84,6 +84,7 @@ mod present_retirement_tests;
 mod presentation_role_tests;
 mod presentation_tests;
 mod profile_preparation_tests;
+mod public_policy_recovery_tests;
 mod session_config_tests;
 mod startup_output_tests;
 mod visual_candidate_tests;

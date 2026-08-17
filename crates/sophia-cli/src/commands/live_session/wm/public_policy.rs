@@ -126,6 +126,64 @@ struct StartedPublicPolicyRuntime {
     checkpoint_path: std::path::PathBuf,
 }
 
+/// Whether rejecting a response with this outcome leaves the owner owing the
+/// client a replacement cycle.
+///
+/// This is the owner half of the reference client's
+/// `stateless_reference_projection_decision`. The two must agree: a client that
+/// retries by waiting for a fresh snapshot dies behind its socket deadline if
+/// the owner considers itself idle, and the owner is the party that observed
+/// the scene move.
+///
+/// An invalid rejection deliberately does not re-arm. The scene did not move,
+/// so re-offering the cycle would spin on the same faulty proposal; ending the
+/// connection and letting the supervisor replace the client is the fail-closed
+/// answer. A disconnected client has no cycle to receive.
+const fn public_policy_rearm_after_outcome(
+    outcome: sophia_protocol::PolicyProjectionOutcome,
+) -> bool {
+    match outcome {
+        sophia_protocol::PolicyProjectionOutcome::RejectedStale
+        | sophia_protocol::PolicyProjectionOutcome::TimedOut => true,
+        sophia_protocol::PolicyProjectionOutcome::Committed
+        | sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
+        | sophia_protocol::PolicyProjectionOutcome::Disconnected => false,
+    }
+}
+
+/// Folds owner-observed dirty outputs into at most one queued relayout cause.
+///
+/// Merging keeps the queue bounded: a stale-rejection storm re-arms repeatedly
+/// but can never enqueue more than the one relayout entry it finds or creates.
+fn materialize_public_dirty_cause(
+    queue: &mut VecDeque<LivePublicPolicyCause>,
+    pending: &mut BTreeSet<sophia_protocol::OutputId>,
+    in_flight_source: Option<LiveWmProposalSource>,
+) {
+    if pending.is_empty() || in_flight_source == Some(LiveWmProposalSource::Relayout) {
+        return;
+    }
+    if let Some(queued) = queue
+        .iter_mut()
+        .find(|queued| queued.source == LiveWmProposalSource::Relayout)
+    {
+        let mut outputs = queued
+            .affected_outputs
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        outputs.append(pending);
+        queued.affected_outputs = outputs.into_iter().collect();
+        return;
+    }
+    let affected_outputs = std::mem::take(pending).into_iter().collect();
+    queue.push_back(LivePublicPolicyCause {
+        source: LiveWmProposalSource::Relayout,
+        cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+        affected_outputs,
+    });
+}
+
 fn enqueue_public_policy_cause(
     queue: &mut VecDeque<LivePublicPolicyCause>,
     in_flight_source: Option<LiveWmProposalSource>,
@@ -1071,33 +1129,33 @@ impl LivePublicPolicyState {
     }
 
     fn materialize_pending_dirty(&mut self) {
-        if self.pending_dirty_outputs.is_empty()
-            || self.in_flight_source == Some(LiveWmProposalSource::Relayout)
-        {
-            return;
+        materialize_public_dirty_cause(
+            &mut self.queue,
+            &mut self.pending_dirty_outputs,
+            self.in_flight_source,
+        );
+    }
+
+    /// Records a terminal projection settlement, re-arming the owner when the
+    /// client can only recover from a cycle the owner has to offer.
+    ///
+    /// Invariant: after rejecting a response the owner never leaves the
+    /// connection with no outstanding request and nothing queued. A physical
+    /// run stranded exactly there — the client waited for a snapshot that was
+    /// never coming and died on its socket deadline, and the resulting restarts
+    /// exhausted the supervisor budget.
+    fn settle_public_projection(&mut self, outcome: sophia_protocol::PolicyProjectionOutcome) {
+        self.cycle_submitted = false;
+        self.in_flight_request = None;
+        self.in_flight_source = None;
+        if public_policy_rearm_after_outcome(outcome) {
+            // The whole live set: a stale rejection means the canonical scene
+            // moved in a way the owner cannot attribute to particular outputs,
+            // and replaying the original cause would replay a user action or
+            // name a surface that has just been withdrawn.
+            self.pending_dirty_outputs
+                .extend(self.live_output_ids.iter().copied());
         }
-        if let Some(pending) = self
-            .queue
-            .iter_mut()
-            .find(|pending| pending.source == LiveWmProposalSource::Relayout)
-        {
-            let mut outputs = pending
-                .affected_outputs
-                .iter()
-                .copied()
-                .collect::<BTreeSet<_>>();
-            outputs.append(&mut self.pending_dirty_outputs);
-            pending.affected_outputs = outputs.into_iter().collect();
-            return;
-        }
-        let affected_outputs = std::mem::take(&mut self.pending_dirty_outputs)
-            .into_iter()
-            .collect();
-        self.queue.push_back(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Relayout,
-            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
-            affected_outputs,
-        });
     }
 
     fn submit_or_defer(
@@ -1150,9 +1208,7 @@ impl LivePublicPolicyState {
             outcome,
             expect_session_operation: false,
         })?;
-        self.cycle_submitted = false;
-        self.in_flight_request = None;
-        self.in_flight_source = None;
+        self.settle_public_projection(outcome);
         self.expected_operation_slot = None;
         self.staged = None;
         Ok(())
@@ -1824,7 +1880,7 @@ impl LiveWmSession {
                     )?;
                     self.stale_responses = self.stale_responses.saturating_add(1);
                     println!(
-                        "sophia_live_wm schema=1 status=stale_response_rejected transaction={} reason=scene_advanced",
+                        "sophia_live_wm schema=1 status=stale_response_rejected transaction={} reason=scene_advanced rearmed=true",
                         projection.transaction.raw(),
                     );
                     None
@@ -2233,6 +2289,14 @@ impl LiveWmSession {
         );
         if admission == LiveWmRequestAdmission::RejectedCapacity {
             return Ok(admission);
+        }
+        if admission == LiveWmRequestAdmission::Duplicate {
+            // A queued relayout still names the previous live set. Dropping the
+            // replacement would leave a cause pointing at an output that no
+            // longer exists, and issuing that cause fails the session. Merge
+            // instead, the same way owner-observed dirty outputs fold in.
+            let mut dirty = next_live.iter().copied().collect::<BTreeSet<_>>();
+            materialize_public_dirty_cause(&mut next_queue, &mut dirty, public.in_flight_source);
         }
         public.outputs = outputs.to_vec();
         public.output_generations = next_generations;
