@@ -1026,19 +1026,32 @@ Detailed physical-run diagnoses remain in
   Two invariants were removed for failing their own controls rather than kept as
   decoration. Four counterexamples are pinned as deterministic Rust regressions
   in `crates/sophia-protocol/tests/capacity.rs`.
-- [ ] Apply the dispositions to the ten session-killing sites, one revertible
-  commit each: libinput acquisition to bounded deferral escalating to a closed
-  endpoint epoch; the seven routed-input ingress sites to endpoint closure with
-  the reserve set to outstanding presses, two of which are release flushes and
-  must take the terminating-boundary class; the XKB worker to a typed error with
-  no panic and no deadline-free receive; the page-flip callback by bounding the
-  read rather than the write, since the event is already consumed from the fd;
-  the session observation batch and deferred key timing to reject-and-consume,
-  because a diagnostic must not fail a tick; the pressed-key ledger to per-surface
-  closure that emits the releases it holds; and present feedback to a report that
-  never latches. Resource constants and the epoch-close helper go in a new
-  `crates/sophia-cli/src/commands/live_session/input_capacity.rs`, not in
-  `input.rs`, which is already an audit error at 1444 lines.
+- [x] Apply the dispositions to the session-killing input and presentation
+  sites, one revertible commit each. Libinput acquisition defers 50ms and then
+  abandons a batch it counts, rather than ending the worker. The seven
+  routed-input ingress sites close the endpoint epoch, which `architecture.md`
+  already required and which needs no queue reserve because the epoch advance is
+  an atomic rather than a queued record; releases still get a bounded wait that
+  ordinary input does not. The XKB worker returns `XkbWorkerSaturated` and
+  `XkbWorkerUnavailable` instead of panicking in its thread and blocking without
+  a deadline. The present-cadence sampler slides a 1024-interval window instead
+  of latching an overflow flag that killed the measurement for the rest of the
+  session. A lost key-timing sidecar is consumed; a *mismatched* one stays fatal,
+  because that means the serial-to-timing association is wrong. A full
+  pressed-key ledger closes the epoch and flushes what it holds, which is what
+  lets it drain. `input_capacity.rs` and `client_keys.rs` hold the constants and
+  the flush group, and `input.rs` came down from 1444 to 1304 lines.
+- [x] Drop the session observation batch from that list. It proposed
+  reject-and-consume, but `session/reducer.rs` shows the batch is not telemetry:
+  every observation drives a phase transition and emits a command, so dropping
+  one would skip a frame render or a scanout submission while reporting success.
+  The terminal error is correct and the producer-side bound already prevents the
+  overflow. See `docs/research-log.md`.
+- [ ] Bound the page-flip callback *read* rather than its write, the last
+  session-killing site. The event is already consumed from the DRM fd when the
+  queue is examined, so a write-side degrade would lose a retirement outright.
+  Land it alone and last: it restructures the most physically coupled code here,
+  and `fake_source.rs` should give deterministic coverage first.
 - [ ] Close the remaining silent drops once the fatal sites are converted: the
   three `broker.rs` swallow points, the unbounded input-delivery channel, the
   deadline-free route-lease send, and config-time bound publication. Add
