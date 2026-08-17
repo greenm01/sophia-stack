@@ -1124,8 +1124,21 @@ where the types cannot be made to carry the agreement.
   refusal ends the session. A cause is queued long enough for this to matter
   only because ordinary cycles are held for the whole of a candidate, which is
   exactly the window in which a surface can vanish.
-- [ ] Decide whether a topology commit forces a primary-plane page flip, and
-  make it do so if it does not. With `policy_required` set, `mark_policy_committed`
+- [x] Bound the post-commit presentation wait. Confirmed statically that a
+  topology commit does *not* force a flip: `reconfigure_output_size` returns
+  false when the primary's own size is unchanged, which a three-to-two output
+  change need not alter, and the commit recomposes only when it returns true.
+  What the wait actually protects is narrower than it first appears -- first
+  presentation already put the new *topology* on screen, so the wait is for the
+  new *layout*, which is what keeps input from resuming onto stale window
+  positions. That makes the stall case the safe case: a relayout that moves
+  nothing produces no damage and so no flip, and in exactly that case the
+  displayed layout is already the committed one. Since that is
+  indistinguishable from a slow client, the wait now expires after two seconds,
+  says what was missing, and restores input rather than holding a desktop at
+  shortcuts-only forever.
+- [ ] Decide whether a topology commit should also force a repaint rather than
+  relying on the relayout to generate one. With `policy_required` set, `mark_policy_committed`
   replaces the presentation baseline with the live retirement counter, so
   `observe_presentation` then needs a strictly *new* flip -- and neither of the
   two things the commit touches produces one. `scene.reconfigure_output_size`

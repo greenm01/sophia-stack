@@ -378,3 +378,42 @@ fn a_notice_deferred_by_a_policy_candidate_is_rearmed_when_it_settles() {
     // Claimed exactly once.
     assert!(!owner.take_deferred_hotplug_notice());
 }
+
+/// The post-commit presentation wait must be escapable.
+///
+/// It holds input at shortcuts-only until the committed layout reaches a
+/// screen, but nothing forces that frame: a relayout that moves nothing
+/// produces no damage and so no flip. That case is indistinguishable from a
+/// slow client, and in it the displayed layout is already the committed one, so
+/// waiting forever protects nothing while the desktop feels dead.
+#[test]
+fn a_presentation_wait_can_be_released_without_its_flip() {
+    let mut owner = LiveOutputTopologyOwner::new_at_generation(
+        vec![output(1, 1280)],
+        vec![(OutputId::from_raw(1), 1)],
+        1,
+    )
+    .unwrap();
+
+    owner.begin_policy_change().unwrap();
+    observe_policy_unmirrored(&mut owner, vec![output(1, 1920)], 2).unwrap();
+    owner.mark_published(8, true).unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Published);
+
+    // Not released before the policy commits: that would restore input while
+    // the layout it is waiting on is still unsettled.
+    assert!(!owner.release_presentation_wait());
+
+    owner.mark_policy_committed(9).unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::AwaitingPresentation);
+    assert!(owner.input_quarantined());
+    // No flip arrives: retirements never exceed the baseline.
+    assert!(!owner.observe_presentation(9));
+
+    assert!(owner.release_presentation_wait());
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Stable);
+    assert!(!owner.input_quarantined());
+
+    // Claimed once; a second call is not a second release.
+    assert!(!owner.release_presentation_wait());
+}

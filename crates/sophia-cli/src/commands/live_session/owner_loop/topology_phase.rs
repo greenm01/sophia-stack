@@ -214,6 +214,8 @@
             .as_ref()
             .map_or(0, |native| native.retirements);
         output_topology_owner.mark_policy_committed(presentation_baseline)?;
+        topology_presentation_deadline =
+            Some(Instant::now() + OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT);
         tracing::info!(
             "sophia_live_output_topology schema=1 status=policy_committed transition={} presentation_baseline={presentation_baseline}",
             output_topology_owner.transition,
@@ -235,10 +237,32 @@
             );
             startup_topology_recovery_pending = false;
         }
+        topology_presentation_deadline = None;
         tracing::info!(
             "sophia_live_output_topology schema=1 status=settled transition={} retirements={retirements} input=enabled",
             output_topology_owner.transition,
         );
+    }
+    // A relayout that moves nothing produces no damage and so no flip, which is
+    // indistinguishable from a slow client. In that case the displayed layout is
+    // already the committed one, so continuing to wait protects nothing and
+    // holds input at shortcuts-only indefinitely. Say what was missing and
+    // restore input.
+    if let Some(deadline) = topology_presentation_deadline
+        && Instant::now() >= deadline
+    {
+        topology_presentation_deadline = None;
+        let retirements = native_scanout
+            .as_ref()
+            .map_or(0, |native| native.retirements);
+        if output_topology_owner.release_presentation_wait() {
+            tracing::warn!(
+                "sophia_live_output_topology schema=2 status=presentation_timed_out transition={} retirements={retirements} presentation_baseline={} timeout_msec={} input=enabled",
+                output_topology_owner.transition,
+                output_topology_owner.presentation_baseline,
+                OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT.as_millis(),
+            );
+        }
     }
     // Retried every pass, because the candidate that blocks publication clears
     // on its own schedule. One slot is enough: a newer hardware snapshot

@@ -158,6 +158,15 @@ struct LiveOutputTopologyExecution {
 
 const OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// How long a committed topology waits for its layout to reach a screen before
+/// input is restored anyway.
+///
+/// Generous relative to a client redraw and short relative to a desktop that
+/// feels dead: pointer motion is dropped and every non-shortcut key discarded
+/// for the whole wait, so an unbounded one is worse than presenting a frame
+/// late.
+const OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT: Duration = Duration::from_secs(2);
+
 fn begin_output_topology_first_presentation_rollback<NativeRollback, PolicyRollback>(
     phase: &mut LiveOutputTopologyExecutionPhase,
     transaction: sophia_protocol::TransactionId,
@@ -273,6 +282,10 @@ fn run_session_loop(
     // Whether the parked hardware snapshot's topology has presented, which is
     // the first of the two conditions its publication waits on.
     let mut hardware_output_publication_presented = false;
+    // When the post-commit presentation wait began. Nothing forces the flip it
+    // waits for, so the wait is bounded rather than open-ended; input is held
+    // at shortcuts-only for its whole duration.
+    let mut topology_presentation_deadline: Option<Instant> = None;
     let mut floating_pointer_gesture = FloatingPointerGestureState::default();
     let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
     let mut layout_progress_deferred_reported = false;

@@ -276,6 +276,26 @@ impl LiveOutputTopologyOwner {
         Ok(())
     }
 
+    /// Releases the post-commit presentation wait without the flip it wanted.
+    ///
+    /// The wait exists so input does not resume onto stale window positions:
+    /// the topology itself is already on screen from first presentation, and
+    /// what it additionally waits for is the *policy layout* being presented.
+    /// Nothing forces that frame, though. A relayout that moves nothing
+    /// produces no damage and therefore no flip, which is indistinguishable
+    /// from a client that is merely slow -- and in the first case the displayed
+    /// layout is already the committed one, so waiting forever protects
+    /// nothing while holding input at shortcuts-only.
+    ///
+    /// Callers must have waited a bounded time first and must say why.
+    fn release_presentation_wait(&mut self) -> bool {
+        if self.phase != LiveOutputTopologyPhase::AwaitingPresentation || !self.policy_committed {
+            return false;
+        }
+        self.phase = LiveOutputTopologyPhase::Stable;
+        true
+    }
+
     fn observe_presentation(&mut self, retirements: usize) -> bool {
         if self.phase != LiveOutputTopologyPhase::AwaitingPresentation
             || !self.policy_committed
