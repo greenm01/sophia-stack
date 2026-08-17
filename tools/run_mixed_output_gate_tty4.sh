@@ -114,6 +114,15 @@ echo "right-hand extended output. The extended Kitty is the native-sharp visual 
 set +e
 (
     cd "$ROOT_DIR"
+    # No session bus exists on this rig, and Kitty's portal lookups behave
+    # differently every run without one: one client fast-failed with
+    # ServiceUnknown while another blocked ~30s on a Notify call that never got
+    # a reply, which is libdbus's default timeout. A client stalled that long
+    # never answers a configure, so every layout transaction times out and the
+    # gate fails somewhere new each run. Point the bus at an address that
+    # refuses immediately so client startup is deterministic; the gate proves
+    # output topology, not portals.
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/sophia-gate-no-session-bus \
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
     SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions \
     RUST_LOG="${RUST_LOG:-sophia=info,sophia_backend_live=info}" \
