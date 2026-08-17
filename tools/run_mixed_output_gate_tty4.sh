@@ -5,9 +5,11 @@ set -euo pipefail
 # This performs a real modeset and therefore runs only from a recovery-safe TTY.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MIRROR_PRIMARY="${SOPHIA_MIXED_MIRROR_PRIMARY:-}"
-MIRROR_MEMBER="${SOPHIA_MIXED_MIRROR_MEMBER:-}"
-EXTENDED="${SOPHIA_MIXED_EXTENDED:-}"
+# This rig's one-command default keeps the previously fuzzy DP-2 head native.
+# Environment overrides preserve the runner for other three-head arrangements.
+MIRROR_PRIMARY="${SOPHIA_MIXED_MIRROR_PRIMARY:-DP-1}"
+MIRROR_MEMBER="${SOPHIA_MIXED_MIRROR_MEMBER:-DP-3}"
+EXTENDED="${SOPHIA_MIXED_EXTENDED:-DP-2}"
 KITTY_BIN="${SOPHIA_MIXED_KITTY:-$(command -v kitty || true)}"
 RUNTIME_MSEC="${SOPHIA_MIXED_RUNTIME_MSEC:-30000}"
 DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
@@ -17,10 +19,6 @@ TTY_REQUIRED="${SOPHIA_MIXED_TTY:-/dev/tty4}"
 # shellcheck source=tools/lib/drm_master_guard.sh
 . "$ROOT_DIR/tools/lib/drm_master_guard.sh"
 
-if [[ -z "$MIRROR_PRIMARY" || -z "$MIRROR_MEMBER" || -z "$EXTENDED" ]]; then
-    echo "Set SOPHIA_MIXED_MIRROR_PRIMARY, SOPHIA_MIXED_MIRROR_MEMBER, and SOPHIA_MIXED_EXTENDED." >&2
-    exit 2
-fi
 if [[ "$MIRROR_PRIMARY" == "$MIRROR_MEMBER" \
     || "$MIRROR_PRIMARY" == "$EXTENDED" \
     || "$MIRROR_MEMBER" == "$EXTENDED" ]]; then
