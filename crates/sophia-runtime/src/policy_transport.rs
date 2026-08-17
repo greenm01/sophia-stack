@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sophia_protocol::{
     IpcCodecError, IpcMessageKind, PolicyConfiguration, PolicyDirtyRequest,
@@ -40,6 +40,12 @@ pub enum PolicyTransportError {
     Transfer(PolicyTransferError),
     Codec(IpcCodecError),
     Io(String),
+    /// The socket's own timeout expired with no complete frame.
+    ///
+    /// Distinct from `Io` because it says nothing about the connection: the
+    /// peer is simply slower than one window. Reported as an `Io` string it
+    /// read as a broken transport and restarted a working window manager.
+    TimedOut,
     UnexpectedMessage(IpcMessageKind),
     ProfileHandoff(PolicyProfileHandoffError),
     ProfileCompletionOutOfPhase,
@@ -270,6 +276,25 @@ impl PolicyWmSessionTransport {
         self.decode_client_event(&frame)
     }
 
+    /// Waits for one client event across several socket timeouts.
+    ///
+    /// One expired window says only that the peer is slower than that window,
+    /// which a policy client legitimately is after a topology change hands it a
+    /// whole new layout to compute. Only a client that stays silent across the
+    /// whole deadline is treated as gone.
+    pub fn receive_client_event_within(
+        &mut self,
+        deadline: Duration,
+    ) -> Result<PolicyClientEvent, PolicyTransportError> {
+        let started = Instant::now();
+        loop {
+            match self.receive_client_event() {
+                Err(PolicyTransportError::TimedOut) if started.elapsed() < deadline => {}
+                other => return other,
+            }
+        }
+    }
+
     /// Polls one complete control frame without consuming a partial frame.
     pub fn try_receive_client_event(
         &mut self,
@@ -373,6 +398,21 @@ impl PolicyWmSessionTransport {
         }
     }
 
+    /// Classifies a socket error, keeping an expired timeout apart from a
+    /// genuine transport fault.
+    ///
+    /// A socket carrying `SO_RCVTIMEO`/`SO_SNDTIMEO` reports expiry as
+    /// `WouldBlock` on Linux and `TimedOut` elsewhere, so both mean the same
+    /// thing here.
+    fn classify_io(error: &std::io::Error) -> PolicyTransportError {
+        match error.kind() {
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut => {
+                PolicyTransportError::TimedOut
+            }
+            _ => PolicyTransportError::Io(error.to_string()),
+        }
+    }
+
     fn receive_frame(&mut self, blocking: bool) -> Result<Option<Vec<u8>>, PolicyTransportError> {
         if let Some(frame) = take_buffered_frame(&mut self.read_buffer)? {
             return Ok(Some(frame));
@@ -385,29 +425,35 @@ impl PolicyWmSessionTransport {
             .set_nonblocking(!blocking)
             .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
         let mut bytes = [0_u8; 8192];
-        loop {
+        let outcome = loop {
             match stream.read(&mut bytes) {
-                Ok(0) => return Err(PolicyTransportError::Io("policy peer closed".into())),
+                Ok(0) => break Err(PolicyTransportError::Io("policy peer closed".into())),
                 Ok(count) => {
                     self.read_buffer.extend_from_slice(&bytes[..count]);
                     if let Some(frame) = take_buffered_frame(&mut self.read_buffer)? {
-                        if !blocking {
-                            stream
-                                .set_nonblocking(false)
-                                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
-                        }
-                        return Ok(Some(frame));
+                        break Ok(Some(frame));
                     }
                 }
                 Err(error) if !blocking && error.kind() == std::io::ErrorKind::WouldBlock => {
-                    stream
-                        .set_nonblocking(false)
-                        .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
-                    return Ok(None);
+                    break Ok(None);
                 }
-                Err(error) => return Err(PolicyTransportError::Io(error.to_string())),
+                // A blocking read that expires is the socket's own read
+                // timeout, not a closed peer. Saying so lets the caller wait
+                // again instead of tearing down a live connection; whatever
+                // partial frame arrived stays in the read buffer.
+                Err(error) => break Err(Self::classify_io(&error)),
             }
+        };
+        // Restored on every exit, not only the two that used to. Leaving the
+        // socket non-blocking made the next blocking read return `WouldBlock`
+        // immediately, which read as a dead transport and restarted a working
+        // window manager.
+        if !blocking {
+            stream
+                .set_nonblocking(false)
+                .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
         }
+        outcome
     }
 
     pub fn send_snapshot(

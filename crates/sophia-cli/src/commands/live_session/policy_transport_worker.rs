@@ -166,6 +166,14 @@ impl Drop for PolicyTransportWorker {
     }
 }
 
+/// How long a policy client may take to answer before it is treated as gone.
+///
+/// The socket's own timeout is one window; this is the budget across several.
+/// A client legitimately needs more than one window after a topology change,
+/// which hands it an entire new layout to compute, and one expired window used
+/// to restart a window manager that was merely busy.
+const POLICY_CLIENT_RESPONSE_DEADLINE: Duration = Duration::from_secs(12);
+
 fn run_policy_transport(
     transport: &mut PolicyWmSessionTransport,
     connection_epoch: u64,
@@ -190,7 +198,7 @@ fn run_policy_transport(
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
 
     let configuration = transport
-        .receive_client_event()
+        .receive_client_event_within(POLICY_CLIENT_RESPONSE_DEADLINE)
         .map_err(|error| error.to_string())?;
     let PolicyClientEvent::Configuration {
         transaction,
@@ -272,7 +280,7 @@ fn run_policy_transport(
                 let mut projection_started = false;
                 let proposal = loop {
                     match transport
-                        .receive_client_event()
+                        .receive_client_event_within(POLICY_CLIENT_RESPONSE_DEADLINE)
                         .map_err(|error| error.to_string())?
                     {
                         PolicyClientEvent::ProjectionPending => projection_started = true,
@@ -320,7 +328,7 @@ fn run_policy_transport(
                     .map_err(|error| error.to_string())?;
                 if expect_session_operation && outcome == PolicyProjectionOutcome::Committed {
                     let event = transport
-                        .receive_client_event()
+                        .receive_client_event_within(POLICY_CLIENT_RESPONSE_DEADLINE)
                         .map_err(|error| error.to_string())?;
                     let PolicyClientEvent::SessionOperation {
                         transaction,

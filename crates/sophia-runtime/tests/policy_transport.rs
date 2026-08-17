@@ -349,3 +349,58 @@ fn scene() -> PolicySceneSnapshot {
         session_operations: Vec::new(),
     }
 }
+
+/// A socket timeout is not a broken transport.
+///
+/// The policy socket carries `SO_RCVTIMEO`, and Linux reports its expiry as
+/// `WouldBlock`. Folded into an `Io` error it read as a dead peer and
+/// restarted a window manager that was merely slow, which is exactly what a
+/// client is after a topology change hands it a whole new layout to compute.
+#[test]
+fn a_silent_client_times_out_rather_than_failing_the_transport() {
+    let directory = std::env::temp_dir().join(format!(
+        "sophia-policy-transport-{}-{}",
+        std::process::id(),
+        NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let mut transport = PolicyWmSessionTransport::bind(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_path_buf();
+    // Connects, negotiates, then says nothing at all.
+    let client = std::thread::spawn(move || {
+        let client = PolicyV1Client::connect(socket_path, Duration::from_secs(1)).unwrap();
+        std::thread::sleep(Duration::from_millis(600));
+        drop(client);
+    });
+
+    transport
+        .accept_and_negotiate(1, Duration::from_millis(100))
+        .unwrap();
+
+    // One expired window is a timeout, not a fault: the connection is intact
+    // and the caller may wait again.
+    assert_eq!(
+        transport.receive_client_event(),
+        Err(PolicyTransportError::TimedOut)
+    );
+
+    // Waiting across several windows is still bounded, and still a timeout
+    // rather than a transport failure.
+    assert_eq!(
+        transport.receive_client_event_within(Duration::from_millis(250)),
+        Err(PolicyTransportError::TimedOut)
+    );
+
+    // A non-blocking poll leaves the socket usable, which it did not when it
+    // returned early without restoring blocking mode.
+    assert_eq!(transport.try_receive_client_event(), Ok(None));
+    assert_eq!(
+        transport.receive_client_event(),
+        Err(PolicyTransportError::TimedOut)
+    );
+
+    client.join().unwrap();
+}
