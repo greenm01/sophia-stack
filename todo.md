@@ -1099,13 +1099,25 @@ where the types cannot be made to carry the agreement.
   fallible step between the commit log and `Stable`, and judge which are
   satisfiable in a normal commit, rather than discovering them one run at a
   time.
-- [ ] Collapse `output_topology_preparation_quiescent` (scanout) and
-  `topology_rebind_quiescent` (runtime) into one composed predicate read by
-  every caller. They are two definitions of "may the topology change now" that
-  already drifted apart once; ANDing them at the wait fixed the instance and
-  left the class open. They live on different types, so confirm the borrow at
-  each call site first. If the borrow forbids composition, model their agreement
-  instead of restating it.
+- [x] Do *not* collapse `output_topology_preparation_quiescent` (scanout) and
+  `topology_rebind_quiescent` (runtime), which an audit showed would break the
+  working path. They read as two definitions of one question but answer
+  different ones: the scanout asks whether a preparation may *begin*, and it is
+  false for the whole of an installed candidate, because
+  `install_applied_output_topology` restores the preparation with phase
+  `CandidateInstalled` -- which is exactly when the runtime's rebind runs. An
+  AND enforced at the rebind would reject every candidate installation. The
+  owner's pre-apply wait ANDs them correctly, because it precedes both. Both
+  now carry doc comments saying so, since the similar names are what invited
+  the mistake. The audit also found the escalation log mixing a blocker
+  observed before the skip with a runtime report taken after it, describing a
+  state that never existed; both are now read after.
+- [ ] Cover `output_topology_preparation_quiescent`, its blocker, and the head
+  report with tests. They have none anywhere, and no test calls
+  `begin_output_topology_preparation` either, so the scanout half of the
+  pre-apply wait is unpinned. `native.rs` has roughly eighty lines of headroom
+  before it becomes a twenty-seventh audit error, so new code belongs beside the
+  tests rather than in it.
 - [ ] Stamp work queued across a topology transition with the epoch it was built
   in, and revalidate or rebuild it on mismatch. `affected_outputs` was one
   instance of the class; the fix there resolves outputs at submission, which

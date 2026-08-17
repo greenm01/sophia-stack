@@ -212,7 +212,13 @@
                                 skipped.skipped_queued,
                                 skipped.skipped_software,
                                 ordinary_settlement_idle,
-                                quiescence_blocker.unwrap_or("none"),
+                                // Both read after the skip. Reporting the
+                                // blocker observed before it, beside a runtime
+                                // report taken after, would describe a state
+                                // that never existed.
+                                native
+                                    .output_topology_preparation_quiescence_blocker()
+                                    .unwrap_or("none"),
                                 runtime.as_ref().map_or_else(
                                     || "none".to_owned(),
                                     LiveProductionVisualRuntime::topology_rebind_quiescence_report,

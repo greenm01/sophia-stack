@@ -450,6 +450,12 @@ impl LiveProductionVisualRuntime {
     /// used to consult only the native scanout, while the rebind demands this
     /// as well. The two definitions drifted, so the wait could pass and the
     /// rebind still fail. Both now read this.
+    ///
+    /// Distinct from the scanout's `output_topology_preparation_quiescent`,
+    /// which asks whether a preparation may *begin*. That one is false
+    /// throughout an installed candidate, which is precisely when this rebind
+    /// runs, so the two cannot be collapsed. The wait ANDs them because it
+    /// precedes both.
     pub fn topology_rebind_quiescent(&self) -> bool {
         !self.native_scanout_in_flight()
             && self.present_scheduler.in_flight_displayed_layer().is_none()

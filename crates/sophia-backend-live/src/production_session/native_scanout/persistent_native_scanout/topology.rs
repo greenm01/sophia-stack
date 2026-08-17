@@ -1527,6 +1527,17 @@ impl LiveProductionNativeScanout {
     /// Reports whether every ordinary frame/resource owner has retired. The
     /// session owner uses this before transferring scheduling authority to an
     /// output-topology transaction.
+    /// Whether the scanout may *begin* a topology preparation.
+    ///
+    /// Deliberately not the same question as the runtime's
+    /// `topology_rebind_quiescent`, despite the similar name, and the two must
+    /// not be collapsed into one predicate. This one is false for the whole of
+    /// an installed candidate, because `install_applied_output_topology`
+    /// restores the preparation with phase `CandidateInstalled` -- and the
+    /// runtime's rebind runs at exactly that moment. An AND of the two enforced
+    /// at the rebind would reject every candidate installation. The owner's
+    /// pre-apply wait ANDs them only because it precedes both.
+    ///
     /// Queued work that has not crossed into a renderer worker is deliberately
     /// not counted. Installation discards exactly that state itself -- it
     /// refuses only `worker_in_flight` and then calls `discard_pending_frame`
