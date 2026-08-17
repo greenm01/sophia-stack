@@ -1,7 +1,8 @@
 use sophia_cli::session_keyboard::{
-    PhysicalKeyboardCoverage, RuntimeDeadlineKeyDrain, RuntimeDeadlineKeyDrainDecision,
-    SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState, SessionClientPressedKey,
-    SessionPressedKeyAdmission, VirtualTerminalChordAction, VirtualTerminalChordState,
+    PhysicalKeyboardCoverage, RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC, RuntimeDeadlineKeyDrain,
+    RuntimeDeadlineKeyDrainDecision, SESSION_CLIENT_PRESSED_KEY_CAPACITY, SessionClientKeyState,
+    SessionClientPressedKey, SessionPressedKeyAdmission, VirtualTerminalChordAction,
+    VirtualTerminalChordState,
 };
 use sophia_protocol::{DeviceId, SeatId, SurfaceId};
 
@@ -18,16 +19,16 @@ fn pressed_key(surface: u32, keycode: u32) -> SessionClientPressedKey {
 fn runtime_deadline_releases_held_keys_then_waits_for_delivery_acknowledgement() {
     let mut drain = RuntimeDeadlineKeyDrain::default();
     assert_eq!(
-        drain.observe(1_000, 1, 0, 0),
+        drain.observe(1_000, 1, 0, 0, 0),
         RuntimeDeadlineKeyDrainDecision::BeginRelease,
     );
     assert!(drain.is_draining());
     assert_eq!(
-        drain.observe(1_001, 0, 1, 1),
+        drain.observe(1_001, 0, 1, 1, 0),
         RuntimeDeadlineKeyDrainDecision::Waiting,
     );
     assert_eq!(
-        drain.observe(1_002, 0, 0, 0),
+        drain.observe(1_002, 0, 0, 0, 0),
         RuntimeDeadlineKeyDrainDecision::Complete,
     );
 }
@@ -36,22 +37,22 @@ fn runtime_deadline_releases_held_keys_then_waits_for_delivery_acknowledgement()
 fn runtime_deadline_key_release_is_immediate_when_idle_and_bounded_when_blocked() {
     let mut idle = RuntimeDeadlineKeyDrain::default();
     assert_eq!(
-        idle.observe(2_000, 0, 0, 0),
+        idle.observe(2_000, 0, 0, 0, 0),
         RuntimeDeadlineKeyDrainDecision::Complete,
     );
     assert!(!idle.is_draining());
 
     let mut blocked = RuntimeDeadlineKeyDrain::default();
     assert_eq!(
-        blocked.observe(2_000, 1, 0, 0),
+        blocked.observe(2_000, 1, 0, 0, 0),
         RuntimeDeadlineKeyDrainDecision::BeginRelease,
     );
     assert_eq!(
-        blocked.observe(2_499, 0, 1, 1),
+        blocked.observe(2_499, 0, 1, 1, 0),
         RuntimeDeadlineKeyDrainDecision::Waiting,
     );
     assert_eq!(
-        blocked.observe(2_500, 0, 1, 1),
+        blocked.observe(2_500, 0, 1, 1, 0),
         RuntimeDeadlineKeyDrainDecision::TimedOut,
     );
 }
@@ -199,4 +200,48 @@ fn state_only_release_retires_key_from_a_removed_surface() {
     assert_eq!(state.pending_len(), 0);
     assert_eq!(state.metrics().state_only_releases, 1);
     assert_eq!(state.metrics().removed_surface_keys, 0);
+}
+
+/// A deadline lands at an arbitrary instant, and the last pointer motion
+/// before it can raise a focus request that cannot settle in the same tick.
+///
+/// Ending there discards the user's final intent and reports work as
+/// outstanding that was never stuck. The drain waits for it on the same
+/// bounded terms as held keys, so a request that genuinely cannot settle is
+/// still reported.
+#[test]
+fn runtime_deadline_waits_for_a_policy_request_raised_at_the_boundary() {
+    let mut drain = RuntimeDeadlineKeyDrain::default();
+    // No keys owed, one policy request in flight.
+    assert_eq!(
+        drain.observe(3_000, 0, 0, 0, 1),
+        RuntimeDeadlineKeyDrainDecision::Waiting,
+    );
+    assert!(drain.is_draining());
+    assert_eq!(
+        drain.observe(3_001, 0, 0, 0, 1),
+        RuntimeDeadlineKeyDrainDecision::Waiting,
+    );
+    // It settles, and the session may end cleanly.
+    assert_eq!(
+        drain.observe(3_002, 0, 0, 0, 0),
+        RuntimeDeadlineKeyDrainDecision::Complete,
+    );
+
+    // One that never settles is still bounded and still reported.
+    let mut stuck = RuntimeDeadlineKeyDrain::default();
+    assert_eq!(
+        stuck.observe(4_000, 0, 0, 0, 1),
+        RuntimeDeadlineKeyDrainDecision::Waiting,
+    );
+    assert_eq!(
+        stuck.observe(
+            4_000 + RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC,
+            0,
+            0,
+            0,
+            1
+        ),
+        RuntimeDeadlineKeyDrainDecision::TimedOut,
+    );
 }

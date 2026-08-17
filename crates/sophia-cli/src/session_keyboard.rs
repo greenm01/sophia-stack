@@ -50,14 +50,26 @@ impl RuntimeDeadlineKeyDrain {
         matches!(self, Self::Draining { .. })
     }
 
+    /// Observes what the session still owes at its runtime deadline.
+    ///
+    /// `pending_policy_requests` is counted alongside the key state because a
+    /// deadline lands at an arbitrary instant: a focus request raised by the
+    /// last pointer motion before it cannot settle in the same tick, and
+    /// ending on it discards the user's final intent and reports outstanding
+    /// work that was never stuck. Draining is still bounded, so a request that
+    /// genuinely cannot settle still times out and is still reported.
     pub fn observe(
         &mut self,
         now_msec: u64,
         pressed_keys: usize,
         pending_deliveries: usize,
         release_barriers: usize,
+        pending_policy_requests: usize,
     ) -> RuntimeDeadlineKeyDrainDecision {
-        let pending = pressed_keys != 0 || pending_deliveries != 0 || release_barriers != 0;
+        let pending = pressed_keys != 0
+            || pending_deliveries != 0
+            || release_barriers != 0
+            || pending_policy_requests != 0;
         match *self {
             Self::Idle if !pending => RuntimeDeadlineKeyDrainDecision::Complete,
             Self::Idle => {

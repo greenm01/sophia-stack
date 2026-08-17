@@ -281,6 +281,9 @@ macro_rules! service_runtime_deadline_key_drain {
             client_keys.pending_len(),
             input_delivery.pending.len(),
             client_key_release_barrier.len(),
+            wm_session
+                .as_ref()
+                .map_or(0, LiveWmSession::pending_request_count),
         ) {
             RuntimeDeadlineKeyDrainDecision::BeginRelease => {
                 flush_all_client_keys!("runtime_deadline");

@@ -1137,8 +1137,19 @@ where the types cannot be made to carry the agreement.
   indistinguishable from a slow client, the wait now expires after two seconds,
   says what was missing, and restores input rather than holding a desktop at
   shortcuts-only forever.
+- [x] Drain an outstanding policy request at the runtime deadline instead of
+  reporting it as pending work. A deadline lands at an arbitrary instant, so the
+  last pointer motion before it can raise a focus request that cannot settle in
+  the same tick; ending there discarded the user's final intent and failed a
+  session on work that was never stuck. The existing bounded key drain already
+  had the right shape, so policy requests are counted alongside held keys rather
+  than given a second mechanism, and one that genuinely cannot settle still
+  times out and is still reported.
 - [ ] Decide whether a topology commit should also force a repaint rather than
-  relying on the relayout to generate one. With `policy_required` set, `mark_policy_committed`
+  relying on the relayout to generate one. The first full run settled naturally
+  -- presentation baseline 26, retirements 27 -- so the relayout did produce the
+  flip, and the bounded wait added alongside never fired. Nothing guarantees
+  that, though. With `policy_required` set, `mark_policy_committed`
   replaces the presentation baseline with the live retirement counter, so
   `observe_presentation` then needs a strictly *new* flip -- and neither of the
   two things the commit touches produces one. `scene.reconfigure_output_size`
