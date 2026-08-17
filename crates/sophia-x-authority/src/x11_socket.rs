@@ -57,8 +57,8 @@ use crate::{
 use sophia_protocol::RoutedInputRequest;
 #[cfg(unix)]
 use sophia_protocol::{
-    ClientAdmissionContext, ClientAdmissionId, InputEventKind, NamespaceId, Rect, SeatId, Size,
-    SurfaceId, SurfaceOutputReservations, TransactionId,
+    CapacityStallLedger, ClientAdmissionContext, ClientAdmissionId, InputEventKind, NamespaceId,
+    Rect, SeatId, Size, SurfaceId, SurfaceOutputReservations, TransactionId,
 };
 
 include!("x11_socket/routing/broker.rs");

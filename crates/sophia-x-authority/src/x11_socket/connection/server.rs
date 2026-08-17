@@ -315,7 +315,7 @@ fn run_x_authority_egress_sequencer(
     let mut input_disconnected = false;
     let mut pending = BTreeMap::<u64, Option<XAuthorityObservedTransactionBatch>>::new();
     let mut output = None::<(XAuthorityObservedTransactionBatch, Instant)>;
-    let mut waiting = BTreeSet::<u64>::new();
+    let mut waiting = CapacityStallLedger::<u64>::default();
     loop {
         loop {
             match receiver.try_recv() {
@@ -370,7 +370,7 @@ fn run_x_authority_egress_sequencer(
             let transaction = batch.transaction;
             match sender.try_send(batch) {
                 Ok(()) => {
-                    if waiting.remove(&transaction.raw()) {
+                    if waiting.end_stall(&transaction.raw()) {
                         telemetry(XAuthorityBackpressureTelemetry {
                             kind: XAuthorityBackpressureTelemetryKind::Resume,
                             client,
@@ -381,7 +381,7 @@ fn run_x_authority_egress_sequencer(
                     }
                 }
                 Err(TrySendError::Full(batch)) => {
-                    if waiting.insert(transaction.raw()) {
+                    if waiting.begin_stall(transaction.raw()) {
                         telemetry(XAuthorityBackpressureTelemetry {
                             kind: XAuthorityBackpressureTelemetryKind::Wait,
                             client,
@@ -394,7 +394,7 @@ fn run_x_authority_egress_sequencer(
                     // Later consecutive batches are causally waiting behind
                     // this full boundary even though they cannot overtake it.
                     for batch in pending.values().flatten() {
-                        if waiting.insert(batch.transaction.raw()) {
+                        if waiting.begin_stall(batch.transaction.raw()) {
                             telemetry(XAuthorityBackpressureTelemetry {
                                 kind: XAuthorityBackpressureTelemetryKind::Wait,
                                 client: batch.client,
