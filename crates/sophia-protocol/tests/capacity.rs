@@ -319,3 +319,193 @@ fn a_saturated_endpoint_can_still_release_every_key_it_holds() {
     }
     assert_eq!(depth, resource.capacity);
 }
+
+/// A bounded sink standing in for the acquisition queue.
+struct Sink {
+    depth: usize,
+    capacity: usize,
+    gone: bool,
+}
+
+impl Sink {
+    fn offer<T>(&mut self, record: T) -> CapacityBatchAttempt<T> {
+        if self.gone {
+            return CapacityBatchAttempt::RecipientGone;
+        }
+        if self.depth >= self.capacity {
+            return CapacityBatchAttempt::Full {
+                record,
+                depth: self.depth,
+            };
+        }
+        self.depth += 1;
+        CapacityBatchAttempt::Accepted
+    }
+}
+
+/// The shape that killed seven physical gate runs: a batch arrives, the sink is
+/// already full, and the remainder has nowhere to go. It must cost the batch,
+/// not the session, and the cost must be counted.
+#[test]
+fn a_saturated_batch_abandons_its_tail_and_says_how_much() {
+    let capacity = bounded(4, deferral(5));
+    let mut sink = Sink {
+        depth: 4,
+        capacity: 4,
+        gone: false,
+    };
+    let outcome = drive_capacity_batch(
+        &capacity,
+        vec![1u8, 2, 3, 4, 5],
+        FakeWait::default,
+        |record| sink.offer(record),
+    );
+
+    let CapacityBatchOutcome::Saturated {
+        admitted,
+        discarded,
+        report,
+    } = outcome
+    else {
+        panic!("a full sink must saturate, got {outcome:?}");
+    };
+    assert_eq!(admitted, 0);
+    assert_eq!(discarded, 5);
+    assert_eq!(report.discarded, 5);
+    assert_eq!(report.cause, CapacitySaturationCause::DeadlineExpired);
+    // Admitted plus discarded accounts for the whole batch: nothing was merged
+    // and nothing vanished.
+    assert_eq!(outcome.admitted() + outcome.discarded(), 5);
+}
+
+/// Partial admission is the case a naive count gets wrong, because the batch
+/// neither drained nor failed outright.
+#[test]
+fn a_partly_admitted_batch_accounts_for_both_halves() {
+    let capacity = bounded(4, deferral(5));
+    let mut sink = Sink {
+        depth: 2,
+        capacity: 4,
+        gone: false,
+    };
+    let outcome = drive_capacity_batch(
+        &capacity,
+        vec![1u8, 2, 3, 4, 5],
+        FakeWait::default,
+        |record| sink.offer(record),
+    );
+
+    assert_eq!(outcome.admitted(), 2);
+    assert_eq!(outcome.discarded(), 3);
+    assert_eq!(outcome.admitted() + outcome.discarded(), 5);
+    assert_eq!(sink.depth, 4);
+}
+
+/// A sink that drains between attempts takes the whole batch, and the deferral
+/// costs latency rather than events.
+#[test]
+fn a_batch_that_waits_out_a_busy_sink_loses_nothing() {
+    let capacity = bounded(1, deferral(1_000));
+    let mut sink = Sink {
+        depth: 1,
+        capacity: 1,
+        gone: false,
+    };
+    let outcome = drive_capacity_batch(&capacity, vec![1u8, 2, 3], FakeWait::default, |record| {
+        // The consumer drains one slot before each retry.
+        sink.depth = sink.depth.saturating_sub(1);
+        sink.offer(record)
+    });
+
+    assert_eq!(outcome, CapacityBatchOutcome::Drained { admitted: 3 });
+    assert_eq!(outcome.discarded(), 0);
+}
+
+/// Teardown is not a degradation. A site that reports loss on every clean exit
+/// trains its reader to ignore the one line that matters.
+#[test]
+fn a_cancelled_batch_is_teardown_rather_than_loss() {
+    let capacity = bounded(1, deferral(1_000));
+    let mut sink = Sink {
+        depth: 1,
+        capacity: 1,
+        gone: false,
+    };
+    let outcome = drive_capacity_batch(
+        &capacity,
+        vec![1u8, 2, 3, 4],
+        || FakeWait {
+            cancelled: true,
+            ..FakeWait::default()
+        },
+        |record| sink.offer(record),
+    );
+
+    assert_eq!(
+        outcome,
+        CapacityBatchOutcome::Cancelled {
+            admitted: 0,
+            abandoned: 4,
+        }
+    );
+    assert_eq!(outcome.discarded(), 0);
+}
+
+/// A departed recipient is also not a running-session degradation, and it is
+/// distinguished from cancellation so a report can name which happened.
+#[test]
+fn a_departed_sink_ends_the_batch_without_reporting_loss() {
+    let capacity = bounded(4, deferral(5));
+    let mut sink = Sink {
+        depth: 0,
+        capacity: 4,
+        gone: false,
+    };
+    let mut offered = 0;
+    let outcome =
+        drive_capacity_batch(&capacity, vec![1u8, 2, 3, 4], FakeWait::default, |record| {
+            offered += 1;
+            if offered > 2 {
+                sink.gone = true;
+            }
+            sink.offer(record)
+        });
+
+    assert_eq!(
+        outcome,
+        CapacityBatchOutcome::RecipientGone {
+            admitted: 2,
+            abandoned: 2,
+        }
+    );
+    assert_eq!(outcome.discarded(), 0);
+}
+
+/// Each record gets its own deferral budget. Sharing one across a batch would
+/// let the first record spend the whole allowance.
+#[test]
+fn every_record_gets_its_own_deferral_budget() {
+    let capacity = bounded(2, deferral(4));
+    let mut sink = Sink {
+        depth: 2,
+        capacity: 2,
+        gone: false,
+    };
+    let mut waits = 0;
+    let outcome = drive_capacity_batch(
+        &capacity,
+        vec![1u8, 2],
+        || {
+            waits += 1;
+            FakeWait::default()
+        },
+        |record| {
+            // Drains just in time, but only after some waiting.
+            sink.depth = sink.depth.saturating_sub(1);
+            sink.offer(record)
+        },
+    );
+
+    assert_eq!(outcome, CapacityBatchOutcome::Drained { admitted: 2 });
+    assert_eq!(waits, 2, "one wait per record, not one per batch");
+}

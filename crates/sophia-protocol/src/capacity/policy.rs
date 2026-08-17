@@ -93,6 +93,21 @@ pub enum CapacitySaturationCause {
     IdentityExhausted,
 }
 
+impl CapacitySaturationDisposition {
+    /// Stable snake_case token for structured logs. A reader that groups by
+    /// disposition can tell a bounded wait from a dropped record without
+    /// parsing the rest of the line.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::EndpointEpochClosed => "endpoint_epoch_closed",
+            Self::BoundedDeferral { .. } => "bounded_deferral",
+            Self::RejectAndConsume => "reject_and_consume",
+            Self::DegradeWithCause => "degrade_with_cause",
+        }
+    }
+}
+
 impl CapacitySaturationCause {
     /// Stable snake_case token for structured logs.
     pub const fn as_str(self) -> &'static str {

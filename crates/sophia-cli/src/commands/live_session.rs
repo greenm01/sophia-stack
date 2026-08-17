@@ -172,6 +172,12 @@ impl SessionPhysicalInput {
             Self::Threaded(poller) => poller.drain_event_timings(),
         }
     }
+
+    fn take_acquisition_saturation(&mut self) -> Option<sophia_protocol::CapacitySaturationReport> {
+        match self {
+            Self::Threaded(poller) => poller.take_acquisition_saturation(),
+        }
+    }
 }
 
 /// The one DRM device every enabled output in a plan is driven by, if there is one.

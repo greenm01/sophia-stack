@@ -97,6 +97,21 @@ macro_rules! drain_physical_input {
                 },
             )?;
             let event_timings = poller.drain_event_timings();
+            // Acquisition saturation costs events rather than the session, so
+            // it has to be audible. The count is cumulative, which is what lets
+            // one replaceable slot carry every occurrence since the last tick.
+            if let Some(saturation) = poller.take_acquisition_saturation() {
+                eprintln!(
+                    "sophia_live_input_acquisition schema=1 status=saturated resource={} cause={} disposition={} depth={} capacity={} discarded={} waited_msec={}",
+                    saturation.resource.as_str(),
+                    saturation.cause.as_str(),
+                    saturation.disposition.as_str(),
+                    saturation.depth,
+                    saturation.capacity,
+                    saturation.discarded,
+                    saturation.waited_msec,
+                );
+            }
             if report.keyboard_focus_handoff_expired
                 || report.keyboard_focus_handoff_stale_drops != 0
                 || report.keyboard_focus_handoff_capacity_drops != 0

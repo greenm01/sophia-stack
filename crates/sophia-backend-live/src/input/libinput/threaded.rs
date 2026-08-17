@@ -1,11 +1,16 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
+use sophia_protocol::{
+    BoundedCapacity, CapacityAcquisitionLedger, CapacityBatchAttempt, CapacityBatchOutcome,
+    CapacityEscalation, CapacityResourceId, CapacitySaturationDisposition,
+    CapacitySaturationReport, CapacityWait, drive_capacity_batch,
+};
 
 use crate::prelude::*;
 
@@ -16,6 +21,67 @@ use super::{
 };
 
 const INPUT_THREAD_POLL_MSEC: i64 = 1;
+
+const NATIVE_INPUT_ACQUISITION: CapacityResourceId =
+    CapacityResourceId("backend_live.input.acquisition");
+
+/// How long the acquisition worker declines to read before abandoning a batch.
+///
+/// Not reading is the correct backpressure here: evdev buffers upstream while
+/// the worker waits, so a consumer that is merely late costs latency rather
+/// than events. The ceiling is what keeps this a bounded deferral instead of
+/// the unbounded retry it replaces.
+const NATIVE_INPUT_ACQUISITION_DEFERRAL_MSEC: u32 = 50;
+const NATIVE_INPUT_ACQUISITION_RETRY_MSEC: u32 = 1;
+
+/// What acquisition saturation cost, shared with the session frontend.
+///
+/// The report is a replaceable slot rather than a queue: every report carries
+/// the cumulative discard total, so the newest supersedes its predecessors and
+/// reporting saturation cannot itself become an unbounded resource.
+///
+/// A non-zero discard total means raw device packets were dropped, which can
+/// include key releases. The frontend treats that as a reason to flush the keys
+/// it believes are held; acquisition cannot do that itself because at this
+/// layer a packet has no routed meaning yet.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NativeInputAcquisitionSaturation {
+    pub ledger: CapacityAcquisitionLedger,
+    pub latest: Option<CapacitySaturationReport>,
+}
+
+const fn acquisition_capacity(capacity: usize) -> BoundedCapacity {
+    BoundedCapacity::new(
+        NATIVE_INPUT_ACQUISITION,
+        capacity,
+        CapacitySaturationDisposition::BoundedDeferral {
+            deadline_msec: NATIVE_INPUT_ACQUISITION_DEFERRAL_MSEC,
+            retry_interval_msec: NATIVE_INPUT_ACQUISITION_RETRY_MSEC,
+            escalation: CapacityEscalation::EndpointEpochClosed,
+        },
+    )
+}
+
+/// The worker's own waiting strategy. Pausing this thread is the backpressure:
+/// it stops draining libinput, which is what lets the kernel hold the events.
+struct AcquisitionWait<'a> {
+    started: Instant,
+    stop: &'a AtomicBool,
+}
+
+impl CapacityWait for AcquisitionWait<'_> {
+    fn elapsed_msec(&self) -> u32 {
+        u32::try_from(self.started.elapsed().as_millis()).unwrap_or(u32::MAX)
+    }
+
+    fn pause(&mut self, interval_msec: u32) {
+        std::thread::sleep(Duration::from_millis(u64::from(interval_msec.max(1))));
+    }
+
+    fn cancelled(&self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+}
 
 struct QueuedInputEvent {
     packet: InputEventPacket,
@@ -46,6 +112,7 @@ pub struct ThreadedNativeLibinputEventPoller {
     max_dispatch_gap_msec: Arc<AtomicUsize>,
     max_queue_dwell_msec: usize,
     event_timings: VecDeque<ThreadedNativeInputEventTiming>,
+    saturation: Arc<Mutex<NativeInputAcquisitionSaturation>>,
     max_read_per_poll: usize,
     worker: Option<JoinHandle<()>>,
 }
@@ -67,6 +134,25 @@ impl ThreadedNativeLibinputEventPoller {
 
     pub fn drain_event_timings(&mut self) -> Vec<ThreadedNativeInputEventTiming> {
         self.event_timings.drain(..).collect()
+    }
+
+    /// Takes the pending acquisition-saturation report, leaving the cumulative
+    /// ledger in place. Returns `None` when nothing was discarded since the
+    /// last call, which is the ordinary case.
+    pub fn take_acquisition_saturation(&mut self) -> Option<CapacitySaturationReport> {
+        self.saturation
+            .lock()
+            .ok()
+            .and_then(|mut state| state.latest.take())
+    }
+
+    /// Cumulative acquisition accounting. `discarded_total` is zero unless a
+    /// deferral ran out of time.
+    pub fn acquisition_ledger(&self) -> CapacityAcquisitionLedger {
+        self.saturation.lock().map_or_else(
+            |_| CapacityAcquisitionLedger::default(),
+            |state| state.ledger,
+        )
     }
 
     fn worker_error(&self) -> io::Result<()> {
@@ -251,6 +337,9 @@ fn open_threaded_native_libinput_poller(
     let worker_depth = Arc::clone(&queue_depth);
     let worker_max_depth = Arc::clone(&max_queue_depth);
     let worker_max_gap = Arc::clone(&max_dispatch_gap_msec);
+    let saturation = Arc::new(Mutex::new(NativeInputAcquisitionSaturation::default()));
+    let worker_saturation = Arc::clone(&saturation);
+    let capacity = acquisition_capacity(queue_capacity);
     let worker = std::thread::spawn(move || {
         let opened = match source {
             NativeLibinputSource::Paths(paths) => {
@@ -299,6 +388,8 @@ fn open_threaded_native_libinput_poller(
             &worker_depth,
             &worker_max_depth,
             &worker_max_gap,
+            &worker_saturation,
+            capacity,
         );
         let _ = health_sender.try_send(result);
     });
@@ -313,6 +404,7 @@ fn open_threaded_native_libinput_poller(
             max_dispatch_gap_msec,
             max_queue_dwell_msec: 0,
             event_timings: VecDeque::new(),
+            saturation,
             max_read_per_poll,
             worker: Some(worker),
         }),
@@ -335,6 +427,8 @@ fn run_input_worker(
     queue_depth: &AtomicUsize,
     max_queue_depth: &AtomicUsize,
     max_dispatch_gap_msec: &AtomicUsize,
+    saturation: &Mutex<NativeInputAcquisitionSaturation>,
+    capacity: BoundedCapacity,
 ) -> Result<(), String> {
     let timeout = Timespec {
         tv_sec: 0,
@@ -351,26 +445,87 @@ fn run_input_worker(
         observe_max(max_dispatch_gap_msec, gap);
         last_dispatch = Instant::now();
         let events = poller.poll_ready().map_err(|error| error.to_string())?;
-        for packet in events {
-            let depth = queue_depth.fetch_add(1, Ordering::AcqRel).saturating_add(1);
-            observe_max(max_queue_depth, depth);
-            match sender.try_send(QueuedInputEvent {
-                packet,
-                queued_at: Instant::now(),
-            }) {
-                Ok(()) => {}
-                Err(TrySendError::Full(_)) => {
-                    queue_depth.fetch_sub(1, Ordering::AcqRel);
-                    return Err("native input acquisition queue saturated".to_owned());
+        record_arrivals(saturation, events.len());
+        let outcome = drive_capacity_batch(
+            &capacity,
+            events,
+            || AcquisitionWait {
+                started: Instant::now(),
+                stop,
+            },
+            |packet| {
+                // Claim the slot before the event becomes visible to the
+                // receiver, and release it if the offer failed. A claim made
+                // afterwards could be subtracted before it was ever added.
+                let depth = queue_depth.fetch_add(1, Ordering::AcqRel).saturating_add(1);
+                observe_max(max_queue_depth, depth);
+                match sender.try_send(QueuedInputEvent {
+                    packet,
+                    queued_at: Instant::now(),
+                }) {
+                    Ok(()) => CapacityBatchAttempt::Accepted,
+                    Err(TrySendError::Full(event)) => {
+                        queue_depth.fetch_sub(1, Ordering::AcqRel);
+                        CapacityBatchAttempt::Full {
+                            record: event.packet,
+                            depth: capacity.capacity,
+                        }
+                    }
+                    Err(TrySendError::Disconnected(_)) => {
+                        queue_depth.fetch_sub(1, Ordering::AcqRel);
+                        CapacityBatchAttempt::RecipientGone
+                    }
                 }
-                Err(TrySendError::Disconnected(_)) => {
-                    queue_depth.fetch_sub(1, Ordering::AcqRel);
-                    return Ok(());
-                }
+            },
+        );
+        record_admitted(saturation, outcome.admitted());
+        match outcome {
+            CapacityBatchOutcome::Drained { .. } => {}
+            // Neither teardown nor a departed poller is a degradation of a
+            // running session. What they abandoned stays visible as the
+            // ledger's held count without being reported as loss.
+            CapacityBatchOutcome::Cancelled { .. } | CapacityBatchOutcome::RecipientGone { .. } => {
+                return Ok(());
             }
+            // Deferral is spent. This costs the batch rather than the session,
+            // and says exactly what it cost: a truncation reporting zero would
+            // be the silent drop this disposition exists to forbid.
+            CapacityBatchOutcome::Saturated {
+                discarded, report, ..
+            } => record_discarded(saturation, discarded, report),
         }
     }
     Ok(())
+}
+
+fn record_arrivals(saturation: &Mutex<NativeInputAcquisitionSaturation>, count: usize) {
+    if let Ok(mut state) = saturation.lock() {
+        state.ledger.arrived(count as u64);
+    }
+}
+
+fn record_admitted(saturation: &Mutex<NativeInputAcquisitionSaturation>, count: usize) {
+    if let Ok(mut state) = saturation.lock() {
+        state.ledger.admitted(count as u64);
+    }
+}
+
+fn record_discarded(
+    saturation: &Mutex<NativeInputAcquisitionSaturation>,
+    count: usize,
+    mut report: CapacitySaturationReport,
+) {
+    debug_assert!(
+        count > 0,
+        "a discard report must account for at least one event"
+    );
+    if let Ok(mut state) = saturation.lock() {
+        state.ledger.discarded(count as u64);
+        // The published total is cumulative, which is what lets one replaceable
+        // slot supersede every earlier report without losing volume.
+        report.discarded = usize::try_from(state.ledger.discarded_total()).unwrap_or(usize::MAX);
+        state.latest = Some(report);
+    }
 }
 
 fn observe_max(value: &AtomicUsize, candidate: usize) {
