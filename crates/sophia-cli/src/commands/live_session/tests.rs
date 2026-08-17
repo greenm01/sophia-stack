@@ -42,7 +42,8 @@ use super::{
     take_settled_input_delivery_wait,
 };
 use crate::commands::live_session::{
-    PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation, resolve_public_policy_affected_outputs,
+    PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation, policy_cause_subject_is_live,
+    resolve_public_policy_affected_outputs,
 };
 use sophia_backend_live::{
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
@@ -1218,4 +1219,67 @@ fn a_queued_cause_resolves_its_outputs_against_the_current_scene() {
         resolve_public_policy_affected_outputs(Vec::new(), [one]),
         vec![one]
     );
+}
+
+/// A cause outliving the surface it was raised about must be dropped, not
+/// submitted.
+///
+/// The projection reducer refuses a cause naming a withdrawn surface with
+/// `InvalidRequestCause`, and that refusal ends the session. Causes are queued
+/// long enough for this to matter because ordinary cycles are held for the
+/// whole of a topology candidate, which is exactly when a surface can vanish.
+#[test]
+fn a_cause_naming_a_withdrawn_surface_is_not_submitted() {
+    let output = OutputId::from_raw(1);
+    let live = SurfaceId::new(41, 1);
+    let gone = SurfaceId::new(42, 1);
+    let bounds = sophia_protocol::Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+    };
+    let scene = sophia_protocol::PolicySceneSnapshot {
+        generation: 1,
+        active_output: output,
+        outputs: vec![sophia_protocol::PolicyOutputSnapshot {
+            output,
+            generation: 1,
+            focus: Some(live),
+            bounds,
+            work_area: bounds,
+        }],
+        surfaces: vec![sophia_protocol::PolicySurfaceSnapshot {
+            surface: live,
+            generation: 1,
+            current_output: Some(output),
+            kind: sophia_protocol::PolicySurfaceKind::Toplevel,
+            capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+            constraints: sophia_protocol::SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            exact_size: None,
+            requested_state: sophia_protocol::PolicyPresentationState::default(),
+            current_state: sophia_protocol::PolicyPresentationState::default(),
+            transient_owner: None,
+            geometry: bounds,
+        }],
+        session_operations: Vec::new(),
+    };
+
+    // A scene-wide cause names no subject, so it always survives.
+    assert!(policy_cause_subject_is_live(
+        sophia_protocol::PolicyRequestCause::SceneChanged,
+        &scene
+    ));
+
+    assert!(policy_cause_subject_is_live(
+        sophia_protocol::PolicyRequestCause::Focus { target: live },
+        &scene
+    ));
+    assert!(!policy_cause_subject_is_live(
+        sophia_protocol::PolicyRequestCause::Focus { target: gone },
+        &scene
+    ));
 }

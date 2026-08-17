@@ -5,6 +5,24 @@ struct LivePublicPolicyCause {
     affected_outputs: Vec<sophia_protocol::OutputId>,
 }
 
+/// Whether the surface a cause was raised about is still in the scene.
+///
+/// The projection reducer validates this itself and rejects a cause naming a
+/// withdrawn surface, but its rejection is an error that ends the session
+/// rather than a signal to skip. Checking here keeps a queued cause from
+/// outliving its own subject.
+fn policy_cause_subject_is_live(
+    cause: sophia_protocol::PolicyRequestCause,
+    scene: &sophia_protocol::PolicySceneSnapshot,
+) -> bool {
+    let live = |target| scene.surfaces.iter().any(|surface| surface.surface == target);
+    match cause {
+        sophia_protocol::PolicyRequestCause::Focus { target }
+        | sophia_protocol::PolicyRequestCause::Interaction { target, .. } => live(target),
+        _ => true,
+    }
+}
+
 /// Narrows a queued cause's outputs to those the scene still has.
 ///
 /// A cause names the outputs it was raised for, and it may have been queued
@@ -2061,12 +2079,37 @@ impl LiveWmSession {
             && public.transport_ready
             && public.in_flight_request.is_none()
             && public.deferred_command.is_none()
-            && let Some(cause) = public.queue.pop_front()
+            && !public.queue.is_empty()
         {
             let scene = public.snapshot(layout)?;
             if scene.generation > public.reducer.scene().generation {
                 public.reducer.observe_scene(scene.clone())?;
             }
+            // A cause whose subject is gone is moot, and the projection
+            // reducer refuses it outright rather than ignoring it, which ends
+            // the session. Withdrawal raises its own cause, so dropping this
+            // one loses nothing. Causes are only queued long enough to matter
+            // because ordinary cycles are held for the whole of a topology
+            // candidate, which is exactly when a surface can disappear.
+            let mut dropped = 0usize;
+            let cause = loop {
+                let Some(cause) = public.queue.pop_front() else {
+                    break None;
+                };
+                if policy_cause_subject_is_live(cause.cause, &scene) {
+                    break Some(cause);
+                }
+                dropped = dropped.saturating_add(1);
+            };
+            if dropped != 0 {
+                tracing::warn!(
+                    "sophia_live_wm_policy schema=1 status=cause_withdrawn dropped={dropped}",
+                );
+            }
+            let Some(cause) = cause else {
+                self.public = Some(public);
+                return Ok(proposal);
+            };
             // A cause names the outputs it was raised for, and it may have been
             // queued before a topology change replaced them. Its outputs are a
             // hint about where work is owed, not an identity, so they are
