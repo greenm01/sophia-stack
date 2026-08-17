@@ -96,6 +96,7 @@ macro_rules! drain_physical_input {
                     input_presentation_epoch,
                 },
             )?;
+            routed_input_saturation.merge(report.ingress_saturation);
             let event_timings = poller.drain_event_timings();
             // Acquisition saturation costs events rather than the session, so
             // it has to be audible. The count is cumulative, which is what lets
@@ -247,7 +248,7 @@ macro_rules! drain_physical_input {
             input_delivery
                 .pending
                 .extend(report.deliveries.iter().copied());
-            let repeat_report = route_due_key_repeat(
+            let repeat_report = route_due_key_repeat_with_saturation(
                 &mut key_repeat,
                 seat,
                 u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -256,6 +257,7 @@ macro_rules! drain_physical_input {
                 committed_surfaces,
                 &client_keys,
                 input_sender,
+                &mut routed_input_saturation,
                 &mut input_delivery.next,
             )?;
             metrics.key_repeats_routed = metrics
@@ -642,6 +644,30 @@ macro_rules! drain_physical_input {
             {
                 std::io::stdout().flush()?;
             }
+        }
+        // A full ingress queue costs the records it could not take, and the
+        // epoch close is what keeps that from leaving latched state in a
+        // client. Closing it here rather than at the seven send sites keeps the
+        // policy in one place, and keeps it outside the borrow that routing
+        // holds on the runtime.
+        if !routed_input_saturation.is_empty() {
+            routed_input_saturation
+                .report(input_sender.capacity(), &mut routed_input_saturation_ledger);
+            routed_input_saturation = RoutedInputIngressSaturation::default();
+            let revoked_input_leases = advance_application_input_security_epoch(
+                &mut application_route_leases,
+                input_sender,
+                &layout.client_routes,
+                route_lease_release_sender,
+            )?;
+            revoke_floating_pointer_interaction!("routed_input_saturation");
+            pointer_focus_handoff = PointerFocusHandoffState::default();
+            keyboard_focus_handoff = KeyboardFocusHandoffState::default();
+            key_repeat.cancel_seat(seat);
+            println!(
+                "sophia_live_input_epoch schema=1 reason=routed_input_saturation epoch={} revoked_leases={revoked_input_leases}",
+                application_route_leases.control_epoch(),
+            );
         }
         emergency_exit
     }};

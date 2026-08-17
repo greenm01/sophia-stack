@@ -1,6 +1,8 @@
 use super::super::{InputDeliveryPhase, InputDeliveryState};
 use super::*;
-use crate::commands::live_session::{FloatingPointerPolicyInteraction, pointer_focus_surface};
+use crate::commands::live_session::{
+    FloatingPointerPolicyInteraction, RoutedInputIngressSaturation, pointer_focus_surface,
+};
 use sophia_engine::InputFocusDecision;
 use sophia_protocol::TransactionId;
 use sophia_x_authority::{
@@ -409,6 +411,7 @@ fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
         &mut scratch,
         &mut deliveries,
         &input_sender,
+        &mut RoutedInputIngressSaturation::default(),
         &mut modifiers,
         &mut next_delivery,
         4,

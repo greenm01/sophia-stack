@@ -214,6 +214,7 @@
                     &mut client_key_scratch,
                     &mut modifiers,
                     input_sender,
+                    &mut routed_input_saturation,
                     &mut input_delivery.next,
                     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                 )?;

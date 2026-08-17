@@ -4,6 +4,9 @@ use floating_pointer::*;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct PhysicalInputRouteReport {
+    /// What a full ingress queue cost this pass. Non-zero means the endpoint
+    /// epoch must close, which is the barrier that replaces the records lost.
+    ingress_saturation: RoutedInputIngressSaturation,
     events: usize,
     wm_actions: Vec<WmActionId>,
     wm_pointer_gestures: Vec<sophia_protocol::WmPointerGestureCompleted>,
@@ -51,6 +54,9 @@ trait RoutedInputIngress {
         &self,
         route: XAuthorityRoutedInput,
     ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>>;
+
+    /// The queue's bound, so a saturation report names what was exhausted.
+    fn capacity(&self) -> usize;
 }
 
 impl RoutedInputIngress for XAuthorityRoutedInputSender {
@@ -59,6 +65,10 @@ impl RoutedInputIngress for XAuthorityRoutedInputSender {
         route: XAuthorityRoutedInput,
     ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
         XAuthorityRoutedInputSender::try_send(self, route)
+    }
+
+    fn capacity(&self) -> usize {
+        XAuthorityRoutedInputSender::capacity(self)
     }
 }
 
@@ -69,6 +79,12 @@ impl RoutedInputIngress for SyncSender<XAuthorityRoutedInput> {
         route: XAuthorityRoutedInput,
     ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
         SyncSender::try_send(self, route)
+    }
+
+    fn capacity(&self) -> usize {
+        // A plain channel has no capacity accessor. The value reaches only a
+        // diagnostic field, never an admission decision.
+        8
     }
 }
 
@@ -498,6 +514,7 @@ fn route_input_events_with_pointer_focus(
     pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
+        ingress_saturation: RoutedInputIngressSaturation::default(),
         events: events.len(),
         wm_actions: Vec::new(),
         wm_pointer_gestures: Vec::new(),
@@ -602,12 +619,19 @@ fn route_input_events_with_pointer_focus(
                     )?,
                     None => None,
                 };
-                input_sender.try_send(XAuthorityRoutedInput {
-                    request,
-                    route_lease,
-                    delivery: Some(delivery),
-                    mode: XAuthorityRoutedInputMode::Deliver,
-                })?;
+                if !route_bounded_input(
+                    input_sender,
+                    XAuthorityRoutedInput {
+                        request,
+                        route_lease,
+                        delivery: Some(delivery),
+                        mode: XAuthorityRoutedInputMode::Deliver,
+                    },
+                    sophia_protocol::CapacityClass::Ordered,
+                    &mut report.ingress_saturation,
+                )? {
+                    continue;
+                }
                 report.pointer_routed = report.pointer_routed.saturating_add(1);
                 if is_button {
                     report.pointer_buttons_routed =
@@ -669,21 +693,31 @@ fn route_input_events_with_pointer_focus(
                                 next_input_delivery.checked_add(1).ok_or(
                                     "live-session input delivery ID exhausted",
                                 )?;
-                            input_sender.try_send(XAuthorityRoutedInput {
-                                request: sophia_protocol::RoutedInputRequest {
-                                    serial: release.serial,
-                                    seat: release.seat,
-                                    device: release.device,
-                                    time_msec: release.time_msec,
-                                    target_surface,
-                                    global_position: Point::default(),
-                                    local_position: Point::default(),
-                                    kind: release.kind,
+                            // A release the client never sees is a modifier
+                            // held down forever, so leave the key recorded as
+                            // pressed and let the epoch close be the barrier.
+                            if !route_bounded_input(
+                                input_sender,
+                                XAuthorityRoutedInput {
+                                    request: sophia_protocol::RoutedInputRequest {
+                                        serial: release.serial,
+                                        seat: release.seat,
+                                        device: release.device,
+                                        time_msec: release.time_msec,
+                                        target_surface,
+                                        global_position: Point::default(),
+                                        local_position: Point::default(),
+                                        kind: release.kind,
+                                    },
+                                    route_lease: None,
+                                    delivery: Some(delivery),
+                                    mode: XAuthorityRoutedInputMode::Deliver,
                                 },
-                                route_lease: None,
-                                delivery: Some(delivery),
-                                mode: XAuthorityRoutedInputMode::Deliver,
-                            })?;
+                                sophia_protocol::CapacityClass::TerminatingBoundary,
+                                &mut report.ingress_saturation,
+                            )? {
+                                continue;
+                            }
                             client_keys.record_routed(
                                 SessionClientPressedKey {
                                     surface: target_surface,
@@ -836,21 +870,32 @@ fn route_input_events_with_pointer_focus(
                 *next_input_delivery = next_input_delivery
                     .checked_add(1)
                     .ok_or("live-session input delivery ID exhausted")?;
-                input_sender.try_send(XAuthorityRoutedInput {
-                    request: sophia_protocol::RoutedInputRequest {
-                        serial: event.serial,
-                        seat: event.seat,
-                        device: event.device,
-                        time_msec: event.time_msec,
-                        target_surface,
-                        global_position: Point::default(),
-                        local_position: Point::default(),
-                        kind: event.kind,
+                if !route_bounded_input(
+                    input_sender,
+                    XAuthorityRoutedInput {
+                        request: sophia_protocol::RoutedInputRequest {
+                            serial: event.serial,
+                            seat: event.seat,
+                            device: event.device,
+                            time_msec: event.time_msec,
+                            target_surface,
+                            global_position: Point::default(),
+                            local_position: Point::default(),
+                            kind: event.kind,
+                        },
+                        route_lease: None,
+                        delivery: Some(delivery),
+                        mode: XAuthorityRoutedInputMode::Deliver,
                     },
-                    route_lease: None,
-                    delivery: Some(delivery),
-                    mode: XAuthorityRoutedInputMode::Deliver,
-                })?;
+                    if pressed {
+                        sophia_protocol::CapacityClass::Ordered
+                    } else {
+                        sophia_protocol::CapacityClass::TerminatingBoundary
+                    },
+                    &mut report.ingress_saturation,
+                )? {
+                    continue;
+                }
                 client_keys.record_routed(key, pressed)?;
                 if pressed {
                     match key_repeat.arm(
@@ -1145,12 +1190,19 @@ fn route_input_events_with_pointer_focus(
                     )?,
                     None => None,
                 };
-                input_sender.try_send(XAuthorityRoutedInput {
-                    request,
-                    route_lease,
-                    delivery: Some(delivery),
-                    mode: XAuthorityRoutedInputMode::Deliver,
-                })?;
+                if !route_bounded_input(
+                    input_sender,
+                    XAuthorityRoutedInput {
+                        request,
+                        route_lease,
+                        delivery: Some(delivery),
+                        mode: XAuthorityRoutedInputMode::Deliver,
+                    },
+                    sophia_protocol::CapacityClass::Ordered,
+                    &mut report.ingress_saturation,
+                )? {
+                    continue;
+                }
                 report.pointer_routed = report.pointer_routed.saturating_add(1);
                 if is_button {
                     report.pointer_buttons_routed = report.pointer_buttons_routed.saturating_add(1);
@@ -1245,200 +1297,4 @@ fn record_pointer_boundary_placement(
             .pointer_output_transitions
             .push((transition, placement.contact.is_empty()));
     }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct KeyRepeatRouteReport {
-    routed: usize,
-    delivery: Option<XAuthorityInputDeliveryId>,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn route_due_key_repeat(
-    key_repeat: &mut KeyRepeatState,
-    seat: SeatId,
-    now_msec: u64,
-    routing_mode: PhysicalInputRoutingMode,
-    focus: &InputFocusState,
-    committed_surfaces: &[CommittedSurfaceState],
-    client_keys: &SessionClientKeyState,
-    input_sender: &impl RoutedInputIngress,
-    next_input_delivery: &mut u64,
-) -> Result<KeyRepeatRouteReport, Box<dyn std::error::Error>> {
-    let mut report = KeyRepeatRouteReport::default();
-    if routing_mode != PhysicalInputRoutingMode::Full {
-        return Ok(report);
-    }
-    let Some(target) = key_repeat.active_target(seat) else {
-        return Ok(report);
-    };
-    let pressed = SessionClientPressedKey {
-        surface: target.surface,
-        seat: target.seat,
-        device: target.device,
-        keycode: target.keycode,
-    };
-    let target_is_current = focus.focused_surface(seat) == Some(target.surface)
-        && committed_surfaces
-            .iter()
-            .any(|committed| committed.surface == target.surface)
-        && client_keys.is_pressed(pressed);
-    if !target_is_current {
-        key_repeat.cancel_seat(seat);
-        return Ok(report);
-    }
-    let Some(pulse) = key_repeat.take_due(seat, now_msec) else {
-        return Ok(report);
-    };
-    let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
-    *next_input_delivery = next_input_delivery
-        .checked_add(1)
-        .ok_or("live-session input delivery ID exhausted")?;
-    input_sender.try_send(XAuthorityRoutedInput {
-        request: sophia_protocol::RoutedInputRequest {
-            serial: delivery.raw(),
-            seat: pulse.target.seat,
-            device: pulse.target.device,
-            time_msec: pulse.time_msec,
-            target_surface: pulse.target.surface,
-            global_position: Point::default(),
-            local_position: Point::default(),
-            kind: sophia_protocol::InputEventKind::Key {
-                keycode: pulse.target.keycode,
-                pressed: true,
-            },
-        },
-        route_lease: None,
-        delivery: Some(delivery),
-        mode: XAuthorityRoutedInputMode::Repeat,
-    })?;
-    report.routed = 1;
-    report.delivery = Some(delivery);
-    Ok(report)
-}
-
-fn flush_client_pressed_keys(
-    surface: SurfaceId,
-    client_keys: &mut SessionClientKeyState,
-    scratch: &mut Vec<SessionClientPressedKey>,
-    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &impl RoutedInputIngress,
-    modifiers: &mut XCoreKeyboardMapper,
-    next_input_delivery: &mut u64,
-    time_msec: u64,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    client_keys.copy_surface_keys(surface, scratch);
-    flush_copied_client_pressed_keys(
-        client_keys,
-        scratch,
-        deliveries,
-        input_sender,
-        modifiers,
-        next_input_delivery,
-        time_msec,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn flush_all_client_pressed_keys(
-    client_keys: &mut SessionClientKeyState,
-    scratch: &mut Vec<SessionClientPressedKey>,
-    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &impl RoutedInputIngress,
-    modifiers: &mut XCoreKeyboardMapper,
-    next_input_delivery: &mut u64,
-    time_msec: u64,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    client_keys.copy_all_keys(scratch);
-    flush_copied_client_pressed_keys(
-        client_keys,
-        scratch,
-        deliveries,
-        input_sender,
-        modifiers,
-        next_input_delivery,
-        time_msec,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn flush_copied_client_pressed_keys(
-    client_keys: &mut SessionClientKeyState,
-    scratch: &[SessionClientPressedKey],
-    deliveries: &mut Vec<XAuthorityInputDeliveryId>,
-    input_sender: &impl RoutedInputIngress,
-    modifiers: &mut XCoreKeyboardMapper,
-    next_input_delivery: &mut u64,
-    time_msec: u64,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    deliveries.clear();
-    for key in scratch.iter().copied() {
-        let Some((_x_keycode, _state)) = modifiers.map_evdev_key(key.keycode, false) else {
-            return Err("pressed-key ledger contains an unmappable key".into());
-        };
-        let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
-        *next_input_delivery = next_input_delivery
-            .checked_add(1)
-            .ok_or("live-session input delivery ID exhausted")?;
-        input_sender.try_send(XAuthorityRoutedInput {
-            request: sophia_protocol::RoutedInputRequest {
-                serial: delivery.raw(),
-                seat: key.seat,
-                device: key.device,
-                time_msec,
-                target_surface: key.surface,
-                global_position: Point::default(),
-                local_position: Point::default(),
-                kind: sophia_protocol::InputEventKind::Key {
-                    keycode: key.keycode,
-                    pressed: false,
-                },
-            },
-            route_lease: None,
-            delivery: Some(delivery),
-            mode: XAuthorityRoutedInputMode::Deliver,
-        })?;
-        deliveries.push(delivery);
-        client_keys.record_synthetic_release(key);
-    }
-    Ok(scratch.len())
-}
-
-fn clear_client_pressed_keys_state_only(
-    surface: SurfaceId,
-    client_keys: &mut SessionClientKeyState,
-    scratch: &mut Vec<SessionClientPressedKey>,
-    modifiers: &mut XCoreKeyboardMapper,
-    input_sender: &impl RoutedInputIngress,
-    next_input_delivery: &mut u64,
-    time_msec: u64,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    client_keys.copy_surface_keys(surface, scratch);
-    for key in scratch.iter().copied() {
-        let _ = modifiers.map_evdev_key(key.keycode, false);
-        let serial = *next_input_delivery;
-        *next_input_delivery = next_input_delivery
-            .checked_add(1)
-            .ok_or("live-session input delivery ID exhausted")?;
-        input_sender.try_send(XAuthorityRoutedInput {
-            request: sophia_protocol::RoutedInputRequest {
-                serial,
-                seat: key.seat,
-                device: key.device,
-                time_msec,
-                target_surface: key.surface,
-                global_position: Point::default(),
-                local_position: Point::default(),
-                kind: sophia_protocol::InputEventKind::Key {
-                    keycode: key.keycode,
-                    pressed: false,
-                },
-            },
-            route_lease: None,
-            delivery: None,
-            mode: XAuthorityRoutedInputMode::StateOnly,
-        })?;
-        client_keys.record_state_only_release(key);
-    }
-    Ok(scratch.len())
 }

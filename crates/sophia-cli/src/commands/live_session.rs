@@ -117,6 +117,7 @@ use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 include!("live_session/config.rs");
 include!("live_session/input.rs");
 include!("live_session/input_capacity.rs");
+include!("live_session/client_keys.rs");
 include!("live_session/policy.rs");
 include!("live_session/presentation.rs");
 include!("live_session/startup.rs");

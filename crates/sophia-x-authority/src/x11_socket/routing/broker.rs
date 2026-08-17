@@ -18,6 +18,7 @@ pub struct XServerFrontendRouteBroker {
     routed_input_sender: SyncSender<XAuthorityEpochRoutedInput>,
     routed_input_receiver: Receiver<XAuthorityEpochRoutedInput>,
     input_control_epoch: Arc<AtomicU64>,
+    routed_input_capacity: usize,
     applied_input_control_epoch: u64,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
@@ -34,6 +35,7 @@ pub struct XServerFrontendRouteBroker {
 pub struct XAuthorityRoutedInputSender {
     sender: SyncSender<XAuthorityEpochRoutedInput>,
     control_epoch: Arc<AtomicU64>,
+    capacity: usize,
 }
 
 #[cfg(unix)]
@@ -63,6 +65,12 @@ impl XAuthorityRoutedInputSender {
             TrySendError::Full(envelope) => TrySendError::Full(envelope.route),
             TrySendError::Disconnected(envelope) => TrySendError::Disconnected(envelope.route),
         })
+    }
+
+    /// The queue's bound, so a saturation report can say what was exhausted
+    /// rather than only that something was.
+    pub const fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub fn control_epoch(&self) -> u64 {
@@ -352,6 +360,7 @@ impl XServerFrontendRouteBroker {
             routed_input_sender,
             routed_input_receiver,
             input_control_epoch,
+            routed_input_capacity: capacities.input.get(),
             applied_input_control_epoch: 1,
             route_lease_release_sender,
             route_lease_release_receiver,
@@ -372,6 +381,7 @@ impl XServerFrontendRouteBroker {
         XAuthorityRoutedInputSender {
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
+            capacity: self.routed_input_capacity,
         }
     }
 

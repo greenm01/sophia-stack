@@ -41,6 +41,7 @@ use super::{
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
 };
+use crate::commands::live_session::RoutedInputIngressSaturation;
 use sophia_backend_live::{
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
     LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
@@ -965,6 +966,7 @@ fn closing_surface_clears_pressed_keys_without_client_delivery_barrier() {
         &mut scratch,
         &mut modifiers,
         &input_sender,
+        &mut RoutedInputIngressSaturation::default(),
         &mut next_delivery,
         10,
     )

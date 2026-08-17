@@ -82,3 +82,179 @@ impl PhysicalKeyTimingRejects {
         }
     }
 }
+
+/// The shared queue carrying routed input to the X authority.
+///
+/// `docs/architecture.md` is explicit that bounded-queue exhaustion "fails the
+/// recipient epoch closed rather than coalescing an ordered boundary or failing
+/// every frontend client". Propagating the send error did the third thing: one
+/// full queue ended the session for every client on it.
+///
+/// The epoch advance is a compare-exchange on an atomic rather than a queued
+/// record, so the close is deliverable no matter how full the queue is. That is
+/// what makes the epoch itself the terminating boundary, and applying it clears
+/// active grabs and frozen input.
+const ROUTED_INPUT_INGRESS: sophia_protocol::CapacityResourceId =
+    sophia_protocol::CapacityResourceId("cli.live_session.routed_input_ingress");
+
+/// How long a terminating boundary waits for room before it is abandoned.
+///
+/// Ordered input is refused immediately, because a queue this full is already
+/// delivering late and holding the owner loop would make that worse. A release
+/// is different: it is rare, it is small, and losing one leaves a client
+/// believing a key is still down, so it is worth a short wait that ordinary
+/// input does not get. This is the terminating-boundary class expressed against
+/// a channel that has no reserve of its own.
+const ROUTED_INPUT_BOUNDARY_DEFERRAL_MSEC: u32 = 20;
+const ROUTED_INPUT_BOUNDARY_RETRY_MSEC: u32 = 1;
+
+fn routed_input_ingress_capacity(
+    capacity: usize,
+    class: sophia_protocol::CapacityClass,
+) -> sophia_protocol::BoundedCapacity {
+    let disposition = match class {
+        sophia_protocol::CapacityClass::TerminatingBoundary => {
+            sophia_protocol::CapacitySaturationDisposition::BoundedDeferral {
+                deadline_msec: ROUTED_INPUT_BOUNDARY_DEFERRAL_MSEC,
+                retry_interval_msec: ROUTED_INPUT_BOUNDARY_RETRY_MSEC,
+                escalation: sophia_protocol::CapacityEscalation::EndpointEpochClosed,
+            }
+        }
+        _ => sophia_protocol::CapacitySaturationDisposition::EndpointEpochClosed,
+    };
+    sophia_protocol::BoundedCapacity::new(ROUTED_INPUT_INGRESS, capacity, disposition)
+}
+
+/// The owner loop's own waiting strategy, on the real clock.
+struct OwnerLoopWait {
+    started: std::time::Instant,
+}
+
+impl OwnerLoopWait {
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+        }
+    }
+}
+
+impl sophia_protocol::CapacityWait for OwnerLoopWait {
+    fn elapsed_msec(&self) -> u32 {
+        u32::try_from(self.started.elapsed().as_millis()).unwrap_or(u32::MAX)
+    }
+
+    fn pause(&mut self, interval_msec: u32) {
+        std::thread::sleep(std::time::Duration::from_millis(u64::from(
+            interval_msec.max(1),
+        )));
+    }
+}
+
+/// What the routed-input ingress dropped this tick, kept apart by class so the
+/// report can say whether an ordinary event or a release was lost.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RoutedInputIngressSaturation {
+    ordered_discarded: usize,
+    boundary_discarded: usize,
+}
+
+impl RoutedInputIngressSaturation {
+    const fn is_empty(self) -> bool {
+        self.ordered_discarded == 0 && self.boundary_discarded == 0
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.ordered_discarded = self.ordered_discarded.saturating_add(other.ordered_discarded);
+        self.boundary_discarded = self
+            .boundary_discarded
+            .saturating_add(other.boundary_discarded);
+    }
+
+    /// Reports through the shared coalescer so sustained pressure does not
+    /// bury the rest of the log. Every emitted line carries the cumulative
+    /// count, which is what keeps suppression from hiding volume.
+    fn report(
+        self,
+        capacity: usize,
+        ledger: &mut sophia_protocol::CapacityReportLedger,
+    ) {
+        for (discarded, class) in [
+            (
+                self.ordered_discarded,
+                sophia_protocol::CapacityClass::Ordered,
+            ),
+            (
+                self.boundary_discarded,
+                sophia_protocol::CapacityClass::TerminatingBoundary,
+            ),
+        ] {
+            if discarded == 0 {
+                continue;
+            }
+            let bound = routed_input_ingress_capacity(capacity, class);
+            let cause = sophia_protocol::CapacitySaturationCause::DepthExhausted;
+            let Some(occurrences) = ledger.observe(bound.resource, cause) else {
+                continue;
+            };
+            print_capacity_saturation(&sophia_protocol::CapacitySaturationReport {
+                resource: bound.resource,
+                cause,
+                disposition: bound.disposition,
+                depth: capacity,
+                capacity,
+                discarded: usize::try_from(occurrences).unwrap_or(usize::MAX),
+                waited_msec: 0,
+            });
+        }
+    }
+}
+
+/// Offers one routed-input record, costing the record rather than the session
+/// when the queue is full.
+///
+/// Returns whether the record was delivered. A `false` answer means the caller
+/// must not record the record as routed: the client never saw it, and the epoch
+/// close that follows is what keeps that from leaving latched state behind.
+fn route_bounded_input<S: RoutedInputIngress>(
+    sender: &S,
+    route: XAuthorityRoutedInput,
+    class: sophia_protocol::CapacityClass,
+    saturation: &mut RoutedInputIngressSaturation,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let bound = routed_input_ingress_capacity(sender.capacity(), class);
+    let outcome = sophia_protocol::drive_capacity_batch(
+        &bound,
+        [route],
+        OwnerLoopWait::new,
+        |route| match sender.try_send(route) {
+            Ok(()) => sophia_protocol::CapacityBatchAttempt::Accepted,
+            Err(std::sync::mpsc::TrySendError::Full(route)) => {
+                sophia_protocol::CapacityBatchAttempt::Full {
+                    record: route,
+                    depth: bound.capacity,
+                }
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                sophia_protocol::CapacityBatchAttempt::RecipientGone
+            }
+        },
+    );
+    match outcome {
+        sophia_protocol::CapacityBatchOutcome::Drained { .. } => Ok(true),
+        // A departed authority is not backpressure. Nothing downstream can
+        // route input again, so this stays fatal.
+        sophia_protocol::CapacityBatchOutcome::RecipientGone { .. } => {
+            Err("routed input recipient departed".into())
+        }
+        sophia_protocol::CapacityBatchOutcome::Cancelled { .. }
+        | sophia_protocol::CapacityBatchOutcome::Saturated { .. } => {
+            match class {
+                sophia_protocol::CapacityClass::TerminatingBoundary => {
+                    saturation.boundary_discarded = saturation.boundary_discarded.saturating_add(1);
+                }
+                _ => saturation.ordered_discarded = saturation.ordered_discarded.saturating_add(1),
+            }
+            Ok(false)
+        }
+    }
+}
