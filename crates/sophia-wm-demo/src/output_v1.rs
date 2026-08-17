@@ -59,8 +59,8 @@ impl From<OutputTopologyCandidateError> for OutputV1ClientError {
 
 /// Reference client for the exclusive physical-output role.
 ///
-/// Connector labels remain private to this role. The policy connection still
-/// receives only logical outputs and opaque surface identities.
+/// Physical head labels remain private to this role. The policy connection
+/// still receives only logical outputs and opaque surface identities.
 pub struct OutputV1Client {
     stream: UnixStream,
     connection_epoch: u64,
@@ -179,8 +179,8 @@ impl OutputV1Client {
 ///
 /// The proof shape is deliberately exact. Extra connected heads are rejected
 /// instead of being disabled as a side effect, and all three heads keep their
-/// current modes. Existing output identities and head-local mappings survive
-/// wherever they remain meaningful.
+/// current modes. The primary and extended heads use exact placement so only
+/// the unequal mirror member may resample; existing output identities survive.
 pub fn mixed_mirror_extended_candidate(
     snapshot: &OutputAuthoritySnapshot,
     mirror_primary_label: &str,
@@ -269,7 +269,7 @@ pub fn mixed_mirror_extended_candidate(
                 members: vec![
                     OutputGroupMember {
                         head: primary.head,
-                        mapping: mapping_for(primary_group, primary),
+                        mapping: OutputHeadMapping::Exact,
                     },
                     OutputGroupMember {
                         head: member.head,
@@ -287,7 +287,7 @@ pub fn mixed_mirror_extended_candidate(
                 },
                 members: vec![OutputGroupMember {
                     head: extended.head,
-                    mapping: mapping_for(extended_group, extended),
+                    mapping: OutputHeadMapping::Exact,
                 }],
             },
         ],
@@ -325,14 +325,6 @@ fn group_for_head<'a>(
         .ok_or(OutputV1ClientError::InvalidProofTopology(
             "proof head has no logical output",
         ))
-}
-
-fn mapping_for(group: &OutputLogicalGroupState, head: &OutputHeadDescriptor) -> OutputHeadMapping {
-    group
-        .members
-        .iter()
-        .find(|member| member.head == head.head)
-        .map_or(OutputHeadMapping::Fit, |member| member.mapping)
 }
 
 fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, OutputV1ClientError> {

@@ -20,7 +20,8 @@ static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 #[test]
 fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
     let snapshot = three_head_snapshot();
-    let candidate = mixed_mirror_extended_candidate(&snapshot, "DP-1", "DP-2", "HDMI-A-1").unwrap();
+    let candidate =
+        mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3").unwrap();
 
     assert_eq!(candidate.heads.len(), 3);
     assert_eq!(candidate.groups.len(), 2);
@@ -35,6 +36,10 @@ fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
         OutputHeadMapping::Fit
     );
     assert_eq!(candidate.groups[1].output.raw(), 3);
+    assert_eq!(
+        candidate.groups[1].members[0].mapping,
+        OutputHeadMapping::Exact
+    );
     assert_eq!(candidate.groups[1].logical.x, 2560);
     assert_eq!(candidate.groups[1].logical.width, 1920);
     assert_eq!(candidate.heads[0].mode.raw(), 11);
@@ -52,10 +57,11 @@ fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
 #[test]
 fn mixed_candidate_refuses_to_disable_an_unmentioned_connected_head() {
     let mut snapshot = three_head_snapshot();
-    snapshot.heads.push(head(4, 14, "DP-3", 1280, 1024));
+    snapshot.heads.push(head(4, 14, "Display 4", 1280, 1024));
     snapshot.groups.push(group(4, 4, 4480, 1280, 1024));
 
-    let error = mixed_mirror_extended_candidate(&snapshot, "DP-1", "DP-2", "HDMI-A-1").unwrap_err();
+    let error = mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3")
+        .unwrap_err();
     assert!(
         error
             .to_string()
@@ -135,7 +141,8 @@ fn output_client_negotiates_snapshot_and_committed_candidate() {
     let (snapshot_transaction, snapshot) = client.receive_snapshot().unwrap();
     assert_eq!(snapshot_transaction.raw(), 7);
     assert_eq!(snapshot, expected_snapshot);
-    let candidate = mixed_mirror_extended_candidate(&snapshot, "DP-1", "DP-2", "HDMI-A-1").unwrap();
+    let candidate =
+        mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3").unwrap();
     let outcome = client.submit(candidate, &snapshot).unwrap();
     assert_eq!(outcome.kind, OutputV1OutcomeKind::Committed);
     assert_eq!(outcome.topology_epoch, 5);
@@ -149,9 +156,9 @@ fn three_head_snapshot() -> OutputAuthoritySnapshot {
         topology_epoch: 4,
         primary_output: sophia_protocol::OutputId::from_raw(1),
         heads: vec![
-            head(1, 11, "DP-1", 2560, 1440),
-            head(2, 12, "DP-2", 1920, 1080),
-            head(3, 13, "HDMI-A-1", 1920, 1200),
+            head(1, 11, "Display 1", 2560, 1440),
+            head(2, 12, "Display 2", 1920, 1080),
+            head(3, 13, "Display 3", 1920, 1200),
         ],
         groups: vec![
             group(1, 1, 0, 2560, 1440),

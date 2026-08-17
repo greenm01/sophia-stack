@@ -11,6 +11,11 @@ ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 MIRROR_PRIMARY="${SOPHIA_MIXED_MIRROR_PRIMARY:-DP-1}"
 MIRROR_MEMBER="${SOPHIA_MIXED_MIRROR_MEMBER:-DP-3}"
 EXTENDED="${SOPHIA_MIXED_EXTENDED:-DP-2}"
+# The public output role receives connector-neutral labels. On this signed rig,
+# startup discovery maps the three connector checks above to these opaque heads.
+MIRROR_PRIMARY_LABEL="${SOPHIA_MIXED_MIRROR_PRIMARY_LABEL:-Display 1}"
+MIRROR_MEMBER_LABEL="${SOPHIA_MIXED_MIRROR_MEMBER_LABEL:-Display 3}"
+EXTENDED_LABEL="${SOPHIA_MIXED_EXTENDED_LABEL:-Display 2}"
 KITTY_BIN="${SOPHIA_MIXED_KITTY:-$(command -v kitty || true)}"
 RUNTIME_MSEC="${SOPHIA_MIXED_RUNTIME_MSEC:-30000}"
 DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
@@ -102,6 +107,7 @@ printf 'sophia_mixed_output_gate schema=1 status=starting source_commit=%s sophi
 echo "The session will first start extended, then sophia_output_v1 will form:"
 echo "  mirror:   $MIRROR_PRIMARY + $MIRROR_MEMBER"
 echo "  extended: $EXTENDED"
+echo "  authority labels: $MIRROR_PRIMARY_LABEL + $MIRROR_MEMBER_LABEL; $EXTENDED_LABEL"
 echo "One Kitty should remain on the mirrored output; the other should move to the"
 echo "right-hand extended output. The extended Kitty is the native-sharp visual gate."
 
@@ -140,9 +146,9 @@ set +e
         --wm-process="$wm_bin" \
         --wm-interface=sophia_wm_v1 \
         --wm-process-arg=live-mixed-output-proof \
-        --wm-process-arg="$MIRROR_PRIMARY" \
-        --wm-process-arg="$MIRROR_MEMBER" \
-        --wm-process-arg="$EXTENDED" \
+        --wm-process-arg="$MIRROR_PRIMARY_LABEL" \
+        --wm-process-arg="$MIRROR_MEMBER_LABEL" \
+        --wm-process-arg="$EXTENDED_LABEL" \
         --max-runtime-ms="$RUNTIME_MSEC"
 ) 2>&1 | tee -a "$EVIDENCE"
 status="${PIPESTATUS[0]}"
