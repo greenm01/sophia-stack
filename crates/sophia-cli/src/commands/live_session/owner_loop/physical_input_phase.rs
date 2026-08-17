@@ -101,16 +101,7 @@ macro_rules! drain_physical_input {
             // it has to be audible. The count is cumulative, which is what lets
             // one replaceable slot carry every occurrence since the last tick.
             if let Some(saturation) = poller.take_acquisition_saturation() {
-                eprintln!(
-                    "sophia_live_input_acquisition schema=1 status=saturated resource={} cause={} disposition={} depth={} capacity={} discarded={} waited_msec={}",
-                    saturation.resource.as_str(),
-                    saturation.cause.as_str(),
-                    saturation.disposition.as_str(),
-                    saturation.depth,
-                    saturation.capacity,
-                    saturation.discarded,
-                    saturation.waited_msec,
-                );
+                print_capacity_saturation(&saturation);
             }
             if report.keyboard_focus_handoff_expired
                 || report.keyboard_focus_handoff_stale_drops != 0
@@ -119,23 +110,39 @@ macro_rules! drain_physical_input {
                 deferred_physical_key_timings.clear();
             }
             if physical_input_ready_at.is_some() && input_proof_started_at.is_none() {
+                let mut rejects = PhysicalKeyTimingRejects::default();
                 for (serial, event_time_msec) in &report.deferred_key_presses {
-                    let timing = event_timings
+                    // An absent sidecar is a lost measurement, not a lost key:
+                    // the event itself was already routed. Consuming it keeps a
+                    // diagnostic from being able to end the session.
+                    let Some(timing) = event_timings
                         .iter()
                         .find(|timing| timing.serial == *serial)
                         .copied()
-                        .ok_or("deferred physical key had no libinput timing sidecar")?;
+                    else {
+                        rejects.absent = rejects.absent.saturating_add(1);
+                        continue;
+                    };
+                    // A sidecar that disagrees with its event is different in
+                    // kind. It means the serial-to-timing association is wrong,
+                    // which would make every latency number untrustworthy, so
+                    // this one stays fatal.
                     if timing.event_time_msec != *event_time_msec {
                         return Err(
                             "deferred physical key timing sidecar did not match event".into()
                         );
                     }
+                    if deferred_physical_key_timings.len()
+                        >= sophia_engine::KEYBOARD_FOCUS_HANDOFF_CAPACITY
+                        && !deferred_physical_key_timings.contains_key(serial)
+                    {
+                        rejects.overflow = rejects.overflow.saturating_add(1);
+                        continue;
+                    }
                     deferred_physical_key_timings.insert(*serial, timing);
                 }
-                if deferred_physical_key_timings.len()
-                    > sophia_engine::KEYBOARD_FOCUS_HANDOFF_CAPACITY
-                {
-                    return Err("deferred physical key timing capacity exhausted".into());
+                if !rejects.is_empty() {
+                    rejects.report(deferred_physical_key_timings.len());
                 }
             }
             if physical_input_ready_at.is_some()
