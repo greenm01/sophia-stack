@@ -5,6 +5,32 @@ struct LivePublicPolicyCause {
     affected_outputs: Vec<sophia_protocol::OutputId>,
 }
 
+/// Narrows a queued cause's outputs to those the scene still has.
+///
+/// A cause names the outputs it was raised for, and it may have been queued
+/// before a topology change replaced them. Those outputs are a hint about where
+/// work is owed rather than an identity, so they are resolved against the scene
+/// the request will actually carry. Every live output is returned when nothing
+/// it named survived: a cause that outlived its outputs still needs servicing,
+/// because the topology moving is itself a reason to lay out again, and the
+/// alternative is refusing a request whose only fault is that it waited.
+fn resolve_public_policy_affected_outputs(
+    affected: Vec<sophia_protocol::OutputId>,
+    live: impl IntoIterator<Item = sophia_protocol::OutputId>,
+) -> Vec<sophia_protocol::OutputId> {
+    let live = live.into_iter().collect::<std::collections::BTreeSet<_>>();
+    let retained = affected
+        .into_iter()
+        .filter(|output| live.contains(output))
+        .collect::<Vec<_>>();
+    if retained.is_empty() {
+        let mut all = live.into_iter().collect::<Vec<_>>();
+        all.sort_by_key(|output| output.raw());
+        return all;
+    }
+    retained
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LivePolicySettlementIdentity {
     connection_epoch: u64,
@@ -2041,9 +2067,19 @@ impl LiveWmSession {
             if scene.generation > public.reducer.scene().generation {
                 public.reducer.observe_scene(scene.clone())?;
             }
+            // A cause names the outputs it was raised for, and it may have been
+            // queued before a topology change replaced them. Its outputs are a
+            // hint about where work is owed, not an identity, so they are
+            // resolved against the scene the request will actually carry. A
+            // cause that outlived every output it named still needs servicing:
+            // the topology moved, which is precisely a reason to lay out again.
+            let affected_outputs = resolve_public_policy_affected_outputs(
+                cause.affected_outputs,
+                scene.outputs.iter().map(|output| output.output),
+            );
             let request = public
                 .reducer
-                .issue_request_with_cause(cause.affected_outputs, cause.cause)?;
+                .issue_request_with_cause(affected_outputs, cause.cause)?;
             let snapshot_transaction = public.mint_transaction()?;
             let request_transaction = public.mint_transaction()?;
             public

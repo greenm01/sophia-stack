@@ -41,7 +41,9 @@ use super::{
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
 };
-use crate::commands::live_session::{PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation};
+use crate::commands::live_session::{
+    PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation, resolve_public_policy_affected_outputs,
+};
 use sophia_backend_live::{
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
     LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
@@ -1175,4 +1177,45 @@ fn secondary_terminal_is_a_pointer_witness_without_a_text_prompt() {
 fn primary_input_proof_remains_visible_until_session_completion() {
     assert!(PRIMARY_INPUT_PROOF_SCRIPT.contains("sleep 300"));
     assert!(!PRIMARY_INPUT_PROOF_SCRIPT.contains("sleep 5"));
+}
+
+/// A cause queued across a topology change must not be refused for naming
+/// outputs that change replaced.
+///
+/// Ordinary policy cycles are held for the whole of a topology candidate, so a
+/// cause raised before it is submitted after it, against a scene whose outputs
+/// may be entirely different. Passing its original outputs through produced
+/// `UnknownAffectedOutput` and failed the session on a request whose only fault
+/// was that it waited.
+#[test]
+fn a_queued_cause_resolves_its_outputs_against_the_current_scene() {
+    let one = OutputId::from_raw(1);
+    let two = OutputId::from_raw(2);
+    let three = OutputId::from_raw(3);
+
+    // Outputs that survived are kept, in the order the cause named them.
+    assert_eq!(
+        resolve_public_policy_affected_outputs(vec![two, one], [one, two]),
+        vec![two, one]
+    );
+
+    // Outputs the topology removed are dropped.
+    assert_eq!(
+        resolve_public_policy_affected_outputs(vec![one, three], [one, two]),
+        vec![one]
+    );
+
+    // Nothing it named survived: the topology moved under it, which is itself
+    // a reason to lay out, so every live output is affected.
+    assert_eq!(
+        resolve_public_policy_affected_outputs(vec![three], [two, one]),
+        vec![one, two]
+    );
+
+    // A cause raised before any output existed still resolves to the live set
+    // rather than an empty request, which the projection reducer rejects.
+    assert_eq!(
+        resolve_public_policy_affected_outputs(Vec::new(), [one]),
+        vec![one]
+    );
 }
