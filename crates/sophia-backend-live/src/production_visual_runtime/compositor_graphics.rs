@@ -3,6 +3,7 @@ use super::*;
 pub(super) struct LiveProductionRetainedCompositionSourceSet {
     pub committed: Vec<CommittedSurfaceState>,
     pub display_list: CompositorDisplayList,
+    pub presentation_order: Vec<SurfaceId>,
     pub scene_generation: u64,
     pub sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
 }
@@ -176,6 +177,7 @@ impl LiveProductionVisualRuntime {
         Ok(LiveProductionRetainedCompositionSourceSet {
             committed,
             display_list,
+            presentation_order: retained_order,
             scene_generation,
             sources,
         })
@@ -220,9 +222,12 @@ impl LiveProductionVisualRuntime {
     }
 
     /// Lowers one immutable committed scene into candidate native-size frames
-    /// for a provisional topology. This is read-only with respect to the live
-    /// runtime: the caller must not publish or install the candidate until its
-    /// KMS transaction and first-presentation barrier complete.
+    /// for a provisional topology. CPU buffers and retained renderer images
+    /// come from the ordinary authority-owned source set; committed DMA-BUF
+    /// identities are not independently importable sources. This is read-only
+    /// with respect to the live runtime: the caller must not publish or install
+    /// the candidate until its KMS transaction and first-presentation barrier
+    /// complete.
     pub fn compose_output_topology_head_frames(
         &self,
         scene: &LiveProductionCpuScene,
@@ -232,8 +237,7 @@ impl LiveProductionVisualRuntime {
         if scene_generation == 0 {
             return Err("topology composition requires a valid scene generation".into());
         }
-        let committed = self.production.committed_surfaces();
-        let cpu_layers = scene.presentation_variant_layers(committed, &self.presentation_order);
+        let source_set = self.retained_composition_source_set(scene)?;
         let targets = resolved.head_render_targets();
         if targets.len() != resolved.targets.len() {
             return Err("topology render-target projection is incomplete".into());
@@ -242,9 +246,9 @@ impl LiveProductionVisualRuntime {
         for viewport in &resolved.logical_viewports {
             let mut display_list = surface_chrome_display_list_for_surfaces(
                 viewport.output,
-                &self.presentation_order,
+                &source_set.presentation_order,
                 &self.chrome_surfaces,
-                committed,
+                &source_set.committed,
                 self.focused_surface,
                 self.surface_chrome_style,
             )?;
@@ -267,7 +271,7 @@ impl LiveProductionVisualRuntime {
                 viewport.output,
                 scene_generation,
                 viewport.logical,
-                committed,
+                &source_set.committed,
                 display_list,
                 None,
             )?;
@@ -284,9 +288,9 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_cpu_head_composition_plan(
+                    frame: sophia_renderer_live::lower_head_composition_plan(
                         plan,
-                        &cpu_layers,
+                        &source_set.sources,
                     )?,
                 });
             }

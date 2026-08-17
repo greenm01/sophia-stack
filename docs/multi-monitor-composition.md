@@ -747,10 +747,13 @@ parallel multi-monitor subsystem.
 - Resolved output candidates retain root-space logical viewports as well as
   `HeadlessOutput` extents. The visual runtime can therefore capture one
   committed root scene and independently lower every provisional extended or
-  mirrored head at native size. Topology-specific renderer preparation creates
-  framebuffer/import/mode-blob owners without committing; those owners can join
-  one card-scoped atomic modeset containing both enabled and explicitly disabled
-  heads, then become ordinary retirement owners only after kernel acceptance.
+  mirrored head at native size. Candidate and rollback composition resolve that
+  scene through the same authority-owned CPU buffers and retained renderer-image
+  identities as ordinary presentation; a committed DMA-BUF handle alone is not
+  a renderer source. Topology-specific renderer preparation creates framebuffer/
+  import/mode-blob owners without committing; those owners can join one card-
+  scoped atomic modeset containing both enabled and explicitly disabled heads,
+  then become ordinary retirement owners only after kernel acceptance.
   The card executor submits that complete change as one blocking modeset, and a
   passive coordinator orders cards deterministically. If a later card refuses
   the candidate, the accepted prefix rolls back in reverse card order. The

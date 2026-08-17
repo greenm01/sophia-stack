@@ -831,8 +831,13 @@ Detailed physical-run diagnoses remain in
   owner drains existing frames. The evidence verifier accepts an empty first
   DP-2 topology frame, then requires the later exact active DP-2 frame after
   blind policy partitions the two surfaces, correlated through queue, submit,
-  callback, and retirement. The physical rerun, archive verifier, head-loss
-  phase, and visible-pixel acceptance remain open.
+  callback, and retirement. The next physical run reached that quiescence
+  barrier, then exposed a candidate-composition mismatch: provisional topology
+  frames used the CPU-only lowerer even though both committed Kitty surfaces
+  were retained renderer images. Candidate and rollback planning now reuse the
+  ordinary mixed source set, preserving Engine membership and renderer-image
+  ownership without a second DMA-BUF import. The physical rerun, archive
+  verifier, head-loss phase, and visible-pixel acceptance remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
