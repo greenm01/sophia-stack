@@ -131,6 +131,146 @@ fn unsupported_put_image_format_reports_its_cause_and_keeps_canonical_only() {
 }
 
 #[test]
+fn unjournaled_pixmap_present_invalidates_an_older_replayable_surface_journal() {
+    let namespace = NamespaceId::from_raw(232);
+    let window = XResourceId::new(0x232, 1);
+    let pixmap = XResourceId::new(0x233, 1);
+    let surface = SurfaceId::new(232, 1);
+    let size = Size {
+        width: 40,
+        height: 20,
+    };
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 320);
+
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(321),
+        namespace,
+        window,
+        Region::single(full),
+    );
+    runtime.take_cpu_buffer_updates();
+    runtime
+        .create_pixmap(namespace, pixmap, size, 24, 1)
+        .unwrap();
+    runtime.begin_dispatch();
+    runtime.apply_put_image(
+        TransactionId::from_raw(322),
+        namespace,
+        pixmap,
+        Region::single(full),
+        Some(&opaque_image(size.width, size.height, 0x0011_2233)),
+        None,
+    );
+    runtime.take_cpu_buffer_updates();
+    runtime.begin_dispatch();
+    let presented = runtime.present_standard_pixmap(
+        TransactionId::from_raw(323),
+        namespace,
+        window,
+        pixmap,
+        0,
+        0,
+        None,
+        None,
+    );
+    assert_eq!(presented.outcome, XAuthorityResponseOutcome::Accepted);
+
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(
+                    TransactionId::from_raw(324),
+                    &fallback_requirement(surface, 3, &[750]),
+                )
+                .unwrap(),
+            "an unjournaled presentation must not replay the older surface journal",
+        ),
+        XRasterFallbackCause::UnsupportedCommand,
+    );
+}
+
+#[test]
+fn partial_draw_after_resize_cannot_replay_over_a_blank_derived_surface() {
+    let namespace = NamespaceId::from_raw(234);
+    let window = XResourceId::new(0x234, 1);
+    let surface = SurfaceId::new(234, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 330);
+
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(331),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 20,
+        }),
+    );
+    runtime.take_cpu_buffer_updates();
+    runtime
+        .configure_window_from_engine(
+            namespace,
+            window,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 40,
+            },
+        )
+        .unwrap();
+    runtime.begin_dispatch();
+    runtime.apply_core_draw(
+        TransactionId::from_raw(332),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 2,
+            y: 2,
+            width: 4,
+            height: 4,
+        }),
+    );
+
+    let requirements = SurfaceRasterRequirements {
+        surface,
+        committed_content_generation: 3,
+        requirement_generation: 1,
+        logical_extent: Size {
+            width: 80,
+            height: 40,
+        },
+        classes: vec![SurfaceRasterClass {
+            density_millis: 750,
+            transform: SurfaceRasterTransform::Normal,
+        }],
+    };
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(
+                    TransactionId::from_raw(333),
+                    &requirements,
+                )
+                .unwrap(),
+            "a partial post-resize command cannot reconstruct copied canonical pixels",
+        ),
+        XRasterFallbackCause::LogicalExtentMismatch,
+    );
+}
+
+#[test]
 fn clipped_or_non_copy_put_image_is_not_retained_as_replayable() {
     let namespace = NamespaceId::from_raw(221);
     let surface = SurfaceId::new(221, 1);

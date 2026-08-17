@@ -448,15 +448,18 @@ impl XAuthorityRuntime {
                     damage,
                 )
             };
+        let target_content_size = Size {
+            width: record.geometry.width,
+            height: record.geometry.height,
+        };
+        self.raster_store
+            .invalidate_unjournaled_presentation(target_window, target_content_size);
         self.finish_drawing_update(XDrawingUpdate::present_buffer(
             transaction,
             namespace,
             target_window,
             buffer,
-            Size {
-                width: record.geometry.width,
-                height: record.geometry.height,
-            },
+            target_content_size,
             damage,
             target_generation,
             250,

@@ -374,6 +374,24 @@ impl XAuthorityRasterStore {
         self.surfaces.remove(&presentation);
     }
 
+    /// Invalidates semantic replay after pixels arrive through a presentation
+    /// path that has no journal representation.
+    ///
+    /// Keeping the old journal would let a later density request label stale
+    /// pixels as an authority raster. Reinitializing it as replayable would be
+    /// equally wrong because replaying an empty journal produces a blank
+    /// derived buffer. A later full opaque baseline may recover the store.
+    pub(crate) fn invalidate_unjournaled_presentation(
+        &mut self,
+        presentation: XResourceId,
+        logical_size: Size,
+    ) {
+        let mut state = SurfaceRasterState::new(logical_size);
+        state.replayable = false;
+        state.poison = Some(XRasterFallbackCause::UnsupportedCommand);
+        self.surfaces.insert(presentation, state);
+    }
+
     pub(crate) fn record(
         &mut self,
         presentation: XResourceId,
@@ -386,6 +404,8 @@ impl XAuthorityRasterStore {
             .or_insert_with(|| SurfaceRasterState::new(logical_size));
         if state.logical_size != logical_size {
             *state = SurfaceRasterState::new(logical_size);
+            state.replayable = false;
+            state.poison = Some(XRasterFallbackCause::LogicalExtentMismatch);
         }
         if command.is_full_opaque_baseline(logical_size) {
             state.journal.clear();
@@ -437,7 +457,9 @@ impl XAuthorityRasterStore {
             .entry(presentation)
             .or_insert_with(|| SurfaceRasterState::new(requirements.logical_extent));
         if state.logical_size != requirements.logical_extent {
-            return Err("surface raster requirement logical extent changed");
+            return Ok(XRasterSatisfyOutcome::Fallback(
+                XRasterFallbackCause::LogicalExtentMismatch,
+            ));
         }
         if !state.replayable {
             return Ok(XRasterSatisfyOutcome::Fallback(

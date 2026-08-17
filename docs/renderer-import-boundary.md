@@ -59,6 +59,14 @@ not make its density inexact, while selecting a different variant requires a
 new or updated head plan and the matching sampling classification. An import
 failure cannot silently bind another content generation.
 
+An imported presentation does not imply that X Authority can semantically
+rerasterize it. Standard pixmap and DRI3 Present therefore invalidate any older
+authority replay journal and derived CPU variants for that surface. Density
+demand falls back with a reduced cause until a new full semantic baseline is
+recorded; stale commands are never replayed as exact content, and this private
+limitation is not a session-fatal resource error. A client DMA-BUF rendered at
+the selected head's exact extent remains exact independently of replay.
+
 Persistent renderer-image IDs preserve semantic source identity but their
 backing imports remain local to one physical head's renderer store. When a
 topology assigns retained content to a head that has not rendered it, the

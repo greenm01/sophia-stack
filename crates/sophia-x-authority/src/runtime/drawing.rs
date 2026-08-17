@@ -664,9 +664,14 @@ impl XAuthorityRuntime {
             if let Some(command) = semantic_command {
                 cpu_buffer_updates.extend(self.raster_store.record(
                     presentation_window,
-                    presentation_size,
+                    presentation_update.size(),
                     command.translated(offset_x, offset_y),
                 ));
+            } else {
+                self.raster_store.invalidate_unjournaled_presentation(
+                    presentation_window,
+                    presentation_update.size(),
+                );
             }
         }
         let window = update.target_window;

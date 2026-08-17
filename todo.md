@@ -845,11 +845,16 @@ Detailed physical-run diagnoses remain in
   unauthorized-peer race exposed by the timeout. The next run reached candidate
   renderer preparation and showed that the new mirror member did not own the
   retained renderer-image IDs created on the original large head. Topology
-  preparation now realizes retained images per physical head by restoring an
+  preparation now realizes retained images per physical head by restoring a
   compositor-owned snapshot from a live donor before it queues candidate or
   rollback work; a missing donor rejects before KMS. Unchanged preparation
-  progress is no longer logged on every owner turn. The physical rerun, archive
-  verifier, head-loss phase, and visible-pixel acceptance remain open.
+  progress is no longer logged on every owner turn. The following run committed
+  the physical candidate and both first presentations, then exposed a stale
+  private raster journal when post-publication density demand arrived. Standard
+  pixmap and DRI3 Present now invalidate semantic replay, so stale extent or
+  unsupported-command demand becomes a bounded sampled fallback instead of an
+  X Authority process failure or falsely exact pixels. The physical rerun,
+  archive verifier, head-loss phase, and visible-pixel acceptance remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
