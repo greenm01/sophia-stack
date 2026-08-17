@@ -1601,6 +1601,41 @@ impl LiveProductionNativeScanout {
         None
     }
 
+    /// Per-head pipeline state for the first head blocking quiescence.
+    ///
+    /// The clause name alone said content was stuck without saying where, and
+    /// content only leaves `pending` once a submit reaches the kernel. Naming
+    /// the head and every stage beside it is what distinguishes "nothing is
+    /// submitting" from "a flip never came back".
+    pub fn output_topology_quiescence_head_report(&self) -> Option<String> {
+        let index = self.heads.iter().position(|head| {
+            head.pending_content.is_some()
+                || head.rendering_content.is_some()
+                || head.submitted_content.is_some()
+                || head.scanout_submission.is_some()
+                || head.prepared_scanout.is_some()
+                || head.scanout_cleanup.is_some()
+        })?;
+        let head = &self.heads[index];
+        // Exporters are index-parallel with heads: both are built from one
+        // zipped, jointly sorted list at discovery.
+        let exporter = self.exporters.get(index);
+        Some(format!(
+            "head={} output={} enabled={} pending={} rendering={} submitted={} scanout={} prepared={} cleanup={} exporter_pending={} worker_in_flight={}",
+            head.head.raw(),
+            head.output.id.raw(),
+            head.enabled,
+            u8::from(head.pending_content.is_some()),
+            u8::from(head.rendering_content.is_some()),
+            u8::from(head.submitted_content.is_some()),
+            u8::from(head.scanout_submission.is_some()),
+            u8::from(head.prepared_scanout.is_some()),
+            u8::from(head.scanout_cleanup.is_some()),
+            exporter.map_or(2, |exporter| u8::from(exporter.pending_frame())),
+            exporter.map_or(2, |exporter| u8::from(exporter.worker_in_flight())),
+        ))
+    }
+
     pub fn output_topology_preparation_phase(
         &self,
     ) -> Option<LiveProductionNativeTopologyPreparationPhase> {
