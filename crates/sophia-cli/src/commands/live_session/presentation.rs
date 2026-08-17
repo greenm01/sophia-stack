@@ -1,12 +1,21 @@
-const PRESENT_CADENCE_CAPACITY: usize = 8_192;
+/// Frame intervals retained for the cadence summary.
+///
+/// A sliding window rather than a quota: the oldest interval is dropped to make
+/// room, and `first_ust` advances with it so elapsed time keeps matching the
+/// intervals actually retained. An earlier revision latched an `overflowed`
+/// flag at this bound and never cleared it, so one long session permanently
+/// lost its own frame-pacing measurement. Recent cadence is also the more
+/// useful answer, which is why the window is smaller than the quota was.
+const PRESENT_CADENCE_CAPACITY: usize = 1_024;
 
 #[derive(Debug)]
 struct XPresentCadence {
     first_ust: Option<u64>,
     previous_ust: Option<u64>,
-    intervals_usec: Vec<u64>,
+    intervals_usec: std::collections::VecDeque<u64>,
     nonadvancing: usize,
-    overflowed: bool,
+    /// Intervals aged out of the window. Never a reason to stop reporting.
+    evicted: usize,
 }
 
 impl XPresentCadence {
@@ -14,9 +23,9 @@ impl XPresentCadence {
         Self {
             first_ust: None,
             previous_ust: None,
-            intervals_usec: Vec::with_capacity(PRESENT_CADENCE_CAPACITY),
+            intervals_usec: std::collections::VecDeque::with_capacity(PRESENT_CADENCE_CAPACITY),
             nonadvancing: 0,
-            overflowed: false,
+            evicted: 0,
         }
     }
 
@@ -30,16 +39,20 @@ impl XPresentCadence {
             self.nonadvancing = self.nonadvancing.saturating_add(1);
             return;
         }
-        if self.intervals_usec.len() == PRESENT_CADENCE_CAPACITY {
-            self.overflowed = true;
-        } else {
-            self.intervals_usec.push(ust - previous);
+        if self.intervals_usec.len() == PRESENT_CADENCE_CAPACITY
+            && let Some(oldest) = self.intervals_usec.pop_front()
+        {
+            // The window start moves by exactly the interval that left it, so
+            // elapsed time and retained intervals stay describing each other.
+            self.first_ust = self.first_ust.map(|first| first.saturating_add(oldest));
+            self.evicted = self.evicted.saturating_add(1);
         }
+        self.intervals_usec.push_back(ust - previous);
         self.previous_ust = Some(ust);
     }
 
     fn summary(&self) -> Option<XPresentCadenceSummary> {
-        if self.overflowed || self.intervals_usec.len() < 2 {
+        if self.intervals_usec.len() < 2 {
             return None;
         }
         let first_ust = self.first_ust?;
@@ -48,7 +61,7 @@ impl XPresentCadence {
         if elapsed_usec == 0 {
             return None;
         }
-        let mut sorted_intervals = self.intervals_usec.clone();
+        let mut sorted_intervals = self.intervals_usec.iter().copied().collect::<Vec<_>>();
         sorted_intervals.sort_unstable();
         let p95_index = sorted_intervals
             .len()

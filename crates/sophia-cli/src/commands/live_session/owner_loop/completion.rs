@@ -887,16 +887,17 @@
     let present_observation = &present_observer;
     if let Some(cadence) = present_observation.displayed_cadence.summary() {
         println!(
-            "sophia_live_present_cadence schema=1 status=complete samples={} advancing_intervals={} nonadvancing={} overflowed=false mean_fps={:.3} p95_frame_msec={:.3}",
+            "sophia_live_present_cadence schema=1 status=complete samples={} advancing_intervals={} nonadvancing={} overflowed=false mean_fps={:.3} p95_frame_msec={:.3} evicted={}",
             cadence.samples,
             cadence.advancing_intervals,
             cadence.nonadvancing,
             cadence.mean_fps,
             cadence.p95_frame_msec,
+            present_observation.displayed_cadence.evicted,
         );
     } else {
         println!(
-            "sophia_live_present_cadence schema=1 status=unavailable samples={} advancing_intervals={} nonadvancing={} overflowed={}",
+            "sophia_live_present_cadence schema=1 status=unavailable samples={} advancing_intervals={} nonadvancing={} overflowed=false evicted={}",
             present_observation
                 .displayed_cadence
                 .intervals_usec
@@ -906,7 +907,7 @@
                 )),
             present_observation.displayed_cadence.intervals_usec.len(),
             present_observation.displayed_cadence.nonadvancing,
-            present_observation.displayed_cadence.overflowed,
+            present_observation.displayed_cadence.evicted,
         );
     }
     println!(

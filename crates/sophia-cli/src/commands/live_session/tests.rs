@@ -41,7 +41,7 @@ use super::{
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
 };
-use crate::commands::live_session::RoutedInputIngressSaturation;
+use crate::commands::live_session::{PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation};
 use sophia_backend_live::{
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
     LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
@@ -406,6 +406,33 @@ fn retained_present_cadence_is_aggregated_without_per_frame_logging() {
 
     cadence.observe(1_033_334);
     assert_eq!(cadence.summary().unwrap().nonadvancing, 1);
+}
+
+/// A long session used to lose its own frame pacing: the sampler latched an
+/// overflow flag at capacity and never cleared it, so `summary` returned `None`
+/// forever after. The window now slides instead.
+#[test]
+fn present_cadence_keeps_measuring_past_its_window() {
+    const FRAME_USEC: u64 = 16_667;
+    let mut cadence = XPresentCadence::new();
+    let samples = PRESENT_CADENCE_CAPACITY * 2;
+    for index in 0..=samples {
+        cadence.observe(1_000_000 + FRAME_USEC * index as u64);
+    }
+
+    let summary = cadence
+        .summary()
+        .expect("a sliding window still summarises after it fills");
+    assert_eq!(summary.advancing_intervals, PRESENT_CADENCE_CAPACITY);
+    assert_eq!(cadence.evicted, samples - PRESENT_CADENCE_CAPACITY);
+    // Elapsed time tracks the retained intervals rather than the whole session,
+    // so the rate stays correct instead of drifting as samples age out.
+    assert!(
+        (summary.mean_fps - 59.999).abs() < 0.01,
+        "mean_fps drifted to {}",
+        summary.mean_fps
+    );
+    assert!((summary.p95_frame_msec - 16.667).abs() < 0.001);
 }
 
 #[test]
