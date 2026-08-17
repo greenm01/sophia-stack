@@ -216,3 +216,106 @@ fn a_stall_is_reported_once_rather_than_once_per_retry() {
     assert!(!ledger.end_stall(&7));
     assert!(!ledger.is_empty());
 }
+
+/// `validation/tla/TargetInputPacing.tla`, `AcquisitionIsConserved`. Deleting
+/// the discard accounting from `EscalateEndpoint` violates it in TLC.
+#[test]
+fn a_refused_batch_counts_its_tail_rather_than_dropping_it_silently() {
+    let resource = bounded(4, CapacitySaturationDisposition::EndpointEpochClosed);
+    let mut ledger = CapacityAcquisitionLedger::default();
+
+    // A device batch arrives whole; capacity is examined afterwards.
+    ledger.arrived(10);
+    let mut depth = 2;
+    let mut refused = 0;
+    for _ in 0..10 {
+        match resource.admit(depth, 0, CapacityClass::Ordered) {
+            CapacityAdmission::Admit => {
+                depth += 1;
+                ledger.admitted(1);
+            }
+            _ => refused += 1,
+        }
+    }
+    ledger.discarded(refused);
+
+    assert!(ledger.is_conserved());
+    assert_eq!(ledger.admitted_total(), 2);
+    assert_eq!(ledger.discarded_total(), 8);
+    assert_eq!(ledger.held(), 0);
+    // The count is what makes the loss visible; a report of zero here would be
+    // the silent drop this exists to forbid.
+    assert_ne!(ledger.discarded_total(), 0);
+}
+
+/// A bounded deferral leaves the arrival upstream, so it is neither admitted
+/// nor lost while the wait is in progress.
+#[test]
+fn a_deferred_arrival_is_held_rather_than_admitted_or_discarded() {
+    let resource = bounded(2, deferral(20));
+    let mut ledger = CapacityAcquisitionLedger::default();
+    ledger.arrived(3);
+
+    assert!(matches!(
+        resource.admit(2, 0, CapacityClass::Ordered),
+        CapacityAdmission::Defer { .. }
+    ));
+
+    assert_eq!(ledger.held(), 3);
+    assert_eq!(ledger.discarded_total(), 0);
+    assert!(ledger.is_conserved());
+}
+
+/// `DeliveryPreservesOrder` and the ordered capacity class. Each ordered record
+/// takes its own slot, so two arrivals can never become one.
+#[test]
+fn ordered_work_takes_its_own_slot_rather_than_sharing_one() {
+    let resource = bounded(8, CapacitySaturationDisposition::EndpointEpochClosed);
+    let mut depth = 0;
+    for expected in 0..8 {
+        assert_eq!(depth, expected);
+        assert_eq!(
+            resource.admit(depth, 0, CapacityClass::Ordered),
+            CapacityAdmission::Admit
+        );
+        depth += 1;
+    }
+    assert!(matches!(
+        resource.admit(depth, 0, CapacityClass::Ordered),
+        CapacityAdmission::Saturated { .. }
+    ));
+
+    // Only the replaceable class may be admitted without the resource growing.
+    assert_eq!(
+        resource.admit(depth, 0, CapacityClass::Replaceable),
+        CapacityAdmission::Admit
+    );
+}
+
+/// `validation/tla/TargetInputPacing.tla`, `EndpointCloseIsScoped`. Removing
+/// the boundary flush from `EscalateEndpoint` violates it in TLC: a discarded
+/// release is a key held down forever.
+#[test]
+fn a_saturated_endpoint_can_still_release_every_key_it_holds() {
+    let held = 3usize;
+    let resource = bounded(8, CapacitySaturationDisposition::EndpointEpochClosed);
+    let mut depth = resource.capacity - held;
+
+    // Ordinary input is refused at exactly the point the reserve is needed.
+    assert!(matches!(
+        resource.admit(depth, held, CapacityClass::Ordered),
+        CapacityAdmission::Saturated {
+            cause: CapacitySaturationCause::ReserveExhausted
+        }
+    ));
+
+    // Closing the endpoint still emits every release it owes.
+    for _ in 0..held {
+        assert_eq!(
+            resource.admit(depth, held, CapacityClass::TerminatingBoundary),
+            CapacityAdmission::Admit
+        );
+        depth += 1;
+    }
+    assert_eq!(depth, resource.capacity);
+}

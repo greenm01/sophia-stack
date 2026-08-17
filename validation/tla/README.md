@@ -225,6 +225,39 @@ coordinate grants, and lifecycle cancellation. `TargetInputPacing.tla` isolates
 the replaceable continuous slot from ordered begin, discrete, completion,
 cancellation, endpoint-revocation, and security barriers.
 
+`TargetInputPacing.tla` also models device acquisition, which is the producer
+the compositor cannot decline to have happen: the packet already exists when
+capacity is examined, so a full queue is a choice of disposition rather than an
+absence of work. Three choices are modelled -- bounded deferral, which declines
+to read without dropping anything and has a ceiling; scoped endpoint closure,
+which drops the arrival but spends reserved capacity on the terminating
+boundary; and terminal failure. Closure is per seat and names its tokens
+separately from security revocation, because only revocation is entitled to
+leave a stream with no boundary. The bounded configuration explores 1,969,760
+generated states and 567,966 distinct states to depth 21.
+
+What the reserve buys is now stated rather than implied. Two slots per active
+seat is exactly what escalation spends, so the admission bound is what makes
+escalation always possible instead of a decoration on a guard.
+
+Seven temporary negative controls independently remove `Drain` fairness, the
+deferral ceiling, the discard accounting, the boundary flush at closure, the
+saturation report, the reserve in the acquisition predicate, and in-order
+draining. TLC then violates `QueueEventuallyEmpties`, `DeferralIsBounded`,
+`AcquisitionIsConserved`, `EndpointCloseIsScoped`, `SaturationIsRecorded`,
+`BoundaryCapacityIsReserved`, and `DeliveryPreservesOrder` respectively. The
+fairness control is the one that matters most here: the four new actions all sit
+outside fairness, and removing the assumption on `Drain` still fails the
+property, so admitting a deferral disposition did not quietly convert progress
+into a tautology.
+
+An earlier draft checked `EscalationCanAlwaysFlush` and constrained
+`deferralTicks` in both `TypeOK` and `DeferralIsBounded`. Neither survived a
+control: the first is a strict consequence of `BoundaryCapacityIsReserved` and
+no edit can break one without the other, and the second meant `TypeOK` failed
+first so the ceiling was never the invariant under test. `TypeOK` now states the
+type and `DeferralIsBounded` alone states the bound.
+
 `InputAuthorityArbitration.tla` models the coexistence prerequisite between
 application routing and future shell targets. It separates committed,
 submitted, and presented choices; creates an exact provisional frontend lease;

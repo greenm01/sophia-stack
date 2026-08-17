@@ -1005,6 +1005,46 @@ Detailed physical-run diagnoses remain in
   rule is sound as a result: an extension chunk in the reserved kind range reaches
   only a client that negotiated it. Enum widening remains now-or-never, because no
   gate reaches a value at a fixed offset inside a record already being sent.
+- [x] Give bounded resources one saturation vocabulary instead of thirty ad-hoc
+  choices. `crates/sophia-protocol/src/capacity/` holds the passive types, the
+  pure admission arithmetic, the report coalescer, and a driver that owns no
+  clock and no thread, so a resource's behaviour at its bound is data beside its
+  capacity rather than control flow at each call site. `dod.md` now scopes its
+  terminal rule to the pre-admission group FIFO it was always about, and
+  enumerates the five dispositions under Saturation Dispositions; the FIFO stays
+  terminal, which is what keeps this a classification rather than a general
+  softening. `style-guide.md` records the telemetry-schema rule for the first
+  time. The X authority backpressure path reuses the shared stall ledger with its
+  four existing tests unchanged, which is what proves the step is behaviour-
+  neutral.
+- [x] Extend `validation/tla/TargetInputPacing.tla` with the producer it never
+  had. Device acquisition, bounded deferral, scoped endpoint closure that flushes
+  its terminating boundary, and terminal failure are all modelled; 1,969,760
+  generated and 567,966 distinct states to depth 21. Seven negative controls each
+  violate their own invariant, including the one on `Drain` fairness, so the four
+  new actions sitting outside fairness did not turn progress into a tautology.
+  Two invariants were removed for failing their own controls rather than kept as
+  decoration. Four counterexamples are pinned as deterministic Rust regressions
+  in `crates/sophia-protocol/tests/capacity.rs`.
+- [ ] Apply the dispositions to the ten session-killing sites, one revertible
+  commit each: libinput acquisition to bounded deferral escalating to a closed
+  endpoint epoch; the seven routed-input ingress sites to endpoint closure with
+  the reserve set to outstanding presses, two of which are release flushes and
+  must take the terminating-boundary class; the XKB worker to a typed error with
+  no panic and no deadline-free receive; the page-flip callback by bounding the
+  read rather than the write, since the event is already consumed from the fd;
+  the session observation batch and deferred key timing to reject-and-consume,
+  because a diagnostic must not fail a tick; the pressed-key ledger to per-surface
+  closure that emits the releases it holds; and present feedback to a report that
+  never latches. Resource constants and the epoch-close helper go in a new
+  `crates/sophia-cli/src/commands/live_session/input_capacity.rs`, not in
+  `input.rs`, which is already an audit error at 1444 lines.
+- [ ] Close the remaining silent drops once the fatal sites are converted: the
+  three `broker.rs` swallow points, the unbounded input-delivery channel, the
+  deadline-free route-lease send, and config-time bound publication. Add
+  `discarded = 0` assertions to the gate verifiers so a degraded run still fails
+  rather than passing quietly, which is the one risk converting fatals to
+  degradations actually creates.
 
 Milestone 13 exits only when the public wire is independently implementable,
 the retained Triad behavior port is complete across the correct authorities,

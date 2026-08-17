@@ -110,3 +110,56 @@ impl<K: Ord> CapacityStallLedger<K> {
         self.stalled.is_empty()
     }
 }
+
+/// Conservation at an acquisition boundary.
+///
+/// A device packet exists before capacity is examined, so a refused arrival is
+/// held, admitted, or discarded — never merely gone. Counting the third case is
+/// what separates backpressure from silent loss, and it is the executable form
+/// of `AcquisitionIsConserved` in `validation/tla/TargetInputPacing.tla`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CapacityAcquisitionLedger {
+    produced: u64,
+    admitted: u64,
+    discarded: u64,
+}
+
+impl CapacityAcquisitionLedger {
+    /// `count` arrivals exist and have not yet been examined.
+    pub fn arrived(&mut self, count: u64) {
+        self.produced = self.produced.saturating_add(count);
+    }
+
+    pub fn admitted(&mut self, count: u64) {
+        self.admitted = self.admitted.saturating_add(count);
+    }
+
+    pub fn discarded(&mut self, count: u64) {
+        self.discarded = self.discarded.saturating_add(count);
+    }
+
+    pub const fn produced_total(&self) -> u64 {
+        self.produced
+    }
+
+    pub const fn admitted_total(&self) -> u64 {
+        self.admitted
+    }
+
+    pub const fn discarded_total(&self) -> u64 {
+        self.discarded
+    }
+
+    /// Arrivals examined but neither admitted nor discarded: still upstream,
+    /// which is what a bounded deferral leaves behind.
+    pub const fn held(&self) -> u64 {
+        self.produced
+            .saturating_sub(self.admitted.saturating_add(self.discarded))
+    }
+
+    /// Nothing was accounted for twice. A false answer means an arrival was
+    /// counted as both admitted and discarded, or discarded without arriving.
+    pub const fn is_conserved(&self) -> bool {
+        self.admitted.saturating_add(self.discarded) <= self.produced
+    }
+}

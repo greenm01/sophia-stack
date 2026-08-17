@@ -233,6 +233,20 @@ Levels:
 - `error`: only when a library cannot return the failure to its caller. Most
   engine failures should be returned as typed errors instead.
 
+### Telemetry Schemas
+
+A diagnostic record's fields are its schema, and gate scripts and log readers
+depend on them. Name fields for what they measure rather than where they were
+emitted, keep a field's meaning stable once published, and add fields rather
+than repurposing them. A count of what was lost is not optional on a degraded
+outcome: `discarded = 0` must mean nothing was dropped, never that nobody
+counted. Report at `warn` with a cumulative total rather than per occurrence, so
+a resource under sustained pressure does not saturate the log as well.
+
+Saturation telemetry uses the shared vocabulary in
+`crates/sophia-protocol/src/capacity/` rather than a per-site record, so the
+dedup rule and the field names cannot drift between resources.
+
 ## Allocation
 
 The compositor hot path should not allocate casually. It may resize capacity at

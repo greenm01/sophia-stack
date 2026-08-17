@@ -615,6 +615,16 @@ is observed. The FIFO holds at most 256 groups; capacity exhaustion or a
 mismatched member is an explicit terminal error, never an unbounded allocation
 or an immediate GPU submission.
 
+That terminal rule is this FIFO's, not every bounded resource's. Only its second
+clause generalises: no bounded resource may answer pressure by allocating past
+its bound. What a resource does *at* its bound is a property of the resource,
+recorded beside its capacity rather than decided at each call site, and the
+choices are enumerated under Saturation Dispositions below. Reading the first
+clause as blanket policy is how identical resource classes came to behave
+oppositely -- a per-client input queue closing one endpoint while the shared
+ingress killed the session, a focus handoff discarding a held sequence while the
+pressed-key ledger treated the same pressure as fatal.
+
 A selected complete presented buffer covers older admission groups for that
 surface. Older Present groups cross intake only for explicit Skip/Idle
 settlement; older backing-only groups are discarded without entering committed
@@ -1164,6 +1174,34 @@ No process should hold a mutable reference into another process's table. Cross a
 boundary by serializing a packet or by passing an OS handle with explicit
 ownership.
 
+## Saturation Dispositions
+
+Every bounded resource carries its capacity and its behaviour at that capacity
+as data. Five dispositions exist and no site may invent a sixth:
+
+- **Terminal** -- exhaustion is an explicit terminal error. Correct where
+  continuing would present wrong pixels or split an atomic group, as in the
+  pre-admission group FIFO above.
+- **EndpointEpochClosed** -- one endpoint's epoch closes and its queued work is
+  fenced, leaving other endpoints untouched. A close still emits the terminating
+  boundaries it owes; a discarded key release is a modifier held down forever.
+- **BoundedDeferral** -- admission waits, with a deadline and a named
+  escalation. Declining to read is backpressure rather than loss when the
+  producer buffers upstream. The deadline is what distinguishes this from an
+  unbounded retry loop.
+- **RejectAndConsume** -- the record is dropped and counted. Correct for
+  diagnostics and timing sidecars, which must not be able to fail a frame.
+- **DegradeWithCause** -- the work proceeds at reduced fidelity and says so.
+
+Two rules bind all five. Ordered work is never merged to make room: two arrivals
+may not become one record, because a resource that coalesces under pressure
+reports success while losing user input. And boundary capacity is reserved --
+room for every terminating boundary a resource still owes is held back from
+ordinary work, so closing an endpoint is always possible.
+
+`crates/sophia-protocol/src/capacity/` holds the vocabulary and the pure
+admission arithmetic; `validation/tla/TargetInputPacing.tla` models it.
+
 ## Observability
 
 Logs are another boundary. Engine diagnostics may carry opaque Sophia IDs,
@@ -1171,6 +1209,14 @@ generations, counts, outcomes, and timing data, but default logs must not carry
 raw XIDs, namespace IDs, titles, classes, PIDs, icon pixels, portal payloads, or
 buffer contents. Structured `tracing` spans and events should explain decisions
 without weakening namespace isolation.
+
+A degradation that says nothing is indistinguishable from working code, so every
+non-terminal saturation reports at `warn` with the resource's own name, the
+cause, and a cumulative count of what was lost. Reporting is coalesced -- first
+occurrence, powers of two, cause change, first recovery -- because a resource
+under sustained pressure would otherwise saturate the log as well. A truncation
+that reports a discarded count of zero is a silent drop and is the one shape
+this rule exists to forbid.
 
 ## Hot Paths
 
