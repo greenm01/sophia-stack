@@ -1527,13 +1527,20 @@ impl LiveProductionNativeScanout {
     /// Reports whether every ordinary frame/resource owner has retired. The
     /// session owner uses this before transferring scheduling authority to an
     /// output-topology transaction.
+    /// Queued work that has not crossed into a renderer worker is deliberately
+    /// not counted. Installation discards exactly that state itself -- it
+    /// refuses only `worker_in_flight` and then calls `discard_pending_frame`
+    /// -- so requiring it to be absent first was stricter than the transition
+    /// needs. It was also unreachable: nothing drains a queued frame while the
+    /// owner is quarantined waiting on this predicate, so the wait could only
+    /// end by expiring. What must still retire is everything holding a renderer
+    /// lease or a KMS resource.
     pub fn output_topology_preparation_quiescent(&self) -> bool {
         self.output_topology_preparation.is_none()
             && self.queued_mirror_successors.is_empty()
             && self.output_cohorts.is_empty()
             && self.heads.iter().all(|head| {
-                head.pending_content.is_none()
-                    && head.rendering_content.is_none()
+                head.rendering_content.is_none()
                     && head.submitted_content.is_none()
                     && head.scanout_submission.is_none()
                     && head.prepared_scanout.is_none()
@@ -1542,7 +1549,7 @@ impl LiveProductionNativeScanout {
             && self
                 .exporters
                 .iter()
-                .all(|exporter| !exporter.pending_frame())
+                .all(|exporter| !exporter.worker_in_flight())
             && self
                 .output_lifecycles
                 .values()
@@ -1565,9 +1572,6 @@ impl LiveProductionNativeScanout {
             return Some("output_cohorts");
         }
         for head in &self.heads {
-            if head.pending_content.is_some() {
-                return Some("head_pending_content");
-            }
             if head.rendering_content.is_some() {
                 return Some("head_rendering_content");
             }
@@ -1587,9 +1591,9 @@ impl LiveProductionNativeScanout {
         if self
             .exporters
             .iter()
-            .any(|exporter| exporter.pending_frame())
+            .any(|exporter| exporter.worker_in_flight())
         {
-            return Some("exporter_pending_frame");
+            return Some("exporter_worker_in_flight");
         }
         if self
             .output_lifecycles
@@ -1609,8 +1613,7 @@ impl LiveProductionNativeScanout {
     /// submitting" from "a flip never came back".
     pub fn output_topology_quiescence_head_report(&self) -> Option<String> {
         let index = self.heads.iter().position(|head| {
-            head.pending_content.is_some()
-                || head.rendering_content.is_some()
+            head.rendering_content.is_some()
                 || head.submitted_content.is_some()
                 || head.scanout_submission.is_some()
                 || head.prepared_scanout.is_some()
