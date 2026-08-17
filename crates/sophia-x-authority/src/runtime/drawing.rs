@@ -732,22 +732,41 @@ impl XAuthorityRuntime {
                 observed_content_generation: record.generation,
             });
         }
-        let canonical = self
-            .software_buffers
-            .presentation_snapshot(record.id)
-            .cloned()
-            .ok_or(XAuthorityRuntimeError::InvalidResource)?;
+        // A surface whose pixels arrived through a renderer or pixmap Present
+        // has no canonical CPU drawable, so there is nothing to replay from.
+        // That is an ordinary content state, not a runtime failure: reporting
+        // it as an error here would propagate out of the connection loop and
+        // take the whole X server down over one surface's demand.
+        let Some(canonical) = self.software_buffers.presentation_snapshot(record.id).cloned()
+        else {
+            return Ok(XSurfaceRasterOutcome::SampledFallback {
+                cause: crate::XRasterFallbackCause::NoCanonicalRaster,
+                observed_content_generation: record.generation,
+            });
+        };
         if canonical.size != requirements.logical_extent {
             return Ok(XSurfaceRasterOutcome::SampledFallback {
                 cause: crate::XRasterFallbackCause::LogicalExtentMismatch,
                 observed_content_generation: record.generation,
             });
         }
-        let updates = match self
+        // The store's refusals — a changed extent, a projected size or stride
+        // overflow, a backing bound — are all states this surface can
+        // legitimately be in, so they answer the demand rather than fail the
+        // runtime.
+        let satisfied = match self
             .raster_store
             .satisfy(record.id, requirements, canonical.bytes.len())
-            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?
         {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                return Ok(XSurfaceRasterOutcome::SampledFallback {
+                    cause: crate::XRasterFallbackCause::LogicalExtentMismatch,
+                    observed_content_generation: record.generation,
+                });
+            }
+        };
+        let updates = match satisfied {
             crate::XRasterSatisfyOutcome::Satisfied(updates) => updates,
             crate::XRasterSatisfyOutcome::Fallback(cause) => {
                 return Ok(XSurfaceRasterOutcome::SampledFallback {

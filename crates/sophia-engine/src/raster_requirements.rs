@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::{HeadRenderTarget, OutputSceneSnapshot};
 use sophia_protocol::{
-    MAX_SURFACE_CONTENT_VARIANTS, SurfaceContentFidelity, SurfaceRasterClass,
+    BufferSource, MAX_SURFACE_CONTENT_VARIANTS, SurfaceContentFidelity, SurfaceRasterClass,
     SurfaceRasterRequirements, SurfaceRasterResponseIdentity, SurfaceRasterTransform,
 };
 
@@ -58,6 +58,18 @@ impl SurfaceRasterRequirementTracker {
                     transform: SurfaceRasterTransform::Normal,
                 };
                 for surface in &snapshot.surfaces {
+                    // Only CPU-backed content can be re-rasterized by a
+                    // protocol authority. A renderer or pixmap surface carries
+                    // pixels and no semantic form, so demanding a density
+                    // variant of it asks for something no authority can
+                    // produce; the request would travel the whole round trip
+                    // only to come back as fallback.
+                    if !matches!(
+                        surface.content.canonical_variant().source,
+                        BufferSource::CpuBuffer { .. }
+                    ) {
+                        continue;
+                    }
                     let entry = demand.entry(surface.surface).or_insert_with(|| Demand {
                         content_generation: surface.committed_generation,
                         logical_extent: surface.content.logical_extent(),

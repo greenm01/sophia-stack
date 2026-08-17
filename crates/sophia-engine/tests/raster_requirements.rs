@@ -254,3 +254,68 @@ fn an_unchanged_demand_keeps_one_outstanding_requirement_edge() {
         requirement_generation: requirement.requirement_generation,
     }));
 }
+
+#[test]
+fn renderer_content_raises_no_raster_requirement() {
+    // A DMA-BUF surface carries pixels and no semantic form, so no authority
+    // can re-rasterize it at another density. Demanding one costs a round trip
+    // and returns fallback at best; at worst it asks an authority a question
+    // about a surface it does not own pixels for.
+    let logical = Size {
+        width: 800,
+        height: 600,
+    };
+    let snapshot = scene(SurfaceContentSet::singleton(
+        BufferSource::DmaBuf { handle: 77 },
+        logical,
+    ));
+    let mut tracker = SurfaceRasterRequirementTracker::new();
+    assert!(
+        tracker
+            .reconcile(
+                &[snapshot],
+                &[target(
+                    2,
+                    Size {
+                        width: 1920,
+                        height: 1080,
+                    },
+                )],
+            )
+            .unwrap()
+            .is_empty(),
+        "a renderer surface must not be asked for a density variant"
+    );
+}
+
+#[test]
+fn a_mixed_scene_demands_only_its_cpu_backed_surface() {
+    let logical = Size {
+        width: 800,
+        height: 600,
+    };
+    let mut snapshot = scene(SurfaceContentSet::singleton(
+        BufferSource::CpuBuffer { handle: 11 },
+        logical,
+    ));
+    let cpu_surface = snapshot.surfaces[0].surface;
+    let mut renderer_surface = snapshot.surfaces[0].clone();
+    renderer_surface.surface = SurfaceId::new(9, 1);
+    renderer_surface.content =
+        SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 78 }, logical);
+    snapshot.surfaces.push(renderer_surface);
+
+    let requirements = SurfaceRasterRequirementTracker::new().reconcile(
+        &[snapshot],
+        &[target(
+            2,
+            Size {
+                width: 1920,
+                height: 1080,
+            },
+        )],
+    );
+    let requirements = requirements.unwrap();
+    assert_eq!(requirements.len(), 1);
+    assert_eq!(requirements[0].surface, cpu_surface);
+}

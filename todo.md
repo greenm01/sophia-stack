@@ -765,7 +765,8 @@ Detailed physical-run diagnoses remain in
   coalescer emits the first occurrence and each subsequent power of two with a
   cumulative count. Deterministic coverage exists for unsupported `PutImage`,
   unsupported cross-drawable copy, stale dependency, journal capacity, backing
-  capacity, stale content generation, logical extent mismatch, and transform
+  capacity, stale content generation, logical extent mismatch, absent
+  canonical raster, and transform
   mismatch. Source destruction and allocation failure remain open.
 - [x] Add deterministic authority regressions for the real xterm sequence:
   startup `PutImage`, later ImageText8/PolyText8 and line drawing, same-drawable

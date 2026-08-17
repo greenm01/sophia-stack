@@ -574,14 +574,9 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                             .map_err(|_| {
                                 X11SetupSocketError::new("X11 authority runtime lock poisoned")
                             })?
-                            .apply_surface_raster_requirements(transaction, &requirements)
-                            .map_err(|error| {
-                                X11SetupSocketError::new(format!(
-                                    "failed to satisfy surface raster requirements: {error:?}"
-                                ))
-                            })?;
+                            .apply_surface_raster_requirements(transaction, &requirements);
                         match response {
-                            crate::XSurfaceRasterOutcome::Satisfied(response) => {
+                            Ok(crate::XSurfaceRasterOutcome::Satisfied(response)) => {
                                 raster_fallbacks.report_satisfied(
                                     &requirements,
                                     response.identity.source_content_generation,
@@ -594,10 +589,10 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     batch: Some(batch),
                                 });
                             }
-                            crate::XSurfaceRasterOutcome::SampledFallback {
+                            Ok(crate::XSurfaceRasterOutcome::SampledFallback {
                                 cause,
                                 observed_content_generation,
-                            } => {
+                            }) => {
                                 pending_raster_egress = Some(XAuthorityEgressEnvelope {
                                     transaction,
                                     batch: None,
@@ -606,6 +601,21 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     &requirements,
                                     cause,
                                     observed_content_generation,
+                                );
+                            }
+                            Err(error) => {
+                                // One surface's demand must never end the
+                                // server. Answer it with the canonical raster
+                                // and keep serving every other client.
+                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
+                                    transaction,
+                                    batch: None,
+                                });
+                                tracing::warn!(
+                                    "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
+                                    requirements.surface,
+                                    requirements.committed_content_generation,
+                                    requirements.requirement_generation,
                                 );
                             }
                         }

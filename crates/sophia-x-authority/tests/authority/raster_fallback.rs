@@ -795,3 +795,28 @@ fn a_recovery_still_reports_the_failures_it_ended() {
     }
     assert_eq!(coalescer.observe_satisfied(surface), Some(3));
 }
+
+#[test]
+fn a_surface_with_no_canonical_raster_falls_back_instead_of_failing() {
+    let namespace = NamespaceId::from_raw(232);
+    let window = XResourceId::new(0x233, 1);
+    let surface = SurfaceId::new(232, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    // A window whose pixels only ever arrive through a renderer present has no
+    // CPU drawable at all. This is the shape that killed the mixed-output gate:
+    // the requirement returned an error, the error left the connection loop,
+    // and one surface's demand ended the whole X server.
+    fallback_window(&mut runtime, namespace, window, surface, 320);
+
+    let outcome = runtime
+        .apply_surface_raster_requirements(
+            TransactionId::from_raw(321),
+            &fallback_requirement(surface, 1, &[750]),
+        )
+        .expect("an unanswerable requirement must never be a runtime error");
+    let (cause, _) = expect_raster_fallback_detail(
+        outcome,
+        "a surface with no canonical drawable cannot be rasterized",
+    );
+    assert_eq!(cause, XRasterFallbackCause::NoCanonicalRaster);
+}

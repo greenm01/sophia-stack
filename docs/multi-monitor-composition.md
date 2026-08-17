@@ -630,6 +630,12 @@ parallel multi-monitor subsystem.
   X Authority may publish its bounded density set, and committed state retains
   the whole set. Sets contain ready-only variants;
   per-variant damage, fidelity, and transform class are validated and consumed.
+- Engine raises raster requirements only for surfaces whose canonical variant
+  is a CPU buffer. Renderer and pixmap presentation content carries pixels and
+  no semantic form, so no authority can re-render it at another density, and
+  demanding one would spend a round trip to be told so. An authority that is
+  asked anyway answers with a named fallback: one surface's unanswerable demand
+  never fails the protocol runtime.
 - Engine reduces all visible physical-head targets into one bounded,
   `SurfaceId`-keyed `SurfaceRasterRequirements` union. The edge-triggered
   tracker emits only missing or changed density classes, prioritizes an
@@ -668,8 +674,8 @@ parallel multi-monitor subsystem.
   later text and copy commands is preserved.
 - Sampled fallback is cause-classified. X Authority reports unsupported
   `PutImage`, unsupported cross-drawable copy, unsupported command, stale
-  content generation, logical extent mismatch, journal capacity, backing
-  capacity, and transform mismatch. A stale generation carries the authority's
+  content generation, logical extent mismatch, absent canonical raster,
+  journal capacity, backing capacity, and transform mismatch. A stale generation carries the authority's
   own observed generation beside the requested one, so a run shows the size of
   the lag rather than only its existence. A
   bounded per-surface coalescer emits the first occurrence and each subsequent

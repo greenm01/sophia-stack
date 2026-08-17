@@ -39,6 +39,9 @@ pub enum XRasterFallbackCause {
     StaleContentGeneration,
     /// The requirement's logical extent disagrees with the canonical drawable.
     LogicalExtentMismatch,
+    /// The surface has no canonical CPU drawable to replay from, because its
+    /// content arrived through a renderer or pixmap presentation path.
+    NoCanonicalRaster,
     /// The semantic journal exceeded its command or payload bound.
     JournalCapacity,
     /// The derived stores would exceed the variant or backing-byte bound.
@@ -56,6 +59,7 @@ impl XRasterFallbackCause {
             Self::UnsupportedCommand => "unsupported_command",
             Self::StaleContentGeneration => "stale_content_generation",
             Self::LogicalExtentMismatch => "logical_extent_mismatch",
+            Self::NoCanonicalRaster => "no_canonical_raster",
             Self::JournalCapacity => "journal_capacity",
             Self::BackingCapacity => "backing_capacity",
             Self::TransformMismatch => "transform_mismatch",
