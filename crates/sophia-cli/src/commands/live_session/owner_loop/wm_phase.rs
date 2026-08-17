@@ -699,7 +699,14 @@
         && layout.pending.is_none()
         && let Some(wm) = wm_session.as_mut()
     {
-        let allow_new_cycle = !wm.output_topology_effect_pending();
+        // Held both before the effect is taken and while the candidate is in
+        // flight. Only the first was checked, so cycles resumed at the moment
+        // the candidate dispatched: a new layout transaction would start under
+        // the quarantine, keep ordinary settlement busy, and deny the candidate
+        // the idle window it waits for until it timed out and was rejected.
+        // Causes queue rather than drop, so nothing is lost by waiting.
+        let allow_new_cycle =
+            !wm.output_topology_effect_pending() && !wm.output_candidate_active();
         if let Some(proposal) = wm.poll_request(&mut layout, output, allow_new_cycle)? {
             let public_projection = proposal
                 .policy_settlement
