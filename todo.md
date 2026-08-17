@@ -816,6 +816,18 @@ Detailed physical-run diagnoses remain in
   connector identity. Require spanning-surface coverage, complete candidate and
   rollback ownership, first-presentation publication, head-loss recovery, and
   clean teardown on the physical target.
+  The Rust reference policy now hosts the exclusive output role for this gate.
+  It negotiates the owner-only socket, accepts only an exact three-connected-head
+  snapshot, preserves every current mode, and submits one complete candidate
+  containing a two-head mirror group beside one extended group. Extra connected
+  heads fail closed instead of being disabled implicitly. In the same supervised
+  process, the public-policy client completes exact profile activation and
+  configuration, then partitions two proof surfaces across the resulting logical
+  outputs using only policy-visible geometry; connector labels never cross into
+  blind policy. `tools/run_mixed_output_gate_tty4.sh` retains signed source and
+  binary identity and arms the real modeset only from a recovery-safe TTY. The
+  physical run, archive verifier, head-loss phase, and visible-pixel acceptance
+  remain open; the present host has only two connected heads.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze

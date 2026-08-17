@@ -1,9 +1,24 @@
+use std::io::{Read, Write};
+use std::os::unix::net::UnixListener;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot, PolicySurfaceKind,
-    PolicySurfaceSnapshot, Rect, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    PolicySurfaceSnapshot, Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, SOPHIA_WM_INTERFACE_REVISION,
+    SOPHIA_WM_OUTCOME_COMMITTED, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WM_V1_PROFILE_DIGEST_BYTES, WmV1PolicyConfigurationOutcome, WmV1ProfileCommand,
+    WmV1ProfileIdentity, WmV1ServerWelcome, decode_wm_v1_client_hello_frame,
+    decode_wm_v1_policy_configuration, decode_wm_v1_policy_configuration_frame,
+    decode_wm_v1_profile_active, decode_wm_v1_profile_prepared,
+    encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_profile_activate,
+    encode_wm_v1_profile_prepare, encode_wm_v1_server_welcome_frame,
 };
-use sophia_wm_demo::tile_policy_scene;
+use sophia_wm_demo::{PolicyV1Client, partition_policy_scene_across_outputs, tile_policy_scene};
+
+static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 #[test]
 fn reference_policy_tiles_only_the_complete_affected_output() {
@@ -53,6 +68,141 @@ fn reference_policy_tiles_only_the_complete_affected_output() {
     assert_eq!(proposal.outputs[0].focus, Some(SurfaceId::new(1, 1)));
 }
 
+#[test]
+fn mixed_proof_partitions_surfaces_by_logical_geometry_without_head_identity() {
+    let left = OutputId::from_raw(1);
+    let right = OutputId::from_raw(2);
+    let mut scene = PolicySceneSnapshot {
+        generation: 4,
+        active_output: left,
+        outputs: vec![
+            PolicyOutputSnapshot {
+                output: right,
+                generation: 1,
+                focus: None,
+                bounds: Rect {
+                    x: 2560,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                work_area: Rect {
+                    x: 2560,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            },
+            PolicyOutputSnapshot {
+                output: left,
+                generation: 1,
+                focus: Some(SurfaceId::new(1, 1)),
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2560,
+                    height: 1440,
+                },
+                work_area: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2560,
+                    height: 1440,
+                },
+            },
+        ],
+        surfaces: vec![surface(1, Some(left)), surface(2, Some(left))],
+        session_operations: Vec::new(),
+    };
+
+    partition_policy_scene_across_outputs(&mut scene).unwrap();
+
+    assert_eq!(scene.active_output, right);
+    assert_eq!(scene.surfaces[0].current_output, Some(left));
+    assert_eq!(scene.surfaces[1].current_output, Some(right));
+}
+
+#[test]
+fn live_reference_policy_accepts_profile_and_configures_before_scene_intake() {
+    let socket = std::env::temp_dir().join(format!(
+        "sophia-wm-demo-policy-v1-profile-{}-{}",
+        std::process::id(),
+        NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
+    ));
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let hello = decode_wm_v1_client_hello_frame(&read_frame(&mut stream)).unwrap();
+        assert_ne!(
+            hello.capabilities & SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+            0
+        );
+        assert_ne!(hello.capabilities & SOPHIA_WM_CAPABILITY_CONFIGURATION, 0);
+        stream
+            .write_all(
+                &encode_wm_v1_server_welcome_frame(&WmV1ServerWelcome {
+                    selected_revision: SOPHIA_WM_INTERFACE_REVISION,
+                    capabilities: hello.capabilities,
+                    connection_epoch: 7,
+                    max_outputs: 16,
+                    max_bindings: 256,
+                    max_surfaces: 1024,
+                    max_chunk_bytes: 65_520,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let identity = WmV1ProfileIdentity::new(7, 4, [0x5a; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_profile_prepare(WmV1ProfileCommand {
+                    transaction: TransactionId::from_raw(1),
+                    identity,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let prepared = decode_wm_v1_profile_prepared(&read_frame(&mut stream)).unwrap();
+        assert_eq!(prepared.identity, identity);
+        stream
+            .write_all(
+                &encode_wm_v1_profile_activate(WmV1ProfileCommand {
+                    transaction: TransactionId::from_raw(2),
+                    identity,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let active = decode_wm_v1_profile_active(&read_frame(&mut stream)).unwrap();
+        assert_eq!(active.identity, identity);
+        let (transaction, wire) =
+            decode_wm_v1_policy_configuration_frame(&read_frame(&mut stream)).unwrap();
+        let configuration = decode_wm_v1_policy_configuration(&wire).unwrap();
+        assert_eq!(configuration.connection_epoch, 7);
+        assert_eq!(configuration.generation, 1);
+        assert!(configuration.actions.is_empty());
+        stream
+            .write_all(
+                &encode_wm_v1_policy_configuration_outcome_frame(
+                    transaction,
+                    &WmV1PolicyConfigurationOutcome {
+                        connection_epoch: 7,
+                        configuration_generation: 1,
+                        outcome: SOPHIA_WM_OUTCOME_COMMITTED,
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    });
+
+    let mut client = PolicyV1Client::connect(&socket, Duration::from_secs(1)).unwrap();
+    client.activate_profile_and_configure().unwrap();
+
+    server.join().unwrap();
+    std::fs::remove_file(socket).unwrap();
+}
+
 fn surface(index: u32, current_output: Option<OutputId>) -> PolicySurfaceSnapshot {
     PolicySurfaceSnapshot {
         surface: SurfaceId::new(index, 1),
@@ -78,4 +228,16 @@ fn surface(index: u32, current_output: Option<OutputId>) -> PolicySurfaceSnapsho
             height: 40,
         },
     }
+}
+
+fn read_frame(stream: &mut impl Read) -> Vec<u8> {
+    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
+    stream.read_exact(&mut header).unwrap();
+    let payload_len = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+    let mut frame = header.to_vec();
+    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
+    stream
+        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+        .unwrap();
+    frame
 }

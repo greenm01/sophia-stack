@@ -5,19 +5,25 @@ use std::path::Path;
 use std::time::Duration;
 
 use sophia_protocol::{
-    IpcCodecError, POLICY_MAX_OUTPUTS, PolicyOutputProjection, PolicyProjectionOutcome,
-    PolicyProjectionProposal, PolicyProjectionRequest, PolicySceneSnapshot, PolicySurfacePlacement,
-    PolicyTransform, Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN,
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
-    SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, Size, TransactionId,
-    WmV1ClientHello, WmV1DecodedSnapshot, WmV1SnapshotTransfer,
+    IpcCodecError, OutputId, POLICY_MAX_OUTPUTS, PolicyConfiguration, PolicyOutputProjection,
+    PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest,
+    PolicySceneSnapshot, PolicySurfacePlacement, PolicyTransform, Rect, SOPHIA_IPC_HEADER_LEN,
+    SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
+    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS,
+    SOPHIA_WM_MAX_SURFACES, SOPHIA_WM_OUTCOME_COMMITTED, Size, TransactionId, WmChromePolicy,
+    WmV1ClientHello, WmV1DecodedSnapshot, WmV1ProfileCompletion, WmV1ProfileOutcome,
+    WmV1SnapshotTransfer, decode_wm_v1_policy_configuration_outcome_frame,
     decode_wm_v1_policy_projection_outcome, decode_wm_v1_policy_projection_request,
-    decode_wm_v1_policy_snapshot, decode_wm_v1_projection_outcome_frame,
-    decode_wm_v1_projection_request_frame, decode_wm_v1_server_welcome_frame,
-    decode_wm_v1_snapshot_begin_frame, decode_wm_v1_snapshot_chunk_frame,
-    decode_wm_v1_snapshot_end_frame, encode_wm_v1_client_hello_frame,
-    encode_wm_v1_policy_projection, encode_wm_v1_projection_begin_frame,
-    encode_wm_v1_projection_chunk_frame, encode_wm_v1_projection_end_frame,
+    decode_wm_v1_policy_snapshot, decode_wm_v1_profile_activate, decode_wm_v1_profile_prepare,
+    decode_wm_v1_projection_outcome_frame, decode_wm_v1_projection_request_frame,
+    decode_wm_v1_server_welcome_frame, decode_wm_v1_snapshot_begin_frame,
+    decode_wm_v1_snapshot_chunk_frame, decode_wm_v1_snapshot_end_frame,
+    encode_wm_v1_client_hello_frame, encode_wm_v1_policy_configuration,
+    encode_wm_v1_policy_configuration_frame, encode_wm_v1_policy_projection,
+    encode_wm_v1_profile_active, encode_wm_v1_profile_prepared,
+    encode_wm_v1_projection_begin_frame, encode_wm_v1_projection_chunk_frame,
+    encode_wm_v1_projection_end_frame,
 };
 
 #[derive(Debug)]
@@ -30,6 +36,9 @@ pub enum PolicyV1ClientError {
     ConnectionEpochMismatch,
     SceneGenerationMismatch,
     InvalidScene,
+    ProfileActivationUnavailable,
+    ProfileIdentityMismatch,
+    ConfigurationRejected,
     TransactionExhausted,
 }
 
@@ -75,7 +84,9 @@ impl PolicyV1Client {
             maximum_revision: 3,
             capabilities: SOPHIA_WM_CAPABILITY_BINDINGS
                 | SOPHIA_WM_CAPABILITY_ACTIONS
-                | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
+                | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
+                | SOPHIA_WM_CAPABILITY_CONFIGURATION
+                | SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
         };
         stream.write_all(&encode_wm_v1_client_hello_frame(&hello)?)?;
         stream.flush()?;
@@ -108,8 +119,70 @@ impl PolicyV1Client {
             max_outputs,
             max_surfaces,
             max_bindings,
-            next_transaction: 1,
+            // Profile activation uses server-owned transactions 1 and 2 in the
+            // live host. Client transactions start after them so evidence never
+            // relies on direction-local reuse being harmless.
+            next_transaction: 3,
         })
+    }
+
+    /// Accepts the exact startup profile and installs an empty, valid policy
+    /// configuration before the host publishes its first scene.
+    pub fn activate_profile_and_configure(&mut self) -> Result<(), PolicyV1ClientError> {
+        if self.capabilities & SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION == 0
+            || self.capabilities & SOPHIA_WM_CAPABILITY_CONFIGURATION == 0
+        {
+            return Err(PolicyV1ClientError::ProfileActivationUnavailable);
+        }
+        let prepare = decode_wm_v1_profile_prepare(&read_frame(&mut self.stream)?)?;
+        if prepare.identity.connection_epoch != self.connection_epoch {
+            return Err(PolicyV1ClientError::ConnectionEpochMismatch);
+        }
+        self.stream
+            .write_all(&encode_wm_v1_profile_prepared(WmV1ProfileCompletion {
+                transaction: prepare.transaction,
+                identity: prepare.identity,
+                outcome: WmV1ProfileOutcome::Accepted,
+            })?)?;
+        self.stream.flush()?;
+
+        let activate = decode_wm_v1_profile_activate(&read_frame(&mut self.stream)?)?;
+        if activate.identity != prepare.identity {
+            return Err(PolicyV1ClientError::ProfileIdentityMismatch);
+        }
+        self.stream
+            .write_all(&encode_wm_v1_profile_active(WmV1ProfileCompletion {
+                transaction: activate.transaction,
+                identity: activate.identity,
+                outcome: WmV1ProfileOutcome::Accepted,
+            })?)?;
+        self.stream.flush()?;
+
+        let transaction = self.mint_transaction()?;
+        let configuration = encode_wm_v1_policy_configuration(&PolicyConfiguration {
+            connection_epoch: self.connection_epoch,
+            generation: 1,
+            actions: Vec::new(),
+            chrome: WmChromePolicy::default(),
+        })?;
+        self.stream
+            .write_all(&encode_wm_v1_policy_configuration_frame(
+                transaction,
+                &configuration,
+            )?)?;
+        self.stream.flush()?;
+        let (outcome_transaction, outcome) =
+            decode_wm_v1_policy_configuration_outcome_frame(&read_frame(&mut self.stream)?)?;
+        if outcome_transaction != transaction
+            || outcome.connection_epoch != self.connection_epoch
+            || outcome.configuration_generation != 1
+        {
+            return Err(PolicyV1ClientError::ConnectionEpochMismatch);
+        }
+        if outcome.outcome != SOPHIA_WM_OUTCOME_COMMITTED {
+            return Err(PolicyV1ClientError::ConfigurationRejected);
+        }
+        Ok(())
     }
 
     pub fn receive_snapshot(&mut self) -> Result<WmV1DecodedSnapshot, PolicyV1ClientError> {
@@ -210,16 +283,20 @@ impl PolicyV1Client {
         {
             return Err(PolicyV1ClientError::MissingCapability);
         }
-        let transaction = self.next_transaction;
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or(PolicyV1ClientError::TransactionExhausted)?;
-        tile_policy_scene(TransactionId::from_raw(transaction), snapshot, request)
+        tile_policy_scene(self.mint_transaction()?, snapshot, request)
     }
 
     pub const fn connection_epoch(&self) -> u64 {
         self.connection_epoch
+    }
+
+    fn mint_transaction(&mut self) -> Result<TransactionId, PolicyV1ClientError> {
+        let transaction = TransactionId::from_raw(self.next_transaction);
+        self.next_transaction = self
+            .next_transaction
+            .checked_add(1)
+            .ok_or(PolicyV1ClientError::TransactionExhausted)?;
+        Ok(transaction)
     }
 }
 
@@ -292,6 +369,29 @@ pub fn tile_policy_scene(
         indicators: Vec::new(),
         output_statuses: Vec::new(),
     })
+}
+
+/// Partitions manageable surfaces across two logical outputs using only
+/// policy-visible geometry. Physical head and connector identity never enters
+/// this decision.
+pub fn partition_policy_scene_across_outputs(
+    scene: &mut PolicySceneSnapshot,
+) -> Result<OutputId, PolicyV1ClientError> {
+    if scene.outputs.len() != 2 {
+        return Err(PolicyV1ClientError::InvalidScene);
+    }
+    let mut outputs = scene.outputs.iter().collect::<Vec<_>>();
+    outputs.sort_by_key(|output| (output.bounds.x, output.bounds.y, output.output.raw()));
+    let left = outputs[0].output;
+    let rightmost = outputs[1].output;
+    scene.active_output = rightmost;
+    scene
+        .surfaces
+        .sort_by_key(|surface| (surface.surface.index(), surface.surface.generation()));
+    for (index, surface) in scene.surfaces.iter_mut().enumerate() {
+        surface.current_output = Some(if index == 0 { left } else { rightmost });
+    }
+    Ok(rightmost)
 }
 
 fn column_geometry(bounds: Rect, index: usize, count: usize) -> Result<Rect, PolicyV1ClientError> {
