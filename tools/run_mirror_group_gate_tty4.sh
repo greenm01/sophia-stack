@@ -56,13 +56,27 @@ sed 's/^/  | /' "$PROFILE"
 echo
 
 echo "Connected connectors, straight from sysfs:"
+connected_connectors=()
 for status in /sys/class/drm/card*-*/status; do
     [[ "$(cat "$status" 2>/dev/null)" == "connected" ]] || continue
     name="${status%/status}"
+    connected_connectors+=("${name##*/}")
     printf '  %-20s first_mode=%s\n' "${name##*/}" \
         "$(head -1 "${name}/modes" 2>/dev/null || echo none)"
 done
 echo
+
+# This gate is two-head by construction: the profile mirrors one pair and its
+# own pass line asserts connectors=2 heads=2. A third connected head becomes a
+# logical output with nothing placed on it, so it exports no pixels and fails
+# the independent-present check with an error that describes the symptom rather
+# than the cause. Say the cause here instead.
+if (( ${#connected_connectors[@]} != 2 )); then
+    echo "The mirror-group proof needs exactly two connected heads; observed ${#connected_connectors[@]}." >&2
+    printf '  %s\n' "${connected_connectors[@]}" >&2
+    echo "Disconnect the extras, or run tools/run_mixed_output_gate_tty4.sh for a three-head rig." >&2
+    exit 2
+fi
 
 if [[ "$(tty)" != "$TTY_REQUIRED" ]]; then
     echo "You are on $(tty); this needs $TTY_REQUIRED and DRM master." >&2
