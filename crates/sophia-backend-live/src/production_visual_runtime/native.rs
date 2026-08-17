@@ -366,19 +366,41 @@ impl LiveProductionVisualRuntime {
     /// Rebuilds logical output runtimes around scanout owners already installed
     /// by a blocking topology transaction. No renderer initialization or KMS
     /// modeset is performed here.
+    /// Names the presentation owner that would refuse a topology rebind.
+    ///
+    /// The owner waits for quiescence before applying a topology, but its wait
+    /// used to consult only the native scanout, while the rebind demands this
+    /// as well. The two definitions drifted, so the wait could pass and the
+    /// rebind still fail. Both now read the same predicate.
+    pub fn topology_rebind_quiescence_blocker(&self) -> Option<&'static str> {
+        if self.native_scanout_in_flight() {
+            return Some("native_scanout_in_flight");
+        }
+        if self.present_scheduler.in_flight_displayed_layer().is_some() {
+            return Some("in_flight_displayed_layer");
+        }
+        if self.present_scheduler.has_runnable_queued() {
+            return Some("runnable_queued_present");
+        }
+        if !self.software_present_frames_waiting.is_empty() {
+            return Some("software_present_waiting");
+        }
+        if !self.software_present_frames_bound.is_empty() {
+            return Some("software_present_bound");
+        }
+        if !self.software_presents_unframed.is_empty() {
+            return Some("software_present_unframed");
+        }
+        None
+    }
+
     pub fn rebind_applied_native_topology(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
         logical_viewports: &[(OutputId, Rect)],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.native_scanout_in_flight()
-            || self.present_scheduler.in_flight_displayed_layer().is_some()
-            || self.present_scheduler.has_runnable_queued()
-            || !self.software_present_frames_waiting.is_empty()
-            || !self.software_present_frames_bound.is_empty()
-            || !self.software_presents_unframed.is_empty()
-        {
+        if self.topology_rebind_quiescence_blocker().is_some() {
             return Err(
                 "native topology runtime rebind requires quiescent presentation ownership".into(),
             );

@@ -103,10 +103,18 @@
                         && wm.ordinary_policy_settlement_idle();
                     let quiescence_blocker =
                         native.output_topology_preparation_quiescence_blocker();
+                    // The rebind that follows this wait has its own quiescence
+                    // requirement. Waiting on only the scanout's let the wait
+                    // pass and the rebind fail immediately afterwards, so both
+                    // read the same predicate now.
+                    let runtime_blocker = runtime
+                        .as_ref()
+                        .and_then(|runtime| runtime.topology_rebind_quiescence_blocker());
                     let decision = reduce_output_topology_preparation_wait(Observation {
                         cancellation_requested: cancellation_reason.is_some(),
                         ordinary_settlement_idle,
-                        native_quiescent: quiescence_blocker.is_none(),
+                        native_quiescent: quiescence_blocker.is_none()
+                            && runtime_blocker.is_none(),
                         deadline_reached: Instant::now() >= execution.preparation_deadline,
                     });
                     match decision {
@@ -193,9 +201,10 @@
                             // that a wait expired sends its reader to the
                             // source to guess between eight candidates.
                             tracing::warn!(
-                                "sophia_live_output_authority schema=3 status=quiescence_timed_out settlement_idle={} native_blocker={} native_head={} wm_update_pending={} layout_pending={} policy_settlement_idle={} transaction={} timeout_msec={} kms_submits=0 preserved_topology=true",
+                                "sophia_live_output_authority schema=3 status=quiescence_timed_out settlement_idle={} native_blocker={} runtime_blocker={} native_head={} wm_update_pending={} layout_pending={} policy_settlement_idle={} transaction={} timeout_msec={} kms_submits=0 preserved_topology=true",
                                 ordinary_settlement_idle,
                                 quiescence_blocker.unwrap_or("none"),
+                                runtime_blocker.unwrap_or("none"),
                                 native
                                     .output_topology_quiescence_head_report()
                                     .unwrap_or_else(|| "none".to_owned()),
