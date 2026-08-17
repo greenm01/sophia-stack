@@ -366,32 +366,51 @@ impl LiveProductionVisualRuntime {
     /// Rebuilds logical output runtimes around scanout owners already installed
     /// by a blocking topology transaction. No renderer initialization or KMS
     /// modeset is performed here.
-    /// Names the presentation owner that would refuse a topology rebind.
+    /// Whether the runtime would accept a topology rebind.
     ///
     /// The owner waits for quiescence before applying a topology, but its wait
     /// used to consult only the native scanout, while the rebind demands this
     /// as well. The two definitions drifted, so the wait could pass and the
-    /// rebind still fail. Both now read the same predicate.
-    pub fn topology_rebind_quiescence_blocker(&self) -> Option<&'static str> {
+    /// rebind still fail. Both now read this.
+    pub fn topology_rebind_quiescent(&self) -> bool {
+        !self.native_scanout_in_flight()
+            && self.present_scheduler.in_flight_displayed_layer().is_none()
+            && !self.present_scheduler.has_runnable_queued()
+            && self.software_present_frames_waiting.is_empty()
+            && self.software_present_frames_bound.is_empty()
+            && self.software_presents_unframed.is_empty()
+    }
+
+    /// Every unmet clause, not just the first.
+    ///
+    /// Reporting only the first hid a second condition once already: a queued
+    /// present and a waiting software frame produce different fixes, and the
+    /// dispatch that would drain the queue is itself gated on no software frame
+    /// waiting. One name could not distinguish them.
+    pub fn topology_rebind_quiescence_report(&self) -> String {
+        let mut blockers = Vec::new();
         if self.native_scanout_in_flight() {
-            return Some("native_scanout_in_flight");
+            blockers.push("native_scanout_in_flight");
         }
         if self.present_scheduler.in_flight_displayed_layer().is_some() {
-            return Some("in_flight_displayed_layer");
+            blockers.push("in_flight_displayed_layer");
         }
         if self.present_scheduler.has_runnable_queued() {
-            return Some("runnable_queued_present");
+            blockers.push("runnable_queued_present");
         }
         if !self.software_present_frames_waiting.is_empty() {
-            return Some("software_present_waiting");
+            blockers.push("software_present_waiting");
         }
         if !self.software_present_frames_bound.is_empty() {
-            return Some("software_present_bound");
+            blockers.push("software_present_bound");
         }
         if !self.software_presents_unframed.is_empty() {
-            return Some("software_present_unframed");
+            blockers.push("software_present_unframed");
         }
-        None
+        if blockers.is_empty() {
+            return "none".to_owned();
+        }
+        blockers.join("+")
     }
 
     pub fn rebind_applied_native_topology(
@@ -400,7 +419,7 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         logical_viewports: &[(OutputId, Rect)],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.topology_rebind_quiescence_blocker().is_some() {
+        if !self.topology_rebind_quiescent() {
             return Err(
                 "native topology runtime rebind requires quiescent presentation ownership".into(),
             );
