@@ -29,6 +29,8 @@ fn capability(head: u64, connector: &str, selected: (u32, u32)) -> LibdrmNativeO
 
 #[test]
 fn preparation_wait_prioritizes_cancellation_then_readiness_then_timeout() {
+    // Escalation spent, so a deadline still rejects. The unspent case is
+    // covered separately below.
     let observation =
         |cancellation_requested, ordinary_settlement_idle, native_quiescent, deadline_reached| {
             OutputTopologyPreparationWaitObservation {
@@ -36,6 +38,7 @@ fn preparation_wait_prioritizes_cancellation_then_readiness_then_timeout() {
                 ordinary_settlement_idle,
                 native_quiescent,
                 deadline_reached,
+                escalation_available: false,
             }
         };
 
@@ -54,6 +57,42 @@ fn preparation_wait_prioritizes_cancellation_then_readiness_then_timeout() {
     assert_eq!(
         reduce_output_topology_preparation_wait(observation(false, false, true, false)),
         OutputTopologyPreparationWaitDecision::Wait
+    );
+}
+
+/// A wait blocks on owners that can only advance while it waits, so the first
+/// expiry forces quiescence rather than reporting a stall it never tried to
+/// clear. The escalation is one-shot: a second expiry rejects.
+#[test]
+fn preparation_wait_escalates_once_before_it_rejects() {
+    let expired = |escalation_available| OutputTopologyPreparationWaitObservation {
+        cancellation_requested: false,
+        ordinary_settlement_idle: true,
+        native_quiescent: false,
+        deadline_reached: true,
+        escalation_available,
+    };
+
+    assert_eq!(
+        reduce_output_topology_preparation_wait(expired(true)),
+        OutputTopologyPreparationWaitDecision::Escalate
+    );
+    assert_eq!(
+        reduce_output_topology_preparation_wait(expired(false)),
+        OutputTopologyPreparationWaitDecision::TimedOut
+    );
+
+    // Readiness still wins over an available escalation: nothing is skipped
+    // when the wait can simply proceed.
+    assert_eq!(
+        reduce_output_topology_preparation_wait(OutputTopologyPreparationWaitObservation {
+            cancellation_requested: false,
+            ordinary_settlement_idle: true,
+            native_quiescent: true,
+            deadline_reached: true,
+            escalation_available: true,
+        }),
+        OutputTopologyPreparationWaitDecision::Begin
     );
 }
 

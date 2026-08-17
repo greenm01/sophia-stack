@@ -32,12 +32,19 @@ pub struct OutputTopologyPreparationWaitObservation {
     pub ordinary_settlement_idle: bool,
     pub native_quiescent: bool,
     pub deadline_reached: bool,
+    /// Whether the one-shot escalation is still unspent. A wait may force
+    /// quiescence once; a second expiry rejects the candidate.
+    pub escalation_available: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputTopologyPreparationWaitDecision {
     Cancel,
     Begin,
+    /// Force presentation quiescence and wait once more. The owners this wait
+    /// blocks on can only advance while it waits, so a wait that merely
+    /// expires reports a stall it never tried to clear.
+    Escalate,
     TimedOut,
     Wait,
 }
@@ -51,6 +58,8 @@ pub const fn reduce_output_topology_preparation_wait(
         OutputTopologyPreparationWaitDecision::Cancel
     } else if observation.ordinary_settlement_idle && observation.native_quiescent {
         OutputTopologyPreparationWaitDecision::Begin
+    } else if observation.deadline_reached && observation.escalation_available {
+        OutputTopologyPreparationWaitDecision::Escalate
     } else if observation.deadline_reached {
         OutputTopologyPreparationWaitDecision::TimedOut
     } else {

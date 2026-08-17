@@ -148,6 +148,10 @@ struct LiveOutputTopologyExecution {
     first_frames:
         BTreeMap<sophia_protocol::OutputId, sophia_backend_live::LiveProductionNativeFrameId>,
     frontend_candidate_published: bool,
+    /// Whether this candidate has already forced presentation quiescence. The
+    /// escalation is one-shot: a second expiry rejects rather than skipping
+    /// more client work.
+    quiescence_escalated: bool,
     last_preparation_progress:
         Option<sophia_backend_live::LiveProductionNativeTopologyPreparationReport>,
 }

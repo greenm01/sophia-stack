@@ -1250,3 +1250,69 @@ fn superseded_present_is_rejected_without_evicting_matching_candidate() {
         Some(matching_transaction)
     );
 }
+
+/// Forcing quiescence for a topology change skips what could run now, and
+/// leaves alone what a layout epoch is still holding.
+///
+/// A staged present belongs to its epoch, which commits or aborts it on its
+/// own schedule. Mass-skipping it here would settle work the layout still
+/// intends to present; what blocks quiescence is the runnable set alone.
+#[test]
+fn drain_runnable_transactions_leaves_layout_deferred() {
+    let runnable_handle = BufferHandle::from_raw(220);
+    let staged_handle = BufferHandle::from_raw(221);
+    let runnable_transaction = TransactionId::from_raw(222);
+    let staged_transaction = TransactionId::from_raw(223);
+    let surface = SurfaceId::new(224, 1);
+    let epoch = TransactionId::from_raw(225);
+
+    let mut resources = LivePresentationResourceSession::default();
+    resources
+        .register_source(descriptor(runnable_handle), vec![fd()])
+        .unwrap();
+    resources
+        .register_source(descriptor(staged_handle), vec![fd()])
+        .unwrap();
+    let mut scheduler = LiveProductionPresentScheduler::default();
+
+    scheduler
+        .enqueue_group(
+            &scheduler_batch(runnable_transaction, surface, runnable_handle).groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    scheduler
+        .enqueue_group(
+            &scheduler_batch_with_disposition(
+                staged_transaction,
+                surface,
+                staged_handle,
+                LiveProductionPresentDisposition::StageLayout { epoch },
+            )
+            .groups[0],
+            &[],
+            Vec::new(),
+            &mut resources,
+            Instant::now(),
+        )
+        .unwrap();
+    assert!(scheduler.has_runnable_queued());
+
+    assert_eq!(
+        scheduler.drain_runnable_transactions(),
+        [runnable_transaction]
+    );
+
+    // The runnable one is gone, so quiescence is reachable; the staged one is
+    // still owned by its epoch.
+    assert!(!scheduler.has_runnable_queued());
+    assert!(scheduler.has_queued());
+    assert_eq!(
+        scheduler.abort_layout_epoch(epoch).rejected,
+        [staged_transaction]
+    );
+    assert!(!scheduler.has_queued());
+}

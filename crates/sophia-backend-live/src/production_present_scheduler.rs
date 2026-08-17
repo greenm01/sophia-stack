@@ -726,6 +726,26 @@ impl LiveProductionPresentScheduler {
         std::mem::take(&mut self.diagnose_first_mixed_export)
     }
 
+    /// Drains only presents that are eligible to run right now.
+    ///
+    /// Layout-deferred entries stay: they belong to their layout epoch, which
+    /// commits or aborts them on its own schedule, and mass-skipping them here
+    /// would settle work the layout still intends to present. What blocks
+    /// quiescence is the runnable set alone.
+    pub fn drain_runnable_transactions(&mut self) -> Vec<TransactionId> {
+        let mut drained = Vec::new();
+        let mut retained = VecDeque::with_capacity(self.queued.len());
+        for queued in self.queued.drain(..) {
+            if queued.layout_state.runnable() {
+                drained.push(queued.submission.transaction);
+            } else {
+                retained.push_back(queued);
+            }
+        }
+        self.queued = retained;
+        drained
+    }
+
     pub fn drain_transactions(&mut self) -> Vec<TransactionId> {
         self.queued
             .drain(..)

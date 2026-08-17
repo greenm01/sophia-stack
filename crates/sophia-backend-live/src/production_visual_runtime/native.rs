@@ -31,6 +31,24 @@ pub struct LiveProductionNativeSuspendReport {
     pub skipped_present: Option<TransactionId>,
 }
 
+/// What a topology escalation had to skip to reach quiescence.
+///
+/// Every count here is a present a client will never see. Zero across all
+/// three is the ordinary case and means the wait converged on its own.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LiveTopologyPresentationSkipReport {
+    pub skipped_in_flight: Option<TransactionId>,
+    pub skipped_queued: usize,
+    pub skipped_software: usize,
+}
+
+impl LiveTopologyPresentationSkipReport {
+    /// Whether anything was actually given up.
+    pub const fn is_empty(&self) -> bool {
+        self.skipped_in_flight.is_none() && self.skipped_queued == 0 && self.skipped_software == 0
+    }
+}
+
 #[derive(Debug)]
 pub struct LiveProductionNativeSuspendError {
     pub drain_error: Box<dyn std::error::Error>,
@@ -250,6 +268,74 @@ impl LiveProductionVisualRuntime {
         )
     }
 
+    /// Skips whichever present currently owns the kernel, settling it as
+    /// `Skipped` and returning its renderer image.
+    ///
+    /// Shared by suspend and by topology escalation so the two cannot drift:
+    /// both need the same "this present will never reach a screen" settlement,
+    /// and only the attributed counter differs.
+    fn skip_in_flight_present(
+        &mut self,
+        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        attribute: impl FnOnce(&mut Self),
+    ) -> Option<LiveProductionSubmittedPresent> {
+        let skipped = self
+            .present_scheduler
+            .take_submitted()
+            .or_else(|| self.present_scheduler.take_rendering());
+        if let Some(present) = skipped.as_ref() {
+            if let Some(native_scanout) = native_scanout.as_deref_mut() {
+                let _ = native_scanout.rollback_renderer_image(present.displayed_layer.image_id);
+            }
+            if self.reject_gpu_presentation(present.transaction) {
+                attribute(self);
+            }
+        }
+        skipped
+    }
+
+    /// Forces presentation quiescence without giving up the displayed topology.
+    ///
+    /// The topology wait needs every present owner to settle before it may
+    /// apply, but it cannot make clients stop drawing, and the owners it waits
+    /// on can only advance while it is waiting. This is the escalation for
+    /// that: skip what is runnable and what is waiting, settle each as
+    /// `Skipped` so no client is left expecting feedback, and leave the scanout
+    /// and output set alone so the current topology keeps scanning out.
+    ///
+    /// Layout-deferred presents are untouched. They belong to a layout epoch
+    /// that will commit or abort them itself.
+    pub fn skip_presentations_for_topology(
+        &mut self,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> LiveTopologyPresentationSkipReport {
+        let skipped_in_flight = self
+            .skip_in_flight_present(native_scanout, |runtime| {
+                runtime.topology_escalation_present_rejections = runtime
+                    .topology_escalation_present_rejections
+                    .saturating_add(1);
+            })
+            .map(|present| present.transaction);
+        let mut skipped_queued = 0usize;
+        for transaction in self.present_scheduler.drain_runnable_transactions() {
+            if self.reject_gpu_presentation(transaction) {
+                skipped_queued = skipped_queued.saturating_add(1);
+                self.topology_escalation_present_rejections = self
+                    .topology_escalation_present_rejections
+                    .saturating_add(1);
+            }
+        }
+        let skipped_software = self.reject_software_presents();
+        self.topology_escalation_present_rejections = self
+            .topology_escalation_present_rejections
+            .saturating_add(skipped_software);
+        LiveTopologyPresentationSkipReport {
+            skipped_in_flight,
+            skipped_queued,
+            skipped_software,
+        }
+    }
+
     fn detach_native_scanout(
         &mut self,
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
@@ -262,20 +348,12 @@ impl LiveProductionVisualRuntime {
                 .as_deref()
                 .map_or(0, LiveProductionNativeScanout::head_scanout_in_flight_count),
         );
-        let skipped_present = self
-            .present_scheduler
-            .take_submitted()
-            .or_else(|| self.present_scheduler.take_rendering());
+        let skipped_present =
+            self.skip_in_flight_present(native_scanout.as_deref_mut(), |runtime| {
+                runtime.native_suspend_present_rejections =
+                    runtime.native_suspend_present_rejections.saturating_add(1);
+            });
         self.reject_software_presents();
-        if let Some(present) = skipped_present.as_ref() {
-            if let Some(native_scanout) = native_scanout.as_deref_mut() {
-                let _ = native_scanout.rollback_renderer_image(present.displayed_layer.image_id);
-            }
-            if self.reject_gpu_presentation(present.transaction) {
-                self.native_suspend_present_rejections =
-                    self.native_suspend_present_rejections.saturating_add(1);
-            }
-        }
         let invalidation_epoch = self
             .input_projections
             .iter()

@@ -39,6 +39,7 @@ pub struct LiveProductionVisualDiagnostics {
     pub controlled_rejections: usize,
     pub present_rejections: usize,
     pub native_suspend_present_rejections: usize,
+    pub topology_escalation_present_rejections: usize,
     pub other_present_rejections: usize,
     pub shutdown_present_rejections: usize,
 }
@@ -94,12 +95,14 @@ impl LiveProductionVisualRuntime {
             controlled_rejections: self.present_scheduler.controlled_rejections(),
             present_rejections: self.present_rejections,
             native_suspend_present_rejections: self.native_suspend_present_rejections,
+            topology_escalation_present_rejections: self.topology_escalation_present_rejections,
             other_present_rejections: self.present_rejections.saturating_sub(
                 self.surface_content_stream
                     .supersessions()
                     .saturating_add(self.present_scheduler.pending_supersessions())
                     .saturating_add(self.present_scheduler.controlled_rejections())
                     .saturating_add(self.native_suspend_present_rejections)
+                    .saturating_add(self.topology_escalation_present_rejections)
                     .saturating_add(self.shutdown_present_rejections),
             ),
             shutdown_present_rejections: self.shutdown_present_rejections,

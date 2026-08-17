@@ -236,6 +236,19 @@ impl LiveProductionVisualRuntime {
         self.reject_software_present_frames()
     }
 
+    /// Settles software presents whose head frames a topology transition threw
+    /// away.
+    ///
+    /// A bound software present is retired only by a real page flip of the head
+    /// frames it was lowered onto. Topology installation and abort discard
+    /// exactly those frames, so without this the binding would wait on a flip
+    /// that can never happen: the runtime would never report quiescent again
+    /// and the client would never receive its feedback. Returns how many were
+    /// settled; zero is the ordinary case.
+    pub fn settle_discarded_software_presents(&mut self) -> usize {
+        self.reject_software_present_frames()
+    }
+
     pub(super) fn reject_superseded_surface_content(
         &mut self,
     ) -> Result<usize, Box<dyn std::error::Error>> {

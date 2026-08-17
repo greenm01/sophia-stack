@@ -115,6 +115,7 @@
                         ordinary_settlement_idle,
                         native_quiescent: quiescence_blocker.is_none() && runtime_quiescent,
                         deadline_reached: Instant::now() >= execution.preparation_deadline,
+                        escalation_available: !execution.quiescence_escalated,
                     });
                     match decision {
                         Decision::Cancel => {
@@ -187,6 +188,38 @@
                                     );
                                 }
                             }
+                        }
+                        Decision::Escalate => {
+                            // The owners this wait blocks on advance only while
+                            // it waits, so an expiry that merely reports a
+                            // stall has not tried to clear it. Skip what is
+                            // runnable and what is waiting, settling each as
+                            // Skipped so no client is left expecting feedback,
+                            // and give the candidate one more window. The
+                            // displayed topology is untouched.
+                            let skipped = runtime.as_mut().map_or_else(
+                                Default::default,
+                                |runtime| runtime.skip_presentations_for_topology(Some(native)),
+                            );
+                            execution.quiescence_escalated = true;
+                            execution.preparation_deadline =
+                                Instant::now() + OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT;
+                            tracing::warn!(
+                                "sophia_live_output_authority schema=3 status=quiescence_escalated escalated=1 skipped_in_flight={} skipped_queued={} skipped_software={} settlement_idle={} native_blocker={} runtime_blocker={} transaction={} timeout_msec={}",
+                                skipped
+                                    .skipped_in_flight
+                                    .map_or_else(|| "none".to_owned(), |t| t.raw().to_string()),
+                                skipped.skipped_queued,
+                                skipped.skipped_software,
+                                ordinary_settlement_idle,
+                                quiescence_blocker.unwrap_or("none"),
+                                runtime.as_ref().map_or_else(
+                                    || "none".to_owned(),
+                                    LiveProductionVisualRuntime::topology_rebind_quiescence_report,
+                                ),
+                                transaction.raw(),
+                                OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT.as_millis(),
+                            );
                         }
                         Decision::TimedOut => {
                             wm.reject_output_topology_effect(
@@ -301,6 +334,18 @@
                                         .ok_or("first topology frame targets an unknown head")?;
                                     by_output.entry(output).or_default().push(frame);
                                 }
+                                // Installation discards the head frames any
+                                // bound software present was lowered onto, so
+                                // those bindings must settle here. Left alone
+                                // they would wait forever on a flip that can no
+                                // longer happen, and the runtime would never
+                                // report quiescent again.
+                                let orphaned = runtime.settle_discarded_software_presents();
+                                if orphaned != 0 {
+                                    tracing::warn!(
+                                        "sophia_live_present_skip schema=1 status=topology_discarded reason=install settled={orphaned}",
+                                    );
+                                }
                                 let candidate_outputs = native.install_applied_output_topology()?;
                                 let candidate_viewports = execution
                                     .effect
@@ -380,6 +425,14 @@
                         }
                         Transition::RolledBack { card_index, heads } => {
                             let (plan, reason) = native.install_rolled_back_output_topology()?;
+                            if let Some(runtime) = runtime.as_mut() {
+                                let orphaned = runtime.settle_discarded_software_presents();
+                                if orphaned != 0 {
+                                    tracing::warn!(
+                                        "sophia_live_present_skip schema=1 status=topology_discarded reason=rollback settled={orphaned}",
+                                    );
+                                }
+                            }
                             let rollback_outputs = native.outputs();
                             let rollback_viewports = plan
                                 .logical_viewports
@@ -702,6 +755,7 @@
                 preparation_deadline: Instant::now() + OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT,
                 first_frames: BTreeMap::new(),
                 frontend_candidate_published: false,
+                quiescence_escalated: false,
                 last_preparation_progress: None,
             });
             tracing::info!(
