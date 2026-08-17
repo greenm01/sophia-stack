@@ -40,11 +40,16 @@
         }
     }
 
+    // Only a hotplug quarantine is this path's to consume. Arming the retry on
+    // a policy quarantine is what let a rescan tear down the scanout a
+    // candidate was mid-apply on, and release the quarantine it was holding.
+    let hotplug_quarantined = output_topology_owner.phase
+        == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug);
     let rebuild_requested = (monitor_notice.is_some() || retry_due)
-        && output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+        && hotplug_quarantined
         && seat_state == sophia_backend_live::LiveSeatState::Active
         && runtime.is_some();
-    if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+    if (hotplug_quarantined || output_topology_owner.take_deferred_hotplug_notice())
         && output_topology_retry_at.is_none()
     {
         output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));

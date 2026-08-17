@@ -715,7 +715,9 @@ macro_rules! schedule_output_topology_rebuild {
 
 macro_rules! publish_resumed_topology_transport {
     ($native:expr) => {{
-        if output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined {
+        if output_topology_owner.phase
+            == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
+        {
             let rebuild = output_topology_owner
                 .observe_rebuild(outputs.clone(), $native.head_fingerprint())?;
             debug_assert_eq!(rebuild, LiveOutputTopologyRebuild::TransportReplaced);

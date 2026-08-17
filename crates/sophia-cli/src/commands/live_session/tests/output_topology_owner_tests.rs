@@ -1,6 +1,7 @@
 use super::super::{
     LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
-    LiveOutputTopologyRebuild, begin_output_topology_first_presentation_rollback,
+    LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild,
+    begin_output_topology_first_presentation_rollback,
 };
 use sophia_protocol::{OutputId, Size, TransactionId};
 use std::cell::RefCell;
@@ -13,6 +14,18 @@ fn observe_unmirrored(
 ) -> Result<LiveOutputTopologyRebuild, &'static str> {
     let heads = outputs.iter().map(|output| (output.id, 1)).collect();
     owner.observe_rebuild(outputs, heads)
+}
+
+/// The policy candidate's rebuild. Distinct from `observe_unmirrored` because
+/// the two are distinct writers: a candidate may not consume the rescan path's
+/// quarantine, nor a rescan the candidate's.
+fn observe_policy_unmirrored(
+    owner: &mut LiveOutputTopologyOwner,
+    outputs: Vec<sophia_engine::HeadlessOutput>,
+    candidate_topology_epoch: u64,
+) -> Result<(), &'static str> {
+    let heads = outputs.iter().map(|output| (output.id, 1)).collect();
+    owner.observe_policy_rebuild(outputs, heads, candidate_topology_epoch)
 }
 
 fn output(raw: u64, width: i32) -> sophia_engine::HeadlessOutput {
@@ -132,7 +145,10 @@ fn newer_notice_restarts_publication_without_reconsuming_security_epoch() {
     observe_unmirrored(&mut owner, vec![output(1, 1920)]).unwrap();
     owner.mark_published(3, true).unwrap();
     assert!(!owner.begin_rescan(2).unwrap());
-    assert_eq!(owner.phase, LiveOutputTopologyPhase::Quarantined);
+    assert_eq!(
+        owner.phase,
+        LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
+    );
     assert_eq!(owner.transition, 2);
 }
 
@@ -155,7 +171,10 @@ fn duplicate_coalescer_token_does_not_restart_a_transition() {
     assert!(owner.begin_rescan(3).unwrap());
     assert!(!owner.begin_rescan(3).unwrap());
     assert_eq!(owner.transition, 1);
-    assert_eq!(owner.phase, LiveOutputTopologyPhase::Quarantined);
+    assert_eq!(
+        owner.phase,
+        LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
+    );
 }
 
 #[test]
@@ -167,9 +186,12 @@ fn policy_change_keeps_published_identity_private_until_commit() {
     assert_eq!(owner.publication_generation, 1);
     assert_eq!(owner.outputs, vec![output(1, 1280)]);
 
+    // Through the policy writer, not the rescan one. This test previously drove
+    // `observe_rebuild` here, which is the hotplug path, and that mixing is what
+    // let a rescan consume a candidate's quarantine in a live session.
     assert_eq!(
-        observe_unmirrored(&mut owner, vec![output(1, 1920), output(2, 1280)]),
-        Ok(LiveOutputTopologyRebuild::TopologyChanged),
+        observe_policy_unmirrored(&mut owner, vec![output(1, 1920), output(2, 1280)], 2),
+        Ok(()),
     );
     assert_eq!(owner.topology_epoch, 2);
     assert_eq!(owner.publication_generation, 2);
@@ -286,4 +308,73 @@ fn policy_failure_retains_the_physically_accepted_rollback_phase() {
 
     assert_eq!(phase, LiveOutputTopologyExecutionPhase::RollingBack);
     assert_eq!(error.to_string(), "policy transport disconnected");
+}
+
+/// A policy candidate's quarantine is not the rescan path's to consume.
+///
+/// Sharing one untagged `Quarantined` phase between the two writers meant a
+/// hotplug rebuild ran to completion on a candidate's quarantine and released
+/// it, so the candidate reached `observe_policy_rebuild` to find the owner
+/// already `Stable` and failed a live session mid-apply.
+#[test]
+fn a_hotplug_rebuild_cannot_consume_a_policy_quarantine() {
+    let mut owner = LiveOutputTopologyOwner::new_at_generation(
+        vec![output(1, 1920)],
+        vec![(OutputId::from_raw(1), 1)],
+        1,
+    )
+    .unwrap();
+
+    owner.begin_policy_change().unwrap();
+    assert_eq!(
+        owner.phase,
+        LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+    );
+
+    // A notice arriving now is remembered, not serviced.
+    assert!(!owner.begin_rescan(1).unwrap());
+    assert_eq!(
+        owner.phase,
+        LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+    );
+
+    // The rescan path is refused outright rather than silently taking over.
+    assert!(
+        owner
+            .observe_rebuild(vec![output(1, 2560)], vec![(OutputId::from_raw(1), 1)])
+            .is_err()
+    );
+    assert_eq!(
+        owner.phase,
+        LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+    );
+
+    // The candidate still owns its quarantine and can complete.
+    owner
+        .observe_policy_rebuild(vec![output(1, 2560)], vec![(OutputId::from_raw(1), 1)], 2)
+        .unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Rebuilt);
+}
+
+/// The deferred notice is re-armed once the candidate settles, so a hotplug
+/// that arrived at the wrong moment is delayed rather than dropped.
+#[test]
+fn a_notice_deferred_by_a_policy_candidate_is_rearmed_when_it_settles() {
+    let mut owner = LiveOutputTopologyOwner::new_at_generation(
+        vec![output(1, 1920)],
+        vec![(OutputId::from_raw(1), 1)],
+        1,
+    )
+    .unwrap();
+
+    owner.begin_policy_change().unwrap();
+    assert!(!owner.begin_rescan(1).unwrap());
+    // Still quarantined, so nothing is owed yet.
+    assert!(!owner.take_deferred_hotplug_notice());
+
+    owner.cancel_policy_change().unwrap();
+    assert_eq!(owner.phase, LiveOutputTopologyPhase::Stable);
+    assert!(owner.take_deferred_hotplug_notice());
+    // Claimed exactly once.
+    assert!(!owner.take_deferred_hotplug_notice());
 }

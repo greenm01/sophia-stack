@@ -1,7 +1,22 @@
+/// Who a quarantine belongs to.
+///
+/// The phase alone was ambiguous, and two independent writers shared it: a DRM
+/// rescan and an authority-driven policy candidate. Whichever finished first
+/// released the other's quarantine, so a policy candidate could reach its
+/// rebuild to find the owner already `Stable`. Naming the holder makes that a
+/// typed refusal instead of silent theft.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveOutputTopologyQuarantine {
+    /// A DRM hotplug notice, or a retry of one.
+    Hotplug,
+    /// A `sophia_output_v1` candidate between admission and settlement.
+    Policy,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveOutputTopologyPhase {
     Stable,
-    Quarantined,
+    Quarantined(LiveOutputTopologyQuarantine),
     Rebuilt,
     Published,
     AwaitingPresentation,
@@ -31,6 +46,9 @@ struct LiveOutputTopologyOwner {
     policy_committed: bool,
     policy_settlement_pending: bool,
     presentation_baseline: usize,
+    /// A hotplug notice that arrived under a policy quarantine and still owes
+    /// a rescan once the owner settles.
+    deferred_hotplug_notice: bool,
 }
 
 impl LiveOutputTopologyOwner {
@@ -56,6 +74,7 @@ impl LiveOutputTopologyOwner {
             policy_committed: true,
             policy_settlement_pending: false,
             presentation_baseline: 0,
+            deferred_hotplug_notice: false,
         })
     }
 
@@ -70,7 +89,13 @@ impl LiveOutputTopologyOwner {
             return Ok(false);
         }
         self.notice_sequence = notice_sequence;
-        if self.phase == LiveOutputTopologyPhase::Quarantined {
+        if let LiveOutputTopologyPhase::Quarantined(holder) = self.phase {
+            // A notice arriving under a policy candidate is remembered rather
+            // than serviced, because servicing it here would consume the
+            // candidate's quarantine. It is re-armed when the owner settles.
+            if holder == LiveOutputTopologyQuarantine::Policy {
+                self.deferred_hotplug_notice = true;
+            }
             return Ok(false);
         }
         if self.phase != LiveOutputTopologyPhase::Stable {
@@ -78,15 +103,31 @@ impl LiveOutputTopologyOwner {
                 .transition
                 .checked_add(1)
                 .ok_or("live topology transition identity exhausted")?;
-            self.phase = LiveOutputTopologyPhase::Quarantined;
+            self.phase =
+                LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug);
             return Ok(false);
         }
         self.transition = self
             .transition
             .checked_add(1)
             .ok_or("live topology transition identity exhausted")?;
-        self.phase = LiveOutputTopologyPhase::Quarantined;
+        self.phase = LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug);
         Ok(true)
+    }
+
+    /// Whether a hotplug notice arrived while a policy candidate held the
+    /// quarantine, and so still owes a rescan.
+    const fn hotplug_notice_deferred(&self) -> bool {
+        self.deferred_hotplug_notice
+            && matches!(self.phase, LiveOutputTopologyPhase::Stable)
+    }
+
+    fn take_deferred_hotplug_notice(&mut self) -> bool {
+        if !self.hotplug_notice_deferred() {
+            return false;
+        }
+        self.deferred_hotplug_notice = false;
+        true
     }
 
     /// Quarantines input for an authority-driven topology transaction without
@@ -101,7 +142,7 @@ impl LiveOutputTopologyOwner {
             .transition
             .checked_add(1)
             .ok_or("live topology transition identity exhausted")?;
-        self.phase = LiveOutputTopologyPhase::Quarantined;
+        self.phase = LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy);
         Ok(true)
     }
 
@@ -109,7 +150,9 @@ impl LiveOutputTopologyOwner {
     /// or physically rolled back. No published fields were mutated while the
     /// owner was quarantined, so cancellation is an explicit phase transition.
     fn cancel_policy_change(&mut self) -> Result<(), &'static str> {
-        if self.phase != LiveOutputTopologyPhase::Quarantined {
+        if self.phase
+            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
+        {
             return Err("live policy topology cancellation is out of order");
         }
         self.phase = LiveOutputTopologyPhase::Stable;
@@ -123,7 +166,8 @@ impl LiveOutputTopologyOwner {
         &mut self,
         publication_generation: u64,
     ) -> Result<(), &'static str> {
-        if self.phase != LiveOutputTopologyPhase::Quarantined
+        if self.phase
+            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
             || publication_generation <= self.publication_generation
         {
             return Err("live policy topology transport rollback is out of order");
@@ -137,8 +181,10 @@ impl LiveOutputTopologyOwner {
         outputs: Vec<sophia_engine::HeadlessOutput>,
         heads: Vec<(sophia_protocol::OutputId, usize)>,
     ) -> Result<LiveOutputTopologyRebuild, &'static str> {
-        if self.phase != LiveOutputTopologyPhase::Quarantined {
-            return Err("live topology rebuild was observed outside quarantine");
+        if self.phase
+            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Hotplug)
+        {
+            return Err("live topology rebuild was observed outside a hotplug quarantine");
         }
         if outputs.is_empty() {
             return Ok(LiveOutputTopologyRebuild::Unavailable);
@@ -177,7 +223,8 @@ impl LiveOutputTopologyOwner {
         heads: Vec<(sophia_protocol::OutputId, usize)>,
         candidate_topology_epoch: u64,
     ) -> Result<(), &'static str> {
-        if self.phase != LiveOutputTopologyPhase::Quarantined
+        if self.phase
+            != LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
             || outputs.is_empty()
             || candidate_topology_epoch != self.topology_epoch.checked_add(1).unwrap_or(0)
         {

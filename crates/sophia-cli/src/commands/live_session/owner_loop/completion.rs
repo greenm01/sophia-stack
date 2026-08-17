@@ -211,7 +211,8 @@
             }
         }
         if topology_rollback_established
-            && output_topology_owner.phase == LiveOutputTopologyPhase::Quarantined
+            && output_topology_owner.phase
+                == LiveOutputTopologyPhase::Quarantined(LiveOutputTopologyQuarantine::Policy)
             && let Err(error) = output_topology_owner.cancel_policy_change()
         {
             cleanup_failures.push(format!(
