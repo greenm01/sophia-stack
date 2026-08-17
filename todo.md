@@ -1060,6 +1060,57 @@ Detailed physical-run diagnoses remain in
   settle, and the quiescence wait escalates once -- skipping runnable and
   waiting presents with `Skipped` feedback, keeping the displayed topology --
   before rejecting a candidate. See `docs/research-log.md`.
+- [x] Stop a queued policy cause from being rejected for naming outputs a
+  topology change replaced. Holding ordinary cycles for the whole of a candidate
+  made queuing across a transition normal rather than rare, so a cause raised
+  before the commit reached the projection reducer after it and failed the
+  session with `UnknownAffectedOutput`. A cause's outputs are a hint about where
+  work is owed, not an identity, so they resolve against the scene the request
+  will actually carry; a cause that outlived every output it named still needs
+  servicing, because the topology moving is itself a reason to lay out again.
+- [x] Keep a policy socket timeout apart from a dead transport. The socket
+  carries `SO_RCVTIMEO`, Linux reports expiry as `WouldBlock`, and folding that
+  into an I/O error restarted a window manager that was merely slow -- which is
+  what a client is after a topology change hands it a whole new layout. Also
+  fixed alongside: the non-blocking read path restored blocking mode on only two
+  of its four exits, so any other error left the socket non-blocking and made
+  the next blocking read fail instantly for the same reason.
+
+Eight consecutive gate failures on this path shared one shape, and it is worth
+naming as architecture rather than as eight bugs: **the same fact is derived in
+two places from different data, and nothing forces the two to agree.** The
+hotplug and policy writers shared one `Quarantined` field; the wait's
+precondition was stricter than what installation required; scanout quiescence
+and runtime quiescence were separate definitions of the same question; the frame
+reducer emitted on `native_phase` while its handler refused on `pending_frame`;
+a queued cause's captured outputs outlived the scene they named. The durable
+fixes were the ones that made the disagreement unrepresentable -- naming the
+quarantine's holder in its type, and having both callers read one predicate --
+rather than the ones that merely detected it. These duplications are semantic
+rather than lexical, so they cannot be found by searching for a name; that is
+why they survived review and only surfaced under execution, and it is what makes
+a bounded model asserting `Gate => HandlerPrecondition` the right instrument
+where the types cannot be made to carry the agreement.
+
+- [ ] Audit the post-commit topology path statically before running it again.
+  `mark_policy_committed` -> `observe_presentation` -> `Stable` has never
+  executed, so every defect on it is latent, and the physical gate surfaces
+  exactly one per manual thirty-second run. Enumerate each guard and every
+  fallible step between the commit log and `Stable`, and judge which are
+  satisfiable in a normal commit, rather than discovering them one run at a
+  time.
+- [ ] Collapse `output_topology_preparation_quiescent` (scanout) and
+  `topology_rebind_quiescent` (runtime) into one composed predicate read by
+  every caller. They are two definitions of "may the topology change now" that
+  already drifted apart once; ANDing them at the wait fixed the instance and
+  left the class open. They live on different types, so confirm the borrow at
+  each call site first. If the borrow forbids composition, model their agreement
+  instead of restating it.
+- [ ] Stamp work queued across a topology transition with the epoch it was built
+  in, and revalidate or rebuild it on mismatch. `affected_outputs` was one
+  instance of the class; the fix there resolves outputs at submission, which
+  closes the instance rather than the class. Follow whatever epoch-validation
+  precedent the codebase already has instead of inventing a second one.
 - [ ] Bound the page-flip callback *read* rather than its write, the last
   session-killing site. The event is already consumed from the DRM fd when the
   queue is examined, so a write-side degrade would lose a retirement outright.
