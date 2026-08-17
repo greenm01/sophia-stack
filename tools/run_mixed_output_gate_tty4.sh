@@ -4,7 +4,8 @@ set -euo pipefail
 # Signed physical proof for one two-head mirror group beside one extended head.
 # This performs a real modeset and therefore runs only from a recovery-safe TTY.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 # This rig's one-command default keeps the previously fuzzy DP-2 head native.
 # Environment overrides preserve the runner for other three-head arrangements.
 MIRROR_PRIMARY="${SOPHIA_MIXED_MIRROR_PRIMARY:-DP-1}"
