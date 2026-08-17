@@ -53,7 +53,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut output_started = false;
         let mut output_settled = false;
         loop {
-            let snapshot = policy.receive_snapshot()?;
+            if output_started && !output_settled {
+                // Collect the topology outcome without ever ceasing to service
+                // the policy connection. Blocking here starves the owner's
+                // writes: it keeps issuing cycles while the topology applies,
+                // and a socket this side has stopped draining fills until the
+                // owner's write deadline fires and it restarts this process
+                // mid-apply.
+                match output_result_receiver.try_recv() {
+                    Ok(result) => {
+                        let outcome = result?;
+                        debug_assert_eq!(
+                            outcome.kind,
+                            sophia_protocol::OutputV1OutcomeKind::Committed
+                        );
+                        output_settled = true;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        return Err("output reference client ended without an outcome".into());
+                    }
+                }
+            }
+            let snapshot = match policy.receive_snapshot() {
+                Ok(snapshot) => snapshot,
+                // The owner issues no cycle while a topology transaction
+                // prepares. That quiet window is expected, not a fault, so keep
+                // waiting for whichever result arrives first.
+                Err(error)
+                    if output_started
+                        && !output_settled
+                        && sophia_wm_demo::policy_client_read_timed_out(&error) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             let request = policy.receive_projection_request()?;
             // Once the physical role has formed two logical groups, partition
             // proof surfaces through policy-visible geometry alone. Connector
@@ -94,18 +129,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .send(())
                     .map_err(|_| "output reference client start barrier disconnected")?;
                 output_started = true;
-                // Do not generate another layout commit while native scanout
-                // drains and the output transaction prepares its first frames.
-                // The output role has a bounded socket timeout, so this pause
-                // cannot strand the policy client indefinitely.
-                let outcome = output_result_receiver
-                    .recv_timeout(std::time::Duration::from_secs(10))
-                    .map_err(|_| "output reference client did not settle before its deadline")??;
-                debug_assert_eq!(
-                    outcome.kind,
-                    sophia_protocol::OutputV1OutcomeKind::Committed
-                );
-                output_settled = true;
             }
             if output_settled && partitioned {
                 let placement_counts = proposal

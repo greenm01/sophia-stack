@@ -141,3 +141,75 @@ fn a_duplicate_relayout_admission_merges_the_replacement_output_set() {
         "the replacement live output must survive a duplicate admission"
     );
 }
+
+#[test]
+fn a_recovery_request_naming_a_withdrawn_surface_is_filtered_before_it_is_issued() {
+    // `begin_recovery` fails the whole call when any requested surface has no
+    // committed extent, and that is correct: there is nothing to configure it
+    // back to. The caller therefore has to filter, and for a long time it did
+    // so only for its fixed set. A physical run ended the session over one
+    // surface that had been withdrawn while its resize was outstanding.
+    let live = SurfaceId::new(21, 1);
+    let withdrawn = SurfaceId::new(22, 1);
+    let committed = Size {
+        width: 500,
+        height: 400,
+    };
+    let mut epochs = sophia_engine::LayoutEpochCoordinator::default();
+    epochs.record_committed(live, committed);
+
+    // Unfiltered, the withdrawn surface takes the whole recovery down.
+    let mut unfiltered = sophia_engine::LayoutEpochCoordinator::default();
+    unfiltered.record_committed(live, committed);
+    assert!(
+        unfiltered
+            .begin_recovery(
+                [
+                    (
+                        live,
+                        Size {
+                            width: 900,
+                            height: 700
+                        }
+                    ),
+                    (
+                        withdrawn,
+                        Size {
+                            width: 900,
+                            height: 700
+                        }
+                    ),
+                ],
+                [],
+            )
+            .is_err()
+    );
+
+    // Filtered the way the caller now filters, the recoverable surface still
+    // recovers.
+    let requests = [
+        (
+            live,
+            Size {
+                width: 900,
+                height: 700,
+            },
+        ),
+        (
+            withdrawn,
+            Size {
+                width: 900,
+                height: 700,
+            },
+        ),
+    ]
+    .into_iter()
+    .filter(|(surface, _)| epochs.safe_size(*surface).is_some())
+    .collect::<Vec<_>>();
+    let configures = epochs
+        .begin_recovery(requests, [])
+        .expect("a filtered recovery must not fail on a withdrawn surface");
+    assert_eq!(configures.len(), 1);
+    assert_eq!(configures[0].surface, live);
+    assert_eq!(configures[0].size, committed);
+}

@@ -49,6 +49,24 @@ pub enum StatelessReferenceProjectionDecision {
     Fatal,
 }
 
+/// Whether this error is the socket read deadline expiring rather than a
+/// failed or closed connection.
+///
+/// A client waiting on a second asynchronous result must distinguish the two:
+/// the owner legitimately issues no cycle while a topology transaction is
+/// preparing, and treating that quiet window as a fault kills the process in
+/// the middle of the apply it was waiting for.
+pub fn policy_client_read_timed_out(error: &PolicyV1ClientError) -> bool {
+    matches!(
+        error,
+        PolicyV1ClientError::Io(io)
+            if matches!(
+                io.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            )
+    )
+}
+
 /// The bundled reference policy has no state beyond one received cycle, so a
 /// stale outcome can safely return to snapshot intake on the same connection.
 /// Stateful policy peers must instead discard their speculative process state.

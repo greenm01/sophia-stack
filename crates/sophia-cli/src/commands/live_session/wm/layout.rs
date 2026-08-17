@@ -930,17 +930,24 @@ impl PersistentLiveLayout {
         // fixed recovery extent, not rolled back. Pixel-silent admission is an
         // expected state: it keeps the standing target and bounded retry but
         // cannot claim a recovery extent that does not exist.
-        let rollback = self.layout_epochs.begin_recovery(
-            pending
-                .requested_sizes
-                .iter()
-                .filter(|(surface, _)| {
-                    !terminal_admissions.contains(surface)
-                        && !admission_surfaces.contains(surface)
-                })
-                .map(|(surface, size)| (*surface, *size)),
-            recoverable_admissions,
-        )?;
+        // A recovery request needs a committed extent to configure back to. A
+        // surface the coordinator no longer knows — one withdrawn while its
+        // resize was outstanding — has none, and naming it fails the whole
+        // recovery for every surface that could still be recovered. The fixed
+        // set above already applies this test; requests must apply it too.
+        let recoverable_requests = pending
+            .requested_sizes
+            .iter()
+            .filter(|(surface, _)| {
+                !terminal_admissions.contains(surface)
+                    && !admission_surfaces.contains(surface)
+                    && self.layout_epochs.safe_size(**surface).is_some()
+            })
+            .map(|(surface, size)| (*surface, *size))
+            .collect::<Vec<_>>();
+        let rollback = self
+            .layout_epochs
+            .begin_recovery(recoverable_requests, recoverable_admissions)?;
         // Retain each fenced admission surface's blind-WM target as a standing
         // obligation. Once its temporary recovery extent clears it is driven to
         // that size rather than staying welded to the extent it first mapped at.
