@@ -258,6 +258,37 @@ no edit can break one without the other, and the second meant `TypeOK` failed
 first so the ceiling was never the invariant under test. `TypeOK` now states the
 type and `DeferralIsBounded` alone states the bound.
 
+`FrameServiceArbitration.tla` isolates how frame service arbitrates the three
+owners of one output: a native pending frame, a queued GPU present, and a
+waiting software present. It models the reducer's emit gate and the handler's
+own precondition as separate conjuncts, because the defect it was written for
+lived in the gap between them. The reducer admitted a present that the handler
+then silently refused, while withholding the only effect that would have
+drained what the handler was refusing over; neither owner could advance, and
+nothing re-deferred the present, so the two waited on each other permanently.
+The bounded configuration explores 177 generated states and 96 distinct states
+to depth 14.
+
+`EmittedEffectsAreExecutable` is the invariant that keeps the two halves from
+drifting apart again: it states each handler precondition as a consequence of
+the reducer gate that emits it. A handler guard that merely repeats its gate is
+then provably unreachable, which is what makes a silent deferral impossible
+rather than merely unlikely. Staging is the case where the mismatch is fatal
+instead of silent, so `ServiceNeverCrashes` covers it separately.
+
+Six temporary negative controls independently restore the old primary
+suppression, drop the global-idle requirement from the staging gate, drop the
+pending-frame requirement from the presentation gate, remove staging from
+fairness, and let a present reach flight without occupying the kernel. TLC then
+violates `PresentSettles`, `EmittedEffectsAreExecutable` (and
+`ServiceNeverCrashes` once the stronger invariant is unlisted),
+`EmittedEffectsAreExecutable`, `SoftwareSettles`, and `OneSubmissionInFlight`
+respectively. The first is the production deadlock exactly: TLC reaches
+`pendingFrame = TRUE` with `presentState = "queued"` and no action remains
+enabled. Environment actions stay outside fairness and both producers are
+budgeted, so liveness here is a question about arbitration rather than about
+outrunning an unbounded producer.
+
 `InputAuthorityArbitration.tla` models the coexistence prerequisite between
 application routing and future shell targets. It separates committed,
 submitted, and presented choices; creates an exact provisional frontend lease;
