@@ -137,6 +137,12 @@ struct XkbKeyboardWorker {
 }
 
 #[cfg(unix)]
+/// How long the routing thread waits for one keyboard translation.
+///
+/// Generous relative to the work, which is a table lookup, and short relative
+/// to a human noticing: the point is only that the wait ends.
+const XKB_WORKER_REPLY_DEADLINE: std::time::Duration = std::time::Duration::from_millis(250);
+
 impl XkbKeyboardWorker {
     fn spawn(config: crate::XkbRmlvoConfig) -> Self {
         let (commands, command_receiver) = sync_channel(64);
@@ -150,10 +156,25 @@ impl XkbKeyboardWorker {
                         XkbWorkerCommand::Key { seat, .. }
                         | XkbWorkerCommand::Modifiers { seat } => seat,
                     };
-                    let state = seats.entry(seat_id).or_insert_with(|| {
-                        crate::XkbKeyboardState::new(&config)
-                            .expect("validated XKB configuration must remain compilable")
-                    });
+                    // A keymap that no longer compiles is a real fault, but
+                    // panicking here would take the thread down and leave every
+                    // later request looking like a poisoned lock. Answering
+                    // `None` reports the failure through the same channel as
+                    // any other unmappable key.
+                    let state = match seats.entry(seat_id) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            match crate::XkbKeyboardState::new(&config) {
+                                Ok(state) => entry.insert(state),
+                                Err(_) => {
+                                    if reply_sender.send(None).is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    };
                     let reply = match command {
                         XkbWorkerCommand::Key {
                             keycode, pressed, ..
@@ -181,14 +202,22 @@ impl XkbKeyboardWorker {
         &self,
         command: XkbWorkerCommand,
     ) -> Result<Option<(u8, u16, u16)>, XServerFrontendRouteError> {
-        self.commands
-            .try_send(command)
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        self.commands.try_send(command).map_err(|error| match error {
+            std::sync::mpsc::TrySendError::Full(_) => {
+                XServerFrontendRouteError::XkbWorkerSaturated
+            }
+            std::sync::mpsc::TrySendError::Disconnected(_) => {
+                XServerFrontendRouteError::XkbWorkerUnavailable
+            }
+        })?;
+        // Bounded, because this runs on the routing thread: a worker that never
+        // answers would otherwise stall every client's input, and a stalled
+        // keyboard is worse than an unmapped key.
         self.replies
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .recv()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)
+            .recv_timeout(XKB_WORKER_REPLY_DEADLINE)
+            .map_err(|_| XServerFrontendRouteError::XkbWorkerUnavailable)
     }
 }
 

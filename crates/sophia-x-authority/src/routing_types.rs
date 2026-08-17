@@ -283,13 +283,32 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
-    UnknownClient { client: XServerFrontendClientId },
-    UnknownSurface { surface: SurfaceId },
-    ClientQueueFull { client: XServerFrontendClientId },
-    DuplicatePresentation { transaction: TransactionId },
-    ClientQueueDisconnected { client: XServerFrontendClientId },
-    DuplicateClient { client: XServerFrontendClientId },
+    UnknownClient {
+        client: XServerFrontendClientId,
+    },
+    UnknownSurface {
+        surface: SurfaceId,
+    },
+    ClientQueueFull {
+        client: XServerFrontendClientId,
+    },
+    DuplicatePresentation {
+        transaction: TransactionId,
+    },
+    ClientQueueDisconnected {
+        client: XServerFrontendClientId,
+    },
+    DuplicateClient {
+        client: XServerFrontendClientId,
+    },
     RegistryPoisoned,
+    /// The XKB worker's command queue is full. Distinct from a poisoned lock:
+    /// the worker is alive and behind, not broken.
+    XkbWorkerSaturated,
+    /// The XKB worker did not answer within its deadline, or has stopped.
+    /// A keyboard translation that never returns would stall the whole routing
+    /// thread, so the wait is bounded and this is what a timeout becomes.
+    XkbWorkerUnavailable,
 }
 
 /// Tracks the two independently ordered lifecycle phases of one X Present.
@@ -365,6 +384,11 @@ impl core::fmt::Display for XServerFrontendRouteError {
                     client.raw()
                 )
             }
+            Self::XkbWorkerSaturated => write!(formatter, "X11 keyboard translation queue is full"),
+            Self::XkbWorkerUnavailable => write!(
+                formatter,
+                "X11 keyboard translation did not answer within its deadline"
+            ),
             Self::RegistryPoisoned => formatter.write_str("X11 route registry lock poisoned"),
         }
     }
