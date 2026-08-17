@@ -19,6 +19,7 @@ mod persistent_native_scanout {
     use renderer_images::LiveProductionQueuedMirrorGeneration;
     pub use renderer_images::{
         LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
+        live_topology_frame_renderer_image_requirements,
         validate_live_head_composition_frame_batch,
     };
     pub use state::*;
@@ -2765,9 +2766,10 @@ pub use persistent_native_scanout::{
     LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
     LiveProductionSemanticStartupBarrier, finish_live_production_native_initialization,
     live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
-    plan_live_production_native_topology, project_live_production_published_topology,
-    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
+    live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
+    project_live_production_published_topology, project_mirror_output_damage_snapshot,
+    project_native_cursor_logical_viewport, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_head_render_target,
     reduce_live_production_mirror_generation_queue_target,
     reduce_live_production_page_flip_watchdog, reduce_live_production_semantic_startup_barrier,
     validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,

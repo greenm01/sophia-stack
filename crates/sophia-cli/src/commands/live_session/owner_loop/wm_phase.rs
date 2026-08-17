@@ -197,14 +197,17 @@
                 }
                 LiveOutputTopologyExecutionPhase::Preparing => {
                     let report = native.service_output_topology_preparation()?;
-                    tracing::info!(
-                        "sophia_live_output_authority schema=2 status=resource_progress transaction={} phase={:?} candidate_prepared={} rollback_prepared={} heads={} kms_submits=0 published=false",
-                        transaction.raw(),
-                        report.phase,
-                        report.candidate_prepared,
-                        report.rollback_prepared,
-                        report.affected_heads,
-                    );
+                    if execution.last_preparation_progress != Some(report) {
+                        tracing::info!(
+                            "sophia_live_output_authority schema=2 status=resource_progress transaction={} phase={:?} candidate_prepared={} rollback_prepared={} heads={} kms_submits=0 published=false",
+                            transaction.raw(),
+                            report.phase,
+                            report.candidate_prepared,
+                            report.rollback_prepared,
+                            report.affected_heads,
+                        );
+                        execution.last_preparation_progress = Some(report);
+                    }
                     if report.phase
                         == sophia_backend_live::LiveProductionNativeTopologyPreparationPhase::Prepared
                     {
@@ -674,6 +677,7 @@
                 preparation_deadline: Instant::now() + OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT,
                 first_frames: BTreeMap::new(),
                 frontend_candidate_published: false,
+                last_preparation_progress: None,
             });
             tracing::info!(
                 "sophia_live_output_authority schema=2 status=waiting_for_quiescence transaction={} timeout_msec={} input=quarantined",

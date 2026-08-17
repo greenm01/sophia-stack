@@ -1671,6 +1671,8 @@ impl LiveProductionNativeScanout {
         validate_live_production_rollback_topology(&plan, &rollback)?;
         let rollback_frames =
             validate_live_production_topology_frames(&plan, rollback_frames, false)?;
+        self.prepare_output_topology_renderer_images(&candidate_frames)?;
+        self.prepare_output_topology_renderer_images(&rollback_frames)?;
         let mut resources = LiveProductionNativeTopologyResources::new(&plan)
             .ok_or("native output topology resource cohort is invalid")?;
 
@@ -2648,6 +2650,71 @@ impl LiveProductionNativeScanout {
                 .into())
             }
         }
+    }
+
+    fn prepare_output_topology_renderer_images(
+        &mut self,
+        frames: &BTreeMap<sophia_engine::RenderHeadId, crate::LiveProductionHeadCompositionFrame>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let requirements = crate::live_topology_frame_renderer_image_requirements(frames);
+        for (head, image_ids) in requirements {
+            let target_index = self
+                .head_index_for_head(head)
+                .ok_or("topology renderer-image preparation targets an unknown head")?;
+            for image_id in image_ids {
+                if self.exporters[target_index]
+                    .export_promoted_renderer_image(image_id)?
+                    .is_some()
+                {
+                    continue;
+                }
+                if self.exporters[target_index].promote_renderer_image(image_id)?
+                    && self.exporters[target_index]
+                        .export_promoted_renderer_image(image_id)?
+                        .is_some()
+                {
+                    continue;
+                }
+
+                let mut snapshot = None;
+                for donor_index in 0..self.exporters.len() {
+                    if donor_index == target_index {
+                        continue;
+                    }
+                    if let Some(available) =
+                        self.exporters[donor_index].export_promoted_renderer_image(image_id)?
+                    {
+                        snapshot = Some(available);
+                        break;
+                    }
+                }
+                let snapshot = snapshot.ok_or_else(|| {
+                    format!(
+                        "topology renderer image {} for head {} has no live donor",
+                        image_id.raw(),
+                        head.raw(),
+                    )
+                })?;
+                if !self.exporters[target_index].restore_promoted_renderer_image(snapshot)?
+                    && self.exporters[target_index]
+                        .export_promoted_renderer_image(image_id)?
+                        .is_none()
+                {
+                    return Err(format!(
+                        "topology renderer image {} was not installed for head {}",
+                        image_id.raw(),
+                        head.raw(),
+                    )
+                    .into());
+                }
+                tracing::info!(
+                    "sophia_live_output_topology schema=1 status=renderer_image_replicated head={} image={} kms_submits=0",
+                    head.raw(),
+                    image_id.raw(),
+                );
+            }
+        }
+        Ok(())
     }
 }
 

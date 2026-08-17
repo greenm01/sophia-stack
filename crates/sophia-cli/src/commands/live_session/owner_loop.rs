@@ -143,6 +143,8 @@ struct LiveOutputTopologyExecution {
     first_frames:
         BTreeMap<sophia_protocol::OutputId, sophia_backend_live::LiveProductionNativeFrameId>,
     frontend_candidate_published: bool,
+    last_preparation_progress:
+        Option<sophia_backend_live::LiveProductionNativeTopologyPreparationReport>,
 }
 
 const OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT: Duration = Duration::from_secs(2);

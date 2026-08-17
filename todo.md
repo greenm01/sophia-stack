@@ -842,7 +842,13 @@ Detailed physical-run diagnoses remain in
   for a redundant scene echo after its committed two-surface proposal and timed
   out. It now starts directly from that committed proposal. Restart acceptance
   is also paused across spawn-to-PID reauthorization, closing the secondary
-  unauthorized-peer race exposed by the timeout. The physical rerun, archive
+  unauthorized-peer race exposed by the timeout. The next run reached candidate
+  renderer preparation and showed that the new mirror member did not own the
+  retained renderer-image IDs created on the original large head. Topology
+  preparation now realizes retained images per physical head by restoring an
+  compositor-owned snapshot from a live donor before it queues candidate or
+  rollback work; a missing donor rejects before KMS. Unchanged preparation
+  progress is no longer logged on every owner turn. The physical rerun, archive
   verifier, head-loss phase, and visible-pixel acceptance remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary

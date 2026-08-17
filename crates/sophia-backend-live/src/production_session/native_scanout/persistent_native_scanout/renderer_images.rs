@@ -17,6 +17,38 @@ pub struct LiveProductionHeadCompositionFrame {
     pub frame: crate::LiveOwnedMixedCompositionFrame,
 }
 
+/// Returns the renderer-image identities that each physical head must own
+/// before its lowered frame can enter a renderer worker.
+///
+/// Renderer-image identities are local to one head's persistent renderer
+/// store. A topology change can assign an already-retained logical scene to a
+/// head that has never rendered it, so frame coverage alone is not sufficient
+/// preparation.
+pub fn live_topology_frame_renderer_image_requirements(
+    frames: &BTreeMap<sophia_engine::RenderHeadId, LiveProductionHeadCompositionFrame>,
+) -> BTreeMap<sophia_engine::RenderHeadId, Vec<sophia_renderer_live::LiveRendererImageId>> {
+    frames
+        .iter()
+        .filter_map(|(head, frame)| {
+            let image_ids = frame
+                .frame
+                .layers
+                .iter()
+                .filter_map(|layer| match layer {
+                    sophia_renderer_live::LiveOwnedMixedCompositionLayer::RendererImage {
+                        image_id,
+                        ..
+                    } => Some(*image_id),
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            (!image_ids.is_empty()).then_some((*head, image_ids))
+        })
+        .collect()
+}
+
 /// Validates the complete passive Engine-plan batch before any exporter slot is
 /// mutated. The batch is one immutable logical scene, but every member must
 /// retain its own current target generation, mapping, and native damage extent.

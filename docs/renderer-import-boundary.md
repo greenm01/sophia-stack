@@ -59,6 +59,14 @@ not make its density inexact, while selecting a different variant requires a
 new or updated head plan and the matching sampling classification. An import
 failure cannot silently bind another content generation.
 
+Persistent renderer-image IDs preserve semantic source identity but their
+backing imports remain local to one physical head's renderer store. When a
+topology assigns retained content to a head that has not rendered it, the
+native owner must realize that identity in the target store from a
+compositor-owned snapshot before submitting the head's worker request. It may
+not borrow another head's cache entry or scanout-buffer lease, and failure to
+find or restore a donor rejects the topology before KMS mutation.
+
 Startup reports expose only reduced renderer import health: CPU fallback, native
 import capable, or degraded. Per-path status is reduced to disabled, enabled, or
 degraded for XPixmap and DMA-BUF. No renderer-private handle, file descriptor,

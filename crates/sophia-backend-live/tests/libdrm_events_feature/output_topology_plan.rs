@@ -955,6 +955,58 @@ fn topology_frame_admission_separates_candidate_and_rollback_coverage() {
 }
 
 #[test]
+fn topology_renderer_image_requirements_are_scoped_per_physical_head() {
+    use sophia_backend_live::live_topology_frame_renderer_image_requirements;
+    use sophia_renderer_live::{
+        LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCompositionPlacement, LiveRendererImageId,
+    };
+
+    let plan = topology_apply_plan(&[0, 1]);
+    let first = plan.heads[0].head;
+    let second = plan.heads[1].head;
+    let mut first_frame = topology_composition_frame(&plan, first, true, None);
+    let second_frame = topology_composition_frame(&plan, second, true, None);
+    let placement = LiveCompositionPlacement {
+        target: sophia_protocol::Rect {
+            x: 0,
+            y: 0,
+            width: 16,
+            height: 16,
+        },
+        clip: None,
+        transform: sophia_protocol::Transform::IDENTITY,
+        alpha: 1.0,
+    };
+    for image_id in [2, 1, 2] {
+        first_frame.frame.layers.push(
+            sophia_renderer_live::LiveOwnedMixedCompositionLayer::RendererImage {
+                image_id: LiveRendererImageId::from_raw(image_id),
+                size: sophia_protocol::Size {
+                    width: 16,
+                    height: 16,
+                },
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                placement,
+            },
+        );
+    }
+    let frames = [(first, first_frame), (second, second_frame)]
+        .into_iter()
+        .collect();
+
+    let requirements = live_topology_frame_renderer_image_requirements(&frames);
+
+    assert_eq!(
+        requirements.get(&first),
+        Some(&vec![
+            LiveRendererImageId::from_raw(1),
+            LiveRendererImageId::from_raw(2),
+        ])
+    );
+    assert!(!requirements.contains_key(&second));
+}
+
+#[test]
 fn current_heads_reduce_to_independent_committed_render_targets() {
     use sophia_backend_live::{
         LiveProductionNativeTopologyCurrentHead, reduce_live_production_head_render_target,

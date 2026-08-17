@@ -617,6 +617,11 @@ parallel multi-monitor subsystem.
   and resource lifetime; logical retirement joins the callbacks.
 - CPU, mixed CPU/DMA-BUF, retained renderer images, compositor solids, cursor
   coordinates, and damage snapshots fan out to the heads.
+- Retained renderer-image identities are realized per physical renderer store.
+  Topology preparation derives each candidate and rollback head's requirements
+  and restores compositor-owned snapshots into a newly assigned head before
+  worker submission; it never treats another head's cache identity or scanout
+  lease as locally usable.
 - The current renderer can apply exact, downsampled, and upsampled sampling and
   reports requested/effective paths and fallback outcomes.
 - Content crosses the authority boundary as a bounded `SurfaceContentSet` of
