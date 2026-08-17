@@ -119,6 +119,7 @@ set +e
         --session-app-arg=mirror=sh \
         --session-app-arg=mirror=-lc \
         --session-app-arg=mirror='printf "SOPHIA MIXED NATIVE SHARP AaZz 0123456789\n"; exec sh -i' \
+        --session-action-app=terminal=mirror \
         --session-app=proof="$KITTY_BIN" \
         --session-start=proof \
         --session-app-arg=proof=--config \
@@ -128,6 +129,7 @@ set +e
         --session-app-arg=proof=sh \
         --session-app-arg=proof=-lc \
         --session-app-arg=proof='printf "SOPHIA MIXED NATIVE SHARP AaZz 0123456789\n"; exec sh -i' \
+        --session-action-app=firefox=proof \
         --wm-process="$wm_bin" \
         --wm-interface=sophia_wm_v1 \
         --wm-process-arg=live-mixed-output-proof \

@@ -690,6 +690,43 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
 }
 
 #[test]
+fn mixed_output_gate_apps_satisfy_compiled_shortcut_capabilities() {
+    let config = PersistentXtermSessionConfig::from_args(&[
+        "--no-config".to_owned(),
+        "--session-mode=normal".to_owned(),
+        "--session-app=mirror=/usr/bin/kitty".to_owned(),
+        "--session-start=mirror".to_owned(),
+        "--session-action-app=terminal=mirror".to_owned(),
+        "--session-app=proof=/usr/bin/kitty".to_owned(),
+        "--session-start=proof".to_owned(),
+        "--session-action-app=firefox=proof".to_owned(),
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        "--max-runtime-ms=30000".to_owned(),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        config
+            .application_for_action(WmSessionAction::LaunchApplication {
+                application: super::super::TERMINAL_APPLICATION_ID,
+            })
+            .unwrap()
+            .id,
+        "mirror"
+    );
+    assert_eq!(
+        config
+            .application_for_action(WmSessionAction::LaunchApplication {
+                application: super::super::BROWSER_APPLICATION_ID,
+            })
+            .unwrap()
+            .id,
+        "proof"
+    );
+}
+
+#[test]
 fn session_authority_preparation_is_deterministic_and_rejection_preserves_active_state() {
     let args = [
         "--session-mode=normal".to_owned(),
