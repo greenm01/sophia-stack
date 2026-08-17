@@ -101,10 +101,12 @@
                     let ordinary_settlement_idle = pending_wm_update.is_none()
                         && layout.pending.is_none()
                         && wm.ordinary_policy_settlement_idle();
+                    let quiescence_blocker =
+                        native.output_topology_preparation_quiescence_blocker();
                     let decision = reduce_output_topology_preparation_wait(Observation {
                         cancellation_requested: cancellation_reason.is_some(),
                         ordinary_settlement_idle,
-                        native_quiescent: native.output_topology_preparation_quiescent(),
+                        native_quiescent: quiescence_blocker.is_none(),
                         deadline_reached: Instant::now() >= execution.preparation_deadline,
                     });
                     match decision {
@@ -186,8 +188,17 @@
                             )?;
                             output_topology_owner.cancel_policy_change()?;
                             retain_execution = false;
+                            // Say which of the two conditions was unmet, and
+                            // which owner still held a frame. Reporting only
+                            // that a wait expired sends its reader to the
+                            // source to guess between eight candidates.
                             tracing::warn!(
-                                "sophia_live_output_authority schema=2 status=quiescence_timed_out transaction={} timeout_msec={} kms_submits=0 preserved_topology=true",
+                                "sophia_live_output_authority schema=3 status=quiescence_timed_out settlement_idle={} native_blocker={} wm_update_pending={} layout_pending={} policy_settlement_idle={} transaction={} timeout_msec={} kms_submits=0 preserved_topology=true",
+                                ordinary_settlement_idle,
+                                quiescence_blocker.unwrap_or("none"),
+                                pending_wm_update.is_some(),
+                                layout.pending.is_some(),
+                                wm.ordinary_policy_settlement_idle(),
                                 transaction.raw(),
                                 OUTPUT_TOPOLOGY_QUIESCENCE_TIMEOUT.as_millis(),
                             );

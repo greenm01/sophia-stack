@@ -1549,6 +1549,58 @@ impl LiveProductionNativeScanout {
                 .all(|lifecycle| lifecycle.active_frame().is_none())
     }
 
+    /// Names the first unmet clause of `output_topology_preparation_quiescent`,
+    /// or `None` when quiescent.
+    ///
+    /// A wait that reports only that it timed out sends its reader back to the
+    /// source to guess which of eight owners was still holding a frame.
+    pub fn output_topology_preparation_quiescence_blocker(&self) -> Option<&'static str> {
+        if self.output_topology_preparation.is_some() {
+            return Some("topology_preparation");
+        }
+        if !self.queued_mirror_successors.is_empty() {
+            return Some("queued_mirror_successors");
+        }
+        if !self.output_cohorts.is_empty() {
+            return Some("output_cohorts");
+        }
+        for head in &self.heads {
+            if head.pending_content.is_some() {
+                return Some("head_pending_content");
+            }
+            if head.rendering_content.is_some() {
+                return Some("head_rendering_content");
+            }
+            if head.submitted_content.is_some() {
+                return Some("head_submitted_content");
+            }
+            if head.scanout_submission.is_some() {
+                return Some("head_scanout_submission");
+            }
+            if head.prepared_scanout.is_some() {
+                return Some("head_prepared_scanout");
+            }
+            if head.scanout_cleanup.is_some() {
+                return Some("head_scanout_cleanup");
+            }
+        }
+        if self
+            .exporters
+            .iter()
+            .any(|exporter| exporter.pending_frame())
+        {
+            return Some("exporter_pending_frame");
+        }
+        if self
+            .output_lifecycles
+            .values()
+            .any(|lifecycle| lifecycle.active_frame().is_some())
+        {
+            return Some("output_lifecycle_active_frame");
+        }
+        None
+    }
+
     pub fn output_topology_preparation_phase(
         &self,
     ) -> Option<LiveProductionNativeTopologyPreparationPhase> {
