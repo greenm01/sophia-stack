@@ -2055,6 +2055,18 @@ impl LiveWmSession {
         self.shortcuts = None;
         self.force_transport_restart = false;
         self.restarts = self.restarts.saturating_add(1);
+        if let Some(output_service) = public.output_service.as_ref() {
+            let abandoned = output_service
+                .pause_acceptance(Duration::from_secs(1))
+                .map_err(|error| format!("output authority restart barrier failed: {error}"))?;
+            if !abandoned.is_empty() {
+                public.abandon_output_candidate()?;
+            }
+            println!(
+                "sophia_live_output_authority schema=2 status=acceptance_paused abandoned={} preserved_topology=true",
+                abandoned.len(),
+            );
+        }
         let next_epoch = public.next_connection_epoch;
         public.next_connection_epoch = public
             .next_connection_epoch

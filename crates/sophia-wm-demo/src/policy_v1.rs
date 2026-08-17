@@ -409,6 +409,21 @@ pub fn tile_policy_scene(
     })
 }
 
+/// Counts the distinct surfaces carried by one immutable policy proposal.
+///
+/// A committed proposal is the authoritative layout decision. Callers that
+/// gate a follow-up role on placement must inspect it directly instead of
+/// waiting for a later scene snapshot to echo the same geometry.
+pub fn policy_projection_distinct_surface_count(proposal: &PolicyProjectionProposal) -> usize {
+    proposal
+        .outputs
+        .iter()
+        .flat_map(|output| &output.placements)
+        .map(|placement| placement.surface)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+}
+
 /// Partitions manageable surfaces across two logical outputs using only
 /// policy-visible geometry. Physical head and connector identity never enters
 /// this decision.

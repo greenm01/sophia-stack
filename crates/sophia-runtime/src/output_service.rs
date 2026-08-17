@@ -1,4 +1,4 @@
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, SyncSender, TryRecvError, channel, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -61,6 +61,12 @@ pub enum OutputTransportServiceEvent {
     },
 }
 
+enum OutputTransportServiceControl {
+    PauseAcceptance {
+        acknowledged: SyncSender<Vec<AdmittedOutputProposal>>,
+    },
+}
+
 /// Optional, cancellable transport service for the exclusive output role.
 ///
 /// Absence of a client is normal: the session's static output configuration
@@ -69,6 +75,7 @@ pub enum OutputTransportServiceEvent {
 /// connecting or completing a frame.
 pub struct OutputTransportService {
     commands: Sender<OutputTransportServiceCommand>,
+    controls: Sender<OutputTransportServiceControl>,
     events: Receiver<OutputTransportServiceEvent>,
     thread: Option<JoinHandle<()>>,
 }
@@ -81,6 +88,7 @@ impl OutputTransportService {
         snapshot: OutputAuthoritySnapshot,
     ) -> Result<Self, std::io::Error> {
         let (command_sender, command_receiver) = channel();
+        let (control_sender, control_receiver) = channel();
         let (event_sender, event_receiver) = channel();
         let thread = std::thread::Builder::new()
             .name("sophia-output-v1".to_owned())
@@ -91,6 +99,7 @@ impl OutputTransportService {
                     snapshot_transaction,
                     snapshot,
                     &command_receiver,
+                    &control_receiver,
                     &event_sender,
                 ) {
                     let _ = event_sender.send(OutputTransportServiceEvent::Failed { message });
@@ -101,6 +110,7 @@ impl OutputTransportService {
             })?;
         Ok(Self {
             commands: command_sender,
+            controls: control_sender,
             events: event_receiver,
             thread: Some(thread),
         })
@@ -127,6 +137,25 @@ impl OutputTransportService {
     ) -> Result<OutputTransportServiceEvent, std::sync::mpsc::RecvTimeoutError> {
         self.events.recv_timeout(timeout)
     }
+
+    /// Stops accepting the old assignee before its replacement is spawned.
+    ///
+    /// The replacement PID is unknowable until spawn returns. This synchronous
+    /// barrier closes the accept race across that interval; a later
+    /// `ReplaceSupervisedPid` command installs the new identity and resumes
+    /// acceptance.
+    pub fn pause_acceptance(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<AdmittedOutputProposal>, &'static str> {
+        let (acknowledged, acknowledgement) = sync_channel(1);
+        self.controls
+            .send(OutputTransportServiceControl::PauseAcceptance { acknowledged })
+            .map_err(|_| "output service control channel disconnected")?;
+        acknowledgement
+            .recv_timeout(timeout)
+            .map_err(|_| "output service did not pause acceptance before its deadline")
+    }
 }
 
 impl Drop for OutputTransportService {
@@ -144,6 +173,7 @@ fn run_output_transport_service(
     mut snapshot_transaction: TransactionId,
     mut snapshot: OutputAuthoritySnapshot,
     commands: &Receiver<OutputTransportServiceCommand>,
+    controls: &Receiver<OutputTransportServiceControl>,
     events: &Sender<OutputTransportServiceEvent>,
 ) -> Result<(), String> {
     if first_connection_epoch == 0 || !snapshot_transaction.is_valid() {
@@ -154,7 +184,22 @@ fn run_output_transport_service(
         .map_err(|error| format!("invalid initial output snapshot: {error:?}"))?;
     let mut connection_epoch = first_connection_epoch;
     let mut connected = false;
+    let mut acceptance_paused = false;
     loop {
+        while let Ok(control) = controls.try_recv() {
+            match control {
+                OutputTransportServiceControl::PauseAcceptance { acknowledged } => {
+                    let abandoned = if connected {
+                        transport.disconnect().map_err(|error| error.to_string())?
+                    } else {
+                        Vec::new()
+                    };
+                    connected = false;
+                    acceptance_paused = true;
+                    let _ = acknowledged.send(abandoned);
+                }
+            }
+        }
         while let Ok(command) = commands.try_recv() {
             match command {
                 OutputTransportServiceCommand::ReplaceSupervisedPid { pid } => {
@@ -170,6 +215,7 @@ fn run_output_transport_service(
                     transport
                         .authorize_supervised_pid(pid)
                         .map_err(|error| error.to_string())?;
+                    acceptance_paused = false;
                     events
                         .send(OutputTransportServiceEvent::AssigneeReplaced {
                             connection_epoch,
@@ -232,6 +278,10 @@ fn run_output_transport_service(
             }
         }
 
+        if acceptance_paused {
+            std::thread::sleep(Duration::from_millis(2));
+            continue;
+        }
         if !connected {
             match transport.accept_and_negotiate(connection_epoch, Duration::from_millis(20)) {
                 Ok(()) => {

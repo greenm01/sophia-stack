@@ -18,7 +18,8 @@ use sophia_protocol::{
 };
 use sophia_wm_demo::{
     PolicyV1Client, StatelessReferenceProjectionDecision, partition_policy_scene_across_outputs,
-    stateless_reference_projection_decision, tile_policy_scene,
+    policy_projection_distinct_surface_count, stateless_reference_projection_decision,
+    tile_policy_scene,
 };
 
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
@@ -99,6 +100,54 @@ fn reference_policy_adopts_unassigned_surfaces_on_the_active_affected_output() {
     assert_eq!(proposal.outputs[0].placements[1].geometry.width, 33);
     assert_eq!(proposal.outputs[0].placements[2].geometry.width, 35);
     assert_eq!(proposal.outputs[0].focus, Some(SurfaceId::new(1, 1)));
+}
+
+#[test]
+fn mixed_output_start_barrier_uses_the_committed_proposal_without_an_echo_cycle() {
+    let output = OutputId::from_raw(1);
+    let scene = PolicySceneSnapshot {
+        generation: 4,
+        active_output: output,
+        outputs: vec![PolicyOutputSnapshot {
+            output,
+            generation: 1,
+            focus: None,
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 2_560,
+                height: 1_440,
+            },
+            work_area: Rect {
+                x: 0,
+                y: 0,
+                width: 2_560,
+                height: 1_440,
+            },
+        }],
+        surfaces: vec![surface(1, None), surface(2, None)],
+        session_operations: Vec::new(),
+    };
+    let request = PolicyProjectionRequest {
+        connection_epoch: 7,
+        request_id: 8,
+        scene_generation: 4,
+        policy_generation: 1,
+        affected_outputs: vec![output],
+        cause: PolicyRequestCause::SceneChanged,
+    };
+
+    let proposal = tile_policy_scene(TransactionId::from_raw(9), &scene, &request).unwrap();
+
+    assert_eq!(
+        scene
+            .surfaces
+            .iter()
+            .filter(|surface| surface.current_output.is_some())
+            .count(),
+        0
+    );
+    assert_eq!(policy_projection_distinct_surface_count(&proposal), 2);
 }
 
 #[test]

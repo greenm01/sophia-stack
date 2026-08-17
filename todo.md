@@ -836,7 +836,13 @@ Detailed physical-run diagnoses remain in
   frames used the CPU-only lowerer even though both committed Kitty surfaces
   were retained renderer images. Candidate and rollback planning now reuse the
   ordinary mixed source set, preserving Engine membership and renderer-image
-  ownership without a second DMA-BUF import. The physical rerun, archive
+  ownership without a second DMA-BUF import. The following run rendered both
+  proof surfaces on the initial large output and left the two initial secondary
+  outputs black, but never submitted an output proposal: the proof client waited
+  for a redundant scene echo after its committed two-surface proposal and timed
+  out. It now starts directly from that committed proposal. Restart acceptance
+  is also paused across spawn-to-PID reauthorization, closing the secondary
+  unauthorized-peer race exposed by the timeout. The physical rerun, archive
   verifier, head-loss phase, and visible-pixel acceptance remain open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary

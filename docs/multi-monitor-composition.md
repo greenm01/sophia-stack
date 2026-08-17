@@ -785,7 +785,12 @@ parallel multi-monitor subsystem.
   quarantine, and protocol authority reconcile around that barrier. Hardware
   hotplug similarly republishes output capabilities only after replacement
   scanout presents. Preparation failure and session completion retain bounded
-  affine-owner cancellation and cleanup.
+  affine-owner cancellation and cleanup. The bundled physical proof starts its
+  output role from the committed policy proposal that first places both proof
+  surfaces; it does not wait for a redundant scene-echo cycle. If the supervised
+  dual-role process restarts, the output service synchronously pauses acceptance
+  before spawn, then installs the returned PID and resumes negotiation. A new
+  process therefore cannot race the old assignee identity.
 - Exact root-space viewports survive runtime adoption and rollback, so ordinary
   extended-output composition cannot collapse back to origin zero. DMA-BUF
   Present resolves its authority-owned sources once, builds one native plan per

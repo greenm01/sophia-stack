@@ -197,6 +197,65 @@ fn output_service_reauthorizes_a_restarted_supervised_process() {
     );
 }
 
+#[test]
+fn output_service_pauses_acceptance_across_the_spawn_to_pid_handoff() {
+    let directory = temporary_directory("restart-barrier");
+    let uid = rustix::process::geteuid().as_raw();
+    let pid = std::process::id();
+    let mut transport = OutputSessionTransport::bind_for_supervised_uid(&directory, uid).unwrap();
+    transport.authorize_supervised_pid(pid).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let service =
+        OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), snapshot())
+            .unwrap();
+
+    assert!(
+        service
+            .pause_acceptance(Duration::from_secs(1))
+            .unwrap()
+            .is_empty()
+    );
+    let mut replacement = connect_output_client(&socket_path);
+    replacement
+        .set_read_timeout(Some(Duration::from_millis(50)))
+        .unwrap();
+    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
+    let error = replacement
+        .read_exact(&mut header)
+        .expect_err("paused service must not negotiate against the old PID");
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ));
+
+    service
+        .command(OutputTransportServiceCommand::ReplaceSupervisedPid { pid })
+        .unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::AssigneeReplaced {
+            connection_epoch: 2,
+            abandoned: Vec::new(),
+        }
+    );
+    replacement
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    assert_eq!(
+        decode_output_v1_server_welcome_frame(&read_frame(&mut replacement))
+            .unwrap()
+            .connection_epoch,
+        2
+    );
+    decode_output_v1_snapshot_frame(&read_frame(&mut replacement)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 2
+        }
+    );
+}
+
 fn temporary_directory(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "sophia-output-service-{label}-{}-{}",

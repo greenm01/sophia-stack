@@ -54,13 +54,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut output_settled = false;
         loop {
             let snapshot = policy.receive_snapshot()?;
-            let proof_surfaces_placed = snapshot
-                .scene
-                .surfaces
-                .iter()
-                .filter(|surface| surface.current_output.is_some())
-                .count()
-                >= 2;
             let request = policy.receive_projection_request()?;
             // Once the physical role has formed two logical groups, partition
             // proof surfaces through policy-visible geometry alone. Connector
@@ -94,6 +87,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .into());
                 }
             }
+            let proof_surfaces_placed =
+                sophia_wm_demo::policy_projection_distinct_surface_count(&proposal) >= 2;
             if !output_started && proof_surfaces_placed {
                 output_start_sender
                     .send(())
