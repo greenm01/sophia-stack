@@ -1047,6 +1047,19 @@ Detailed physical-run diagnoses remain in
   one would skip a frame render or a scanout submission while reporting success.
   The terminal error is correct and the producer-side bound already prevents the
   overflow. See `docs/research-log.md`.
+- [x] Fix the frame-service arbitration deadlock that stalled every topology
+  candidate. The reducer admitted a present the handler then silently refused,
+  while withholding the only effect that drains what the handler refused over;
+  neither could advance and no submission reached the kernel. The reducer now
+  owns the ordering and each handler refusal is unreachable by construction,
+  which also closes a latent session fatal in software staging.
+  `validation/tla/FrameServiceArbitration.tla` models the reducer/handler split
+  and violates `PresentSettles` when the old reservation is restored. An
+  existing test had pinned the defect as correct; it is rewritten as the
+  regression. Bound software presents orphaned by topology installation now
+  settle, and the quiescence wait escalates once -- skipping runnable and
+  waiting presents with `Skipped` feedback, keeping the displayed topology --
+  before rejecting a candidate. See `docs/research-log.md`.
 - [ ] Bound the page-flip callback *read* rather than its write, the last
   session-killing site. The event is already consumed from the DRM fd when the
   queue is examined, so a write-side degrade would lose a retirement outright.
