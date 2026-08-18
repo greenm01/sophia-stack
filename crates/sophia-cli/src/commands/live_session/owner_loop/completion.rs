@@ -650,9 +650,15 @@
     if config.normal_session
         && (layout.pending.is_some()
             || pending_wm_update.is_some()
+            // Requests already sent to the peer, not causes still queued
+            // locally. A queued cause was promised to nobody and is dropped
+            // when the session stops; an issued request is owed an answer, and
+            // the deadline drain has already waited a bounded time for it.
+            // Counting the queue here failed sessions on a focus request that
+            // the last pointer motion raised a tick before the stop.
             || wm_session
                 .as_ref()
-                .is_some_and(|wm| wm.pending_request_count() != 0)
+                .is_some_and(|wm| wm.in_flight_request_count() != 0)
             || !committed_session_actions.is_empty()
             || session_launches.pending_len() != 0
             || session_launches.admission().is_some()
@@ -666,7 +672,7 @@
             usize::from(pending_wm_update.is_some()),
             wm_session
                 .as_ref()
-                .map_or(0, LiveWmSession::pending_request_count),
+                .map_or(0, LiveWmSession::in_flight_request_count),
             committed_session_actions.len(),
             session_launches.pending_len(),
             usize::from(session_launches.admission().is_some()),

@@ -283,7 +283,7 @@ macro_rules! service_runtime_deadline_key_drain {
             client_key_release_barrier.len(),
             wm_session
                 .as_ref()
-                .map_or(0, LiveWmSession::pending_request_count),
+                .map_or(0, LiveWmSession::in_flight_request_count),
         ) {
             RuntimeDeadlineKeyDrainDecision::BeginRelease => {
                 flush_all_client_keys!("runtime_deadline");
@@ -308,10 +308,13 @@ macro_rules! service_runtime_deadline_key_drain {
             }
             RuntimeDeadlineKeyDrainDecision::TimedOut => {
                 return Err(format!(
-                    "runtime deadline key-release barrier timed out: pressed={} pending_deliveries={} release_barrier_pending={}",
+                    "runtime deadline key-release barrier timed out: pressed={} pending_deliveries={} release_barrier_pending={} policy_requests={}",
                     client_keys.pending_len(),
                     input_delivery.pending.len(),
                     client_key_release_barrier.len(),
+                    wm_session
+                        .as_ref()
+                        .map_or(0, LiveWmSession::in_flight_request_count),
                 )
                 .into());
             }

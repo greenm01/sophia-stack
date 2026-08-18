@@ -1137,6 +1137,18 @@ where the types cannot be made to carry the agreement.
   indistinguishable from a slow client, the wait now expires after two seconds,
   says what was missing, and restores input rather than holding a desktop at
   shortcuts-only forever.
+- [x] Wait at the runtime deadline for policy requests already *issued*, and
+  drop causes still queued locally. The first attempt folded the whole pending
+  count into the key drain, which was wrong twice over: the queue never
+  converges, because a moving pointer keeps raising fresh causes for as long as
+  the drain waits, and the timeout message printed only the three key counters,
+  so a policy-driven expiry reported `pressed=0 pending_deliveries=0
+  release_barrier_pending=0` and named nothing. That is the same
+  two-facts-one-field mistake this roadmap already describes, committed while
+  documenting it. A queued cause was promised to nobody and is dropped when the
+  session stops; an issued request is owed an answer. The completion check now
+  reads the same count, so a cause raised during the drain cannot fail a session
+  the drain just declared clean.
 - [x] Drain an outstanding policy request at the runtime deadline instead of
   reporting it as pending work. A deadline lands at an arbitrary instant, so the
   last pointer motion before it can raise a focus request that cannot settle in

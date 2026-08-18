@@ -3,6 +3,21 @@ impl LiveWmSession {
         self.max_request
     }
 
+    /// Requests already sent to the policy peer and not yet settled.
+    ///
+    /// Distinct from `pending_request_count`, which also counts causes still
+    /// queued locally. At a runtime deadline only this matters: a queued cause
+    /// was promised to nobody and can be dropped when the session stops, while
+    /// an issued request is owed an answer. Counting the queue there never
+    /// converges anyway, because a moving pointer keeps raising fresh causes
+    /// for as long as the drain waits.
+    fn in_flight_request_count(&self) -> usize {
+        if let Some(public) = self.public.as_ref() {
+            return usize::from(public.in_flight_request.is_some());
+        }
+        usize::from(self.in_flight_request.is_some())
+    }
+
     fn pending_request_count(&self) -> usize {
         if let Some(public) = self.public.as_ref() {
             return public
