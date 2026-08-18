@@ -610,7 +610,28 @@ impl LayoutEpochCoordinator {
         proposed: Size,
         bounds: Rect,
     ) -> Result<Size, LayoutConstraintError> {
-        let constraints = self.effective_constraints(surface);
+        // A recovery extent pins the surface to exactly the pixels the client
+        // has already produced, so admission can show real content before the
+        // blind WM drives final geometry. It is a best-effort aid, not
+        // something the client asked for, and an output change can leave it
+        // larger than the output the surface now lands on. Yield to the
+        // client's declared constraints there: holding the pin instead makes
+        // every proposal unsatisfiable and fails the session over pixels that
+        // were only ever a courtesy.
+        let constraints = self.constraints.get(&surface).map_or(
+            SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            |state| {
+                if state.recovery_extent.is_some_and(|extent| {
+                    extent.width > bounds.width || extent.height > bounds.height
+                }) {
+                    return state.declared;
+                }
+                state.effective()
+            },
+        );
         let minimum = constraints.min_size.unwrap_or(Size {
             width: 1,
             height: 1,

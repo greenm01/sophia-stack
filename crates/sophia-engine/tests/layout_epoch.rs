@@ -582,3 +582,68 @@ fn retained_extent_updates_remain_presentable_while_a_standing_target_is_pending
     );
     assert_eq!(coordinator.pending_target(surface), Some(target));
 }
+
+/// A recovery extent yields to the client's own constraints on an output it
+/// cannot fit.
+///
+/// The extent pins a surface to exactly the pixels it has already produced, so
+/// admission can show real content before the blind WM drives final geometry.
+/// It is a courtesy, not something the client asked for. An output-topology
+/// change can leave it larger than the output the surface now lands on -- a
+/// mixed mirror-plus-extended commit put a 1280x1440 extent onto a 1920x1080
+/// output -- and because the pin is both minimum and maximum, no proposal
+/// could satisfy it and the session ended.
+#[test]
+fn an_oversized_recovery_extent_yields_to_declared_constraints() {
+    let surface = SurfaceId::new(80, 1);
+    let extent = size(1280, 1440);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(surface, extent);
+    coordinator.set_recovery_extent(surface, extent);
+
+    let placement = |bounds: Rect| layout_transaction([(surface, bounds)]);
+
+    // An output that can hold the extent still honours the pin exactly.
+    let roomy = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let reconciled = coordinator
+        .reconcile_transaction(&placement(roomy), roomy)
+        .expect("an extent that fits is satisfiable");
+    assert_eq!(
+        reconciled
+            .transaction
+            .render_positions
+            .iter()
+            .find(|position| position.surface == surface)
+            .expect("the surface keeps its placement")
+            .geometry
+            .height,
+        1440
+    );
+
+    // One that cannot must fall back rather than fail the session.
+    let narrow = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    let reconciled = coordinator
+        .reconcile_transaction(&placement(narrow), narrow)
+        .expect("a courtesy extent yields rather than ending the session");
+    assert!(
+        reconciled
+            .transaction
+            .render_positions
+            .iter()
+            .find(|position| position.surface == surface)
+            .expect("the surface keeps its placement")
+            .geometry
+            .height
+            <= 1080
+    );
+}

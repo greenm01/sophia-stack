@@ -1157,6 +1157,18 @@ where the types cannot be made to carry the agreement.
   had the right shape, so policy requests are counted alongside held keys rather
   than given a second mechanism, and one that genuinely cannot settle still
   times out and is still reported.
+- [x] Let an oversized recovery extent yield to the client's declared
+  constraints instead of failing the session, and drop the topology-commit
+  release entirely. The extent becomes both minimum *and* maximum, pinning the
+  surface to exactly the pixels it had already produced, so on an output that
+  cannot hold it no proposal is satisfiable and reconciliation errors out. Two
+  attempts to fix that from the commit site were both wrong, for opposite
+  reasons: releasing every extent stranded a surface mid-admission, and
+  releasing only those no output could hold kept one that fitted the mirrored
+  output and was then placed on the extended one. The commit site cannot know
+  where the relayout will put a surface; `constrained_size` does, because it
+  receives the target bounds. The extent is a courtesy rather than a client
+  requirement, so it gives way there and the surface keeps its declared limits.
 - [x] Release only the recovery extents no output in the new topology can hold.
   The first attempt released every extent, which stranded a surface still
   mid-admission: its extent was the only size evidence it had, re-priming reads
