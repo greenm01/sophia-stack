@@ -172,3 +172,42 @@ fn unarmed_target_without_a_recovery_extent_cannot_bypass_the_layout_epoch() {
     assert_eq!(layout.layout_epochs.pending_target(surface), Some(target));
     assert!(!layout.constraint_relayout_required());
 }
+
+/// A recovery extent must not outlive the layout it was captured against.
+///
+/// It records the pixels a client had already produced on the output it was
+/// then on. A topology change can move that surface to a smaller output, where
+/// the extent cannot be satisfied at all and constraint reconciliation fails
+/// the session rather than shrinking the surface: a mixed mirror-plus-extended
+/// commit put a 1280x1440 extent onto a 1920x1080 output and ended a live
+/// session.
+#[test]
+fn a_topology_change_releases_every_recovery_extent() {
+    let tall = SurfaceId::new(70, 1);
+    let short = SurfaceId::new(71, 1);
+    let tall_extent = Size {
+        width: 1280,
+        height: 1440,
+    };
+    let short_extent = Size {
+        width: 640,
+        height: 480,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layout_epochs.record_committed(tall, tall_extent);
+    layout.layout_epochs.set_recovery_extent(tall, tall_extent);
+    layout.layout_epochs.record_committed(short, short_extent);
+    layout.layout_epochs.set_recovery_extent(short, short_extent);
+
+    assert_eq!(layout.release_recovery_extents_for_topology(), 2);
+    assert_eq!(layout.layout_epochs.recovery_extent(tall), None);
+    assert_eq!(layout.layout_epochs.recovery_extent(short), None);
+    // The release is what schedules the relayout the new topology needs.
+    assert!(layout.constraint_relayout_required());
+
+    // Nothing left to release, and no spurious relayout demanded.
+    let mut settled = PersistentLiveLayout::default();
+    settled.layout_epochs.record_committed(tall, tall_extent);
+    assert_eq!(settled.release_recovery_extents_for_topology(), 0);
+    assert!(!settled.constraint_relayout_required());
+}

@@ -1145,6 +1145,16 @@ where the types cannot be made to carry the agreement.
   had the right shape, so policy requests are counted alongside held keys rather
   than given a second mechanism, and one that genuinely cannot settle still
   times out and is still reported.
+- [x] Release recovery extents at a topology commit. An extent records the
+  pixels a client had already produced on the output it was then on, held so
+  admission can show real content before the blind WM drives final geometry,
+  and it lives until that admission commits. A surface still mid-admission when
+  the topology changed kept a 1280x1440 extent -- half of the mirror group --
+  and the relayout placed it on the 1920x1080 extended output, where constraint
+  reconciliation fails the session outright rather than shrinking the surface.
+  The clamp never consults output bounds, so no proposal could have satisfied
+  it. Re-priming reads the client's current size and costs one pass, so
+  dropping a still valid extent is nearly free; keeping a stale one is not.
 - [ ] Decide whether a topology commit should also force a repaint rather than
   relying on the relayout to generate one. The first full run settled naturally
   -- presentation baseline 26, retirements 27 -- so the relayout did produce the

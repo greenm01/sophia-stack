@@ -688,6 +688,18 @@
                             output_topology_owner = published_topology_owner;
                             outputs = candidate_outputs;
                             output = candidate_primary;
+                            // A recovery extent describes a client's pixels on
+                            // the output it was then on. The relayout that
+                            // follows can move that surface to a smaller one,
+                            // where the extent cannot be satisfied and
+                            // constraint reconciliation fails the session
+                            // instead of shrinking the surface.
+                            let released = layout.release_recovery_extents_for_topology();
+                            if released != 0 {
+                                println!(
+                                    "sophia_live_resize_epoch schema=2 status=recovery_extents_released reason=output_topology_changed count={released}",
+                                );
+                            }
                             pointer.set_output_bounds(
                                 bounds.iter().map(|(_, bounds)| *bounds).collect(),
                             );

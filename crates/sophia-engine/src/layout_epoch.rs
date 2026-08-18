@@ -561,6 +561,14 @@ impl LayoutEpochCoordinator {
         })
     }
 
+    /// Every surface currently holding a recovery extent.
+    pub fn recovery_extent_surfaces(&self) -> impl Iterator<Item = SurfaceId> + '_ {
+        self.constraints
+            .iter()
+            .filter(|(_, state)| state.recovery_extent.is_some())
+            .map(|(surface, _)| *surface)
+    }
+
     pub fn recovery_extent_count(&self) -> usize {
         self.constraints
             .values()

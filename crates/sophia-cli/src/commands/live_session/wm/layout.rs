@@ -556,6 +556,28 @@ impl PersistentLiveLayout {
             .map(|layer| layer.surface)
     }
 
+    /// Releases every recovery extent, because the layout they were captured
+    /// against no longer exists.
+    ///
+    /// A recovery extent is the pixels a client had already produced, held so
+    /// admission can show real content before the blind WM drives it toward
+    /// final geometry. It describes that surface on the output it was then on.
+    /// After a topology change the same surface can be laid out on a smaller
+    /// output, where the extent cannot be satisfied at all and constraint
+    /// reconciliation fails the session rather than shrinking it. Re-priming
+    /// costs one pass and reads the client's current size, so dropping a still
+    /// valid extent is nearly free; keeping a stale one is not.
+    fn release_recovery_extents_for_topology(&mut self) -> usize {
+        let surfaces = self
+            .layout_epochs
+            .recovery_extent_surfaces()
+            .collect::<Vec<_>>();
+        surfaces
+            .into_iter()
+            .filter(|surface| self.release_recovery_extent(*surface, "output_topology_changed"))
+            .count()
+    }
+
     fn release_recovery_extent(&mut self, surface: SurfaceId, reason: &'static str) -> bool {
         if !self.layout_epochs.clear_recovery_extent(surface) {
             return false;
