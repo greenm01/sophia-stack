@@ -1167,6 +1167,21 @@ where the types cannot be made to carry the agreement.
   The clamp never consults output bounds, so no proposal could have satisfied
   it. Re-priming reads the client's current size and costs one pass, so
   dropping a still valid extent is nearly free; keeping a stale one is not.
+- [x] Let the reference policy client tolerate a quiet owner at any time. The
+  owner issues a cycle only when policy work exists, so silence is the ordinary
+  state, but the client forgave a read timeout only while a topology
+  transaction was preparing. Once that settled, the next silent window killed
+  the client, and the request the owner sent afterwards had nobody left to
+  answer it -- which the session then reported as an unsettled in-flight
+  request at its deadline. A closed peer reports itself differently and still
+  ends the loop.
+- [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
+  transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
+  transport and the reference policy client are now fixed, while
+  `sophia-runtime/src/output_transport.rs` and
+  `sophia-wm-demo/src/output_v1.rs` still treat an expired window as an I/O
+  failure. Neither has bitten yet because the output role completes early, but
+  the class has now cost two separate sessions.
 - [ ] Decide whether a topology commit should also force a repaint rather than
   relying on the relayout to generate one. The first full run settled naturally
   -- presentation baseline 26, retirements 27 -- so the relayout did produce the

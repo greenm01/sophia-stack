@@ -77,14 +77,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let snapshot = match policy.receive_snapshot() {
                 Ok(snapshot) => snapshot,
-                // The owner issues no cycle while a topology transaction
-                // prepares. That quiet window is expected, not a fault, so keep
-                // waiting for whichever result arrives first.
-                Err(error)
-                    if output_started
-                        && !output_settled
-                        && sophia_wm_demo::policy_client_read_timed_out(&error) =>
-                {
+                // A quiet owner is the ordinary state, not a fault: it issues a
+                // cycle only when policy work exists. This used to be forgiven
+                // only while a topology transaction was preparing, so once that
+                // settled the next silent window killed the client, and the
+                // request the owner sent afterwards had nobody left to answer
+                // it. A closed peer reports itself differently and still ends
+                // the loop here.
+                Err(error) if sophia_wm_demo::policy_client_read_timed_out(&error) => {
                     continue;
                 }
                 Err(error) => return Err(error.into()),
