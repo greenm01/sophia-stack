@@ -1175,6 +1175,16 @@ where the types cannot be made to carry the agreement.
   answer it -- which the session then reported as an unsettled in-flight
   request at its deadline. A closed peer reports itself differently and still
   ends the loop.
+- [x] Give clients a realistic window to acknowledge a layout. The reference
+  policy asked the owner to hold one open for 300ms, which is a property of the
+  clients being tiled rather than of the compositor: a topology change can
+  double a surface's width -- 1280x1440 to 2560x1440 when two heads merge into
+  one mirrored output -- and a terminal answering that reallocates its buffers
+  and re-renders its whole grid while the compositor drives three heads. At
+  300ms the same code converged with no timeouts on one run and timed out seven
+  times on the next, rolling the layout back each round and never settling.
+  This is tuning, not a defect fix: the compositor delivered every configure
+  correctly on both runs.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while

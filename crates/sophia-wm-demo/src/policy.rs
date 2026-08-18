@@ -1,3 +1,16 @@
+/// How long the reference policy asks the owner to hold a layout open for
+/// clients to acknowledge.
+///
+/// This is a property of the clients being tiled, not of the compositor. A
+/// topology change can double a surface's width -- 1280x1440 to 2560x1440 when
+/// two heads merge into one mirrored output -- and a terminal answering that
+/// must reallocate its buffers and re-render its whole grid while the
+/// compositor is driving three heads. At 300ms that landed either side of the
+/// deadline from run to run: the same code converged with no timeouts once and
+/// timed out seven times the next, rolling the layout back each round and
+/// never reaching a settled desktop.
+const REFERENCE_LAYOUT_TIMEOUT_MSEC: u32 = 1_500;
+
 use sophia_protocol::{
     LayoutNodeSnapshot, LayoutTransaction, Rect, Size, SurfacePlacement, SurfaceSizeRequest,
     TransactionId, Transform, WmCommand, WmRequestKind, WmRequestPacket, WmResponsePacket,
@@ -10,7 +23,7 @@ pub fn empty_transaction(transaction: TransactionId) -> LayoutTransaction {
         requested_sizes: Vec::new(),
         focus: None,
         render_positions: Vec::new(),
-        timeout_msec: 300,
+        timeout_msec: REFERENCE_LAYOUT_TIMEOUT_MSEC,
     }
 }
 
@@ -20,7 +33,13 @@ pub fn tile_workspace(
     bounds: Rect,
     nodes: &[LayoutNodeSnapshot],
 ) -> LayoutTransaction {
-    tile_workspace_with_timeout(transaction, workspace, bounds, nodes, 300)
+    tile_workspace_with_timeout(
+        transaction,
+        workspace,
+        bounds,
+        nodes,
+        REFERENCE_LAYOUT_TIMEOUT_MSEC,
+    )
 }
 
 fn tile_workspace_with_timeout(
@@ -179,7 +198,7 @@ pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
         WmRequestKind::SurfaceRemoved { .. } => WmResponsePacket {
             transaction: request.transaction,
             commands: Vec::new(),
-            timeout_msec: 300,
+            timeout_msec: REFERENCE_LAYOUT_TIMEOUT_MSEC,
         },
         WmRequestKind::ActionActivated(activation) => {
             let commands = match activation.action.raw() {
@@ -215,18 +234,18 @@ pub fn handle_wm_request(request: WmRequestPacket) -> WmResponsePacket {
             WmResponsePacket {
                 transaction: request.transaction,
                 commands,
-                timeout_msec: 300,
+                timeout_msec: REFERENCE_LAYOUT_TIMEOUT_MSEC,
             }
         }
         WmRequestKind::FocusRequested(focus) => WmResponsePacket {
             transaction: request.transaction,
             commands: vec![WmCommand::FocusSurface(focus.surface)],
-            timeout_msec: 300,
+            timeout_msec: REFERENCE_LAYOUT_TIMEOUT_MSEC,
         },
         WmRequestKind::PointerGestureCompleted(_) => WmResponsePacket {
             transaction: request.transaction,
             commands: Vec::new(),
-            timeout_msec: 300,
+            timeout_msec: REFERENCE_LAYOUT_TIMEOUT_MSEC,
         },
     }
 }
