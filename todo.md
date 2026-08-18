@@ -1207,6 +1207,18 @@ where the types cannot be made to carry the agreement.
   times on the next, rolling the layout back each round and never settling.
   This is tuning, not a defect fix: the compositor delivered every configure
   correctly on both runs.
+- [ ] Find why no present reaches "stable", which is what startup readiness
+  waits on. The mixed topology now settles fully and both surfaces commit, but
+  every present is superseded before it is displayed with nothing newer
+  submitted and no queued exporter frame, so `visual_detail` never becomes true
+  and the session never reports ready. Two causes need opposite fixes -- a
+  present that never gets a turn behind primary frame drains, which is the
+  starvation risk named when the frame-service arbitration was fixed, versus
+  one simply overtaken by fresher content during resize churn. The run could
+  not distinguish them because the deferral was logged at `debug` while the
+  gate runs at `info`: instrumentation nobody reads is the same silence it was
+  added to remove. It is now a coalesced `info` line, and the readiness failure
+  itself reports which of its four conditions was unmet.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while

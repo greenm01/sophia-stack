@@ -471,6 +471,23 @@ impl LiveProductionVisualRuntime {
     /// present and a waiting software frame produce different fixes, and the
     /// dispatch that would drain the queue is itself gated on no software frame
     /// waiting. One name could not distinguish them.
+    /// Why the focused surface's present has not settled.
+    ///
+    /// Startup readiness waits for a present to be *stable*: displayed, with
+    /// nothing newer submitted and no queued exporter frame. Every present
+    /// being superseded instead is the difference between a session that comes
+    /// up and one that never reports ready, and the two causes -- a present
+    /// that never gets a turn, and one that is simply overtaken by fresher
+    /// content -- need opposite fixes.
+    pub fn present_supersession_report(&self) -> String {
+        format!(
+            "defers={} in_flight_displayed={} runnable_queued={}",
+            self.present_output_busy_defers,
+            u8::from(self.present_scheduler.in_flight_displayed_layer().is_some()),
+            u8::from(self.present_scheduler.has_runnable_queued()),
+        )
+    }
+
     pub fn topology_rebind_quiescence_report(&self) -> String {
         let mut blockers = Vec::new();
         if self.native_scanout_in_flight() {

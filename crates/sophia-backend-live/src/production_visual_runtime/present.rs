@@ -94,12 +94,19 @@ impl LiveProductionVisualRuntime {
                 // the presentation effect while it owes a native frame. A
                 // cohort spanning outputs can still find a secondary busy, and
                 // that one is drained by this same pass. Deferring silently is
-                // what let the earlier deadlock hide, so it is said out loud.
-                tracing::debug!(
-                    "sophia_live_present_defer schema=1 status=output_busy transaction={} output={} in_flight={in_flight} cleanup_pending={cleanup_pending} pending_frame={pending_frame}",
-                    transaction.raw(),
-                    output.raw(),
-                );
+                // what let the earlier deadlock hide, so it is said out loud --
+                // at info, because the sessions that need this run at info and
+                // a debug line there is the same silence by another name.
+                // Coalesced on powers of two so a flood stays legible.
+                self.present_output_busy_defers = self.present_output_busy_defers.saturating_add(1);
+                if self.present_output_busy_defers.is_power_of_two() {
+                    tracing::info!(
+                        "sophia_live_present_defer schema=1 status=output_busy defers={} transaction={} output={} in_flight={in_flight} cleanup_pending={cleanup_pending} pending_frame={pending_frame}",
+                        self.present_output_busy_defers,
+                        transaction.raw(),
+                        output.raw(),
+                    );
+                }
                 return self.run_observation_tick();
             }
         }

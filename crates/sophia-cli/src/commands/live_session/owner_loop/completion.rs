@@ -921,7 +921,22 @@
         "sophia_live_session schema=16 status=bounded_complete display={} elapsed_msec={} startup_ready_msec={} session_ticks={} authority_batches={} authority_transactions={} authority_queue_capacity={} authority_batches_dropped=0 backend_ticks={} runtime_committed={} runtime_surfaces={} cpu_layers={} cpu_nonzero_pixel_bytes={} cpu_max_nonzero_pixel_bytes={} cpu_nonzero_frames={} cpu_checksum={} cpu_max_compose_msec={} injected_input={} input_events_expected={} input_events_flushed={} input_flush_latency_msec={} input_pixel_change={} input_text_match={} input_presented_latency_msec={} input_dispatch_max_gap_msec={} input_queue_max_depth={} input_queue_dwell_max_msec={} physical_events={} physical_keys_routed={} pointer_pixel_change={} physical_pointer_events={} physical_pointer_routed={} pointer_proof={} native_presentation={} native_submissions={} native_submit_deferred={} native_submit_failures={} native_retirements={} native_retire_failures={} native_max_in_flight_ticks={} native_max_submit_to_page_flip_msec={} native_max_upload_msec={} native_max_target_create_msec={} native_max_frame_surface_create_msec={} native_max_render_msec={} native_target_creations={} native_target_recreations={} native_pipeline_creations={} native_frame_surface_creations={} native_frame_uploads={} native_callback_accepted={} native_callback_rejected={} native_callback_queue_saturated={} native_nonzero_exports={} native_mixed_exports={} native_export_attempts={} native_in_flight={} native_cleanup_pending={} physical_input={} wm_policy={} wm_requests={} wm_committed={} wm_restarts={} wm_degraded={} namespace_profile={} output_update={} output_notifications={} surface_resize={} present_complete_copy={} present_complete_flip={} present_complete_skip={} present_idle={} present_complete_routed={} present_idle_routed={} present_route_failures={} present_idle_fence_triggers={} present_disconnect_sources={} present_disconnect_fences={} present_disconnect_failures={} present_live_sources={} present_live_fences={} present_live_transactions={} present_acquire_waits={} present_controlled_rejections={}",
         config.display,
         started.elapsed().as_millis(),
-        startup_ready_msec.ok_or("persistent live session never reached startup readiness")?,
+        startup_ready_msec.ok_or_else(|| {
+            // Readiness waits for the focused surface's present to settle, so
+            // say what stopped it settling. Reporting only that readiness was
+            // missed sends its reader back to the source to guess between a
+            // present that never got a turn and one simply overtaken.
+            format!(
+                "persistent live session never reached startup readiness: surface={} focus_applied={} visual_detail={} {}",
+                usize::from(startup_readiness.surface.is_some()),
+                usize::from(startup_readiness.client_focus_applied),
+                usize::from(startup_readiness.visual_detail),
+                runtime.as_ref().map_or_else(
+                    || "defers=none".to_owned(),
+                    LiveProductionVisualRuntime::present_supersession_report,
+                ),
+            )
+        })?,
         session_ticks,
         batches,
         transactions,

@@ -184,6 +184,11 @@ pub struct LiveProductionVisualRuntime {
     present_rejections: usize,
     native_suspend_present_rejections: usize,
     topology_escalation_present_rejections: usize,
+    /// Times a queued present found an output busy and deferred. Counted so the
+    /// coalesced report can say how often, since a defer is invisible on its
+    /// own and the difference between a handful and a flood is the difference
+    /// between ordinary contention and a present that never gets a turn.
+    present_output_busy_defers: u64,
     shutdown_present_rejections: usize,
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
@@ -266,6 +271,7 @@ impl LiveProductionVisualRuntime {
             present_rejections: 0,
             native_suspend_present_rejections: 0,
             topology_escalation_present_rejections: 0,
+            present_output_busy_defers: 0,
             shutdown_present_rejections: 0,
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
