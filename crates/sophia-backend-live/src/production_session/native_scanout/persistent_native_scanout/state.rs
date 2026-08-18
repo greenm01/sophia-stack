@@ -573,10 +573,30 @@ pub fn reduce_live_production_cpu_frame_queue(
     }
 }
 
+/// Whether this Present's pixels reached the screen.
+///
+/// The question is about one transaction's own page flip, so it asks only
+/// about what is displayed. Work that arrived afterwards -- queued, prepared,
+/// or already submitted -- does not unsettle a frame the kernel has shown.
+///
+/// It used to also demand that nothing newer was submitted and that no head
+/// was busy, which asked for a globally quiescent instant. Judgement happens
+/// after a whole frame-service pass, and that pass polls the retirement and
+/// then submits the successor, so the second condition was routinely false by
+/// the time it was read. A mirror group made it worse: retirement itself
+/// promotes the coalesced successor into every head's exporter slot, so the
+/// third condition was falsified during the very retirement being judged. A
+/// physical run judged all eleven of its retirements superseded and never
+/// reported startup readiness. Those conjuncts looked free when they were
+/// written, because the frame reducer then reserved the primary while a
+/// present was queued -- but that reservation was the arbitration deadlock,
+/// not a source of quiet.
+///
+/// `PresentFrameOwnership.tla` already draws this line: it permits a successor
+/// submitted after the Present's retirement is observed, requiring only that
+/// the successor cannot steal or block the captured retirement.
 pub fn live_production_scanout_is_stable_present(
     presented: Option<LiveProductionScanoutContent>,
-    submitted: Option<LiveProductionScanoutContent>,
-    pending: bool,
     transaction: TransactionId,
 ) -> bool {
     matches!(
@@ -586,6 +606,5 @@ pub fn live_production_scanout_is_stable_present(
             nonzero_rgb_pixels,
             ..
         }) if presented_transaction == transaction && nonzero_rgb_pixels > 0
-    ) && submitted.is_none()
-        && !pending
+    )
 }

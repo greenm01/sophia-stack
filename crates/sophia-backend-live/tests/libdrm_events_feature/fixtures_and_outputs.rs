@@ -351,9 +351,18 @@ fn hardware_cursor_mode_never_enters_cpu_composition() {
     );
 }
 
+/// Stability is a claim about one transaction's own page flip.
+///
+/// The predicate once also took what was submitted and whether any head was
+/// busy, and refused stability whenever either said work had arrived since.
+/// That asked a flowing pipeline for a quiescent instant it does not have: a
+/// physical mixed-topology run judged all eleven of its retirements superseded
+/// and never reported readiness. Successor state is no longer an argument, so
+/// there is nothing left here to vary -- the signature is the invariant. What
+/// stays falsifiable is everything about the flip itself.
 #[cfg(feature = "gbm-probe")]
 #[test]
-fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
+fn stable_present_requires_this_transaction_displayed_with_real_pixels() {
     let transaction = TransactionId::from_raw(41);
     let displayed = Some(LiveProductionScanoutContent::MixedPresent {
         frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
@@ -363,50 +372,33 @@ fn stable_present_requires_exact_displayed_transaction_and_an_empty_queue() {
 
     assert!(live_production_scanout_is_stable_present(
         displayed,
-        None,
-        false,
-        transaction,
+        transaction
     ));
-    assert!(!live_production_scanout_is_stable_present(
-        displayed,
-        Some(LiveProductionScanoutContent::Cpu {
-            frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(2),
-            checksum: 9,
-        }),
-        false,
-        transaction,
-    ));
+    // A flip that put nothing visible on the screen is not this client's
+    // pixels arriving, however exactly it names the transaction.
     assert!(!live_production_scanout_is_stable_present(
         Some(LiveProductionScanoutContent::MixedPresent {
             frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(3),
             transaction,
             nonzero_rgb_pixels: 0,
         }),
-        None,
-        false,
         transaction,
     ));
+    // Some other transaction's pixels are on the screen, not this one's.
     assert!(!live_production_scanout_is_stable_present(
         displayed,
-        None,
-        true,
-        transaction,
+        TransactionId::from_raw(42)
     ));
-    assert!(!live_production_scanout_is_stable_present(
-        displayed,
-        None,
-        false,
-        TransactionId::from_raw(42),
-    ));
+    // Retained content carries no transaction, so it can never be evidence
+    // that a particular one was shown.
     assert!(!live_production_scanout_is_stable_present(
         Some(LiveProductionScanoutContent::RetainedMixed {
             frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(4),
             nonzero_rgb_pixels: 1,
         }),
-        None,
-        false,
         transaction,
     ));
+    assert!(!live_production_scanout_is_stable_present(None, transaction));
 }
 
 #[cfg(feature = "gbm-probe")]

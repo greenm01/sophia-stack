@@ -2640,14 +2640,11 @@ mod persistent_native_scanout {
             if indices.is_empty() {
                 return false;
             }
+            // Every head of the output must show it: a mirror group is
+            // presented when each of its screens is, not when one is.
             indices.into_iter().all(|index| {
-                let head = &self.heads[index];
                 live_production_scanout_is_stable_present(
-                    head.presented_content,
-                    head.submitted_content,
-                    self.exporters[index].pending_frame()
-                        || head.prepared_scanout.is_some()
-                        || head.scanout_submission.is_some(),
+                    self.heads[index].presented_content,
                     transaction,
                 )
             })

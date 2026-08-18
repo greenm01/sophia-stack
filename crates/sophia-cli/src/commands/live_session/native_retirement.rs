@@ -20,12 +20,10 @@ pub(super) fn record_native_present_retirement(
     let _ = layout.complete_visual_commit(retired.candidate, retired.source_size);
     layout.complete_admission_retirement(retired.candidate);
     let stable = runtime.stable_present(native_scanout, retired.transaction, &retired.outputs);
+    let nonzero_rgb_pixels = native_scanout.presented_mixed_nonzero_rgb_pixels(retired.transaction);
     retired_present_surfaces.insert(retired.surface, retired.transaction);
     if stable {
-        startup_surface_presentations.observe_stable(
-            retired.surface,
-            native_scanout.presented_mixed_nonzero_rgb_pixels(retired.transaction),
-        );
+        startup_surface_presentations.observe_stable(retired.surface, nonzero_rgb_pixels);
         let _ = reduce_session_startup(
             startup_readiness,
             SessionStartupEvent::StablePresented(retired.surface),
@@ -50,11 +48,13 @@ pub(super) fn record_native_present_retirement(
         retired.source_size.width == retired.target.width
             && retired.source_size.height == retired.target.height,
     );
+    // `pending_primary` was `!stable` restated, and stability no longer has
+    // anything to do with what is queued behind this flip. The pixel count is
+    // what a reader actually needs to tell "shown but blank" from "not shown".
     println!(
-        "sophia_live_session_scanout schema=1 status={} kind=mixed transaction={} pending_primary={}",
+        "sophia_live_session_scanout schema=2 status={} kind=mixed transaction={} nonzero_rgb_pixels={nonzero_rgb_pixels}",
         if stable { "stable" } else { "superseded" },
         retired.transaction.raw(),
-        !stable,
     );
 
     NativePresentRetirementObservation {

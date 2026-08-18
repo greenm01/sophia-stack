@@ -1207,18 +1207,25 @@ where the types cannot be made to carry the agreement.
   times on the next, rolling the layout back each round and never settling.
   This is tuning, not a defect fix: the compositor delivered every configure
   correctly on both runs.
-- [ ] Find why no present reaches "stable", which is what startup readiness
-  waits on. The mixed topology now settles fully and both surfaces commit, but
-  every present is superseded before it is displayed with nothing newer
-  submitted and no queued exporter frame, so `visual_detail` never becomes true
-  and the session never reports ready. Two causes need opposite fixes -- a
-  present that never gets a turn behind primary frame drains, which is the
-  starvation risk named when the frame-service arbitration was fixed, versus
-  one simply overtaken by fresher content during resize churn. The run could
-  not distinguish them because the deferral was logged at `debug` while the
-  gate runs at `info`: instrumentation nobody reads is the same silence it was
-  added to remove. It is now a coalesced `info` line, and the readiness failure
-  itself reports which of its four conditions was unmet.
+- [x] Find why no present reaches "stable", which is what startup readiness
+  waits on. Neither of the two candidate causes was it: starvation was ruled
+  out by the eleven flips being spread across the run, and no present was
+  overtaken before being displayed. The predicate asked for the wrong thing.
+  Besides requiring that this transaction be displayed with real pixels -- the
+  only part that is about the flip -- it required that nothing newer be
+  submitted and that no head be busy, which is a claim about the instant of
+  judgement rather than about the frame. Judgement happens after a whole
+  `service_native` pass, and that pass submits the successor before it returns;
+  a mirror group's retirement promotes the coalesced successor into every
+  head's exporter slot while the retirement is still being reported. Those
+  conjuncts were written when the frame reducer reserved the primary, and that
+  reservation was the arbitration deadlock, not a source of quiet.
+  `PresentFrameOwnership.tla` already permits a successor submitted after a
+  retirement is observed, so the code had been stricter than its own model. A
+  present is now stable when its page flip retired with it displayed and
+  carrying nonzero pixels. Telemetry moved to `schema=2`, dropping a
+  `pending_primary` field that was `!stable` under a name suggesting an
+  independent fact, in favour of the pixel count.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while
