@@ -556,23 +556,35 @@ impl PersistentLiveLayout {
             .map(|layer| layer.surface)
     }
 
-    /// Releases every recovery extent, because the layout they were captured
-    /// against no longer exists.
+    /// Releases recovery extents that no output in the new topology can hold.
     ///
     /// A recovery extent is the pixels a client had already produced, held so
     /// admission can show real content before the blind WM drives it toward
-    /// final geometry. It describes that surface on the output it was then on.
-    /// After a topology change the same surface can be laid out on a smaller
-    /// output, where the extent cannot be satisfied at all and constraint
-    /// reconciliation fails the session rather than shrinking it. Re-priming
-    /// costs one pass and reads the client's current size, so dropping a still
-    /// valid extent is nearly free; keeping a stale one is not.
-    fn release_recovery_extents_for_topology(&mut self) -> usize {
-        let surfaces = self
+    /// final geometry. It describes that surface on the output it was then on,
+    /// and after a topology change an extent taller or wider than every
+    /// remaining output can never be satisfied: constraint reconciliation
+    /// fails the session outright rather than shrinking the surface, because
+    /// the clamp consults the surface's own limits and never the output's.
+    ///
+    /// Only those are released. Clearing every extent instead strands any
+    /// surface still mid-admission, whose extent is its only size evidence:
+    /// re-priming reads `safe_size`, which comes from a committed size such a
+    /// surface has not got yet, so it can never commit and never regains one.
+    fn release_recovery_extents_for_topology(&mut self, bounds: &[(sophia_protocol::OutputId, Rect)]) -> usize {
+        let unsatisfiable = self
             .layout_epochs
             .recovery_extent_surfaces()
+            .filter(|surface| {
+                self.layout_epochs
+                    .recovery_extent(*surface)
+                    .is_some_and(|extent| {
+                        !bounds.iter().any(|(_, bounds)| {
+                            extent.width <= bounds.width && extent.height <= bounds.height
+                        })
+                    })
+            })
             .collect::<Vec<_>>();
-        surfaces
+        unsatisfiable
             .into_iter()
             .filter(|surface| self.release_recovery_extent(*surface, "output_topology_changed"))
             .count()

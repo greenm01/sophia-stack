@@ -1157,6 +1157,16 @@ where the types cannot be made to carry the agreement.
   had the right shape, so policy requests are counted alongside held keys rather
   than given a second mechanism, and one that genuinely cannot settle still
   times out and is still reported.
+- [x] Release only the recovery extents no output in the new topology can hold.
+  The first attempt released every extent, which stranded a surface still
+  mid-admission: its extent was the only size evidence it had, re-priming reads
+  `safe_size`, and that comes from a committed size such a surface has not got
+  yet, so it never committed and never regained one. The gate showed it
+  directly -- `recovery_extent_cleared reason=output_topology_changed` followed
+  by a surface that configured eight times and visually committed never. Both
+  keeping and clearing are wrong in different cases, so the rule is now the
+  narrow one: drop an extent when no remaining output could satisfy it, keep it
+  otherwise.
 - [x] Release recovery extents at a topology commit. An extent records the
   pixels a client had already produced on the output it was then on, held so
   admission can show real content before the blind WM drives final geometry,

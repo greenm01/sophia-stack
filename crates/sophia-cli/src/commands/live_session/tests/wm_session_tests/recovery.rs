@@ -173,41 +173,78 @@ fn unarmed_target_without_a_recovery_extent_cannot_bypass_the_layout_epoch() {
     assert!(!layout.constraint_relayout_required());
 }
 
-/// A recovery extent must not outlive the layout it was captured against.
+/// A recovery extent must not outlive the layout it was captured against --
+/// but only the ones no output can hold.
 ///
 /// It records the pixels a client had already produced on the output it was
-/// then on. A topology change can move that surface to a smaller output, where
-/// the extent cannot be satisfied at all and constraint reconciliation fails
-/// the session rather than shrinking the surface: a mixed mirror-plus-extended
-/// commit put a 1280x1440 extent onto a 1920x1080 output and ended a live
+/// then on. A topology change can leave an extent taller than every remaining
+/// output, where constraint reconciliation fails the session rather than
+/// shrinking the surface: a mixed mirror-plus-extended commit put a 1280x1440
+/// extent into a topology whose tallest output was 1080 and ended a live
 /// session.
+///
+/// Releasing every extent instead strands a surface still mid-admission, whose
+/// extent is its only size evidence. Re-priming reads `safe_size`, which comes
+/// from a committed size such a surface has not got yet, so it never commits
+/// and never regains one.
 #[test]
-fn a_topology_change_releases_every_recovery_extent() {
+fn a_topology_change_releases_only_extents_no_output_can_hold() {
     let tall = SurfaceId::new(70, 1);
-    let short = SurfaceId::new(71, 1);
+    let fits = SurfaceId::new(71, 1);
     let tall_extent = Size {
         width: 1280,
         height: 1440,
     };
-    let short_extent = Size {
+    let small_extent = Size {
         width: 640,
         height: 480,
     };
+    // The new topology's tallest output is 1080.
+    let bounds = [(
+        OutputId::from_raw(1),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+    )];
+
     let mut layout = PersistentLiveLayout::default();
     layout.layout_epochs.record_committed(tall, tall_extent);
     layout.layout_epochs.set_recovery_extent(tall, tall_extent);
-    layout.layout_epochs.record_committed(short, short_extent);
-    layout.layout_epochs.set_recovery_extent(short, short_extent);
+    layout.layout_epochs.record_committed(fits, small_extent);
+    layout.layout_epochs.set_recovery_extent(fits, small_extent);
 
-    assert_eq!(layout.release_recovery_extents_for_topology(), 2);
+    assert_eq!(layout.release_recovery_extents_for_topology(&bounds), 1);
+    // Unsatisfiable anywhere, so it goes.
     assert_eq!(layout.layout_epochs.recovery_extent(tall), None);
-    assert_eq!(layout.layout_epochs.recovery_extent(short), None);
-    // The release is what schedules the relayout the new topology needs.
+    // Still satisfiable, so it stays: a surface mid-admission keeps the only
+    // size evidence it has.
+    assert_eq!(
+        layout.layout_epochs.recovery_extent(fits),
+        Some(small_extent)
+    );
     assert!(layout.constraint_relayout_required());
 
-    // Nothing left to release, and no spurious relayout demanded.
+    // A topology that can hold everything releases nothing and demands no
+    // relayout of its own.
+    let roomy = [(
+        OutputId::from_raw(1),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        },
+    )];
     let mut settled = PersistentLiveLayout::default();
     settled.layout_epochs.record_committed(tall, tall_extent);
-    assert_eq!(settled.release_recovery_extents_for_topology(), 0);
+    settled.layout_epochs.set_recovery_extent(tall, tall_extent);
+    assert_eq!(settled.release_recovery_extents_for_topology(&roomy), 0);
+    assert_eq!(
+        settled.layout_epochs.recovery_extent(tall),
+        Some(tall_extent)
+    );
     assert!(!settled.constraint_relayout_required());
 }

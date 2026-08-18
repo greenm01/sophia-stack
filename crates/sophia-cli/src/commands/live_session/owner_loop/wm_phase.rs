@@ -694,7 +694,7 @@
                             // where the extent cannot be satisfied and
                             // constraint reconciliation fails the session
                             // instead of shrinking the surface.
-                            let released = layout.release_recovery_extents_for_topology();
+                            let released = layout.release_recovery_extents_for_topology(&bounds);
                             if released != 0 {
                                 println!(
                                     "sophia_live_resize_epoch schema=2 status=recovery_extents_released reason=output_topology_changed count={released}",
