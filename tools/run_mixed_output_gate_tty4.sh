@@ -179,9 +179,17 @@ if ! bash "$ROOT_DIR/tools/verify_mixed_output_evidence.sh" "$EVIDENCE" "$EXTEND
     exit 1
 fi
 
-echo "Did the two mirror heads show matching content, and did the extended head show"
-echo "the SOPHIA MIXED NATIVE SHARP marker with crisp outline text and no soft resampling?"
-echo "Type yes to record visible-pixel acceptance."
+# The mirror member is a resampled copy by construction: one logical output at
+# the primary's mode, one client buffer, and a smaller panel to put it on. Only
+# the extended head carries the sharpness claim, and an operator asked about
+# "matching content" cannot be expected to know that the softer copy is correct.
+echo "Three screens, three questions:"
+echo "  $MIRROR_PRIMARY (mirror primary, native): shows the desktop crisply."
+echo "  $MIRROR_MEMBER (mirror member): shows the SAME content as $MIRROR_PRIMARY."
+echo "    It is a downscaled copy and is expected to look softer -- that is not a fault."
+echo "  $EXTENDED (extended, native): shows its own terminal with the"
+echo "    SOPHIA MIXED NATIVE SHARP marker, crisp, with no soft resampling."
+echo "Type yes if all three held."
 confirmation=
 if ! read -r confirmation </dev/tty || [[ "$confirmation" != yes ]]; then
     printf 'sophia_mixed_output_gate schema=1 status=failed stage=visual_confirmation exit=1\n' \
