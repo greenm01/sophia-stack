@@ -174,18 +174,36 @@ impl OutputV1Client {
     }
 }
 
+/// Which head of a mirror group keeps its own pixels.
+///
+/// A mirror group has one logical size and its members are placed into it, so
+/// exactly one member can be exact and the rest are resampled to reach it.
+/// Choosing that member is the whole of what macOS calls "optimize for
+/// <display>", and it is a property of the group rather than a mode change:
+/// every head keeps its own mode either way.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MirrorOptimizedHead {
+    /// The larger panel stays pixel-exact and the member resamples down.
+    #[default]
+    Primary,
+    /// The member stays pixel-exact and the primary resamples up.
+    Member,
+}
+
 /// Builds a complete three-head candidate: two heads mirror one logical output,
 /// and the third extends it to the right.
 ///
 /// The proof shape is deliberately exact. Extra connected heads are rejected
 /// instead of being disabled as a side effect, and all three heads keep their
-/// current modes. The primary and extended heads use exact placement so only
-/// the unequal mirror member may resample; existing output identities survive.
+/// current modes. The extended head is always exact; within the mirror group,
+/// the optimized head is exact and the other member fits itself to the group's
+/// logical size, which is that optimized head's own mode.
 pub fn mixed_mirror_extended_candidate(
     snapshot: &OutputAuthoritySnapshot,
     mirror_primary_label: &str,
     mirror_member_label: &str,
     extended_label: &str,
+    optimized: MirrorOptimizedHead,
 ) -> Result<OutputTopologyCandidate, OutputV1ClientError> {
     snapshot.validate()?;
     if mirror_primary_label == mirror_member_label
@@ -238,13 +256,25 @@ pub fn mixed_mirror_extended_candidate(
         ));
     }
 
-    let extended_x = primary_group
-        .logical
-        .x
-        .checked_add(primary_group.logical.width)
-        .ok_or(OutputV1ClientError::InvalidProofTopology(
-            "extended placement overflows root coordinates",
-        ))?;
+    // The group is sized by the head it is optimized for, so that head places
+    // exactly and the other reaches the same logical size by resampling.
+    let optimized_size = current_mode_pixel_size(match optimized {
+        MirrorOptimizedHead::Primary => primary,
+        MirrorOptimizedHead::Member => member,
+    })?;
+    let mirror_logical = Rect {
+        x: primary_group.logical.x,
+        y: primary_group.logical.y,
+        width: optimized_size.width,
+        height: optimized_size.height,
+    };
+    let extended_x = mirror_logical.x.checked_add(mirror_logical.width).ok_or(
+        OutputV1ClientError::InvalidProofTopology("extended placement overflows root coordinates"),
+    )?;
+    let (primary_mapping, member_mapping) = match optimized {
+        MirrorOptimizedHead::Primary => (OutputHeadMapping::Exact, OutputHeadMapping::Fit),
+        MirrorOptimizedHead::Member => (OutputHeadMapping::Fit, OutputHeadMapping::Exact),
+    };
     let targets = [primary, member, extended]
         .into_iter()
         .map(|head| OutputHeadTargetProposal {
@@ -265,15 +295,15 @@ pub fn mixed_mirror_extended_candidate(
         groups: vec![
             OutputLogicalGroupProposal {
                 output: primary_group.output,
-                logical: primary_group.logical,
+                logical: mirror_logical,
                 members: vec![
                     OutputGroupMember {
                         head: primary.head,
-                        mapping: OutputHeadMapping::Exact,
+                        mapping: primary_mapping,
                     },
                     OutputGroupMember {
                         head: member.head,
-                        mapping: OutputHeadMapping::Fit,
+                        mapping: member_mapping,
                     },
                 ],
             },
@@ -281,7 +311,7 @@ pub fn mixed_mirror_extended_candidate(
                 output: extended_group.output,
                 logical: Rect {
                     x: extended_x,
-                    y: primary_group.logical.y,
+                    y: mirror_logical.y,
                     width: extended_group.logical.width,
                     height: extended_group.logical.height,
                 },
@@ -294,6 +324,24 @@ pub fn mixed_mirror_extended_candidate(
     };
     candidate.validate_against(snapshot)?;
     Ok(candidate)
+}
+
+/// The pixel size of the mode this head is currently running.
+fn current_mode_pixel_size(
+    head: &OutputHeadDescriptor,
+) -> Result<sophia_protocol::Size, OutputV1ClientError> {
+    let mode = head
+        .current_mode
+        .ok_or(OutputV1ClientError::InvalidProofTopology(
+            "proof head is not enabled with a current mode",
+        ))?;
+    head.modes
+        .iter()
+        .find(|descriptor| descriptor.mode == mode)
+        .map(|descriptor| descriptor.pixel_size)
+        .ok_or(OutputV1ClientError::InvalidProofTopology(
+            "proof head reports a current mode it does not advertise",
+        ))
 }
 
 fn head_by_label<'a>(

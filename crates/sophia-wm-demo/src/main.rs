@@ -1,15 +1,29 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.first().map(String::as_str) == Some("live-mixed-output-proof") {
-        if args.len() != 4 {
+        if args.len() != 4 && args.len() != 5 {
             return Err(
-                "usage: sophia-wm-demo live-mixed-output-proof MIRROR_PRIMARY MIRROR_MEMBER EXTENDED"
+                "usage: sophia-wm-demo live-mixed-output-proof MIRROR_PRIMARY MIRROR_MEMBER EXTENDED [OPTIMIZE_FOR]"
                     .into(),
             );
         }
         let policy_socket = std::env::var("SOPHIA_WM_SOCKET")?;
         let output_socket = std::env::var("SOPHIA_OUTPUT_SOCKET")?;
         let labels = [args[1].clone(), args[2].clone(), args[3].clone()];
+        // Which mirror head keeps its own pixels. Naming the primary is the
+        // same as naming nothing; naming the member optimizes the group for the
+        // smaller panel and resamples the larger one instead.
+        let optimized = match args.get(4).map(String::as_str) {
+            None => sophia_wm_demo::MirrorOptimizedHead::Primary,
+            Some(label) if label == labels[0] => sophia_wm_demo::MirrorOptimizedHead::Primary,
+            Some(label) if label == labels[1] => sophia_wm_demo::MirrorOptimizedHead::Member,
+            Some(_) => {
+                return Err(
+                    "live-mixed-output-proof optimizes for a mirror head, not another display"
+                        .into(),
+                );
+            }
+        };
         let (output_result_sender, output_result_receiver) = std::sync::mpsc::sync_channel(1);
         let (output_start_sender, output_start_receiver) = std::sync::mpsc::sync_channel(1);
         let _output_thread = std::thread::Builder::new()
@@ -29,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     let (_, snapshot) = client.receive_snapshot()?;
                     let candidate = sophia_wm_demo::mixed_mirror_extended_candidate(
-                        &snapshot, &labels[0], &labels[1], &labels[2],
+                        &snapshot, &labels[0], &labels[1], &labels[2], optimized,
                     )?;
                     let outcome = client.submit(candidate, &snapshot)?;
                     if outcome.kind != sophia_protocol::OutputV1OutcomeKind::Committed {

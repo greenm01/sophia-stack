@@ -1288,11 +1288,17 @@ hardware, the second only decides which screen looks best.
   quantifying over every head of the output and names the primary; and the
   mirror gate's matching-content criterion must permit the bounded lag or it
   will fail correct runs.
-- [ ] Make the optimized head a property of a mirror group, as macOS does. The
-  group's logical size is the primary's mode today, so a smaller member always
-  receives the resampled copy -- which is macOS's model with the choice removed.
-  Naming the optimized head keeps one fact in one place and lets an operator
-  decide which panel is pixel-exact.
+- [x] Make the optimized head a property of a mirror group, as macOS does. The
+  choice turned out to be expressible already: a group proposal carries one
+  logical rect and a mapping per member, so optimizing for a head is sizing the
+  group to that head's mode and marking it `Exact` while the others `Fit`. The
+  compositor needed nothing -- it already plans each head against the group's
+  logical size. The reference policy now takes the choice as a parameter and
+  the gate exposes it as `SOPHIA_MIXED_OPTIMIZE_FOR_LABEL`, defaulting to the
+  primary, which is what every run so far did implicitly. Note this also makes
+  the group's size follow the optimized head's mode rather than whatever rect
+  the group already had; those coincide on this rig and the former is the
+  meaningful one.
 - [ ] Decide whether mirror members should be re-moded rather than resampled.
   Windows Duplicate and X both refuse to scale: they restrict the desktop to a
   mode every member supports, so each panel scans out natively and the larger

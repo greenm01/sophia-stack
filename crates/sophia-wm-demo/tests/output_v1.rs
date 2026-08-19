@@ -13,15 +13,21 @@ use sophia_protocol::{
     encode_output_v1_outcome_frame, encode_output_v1_server_welcome_frame,
     encode_output_v1_snapshot_frame,
 };
-use sophia_wm_demo::{OutputV1Client, mixed_mirror_extended_candidate};
+use sophia_wm_demo::{MirrorOptimizedHead, OutputV1Client, mixed_mirror_extended_candidate};
 
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 #[test]
 fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
     let snapshot = three_head_snapshot();
-    let candidate =
-        mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3").unwrap();
+    let candidate = mixed_mirror_extended_candidate(
+        &snapshot,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Primary,
+    )
+    .unwrap();
 
     assert_eq!(candidate.heads.len(), 3);
     assert_eq!(candidate.groups.len(), 2);
@@ -54,14 +60,57 @@ fn mixed_candidate_keeps_modes_and_forms_one_mirror_plus_one_extended_group() {
     candidate.validate_against(&snapshot).unwrap();
 }
 
+/// Optimizing for the smaller member sizes the group to it and swaps who
+/// resamples.
+///
+/// A mirror group has one logical size, so exactly one member can be exact.
+/// Which one is a choice about the desk, not about the compositor: every head
+/// keeps its own mode either way, and the extended output simply starts where
+/// the narrower group now ends.
+#[test]
+fn mixed_candidate_optimized_for_the_member_sizes_the_group_to_it() {
+    let snapshot = three_head_snapshot();
+    let candidate = mixed_mirror_extended_candidate(
+        &snapshot,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Member,
+    )
+    .unwrap();
+
+    assert_eq!(candidate.groups[0].logical.width, 1920);
+    assert_eq!(candidate.groups[0].logical.height, 1080);
+    assert_eq!(
+        candidate.groups[0].members[0].mapping,
+        OutputHeadMapping::Fit
+    );
+    assert_eq!(
+        candidate.groups[0].members[1].mapping,
+        OutputHeadMapping::Exact
+    );
+    assert_eq!(candidate.groups[1].logical.x, 1920);
+    // Every head keeps the mode it was already running.
+    assert_eq!(candidate.heads[0].mode.raw(), 11);
+    assert_eq!(candidate.heads[1].mode.raw(), 12);
+    assert_eq!(candidate.heads[2].mode.raw(), 13);
+    candidate.validate_against(&snapshot).unwrap();
+}
+
 #[test]
 fn mixed_candidate_refuses_to_disable_an_unmentioned_connected_head() {
     let mut snapshot = three_head_snapshot();
     snapshot.heads.push(head(4, 14, "Display 4", 1280, 1024));
     snapshot.groups.push(group(4, 4, 4480, 1280, 1024));
 
-    let error = mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3")
-        .unwrap_err();
+    let error = mixed_mirror_extended_candidate(
+        &snapshot,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Primary,
+    )
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -141,8 +190,14 @@ fn output_client_negotiates_snapshot_and_committed_candidate() {
     let (snapshot_transaction, snapshot) = client.receive_snapshot().unwrap();
     assert_eq!(snapshot_transaction.raw(), 7);
     assert_eq!(snapshot, expected_snapshot);
-    let candidate =
-        mixed_mirror_extended_candidate(&snapshot, "Display 1", "Display 2", "Display 3").unwrap();
+    let candidate = mixed_mirror_extended_candidate(
+        &snapshot,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Primary,
+    )
+    .unwrap();
     let outcome = client.submit(candidate, &snapshot).unwrap();
     assert_eq!(outcome.kind, OutputV1OutcomeKind::Committed);
     assert_eq!(outcome.topology_epoch, 5);

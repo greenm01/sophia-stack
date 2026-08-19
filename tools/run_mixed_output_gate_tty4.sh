@@ -16,6 +16,11 @@ EXTENDED="${SOPHIA_MIXED_EXTENDED:-DP-2}"
 MIRROR_PRIMARY_LABEL="${SOPHIA_MIXED_MIRROR_PRIMARY_LABEL:-Display 1}"
 MIRROR_MEMBER_LABEL="${SOPHIA_MIXED_MIRROR_MEMBER_LABEL:-Display 3}"
 EXTENDED_LABEL="${SOPHIA_MIXED_EXTENDED_LABEL:-Display 2}"
+# Which mirror head keeps its own pixels. The group has one logical size, so the
+# other member reaches it by resampling; naming the primary is what a bare run
+# does. Naming the member optimizes for the smaller panel instead, which is the
+# trade Windows and X make by re-moding and macOS makes by scaling.
+OPTIMIZE_FOR_LABEL="${SOPHIA_MIXED_OPTIMIZE_FOR_LABEL:-$MIRROR_PRIMARY_LABEL}"
 KITTY_BIN="${SOPHIA_MIXED_KITTY:-$(command -v kitty || true)}"
 RUNTIME_MSEC="${SOPHIA_MIXED_RUNTIME_MSEC:-30000}"
 DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
@@ -162,6 +167,7 @@ set +e
         --wm-process-arg="$MIRROR_PRIMARY_LABEL" \
         --wm-process-arg="$MIRROR_MEMBER_LABEL" \
         --wm-process-arg="$EXTENDED_LABEL" \
+        --wm-process-arg="$OPTIMIZE_FOR_LABEL" \
         --max-runtime-ms="$RUNTIME_MSEC"
 ) 2>&1 | tee -a "$EVIDENCE"
 status="${PIPESTATUS[0]}"
@@ -186,7 +192,8 @@ fi
 echo "Three screens, three questions:"
 echo "  $MIRROR_PRIMARY (mirror primary, native): shows the desktop crisply."
 echo "  $MIRROR_MEMBER (mirror member): shows the SAME content as $MIRROR_PRIMARY."
-echo "    It is a downscaled copy and is expected to look softer -- that is not a fault."
+echo "    The group is optimized for $OPTIMIZE_FOR_LABEL, so the other member is a"
+echo "    resampled copy and is expected to look softer -- that is not a fault."
 echo "  $EXTENDED (extended, native): shows its own terminal with the"
 echo "    SOPHIA MIXED NATIVE SHARP marker, crisp, with no soft resampling."
 echo "Type yes if all three held."
