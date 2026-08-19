@@ -208,6 +208,15 @@ fn source_size(
     }
 }
 
+/// Whether this source is the buffer a plan measured, or a copy of one.
+pub const fn requires_exact_source_size(kind: &LiveOwnedHeadCompositionSourceKind) -> bool {
+    match kind {
+        LiveOwnedHeadCompositionSourceKind::Cpu(_)
+        | LiveOwnedHeadCompositionSourceKind::DmaBuf { .. } => true,
+        LiveOwnedHeadCompositionSourceKind::RendererImage { .. } => false,
+    }
+}
+
 fn lower_owned_source(
     expected: BufferSource,
     source: &LiveOwnedHeadCompositionSource,
@@ -218,7 +227,15 @@ fn lower_owned_source(
         return Err(LiveHeadCompositionLoweringError::MissingSource(expected));
     }
     let actual_size = source_size(source)?;
-    if actual_size != expected_size {
+    // A renderer image is the compositor's own copy of an earlier generation,
+    // carried under the identity of the surface's committed buffer. Its size is
+    // its own fact, not a measurement of that buffer, so comparing the two asks
+    // a question with no answer: they agree only while the surface has not
+    // resized, and a mirror member already draws every retained image at a size
+    // of its own. Placement carries it to the head either way. The comparison
+    // stays for CPU and DMA-BUF sources, where the plan measured the very
+    // buffer being handed over and a difference means the wrong one arrived.
+    if requires_exact_source_size(&source.kind) && actual_size != expected_size {
         return Err(LiveHeadCompositionLoweringError::SourceSizeMismatch {
             surface: source.surface,
             handle: match expected {

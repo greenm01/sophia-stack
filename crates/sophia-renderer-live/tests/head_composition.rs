@@ -160,6 +160,79 @@ fn retained_renderer_image_uses_head_plan_geometry_instead_of_primary_geometry()
     assert_eq!(placement.clip, Some(plan.layers[0].native_clip));
 }
 
+/// A retained image is a copy, so its size is its own fact.
+///
+/// The plan measures the surface's committed buffer; a renderer image holds
+/// the compositor's copy of an earlier generation under that same identity.
+/// The two agree only while the surface has not resized, and a live session
+/// ended when they stopped agreeing -- a mirror surface whose committed buffer
+/// had grown to 2560x1440 while the copy still held 1280x1440. Placement
+/// carries the copy to the head at whatever size the head wants; a mirror
+/// member already draws every retained image at a size of its own.
+#[test]
+fn retained_renderer_image_may_hold_a_generation_of_another_size() {
+    let mut plan = plan();
+    plan.layers[0].source = BufferSource::DmaBuf { handle: 77 };
+    let source = LiveOwnedHeadCompositionSource {
+        surface: SurfaceId::new(3, 1),
+        source: BufferSource::DmaBuf { handle: 77 },
+        kind: LiveOwnedHeadCompositionSourceKind::RendererImage {
+            image_id: LiveRendererImageId::from_raw(9),
+            size: Size {
+                width: 300,
+                height: 450,
+            },
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        },
+    };
+
+    let frame = lower_head_composition_plan(&plan, &[source]).unwrap();
+    let LiveOwnedMixedCompositionLayer::RendererImage { placement, .. } = frame.layers[0] else {
+        panic!("retained copy of another generation did not lower")
+    };
+    assert_eq!(placement.target, plan.layers[0].native_geometry);
+}
+
+/// A buffer the plan measured must be the buffer that arrives.
+#[test]
+fn cpu_source_of_the_wrong_size_is_still_refused() {
+    let plan = plan();
+    let source = LiveOwnedHeadCompositionSource {
+        surface: SurfaceId::new(3, 1),
+        source: BufferSource::CpuBuffer { handle: 42 },
+        kind: LiveOwnedHeadCompositionSourceKind::Cpu(
+            LiveCpuBufferSource {
+                handle: 42,
+                size: Size {
+                    width: 300,
+                    height: 450,
+                },
+                stride: 1_200,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 9,
+                bytes: vec![0; 1_200 * 450],
+            }
+            .into(),
+        ),
+    };
+
+    assert_eq!(
+        lower_head_composition_plan(&plan, &[source]).unwrap_err(),
+        LiveHeadCompositionLoweringError::SourceSizeMismatch {
+            surface: SurfaceId::new(3, 1),
+            handle: 42,
+            planned: Size {
+                width: 600,
+                height: 450,
+            },
+            held: Size {
+                width: 300,
+                height: 450,
+            },
+        }
+    );
+}
+
 #[test]
 fn dma_buf_source_duplicates_its_affine_plane_for_each_head_frame() {
     let mut plan = plan();
