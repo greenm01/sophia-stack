@@ -1260,6 +1260,14 @@ where the types cannot be made to carry the agreement.
   retires, so nothing moved again. The head stayed blank and its client, still
   waiting on that Present, stopped drawing -- which is why the terminal looked
   dead to the keyboard even though the keys were routed and flushed.
+Mirror work is sequenced deliberately, because every item below changes either
+the logical size of an output or the pacing of its heads -- the inputs whose
+churn produced the last several gate failures. Take the physical gate to
+`status=passed` first, then the optimized-head choice (contained, no new model
+surface), then per-head pacing (model first), then mode matching (its own gate
+run). Correct pacing outranks sharper mirroring: the first is wrong on ordinary
+hardware, the second only decides which screen looks best.
+
 - [ ] Let a mirror group's heads flip at their own refresh rates. One generation
   is held until every required head has flipped
   (`LiveProductionMirrorGroupLifecycle` completes on the `flipped` set covering
@@ -1272,8 +1280,11 @@ where the types cannot be made to carry the agreement.
   desk is worse than a mirror that briefly lags. Three things must move
   together: buffer lifetime becomes per-head (a slow head may still be scanning
   a generation the fast head has left, so release waits for every head that
-  scanned it), which is frame-slot semantics and so extends
-  `PresentFrameOwnership.tla` before any code; `stable_present` stops
+  scanned it), which is frame-slot semantics and so is modelled before any code
+  -- `validation/tla/MirrorHeadPacing.tla` now states the successor rule, and
+  restoring today's joint advance in it violates `PrimarySubmitNeverBlocked`,
+  which is what the fast head being throttled looks like in the model;
+  `stable_present` stops
   quantifying over every head of the output and names the primary; and the
   mirror gate's matching-content criterion must permit the bounded lag or it
   will fail correct runs.

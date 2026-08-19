@@ -289,6 +289,33 @@ enabled. Environment actions stay outside fairness and both producers are
 budgeted, so liveness here is a question about arbitration rather than about
 outrunning an unbounded producer.
 
+`MirrorHeadPacing.tla` states the successor rule for a mirror group's heads,
+and is written before the code that will implement it. `VisualRetirement.tla`
+records today's rule -- a logical output retires when every one of its heads has
+flipped -- which paces a group at its slowest screen. That is wrong on ordinary
+hardware: 144Hz beside 60Hz is a normal desk, and holding the fast panel back
+throttles the client's frame callbacks with it. Here each head instead takes the
+newest generation it has not shown, skipping what it missed, and the primary
+head alone owns present feedback. Screens may disagree for a while; the bounded
+configuration explores 745 generated states and 302 distinct states to depth 12.
+
+Independent pacing is what makes the release rule load-bearing.  Under joint
+retirement, "no screen is reading this generation" followed from the group
+having moved on together; it no longer does, so `NoScannedGenerationIsReleased`
+is stated over every head separately and the newest generation is never freed --
+a head that has not caught up will take it next.  `PrimarySubmitNeverBlocked` is
+provable from the submit guard as written, in the same way and for the same
+reason as `EmittedEffectsAreExecutable`: it exists so that a later conjunct
+about another head's progress cannot be added quietly.
+
+Five temporary negative controls independently restore joint advance, judge
+release by the primary head alone, let a head take work it has already shown,
+make feedback wait for every screen, and drop the secondary head from fairness.
+TLC then violates `PrimarySubmitNeverBlocked`, `NoScannedGenerationIsReleased`,
+`HeadsNeverShowOlderWork`, `FeedbackIsItsOwnScreen`, and `AllHeadsConverge`
+respectively. The first is today's implementation: restoring the rule the code
+currently follows is what the fast head being blocked looks like in the model.
+
 `InputAuthorityArbitration.tla` models the coexistence prerequisite between
 application routing and future shell targets. It separates committed,
 submitted, and presented choices; creates an exact provisional frontend lease;
