@@ -29,6 +29,53 @@ TTY_REQUIRED="${SOPHIA_MIXED_TTY:-/dev/tty4}"
 CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
 DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl"
 
+usage() {
+    cat <<USAGE
+usage: run_mixed_output_gate_tty4.sh [--optimize-for=HEAD]
+
+  --optimize-for=HEAD  Which mirror head keeps its own pixels. HEAD is a
+                       connector ($MIRROR_PRIMARY or $MIRROR_MEMBER) or the
+                       words "primary" or "member". The other member reaches
+                       the group's logical size by resampling, so it looks
+                       softer; the extended head $EXTENDED is always native and
+                       cannot be chosen. Defaults to $MIRROR_PRIMARY.
+
+Every connector and label is also overridable by environment variable; see the
+SOPHIA_MIXED_* assignments at the top of this script.
+USAGE
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --optimize-for=*)
+            choice="${1#*=}"
+            case "$choice" in
+                primary | "$MIRROR_PRIMARY" | "$MIRROR_PRIMARY_LABEL")
+                    OPTIMIZE_FOR_LABEL="$MIRROR_PRIMARY_LABEL"
+                    ;;
+                member | "$MIRROR_MEMBER" | "$MIRROR_MEMBER_LABEL")
+                    OPTIMIZE_FOR_LABEL="$MIRROR_MEMBER_LABEL"
+                    ;;
+                *)
+                    echo "A mirror group is optimized for one of its own heads:" >&2
+                    echo "  $MIRROR_PRIMARY (primary) or $MIRROR_MEMBER (member); got: $choice" >&2
+                    exit 2
+                    ;;
+            esac
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
 # shellcheck source=tools/lib/drm_master_guard.sh
 . "$ROOT_DIR/tools/lib/drm_master_guard.sh"
 
