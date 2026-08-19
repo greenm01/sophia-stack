@@ -20,7 +20,25 @@ pub enum PolicyProjectionError {
     ExcessiveOutputs,
     InvalidSurface,
     DuplicateSurface,
-    InvalidSurfaceGeometry,
+    /// A scene surface arrived with nothing to place.
+    EmptySceneSurfaceGeometry {
+        surface: SurfaceId,
+        geometry: Rect,
+    },
+    /// A placement does not fit the output it was placed on.
+    ///
+    /// It carries all three rectangles because the interesting case is a
+    /// projection that was correct when the policy wrote it: an output that
+    /// shrinks under it -- a mirror group re-optimized onto its smaller head,
+    /// say -- makes yesterday's placement too large today, and the numbers are
+    /// the only way to tell that from a policy proposing nonsense.
+    InvalidSurfaceGeometry {
+        surface: SurfaceId,
+        geometry: Rect,
+        work_area: Rect,
+        bounds: Rect,
+        fullscreen: bool,
+    },
     InvalidSurfaceConstraints,
     InvalidPresentationState,
     InvalidTransientOwner,
@@ -725,7 +743,10 @@ fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyProjectionErr
             return Err(PolicyProjectionError::DuplicateSurface);
         }
         if surface.geometry.is_empty() {
-            return Err(PolicyProjectionError::InvalidSurfaceGeometry);
+            return Err(PolicyProjectionError::EmptySceneSurfaceGeometry {
+                surface: surface.surface,
+                geometry: surface.geometry,
+            });
         }
         validate_constraints(surface)?;
     }
@@ -930,7 +951,13 @@ fn validate_output_projection(
             || !valid_geometry
             || placement.crop.is_some_and(Rect::is_empty)
         {
-            return Err(PolicyProjectionError::InvalidSurfaceGeometry);
+            return Err(PolicyProjectionError::InvalidSurfaceGeometry {
+                surface: placement.surface,
+                geometry: placement.geometry,
+                work_area,
+                bounds,
+                fullscreen: placement.presentation.fullscreen,
+            });
         }
         let requested = placement.requested_size.unwrap_or(Size {
             width: placement.geometry.width,
