@@ -12840,3 +12840,27 @@ separately requires every plan after the commit -- where plans do exist -- to
 be unsampled and free of fallback. Inventing a plan-shaped line for the
 install path would have meant deriving the same fact twice, which is the
 defect class this log keeps recording.
+
+## A head plan measured one buffer while the compositor held another
+
+Composing the scene for every output moved the failure one layer down: the
+session now dies at `SourceSizeMismatch(7)` while lowering a head
+composition, immediately after the mirror heads plan cleanly. The extended
+head is in the scene at last -- that is what makes this reachable -- and the
+surface it must show has a size the compositor cannot supply.
+
+The two records come from different places. A head plan takes each layer's
+`source_pixel_size` from the committed content set, which a resize advances at
+admission. The pixels come from `displayed_surfaces`, a retained renderer
+image refreshed only when that surface's own Present retires. Between those
+two moments the committed record names a buffer whose pixels nothing has
+composed yet, and the retained image still holds the previous frame. Lowering
+compares them and ends the session.
+
+Which record is stale decides the fix, and the error could not say: it carried
+a bare buffer handle. It now carries the surface, both sizes, and the handle,
+because "7" cannot distinguish a mirror surface pinned to its produced pixels
+by a recovery extent from an extended-output surface that answered a configure
+the compositor has not drawn yet. Both are live candidates here and they want
+opposite treatments -- one wants the plan to bind what can be drawn, the other
+wants the head to keep its current frame until the client's Present lands.

@@ -14,7 +14,20 @@ use crate::{
 pub enum LiveHeadCompositionLoweringError {
     MissingCpuSource(u64),
     UnsupportedSource(BufferSource),
-    SourceSizeMismatch(u64),
+    /// The plan measured this buffer at one size and the source holds another.
+    ///
+    /// It carries both sizes and the surface because the handle alone cannot
+    /// say which record is stale: a plan is written from committed content,
+    /// while a retained projection holds the pixels of whatever last reached a
+    /// screen. When a surface commits a new buffer that no head has composed
+    /// yet, those two disagree, and the session ends over a number nobody can
+    /// trace without seeing both.
+    SourceSizeMismatch {
+        surface: SurfaceId,
+        handle: u64,
+        planned: Size,
+        held: Size,
+    },
     DuplicateSurface,
     MissingPlannedSurface,
     MissingSource(BufferSource),
@@ -206,11 +219,15 @@ fn lower_owned_source(
     }
     let actual_size = source_size(source)?;
     if actual_size != expected_size {
-        let handle = match expected {
-            BufferSource::CpuBuffer { handle } | BufferSource::DmaBuf { handle } => handle,
-            BufferSource::None | BufferSource::XPixmap { .. } => 0,
-        };
-        return Err(LiveHeadCompositionLoweringError::SourceSizeMismatch(handle));
+        return Err(LiveHeadCompositionLoweringError::SourceSizeMismatch {
+            surface: source.surface,
+            handle: match expected {
+                BufferSource::CpuBuffer { handle } | BufferSource::DmaBuf { handle } => handle,
+                BufferSource::None | BufferSource::XPixmap { .. } => 0,
+            },
+            planned: expected_size,
+            held: actual_size,
+        });
     }
     match (&source.kind, expected) {
         (LiveOwnedHeadCompositionSourceKind::Cpu(buffer), BufferSource::CpuBuffer { .. }) => {
