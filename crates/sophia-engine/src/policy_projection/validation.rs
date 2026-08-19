@@ -73,22 +73,17 @@ pub(super) fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyPr
             return Err(PolicyProjectionError::InvalidTransientOwner);
         }
     }
-    let surface_map = scene
-        .surfaces
-        .iter()
-        .map(|surface| (surface.surface, surface))
-        .collect::<BTreeMap<_, _>>();
-    let committed = committed_from_scene(scene);
-    for output in &scene.outputs {
-        validate_output_projection(
-            committed
-                .get(&output.output)
-                .expect("current projection has every validated output"),
-            output.bounds,
-            output.work_area,
-            &surface_map,
-        )?;
-    }
+    // A scene is a description of where surfaces are, not a proposal about
+    // where they should be, so it is checked for shape and not for fit. It used
+    // to be run through the projection validator, which additionally requires
+    // every placement to sit inside its output -- true of any layout the policy
+    // authors, and false for one instant whenever an output shrinks underneath
+    // an existing one. Optimizing a mirror group for its smaller head does
+    // exactly that: a surface tiled at 1280x1440 on a 2560x1440 group is still
+    // 1440 tall when the group becomes 1080, and describing that truthfully
+    // ended the session. Fit stays required of proposals, in
+    // `validated_candidate`, which is where a placement is being asserted
+    // rather than reported.
     Ok(())
 }
 

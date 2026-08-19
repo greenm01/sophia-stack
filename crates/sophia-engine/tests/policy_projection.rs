@@ -663,3 +663,52 @@ fn rect(x: i32, y: i32) -> Rect {
         height: 50,
     }
 }
+
+/// A scene may describe a surface that no longer fits its output.
+///
+/// Shrinking a logical output -- optimizing a mirror group for its smaller
+/// head, say -- leaves existing surfaces exactly where they were until the
+/// policy answers with a new layout. Refusing to describe that instant ended a
+/// live session: a surface tiled at 1280x1440 on a 2560x1440 group was still
+/// 1440 tall when the group became 1080. Fit is required of a proposal, which
+/// asserts a placement, not of a scene, which reports one.
+#[test]
+fn a_scene_may_report_a_surface_larger_than_its_shrunken_output() {
+    let mut oversized = surface(1);
+    oversized.geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 50,
+        height: 400,
+    };
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+
+    reducer.observe_scene(scene(2, &[oversized])).unwrap();
+}
+
+/// A proposal placing a surface outside the work area is still refused.
+#[test]
+fn a_proposal_may_not_place_a_surface_outside_its_output() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let outside = Rect {
+        x: 0,
+        y: 0,
+        width: 50,
+        height: 400,
+    };
+
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            7,
+            vec![projected(
+                output(1),
+                vec![placed(surface_id(1), 1, outside)],
+                None
+            )],
+        )),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+}
