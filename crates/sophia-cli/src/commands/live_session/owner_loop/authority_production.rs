@@ -67,6 +67,9 @@
                 } else {
                     LiveProductionCursorPresentation::Software(pointer.position())
                 };
+                // One scene spans every output, so a layer belongs in it when
+                // any output shows it. Asking only the primary output erased
+                // whatever the policy had placed on the others.
                 let mut presentation_layout = Vec::with_capacity(layout.layers.len());
                 for layer in layout.layers.values() {
                     let visible = if layout.is_client_positioned(layer.surface) {
@@ -74,7 +77,7 @@
                             && match layout.presentation_owner(layer.surface) {
                                 Some(owner) if !layout.knows_surface(owner) => false,
                                 Some(owner) => match wm_session.as_ref() {
-                                    Some(wm) => wm.surface_visible_on_output(owner, output.id)?,
+                                    Some(wm) => wm.surface_visible_on_any_output(owner, &outputs)?,
                                     None => layout.mapped_surfaces.contains(&owner),
                                 },
                                 None => true,
@@ -82,7 +85,7 @@
                     } else {
                         match wm_session.as_ref() {
                         Some(wm) => {
-                            wm.surface_visible_on_output(layer.surface, output.id)?
+                            wm.surface_visible_on_any_output(layer.surface, &outputs)?
                         }
                         None => true,
                         }

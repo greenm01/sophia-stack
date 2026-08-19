@@ -57,13 +57,30 @@ if [[ -z "$extended_head" || -z "$committed_transaction" || -z "$effect_line" \
 fi
 
 # The first topology frame is composed from the last committed three-output
-# scene. DP-2 may therefore be empty, but its physical mapping must already be
-# exact and must not invoke sampling or fallback.
+# scene rather than from a fresh engine plan, so the artefact to read here is
+# the queued candidate: DP-2 may be empty, but it must already be composed at
+# its own mode with an exact mapping. A head plan cannot appear in this window
+# -- plans are emitted where the engine binds scene layers to a head, which
+# installing a prepared topology does not do.
+extended_mode="$(sed -n 's/.* mode=\([0-9][0-9]*x[0-9][0-9]*\) .*/\1/p' <<<"${extended_ready[0]}")"
+if [[ -z "$extended_mode" ]]; then
+    echo "The extended connector did not report a mode." >&2
+    exit 1
+fi
 sed -n "${effect_line},${first_presented_line}p" "$EVIDENCE" \
-    | grep -Eq "sophia_live_head_composition_plan schema=1 status=ready .* head=$extended_head .* mapping=exact .* downsampled=0 upsampled=0 .* fallback=0 unavailable=0 " || {
-        echo "The extended head did not prepare an unsampled exact topology frame." >&2
+    | grep -Eq "sophia_live_head_composition_queue schema=1 status=queued .* head=$extended_head .* mapping=exact width=${extended_mode%x*} height=${extended_mode#*x} " || {
+        echo "The extended head did not queue an exact native topology frame." >&2
         exit 1
     }
+
+# Where a plan does exist -- every frame after the topology committed -- the
+# extended head must still bind at its own scale: no sampling, no fallback.
+if sed -n "$((first_presented_line + 1)),\$p" "$EVIDENCE" \
+    | grep -E "sophia_live_head_composition_plan schema=1 status=ready .* head=$extended_head " \
+    | grep -qvE " mapping=exact .* downsampled=0 upsampled=0 .* fallback=0 unavailable=0 "; then
+    echo "The extended head composed a sampled or fallback frame after the topology committed." >&2
+    exit 1
+fi
 
 exact_plan="$(awk -v start="$placement_line" -v head="$extended_head" '
     NR > start && $0 ~ "sophia_live_head_composition_plan schema=1 status=ready" \

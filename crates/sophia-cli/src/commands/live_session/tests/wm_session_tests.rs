@@ -1553,6 +1553,72 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
     );
 }
 
+/// A surface on any output belongs to the scene, not only one on the primary.
+///
+/// The presentation layout spans the whole desktop, so this query decides
+/// whether a layer is composed at all. Asked about one output it answered a
+/// narrower question, and on a mixed topology the extended output's surface
+/// left the scene entirely: its Present then never became visible, never
+/// retired, and never committed the resize that placed it there.
+#[test]
+fn committed_projections_place_a_surface_on_any_of_its_outputs() {
+    let primary = OutputId::from_raw(1);
+    let extended = OutputId::from_raw(2);
+    let mirrored = SurfaceId::new(11, 1);
+    let placed = SurfaceId::new(12, 1);
+    let projections = vec![
+        policy_projection(primary, mirrored),
+        policy_projection(extended, placed),
+    ];
+
+    assert!(policy_projections_place_surface(
+        &projections,
+        &[primary, extended],
+        placed
+    ));
+    assert!(policy_projections_place_surface(
+        &projections,
+        &[primary, extended],
+        mirrored
+    ));
+    // The narrow question, which is the one that used to be asked.
+    assert!(!policy_projections_place_surface(
+        &projections,
+        &[primary],
+        placed
+    ));
+    // An output that is no longer live cannot keep a surface in the scene.
+    assert!(!policy_projections_place_surface(
+        &projections,
+        &[primary],
+        SurfaceId::new(13, 1)
+    ));
+}
+
+fn policy_projection(
+    output: OutputId,
+    surface: SurfaceId,
+) -> sophia_protocol::PolicyOutputProjection {
+    sophia_protocol::PolicyOutputProjection {
+        output,
+        placements: vec![sophia_protocol::PolicySurfacePlacement {
+            surface,
+            surface_generation: 1,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 480,
+            },
+            requested_size: None,
+            crop: None,
+            transform: sophia_protocol::PolicyTransform::Identity,
+            presentation: sophia_protocol::PolicyPresentationState::default(),
+        }],
+        focus: None,
+    }
+}
+
 include!("wm_session_tests/admission.rs");
 include!("wm_session_tests/direct_map.rs");
 include!("wm_session_tests/geometry.rs");

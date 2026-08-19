@@ -1247,6 +1247,19 @@ where the types cannot be made to carry the agreement.
   `EpochRevoked` now names the session's own boundary and retires like a
   departed target, while `RouteRejected` keeps meaning a fault and keeps ending
   the session.
+- [x] Compose the scene for every output, not for the primary one. The gate
+  reached its telemetry stage -- readiness at 256ms, topology committed and
+  settled, health clean, presents stable with real pixel counts -- and failed
+  because the extended head never showed a client pixel. The presentation
+  layout filtered every layer through `surface_visible_on_output(layer,
+  output.id)` against the primary output alone, which is harmless with one
+  logical output and wrong with two: the surface the policy placed on the
+  extended output left the scene. A staged Present is released only when its
+  surface is in the projection, the surface enters the projection only when it
+  is composed, and the resize that places it commits only when that Present
+  retires, so nothing moved again. The head stayed blank and its client, still
+  waiting on that Present, stopped drawing -- which is why the terminal looked
+  dead to the keyboard even though the keys were routed and flushed.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while

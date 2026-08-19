@@ -30,23 +30,37 @@ impl LiveWmSession {
             .saturating_add(usize::from(self.in_flight_request.is_some()))
     }
 
-    fn surface_visible_on_output(
+    /// Whether any live output shows this surface.
+    ///
+    /// The presentation layout is one scene across every output, so asking a
+    /// single output is a different question with a different answer. Asking
+    /// the primary one dropped everything the policy had placed elsewhere: on
+    /// a mixed topology the extended output's surface left the scene, so its
+    /// staged Present never became visible, never retired, and never committed
+    /// the resize that would have placed it. The head stayed blank and its
+    /// client, still waiting on that Present, stopped drawing entirely.
+    fn surface_visible_on_any_output(
         &self,
         surface: SurfaceId,
-        output: sophia_protocol::OutputId,
+        outputs: &[sophia_engine::HeadlessOutput],
     ) -> Result<bool, Box<dyn std::error::Error>> {
         if let Some(public) = self.public.as_ref() {
-            return Ok(public.reducer.committed().into_iter().any(|projection| {
-                projection.output == output
-                    && projection
-                        .placements
-                        .iter()
-                        .any(|placement| placement.surface == surface)
-            }));
+            let ids = outputs.iter().map(|output| output.id).collect::<Vec<_>>();
+            return Ok(policy_projections_place_surface(
+                &public.reducer.committed(),
+                &ids,
+                surface,
+            ));
         }
-        self.workspace_state
-            .surface_visible_on_output(surface, output)
-            .map_err(Into::into)
+        for output in outputs {
+            if self
+                .workspace_state
+                .surface_visible_on_output(surface, output.id)?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn apply_commit_result(
@@ -274,4 +288,19 @@ impl Drop for LiveWmSession {
         self.transport.take();
         let _ = std::fs::remove_file(&self.socket_path);
     }
+}
+
+/// Whether any of these outputs places the surface in its committed projection.
+fn policy_projections_place_surface(
+    projections: &[sophia_protocol::PolicyOutputProjection],
+    outputs: &[sophia_protocol::OutputId],
+    surface: SurfaceId,
+) -> bool {
+    projections.iter().any(|projection| {
+        outputs.contains(&projection.output)
+            && projection
+                .placements
+                .iter()
+                .any(|placement| placement.surface == surface)
+    })
 }
