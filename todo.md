@@ -1260,6 +1260,35 @@ where the types cannot be made to carry the agreement.
   retires, so nothing moved again. The head stayed blank and its client, still
   waiting on that Present, stopped drawing -- which is why the terminal looked
   dead to the keyboard even though the keys were routed and flushed.
+- [ ] Let a mirror group's heads flip at their own refresh rates. One generation
+  is held until every required head has flipped
+  (`LiveProductionMirrorGroupLifecycle` completes on the `flipped` set covering
+  `required`), so mirroring 144Hz beside 60Hz would run both at 60. Mixed
+  refresh across separate logical outputs is already independent -- each head
+  owns its CRTC and its own vblank -- so this is a mirror-group question only.
+  Each head should take the newest ready generation on its own vblank and
+  coalesce what it missed, with the group's primary head owning present
+  completion; throttling a client's frame callbacks to the slowest panel on the
+  desk is worse than a mirror that briefly lags. Three things must move
+  together: buffer lifetime becomes per-head (a slow head may still be scanning
+  a generation the fast head has left, so release waits for every head that
+  scanned it), which is frame-slot semantics and so extends
+  `PresentFrameOwnership.tla` before any code; `stable_present` stops
+  quantifying over every head of the output and names the primary; and the
+  mirror gate's matching-content criterion must permit the bounded lag or it
+  will fail correct runs.
+- [ ] Make the optimized head a property of a mirror group, as macOS does. The
+  group's logical size is the primary's mode today, so a smaller member always
+  receives the resampled copy -- which is macOS's model with the choice removed.
+  Naming the optimized head keeps one fact in one place and lets an operator
+  decide which panel is pixel-exact.
+- [ ] Decide whether mirror members should be re-moded rather than resampled.
+  Windows Duplicate and X both refuse to scale: they restrict the desktop to a
+  mode every member supports, so each panel scans out natively and the larger
+  one runs below its own resolution. That is a different knob from the
+  optimized head -- one chooses which size the desktop is rasterized at, the
+  other chooses whether members change mode to match it -- and it touches the
+  topology candidate and rollback machinery, so it wants its own gate run.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while
