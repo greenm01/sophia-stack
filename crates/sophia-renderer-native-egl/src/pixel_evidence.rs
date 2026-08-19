@@ -16,6 +16,25 @@ pub struct NativeCompositionPixelMetrics {
     pub checksum: u64,
 }
 
+/// How many compositions a context may read back to prove it emits light.
+///
+/// A readback stalls the pipeline on the whole framebuffer, so this is a proof
+/// budget, not a measurement of every frame. What a context measures last is
+/// what it keeps.
+pub const NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS: usize = 3;
+
+/// Whether this composition is worth spending a proof attempt on.
+///
+/// A composition with no layers clears to black by construction, so measuring
+/// it proves nothing and costs an attempt that a composition with content
+/// needed. A live session spent its entire budget on exactly those: the three
+/// empty startup compositions of its primary head. Every present afterwards
+/// carried the zero those attempts latched, so nothing was ever judged to have
+/// put light on a screen and startup readiness never arrived.
+pub const fn native_composition_pixel_proof_capture(attempts: usize, layers: usize) -> bool {
+    attempts < NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS && layers > 0
+}
+
 /// Convert a top-left composition region into OpenGL's bottom-left readback Y.
 pub const fn native_composition_gl_read_y(frame_height: u32, top: u32, height: u32) -> Option<u32> {
     match top.checked_add(height) {

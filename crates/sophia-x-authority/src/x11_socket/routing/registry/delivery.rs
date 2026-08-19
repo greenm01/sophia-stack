@@ -16,7 +16,7 @@ impl XServerFrontendRouteRegistry {
             self.send_input_delivery(
                 deferred.client,
                 deferred.route.delivery,
-                XAuthorityInputDeliveryOutcome::RouteRejected,
+                XAuthorityInputDeliveryOutcome::EpochRevoked,
             )?;
         }
         Ok(count)
@@ -66,6 +66,8 @@ impl XServerFrontendRouteRegistry {
         route_control_epoch: u64,
         current_control_epoch: u64,
     ) -> Result<(), XServerFrontendRouteError> {
+        // An event stamped with a closed epoch is one the session revoked
+        // between routing and delivery, not one that failed to route.
         if route_control_epoch != current_control_epoch {
             if let Ok(surfaces) = self.surfaces.lock()
                 && let Some(surface_route) = surfaces.get(&route.request.target_surface)
@@ -73,7 +75,7 @@ impl XServerFrontendRouteRegistry {
                 self.send_input_delivery(
                     surface_route.client,
                     route.delivery,
-                    XAuthorityInputDeliveryOutcome::RouteRejected,
+                    XAuthorityInputDeliveryOutcome::EpochRevoked,
                 )?;
             }
             return Ok(());

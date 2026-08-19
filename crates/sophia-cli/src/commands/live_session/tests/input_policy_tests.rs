@@ -315,6 +315,77 @@ fn target_gone_delivery_retires_without_poisoning_the_session() {
     assert_eq!(state.events_flushed, 0);
 }
 
+/// A boundary the session drew itself does not end the session.
+///
+/// Closing the input epoch for an output policy change revokes whatever was in
+/// flight. A live run died mid-topology because the pointer moved while that
+/// happened and the revocation was read as a delivery fault.
+#[test]
+fn epoch_revoked_delivery_retires_without_poisoning_the_session() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(9);
+    let mut state = InputDeliveryState::default();
+    state.pending.insert(delivery);
+    state.events_expected = 1;
+    let mut release_barrier = BTreeSet::from([delivery]);
+    let (sender, receiver) = sync_channel(1);
+    sender
+        .send(XAuthorityClientInputDelivery {
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+        })
+        .unwrap();
+    let mut proof_started_at = None;
+    let mut post_input_deadline = None;
+
+    InputDeliveryPhase {
+        receiver: &receiver,
+        state: &mut state,
+        client_key_release_barrier: &mut release_barrier,
+        proof_started_at: &mut proof_started_at,
+        post_input_deadline: &mut post_input_deadline,
+    }
+    .drain()
+    .unwrap();
+
+    assert!(state.pending.is_empty());
+    assert!(release_barrier.is_empty());
+    assert_eq!(state.events_expected, 0);
+    assert_eq!(state.events_flushed, 0);
+}
+
+/// A route that genuinely could not be delivered still ends the session.
+#[test]
+fn route_rejected_delivery_remains_fatal() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(10);
+    let mut state = InputDeliveryState::default();
+    state.pending.insert(delivery);
+    state.events_expected = 1;
+    let mut release_barrier = BTreeSet::from([delivery]);
+    let (sender, receiver) = sync_channel(1);
+    sender
+        .send(XAuthorityClientInputDelivery {
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+        })
+        .unwrap();
+    let mut proof_started_at = None;
+    let mut post_input_deadline = None;
+
+    assert!(
+        InputDeliveryPhase {
+            receiver: &receiver,
+            state: &mut state,
+            client_key_release_barrier: &mut release_barrier,
+            proof_started_at: &mut proof_started_at,
+            post_input_deadline: &mut post_input_deadline,
+        }
+        .drain()
+        .is_err()
+    );
+}
+
 #[test]
 fn emergency_chord_flushes_routed_modifiers_before_shutdown() {
     let seat = SeatId::from_raw(1);

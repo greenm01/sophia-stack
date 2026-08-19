@@ -1,9 +1,10 @@
+use sophia_renderer_native_egl::{
+    NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS, native_composition_gl_read_y,
+    native_composition_pixel_metrics, native_composition_pixel_metrics_from_rows,
+    native_composition_pixel_proof_capture,
+};
 #[cfg(feature = "gbm-platform")]
 use sophia_renderer_native_egl::{NativeCpuTextureUpload, native_cpu_texture_upload};
-use sophia_renderer_native_egl::{
-    native_composition_gl_read_y, native_composition_pixel_metrics,
-    native_composition_pixel_metrics_from_rows,
-};
 
 #[cfg(feature = "gbm-platform")]
 #[test]
@@ -102,4 +103,25 @@ fn argb_composition_uses_premultiplied_source_over_without_double_alpha() {
     assert!(shaders.contains("color.a = 1.0"));
     assert!(shaders.contains("color.rgb = min(color.rgb, vec3(color.a))"));
     assert!(shaders.contains("vec4(color.rgb * opacity, color.a * opacity)"));
+}
+
+/// The proof budget is spent only where light could be shown.
+///
+/// An empty composition is a clear to black, so measuring one answers a
+/// question nobody asked while consuming an attempt that a composition with
+/// content needed. A live session lost all three attempts to its empty startup
+/// compositions and then reported zero lit pixels for every frame it ever
+/// presented.
+#[test]
+fn pixel_proof_attempts_are_spent_only_on_compositions_with_layers() {
+    assert!(native_composition_pixel_proof_capture(0, 1));
+    assert!(native_composition_pixel_proof_capture(
+        NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS - 1,
+        5
+    ));
+    assert!(!native_composition_pixel_proof_capture(0, 0));
+    assert!(!native_composition_pixel_proof_capture(
+        NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS,
+        1
+    ));
 }

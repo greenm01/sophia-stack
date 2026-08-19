@@ -12748,3 +12748,50 @@ reaching the kernel throughout. The telemetry line went to `schema=2` at the
 same time. Its `pending_primary` field was `!stable` written twice under a name
 that suggested an independent fact; it is replaced by the pixel count, which is
 what actually distinguishes "shown, but blank" from "not shown".
+
+## The pixel proof was spent before there were any pixels to prove
+
+With stability narrowed to "this transaction was displayed carrying real
+pixels", the next run still called every retirement superseded, and now said
+why: `nonzero_rgb_pixels=0` on all of them. The presented content was right --
+`MixedPresent { transaction: 493 }` on the head that flipped it -- so only the
+pixel term was failing.
+
+That term is not a measurement of the frame it is attached to. A renderer
+context reads its composition back at most three times and keeps the last
+result; a full-framebuffer readback is far too expensive to run per frame. The
+log names all three: `sophia_native_composition_frame status=verified` appears
+exactly three times per head, all of them in the first hundred milliseconds,
+all of them `nonzero_rgb_pixels=0`. Every one measured a composition with zero
+layers -- a clear to black, which cannot show anything by construction. The
+budget was gone before the first client had drawn, and every present for the
+rest of the session carried the zero those three attempts latched. No present
+could be judged to have put light on a screen, so startup readiness was
+unreachable no matter how well the pipeline ran.
+
+The proof is now spent only where light could appear: an attempt requires a
+composition with at least one layer. The budget is named
+(`NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS`) rather than written as a literal in
+three places, and the stamping site says what the value is -- the head's proof
+that it has shown light, not this frame's pixel count. Which is what every
+consumer wanted: readiness asks "has this client's content reached a screen",
+and answers it with the displayed transaction plus that proof.
+
+## An epoch the session closed itself was reported as a delivery fault
+
+The same run died before any of that mattered, four seconds in, with
+`X11 input delivery failed: outcome=RouteRejected client=1`. The pointer moved
+while an output policy change closed the input security epoch. Closing it
+strands whatever was in flight -- frozen input is drained, and any event
+stamped with the old epoch is refused at the registry -- and both paths
+reported `RouteRejected`, which the owner loop treats as fatal.
+
+So every pointer motion that overlapped a topology, policy, or seat boundary
+was a session-ending race. This is the timeout-is-not-a-fault distinction in
+another costume: an outcome that means "the session did this on purpose" was
+sharing a name with one that means "this could not be delivered".
+`XAuthorityInputDeliveryOutcome::EpochRevoked` now names the first, and the
+owner loop retires it the way it retires a departed target -- the event is no
+longer expected, and it is reported rather than fatal. `RouteRejected` keeps
+its meaning and keeps ending the session: an unresolvable window or an
+unmappable button is still a fault.

@@ -966,6 +966,12 @@ mod persistent_native_scanout {
                         } else {
                             self.heads[index].pending_content.take()
                         };
+                        // This is the head's pixel proof, not a measurement of
+                        // this frame: a readback costs a whole framebuffer, so
+                        // a renderer context takes a bounded number of them and
+                        // then keeps the last. It answers "this head has put
+                        // light on a screen", which is what startup readiness
+                        // asks of it.
                         let content = content.map(|content| {
                             content.with_nonzero_rgb_pixels(
                                 self.exporter(output).map_or(0, |exporter| {

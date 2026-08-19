@@ -128,10 +128,21 @@ impl XAuthorityInputDeliveryId {
     }
 }
 
+/// How one routed input event ended.
+///
+/// `EpochRevoked` is deliberately apart from `RouteRejected`. A security epoch
+/// advance is the session closing its own input boundary -- for a topology
+/// change, a policy change, or a seat handover -- and every event it revokes
+/// was revoked on purpose. `RouteRejected` means this event could not be
+/// routed: no resolvable window, an unmappable button, a client whose queue is
+/// full. The first is the session working; the second is a fault. Collapsing
+/// them cost a live session, which ended because the pointer happened to move
+/// while an output policy change closed the epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityInputDeliveryOutcome {
     Flushed,
     TargetGone,
+    EpochRevoked,
     RouteRejected,
     WriteFailed,
 }

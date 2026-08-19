@@ -21,8 +21,9 @@ use crate::gl::{
     draw_xrgb8888_current_gl_context_with_loader, smoke_current_gl_context_with_loader,
 };
 use crate::{
-    NativeCompositionPixelMetrics, NativeGbmRenderedScanoutContextStatus,
-    NativeGbmScanoutBufferExportDetail, NativeGbmScanoutBufferExportStatus,
+    NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS, NativeCompositionPixelMetrics,
+    NativeGbmRenderedScanoutContextStatus, NativeGbmScanoutBufferExportDetail,
+    NativeGbmScanoutBufferExportStatus, native_composition_pixel_proof_capture,
 };
 
 include!("scanout/buffer.rs");

@@ -119,8 +119,13 @@ fn routed_pointer_grab_reports_sanitized_lease_confirmation_and_release() {
     );
 }
 
+/// Input caught by an epoch advance is revoked, not rejected.
+///
+/// The session closes the epoch itself, so the events it strands are reported
+/// as its own doing. Reporting them as route failures ended a live session the
+/// moment the pointer moved during an output policy change.
 #[test]
-fn security_epoch_rejects_queued_input_and_clears_active_grabs() {
+fn security_epoch_revokes_queued_input_and_clears_active_grabs() {
     let namespace = NamespaceId::from_raw(22);
     let client = XServerFrontendClientId(18);
     let surface = SurfaceId::new(32, 1);
@@ -183,7 +188,7 @@ fn security_epoch_rejects_queued_input_and_clears_active_grabs() {
         XAuthorityClientInputDelivery {
             client,
             delivery,
-            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+            outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
         }
     );
     assert!(

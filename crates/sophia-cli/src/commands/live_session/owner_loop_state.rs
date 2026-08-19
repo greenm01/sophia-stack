@@ -128,6 +128,17 @@ impl InputDeliveryPhase<'_> {
                         delivery.client.raw(),
                     );
                 }
+                // The session revoked this event itself when it closed the
+                // input epoch for a topology, policy, or seat boundary. Ending
+                // the session over it would make every pointer motion that
+                // overlaps an output change fatal, which is what it did.
+                XAuthorityInputDeliveryOutcome::EpochRevoked => {
+                    self.state.events_expected = self.state.events_expected.saturating_sub(1);
+                    println!(
+                        "sophia_live_session_input_delivery schema=1 status=retired reason=epoch_revoked client={}",
+                        delivery.client.raw(),
+                    );
+                }
                 XAuthorityInputDeliveryOutcome::RouteRejected
                 | XAuthorityInputDeliveryOutcome::WriteFailed => {
                     return Err(format!(

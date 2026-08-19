@@ -1226,6 +1226,27 @@ where the types cannot be made to carry the agreement.
   carrying nonzero pixels. Telemetry moved to `schema=2`, dropping a
   `pending_primary` field that was `!stable` under a name suggesting an
   independent fact, in favour of the pixel count.
+- [x] Spend the composition pixel proof where light could actually appear. With
+  the predicate narrowed, the next run reported `nonzero_rgb_pixels=0` on every
+  retirement while naming the right transaction, which located the last term.
+  That count is not this frame's: a context reads its composition back at most
+  three times and keeps the last result, because a full-framebuffer readback
+  cannot run per frame. All three attempts were spent in the first hundred
+  milliseconds on compositions with zero layers -- clears to black, which prove
+  nothing -- so the zero they latched rode every later present and readiness was
+  unreachable by construction. An attempt now requires a composition with at
+  least one layer, the budget is a named constant instead of a literal in three
+  places, and the stamping site says what the value is: the head's proof that it
+  has shown light, not a measurement of the frame carrying it.
+- [x] Stop ending the session when it revokes its own input. Closing the input
+  security epoch for an output policy change strands whatever was in flight, and
+  both paths that do so -- draining frozen input, refusing an event stamped with
+  the closed epoch -- reported `RouteRejected`, which the owner loop treats as
+  fatal. A live run died four seconds in because the pointer moved during the
+  topology change. This is the timeout-is-not-a-fault distinction again:
+  `EpochRevoked` now names the session's own boundary and retires like a
+  departed target, while `RouteRejected` keeps meaning a fault and keeps ending
+  the session.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while

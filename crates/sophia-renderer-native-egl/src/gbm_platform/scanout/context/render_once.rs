@@ -49,7 +49,10 @@ where
             self.destroy_persistent_composition_target(persistent);
         }
         if let Some(persistent) = self.composition_target.as_mut() {
-            let capture_pixels = self.composition_pixel_proof_attempts < 3;
+            let capture_pixels = native_composition_pixel_proof_capture(
+                self.composition_pixel_proof_attempts,
+                frame.layers.len(),
+            );
             let render_started = Instant::now();
             let rendered = render_native_target_composition(
                 &self.egl,
@@ -71,7 +74,8 @@ where
                 if let Some(metrics) = pixel_metrics {
                     self.last_composition_pixel_metrics = Some(metrics);
                     if metrics.nonzero_rgb_pixels > 0 {
-                        self.composition_pixel_proof_attempts = 3;
+                        self.composition_pixel_proof_attempts =
+                            NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS;
                     }
                 }
             }
@@ -122,7 +126,10 @@ where
             };
             self.stats.composition_target_creations =
                 self.stats.composition_target_creations.saturating_add(1);
-            let capture_pixels = self.composition_pixel_proof_attempts < 3;
+            let capture_pixels = native_composition_pixel_proof_capture(
+                self.composition_pixel_proof_attempts,
+                frame.layers.len(),
+            );
             let render_started = Instant::now();
             let mut import_cache = NativeDmaBufImportCache::with_capacity_and_stats(
                 self.import_cache_capacity,
@@ -148,7 +155,8 @@ where
                 if let Some(metrics) = pixel_metrics {
                     self.last_composition_pixel_metrics = Some(metrics);
                     if metrics.nonzero_rgb_pixels > 0 {
-                        self.composition_pixel_proof_attempts = 3;
+                        self.composition_pixel_proof_attempts =
+                            NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS;
                     }
                 }
             }
