@@ -12887,3 +12887,27 @@ connector by its role, says the member is expected to look softer, and scopes
 the sharpness claim to the extended head where it belongs. An acceptance
 question that a correct run can fail is not a check, and the operator was
 right to distrust it rather than guess.
+
+## A proof that was never asked for is not a proof that failed
+
+The mixed gate reported `input_pixel_change=false input_text_match=false` on a
+run where typing plainly worked -- twenty key events routed and a directory
+listing on the extended screen. Neither field was lying, and neither was
+answering the question a reader asks. They are results of the physical input
+proof, which arms only when a session is given an expected text sequence, and
+the mixed gate gives none. So `false` meant "never attempted" here and means
+"attempted and failed" elsewhere, in the same field of the same line.
+
+The pointer side already draws that line: `pointer_proof=enabled|disabled` sits
+beside `pointer_pixel_change` for exactly this reason. The input side had no
+equivalent, so the session now emits `sophia_live_session_input_proof schema=1
+status=enabled|disabled` at startup, next to where the running line is written.
+
+It is a separate line rather than a field on the completion line deliberately.
+Adding a field there means bumping `sophia_live_session schema=16`, and ten
+tools match that schema literally while a verifier gates a dozen checks on its
+value -- a cost worth paying when the meaning of an existing field changes, and
+not worth paying to add a fact that nothing else reports. A new line states the
+missing fact once, duplicates nothing, and breaks no reader. The completion
+site now carries a comment pointing at it, so the next person reading two false
+booleans does not have to re-derive why.

@@ -815,6 +815,21 @@ pub(crate) fn run_persistent_xterm_session(
         config.namespace_capabilities.request_bits(),
         config.namespace_capabilities.publish_bits(),
     );
+    // Says whether the post-input pixel and text proofs were asked for at all.
+    // Without it their results are two facts in one field: the completion line
+    // reports `input_pixel_change=false input_text_match=false` both when a
+    // configured proof failed and when no proof was ever configured, and a
+    // reader of a session that drives neither -- the mixed-output gate, say --
+    // cannot tell those apart. `pointer_proof` already draws this line for the
+    // pointer side.
+    println!(
+        "sophia_live_session_input_proof schema=1 status={}",
+        if config.expect_physical_text.is_some() {
+            "enabled"
+        } else {
+            "disabled"
+        },
+    );
     if config.normal_session && config.applications.startup.is_empty() {
         println!("sophia_live_session schema=1 status=desktop_ready startup_apps=0");
     }
