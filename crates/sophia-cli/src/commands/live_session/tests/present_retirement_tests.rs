@@ -17,6 +17,10 @@ fn hold_resize(
             namespace: None,
             stack_rank: 0,
             geometry,
+            source_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
             source: BufferSource::None,
             damage: Region::single(geometry),
             opacity: 1.0,

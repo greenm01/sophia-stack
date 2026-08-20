@@ -170,30 +170,31 @@ impl CommittedSurfaceState {
             layer.generation,
             layer.geometry,
             layer.source,
+            layer.source_size,
             layer.damage.clone(),
         )
     }
 
-    /// Builds a committed state around a single canonical raster whose
-    /// pixels span the geometry, which is every current producer's shape.
+    /// Builds a committed state around a single canonical raster.
+    ///
+    /// `source_size` is the raster's own size and is deliberately separate from
+    /// `geometry`: a producer draws at whatever size it last drew at, which is
+    /// its placement only once it has answered the configure that moved it.
+    /// This used to derive one from the other and so reported sizes no producer
+    /// had ever published.
     pub fn with_source(
         surface: SurfaceId,
         committed_generation: u64,
         geometry: Rect,
         source: BufferSource,
+        source_size: Size,
         damage: Region,
     ) -> Self {
         Self {
             surface,
             committed_generation,
             geometry,
-            content: SurfaceContentSet::singleton(
-                source,
-                Size {
-                    width: geometry.width,
-                    height: geometry.height,
-                },
-            ),
+            content: SurfaceContentSet::singleton(source, source_size),
             damage,
         }
     }

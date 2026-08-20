@@ -105,6 +105,10 @@ pub(crate) fn synthetic_layers() -> Vec<LayerSnapshot> {
             height: 200,
         },
         source: BufferSource::CpuBuffer { handle: 1 },
+        source_size: sophia_protocol::Size {
+            width: 320,
+            height: 200,
+        },
         damage: Region::single(Rect {
             x: 10,
             y: 10,

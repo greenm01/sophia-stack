@@ -17,6 +17,10 @@ fn layer_snapshots_from_committed(
             namespace: None,
             stack_rank: u32::try_from(stack_rank).unwrap_or(u32::MAX),
             geometry: surface.geometry,
+            source_size: Size {
+                width: (surface.geometry).width,
+                height: (surface.geometry).height,
+            },
             source: surface.buffer(),
             damage: surface.damage.clone(),
             opacity: 1.0,

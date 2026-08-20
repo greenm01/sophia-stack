@@ -225,6 +225,10 @@ fn mirror_damage_projection_preserves_identity_and_targets_each_head() {
                 height: 360,
             },
             buffer: BufferSource::CpuBuffer { handle: 0x77 },
+            source_size: Size {
+                width: 640,
+                height: 360,
+            },
         }],
         compositor_display_list: CompositorDisplayList {
             output,
@@ -352,6 +356,10 @@ fn mirror_projection_snapshot(
             committed_generation: 5,
             geometry,
             buffer: BufferSource::CpuBuffer { handle: 0x99 },
+            source_size: Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
         }],
         compositor_display_list: CompositorDisplayList {
             output,

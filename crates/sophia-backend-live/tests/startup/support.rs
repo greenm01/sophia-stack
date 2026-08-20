@@ -45,6 +45,10 @@ fn test_layer(raw_surface: u32) -> LayerSnapshot {
             height: 90,
         },
         source: BufferSource::CpuBuffer { handle: 900 },
+        source_size: Size {
+            width: 160,
+            height: 90,
+        },
         damage: Region::single(Rect {
             x: 0,
             y: 0,

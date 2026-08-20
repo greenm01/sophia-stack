@@ -22,6 +22,11 @@ pub fn layer_templates_from_surface_transactions(
             stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
             geometry: transaction.target_geometry,
             source: BufferSource::None,
+            // A template names no raster, so its size is only a placeholder.
+            source_size: sophia_protocol::Size {
+                width: transaction.target_geometry.width,
+                height: transaction.target_geometry.height,
+            },
             damage: transaction.damage.clone(),
             opacity: 1.0,
             crop: None,

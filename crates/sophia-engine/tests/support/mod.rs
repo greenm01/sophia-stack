@@ -82,6 +82,10 @@ pub fn test_layer(surface_index: u32, stack_rank: u32, x: i32, damage: Region) -
         source: BufferSource::CpuBuffer {
             handle: u64::from(surface_index) + 1,
         },
+        source_size: Size {
+            width: 100,
+            height: 100,
+        },
         damage,
         opacity: 1.0,
         crop: None,

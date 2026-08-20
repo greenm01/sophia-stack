@@ -406,6 +406,13 @@ impl PersistentLiveLayout {
                         },
                         geometry,
                         source: transaction.target_buffer(),
+                        // What the buffer registry measured, not what the
+                        // transaction declared: a client that answers a
+                        // configure late attaches an old buffer under a new
+                        // declared extent, and the geometry beside this is
+                        // where the layout is putting it rather than how big it
+                        // is.
+                        source_size: observed_size,
                         damage: transaction.damage.clone(),
                         opacity: 1.0,
                         crop: None,

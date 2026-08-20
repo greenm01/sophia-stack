@@ -662,6 +662,11 @@ impl PersistentLiveLayout {
                 stack_rank: u32::try_from(layers.len()).unwrap_or(u32::MAX - 1),
                 geometry: facts.geometry,
                 source: BufferSource::None,
+                // A planning surface names no raster yet, so this is a placeholder.
+                source_size: sophia_protocol::Size {
+                    width: facts.geometry.width,
+                    height: facts.geometry.height,
+                },
                 damage: Region::empty(),
                 opacity: 1.0,
                 crop: None,

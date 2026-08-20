@@ -200,6 +200,10 @@ fn layer(surface: SurfaceId, generation: u64) -> LayerSnapshot {
         source: BufferSource::CpuBuffer {
             handle: surface.index() as u64,
         },
+        source_size: Size {
+            width: 640,
+            height: 480,
+        },
         damage: Region::empty(),
         opacity: 1.0,
         crop: None,
@@ -345,6 +349,10 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
             namespace: None,
             stack_rank: 0,
             geometry: committed_geometry,
+            source_size: Size {
+                width: (committed_geometry).width,
+                height: (committed_geometry).height,
+            },
             source: transaction.target_buffer(),
             damage: Region::empty(),
             opacity: 1.0,

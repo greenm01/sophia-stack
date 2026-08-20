@@ -122,6 +122,10 @@ fn layer(index: u32) -> LayerSnapshot {
         source: BufferSource::CpuBuffer {
             handle: u64::from(index) + 1,
         },
+        source_size: sophia_protocol::Size {
+            width: 100,
+            height: 100,
+        },
         damage: Region::empty(),
         opacity: 1.0,
         crop: None,

@@ -213,6 +213,67 @@ fn stale_surface_id_fails_closed() {
     assert_eq!(table.get(second), Some(&"second"));
 }
 
+/// A committed raster keeps the size it was drawn at, not the size it is
+/// placed at.
+///
+/// These part company for the whole window between a configure and the
+/// client's redraw. Deriving one from the other reported a size no producer had
+/// published, and a live session ended when the compositor compared that
+/// invention against the buffer it actually held: planned 1920x1080, held
+/// 1280x1440, one DMA-BUF.
+#[test]
+fn committed_state_keeps_the_raster_size_not_the_placement() {
+    let layer = LayerSnapshot {
+        surface: SurfaceId::new(6, 1),
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        },
+        source: BufferSource::DmaBuf { handle: 7 },
+        source_size: Size {
+            width: 1280,
+            height: 1440,
+        },
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation: 3,
+        resize_sync: ResizeSyncCapability::ImplicitOnly,
+    };
+
+    let state = CommittedSurfaceState::from_layer_snapshot(&layer);
+
+    assert_eq!(
+        state.content.canonical_variant().pixel_size,
+        Size {
+            width: 1280,
+            height: 1440,
+        }
+    );
+    assert_eq!(state.geometry, layer.geometry);
+    assert_eq!(
+        layer
+            .to_surface_transaction(
+                TransactionId::from_raw(9),
+                AuthorityKind::SophiaX,
+                SurfaceTransactionReadiness::Ready,
+                250,
+                2,
+            )
+            .target_content_size(),
+        Size {
+            width: 1280,
+            height: 1440,
+        }
+    );
+}
+
 #[test]
 fn layer_snapshot_is_cloneable_frame_data() {
     let surface = SurfaceId::new(0, 1);
@@ -228,6 +289,10 @@ fn layer_snapshot_is_cloneable_frame_data() {
             height: 480,
         },
         source: BufferSource::XPixmap { pixmap: 99 },
+        source_size: Size {
+            width: 640,
+            height: 480,
+        },
         damage: Region::single(Rect {
             x: 10,
             y: 20,
@@ -303,6 +368,10 @@ fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
             height: 600,
         },
         source: BufferSource::DmaBuf { handle: 55 },
+        source_size: Size {
+            width: 800,
+            height: 600,
+        },
         damage: Region::single(Rect {
             x: 30,
             y: 40,
@@ -359,6 +428,10 @@ fn committed_surface_state_is_cloneable_visual_state() {
             height: 240,
         },
         source: BufferSource::CpuBuffer { handle: 3 },
+        source_size: Size {
+            width: 320,
+            height: 240,
+        },
         damage: Region::empty(),
         opacity: 1.0,
         crop: None,

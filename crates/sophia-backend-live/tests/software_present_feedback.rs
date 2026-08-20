@@ -351,6 +351,10 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         namespace: None,
         stack_rank: 0,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: surface_transaction.target_buffer(),
         damage: surface_transaction.damage.clone(),
         opacity: 1.0,
@@ -568,6 +572,10 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
         namespace: None,
         stack_rank: 0,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: BufferSource::None,
         damage: Region::single(geometry),
         opacity: 1.0,

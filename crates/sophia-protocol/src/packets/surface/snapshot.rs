@@ -52,6 +52,9 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
+            // An X window's raster is its window-sized pixmap, so geometry is
+            // the size here. `LayerSnapshot` carries a measured size instead,
+            // because a layer outlives the configure that resized it.
             content: SurfaceContentSet::singleton(
                 self.source,
                 Size {
@@ -75,6 +78,20 @@ pub struct LayerSnapshot {
     pub stack_rank: u32,
     pub geometry: Rect,
     pub source: BufferSource,
+    /// The raster's own pixel size, which is not its placement.
+    ///
+    /// These are equal whenever a producer draws at the size it was placed at,
+    /// which is the steady state and was long assumed to be the only one. It is
+    /// false for the whole window between a configure and the client's redraw:
+    /// a surface moved onto a smaller output still holds the buffer it drew for
+    /// the larger one. Deriving it from `geometry` made every consumer --
+    /// sampling classification, and the check that a lowered source is the
+    /// buffer a plan measured -- believe a number no producer had reported, and
+    /// ended a live session when the buffer disagreed.
+    ///
+    /// With no source there is no raster, and the field carries the geometry
+    /// because nothing samples it.
+    pub source_size: Size,
     pub damage: Region,
     pub opacity: f32,
     pub crop: Option<Rect>,
@@ -98,13 +115,7 @@ impl LayerSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
-            content: SurfaceContentSet::singleton(
-                self.source,
-                Size {
-                    width: self.geometry.width,
-                    height: self.geometry.height,
-                },
-            ),
+            content: SurfaceContentSet::singleton(self.source, self.source_size),
             damage: self.damage.clone(),
             readiness,
             timeout_msec,

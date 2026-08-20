@@ -135,10 +135,18 @@ fn in_flight_present_for_outputs(
         height: 48,
     };
     let buffer = BufferSource::DmaBuf { handle: 900 };
-    let production =
-        ProductionSessionCoordinator::new(HeadlessEngine::default()).with_committed_surfaces(vec![
-            CommittedSurfaceState::with_source(surface, 1, geometry, buffer, Region::empty()),
-        ]);
+    let production = ProductionSessionCoordinator::new(HeadlessEngine::default())
+        .with_committed_surfaces(vec![CommittedSurfaceState::with_source(
+            surface,
+            1,
+            geometry,
+            buffer,
+            Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+            Region::empty(),
+        )]);
     let prepared = production.prepare_present_transaction(&SurfaceTransaction {
         transaction,
         authority: AuthorityKind::SophiaX,
@@ -525,6 +533,10 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
         namespace: None,
         stack_rank: 0,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: batch.groups[0].transactions[0].target_buffer(),
         damage: Region::empty(),
         opacity: 1.0,
@@ -715,6 +727,10 @@ fn present_released_after_commit_runs_when_its_surface_is_visible() {
         namespace: None,
         stack_rank: 0,
         geometry: batch.groups[0].transactions[0].target_geometry,
+        source_size: Size {
+            width: (batch.groups[0].transactions[0].target_geometry).width,
+            height: (batch.groups[0].transactions[0].target_geometry).height,
+        },
         source: batch.groups[0].transactions[0].target_buffer(),
         damage: Region::empty(),
         opacity: 1.0,
@@ -1152,6 +1168,10 @@ fn later_epoch_present_does_not_supersede_another_surface() {
         namespace: None,
         stack_rank: 1,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: BufferSource::DmaBuf {
             handle: second_handle.raw(),
         },

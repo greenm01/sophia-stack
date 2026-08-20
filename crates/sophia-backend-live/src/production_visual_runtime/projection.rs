@@ -162,6 +162,7 @@ fn presented_input_layer_snapshots(
             stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
             geometry: state.geometry,
             source: state.buffer,
+            source_size: state.source_size,
             damage: Region::default(),
             opacity: 1.0,
             crop: None,
@@ -183,7 +184,10 @@ fn layer_snapshot(
         namespace: metadata.and_then(|metadata| metadata.namespace),
         stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
         geometry: state.geometry,
+        // The committed record measured this raster; the geometry is only
+        // where it was placed, and the two part company during a resize.
         source: state.buffer(),
+        source_size: state.content.canonical_variant().pixel_size,
         damage: state.damage.clone(),
         opacity: 1.0,
         crop: None,
@@ -282,6 +286,10 @@ mod tests {
                     height: 200,
                 },
                 buffer: BufferSource::CpuBuffer { handle: 41 },
+                source_size: sophia_protocol::Size {
+                    width: 300,
+                    height: 200,
+                },
             }],
             compositor_display_list: CompositorDisplayList {
                 output: OutputId::from_raw(1),
@@ -335,6 +343,10 @@ mod tests {
                     buffer: BufferSource::CpuBuffer {
                         handle: u64::try_from(index).unwrap_or_default() + 1,
                     },
+                    source_size: sophia_protocol::Size {
+                        width: 100,
+                        height: 100,
+                    },
                 })
                 .collect(),
             compositor_display_list: CompositorDisplayList {
@@ -375,6 +387,10 @@ mod tests {
                 height: 100,
             },
             source: BufferSource::CpuBuffer { handle },
+            source_size: sophia_protocol::Size {
+                width: 100,
+                height: 100,
+            },
             damage: Region::default(),
             opacity: 1.0,
             crop: None,

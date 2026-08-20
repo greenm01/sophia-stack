@@ -43,6 +43,10 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
         namespace: None,
         stack_rank: 0,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: BufferSource::None,
         damage: Region::single(geometry),
         opacity: 1.0,

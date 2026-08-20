@@ -488,6 +488,7 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                         committed_generation: layer.committed_generation,
                         geometry: layer.native_geometry,
                         buffer: layer.source,
+                        source_size: layer.source_pixel_size,
                     });
                 }
             }

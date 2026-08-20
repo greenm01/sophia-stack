@@ -554,6 +554,10 @@ fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_
         namespace: None,
         stack_rank,
         geometry,
+        source_size: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         source: BufferSource::None,
         damage: Region::empty(),
         opacity: 1.0,

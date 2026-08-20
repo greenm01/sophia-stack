@@ -11,6 +11,10 @@ pub struct OutputFrameSurfaceState {
     pub committed_generation: u64,
     pub geometry: Rect,
     pub buffer: BufferSource,
+    /// The raster's own pixel size, carried rather than re-derived from
+    /// `geometry`: a surface presented before it answered a configure is placed
+    /// at one size and drawn at another.
+    pub source_size: Size,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,6 +88,7 @@ pub fn output_frame_damage_snapshot(
             committed_generation: committed.committed_generation,
             geometry: committed.geometry,
             buffer: committed.buffer(),
+            source_size: committed.content.canonical_variant().pixel_size,
         });
     }
     Ok(OutputFrameDamageSnapshot {
