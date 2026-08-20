@@ -406,13 +406,16 @@ impl PersistentLiveLayout {
                         },
                         geometry,
                         source: transaction.target_buffer(),
-                        // What the buffer registry measured, not what the
-                        // transaction declared: a client that answers a
-                        // configure late attaches an old buffer under a new
-                        // declared extent, and the geometry beside this is
-                        // where the layout is putting it rather than how big it
-                        // is.
-                        source_size: observed_size,
+                        // What the buffer registry measured. `observed_size`
+                        // beside it answers a different question -- whether the
+                        // surface reached its configured extent -- and reports
+                        // the logical size when it has, which is the placement
+                        // rather than the raster.
+                        source_size: live_transaction_raster_size(
+                            transaction,
+                            &self.dma_buf_sizes,
+                            &self.cpu_buffer_sizes,
+                        ),
                         damage: transaction.damage.clone(),
                         opacity: 1.0,
                         crop: None,

@@ -15,6 +15,28 @@ fn live_transaction_pixel_size(
     }
 }
 
+/// How big this transaction's raster actually is.
+///
+/// Deliberately not `live_transaction_observed_size`, which answers a different
+/// question: that one reports the *logical* extent whenever a client produced
+/// the content it declared, because resize and admission gates ask whether a
+/// surface has reached its configured size. A raster size is what the buffer
+/// registry measured, and a client that has answered no configure yet holds a
+/// buffer of its own size at a geometry of somebody else's choosing. Only a
+/// source with no registered buffer falls back to the declared extent.
+fn live_transaction_raster_size(
+    transaction: &SurfaceTransaction,
+    dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,
+    cpu_buffer_sizes: &BTreeMap<u64, Size>,
+) -> Size {
+    live_transaction_pixel_size(
+        transaction.target_buffer(),
+        dma_buf_sizes,
+        cpu_buffer_sizes,
+    )
+    .unwrap_or_else(|| transaction.target_content_size())
+}
+
 fn live_transaction_observed_size(
     transaction: &SurfaceTransaction,
     dma_buf_sizes: &BTreeMap<sophia_protocol::BufferHandle, Size>,

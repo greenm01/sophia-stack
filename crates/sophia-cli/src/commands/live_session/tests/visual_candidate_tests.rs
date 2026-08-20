@@ -89,6 +89,52 @@ fn mismatched_present_content_cannot_prove_the_outer_layout_extent() {
     );
 }
 
+/// The raster size is the buffer's, even when the buffer satisfies its extent.
+///
+/// `live_transaction_observed_size` reports the logical extent in that case, on
+/// purpose: it answers whether the surface reached its configured size. Reusing
+/// it as a raster measurement put the placement back into the committed record
+/// and a live session ended comparing it against the buffer -- planned
+/// 1920x1080, held 1280x1440, one DMA-BUF.
+#[test]
+fn raster_size_reports_the_buffer_rather_than_the_configured_extent() {
+    let buffer = BufferHandle::from_raw(772);
+    let raster = Size {
+        width: 1266,
+        height: 1412,
+    };
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(772),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(772, 1),
+        namespace: None,
+        target_geometry: rect(1276, 1422),
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+            raster,
+        ),
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let dma_buf_sizes = BTreeMap::from([(buffer, raster)]);
+
+    assert_eq!(
+        live_transaction_raster_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        raster
+    );
+    assert_eq!(
+        live_transaction_observed_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        Size {
+            width: 1276,
+            height: 1422,
+        }
+    );
+}
+
 #[test]
 fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
     let transaction = SurfaceTransaction {
