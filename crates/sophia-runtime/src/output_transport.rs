@@ -30,6 +30,24 @@ pub enum OutputTransportError {
     },
 }
 
+/// A write that failed because the reader left is that reader leaving.
+///
+/// The read path already draws this line -- an exhausted stream is
+/// `PeerDisconnected`, not an error -- and the write path did not, so any frame
+/// sent to a client that had finished ended the whole service and took its
+/// listening socket with it. A client is entitled to close as soon as it has
+/// what it asked for; publishing a snapshot to one that just did is ordinary.
+fn write_failure(error: std::io::Error) -> OutputTransportError {
+    match error.kind() {
+        std::io::ErrorKind::BrokenPipe
+        | std::io::ErrorKind::ConnectionReset
+        | std::io::ErrorKind::ConnectionAborted
+        | std::io::ErrorKind::NotConnected
+        | std::io::ErrorKind::UnexpectedEof => OutputTransportError::PeerDisconnected,
+        _ => OutputTransportError::Io(error.to_string()),
+    }
+}
+
 impl core::fmt::Display for OutputTransportError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(formatter, "{self:?}")
@@ -276,7 +294,7 @@ impl OutputSessionTransport {
                     .expect("connected stream remains present")
                     .flush()
             })
-            .map_err(|error| OutputTransportError::Io(error.to_string()))
+            .map_err(write_failure)
     }
 
     fn read_available(&mut self) -> Result<(), OutputTransportError> {

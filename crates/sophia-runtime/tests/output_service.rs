@@ -123,6 +123,70 @@ fn connected_output_service_publishes_a_replacement_hardware_snapshot() {
     assert_eq!(observed.snapshot, replacement);
 }
 
+/// A client that has left takes its connection with it, not the service.
+///
+/// A client may close as soon as it has what it asked for, and an unsolicited
+/// snapshot is the frame that finds it gone. Ending the service there ends its
+/// listening socket too, so the next client -- a restarted policy -- finds
+/// nothing to connect to and the supervisor gives up. The read path already
+/// treated a departed peer this way; the write path did not.
+#[test]
+fn publishing_to_a_departed_client_retires_the_connection_and_keeps_serving() {
+    let directory = temporary_directory("publish-after-close");
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let transport = OutputSessionTransport::bind(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let initial = snapshot();
+    let service =
+        OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), initial.clone())
+            .unwrap();
+    let mut client = connect_output_client(&socket_path);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    decode_output_v1_server_welcome_frame(&read_frame(&mut client)).unwrap();
+    decode_output_v1_snapshot_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 1
+        }
+    );
+
+    drop(client);
+    let mut replacement = snapshot();
+    replacement.topology_epoch = 2;
+    // Two publications: the first meets a socket the peer has closed, and the
+    // second proves the service is still there to receive it.
+    for transaction in [3, 4] {
+        service
+            .command(OutputTransportServiceCommand::PublishSnapshot {
+                transaction: TransactionId::from_raw(transaction),
+                snapshot: replacement.clone(),
+            })
+            .unwrap();
+    }
+
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Disconnected {
+            connection_epoch: 1
+        }
+    );
+
+    // The next client is answered from the newest published snapshot.
+    let mut successor = connect_output_client(&socket_path);
+    successor
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    decode_output_v1_server_welcome_frame(&read_frame(&mut successor)).unwrap();
+    let (_, observed) = decode_output_v1_snapshot_frame(&read_frame(&mut successor)).unwrap();
+    assert_eq!(observed.snapshot, replacement);
+}
+
 #[test]
 fn optional_output_service_stops_without_a_client() {
     let directory = temporary_directory("idle");

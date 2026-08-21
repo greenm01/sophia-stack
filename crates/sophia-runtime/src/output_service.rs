@@ -167,6 +167,30 @@ impl Drop for OutputTransportService {
     }
 }
 
+/// Ends one client's connection and leaves the service ready for the next.
+///
+/// The same steps the read path takes when a peer closes: drop the connection,
+/// tell the owner, and advance the epoch so nothing from the departed client is
+/// mistaken for the next one's.
+fn retire_connection(
+    transport: &mut OutputSessionTransport,
+    connected: &mut bool,
+    connection_epoch: &mut u64,
+    events: &Sender<OutputTransportServiceEvent>,
+) -> Result<(), String> {
+    let _ = transport.disconnect();
+    events
+        .send(OutputTransportServiceEvent::Disconnected {
+            connection_epoch: *connection_epoch,
+        })
+        .map_err(|_| "output owner event channel disconnected".to_owned())?;
+    *connection_epoch = connection_epoch
+        .checked_add(1)
+        .ok_or_else(|| "output connection epoch exhausted".to_owned())?;
+    *connected = false;
+    Ok(())
+}
+
 fn run_output_transport_service(
     transport: &mut OutputSessionTransport,
     first_connection_epoch: u64,
@@ -238,9 +262,25 @@ fn run_output_transport_service(
                     snapshot_transaction = transaction;
                     snapshot = replacement;
                     if connected {
-                        transport
-                            .send_snapshot(snapshot_transaction, &snapshot)
-                            .map_err(|error| error.to_string())?;
+                        // A client is entitled to close as soon as it has what
+                        // it asked for, and an unsolicited snapshot is exactly
+                        // the frame that finds it gone. Retire the connection
+                        // and keep serving; ending the service here would take
+                        // the listening socket with it, and the next client --
+                        // a restarted policy -- would find nothing to connect
+                        // to.
+                        match transport.send_snapshot(snapshot_transaction, &snapshot) {
+                            Ok(()) => {}
+                            Err(OutputTransportError::PeerDisconnected) => {
+                                retire_connection(
+                                    transport,
+                                    &mut connected,
+                                    &mut connection_epoch,
+                                    events,
+                                )?;
+                            }
+                            Err(error) => return Err(error.to_string()),
+                        }
                     }
                 }
                 OutputTransportServiceCommand::Settle {
@@ -250,9 +290,19 @@ fn run_output_transport_service(
                     if !connected {
                         return Err("output settlement arrived without a client".to_owned());
                     }
-                    transport
-                        .send_outcome(transaction, outcome)
-                        .map_err(|error| error.to_string())?;
+                    match transport.send_outcome(transaction, outcome) {
+                        Ok(()) => {}
+                        Err(OutputTransportError::PeerDisconnected) => {
+                            retire_connection(
+                                transport,
+                                &mut connected,
+                                &mut connection_epoch,
+                                events,
+                            )?;
+                            continue;
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    }
                     if let Some(promoted) = transport
                         .settle_active(transaction)
                         .map_err(|error| error.to_string())?

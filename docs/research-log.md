@@ -13273,3 +13273,36 @@ been dead since it was written -- referenced only by its own test -- and is
 deleted. And `sampling_class` compares densities only, so a raster that does
 not span its geometry is still reported `Exact`; that is a separate defect,
 now on the roadmap, and the mixed gate reads that field.
+
+## A reader that left is not a transport that broke
+
+Publishing the committed topology made the default gate fail where it had been
+passing, and the line explains itself once the order is visible:
+
+```
+committed_snapshot_published transaction=2 topology_epoch=2 transport_published=true
+sophia_output_v1_reference status=settled kind=Committed topology_epoch=2
+output_authority status=degraded reason="Io(\\"Connection reset by peer\\")"
+```
+
+The proof asks one question, gets its outcome, and its output thread ends --
+which is correct, and which is exactly when the snapshot published after the
+settlement arrives at a closed socket. The write path mapped every I/O error to
+a service failure, so the whole output service ended and took its listening
+socket with it.
+
+That also explains the other run. With the socket gone, the restarted policy
+found nothing to connect to: `Io(NotFound)` three times, and the supervisor
+gave up. One defect, two different-looking failures, both introduced by
+publishing to clients who had every right to have left.
+
+The read path had drawn this line already -- an exhausted stream is
+`PeerDisconnected`, not an error -- so the fix is to make the write path agree.
+A write that fails with a reset, a broken pipe, or an unexpected end retires
+that connection the same way a read does: disconnect, tell the owner, advance
+the epoch, keep serving. Anything else is still a failure.
+
+This is the fourth time in this work that one outcome has been covering two
+situations, and the third for a transport specifically. The pattern is worth
+stating plainly: a peer leaving is something a server does every day, and code
+that cannot say so ends up ending itself.
