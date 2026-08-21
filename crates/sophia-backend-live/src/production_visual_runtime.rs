@@ -55,6 +55,44 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         plan.repaint.rects.len(),
         plan.logical_content_checksum,
     );
+    // Window chrome had no evidence of its own, so a border in the wrong place
+    // could only be inferred from the solid rects it eventually became -- and
+    // those are traced by the renderer, which is blind to head identity and
+    // reports a rect that two heads of the same size both produce. Three
+    // diagnoses in a row stalled on exactly that. This states the geometry the
+    // plan asked for, on the side that knows which head asked.
+    //
+    // Both extents, separately: what the chrome spans and what it is allowed to
+    // paint into. A band that vanished because it fell outside its scene and one
+    // that was never generated look identical downstream.
+    for command in &plan.compositor {
+        if let sophia_engine::HeadCompositorCommand::Border(border) = command {
+            tracing::info!(
+                "sophia_live_head_border schema=1 status=planned output={} head={} scene_generation={} native={}x{} scene={}x{}_{}_{} outer={}x{}_{}_{} inner={}x{}_{}_{} clip={}x{}_{}_{}",
+                plan.output.raw(),
+                plan.head.raw(),
+                plan.scene_generation,
+                plan.native_size.width,
+                plan.native_size.height,
+                plan.transform.projected_scene.width,
+                plan.transform.projected_scene.height,
+                plan.transform.projected_scene.x,
+                plan.transform.projected_scene.y,
+                border.outer.width,
+                border.outer.height,
+                border.outer.x,
+                border.outer.y,
+                border.inner.width,
+                border.inner.height,
+                border.inner.x,
+                border.inner.y,
+                border.clip.width,
+                border.clip.height,
+                border.clip.x,
+                border.clip.y,
+            );
+        }
+    }
     for layer in &plan.layers {
         if let BufferSource::CpuBuffer { handle } = layer.source {
             tracing::info!(

@@ -637,6 +637,7 @@ fn render_native_target_composition(
                         source_stage,
                         layer_index,
                         layer_target,
+                        (target.width, target.height),
                     );
                 }
             }
@@ -741,10 +742,13 @@ fn trace_final_composition_region(
     source_stage: &str,
     layer: usize,
     target: NativeCompositionRect,
+    output: (u32, u32),
 ) {
     match pipeline.read_composition_region_pixels(target.into()) {
         Ok(region) => tracing::info!(
-            "sophia_native_composition_region schema=2 status=read composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
+            "sophia_native_composition_region schema=3 status=read composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
+            output.0,
+            output.1,
             target.width,
             target.height,
             target.x,
@@ -765,7 +769,9 @@ fn trace_final_composition_region(
             region.checksum,
         ),
         Err(_) => tracing::warn!(
-            "sophia_native_composition_region schema=2 status=unavailable composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{}",
+            "sophia_native_composition_region schema=3 status=unavailable composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{}",
+            output.0,
+            output.1,
             target.width,
             target.height,
             target.x,

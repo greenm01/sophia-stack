@@ -101,7 +101,7 @@ collect() {
         printf '%s|%s|%s\t%s\t%s\t%s\n' \
             "$stage" "$layer" "$target" "$mean" "$histogram" "$checksum"
     done < <(
-        grep -E 'sophia_native_composition_region schema=(2|3) status=read ' "$file" || true
+        grep -E 'sophia_native_composition_region schema=(2|3|4) status=read ' "$file" || true
     ) | awk -F'\t' '{ record[$1] = $0 } END { for (key in record) print record[key] }' | sort
 }
 
