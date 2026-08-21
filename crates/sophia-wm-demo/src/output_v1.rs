@@ -158,8 +158,18 @@ impl OutputV1Client {
         )?;
         self.stream.write_all(&frame)?;
         self.stream.flush()?;
-        let (outcome_transaction, outcome) =
-            decode_output_v1_outcome_frame(&read_frame(&mut self.stream)?)?;
+        // A snapshot is an unsolicited update and may arrive at any moment,
+        // including between a proposal and the outcome answering it. Reading
+        // the next frame as an outcome regardless once turned a published
+        // topology into a decode failure and took the session down with it, so
+        // updates are consumed while waiting rather than tripped over.
+        let (outcome_transaction, outcome) = loop {
+            let frame = read_frame(&mut self.stream)?;
+            match decode_output_v1_snapshot_frame(&frame) {
+                Ok(_) => continue,
+                Err(_) => break decode_output_v1_outcome_frame(&frame)?,
+            }
+        };
         if outcome_transaction != transaction {
             return Err(OutputV1ClientError::TransactionMismatch);
         }

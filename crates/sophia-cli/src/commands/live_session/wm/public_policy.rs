@@ -767,23 +767,10 @@ impl LivePublicPolicyState {
             );
             return Ok(());
         }
-        // A committed topology is the desk from now on, so the transport's
-        // copy has to become it. Only the client that submitted learns the new
-        // epoch from its outcome; everyone who connects later -- a restarted
-        // policy, a second tool -- is answered from the service's stored
-        // snapshot, and a session died three restarts deep resubmitting a
-        // candidate built against the topology this replaces.
-        if settlement.outcome.kind == sophia_protocol::OutputV1OutcomeKind::Committed
-            && let Some(published) = settlement.published_snapshot.clone()
-        {
-            let topology_epoch = published.topology_epoch;
-            let (transaction, transport_published) =
-                self.publish_snapshot_to_transport(published, "committed_snapshot_transport")?;
-            println!(
-                "sophia_live_output_authority schema=2 status=committed_snapshot_published transaction={} topology_epoch={topology_epoch} transport_published={transport_published}",
-                transaction.raw(),
-            );
-        }
+        let publish_committed = (settlement.outcome.kind
+            == sophia_protocol::OutputV1OutcomeKind::Committed)
+            .then(|| settlement.published_snapshot.clone())
+            .flatten();
         if let Err(error) = self.send_output_settlement(settlement.clone()) {
             // The reducer is already terminal. In particular, a committed
             // topology has crossed physical first presentation and cannot be
@@ -793,6 +780,23 @@ impl LivePublicPolicyState {
                 "sophia_live_output_authority schema=2 status=degraded reason=terminal_settlement_transport transaction={} outcome={:?} error={error} preserved_topology=true",
                 settlement.transaction.raw(),
                 settlement.outcome.kind,
+            );
+        }
+        // A committed topology is the desk from now on, so the transport's copy
+        // has to become it: only the client that submitted learns the new epoch
+        // from its outcome, and everyone who connects later -- a restarted
+        // policy, a second tool -- is answered from the service's stored
+        // snapshot. It goes out after the settlement, never before. A snapshot
+        // is an unsolicited update and an outcome is the answer to a request;
+        // sending the update first put a frame the client was not waiting for
+        // in front of the one it was, and it failed to decode it.
+        if let Some(published) = publish_committed {
+            let topology_epoch = published.topology_epoch;
+            let (transaction, transport_published) =
+                self.publish_snapshot_to_transport(published, "committed_snapshot_transport")?;
+            println!(
+                "sophia_live_output_authority schema=2 status=committed_snapshot_published transaction={} topology_epoch={topology_epoch} transport_published={transport_published}",
+                transaction.raw(),
             );
         }
         Ok(())
