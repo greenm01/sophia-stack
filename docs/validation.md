@@ -23,6 +23,27 @@ tools/audit_source_layout.sh
 cargo test --workspace --offline
 ```
 
+### Shader Sources
+
+The renderer's GLSL lives in its own files under
+`crates/sophia-renderer-native-egl/src/gl/shaders/`, embedded at compile time by
+`include_str!`, so nothing is read at runtime and there is no asset to deploy.
+
+The reason they are separate files is that a shader error is otherwise not
+discoverable until a GPU refuses it, and that refusal is not fatal by design: the
+pipeline records `status=unavailable`, falls back to the direct program, and the
+session runs on with its filtering silently uncorrected. That is right at runtime
+and a poor place to find a typo. A GLSL front end finds it first:
+
+```sh
+tools/check_shaders.sh          # or SOPHIA_GLSLANG=/path/to/glslangValidator
+```
+
+It refuses to run without a validator rather than passing, and refuses a run that
+matched no shader sources rather than reporting success over nothing. It is a
+front-end check only: it says the source is valid GLSL, not that a driver's
+limits were respected or that a uniform was bound.
+
 ### Bounded Formal Transition Model
 
 Milestone 12 adds unattended TLA+ gates for visual candidate preparation,

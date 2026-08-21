@@ -177,15 +177,41 @@ fn pixel_metrics_reject_invalid_gbm_rows() {
 #[test]
 fn argb_composition_uses_premultiplied_source_over_without_double_alpha() {
     let source = include_str!("../src/gl.rs");
-    let shaders = include_str!("../src/gl/shaders.rs");
 
     assert!(source.contains(".blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA)"));
     assert!(!source.contains(".blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA)"));
     assert!(source.contains("get_uniform_location(program, \"source_is_opaque\")"));
-    assert!(shaders.contains("if (source_is_opaque > 0.5)"));
-    assert!(shaders.contains("color.a = 1.0"));
-    assert!(shaders.contains("color.rgb = min(color.rgb, vec3(color.a))"));
-    assert!(shaders.contains("vec4(color.rgb * opacity, color.a * opacity)"));
+
+    // Every program that can reach the screen, checked individually. A single
+    // search across a file that held both would be satisfied by either one of
+    // them carrying the handling, which is not the claim.
+    for (name, shader) in [
+        (
+            "composition.frag",
+            include_str!("../src/gl/shaders/composition.frag"),
+        ),
+        (
+            "sharp_reconstruction.frag",
+            include_str!("../src/gl/shaders/sharp_reconstruction.frag"),
+        ),
+    ] {
+        assert!(
+            shader.contains("if (source_is_opaque > 0.5)"),
+            "{name} must branch on the opaque flag"
+        );
+        assert!(
+            shader.contains("color.a = 1.0"),
+            "{name} forces opaque alpha"
+        );
+        assert!(
+            shader.contains("color.rgb = min(color.rgb, vec3(color.a))"),
+            "{name} clamps premultiplied ringing to alpha"
+        );
+        assert!(
+            shader.contains("vec4(color.rgb * opacity, color.a * opacity)"),
+            "{name} applies opacity premultiplied"
+        );
+    }
 }
 
 /// The proof budget is spent only where light could be shown.

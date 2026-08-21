@@ -1348,6 +1348,17 @@ hardware, the second only decides which screen looks best.
   post-pass is separable and optional; contrast-adaptive sharpening rings on
   glyphs that were already crisp. None of this may change the reported sampling
   class.
+- [x] Keep the GLSL in its own files and compile it before a GPU sees it. The
+  shaders were string literals in Rust, which is workable until you notice that
+  a shader failing to compile is not fatal by design: the pipeline logs
+  `status=unavailable`, falls back to the direct program, and the session runs on
+  with its filtering silently uncorrected. Right at runtime, wrong as the first
+  place a typo is discovered. `tools/check_shaders.sh` compiles every
+  `.vert`/`.frag` under `crates/*/src` with a real GLSL front end; it refuses to
+  run without a validator and refuses a run that matched no sources, since a
+  search over nothing would otherwise report success. Front-end only -- it does
+  not know a driver's limits or whether a uniform was bound.
+
 - [ ] Filter the blend in linear light too, and the opacity multiply with it.
   The fixed-function ROP mixes `dst*(1-src.a)` on gamma-encoded destination
   bytes, and no shader can reach it: it needs `GL_FRAMEBUFFER_SRGB` and an

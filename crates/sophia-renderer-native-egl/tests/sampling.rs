@@ -1,6 +1,11 @@
 use sophia_renderer_native_egl::{NativeCompositionSampling, native_composition_sampling};
 use sophia_x_authority::x_fixed_glyph_rows;
 
+/// The GLSL the renderer compiles, read as GLSL rather than through the Rust
+/// that binds it. `tools/check_shaders.sh` compiles these same files.
+const RECONSTRUCTION_FRAGMENT: &str = include_str!("../src/gl/shaders/sharp_reconstruction.frag");
+const DIRECT_FRAGMENT: &str = include_str!("../src/gl/shaders/composition.frag");
+
 #[test]
 fn composition_sampling_preserves_exact_pixels_and_reconstructs_reductions() {
     assert_eq!(
@@ -108,12 +113,16 @@ fn sharp_reconstruction_preserves_mixed_case_bitmap_strokes_at_three_quarters_sc
     assert!(opaque_xrgb.iter().any(|pixel| pixel[0] > 0.85));
     assert!(opaque_xrgb.iter().all(|pixel| pixel[3] == 1.0));
 
-    let shader = include_str!("../src/gl/shaders.rs");
+    let bindings = include_str!("../src/gl/shaders.rs");
     let renderer = include_str!("../src/gl.rs");
-    assert!(shader.contains("SHARP_RECONSTRUCTION_FRAGMENT_SHADER"));
-    assert!(shader.contains("for (int row = -1; row <= 2; row++)"));
-    assert!(shader.contains("for (int column = -1; column <= 2; column++)"));
-    assert_eq!(shader.matches("uniform float source_is_opaque;").count(), 2);
+    assert!(bindings.contains("SHARP_RECONSTRUCTION_FRAGMENT_SHADER"));
+    assert!(RECONSTRUCTION_FRAGMENT.contains("for (int row = -1; row <= 2; row++)"));
+    assert!(RECONSTRUCTION_FRAGMENT.contains("for (int column = -1; column <= 2; column++)"));
+    // Asserted of each program rather than counted across a file holding both.
+    // The count was only ever standing in for this, and it would have gone on
+    // passing if one shader grew the uniform twice and the other lost it.
+    assert!(RECONSTRUCTION_FRAGMENT.contains("uniform float source_is_opaque;"));
+    assert!(DIRECT_FRAGMENT.contains("uniform float source_is_opaque;"));
     assert!(renderer.contains("get_uniform_location(program, \"source_is_opaque\")"));
 }
 
@@ -171,22 +180,22 @@ fn filtering_in_light_brightens_the_edges_gamma_space_filtering_darkens() {
     // still pass with the shader reverted to weighting encoded bytes. These pin
     // the shader to the same decode: the tap is decoded where it is gathered,
     // and the sum is re-encoded once at the end rather than per tap.
-    let shader = include_str!("../src/gl/shaders.rs");
     assert!(
-        shader
+        RECONSTRUCTION_FRAGMENT
             .contains("sum += to_light(texture2D(frame, coordinate), source_is_opaque) * weight;"),
         "every tap is decoded before it is weighted"
     );
     assert!(
-        shader.contains("return vec4(encoded.rgb * encoded.rgb, encoded.a);"),
+        RECONSTRUCTION_FRAGMENT.contains("return vec4(encoded.rgb * encoded.rgb, encoded.a);"),
         "the opaque decode squares colour and leaves alpha alone"
     );
     assert!(
-        shader.contains("return vec4(encoded.rgb * encoded.rgb / encoded.a, encoded.a);"),
+        RECONSTRUCTION_FRAGMENT
+            .contains("return vec4(encoded.rgb * encoded.rgb / encoded.a, encoded.a);"),
         "the premultiplied decode divides out coverage and leaves alpha alone"
     );
     assert!(
-        shader.contains("return sqrt(safe * alpha);"),
+        RECONSTRUCTION_FRAGMENT.contains("return sqrt(safe * alpha);"),
         "the premultiplied encode re-applies coverage under the root"
     );
 
@@ -244,11 +253,10 @@ fn reconstruction_ringing_encodes_to_black_rather_than_to_not_a_number() {
         );
     }
 
-    let shader = include_str!("../src/gl/shaders.rs");
-    let clamp_position = shader
+    let clamp_position = RECONSTRUCTION_FRAGMENT
         .find("float alpha = clamp(mixed.a, 0.0, 1.0);")
         .expect("the mixed alpha is clamped before it is used to re-encode");
-    let encode_position = shader
+    let encode_position = RECONSTRUCTION_FRAGMENT
         .find("clamp(to_bytes(mixed.rgb, alpha, source_is_opaque), 0.0, 1.0)")
         .expect("the encode is applied to the clamped value");
     assert!(
@@ -256,7 +264,7 @@ fn reconstruction_ringing_encodes_to_black_rather_than_to_not_a_number() {
         "the clamp must precede the encode, or sqrt sees a negative"
     );
     assert!(
-        shader.contains("vec3 safe = max(light, vec3(0.0));"),
+        RECONSTRUCTION_FRAGMENT.contains("vec3 safe = max(light, vec3(0.0));"),
         "the encode guards its own input as well, since it is reachable directly"
     );
 }
