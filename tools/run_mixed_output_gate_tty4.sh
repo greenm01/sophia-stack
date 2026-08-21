@@ -38,12 +38,16 @@ usage() {
     cat <<USAGE
 usage: run_mixed_output_gate_tty4.sh [--optimize-for=HEAD]
 
-  --optimize-for=HEAD  Which mirror head keeps its own pixels. HEAD is a
-                       connector ($MIRROR_PRIMARY or $MIRROR_MEMBER) or the
-                       words "primary" or "member". The other member reaches
-                       the group's logical size by resampling, so it looks
-                       softer; the extended head $EXTENDED is always native and
-                       cannot be chosen. Defaults to $MIRROR_PRIMARY.
+  --optimize-for=HEAD  How the mirror group picks its logical size. HEAD is a
+                       connector ($MIRROR_PRIMARY or $MIRROR_MEMBER), the words
+                       "primary" or "member", or "center-unscaled" (either
+                       spelling). Naming a head makes that one pixel-exact and
+                       the other reaches the group's size by resampling, so it
+                       looks softer. center-unscaled sizes the group to fit
+                       inside both, so neither resamples and a head with room
+                       left over shows a border instead. The extended head
+                       $EXTENDED is always native and cannot be chosen.
+                       Defaults to $MIRROR_PRIMARY.
 
 Every connector and label is also overridable by environment variable; see the
 SOPHIA_MIXED_* assignments at the top of this script.
@@ -61,9 +65,17 @@ while (( $# > 0 )); do
                 member | "$MIRROR_MEMBER" | "$MIRROR_MEMBER_LABEL")
                     OPTIMIZE_FOR_LABEL="$MIRROR_MEMBER_LABEL"
                     ;;
+                # Passed through to the reference policy verbatim rather than
+                # resolved to a connector, because this one names no head. Both
+                # spellings are taken; the argument is typed by hand and a
+                # rejected value costs a whole run.
+                center-unscaled | centre-unscaled)
+                    OPTIMIZE_FOR_LABEL="center-unscaled"
+                    ;;
                 *)
-                    echo "A mirror group is optimized for one of its own heads:" >&2
-                    echo "  $MIRROR_PRIMARY (primary) or $MIRROR_MEMBER (member); got: $choice" >&2
+                    echo "A mirror group is sized by one of its own heads, or by neither:" >&2
+                    echo "  $MIRROR_PRIMARY (primary), $MIRROR_MEMBER (member)," >&2
+                    echo "  or center-unscaled; got: $choice" >&2
                     exit 2
                     ;;
             esac
@@ -82,12 +94,12 @@ while (( $# > 0 )); do
 done
 
 if [[ -z "$EVIDENCE" ]]; then
-    if [[ "$OPTIMIZE_FOR_LABEL" == "$MIRROR_MEMBER_LABEL" ]]; then
-        optimized_connector="$MIRROR_MEMBER"
-    else
-        optimized_connector="$MIRROR_PRIMARY"
-    fi
-    EVIDENCE="/tmp/sophia-mixed-output-${optimized_connector}-$(date +%Y%m%d-%H%M%S).log"
+    case "$OPTIMIZE_FOR_LABEL" in
+        "$MIRROR_MEMBER_LABEL") sizing_tag="$MIRROR_MEMBER" ;;
+        center-unscaled) sizing_tag="centered" ;;
+        *) sizing_tag="$MIRROR_PRIMARY" ;;
+    esac
+    EVIDENCE="/tmp/sophia-mixed-output-${sizing_tag}-$(date +%Y%m%d-%H%M%S).log"
 fi
 # The evidence file exists before the first check runs, because this gate is
 # operated from a TTY with no way to copy text out of it. A refusal that only
@@ -261,15 +273,27 @@ if ! bash "$ROOT_DIR/tools/verify_mixed_output_evidence.sh" "$EVIDENCE" "$EXTEND
     exit 1
 fi
 
-# The mirror member is a resampled copy by construction: one logical output at
-# the primary's mode, one client buffer, and a smaller panel to put it on. Only
-# the extended head carries the sharpness claim, and an operator asked about
-# "matching content" cannot be expected to know that the softer copy is correct.
+# What the operator is asked has to match what the policy actually built. Under
+# either optimized policy one mirror member is a resampled copy by construction
+# -- one logical output at one head's mode, one client buffer, a differently
+# sized panel to put it on -- and an operator asked about "matching content"
+# cannot be expected to know the softer copy is correct. Under center-unscaled
+# nothing is resampled and the question inverts: softness is now a fault, and the
+# border is the expected cost. Asking the wrong one of these trains the operator
+# to confirm a result the gate exists to catch.
 echo "Three screens, three questions:"
-echo "  $MIRROR_PRIMARY (mirror primary, native): shows the desktop crisply."
-echo "  $MIRROR_MEMBER (mirror member): shows the SAME content as $MIRROR_PRIMARY."
-echo "    The group is optimized for $OPTIMIZE_FOR_LABEL, so the other member is a"
-echo "    resampled copy and is expected to look softer -- that is not a fault."
+if [[ "$OPTIMIZE_FOR_LABEL" == center-unscaled ]]; then
+    echo "  $MIRROR_PRIMARY (mirror primary): shows the desktop crisply, and may"
+    echo "    show an unused BORDER around it. The border is expected."
+    echo "  $MIRROR_MEMBER (mirror member): shows the SAME content as $MIRROR_PRIMARY,"
+    echo "    also crisp, possibly also bordered. Nothing is resampled under this"
+    echo "    policy, so softness on EITHER mirror head is a fault."
+else
+    echo "  $MIRROR_PRIMARY (mirror primary): shows the desktop."
+    echo "  $MIRROR_MEMBER (mirror member): shows the SAME content as $MIRROR_PRIMARY."
+    echo "    The group is sized for $OPTIMIZE_FOR_LABEL, so the other member is a"
+    echo "    resampled copy and is expected to look softer -- that is not a fault."
+fi
 echo "  $EXTENDED (extended, native): shows its own terminal with the"
 echo "    SOPHIA MIXED NATIVE SHARP marker, crisp, with no soft resampling."
 echo "Type yes if all three held."

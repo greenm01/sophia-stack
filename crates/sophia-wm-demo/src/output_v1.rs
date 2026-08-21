@@ -184,20 +184,36 @@ impl OutputV1Client {
     }
 }
 
-/// Which head of a mirror group keeps its own pixels.
+/// How a mirror group chooses its logical size, and what that costs.
 ///
-/// A mirror group has one logical size and its members are placed into it, so
-/// exactly one member can be exact and the rest are resampled to reach it.
-/// Choosing that member is the whole of what macOS calls "optimize for
-/// <display>", and it is a property of the group rather than a mode change:
-/// every head keeps its own mode either way.
+/// A mirror group has one logical size and its members are placed into it, so a
+/// member whose mode differs from that size either resamples to reach it or
+/// keeps its own pixels and leaves the remainder unused. There is no third
+/// outcome, and which one a group takes is a property of the group rather than a
+/// mode change: every head keeps its own mode under all three policies.
+///
+/// Named for the policy rather than for a head. Two of these do name a head, and
+/// the third deliberately optimizes for neither, so a type called "which head is
+/// optimized" could not hold it without one of its values meaning something else.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum MirrorOptimizedHead {
-    /// The larger panel stays pixel-exact and the member resamples down.
+pub enum MirrorSizingPolicy {
+    /// Size to the primary. It stays pixel-exact and the member resamples down.
     #[default]
-    Primary,
-    /// The member stays pixel-exact and the primary resamples up.
-    Member,
+    OptimizeForPrimary,
+    /// Size to the member. It stays pixel-exact and the primary resamples up.
+    OptimizeForMember,
+    /// Size so that every member contains the logical image at its own scale.
+    ///
+    /// Nothing resamples. The size is the smallest mode on each axis across the
+    /// group, so it fits inside every member, and `OutputHeadMapping::Exact`
+    /// centres it there — a head larger than the image shows a border rather than
+    /// a stretch. This is what macOS's "optimize for" cannot express, and it is
+    /// the only policy under which both panels are pixel-exact at once.
+    ///
+    /// The per-axis minimum can name a size no member's mode matches, when two
+    /// heads are larger on different axes. That is still correct: every member
+    /// contains it exactly, and every member shows a border.
+    CenterUnscaled,
 }
 
 /// Builds a complete three-head candidate: two heads mirror one logical output,
@@ -205,15 +221,16 @@ pub enum MirrorOptimizedHead {
 ///
 /// The proof shape is deliberately exact. Extra connected heads are rejected
 /// instead of being disabled as a side effect, and all three heads keep their
-/// current modes. The extended head is always exact; within the mirror group,
-/// the optimized head is exact and the other member fits itself to the group's
-/// logical size, which is that optimized head's own mode.
+/// current modes under every policy. The extended head is always exact; within
+/// the mirror group, `policy` decides both the logical size and which members
+/// reach it by resampling. Head identity comes entirely from the labels this
+/// call is given: nothing here knows a connector name or a panel size.
 pub fn mixed_mirror_extended_candidate(
     snapshot: &OutputAuthoritySnapshot,
     mirror_primary_label: &str,
     mirror_member_label: &str,
     extended_label: &str,
-    optimized: MirrorOptimizedHead,
+    policy: MirrorSizingPolicy,
 ) -> Result<OutputTopologyCandidate, OutputV1ClientError> {
     snapshot.validate()?;
     if mirror_primary_label == mirror_member_label
@@ -266,25 +283,17 @@ pub fn mixed_mirror_extended_candidate(
         ));
     }
 
-    // The group is sized by the head it is optimized for, so that head places
-    // exactly and the other reaches the same logical size by resampling.
-    let optimized_size = current_mode_pixel_size(match optimized {
-        MirrorOptimizedHead::Primary => primary,
-        MirrorOptimizedHead::Member => member,
-    })?;
+    let mirror_size = mirror_logical_size(primary, member, policy)?;
     let mirror_logical = Rect {
         x: primary_group.logical.x,
         y: primary_group.logical.y,
-        width: optimized_size.width,
-        height: optimized_size.height,
+        width: mirror_size.width,
+        height: mirror_size.height,
     };
     let extended_x = mirror_logical.x.checked_add(mirror_logical.width).ok_or(
         OutputV1ClientError::InvalidProofTopology("extended placement overflows root coordinates"),
     )?;
-    let (primary_mapping, member_mapping) = match optimized {
-        MirrorOptimizedHead::Primary => (OutputHeadMapping::Exact, OutputHeadMapping::Fit),
-        MirrorOptimizedHead::Member => (OutputHeadMapping::Fit, OutputHeadMapping::Exact),
-    };
+    let (primary_mapping, member_mapping) = mirror_member_mappings(policy);
     let targets = [primary, member, extended]
         .into_iter()
         .map(|head| OutputHeadTargetProposal {
@@ -349,7 +358,7 @@ pub fn mixed_mirror_extended_topology_is_applied(
     mirror_primary_label: &str,
     mirror_member_label: &str,
     extended_label: &str,
-    optimized: MirrorOptimizedHead,
+    policy: MirrorSizingPolicy,
 ) -> bool {
     let connected = snapshot
         .heads
@@ -376,10 +385,18 @@ pub fn mixed_mirror_extended_topology_is_applied(
     {
         return false;
     }
-    let (primary_mapping, member_mapping) = match optimized {
-        MirrorOptimizedHead::Primary => (OutputHeadMapping::Exact, OutputHeadMapping::Fit),
-        MirrorOptimizedHead::Member => (OutputHeadMapping::Fit, OutputHeadMapping::Exact),
+    let (primary_mapping, member_mapping) = mirror_member_mappings(policy);
+    // The size, not only the mappings. Two exact members sized to the larger
+    // head crop the smaller one instead of bordering it, and that configuration
+    // wears the same pair of mappings as the one that does not.
+    let Ok(expected_size) = mirror_logical_size(primary, member, policy) else {
+        return false;
     };
+    if primary_group.logical.width != expected_size.width
+        || primary_group.logical.height != expected_size.height
+    {
+        return false;
+    }
     let mapping_of = |head: &OutputHeadDescriptor| {
         primary_group
             .members
@@ -388,6 +405,53 @@ pub fn mixed_mirror_extended_topology_is_applied(
             .map(|candidate| candidate.mapping)
     };
     mapping_of(primary) == Some(primary_mapping) && mapping_of(member) == Some(member_mapping)
+}
+
+/// The logical size a mirror group takes under a policy.
+///
+/// Shared by the builder and the applied-topology predicate on purpose. The two
+/// used to agree only because the predicate did not look at the size at all, and
+/// a policy whose whole point is which size gets chosen cannot be confirmed by
+/// reading the mappings alone.
+fn mirror_logical_size(
+    primary: &OutputHeadDescriptor,
+    member: &OutputHeadDescriptor,
+    policy: MirrorSizingPolicy,
+) -> Result<sophia_protocol::Size, OutputV1ClientError> {
+    match policy {
+        MirrorSizingPolicy::OptimizeForPrimary => current_mode_pixel_size(primary),
+        MirrorSizingPolicy::OptimizeForMember => current_mode_pixel_size(member),
+        MirrorSizingPolicy::CenterUnscaled => {
+            let primary_size = current_mode_pixel_size(primary)?;
+            let member_size = current_mode_pixel_size(member)?;
+            // Per axis, not whichever head is smaller overall: a group of a
+            // 2560x1080 and a 1920x1440 head has no smaller member, and taking
+            // either one whole would leave the other cropped by `clip_to_target`
+            // rather than bordered. The minimum on each axis is the largest
+            // rectangle both heads contain.
+            Ok(sophia_protocol::Size {
+                width: primary_size.width.min(member_size.width),
+                height: primary_size.height.min(member_size.height),
+            })
+        }
+    }
+}
+
+/// The mappings a mirror group's two members take under a policy.
+///
+/// `Exact` means the same placement in all three: take the logical size verbatim
+/// and centre it. What differs is whether there is any remainder to leave, which
+/// is decided by `mirror_logical_size` rather than here.
+const fn mirror_member_mappings(
+    policy: MirrorSizingPolicy,
+) -> (OutputHeadMapping, OutputHeadMapping) {
+    match policy {
+        MirrorSizingPolicy::OptimizeForPrimary => {
+            (OutputHeadMapping::Exact, OutputHeadMapping::Fit)
+        }
+        MirrorSizingPolicy::OptimizeForMember => (OutputHeadMapping::Fit, OutputHeadMapping::Exact),
+        MirrorSizingPolicy::CenterUnscaled => (OutputHeadMapping::Exact, OutputHeadMapping::Exact),
+    }
 }
 
 /// The pixel size of the mode this head is currently running.

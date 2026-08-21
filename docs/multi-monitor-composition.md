@@ -434,8 +434,25 @@ Sophia can mirror unequal modes because it composes per head, and the price of
 that ability is this choice.
 
 Centre-unscaled is the only policy where nothing resamples. Padding cannot
-rescue the other direction: showing a 2560x1440 desktop unscaled on a 1920x1080
-panel would have to *crop* a quarter of the picture, not pad it.
+rescue the other direction: showing a larger desktop unscaled on a smaller panel
+would have to *crop* the picture, not pad it.
+
+All three are implemented, as `MirrorSizingPolicy` in the reference policy
+client. The compositor needed nothing for the third either: `OutputHeadMapping::
+Exact` already takes the logical size verbatim and the projection already centres
+it, so "this head owns the size" and "this head shows the image unscaled inside a
+border" are the same placement, differing only in whether there is a remainder to
+leave. What the policy chooses is the logical size; the mapping follows.
+
+Two details the third policy forced into the open. Its size is the minimum on
+each axis across the group, not whichever member is smaller: two heads need not
+be ordered -- one can be wider while the other is taller -- and taking either
+mode whole would run the other head's image past its edge, where clipping crops
+it rather than bordering it. A policy promising that nothing resamples would
+instead have silently lost pixels. And the applied-topology predicate now reads
+the logical size rather than the member mappings alone, because two exact members
+sized to the larger head are that cropping configuration and wear exactly the
+mappings centre-unscaled produces.
 
 ### Sampling quality
 

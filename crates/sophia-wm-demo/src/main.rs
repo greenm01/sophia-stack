@@ -10,17 +10,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let policy_socket = std::env::var("SOPHIA_WM_SOCKET")?;
         let output_socket = std::env::var("SOPHIA_OUTPUT_SOCKET")?;
         let labels = [args[1].clone(), args[2].clone(), args[3].clone()];
-        // Which mirror head keeps its own pixels. Naming the primary is the
-        // same as naming nothing; naming the member optimizes the group for the
-        // smaller panel and resamples the larger one instead.
-        let optimized = match args.get(4).map(String::as_str) {
-            None => sophia_wm_demo::MirrorOptimizedHead::Primary,
-            Some(label) if label == labels[0] => sophia_wm_demo::MirrorOptimizedHead::Primary,
-            Some(label) if label == labels[1] => sophia_wm_demo::MirrorOptimizedHead::Member,
+        // How the mirror group picks its logical size. Naming the primary is the
+        // same as naming nothing; naming the member optimizes for the smaller
+        // panel and resamples the larger one instead; naming neither sizes the
+        // group to fit inside both, so nothing resamples and a head with room
+        // left over shows a border.
+        //
+        // The head labels are whatever this run was given, never a fixed set.
+        // Only the policy that names no head has a spelling of its own, and both
+        // spellings of it are taken: it is typed by hand at a console where a
+        // rejected argument costs an entire run.
+        let sizing_policy = match args.get(4).map(String::as_str) {
+            None => sophia_wm_demo::MirrorSizingPolicy::OptimizeForPrimary,
+            Some(label) if label == labels[0] => {
+                sophia_wm_demo::MirrorSizingPolicy::OptimizeForPrimary
+            }
+            Some(label) if label == labels[1] => {
+                sophia_wm_demo::MirrorSizingPolicy::OptimizeForMember
+            }
+            Some("center-unscaled" | "centre-unscaled") => {
+                sophia_wm_demo::MirrorSizingPolicy::CenterUnscaled
+            }
             Some(_) => {
                 return Err(
-                    "live-mixed-output-proof optimizes for a mirror head, not another display"
-                        .into(),
+                    "live-mixed-output-proof takes a mirror head label or center-unscaled".into(),
                 );
             }
         };
@@ -52,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &labels[0],
                         &labels[1],
                         &labels[2],
-                        optimized,
+                        sizing_policy,
                     ) {
                         println!(
                             "sophia_output_v1_reference schema=1 status=settled kind=Committed topology_epoch={} heads=3 groups=2",
@@ -66,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                     let candidate = sophia_wm_demo::mixed_mirror_extended_candidate(
-                        &snapshot, &labels[0], &labels[1], &labels[2], optimized,
+                        &snapshot, &labels[0], &labels[1], &labels[2], sizing_policy,
                     )?;
                     let outcome = client.submit(candidate, &snapshot)?;
                     if outcome.kind != sophia_protocol::OutputV1OutcomeKind::Committed {

@@ -1380,11 +1380,29 @@ hardware, the second only decides which screen looks best.
   us. The shader's `rgb * opacity` and its `min(rgb, a)` ringing clamp stay in
   encoded space alongside it deliberately -- moving one without the other would
   leave them inconsistent, so they travel together as one later change.
-- [ ] Offer centre-unscaled as a third mirror sizing policy. Both current
-  policies resample one member; placing the smaller image inside a border on the
-  larger head resamples neither, at the cost of an unused margin. It is the only
-  policy that makes both heads pixel-exact, and it belongs beside the optimized
-  head as a third value of the same choice rather than as a separate mode.
+- [x] Offer centre-unscaled as a third mirror sizing policy. Both optimized
+  policies make one panel pixel-exact by making the other stretch; this one gives
+  that up so neither does, at the cost of an unused border on any head with room
+  left over. It is the only policy under which both panels are exact at once.
+
+  The compositor needed nothing. `OutputHeadMapping::Exact` already takes the
+  logical size verbatim and the projection already centres it, so "this head owns
+  the size" and "this head shows the image unscaled in a border" are the same
+  placement; what differs is only whether there is a remainder. The policy
+  chooses the size and the mapping follows, which is why this landed as a value
+  of the reference client's sizing choice rather than as a compositor change.
+
+  Two things it forced into the open. The size is the per-axis minimum across the
+  group, not whichever member is smaller: two heads need not be ordered, and
+  taking either mode whole would run the other's image past its edge where
+  clipping crops rather than borders it -- a policy promising nothing resamples
+  would have silently lost pixels instead. And the applied-topology predicate now
+  reads the logical size, not the member mappings alone, because two exact
+  members sized to the larger head are exactly that cropping configuration and
+  wear the same pair of mappings. The type was renamed with it: a value that
+  optimizes for neither head cannot live in a type called "which head is
+  optimized" without one of its values meaning something else.
+
 - [ ] Decide whether mirror members should be re-moded rather than resampled.
   Windows Duplicate and X both refuse to scale: they restrict the desktop to a
   mode every member supports, so each panel scans out natively and the larger
