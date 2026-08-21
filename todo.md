@@ -1359,6 +1359,19 @@ hardware, the second only decides which screen looks best.
   search over nothing would otherwise report success. Front-end only -- it does
   not know a driver's limits or whether a uniform was bound.
 
+- [ ] Give the composition-region trace a head. The line carries a rect and no
+  output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
+  rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at
+  `mapping=fit`. Their records are indistinguishable, so a before-and-after keyed
+  on the rect compares whichever the collector happened to keep, and the first
+  read of the linear-light verification was byte-identical for exactly that
+  reason: it was comparing the unfiltered head with itself. The correction was
+  confirmed on the 2560x1440 regions instead, whose geometry only one head has,
+  which is luck rather than method. `trace_final_composition_region` takes the
+  pipeline, stage, layer index and rect; the output identity has to reach it.
+  Same class as the raster/presentation split -- a record that does not carry the
+  fact needed to read it.
+
 - [ ] Filter the blend in linear light too, and the opacity multiply with it.
   The fixed-function ROP mixes `dst*(1-src.a)` on gamma-encoded destination
   bytes, and no shader can reach it: it needs `GL_FRAMEBUFFER_SRGB` and an
