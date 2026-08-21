@@ -2,7 +2,7 @@ use sophia_engine::{
     HeadCompositionPlan, HeadCompositorCommand, compositor_border_bands,
     head_output_damage_snapshot,
 };
-use sophia_protocol::{BufferSource, Size, SurfaceId, Transform};
+use sophia_protocol::{BufferSource, Rect, Size, SurfaceId, Transform};
 
 use crate::{
     LiveCompositionPlacement, LiveCpuPresentationLayer, LiveOwnedMixedCompositionFrame,
@@ -137,9 +137,17 @@ pub fn lower_head_composition_plan(
                     inner: border.inner,
                     color: border.color,
                 }) {
-                    if !band.geometry.is_empty() {
+                    // Each band clipped, never only the rects they came from. A
+                    // band is the difference between `outer` and `inner`, and
+                    // clipping those two first does not reliably remove
+                    // anything: where the clip leaves them degenerate the
+                    // subtraction is still positive, so a window entirely
+                    // outside this scene keeps a band at its original off-screen
+                    // coordinates. Clipping the result is what bounds it.
+                    let geometry = intersect_rect(band.geometry, border.clip);
+                    if !geometry.is_empty() {
                         layers.push(LiveOwnedMixedCompositionLayer::Solid {
-                            geometry: band.geometry,
+                            geometry,
                             color: band.color,
                         });
                     }
@@ -174,6 +182,26 @@ pub fn lower_head_composition_plan(
         layers,
         output_damage_snapshot: Some(head_output_damage_snapshot(plan)),
     })
+}
+
+/// The overlap of two head-native rects, empty when they do not meet.
+fn intersect_rect(first: Rect, second: Rect) -> Rect {
+    let left = first.x.max(second.x);
+    let top = first.y.max(second.y);
+    let right = first
+        .x
+        .saturating_add(first.width)
+        .min(second.x.saturating_add(second.width));
+    let bottom = first
+        .y
+        .saturating_add(first.height)
+        .min(second.y.saturating_add(second.height));
+    Rect {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left).max(0),
+        height: bottom.saturating_sub(top).max(0),
+    }
 }
 
 fn lower_surface_source(

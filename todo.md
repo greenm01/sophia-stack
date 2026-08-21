@@ -1359,6 +1359,23 @@ hardware, the second only decides which screen looks best.
   search over nothing would otherwise report success. Front-end only -- it does
   not know a driver's limits or whether a uniform was bound.
 
+- [x] Bound head-native content by the scene, not by the framebuffer. Every
+  mirror policy until centre-unscaled projected the scene across the whole head,
+  so "the framebuffer" and "the region the scene occupies on it" were one rect
+  and clipping to either gave the same answer. A scene placed inside a border
+  separates them, and content bounded by the framebuffer paints into the margin
+  that is meant to hold background alone. Borders showed it first because they
+  are bright lines and because they were not clipped at all -- surfaces and the
+  cursor were clipped, just to the wrong rect.
+
+  Border bands are clipped one at a time rather than by clipping the `outer` and
+  `inner` rects they are derived from. Those are not the same operation: where
+  the clip leaves the two degenerate their difference is still positive, so a
+  window lying entirely outside the scene keeps a band at its original
+  off-screen coordinates. The first version of this note claimed the wrong
+  failure mode -- an invented band at the clip edge -- and enumerating the cases
+  showed it does not happen; the surviving off-screen band does.
+
 - [ ] Give the composition-region trace a head. The line carries a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
   rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at

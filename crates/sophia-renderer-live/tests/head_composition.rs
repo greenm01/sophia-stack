@@ -364,3 +364,134 @@ fn production_scene_resolves_all_resident_cpu_variants_by_handle() {
         vec![41, 42]
     );
 }
+
+/// The lowerer clips each band, and clips them one at a time.
+///
+/// This exercises the real lowering rather than a reimplementation of it, which
+/// matters because the arithmetic is easy to mirror correctly in a test while
+/// the production path does something else. The window here runs far off the
+/// right of the scene: its left, top and bottom bands are partly visible and
+/// must be trimmed to the scene, and its right band is entirely outside and must
+/// disappear rather than reappear against the boundary.
+#[test]
+fn border_bands_are_clipped_individually_to_the_scene_they_belong_to() {
+    let scene = Rect {
+        x: 320,
+        y: 180,
+        width: 1_920,
+        height: 1_080,
+    };
+    let inner = Rect {
+        x: 400,
+        y: 300,
+        width: 4_000,
+        height: 400,
+    };
+    let outer = Rect {
+        x: 396,
+        y: 296,
+        width: 4_008,
+        height: 408,
+    };
+
+    let mut plan = plan();
+    plan.native_size = Size {
+        width: 2_560,
+        height: 1_440,
+    };
+    plan.transform.projected_scene = scene;
+    plan.layers.clear();
+    plan.compositor = vec![HeadCompositorCommand::Border(
+        sophia_engine::HeadCompositorBorder {
+            node: sophia_engine::CompositorNodeId::SurfaceChrome {
+                surface: SurfaceId::new(3, 1),
+                role: sophia_engine::SurfaceChromeRole::Frame,
+            },
+            generation: 3,
+            outer,
+            inner,
+            color: sophia_engine::CompositorRgb8 {
+                red: 0,
+                green: 80,
+                blue: 255,
+            },
+            clip: scene,
+        },
+    )];
+
+    let frame = lower_cpu_head_composition_plan(&plan, &[]).unwrap();
+    let bands = frame
+        .layers
+        .iter()
+        .filter_map(|layer| match layer {
+            LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => Some(*geometry),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        !bands.is_empty(),
+        "the visible bands of a straddling window must still be drawn"
+    );
+    let right_edge = scene.x + scene.width;
+    for band in &bands {
+        assert!(
+            band.x >= scene.x
+                && band.y >= scene.y
+                && band.x + band.width <= right_edge
+                && band.y + band.height <= scene.y + scene.height,
+            "band {band:?} escapes the scene {scene:?}"
+        );
+        // Clipping outer and inner before subtracting them would produce a
+        // vertical band flush against the boundary: a border down the side of a
+        // window that is only running off the screen.
+        assert!(
+            !(band.width <= 8 && band.x + band.width == right_edge),
+            "band {band:?} is the invented border at the scene's edge"
+        );
+    }
+    // The real right band lies wholly outside and must simply be gone.
+    assert!(
+        bands.iter().all(|band| band.x < inner.x + inner.width),
+        "a band survived from beyond the window's own right edge: {bands:?}"
+    );
+
+    // A window lying entirely outside this scene contributes nothing at all.
+    //
+    // This is the case that separates clipping the bands from clipping the rects
+    // they come from. Clipping `outer` and `inner` here leaves both degenerate,
+    // and their difference is still positive, so that approach emits a band at
+    // the window's original off-screen coordinates while reporting itself as
+    // clipped. Only clipping the result removes it.
+    let elsewhere = Rect {
+        x: 3_000,
+        y: 300,
+        width: 400,
+        height: 400,
+    };
+    let HeadCompositorCommand::Border(mut border) = plan.compositor[0] else {
+        unreachable!("the fixture holds exactly one border command");
+    };
+    border.inner = elsewhere;
+    border.outer = Rect {
+        x: elsewhere.x - 4,
+        y: elsewhere.y - 4,
+        width: elsewhere.width + 8,
+        height: elsewhere.height + 8,
+    };
+    plan.compositor = vec![HeadCompositorCommand::Border(border)];
+
+    let frame = lower_cpu_head_composition_plan(&plan, &[]).unwrap();
+    let escaped = frame
+        .layers
+        .iter()
+        .filter_map(|layer| match layer {
+            LiveOwnedMixedCompositionLayer::Solid { geometry, .. } => Some(*geometry),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        escaped.is_empty(),
+        "a window outside the scene still drew bands: {escaped:?}"
+    );
+}

@@ -386,3 +386,205 @@ fn unsupported_target_and_surface_transforms_fail_closed() {
         Err(HeadCompositionPlanError::UnavailableSurfaceVariant)
     );
 }
+
+/// A scene placed inside a border may not paint into that border.
+///
+/// Every mirror policy until centre-unscaled projected the scene across the
+/// whole head, so "the framebuffer" and "where the scene is" were one rect and
+/// clipping to either gave the same answer. Placing a smaller scene inside a
+/// larger head separates them, and content bounded by the framebuffer then
+/// reaches into the margin that is supposed to hold background alone.
+#[test]
+fn a_scene_smaller_than_its_head_is_bounded_by_the_scene_not_the_framebuffer() {
+    let mut snapshot = scene();
+    snapshot.logical_viewport = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    // A window running off the right and bottom of the logical output. It is
+    // retained because it partially intersects, which is what makes the clip
+    // load-bearing rather than decorative.
+    let surface = snapshot.surfaces[0].surface;
+    let straddling = Rect {
+        x: 1400,
+        y: 700,
+        width: 800,
+        height: 600,
+    };
+    snapshot.surfaces[0].geometry = straddling;
+    snapshot.surfaces[0].clip = straddling;
+    snapshot.display_list.commands = vec![
+        CompositorDisplayCommand::Surface { surface },
+        CompositorDisplayCommand::Border(CompositorBorder {
+            node: CompositorNodeId::SurfaceChrome {
+                surface,
+                role: SurfaceChromeRole::Frame,
+            },
+            generation: 3,
+            outer: Rect {
+                x: 1396,
+                y: 696,
+                width: 808,
+                height: 608,
+            },
+            inner: straddling,
+            color: CompositorRgb8 {
+                red: 0,
+                green: 80,
+                blue: 255,
+            },
+        }),
+    ];
+    snapshot.cursor = Some(OutputSceneCursor {
+        geometry: Rect {
+            x: 1910,
+            y: 1070,
+            width: 24,
+            height: 24,
+        },
+        source: BufferSource::CpuBuffer { handle: 99 },
+        generation: 5,
+    });
+
+    // 1920x1080 placed unscaled and centred in 2560x1440: the scene occupies
+    // x 320..2240 and y 180..1260, and the rest is border.
+    let plans = build_output_head_plans(
+        &snapshot,
+        &[target(1, 2560, 1440, OutputHeadMapping::Exact)],
+    )
+    .unwrap();
+    let plan = &plans[0];
+    let painted = plan.transform.projected_scene;
+    assert_eq!(painted.x, 320);
+    assert_eq!(painted.y, 180);
+    assert_eq!(painted.width, 1920);
+    assert_eq!(painted.height, 1080);
+
+    let contains = |rect: Rect| {
+        rect.is_empty()
+            || (rect.x >= painted.x
+                && rect.y >= painted.y
+                && rect.x + rect.width <= painted.x + painted.width
+                && rect.y + rect.height <= painted.y + painted.height)
+    };
+
+    assert!(
+        contains(plan.layers[0].native_clip),
+        "surface clip {:?} escapes the scene {painted:?}",
+        plan.layers[0].native_clip
+    );
+    assert!(
+        contains(plan.cursor.unwrap().geometry),
+        "cursor {:?} escapes the scene {painted:?}",
+        plan.cursor.unwrap().geometry
+    );
+
+    let border = plan
+        .compositor
+        .iter()
+        .find_map(|command| match command {
+            HeadCompositorCommand::Border(border) => Some(*border),
+            _ => None,
+        })
+        .expect("the straddling window keeps its border command");
+    for band in compositor_border_bands(CompositorBorder {
+        node: border.node,
+        generation: border.generation,
+        outer: border.outer,
+        inner: border.inner,
+        color: border.color,
+    }) {
+        let clipped = intersect_for_test(band.geometry, border.clip);
+        assert!(
+            contains(clipped),
+            "border band {:?} clipped to {clipped:?} escapes the scene {painted:?}",
+            band.geometry
+        );
+    }
+}
+
+/// Clipping the bands, never the rects they are derived from.
+///
+/// The four bands are the difference between `outer` and `inner`. Clip those two
+/// first and the subtraction produces a band along the clip edge -- a bright line
+/// down the side of a window that is merely running off the screen, which is
+/// worse than the overflow it was meant to fix.
+#[test]
+fn a_window_cut_off_by_the_scene_edge_does_not_gain_a_border_there() {
+    let painted = Rect {
+        x: 320,
+        y: 180,
+        width: 1920,
+        height: 1080,
+    };
+    // A window whose right edge is far past the scene: its real right band is
+    // outside and must vanish, not be redrawn at the boundary.
+    let inner = Rect {
+        x: 400,
+        y: 300,
+        width: 4000,
+        height: 400,
+    };
+    let outer = Rect {
+        x: 396,
+        y: 296,
+        width: 4008,
+        height: 408,
+    };
+    let color = CompositorRgb8 {
+        red: 0,
+        green: 80,
+        blue: 255,
+    };
+
+    let bands = compositor_border_bands(CompositorBorder {
+        node: CompositorNodeId::SurfaceChrome {
+            surface: SurfaceId::new(4, 1),
+            role: SurfaceChromeRole::Frame,
+        },
+        generation: 3,
+        outer,
+        inner,
+        color,
+    });
+    let right_edge_of_scene = painted.x + painted.width;
+    let survivors = bands
+        .iter()
+        .map(|band| intersect_for_test(band.geometry, painted))
+        .filter(|geometry| !geometry.is_empty())
+        .collect::<Vec<_>>();
+
+    assert!(
+        !survivors.is_empty(),
+        "the top, bottom and left bands are visible and must survive"
+    );
+    for band in &survivors {
+        assert!(
+            band.x < right_edge_of_scene,
+            "a band was placed at the scene's edge: {band:?}"
+        );
+        // A vertical band flush against the boundary would be the invented one.
+        let vertical = band.width <= 8;
+        assert!(
+            !(vertical && band.x + band.width == right_edge_of_scene),
+            "a vertical band ends exactly on the scene edge, which is the \
+             spurious border clipping outer/inner first would create: {band:?}"
+        );
+    }
+}
+
+/// Mirrors the renderer's per-band clip so the engine test can assert on it.
+fn intersect_for_test(first: Rect, second: Rect) -> Rect {
+    let left = first.x.max(second.x);
+    let top = first.y.max(second.y);
+    let right = (first.x + first.width).min(second.x + second.width);
+    let bottom = (first.y + first.height).min(second.y + second.height);
+    Rect {
+        x: left,
+        y: top,
+        width: (right - left).max(0),
+        height: (bottom - top).max(0),
+    }
+}

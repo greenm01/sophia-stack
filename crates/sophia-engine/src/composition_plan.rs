@@ -114,6 +114,16 @@ pub struct HeadCompositorBorder {
     pub outer: Rect,
     pub inner: Rect,
     pub color: CompositorRgb8,
+    /// The head-native region these bands may paint into.
+    ///
+    /// Carried rather than applied here because the four bands are the
+    /// difference between `outer` and `inner`, and clipping those two is not the
+    /// same operation as clipping what they produce. Where the clip leaves them
+    /// degenerate the subtraction is still positive, so a window lying entirely
+    /// outside this scene would keep a band at its original off-screen
+    /// coordinates. The consumer derives the bands from the full rects and
+    /// clips each one.
+    pub clip: Rect,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -380,6 +390,8 @@ pub fn build_head_composition_plan(
         projected_scene,
     };
     let target_density = projected_density_millis(transform);
+    // Everything the scene draws is bounded by this, not by the framebuffer.
+    let painted = scene_clip(projected_scene, target.native_size);
     let mut layers = Vec::with_capacity(snapshot.surfaces.len());
     for surface in &snapshot.surfaces {
         let variant = select_variant(&surface.content, target_density)
@@ -395,9 +407,9 @@ pub fn build_head_composition_plan(
             opacity_millis: surface.opacity_millis,
             native_geometry: transform
                 .project_root_rect(snapshot.logical_viewport, surface.geometry),
-            native_clip: clip_to_target(
+            native_clip: intersect_rect(
                 transform.project_root_rect(snapshot.logical_viewport, surface.clip),
-                target.native_size,
+                painted,
             ),
             requested_sampling,
             outcome: if variant.fidelity == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
@@ -416,15 +428,15 @@ pub fn build_head_composition_plan(
                 HeadCompositorCommand::Surface { surface: *surface }
             }
             CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
-                project_border(*border, snapshot.logical_viewport, transform),
+                project_border(*border, snapshot.logical_viewport, transform, painted),
             ),
         });
     }
 
     let cursor = snapshot.cursor.map(|cursor| OutputSceneCursor {
-        geometry: clip_to_target(
+        geometry: intersect_rect(
             transform.project_root_rect(snapshot.logical_viewport, cursor.geometry),
-            target.native_size,
+            painted,
         ),
         ..cursor
     });
@@ -827,6 +839,7 @@ fn project_border(
     border: CompositorBorder,
     viewport: Rect,
     transform: HeadLogicalTransform,
+    clip: Rect,
 ) -> HeadCompositorBorder {
     HeadCompositorBorder {
         node: border.node,
@@ -834,7 +847,20 @@ fn project_border(
         outer: transform.project_root_rect(viewport, border.outer),
         inner: transform.project_root_rect(viewport, border.inner),
         color: border.color,
+        clip,
     }
+}
+
+/// The head-native region the scene is allowed to paint into.
+///
+/// Not the framebuffer. Every policy until centre-unscaled projected the scene
+/// across the whole head, so these were one rect and the distinction cost
+/// nothing; a scene placed inside a border separates them, and content clipped
+/// to the framebuffer then paints into the margin that is supposed to hold
+/// background alone. Borders showed it first because they are bright lines, but
+/// surfaces and the cursor were bounded by the same wrong rect.
+fn scene_clip(projected_scene: Rect, native: Size) -> Rect {
+    clip_to_target(projected_scene, native)
 }
 
 fn ceil_div_positive(value: i32, divisor: i32) -> Option<i32> {

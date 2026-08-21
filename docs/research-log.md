@@ -13629,3 +13629,47 @@ exact-sampled draw and the uniform bands.
 
 The conclusion stands on the regions whose geometry only one head has. That is
 luck, not method, and the method is the follow-up.
+
+## One rect doing two jobs, found by giving it a second job
+
+Centre-unscaled landed and the scaling was right. The window borders were not:
+bands 1440 tall in a 1080-tall logical space, bands at x=4160 on a 2560-wide
+framebuffer, and the same border appearing twice at coordinates 320 apart --
+2238 against 1918, which is exactly the letterbox offset.
+
+The cause is older than the policy. `project_border` never clipped at all, while
+surfaces got a `native_clip` and the cursor got a `clip_to_target`. That much was
+a plain omission. The deeper half is that the two things which *were* clipped
+were clipped to `target.native_size`, the whole framebuffer, rather than to the
+region the scene occupies on it. Every policy until this one projected the scene
+across the entire head, so those were the same rectangle and nothing could tell
+them apart. Putting a smaller scene inside a larger head separated them for the
+first time, and content bounded by the framebuffer began painting into the margin
+that exists to hold background alone.
+
+So the border bug was three bugs wearing one symptom: borders unclipped,
+surfaces clipped to the wrong bound, and the cursor likewise. Each was confirmed
+load-bearing by reverting it alone and watching the test fail.
+
+The part I got wrong and had to correct: bands must be clipped individually
+rather than by clipping the `outer` and `inner` rects they are subtracted from,
+and I wrote a comment asserting that clipping those first would invent a band
+along the clip edge -- a border down the side of a window merely running off the
+screen. Enumerating the cases showed that does not happen. Both rects clip to the
+same boundary, so the subtraction goes to zero and the band simply vanishes,
+which is correct. What actually goes wrong is the opposite: a window lying
+entirely outside the scene clips to two degenerate rects whose difference is
+still positive, and the band survives at its original off-screen coordinates. The
+approach is wrong, the reason I gave was not, and a test written against the
+reason I gave passed with the wrong approach in place.
+
+That is the second time this session a test agreed with a claim without
+testing it. The first was a mirror of a shader standing in for the shader. This
+one was a case that could not distinguish the two implementations, and the way I
+found it was by running the wrong implementation against the test rather than by
+reasoning about whether it would pass. The case that does distinguish them is in
+the test now, and both wrong approaches fail it.
+
+Worth noting what the new policy actually did here: it did not introduce these
+defects, it made them observable. A latent conflation stays latent while nothing
+in the system can produce the input that separates the two meanings.
