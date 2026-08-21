@@ -42,9 +42,53 @@ field() {
     return 1
 }
 
-# One record per region, keyed by what identifies it across runs. The layer
-# index joins the key because two layers can share a rect, and the stage joins
-# it because a CPU and a DMA-BUF layer at the same place are different draws.
+# The centroid of the lit population, in thousandths of a bucket index.
+#
+# Bucket zero is background, and on a dark desktop it holds well over 97% of
+# every region -- a whole-region mean is therefore a measurement of how much
+# black is on screen, which no filter changes. The pixels a filter does change
+# are the anti-aliased edges spread through the buckets above it, and their
+# centroid is where those edges sit on the dark-to-light axis.
+#
+# It is deliberately a ratio. Two runs of a scripted gate need not put exactly
+# the same number of glyphs on screen, and a count would move for that reason
+# alone; the centroid does not care how much text there is, only how bright its
+# edges came out. That is the quantity a linear-light correction is predicted to
+# raise.
+centroid_millis() {
+    printf '%s' "$1" | awk -F: '
+        {
+            weighted = 0
+            lit = 0
+            for (slot = 2; slot <= NF; slot++) {
+                bucket = slot - 1
+                weighted += bucket * $slot
+                lit += $slot
+            }
+            if (lit == 0) { print "0"; exit }
+            printf "%d\n", (weighted * 1000) / lit
+        }'
+}
+
+# The lit population, ignoring background.
+lit_pixels() {
+    printf '%s' "$1" | awk -F: '
+        {
+            lit = 0
+            for (slot = 2; slot <= NF; slot++) { lit += $slot }
+            print lit
+        }'
+}
+
+# One record per region, keyed by what identifies it across runs, keeping the
+# last.
+#
+# The layer index joins the key because two layers can share a rect, and the
+# stage joins it because a CPU and a DMA-BUF layer at the same place are
+# different draws. The last record wins because the earlier ones are a session
+# starting up: a real run emitted a region nineteen times, eighteen of them
+# while the terminal was still empty or half-drawn, and only the last held the
+# content the gate exists to look at.
 collect() {
     local file="$1" line stage layer target mean histogram checksum
     while IFS= read -r line; do
@@ -58,7 +102,7 @@ collect() {
             "$stage" "$layer" "$target" "$mean" "$histogram" "$checksum"
     done < <(
         grep -E 'sophia_native_composition_region schema=(2|3) status=read ' "$file" || true
-    )
+    ) | awk -F'\t' '{ record[$1] = $0 } END { for (key in record) print record[key] }' | sort
 }
 
 before_records="$(collect "$before")"
@@ -78,39 +122,44 @@ moved=0
 held=0
 unmatched=0
 
-printf '%-34s %10s %10s %9s  %s\n' REGION BEFORE AFTER DELTA VERDICT
+printf '%-32s %8s %9s %9s %8s  %s\n' \
+    REGION LIT CENTROID 'AFTER' DELTA VERDICT
 while IFS=$'\t' read -r key before_mean before_histogram before_checksum; do
     match="$(printf '%s\n' "$after_records" | grep -F -m1 "$(printf '%s\t' "$key")" || true)"
+    before_lit="$(lit_pixels "$before_histogram")"
+    before_centroid="$(centroid_millis "$before_histogram")"
     if [[ -z "$match" ]]; then
-        printf '%-34s %10s %10s %9s  %s\n' "$key" "$before_mean" - - "absent-after"
+        printf '%-32s %8s %9s %9s %8s  %s\n' \
+            "$key" "$before_lit" "$before_centroid" - - "absent-after"
         unmatched=$(( unmatched + 1 ))
         continue
     fi
-    after_mean="$(printf '%s' "$match" | cut -f2)"
     after_histogram="$(printf '%s' "$match" | cut -f3)"
     after_checksum="$(printf '%s' "$match" | cut -f4)"
-    delta=$(( after_mean - before_mean ))
+    after_centroid="$(centroid_millis "$after_histogram")"
+    delta=$(( after_centroid - before_centroid ))
 
-    # A checksum that held while the mean moved, or the reverse, is worth
-    # seeing: the first means the parse found the wrong pair of lines, and the
-    # second means pixels changed in a way that cancelled in the mean, which is
-    # what the histogram is carried for.
-    if [[ "$before_checksum" == "$after_checksum" ]]; then
+    # A region with no lit pixels has no edges to judge, so it is neither
+    # evidence for the change nor against it. Saying so beats printing a
+    # centroid of zero that looks like a measurement.
+    if (( before_lit == 0 )); then
+        verdict="unlit"
+    elif [[ "$before_checksum" == "$after_checksum" ]]; then
         verdict="identical"
         held=$(( held + 1 ))
     elif (( delta > 0 )); then
-        verdict="brighter"
+        verdict="edges-brighter"
         moved=$(( moved + 1 ))
     elif (( delta < 0 )); then
-        verdict="darker"
+        verdict="edges-darker"
         moved=$(( moved + 1 ))
     else
-        verdict="redistributed"
+        verdict="changed-not-in-centroid"
         moved=$(( moved + 1 ))
     fi
 
-    printf '%-34s %10s %10s %+9d  %s\n' \
-        "$key" "$before_mean" "$after_mean" "$delta" "$verdict"
+    printf '%-32s %8s %9s %9s %+8d  %s\n' \
+        "$key" "$before_lit" "$before_centroid" "$after_centroid" "$delta" "$verdict"
     if [[ "$before_histogram" != "$after_histogram" ]]; then
         printf '    before %s\n    after  %s\n' "$before_histogram" "$after_histogram"
     fi
@@ -118,4 +167,10 @@ done < <(printf '%s\n' "$before_records")
 
 printf '\nregions moved=%d identical=%d absent-after=%d\n' \
     "$moved" "$held" "$unmatched"
-echo "means are thousandths of a 0..255 luminance; histograms are 16 buckets, dark to light"
+cat <<'NOTE'
+LIT counts pixels outside the background bucket -- the anti-aliased edges a
+filter acts on. CENTROID is where those edges sit on the dark-to-light axis, in
+thousandths of a bucket, and is a ratio so it does not move when a run happens
+to draw more text. Histograms are 16 buckets, dark to light; bucket zero is
+background and is excluded from both figures.
+NOTE
