@@ -326,6 +326,60 @@ pub fn mixed_mirror_extended_candidate(
     Ok(candidate)
 }
 
+/// Whether the snapshot already shows the topology this proof asks for.
+///
+/// A supervised policy is restarted, and a restart lands after the topology it
+/// applied is already live. Re-submitting the candidate it built the first time
+/// names a base epoch the compositor has moved past, which is refused as stale
+/// -- correctly, and fatally for a proof that reads any non-commit as failure.
+/// So the proof asks first whether the desk already looks the way it wants,
+/// which is the only question that survives being asked twice.
+pub fn mixed_mirror_extended_topology_is_applied(
+    snapshot: &OutputAuthoritySnapshot,
+    mirror_primary_label: &str,
+    mirror_member_label: &str,
+    extended_label: &str,
+    optimized: MirrorOptimizedHead,
+) -> bool {
+    let connected = snapshot
+        .heads
+        .iter()
+        .filter(|head| head.connected)
+        .collect::<Vec<_>>();
+    let (Ok(primary), Ok(member), Ok(extended)) = (
+        head_by_label(&connected, mirror_primary_label),
+        head_by_label(&connected, mirror_member_label),
+        head_by_label(&connected, extended_label),
+    ) else {
+        return false;
+    };
+    let (Ok(primary_group), Ok(member_group), Ok(extended_group)) = (
+        group_for_head(snapshot, primary),
+        group_for_head(snapshot, member),
+        group_for_head(snapshot, extended),
+    ) else {
+        return false;
+    };
+    if primary_group.output != member_group.output
+        || primary_group.output == extended_group.output
+        || extended_group.members.len() != 1
+    {
+        return false;
+    }
+    let (primary_mapping, member_mapping) = match optimized {
+        MirrorOptimizedHead::Primary => (OutputHeadMapping::Exact, OutputHeadMapping::Fit),
+        MirrorOptimizedHead::Member => (OutputHeadMapping::Fit, OutputHeadMapping::Exact),
+    };
+    let mapping_of = |head: &OutputHeadDescriptor| {
+        primary_group
+            .members
+            .iter()
+            .find(|candidate| candidate.head == head.head)
+            .map(|candidate| candidate.mapping)
+    };
+    mapping_of(primary) == Some(primary_mapping) && mapping_of(member) == Some(member_mapping)
+}
+
 /// The pixel size of the mode this head is currently running.
 fn current_mode_pixel_size(
     head: &OutputHeadDescriptor,

@@ -42,6 +42,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         std::time::Duration::from_secs(8),
                     )?;
                     let (_, snapshot) = client.receive_snapshot()?;
+                    // A restart lands after the topology this proof applied is
+                    // already live, and the candidate it would rebuild names a
+                    // base epoch the compositor has moved past. Asking whether
+                    // the desk already looks right is the same question the
+                    // second time it is asked.
+                    if sophia_wm_demo::mixed_mirror_extended_topology_is_applied(
+                        &snapshot,
+                        &labels[0],
+                        &labels[1],
+                        &labels[2],
+                        optimized,
+                    ) {
+                        println!(
+                            "sophia_output_v1_reference schema=1 status=settled kind=Committed topology_epoch={} heads=3 groups=2",
+                            snapshot.topology_epoch,
+                        );
+                        return Ok(sophia_protocol::OutputV1Outcome {
+                            connection_epoch: client.connection_epoch(),
+                            topology_epoch: snapshot.topology_epoch,
+                            kind: sophia_protocol::OutputV1OutcomeKind::Committed,
+                            reason: 0,
+                        });
+                    }
                     let candidate = sophia_wm_demo::mixed_mirror_extended_candidate(
                         &snapshot, &labels[0], &labels[1], &labels[2], optimized,
                     )?;

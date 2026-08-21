@@ -13,7 +13,10 @@ use sophia_protocol::{
     encode_output_v1_outcome_frame, encode_output_v1_server_welcome_frame,
     encode_output_v1_snapshot_frame,
 };
-use sophia_wm_demo::{MirrorOptimizedHead, OutputV1Client, mixed_mirror_extended_candidate};
+use sophia_wm_demo::{
+    MirrorOptimizedHead, OutputV1Client, mixed_mirror_extended_candidate,
+    mixed_mirror_extended_topology_is_applied,
+};
 
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
@@ -95,6 +98,84 @@ fn mixed_candidate_optimized_for_the_member_sizes_the_group_to_it() {
     assert_eq!(candidate.heads[1].mode.raw(), 12);
     assert_eq!(candidate.heads[2].mode.raw(), 13);
     candidate.validate_against(&snapshot).unwrap();
+}
+
+/// A restarted proof recognizes the topology it already applied.
+///
+/// The supervisor restarts this policy, and a restart lands after its topology
+/// is live. The candidate it would rebuild names a base epoch the compositor
+/// has moved past, so the compositor refuses it as stale -- and a proof that
+/// reads any non-commit as failure exits, is restarted, and exhausts the
+/// supervisor. A live session died exactly that way over one transport
+/// timeout.
+#[test]
+fn an_applied_mixed_topology_is_recognized_without_resubmitting_it() {
+    let snapshot = three_head_snapshot();
+    assert!(!mixed_mirror_extended_topology_is_applied(
+        &snapshot,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Primary,
+    ));
+
+    let applied = OutputAuthoritySnapshot {
+        topology_epoch: 5,
+        primary_output: sophia_protocol::OutputId::from_raw(1),
+        heads: snapshot.heads.clone(),
+        groups: vec![
+            OutputLogicalGroupState {
+                output: sophia_protocol::OutputId::from_raw(1),
+                generation: 3,
+                logical: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2560,
+                    height: 1440,
+                },
+                members: vec![
+                    OutputGroupMember {
+                        head: DisplayHeadId::from_raw(1),
+                        mapping: OutputHeadMapping::Exact,
+                    },
+                    OutputGroupMember {
+                        head: DisplayHeadId::from_raw(2),
+                        mapping: OutputHeadMapping::Fit,
+                    },
+                ],
+            },
+            OutputLogicalGroupState {
+                output: sophia_protocol::OutputId::from_raw(3),
+                generation: 3,
+                logical: Rect {
+                    x: 2560,
+                    y: 0,
+                    width: 1920,
+                    height: 1200,
+                },
+                members: vec![OutputGroupMember {
+                    head: DisplayHeadId::from_raw(3),
+                    mapping: OutputHeadMapping::Exact,
+                }],
+            },
+        ],
+    };
+
+    assert!(mixed_mirror_extended_topology_is_applied(
+        &applied,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Primary,
+    ));
+    // The other optimization is a different desk, and is not this one.
+    assert!(!mixed_mirror_extended_topology_is_applied(
+        &applied,
+        "Display 1",
+        "Display 2",
+        "Display 3",
+        MirrorOptimizedHead::Member,
+    ));
 }
 
 #[test]

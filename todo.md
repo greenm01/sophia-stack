@@ -1306,6 +1306,14 @@ hardware, the second only decides which screen looks best.
   optimized head -- one chooses which size the desktop is rasterized at, the
   other chooses whether members change mode to match it -- and it touches the
   topology candidate and rollback machinery, so it wants its own gate run.
+- [ ] Watch whether the public policy transport restarts on quiet rather than
+  on failure. A mixed run restarted the reference WM with
+  `reason=public_transport_failed error=TimedOut` after twelve seconds of
+  silence from a policy client that was alive. Restarting a wedged policy is the
+  designed recovery and it worked -- layout preserved, session continued -- so
+  this is not being loosened without evidence that the peer was healthy. It is
+  worth distinguishing if restarts recur: what the owner was waiting for is not
+  in the line, only that it waited.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while
