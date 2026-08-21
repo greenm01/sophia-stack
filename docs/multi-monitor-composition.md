@@ -448,17 +448,57 @@ problem:
 
 | Direction | Where it occurs | Current filter | Better answers |
 | --- | --- | --- | --- |
-| Downscale | smaller member of a group optimized for the larger | Catmull-Rom bicubic | gamma-correct filtering; a sharpening pass after the resample |
-| Upscale | larger member of a group optimized for the smaller | bilinear | Lanczos-2, or an edge-adaptive upscaler such as FSR 1 EASU or NIS |
+| Downscale | smaller member of a group optimized for the larger | Catmull-Rom bicubic, in linear light | a sharpening pass after the resample; a kernel that widens past 2x |
+| Upscale | larger member of a group optimized for the smaller | Catmull-Rom bicubic, in linear light | Lanczos-2, or an edge-adaptive upscaler such as FSR 1 EASU or NIS |
+
+Both directions run the same program. Catmull-Rom is an interpolating kernel --
+it passes through its samples -- so it is the textbook bicubic upsample as well
+as a reduction filter, and the upscale direction no longer falls through to a
+hardware bilinear. One program means one place where light is decoded and
+re-encoded rather than two that could drift apart, and it removed the need to
+choose an upscale kernel before the colour space was fixed.
+
+The sampler is set to `NEAREST` for every reconstructed draw, which is
+load-bearing rather than incidental: the kernel gathers its own 4x4 footprint at
+texel centres, and a hardware `LINEAR` filter would blend those texels in
+gamma-encoded space before the shader ever ran. That failure is invisible in the
+evidence -- the draw would still report `sharp_downscale status=active` while
+producing a partly uncorrected frame -- so the filter and the program are chosen
+by one function rather than at two sites that could disagree. `LINEAR` survives
+only on the fallback, where no shader is running.
 
 FSR 1 and NIS are spatial upscalers and apply only to the second row. Neither
 improves a downscale, and both expect to know their input's colour space.
 
-Colour space is the load-bearing part, and it is currently wrong in both
-directions: the composition path carries no sRGB decode, so every filter weight
-is applied to gamma-encoded bytes as though they were light. That is the
-ordinary cause of muddy edges on resampled text, and it corrupts a good kernel
-as thoroughly as a poor one. Correcting it precedes any filter work.
+Colour space was the load-bearing part, and it was wrong in both directions:
+every filter weight was applied to gamma-encoded bytes as though they were
+light, which is the ordinary cause of muddy edges on resampled text and corrupts
+a good kernel as thoroughly as a poor one. Averaging the encoded bytes 0 and 255
+gives 127, about a fifth of the light of white rather than half of it, so every
+resampled edge landed too dark.
+
+The reconstruction shader now decodes each tap before weighting it and re-encodes
+the sum once at the end. Gamma 2.0 -- `c*c` and `sqrt` -- rather than the sRGB
+curve, for the reason `software/raster_replay.rs` gives where it made the same
+choice for the CPU raster path: a squared approximation is cheap enough to apply
+to all sixteen taps and keeps one transfer function in the tree instead of two
+that could disagree. A residual error remains in the deep shadows, by choice.
+
+Premultiplied sources are unpremultiplied across the decode, or the alpha would
+be squared along with the colour. Under gamma 2.0 both directions collapse to
+something cheap: `(v/a)^2 * a` is `v*v/a`, and `sqrt(L/a) * a` is `sqrt(L*a)`.
+Alpha itself is never transformed, being coverage rather than light. The clamp
+happens before the encode and not after it, because Catmull-Rom rings below zero
+on a hard edge and the square root of a negative reaches the screen as a hole
+rather than as a dark pixel.
+
+Two things this does not reach. The fixed-function blend still mixes
+`dst*(1-src.a)` on gamma-encoded destination bytes, and no shader can touch it --
+it needs `GL_FRAMEBUFFER_SRGB` and an sRGB-capable EGL surface, and imported
+client textures take their format from EGLImage rather than from us. The
+shader's `rgb * opacity` and its `min(rgb, a)` ringing clamp stay in encoded
+space alongside it deliberately: moving one without the other would leave them
+inconsistent, so they travel together as one later change.
 
 An earlier revision of this section claimed the correction was measurable from
 the composition-region pixel populations the renderer already reported. It was

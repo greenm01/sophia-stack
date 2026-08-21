@@ -1223,12 +1223,12 @@ impl LiveProductionNativeScanout {
                 metrics.sharp_downscale_draws = metrics
                     .sharp_downscale_draws
                     .saturating_add(stats.sharp_downscale_draws);
-                metrics.linear_upscale_draws = metrics
-                    .linear_upscale_draws
-                    .saturating_add(stats.linear_upscale_draws);
-                metrics.sharp_downscale_fallbacks = metrics
-                    .sharp_downscale_fallbacks
-                    .saturating_add(stats.sharp_downscale_fallbacks);
+                metrics.sharp_upscale_draws = metrics
+                    .sharp_upscale_draws
+                    .saturating_add(stats.sharp_upscale_draws);
+                metrics.linear_fallback_draws = metrics
+                    .linear_fallback_draws
+                    .saturating_add(stats.linear_fallback_draws);
                 if let Some(worker) = exporter.worker_metrics() {
                     metrics.worker_requests =
                         metrics.worker_requests.saturating_add(worker.requests);

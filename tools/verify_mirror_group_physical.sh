@@ -379,14 +379,25 @@ cpu_checksum="$(field "$session" cpu_checksum)" || fail "bounded completion omit
 (( cpu_checksum > 0 )) || fail "cpu_checksum must be positive"
 [[ "$dp1_checksum" == "$cpu_checksum" && "$dp2_checksum" == "$cpu_checksum" ]] ||
     fail "mirrored heads did not present the final CPU scene checksum"
-resources="$(grep -E '^sophia_live_native_resources schema=5 status=complete ' "$evidence")"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
 require_positive_field "$resources" worker_completions
 require_positive_field "$resources" exact_nearest_draws
 require_positive_field "$resources" sharp_downscale_draws
-require_field "$resources" sharp_downscale_fallbacks 0
+# Schema 5 counted degraded draws as `sharp_downscale_fallbacks`; schema 6 calls
+# them `linear_fallback_draws`, because the count now covers either direction and
+# no longer double-counts as an upscale. Either name must read zero, and one of
+# them must be present -- a record carrying neither is a record that stopped
+# reporting whether the reconstruction shader ran at all.
+if field "$resources" linear_fallback_draws >/dev/null; then
+    require_field "$resources" linear_fallback_draws 0
+elif field "$resources" sharp_downscale_fallbacks >/dev/null; then
+    require_field "$resources" sharp_downscale_fallbacks 0
+else
+    fail "the resource completion reports no reconstruction fallback count"
+fi
 for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; do
     require_field "$resources" "$key" 0
 done

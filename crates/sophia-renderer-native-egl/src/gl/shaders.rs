@@ -86,11 +86,29 @@ void main() {
 }
 "#;
 
-/// Catmull-Rom reconstruction keeps a reduced one-pixel stem represented by
-/// several coverage values instead of choosing one source row or softening the
-/// whole glyph with a two-sample blend. The fixed 4x4 footprint is accepted by
-/// the GLES2-class contexts used by the native renderer and keeps work bounded.
-pub(super) const SHARP_DOWNSCALE_FRAGMENT_SHADER: &str = r#"#version 110
+/// Catmull-Rom reconstruction, weighting light rather than gamma-encoded bytes.
+///
+/// The kernel keeps a reduced one-pixel stem represented by several coverage
+/// values instead of choosing one source row or softening the whole glyph with a
+/// two-sample blend. The fixed 4x4 footprint is accepted by the GLES2-class
+/// contexts used by the native renderer and keeps work bounded. Being an
+/// interpolating kernel it passes through its samples, so it serves enlargements
+/// as well as reductions and one program covers both directions.
+///
+/// The taps are decoded before they are weighted. Averaging the encoded bytes 0
+/// and 255 gives 127, which is about a fifth of the light of white rather than
+/// half of it, so every resampled edge came out too dark and text read as muddy
+/// no matter how good the kernel was. Gamma 2.0 rather than the sRGB curve, for
+/// the reason `software/raster_replay.rs` gives where it made the same choice
+/// for the CPU path: a squared approximation stays cheap and reproducible, and
+/// one transfer function in the tree beats two that could disagree.
+///
+/// Premultiplied sources must be unpremultiplied across the decode or the alpha
+/// is squared along with the colour. Under gamma 2.0 both directions collapse:
+/// `(v/a)^2 * a` is `v*v/a`, and `sqrt(L/a) * a` is `sqrt(L*a)`. Alpha itself is
+/// never transformed, being coverage rather than light, so it accumulates with
+/// the same weights on the raw value.
+pub(super) const SHARP_RECONSTRUCTION_FRAGMENT_SHADER: &str = r#"#version 110
 uniform sampler2D frame;
 uniform float opacity;
 uniform float source_is_opaque;
@@ -108,6 +126,27 @@ float catmull_rom(float value) {
     return 0.0;
 }
 
+vec4 to_light(vec4 encoded, float opaque) {
+    if (opaque > 0.5) {
+        return vec4(encoded.rgb * encoded.rgb, encoded.a);
+    }
+    if (encoded.a <= 0.0) {
+        return vec4(0.0);
+    }
+    return vec4(encoded.rgb * encoded.rgb / encoded.a, encoded.a);
+}
+
+vec3 to_bytes(vec3 light, float alpha, float opaque) {
+    vec3 safe = max(light, vec3(0.0));
+    if (opaque > 0.5) {
+        return sqrt(safe);
+    }
+    if (alpha <= 0.0) {
+        return vec3(0.0);
+    }
+    return sqrt(safe * alpha);
+}
+
 void main() {
     vec2 source_position = texture_position * source_size - vec2(0.5);
     vec2 origin = floor(source_position);
@@ -120,11 +159,19 @@ void main() {
         for (int column = -1; column <= 2; column++) {
             float weight = weight_y * catmull_rom(float(column) - fraction.x);
             vec2 coordinate = (origin + vec2(float(column), float(row)) + vec2(0.5)) * texel;
-            sum += texture2D(frame, coordinate) * weight;
+            sum += to_light(texture2D(frame, coordinate), source_is_opaque) * weight;
             total += weight;
         }
     }
-    vec4 color = clamp(sum / max(total, 0.0001), 0.0, 1.0);
+    vec4 mixed = sum / max(total, 0.0001);
+    // Clamped before the encode, never after: Catmull-Rom rings below zero on a
+    // hard edge and the square root of a negative is not a number, which reaches
+    // the screen as a hole rather than as a dark pixel.
+    float alpha = clamp(mixed.a, 0.0, 1.0);
+    vec4 color = vec4(
+        clamp(to_bytes(mixed.rgb, alpha, source_is_opaque), 0.0, 1.0),
+        alpha
+    );
     if (source_is_opaque > 0.5) {
         color.a = 1.0;
     } else {

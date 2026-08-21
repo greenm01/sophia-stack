@@ -1313,19 +1313,29 @@ hardware, the second only decides which screen looks best.
   numbers stay as reproducible as the checksum beside them. Judge a filtering
   change on the histogram, not the sum: a mean holds still while the population
   behind it splits, which is exactly the shape gamma-space filtering makes.
-- [ ] Filter in linear light. The composition path has no sRGB decode anywhere:
-  the Catmull-Rom downscale shader weights gamma-encoded bytes as though they
-  were light, and the sampler carries no `GL_FRAMEBUFFER_SRGB` or sRGB texture
-  format. That is the ordinary cause of muddy edges on resampled text, it
-  affects the default mirror configuration rather than only the optional one,
-  and it corrupts any better kernel as thoroughly as the present one. Precedes
-  every other sampling-quality item. Decided: gamma-2.0 (`c*c` / `sqrt`),
-  matching the transfer function `software/raster_replay.rs` already chose for
-  the CPU path and for the stated reason, so the tree holds one gamma decision
-  rather than two that could disagree; and both directions, not only the
-  downscale. Premultiplied sources must be unpremultiplied before the decode --
-  under gamma-2.0 that collapses to `v*v/a` in and `sqrt(L*a)` out -- and alpha
-  is never transformed, being coverage rather than light.
+- [x] Filter in linear light. Every filter weight was applied to gamma-encoded
+  bytes as though they were light, which is the ordinary cause of muddy edges on
+  resampled text: averaging the encoded bytes 0 and 255 gives 127, about a fifth
+  of the light of white rather than half of it. The reconstruction shader now
+  decodes each tap before weighting it and re-encodes the sum once at the end,
+  under gamma 2.0, matching the transfer function `software/raster_replay.rs`
+  already chose for the CPU path and for its stated reason.
+
+  Both directions, from one program. Catmull-Rom is an interpolating kernel, so
+  it is the textbook bicubic upsample as well as a reduction filter; the upscale
+  path stopped falling through to a hardware bilinear and no new kernel had to be
+  chosen. The sampler is `NEAREST` for every reconstructed draw, which is the
+  part that is easy to get wrong invisibly: a hardware `LINEAR` filter would
+  blend the texels in gamma-encoded space before the shader ran, and the evidence
+  would still read `sharp_downscale status=active`. The filter and the program
+  are now one decision taken in one function rather than two that could disagree.
+
+  Premultiplied sources are unpremultiplied across the decode -- `v*v/a` in and
+  `sqrt(L*a)` out -- and alpha is never transformed, being coverage rather than
+  light. The clamp precedes the encode because Catmull-Rom rings negative and
+  `sqrt` of a negative reaches the screen as a hole. Three negative controls
+  were run against the shader and the filter policy; each fails the intended
+  test when reverted.
 - [ ] Give the upscale direction a real kernel. Superseded in part: Catmull-Rom
   is itself the textbook bicubic upsample, so the linear-light change serves
   both directions from the one program that already exists and the upscale path

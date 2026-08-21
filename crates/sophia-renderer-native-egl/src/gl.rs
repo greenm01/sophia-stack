@@ -5,11 +5,15 @@ use std::{
 };
 
 #[cfg(feature = "gbm-platform")]
+mod sampling_program;
+#[cfg(feature = "gbm-platform")]
 mod shaders;
 
 #[cfg(feature = "gbm-platform")]
+use sampling_program::{CompositionProgram, composition_draw_plan, sampling_evidence_index};
+#[cfg(feature = "gbm-platform")]
 use shaders::{
-    FRAGMENT_SHADER, SHARP_DOWNSCALE_FRAGMENT_SHADER, VERTEX_SHADER, compile_program,
+    FRAGMENT_SHADER, SHARP_RECONSTRUCTION_FRAGMENT_SHADER, VERTEX_SHADER, compile_program,
     compile_shader,
 };
 
@@ -32,7 +36,7 @@ const FULLSCREEN_QUAD_VERTICES: [f32; 16] = [
 pub(crate) struct PersistentXrgb8888GlPipeline {
     gl: glow::Context,
     program: glow::NativeProgram,
-    sharp_downscale_program: Option<glow::NativeProgram>,
+    reconstruction_program: Option<glow::NativeProgram>,
     texture: glow::NativeTexture,
     cpu_layer_texture: glow::NativeTexture,
     cpu_layer_texture_width: Cell<u32>,
@@ -41,8 +45,8 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     sampling_evidence: Cell<u16>,
     exact_nearest_draws: Cell<usize>,
     sharp_downscale_draws: Cell<usize>,
-    linear_upscale_draws: Cell<usize>,
-    sharp_downscale_fallbacks: Cell<usize>,
+    sharp_upscale_draws: Cell<usize>,
+    linear_fallback_draws: Cell<usize>,
     width: u32,
     height: u32,
 }
@@ -100,13 +104,13 @@ impl PersistentXrgb8888GlPipeline {
 
     unsafe fn new_inner(gl: glow::Context, width: u32, height: u32) -> Result<Self, String> {
         let program = unsafe { compile_program(&gl, FRAGMENT_SHADER)? };
-        let sharp_downscale_program = match unsafe {
-            compile_program(&gl, SHARP_DOWNSCALE_FRAGMENT_SHADER)
+        let reconstruction_program = match unsafe {
+            compile_program(&gl, SHARP_RECONSTRUCTION_FRAGMENT_SHADER)
         } {
             Ok(program) => Some(program),
             Err(error) => {
                 tracing::warn!(
-                    "sophia_native_composition_sampling schema=2 status=unavailable mode=sharp_downscale reason=shader_compile error={error}"
+                    "sophia_native_composition_sampling schema=2 status=unavailable mode=sharp_reconstruction reason=shader_compile error={error}"
                 );
                 None
             }
@@ -195,7 +199,7 @@ impl PersistentXrgb8888GlPipeline {
         Ok(Self {
             gl,
             program,
-            sharp_downscale_program,
+            reconstruction_program,
             texture,
             cpu_layer_texture,
             cpu_layer_texture_width: Cell::new(width),
@@ -204,8 +208,8 @@ impl PersistentXrgb8888GlPipeline {
             sampling_evidence: Cell::new(0),
             exact_nearest_draws: Cell::new(0),
             sharp_downscale_draws: Cell::new(0),
-            linear_upscale_draws: Cell::new(0),
-            sharp_downscale_fallbacks: Cell::new(0),
+            sharp_upscale_draws: Cell::new(0),
+            linear_fallback_draws: Cell::new(0),
             width,
             height,
         })
@@ -325,9 +329,12 @@ impl PersistentXrgb8888GlPipeline {
             height,
         );
         // Per draw, not once at creation: filter state lives on the texture object
-        // and this one texture is reused for layers at different scales.
+        // and this one texture is reused for layers at different scales. The
+        // filter comes from the same resolution that picks the program, so a
+        // reconstructed draw is guaranteed the unfiltered texels its kernel
+        // gathers rather than a hardware blend of them.
         let sampling = sampling_for_rect((width, height), target);
-        let filter = texture_filter(sampling);
+        let filter = self.draw_plan(sampling).texture_filter;
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl
@@ -521,10 +528,11 @@ impl PersistentXrgb8888GlPipeline {
         alpha: f32,
         alpha_mode: NativeCompositionAlphaMode,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
-        // Same reasoning as the CPU layer: point sampling only where the draw is
-        // 1:1, because anywhere else it drops rows rather than resampling them.
+        // Same reasoning as the CPU layer: the filter and the program are one
+        // decision, so the shader never samples texels the hardware already
+        // blended in gamma-encoded space.
         let sampling = sampling_for_rect(source, target);
-        let filter = texture_filter(sampling);
+        let filter = self.draw_plan(sampling).texture_filter;
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, Some(texture));
@@ -554,12 +562,20 @@ impl PersistentXrgb8888GlPipeline {
         Ok(())
     }
 
+    /// How this pipeline will serve a requested sampling, given what compiled.
+    fn draw_plan(
+        &self,
+        requested: NativeCompositionSampling,
+    ) -> sampling_program::CompositionDrawPlan {
+        composition_draw_plan(requested, self.reconstruction_program.is_some())
+    }
+
     pub(crate) fn sampling_stats(&self) -> NativeCompositionSamplingStats {
         NativeCompositionSamplingStats {
             exact_nearest_draws: self.exact_nearest_draws.get(),
             sharp_downscale_draws: self.sharp_downscale_draws.get(),
-            linear_upscale_draws: self.linear_upscale_draws.get(),
-            sharp_downscale_fallbacks: self.sharp_downscale_fallbacks.get(),
+            sharp_upscale_draws: self.sharp_upscale_draws.get(),
+            linear_fallback_draws: self.linear_fallback_draws.get(),
         }
     }
 
@@ -649,21 +665,20 @@ impl PersistentXrgb8888GlPipeline {
                 vertices.len() * std::mem::size_of::<f32>(),
             )
         };
-        let (program, effective_sampling, status) = match requested_sampling {
-            NativeCompositionSampling::SharpDownscale => self.sharp_downscale_program.map_or(
-                (
-                    self.program,
-                    NativeCompositionSampling::LinearUpscale,
-                    "fallback",
-                ),
-                |program| (program, requested_sampling, "active"),
-            ),
-            _ => (self.program, requested_sampling, "active"),
+        let plan = self.draw_plan(requested_sampling);
+        let program = match plan.program {
+            CompositionProgram::Direct => self.program,
+            // `draw_plan` only names the reconstruction program when it exists,
+            // so the fallback here is unreachable rather than a second policy.
+            CompositionProgram::Reconstruction => {
+                self.reconstruction_program.unwrap_or(self.program)
+            }
         };
+        let effective_sampling = plan.effective;
         self.record_sampling(
             requested_sampling,
             effective_sampling,
-            status,
+            plan.status,
             source,
             target,
             alpha_mode,
@@ -707,7 +722,10 @@ impl PersistentXrgb8888GlPipeline {
                     0.0
                 },
             );
-            if effective_sampling == NativeCompositionSampling::SharpDownscale {
+            // Both directions now, not the reduction alone: the kernel derives
+            // every tap coordinate from this, so an enlargement left without it
+            // would gather from wherever the uniform happened to be.
+            if plan.program == CompositionProgram::Reconstruction {
                 self.gl.uniform_2_f32(
                     self.gl
                         .get_uniform_location(program, "source_size")
@@ -739,23 +757,21 @@ impl PersistentXrgb8888GlPipeline {
         target: GlCompositionRect,
         alpha_mode: NativeCompositionAlphaMode,
     ) {
+        // One counter per outcome, incremented once. The fallback used to be
+        // tallied twice -- as an upscale and as a fallback -- which left the
+        // upscale count meaning either of two things.
         let counter = match effective {
             NativeCompositionSampling::ExactNearest => &self.exact_nearest_draws,
             NativeCompositionSampling::SharpDownscale => &self.sharp_downscale_draws,
-            NativeCompositionSampling::LinearUpscale => &self.linear_upscale_draws,
+            NativeCompositionSampling::SharpUpscale => &self.sharp_upscale_draws,
+            NativeCompositionSampling::LinearFallback => &self.linear_fallback_draws,
         };
         counter.set(counter.get().saturating_add(1));
-        if status == "fallback" {
-            self.sharp_downscale_fallbacks
-                .set(self.sharp_downscale_fallbacks.get().saturating_add(1));
-        }
-        let evidence_index =
-            match (requested, status) {
-                (NativeCompositionSampling::ExactNearest, _) => 0,
-                (NativeCompositionSampling::SharpDownscale, "active") => 2,
-                (NativeCompositionSampling::SharpDownscale, _) => 4,
-                (NativeCompositionSampling::LinearUpscale, _) => 6,
-            } + usize::from(alpha_mode == NativeCompositionAlphaMode::Premultiplied);
+        let evidence_index = sampling_evidence_index(
+            requested,
+            status == "fallback",
+            alpha_mode == NativeCompositionAlphaMode::Premultiplied,
+        );
         let bit = 1u16 << evidence_index;
         if self.sampling_evidence.get() & bit != 0 {
             return;
@@ -786,16 +802,6 @@ fn sampling_for_rect(source: (u32, u32), target: GlCompositionRect) -> NativeCom
             u32::try_from(target.height).unwrap_or(0),
         ),
     )
-}
-
-#[cfg(feature = "gbm-platform")]
-const fn texture_filter(sampling: NativeCompositionSampling) -> u32 {
-    match sampling {
-        NativeCompositionSampling::ExactNearest => glow::NEAREST,
-        NativeCompositionSampling::SharpDownscale | NativeCompositionSampling::LinearUpscale => {
-            glow::LINEAR
-        }
-    }
 }
 
 pub(crate) fn smoke_current_gl_context_with_loader<F>(

@@ -349,7 +349,7 @@ for key in native_mixed_exports native_target_recreations \
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=5 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
