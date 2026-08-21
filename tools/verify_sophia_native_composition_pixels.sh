@@ -7,8 +7,8 @@ evidence_file="${1:-/tmp/sophia-kitty-tty3-launch.log}"
     exit 1
 }
 
-cpu_line="$(grep -E 'sophia_native_composition_pixels schema=(1|2) status=read stage=cpu ' "$evidence_file" | head -n 1 || true)"
-dmabuf_line="$(grep -E 'sophia_native_composition_pixels schema=(1|2) status=read stage=dmabuf ' "$evidence_file" | head -n 1 || true)"
+cpu_line="$(grep -E 'sophia_native_composition_pixels schema=(1|2|3) status=read stage=cpu ' "$evidence_file" | head -n 1 || true)"
+dmabuf_line="$(grep -E 'sophia_native_composition_pixels schema=(1|2|3) status=read stage=dmabuf ' "$evidence_file" | head -n 1 || true)"
 [[ -n "$cpu_line" ]] || {
     echo "missing readable CPU composition evidence" >&2
     exit 1

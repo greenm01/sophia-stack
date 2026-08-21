@@ -644,17 +644,19 @@ fn render_native_target_composition(
                 match target.pipeline.read_composition_pixels() {
                     Ok(metrics) => {
                         tracing::info!(
-                            "sophia_native_composition_frame schema=1 status=verified width={} height={} pixels={} nonzero_rgb_pixels={} checksum={}",
+                            "sophia_native_composition_frame schema=2 status=verified width={} height={} pixels={} nonzero_rgb_pixels={} luminance_sum={} luminance_mean_millis={} checksum={}",
                             target.width,
                             target.height,
                             metrics.pixels,
                             metrics.nonzero_rgb_pixels,
+                            metrics.luminance_sum,
+                            metrics.luminance_mean_millis(),
                             metrics.checksum,
                         );
                         pixel_metrics = Some(metrics);
                     }
                     Err(_) => tracing::warn!(
-                        "sophia_native_composition_frame schema=1 status=unverified width={} height={}",
+                        "sophia_native_composition_frame schema=2 status=unverified width={} height={}",
                         target.width,
                         target.height,
                     ),
@@ -696,7 +698,7 @@ fn trace_composition_pixels(
     let region_metrics = pipeline.read_composition_region_pixels(target.into());
     match (pipeline.read_composition_pixels(), region_metrics) {
         (Ok(metrics), Ok(region)) => tracing::info!(
-            "sophia_native_composition_pixels schema=2 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} checksum={} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_checksum={}",
+            "sophia_native_composition_pixels schema=3 status=read stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride} pixels={} nonzero_rgb_pixels={} alpha_zero_pixels={} alpha_partial_pixels={} alpha_opaque_pixels={} luminance_sum={} luminance_mean_millis={} checksum={} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
             target.width,
             target.height,
             target.x,
@@ -706,6 +708,8 @@ fn trace_composition_pixels(
             metrics.alpha_zero_pixels,
             metrics.alpha_partial_pixels,
             metrics.alpha_opaque_pixels,
+            metrics.luminance_sum,
+            metrics.luminance_mean_millis(),
             metrics.checksum,
             region.pixels,
             region.nonzero_rgb_pixels,
@@ -717,10 +721,13 @@ fn trace_composition_pixels(
             region.magenta_pixels,
             region.gray_pixels,
             region.other_pixels,
+            region.luminance_sum,
+            region.luminance_mean_millis(),
+            region.luminance_histogram_field(),
             region.checksum,
         ),
         _ => tracing::warn!(
-            "sophia_native_composition_pixels schema=2 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
+            "sophia_native_composition_pixels schema=3 status=unavailable stage={stage} layer={layer} target={}x{}_{}_{} format={format:#x} modifier={modifier:#x} stride={stride}",
             target.width,
             target.height,
             target.x,
@@ -737,7 +744,7 @@ fn trace_final_composition_region(
 ) {
     match pipeline.read_composition_region_pixels(target.into()) {
         Ok(region) => tracing::info!(
-            "sophia_native_composition_region schema=1 status=read composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_checksum={}",
+            "sophia_native_composition_region schema=2 status=read composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
             target.width,
             target.height,
             target.x,
@@ -752,10 +759,13 @@ fn trace_final_composition_region(
             region.magenta_pixels,
             region.gray_pixels,
             region.other_pixels,
+            region.luminance_sum,
+            region.luminance_mean_millis(),
+            region.luminance_histogram_field(),
             region.checksum,
         ),
         Err(_) => tracing::warn!(
-            "sophia_native_composition_region schema=1 status=unavailable composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{}",
+            "sophia_native_composition_region schema=2 status=unavailable composition=final source_stage={source_stage} layer={layer} target={}x{}_{}_{}",
             target.width,
             target.height,
             target.x,

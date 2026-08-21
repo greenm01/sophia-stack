@@ -161,7 +161,7 @@ max_final_cpu_gray_pixels() {
         [[ "$gray" =~ ^[0-9]+$ ]] || continue
         (( gray > max )) && max="$gray"
     done < <(
-        grep -E "^sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu layer=[0-9]+ target=$target region_pixels=[0-9]+ .*region_gray_pixels=[0-9]+([[:space:]]|$)" \
+        grep -E "^sophia_native_composition_region schema=(1|2) status=read composition=final source_stage=cpu layer=[0-9]+ target=$target region_pixels=[0-9]+ .*region_gray_pixels=[0-9]+([[:space:]]|$)" \
             "$evidence" || true
     )
     printf '%s\n' "$max"

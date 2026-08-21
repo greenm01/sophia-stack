@@ -1,3 +1,13 @@
+/// How many luminance buckets the histogram spreads the 0..=255 range across.
+pub const NATIVE_COMPOSITION_LUMINANCE_BUCKETS: usize = 16;
+
+/// Integer Rec.709-shaped luminance weights, chosen to sum to exactly 256.
+///
+/// The sum being a power of two is what keeps this exact: the shift below is a
+/// division that never rounds, so two runs of the same frame agree bit for bit
+/// the way `checksum` does. A float luma would not survive that comparison.
+const LUMINANCE_WEIGHTS: (u32, u32, u32) = (54, 183, 19);
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NativeCompositionPixelMetrics {
     pub pixels: usize,
@@ -13,7 +23,52 @@ pub struct NativeCompositionPixelMetrics {
     pub alpha_zero_pixels: usize,
     pub alpha_partial_pixels: usize,
     pub alpha_opaque_pixels: usize,
+    /// Total luminance, the one population above that reads intensity.
+    ///
+    /// The channel buckets are deliberately blind to it — they key on which
+    /// channels are lit so a palette stays legible across an intensity
+    /// conversion, which is exactly what makes them unable to judge one. A
+    /// filter that weights gamma-encoded bytes as though they were light moves
+    /// every resampled edge pixel and moves none of those buckets.
+    pub luminance_sum: u64,
+    /// The distribution behind that sum.
+    ///
+    /// A mean can stay put while a population splits, and the signature of
+    /// gamma-space filtering is a shape: edge pixels piled into the low-mid
+    /// buckets that belong nearer the middle. Judge the change on this and keep
+    /// the sum for a one-number comparison.
+    pub luminance_buckets: [u32; NATIVE_COMPOSITION_LUMINANCE_BUCKETS],
     pub checksum: u64,
+}
+
+impl NativeCompositionPixelMetrics {
+    /// Mean luminance in thousandths, so a comparison stays integer.
+    pub const fn luminance_mean_millis(&self) -> u64 {
+        match self.pixels {
+            0 => 0,
+            pixels => self.luminance_sum.saturating_mul(1_000) / pixels as u64,
+        }
+    }
+
+    /// The bucket populations as one colon-separated evidence field.
+    pub fn luminance_histogram_field(&self) -> String {
+        let mut field = String::with_capacity(NATIVE_COMPOSITION_LUMINANCE_BUCKETS * 4);
+        for (index, count) in self.luminance_buckets.iter().enumerate() {
+            if index > 0 {
+                field.push(':');
+            }
+            field.push_str(&count.to_string());
+        }
+        field
+    }
+}
+
+/// The luminance of one pixel, on the same 0..=255 scale as its channels.
+pub const fn native_composition_luminance(red: u8, green: u8, blue: u8) -> u8 {
+    let (red_weight, green_weight, blue_weight) = LUMINANCE_WEIGHTS;
+    let weighted =
+        red_weight * red as u32 + green_weight * green as u32 + blue_weight * blue as u32;
+    (weighted >> 8) as u8
 }
 
 /// How many compositions a context may read back to prove it emits light.
@@ -77,6 +132,10 @@ pub fn native_composition_pixel_metrics(rgba: &[u8]) -> NativeCompositionPixelMe
             255 => metrics.alpha_opaque_pixels = metrics.alpha_opaque_pixels.saturating_add(1),
             _ => metrics.alpha_partial_pixels = metrics.alpha_partial_pixels.saturating_add(1),
         }
+        let luminance = native_composition_luminance(*red, *green, *blue);
+        metrics.luminance_sum = metrics.luminance_sum.saturating_add(u64::from(luminance));
+        let bucket = usize::from(luminance) / (256 / NATIVE_COMPOSITION_LUMINANCE_BUCKETS);
+        metrics.luminance_buckets[bucket] = metrics.luminance_buckets[bucket].saturating_add(1);
         for byte in pixel {
             metrics.checksum ^= u64::from(*byte);
             metrics.checksum = metrics.checksum.wrapping_mul(0x0000_0100_0000_01b3);

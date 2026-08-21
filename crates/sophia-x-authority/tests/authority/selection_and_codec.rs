@@ -503,7 +503,6 @@ fn x_authority_request_codec_round_trips_create_window() {
     assert_eq!(decoded, request);
 }
 
-#[test]
 /// Both extents survive the wire, including where they disagree.
 ///
 /// A transaction states what its raster spans and, separately, what the

@@ -13400,3 +13400,85 @@ they are one situation, and every reader and writer now uses it.
 The rule this leaves behind: a negative control is not a formality. Deleting
 the code under test and watching the test still pass is the cheapest way to
 find out that the test and the defect never met.
+
+## A measurement that could not have seen what it was cited for
+
+Before touching the shader I checked what the evidence would show, and it would
+have shown nothing. Two sessions of this document, and a paragraph in
+`docs/multi-monitor-composition.md`, said the linear-light correction was
+measurable from the composition-region pixel populations the renderer already
+reports. It was not, and the reason is written in the metric's own comment:
+those buckets key on which channels are lit, deliberately, so that a diagnostic
+palette stays legible across an intensity conversion while still exposing a
+channel swap. Gamma changes intensity and nothing else. Every bucket would have
+held still while every resampled pixel underneath it moved.
+
+What remained was `checksum`, an FNV hash over all four bytes. It is maximally
+sensitive and completely uninformative: it says the frame differs, never which
+direction it went. Had the shader landed first, a wrong gamma and a right one
+would have produced the same evidence -- a changed checksum and unmoved
+populations -- and the only thing left to judge by would have been whether the
+screen looked better to me, which is the impression the measurement existed to
+replace.
+
+`luminance_sum` and `luminance_buckets` were added ahead of the shader, alone,
+so the baseline is banked with the old filter still in place. The weights are
+integer and sum to exactly 256, so the shift is a division that never rounds and
+two runs of one frame agree bit for bit the way the checksum beside them does; a
+float luma would not have survived that comparison. The histogram is the metric
+that judges the change and the sum is for a one-number comparison, because a
+mean holds still while the population behind it splits, and a split is precisely
+the shape gamma-space filtering makes: edge pixels piled into the low-mid
+buckets instead of spread through the middle.
+
+The prediction is recorded before the change rather than after: on a head that
+downscales, mean luminance rises and the low-mid buckets depopulate toward the
+middle; on a head sampling exactly one-to-one, every metric including the
+checksum is byte-identical. That second head is a control the topology hands us
+for free, and it is what makes the first head's movement mean something. The
+alpha populations are a second control -- a correction to RGB must not move
+them.
+
+The rule this leaves behind: a claim that a change is measurable is itself a
+claim to check, and the cheapest time to check it is before the change, when the
+answer can still reorder the work. This one had been asserted in two documents
+and repeated to the user before anyone asked the metric whether it could see.
+
+## What the gate's sharpness verdict actually proves
+
+Reading the composition path for the gamma work turned up something unrelated
+and worse. The mixed-output gate reports `extended_text=sharp`, and the evidence
+behind that phrase cannot distinguish a sharp frame from a resampled one.
+
+Two derivations, unconnected. The engine's `sampling_class` compares two
+`density_millis` scalars -- a property of the output-to-head projection that
+knows nothing about any raster's extent. The renderer's
+`native_composition_sampling` compares the actual source and target rectangles.
+The parameter the renderer names `requested_sampling` is its own value, not the
+engine's: the two names are homonyms across a boundary nothing crosses.
+
+They disagree four ways. Content whose `logical_extent` differs from the
+geometry it is placed into -- the ordinary state of any surface mid-resize, and
+documented as legitimate. Rounding, because the projected density truncates
+while the expected pixel size ceilings and each projected edge truncates on its
+own, so every scale that is not dyadic-clean lands a pixel off; the engine's own
+test happens to use exactly 0.75, where they agree. Mixed-axis projections,
+where one scalar is asked to describe an upscale in x and a downscale in y.
+And retained renderer images, exempt from the source-size check by design, whose
+class is therefore computed from a number that is not the one drawn.
+
+So the string the verifier greps for is satisfiable by a frame the GPU filtered,
+and the single renderer-side check in that script rejects `status=fallback` and
+`status=unavailable` while passing `requested=sharp_downscale status=active` --
+the literal signature of the resample. There is also a quiet consequence beyond
+the evidence: the plan's one-pixel repaint dilation for filter footprint is
+gated on the plan's class, so it is skipped in exactly the cases where the
+renderer is filtering and the footprint does exceed the rect.
+
+It is the same defect as the raster-versus-presentation extent split landed a
+few commits earlier, in a different place: one fact derived twice from different
+data with nothing forcing agreement. It does not block the gamma work, whose
+evidence comes from luminance rather than from this field, so it stays a
+separate change rather than being folded in. Recorded here because it was found
+by reading, not by failing, and a gate that overstates what it proves is worth
+writing down the moment it is noticed.

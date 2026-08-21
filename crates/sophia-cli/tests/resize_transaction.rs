@@ -173,12 +173,12 @@ fn inset_content_retirement_commits_its_distinct_outer_layout_extent() {
     );
 }
 use sophia_protocol::{
-    AuthorityKind, BufferHandle, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability,
-    Size, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
+    AuthorityKind, BufferSource, LayerSnapshot, Rect, Region, ResizeSyncCapability, Size,
+    SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, Transform,
 };
 use sophia_x_authority::{
     XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate, XAuthorityObservedTransactionBatch,
-    XAuthorityPresentSubmission, XResourceId,
+    XResourceId,
 };
 
 fn size(width: i32, height: i32) -> Size {

@@ -458,9 +458,24 @@ Colour space is the load-bearing part, and it is currently wrong in both
 directions: the composition path carries no sRGB decode, so every filter weight
 is applied to gamma-encoded bytes as though they were light. That is the
 ordinary cause of muddy edges on resampled text, and it corrupts a good kernel
-as thoroughly as a poor one. Correcting it precedes any filter work, and it is
-measurable from the composition-region pixel populations the renderer already
-reports.
+as thoroughly as a poor one. Correcting it precedes any filter work.
+
+An earlier revision of this section claimed the correction was measurable from
+the composition-region pixel populations the renderer already reported. It was
+not. Those populations key on which channels are lit, never on how brightly —
+`pixel_evidence.rs` says so in as many words, because a palette check wants to
+survive an intensity conversion in order to expose a channel swap. The property
+that makes them good at their job makes them blind to this one. Gamma moves
+intensity and nothing else, so every one of them would have held still while
+the pixels underneath changed; only `checksum` would have moved, and a hash
+proves a difference without saying which direction it went.
+
+`region_luminance_sum` and `region_luminance_histogram` were added for this.
+Both are integer, with weights summing to 256 so the shift never rounds, which
+keeps them as reproducible as the checksum beside them. Judge a filtering change
+on the histogram — a mean can hold still while the population behind it splits —
+and read the exact-sampled head as the control, because a head that resamples
+nothing must not move at all.
 
 Sharpening after an upscale is a taste with a cost: contrast-adaptive
 sharpening rings on glyphs that were already crisp, which is why the desktop

@@ -83,7 +83,7 @@ while IFS=: read -r number line; do
         palette_number="$number"
         break
     fi
-done < <(grep -nE 'sophia_native_composition_region schema=1 status=read composition=final source_stage=cpu ' "$SESSION_LOG" || true)
+done < <(grep -nE 'sophia_native_composition_region schema=(1|2) status=read composition=final source_stage=cpu ' "$SESSION_LOG" || true)
 [[ -n "$palette_line" ]] ||
     fail "the composed palette has a missing, swapped, collapsed, or contaminated color channel"
 
@@ -123,7 +123,7 @@ while IFS=: read -r number line; do
         kitty_number="$number"
         break
     fi
-done < <(grep -nE 'sophia_native_composition_region schema=1 status=read composition=final source_stage=dmabuf ' "$SESSION_LOG" || true)
+done < <(grep -nE 'sophia_native_composition_region schema=(1|2) status=read composition=final source_stage=dmabuf ' "$SESSION_LOG" || true)
 [[ "$kitty_palette" == true ]] || fail "Kitty's 24-bit ANSI sample did not compose all RGB/CMY channels"
 kitty_submit_line="$(line_after 'sophia_live_native_page_flip schema=1 status=submitted output=[0-9]+ ' "$kitty_number")"
 [[ "$kitty_submit_line" =~ ^[0-9]+$ ]] || fail "the final Kitty color frame was not submitted"

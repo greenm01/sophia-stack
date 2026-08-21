@@ -1,7 +1,7 @@
 use sophia_renderer_native_egl::{
-    NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS, native_composition_gl_read_y,
-    native_composition_pixel_metrics, native_composition_pixel_metrics_from_rows,
-    native_composition_pixel_proof_capture,
+    NATIVE_COMPOSITION_LUMINANCE_BUCKETS, NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS,
+    native_composition_gl_read_y, native_composition_luminance, native_composition_pixel_metrics,
+    native_composition_pixel_metrics_from_rows, native_composition_pixel_proof_capture,
 };
 #[cfg(feature = "gbm-platform")]
 use sophia_renderer_native_egl::{NativeCpuTextureUpload, native_cpu_texture_upload};
@@ -48,6 +48,89 @@ fn pixel_metrics_distinguish_asymmetric_color_channels() {
     assert_eq!(metrics.magenta_pixels, 1);
     assert_eq!(metrics.gray_pixels, 1);
     assert_eq!(metrics.other_pixels, 0);
+}
+
+/// Luminance reads what the channel buckets are built not to see.
+///
+/// Both fixtures are neutral grays, so every channel-presence bucket assigns
+/// them identically and the two are indistinguishable to every population that
+/// existed before. They differ only in intensity, which is the whole of what a
+/// filter working in the wrong space changes. A metric that cannot separate
+/// these cannot judge a gamma correction, which is why one was added rather
+/// than the existing populations being reused.
+#[test]
+fn luminance_separates_frames_the_channel_buckets_report_as_identical() {
+    let dark = native_composition_pixel_metrics(&[64, 64, 64, 255, 64, 64, 64, 255]);
+    let light = native_composition_pixel_metrics(&[192, 192, 192, 255, 192, 192, 192, 255]);
+
+    assert_eq!(dark.gray_pixels, light.gray_pixels);
+    assert_eq!(dark.nonzero_rgb_pixels, light.nonzero_rgb_pixels);
+    assert_eq!(dark.other_pixels, light.other_pixels);
+    assert_eq!(dark.alpha_opaque_pixels, light.alpha_opaque_pixels);
+
+    assert!(light.luminance_sum > dark.luminance_sum);
+    assert_ne!(light.luminance_buckets, dark.luminance_buckets);
+    assert_eq!(dark.luminance_mean_millis(), 64_000);
+    assert_eq!(light.luminance_mean_millis(), 192_000);
+}
+
+/// A mean can hold still while the population behind it splits.
+///
+/// Gamma-space filtering piles resampled edge pixels into the low-mid buckets
+/// instead of spreading them, and a sum alone would report that as no change at
+/// all. The histogram is the metric that judges the correction; the sum is for
+/// a one-number comparison.
+#[test]
+fn luminance_histogram_separates_populations_that_share_a_mean() {
+    let split = native_composition_pixel_metrics(&[0, 0, 0, 255, 246, 246, 246, 255]);
+    let centered = native_composition_pixel_metrics(&[122, 122, 122, 255, 124, 124, 124, 255]);
+
+    assert_eq!(
+        split.luminance_mean_millis(),
+        centered.luminance_mean_millis()
+    );
+    assert_ne!(split.luminance_buckets, centered.luminance_buckets);
+    assert_eq!(split.luminance_buckets[0], 1);
+    assert_eq!(split.luminance_buckets[15], 1);
+    assert_eq!(centered.luminance_buckets[7], 2);
+}
+
+#[test]
+fn luminance_weights_are_exact_and_span_the_channel_range() {
+    // The weights sum to 256, so the shift is a division that never rounds and
+    // white lands exactly on the top of the range rather than one short of it.
+    assert_eq!(native_composition_luminance(255, 255, 255), 255);
+    assert_eq!(native_composition_luminance(0, 0, 0), 0);
+    assert!(
+        native_composition_luminance(0, 255, 0) > native_composition_luminance(255, 0, 0),
+        "green carries more luminance than red"
+    );
+    assert!(
+        native_composition_luminance(255, 0, 0) > native_composition_luminance(0, 0, 255),
+        "red carries more luminance than blue"
+    );
+
+    let saturated = native_composition_pixel_metrics(&[255, 255, 255, 255]);
+    assert_eq!(
+        saturated.luminance_buckets[NATIVE_COMPOSITION_LUMINANCE_BUCKETS - 1],
+        1,
+        "the brightest pixel lands in the last bucket, not past it"
+    );
+}
+
+#[test]
+fn luminance_histogram_field_is_one_count_per_bucket() {
+    let metrics = native_composition_pixel_metrics(&[0, 0, 0, 255, 255, 255, 255, 255]);
+    let field = metrics.luminance_histogram_field();
+
+    let counts = field.split(':').collect::<Vec<_>>();
+    assert_eq!(counts.len(), NATIVE_COMPOSITION_LUMINANCE_BUCKETS);
+    assert_eq!(counts[0], "1");
+    assert_eq!(counts[NATIVE_COMPOSITION_LUMINANCE_BUCKETS - 1], "1");
+    assert!(
+        !field.contains(' '),
+        "the field stays one whitespace-free token"
+    );
 }
 
 #[test]

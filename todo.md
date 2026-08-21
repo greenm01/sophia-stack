@@ -1299,24 +1299,53 @@ hardware, the second only decides which screen looks best.
   the group's size follow the optimized head's mode rather than whatever rect
   the group already had; those coincide on this rig and the former is the
   meaningful one.
+- [x] Give the pixel evidence a population that reads intensity. The plan to
+  filter in linear light rested on a claim that turned out to be false: that the
+  composition-region pixel populations already reported would show the change.
+  They could not. Those buckets key on which channels are lit and never on how
+  brightly, deliberately, so that a palette check survives an intensity
+  conversion and still exposes a channel swap -- the property that makes them
+  good at their job makes them blind to this one. Gamma moves intensity and
+  nothing else, so every one of them would have held still while the pixels
+  underneath changed, leaving only `checksum`, which proves a difference without
+  saying which way it went. `luminance_sum` and `luminance_buckets` were added
+  for it, with integer weights summing to 256 so the shift never rounds and the
+  numbers stay as reproducible as the checksum beside them. Judge a filtering
+  change on the histogram, not the sum: a mean holds still while the population
+  behind it splits, which is exactly the shape gamma-space filtering makes.
 - [ ] Filter in linear light. The composition path has no sRGB decode anywhere:
   the Catmull-Rom downscale shader weights gamma-encoded bytes as though they
   were light, and the sampler carries no `GL_FRAMEBUFFER_SRGB` or sRGB texture
   format. That is the ordinary cause of muddy edges on resampled text, it
   affects the default mirror configuration rather than only the optional one,
   and it corrupts any better kernel as thoroughly as the present one. Precedes
-  every other sampling-quality item, and the composition-region pixel
-  populations already reported make a before-and-after measurable rather than a
-  matter of taste.
-- [ ] Give the upscale direction a real kernel. A group optimized for its
-  smaller member leaves the larger head on plain bilinear, which is the weakest
-  option present. Lanczos-2 first -- small, predictable on glyphs, no vendored
-  source -- with FSR 1 EASU or NIS as the alternative if photographic content
-  proves to matter more than text. Both are MIT and self-contained, but either
-  would be the first third-party shader in this tree, which is a provenance
-  decision rather than a detail. A sharpen-only post-pass is separable and
-  optional; contrast-adaptive sharpening rings on glyphs that were already
-  crisp. None of this may change the reported sampling class.
+  every other sampling-quality item. Decided: gamma-2.0 (`c*c` / `sqrt`),
+  matching the transfer function `software/raster_replay.rs` already chose for
+  the CPU path and for the stated reason, so the tree holds one gamma decision
+  rather than two that could disagree; and both directions, not only the
+  downscale. Premultiplied sources must be unpremultiplied before the decode --
+  under gamma-2.0 that collapses to `v*v/a` in and `sqrt(L*a)` out -- and alpha
+  is never transformed, being coverage rather than light.
+- [ ] Give the upscale direction a real kernel. Superseded in part: Catmull-Rom
+  is itself the textbook bicubic upsample, so the linear-light change serves
+  both directions from the one program that already exists and the upscale path
+  stops being a hardware bilinear of encoded bytes. What remains is the question
+  of whether bicubic upscale is sharp enough -- Lanczos-2 first, small and
+  predictable on glyphs with no vendored source, with FSR 1 EASU or NIS as the
+  alternative if photographic content proves to matter more than text. Both are
+  MIT and self-contained, but either would be the first third-party shader in
+  this tree, which is a provenance decision rather than a detail. A sharpen-only
+  post-pass is separable and optional; contrast-adaptive sharpening rings on
+  glyphs that were already crisp. None of this may change the reported sampling
+  class.
+- [ ] Filter the blend in linear light too, and the opacity multiply with it.
+  The fixed-function ROP mixes `dst*(1-src.a)` on gamma-encoded destination
+  bytes, and no shader can reach it: it needs `GL_FRAMEBUFFER_SRGB` and an
+  sRGB-capable EGL surface, neither of which has been probed on this hardware,
+  and imported client textures take their format from EGLImage rather than from
+  us. The shader's `rgb * opacity` and its `min(rgb, a)` ringing clamp stay in
+  encoded space alongside it deliberately -- moving one without the other would
+  leave them inconsistent, so they travel together as one later change.
 - [ ] Offer centre-unscaled as a third mirror sizing policy. Both current
   policies resample one member; placing the smaller image inside a border on the
   larger head resamples neither, at the cost of an unused margin. It is the only
@@ -1349,6 +1378,31 @@ hardware, the second only decides which screen looks best.
   scaled up still reports `Exact`. The mixed-output gate's sharpness criterion
   reads that field, which means it is currently provable by a frame that was
   visibly resampled.
+
+  The full shape of it, found while planning the linear-light work. The engine
+  and the renderer each decide independently what a draw is: the plan compares
+  two `density_millis` scalars, while `native_composition_sampling` compares the
+  real source and target rectangles. Nothing connects them and nothing forces
+  them to agree -- the parameter the renderer calls `requested_sampling` is its
+  own geometry-derived value, a homonym of the engine's field rather than a copy
+  of it. They diverge in four separate ways: content whose `logical_extent`
+  differs from its placed geometry, which is the ordinary condition of any
+  surface mid-resize; plain rounding, because the projected density truncates
+  while the expected pixel size ceilings and each projected edge truncates
+  independently, so any scale that is not dyadic-clean lands a pixel off; mixed-
+  axis projections, where one scalar cannot describe an upscale in x and a
+  downscale in y; and retained renderer images, which are exempt from the
+  source-size check by design and so are classified from a number that is not
+  the one drawn. A plan line reading `mapping=exact exact=1 downsampled=0
+  upsampled=0` -- the exact string the gate greps for -- is therefore satisfied
+  by a frame the GPU resampled, and the one renderer-side check in that script
+  rejects `status=fallback|unavailable` while passing
+  `requested=sharp_downscale status=active`. Secondary consequence: the plan's
+  one-pixel repaint dilation for filter footprint is gated on the plan's class,
+  so it is skipped exactly when the renderer is in fact filtering. It is the
+  same defect class as the raster/presentation extent split -- one fact derived
+  in two places with nothing forcing agreement -- and the fix is to make one
+  derivation the source and the other read it.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while
