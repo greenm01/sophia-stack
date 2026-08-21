@@ -24,7 +24,12 @@ OPTIMIZE_FOR_LABEL="${SOPHIA_MIXED_OPTIMIZE_FOR_LABEL:-$MIRROR_PRIMARY_LABEL}"
 KITTY_BIN="${SOPHIA_MIXED_KITTY:-$(command -v kitty || true)}"
 RUNTIME_MSEC="${SOPHIA_MIXED_RUNTIME_MSEC:-30000}"
 DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
-EVIDENCE="${SOPHIA_MIXED_EVIDENCE:-/tmp/sophia-mixed-output.log}"
+# One run per file, because two runs in a row are how this gate is read: the
+# same topology optimized for either head, compared against each other. A single
+# path meant the second run erased the evidence for the first. The stable name
+# stays as a symlink to the newest, so "read the log" keeps working.
+EVIDENCE="${SOPHIA_MIXED_EVIDENCE:-}"
+EVIDENCE_LATEST="${SOPHIA_MIXED_EVIDENCE_LATEST:-/tmp/sophia-mixed-output.log}"
 TTY_REQUIRED="${SOPHIA_MIXED_TTY:-/dev/tty4}"
 CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
 DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl"
@@ -130,6 +135,15 @@ git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
     echo "Sophia HEAD must have a valid cryptographic signature." >&2
     exit 2
 }
+if [[ -z "$EVIDENCE" ]]; then
+    if [[ "$OPTIMIZE_FOR_LABEL" == "$MIRROR_MEMBER_LABEL" ]]; then
+        optimized_connector="$MIRROR_MEMBER"
+    else
+        optimized_connector="$MIRROR_PRIMARY"
+    fi
+    EVIDENCE="/tmp/sophia-mixed-output-${optimized_connector}-$(date +%Y%m%d-%H%M%S).log"
+fi
+
 sophia_require_drm_master_available SOPHIA_MIXED_FORCE || exit 1
 
 echo "Building the signed mixed-topology candidate..."
@@ -153,6 +167,10 @@ wm_bin="$ROOT_DIR/target/release/sophia-wm-demo"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 wm_sha256="$(sha256sum "$wm_bin" | awk '{ print $1 }')"
 : >"$EVIDENCE"
+if [[ -n "$EVIDENCE_LATEST" && "$EVIDENCE_LATEST" != "$EVIDENCE" ]]; then
+    ln -sfn "$EVIDENCE" "$EVIDENCE_LATEST"
+fi
+echo "Recording this run to $EVIDENCE"
 printf 'sophia_mixed_output_gate schema=1 status=starting source_commit=%s sophia_sha256=%s wm_sha256=%s heads=3 groups=2\n' \
     "$source_commit" "$sophia_sha256" "$wm_sha256" | tee -a "$EVIDENCE"
 
