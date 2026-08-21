@@ -410,6 +410,63 @@ permission for Engine to ingest or replay X11 drawing commands.
 Client-uploaded bitmaps and DRI3 content remain single-raster unless their
 owning path supplies a genuine additional variant.
 
+### Mirror-group sizing policy
+
+A mirror group has one logical size and places every member into it, so at most
+one member is pixel-exact and the rest reach that size by resampling. Which
+member is exact is a property of the group, not a mode change: every head keeps
+its own mode either way. The choice is expressed in the group proposal as the
+logical extent plus a per-member `Exact` or `Fit` mapping, so no compositor
+change is needed to move it.
+
+| Policy | Larger member | Smaller member | Precedent |
+| --- | --- | --- | --- |
+| Optimize for the primary (default) | native | resampled down | macOS "optimize for display" |
+| Optimize for the smaller member | resampled up | native | macOS, other direction |
+| Centre unscaled | native, smaller image inside a border | native | X/Windows 1:1 centred modes |
+
+The first two are what macOS offers; letterboxing there answers aspect-ratio
+mismatch, not resolution mismatch, and does nothing about resampling. Windows
+Duplicate and X.Org take the other route entirely and refuse to scale: X clones
+only outputs whose modes are equal (`xf86ModesEqual`, "different modes, can't
+clone"), and Windows restricts the desktop to a mode every display supports.
+Sophia can mirror unequal modes because it composes per head, and the price of
+that ability is this choice.
+
+Centre-unscaled is the only policy where nothing resamples. Padding cannot
+rescue the other direction: showing a 2560x1440 desktop unscaled on a 1920x1080
+panel would have to *crop* a quarter of the picture, not pad it.
+
+### Sampling quality
+
+The requested and effective classes stay `Exact`, `Downsampled`, or `Upsampled`
+whatever filter is chosen. A better filter never reclassifies a resampled frame
+as native, and evidence that reads the class must keep meaning what it says.
+
+Filter choice is a renderer capability, and the two directions are not the same
+problem:
+
+| Direction | Where it occurs | Current filter | Better answers |
+| --- | --- | --- | --- |
+| Downscale | smaller member of a group optimized for the larger | Catmull-Rom bicubic | gamma-correct filtering; a sharpening pass after the resample |
+| Upscale | larger member of a group optimized for the smaller | bilinear | Lanczos-2, or an edge-adaptive upscaler such as FSR 1 EASU or NIS |
+
+FSR 1 and NIS are spatial upscalers and apply only to the second row. Neither
+improves a downscale, and both expect to know their input's colour space.
+
+Colour space is the load-bearing part, and it is currently wrong in both
+directions: the composition path carries no sRGB decode, so every filter weight
+is applied to gamma-encoded bytes as though they were light. That is the
+ordinary cause of muddy edges on resampled text, and it corrupts a good kernel
+as thoroughly as a poor one. Correcting it precedes any filter work, and it is
+measurable from the composition-region pixel populations the renderer already
+reports.
+
+Sharpening after an upscale is a taste with a cost: contrast-adaptive
+sharpening rings on glyphs that were already crisp, which is why the desktop
+case wants a sharpen-only mode rather than a game-tuned preset, if it wants one
+at all.
+
 ### Damage
 
 Damage has two stages:

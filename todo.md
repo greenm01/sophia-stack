@@ -1299,6 +1299,29 @@ hardware, the second only decides which screen looks best.
   the group's size follow the optimized head's mode rather than whatever rect
   the group already had; those coincide on this rig and the former is the
   meaningful one.
+- [ ] Filter in linear light. The composition path has no sRGB decode anywhere:
+  the Catmull-Rom downscale shader weights gamma-encoded bytes as though they
+  were light, and the sampler carries no `GL_FRAMEBUFFER_SRGB` or sRGB texture
+  format. That is the ordinary cause of muddy edges on resampled text, it
+  affects the default mirror configuration rather than only the optional one,
+  and it corrupts any better kernel as thoroughly as the present one. Precedes
+  every other sampling-quality item, and the composition-region pixel
+  populations already reported make a before-and-after measurable rather than a
+  matter of taste.
+- [ ] Give the upscale direction a real kernel. A group optimized for its
+  smaller member leaves the larger head on plain bilinear, which is the weakest
+  option present. Lanczos-2 first -- small, predictable on glyphs, no vendored
+  source -- with FSR 1 EASU or NIS as the alternative if photographic content
+  proves to matter more than text. Both are MIT and self-contained, but either
+  would be the first third-party shader in this tree, which is a provenance
+  decision rather than a detail. A sharpen-only post-pass is separable and
+  optional; contrast-adaptive sharpening rings on glyphs that were already
+  crisp. None of this may change the reported sampling class.
+- [ ] Offer centre-unscaled as a third mirror sizing policy. Both current
+  policies resample one member; placing the smaller image inside a border on the
+  larger head resamples neither, at the cost of an unused margin. It is the only
+  policy that makes both heads pixel-exact, and it belongs beside the optimized
+  head as a third value of the same choice rather than as a separate mode.
 - [ ] Decide whether mirror members should be re-moded rather than resampled.
   Windows Duplicate and X both refuse to scale: they restrict the desktop to a
   mode every member supports, so each panel scans out natively and the larger

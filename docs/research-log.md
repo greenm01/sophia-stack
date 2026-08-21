@@ -13306,3 +13306,41 @@ This is the fourth time in this work that one outcome has been covering two
 situations, and the third for a transport specifically. The pattern is worth
 stating plainly: a peer leaving is something a server does every day, and code
 that cannot say so ends up ending itself.
+
+## What the mirror scaling choice actually is
+
+A question about the fuzzy screen turned into the design space being written
+down, so it is recorded here with the reasoning rather than only the outcome.
+
+A mirror group has one logical size and places its members into it, so at most
+one member is pixel-exact. That is not a Sophia limitation: X refuses to clone
+unequal modes at all -- `xf86ModesEqual`, "different modes, can't clone" -- and
+Windows Duplicate restricts the desktop to a mode every display supports.
+Composing per head is what lets Sophia mirror a 1440p and a 1080p panel in the
+first place, and the price of that ability is choosing who resamples. macOS
+charges the same price and calls the choice "optimize for display"; its
+letterboxing answers aspect-ratio mismatch, not resolution mismatch.
+
+Three policies, not two. Optimizing for either member leaves the other
+resampled; centring the smaller image inside a border on the larger head
+resamples neither. Padding only works in that direction -- showing a 2560x1440
+desktop unscaled on a 1080p panel would have to crop a quarter of the picture.
+
+On FSR 1 and NIS: both are spatial upscalers, so they bear only on the
+direction where content is smaller than the panel -- the group optimized for
+its smaller member, where the larger head is currently on plain bilinear and a
+1.33x upscale is well inside their range. Neither does anything for the default
+configuration, where the smaller member downscales through a Catmull-Rom
+bicubic that is already a decent kernel.
+
+Which surfaced the finding that matters more than either: there is no sRGB
+decode anywhere in the composition path. The bicubic weights gamma-encoded
+bytes as though they were light, and the sampler sets no sRGB texture format.
+Filtering in gamma space is the ordinary cause of muddy edges on resampled
+text, it affects the configuration the gate runs by default, and it would
+corrupt FSR or NIS exactly as thoroughly. The filter was never the first
+problem.
+
+Recorded in `docs/multi-monitor-composition.md` beside the per-head rules,
+since it is a property of how a group is composed rather than a story about one
+run.
