@@ -81,30 +81,54 @@ while (( $# > 0 )); do
     shift
 done
 
+if [[ -z "$EVIDENCE" ]]; then
+    if [[ "$OPTIMIZE_FOR_LABEL" == "$MIRROR_MEMBER_LABEL" ]]; then
+        optimized_connector="$MIRROR_MEMBER"
+    else
+        optimized_connector="$MIRROR_PRIMARY"
+    fi
+    EVIDENCE="/tmp/sophia-mixed-output-${optimized_connector}-$(date +%Y%m%d-%H%M%S).log"
+fi
+# The evidence file exists before the first check runs, because this gate is
+# operated from a TTY with no way to copy text out of it. A refusal that only
+# reaches the terminal is a refusal nobody can quote, and the reader after the
+# run is a log reader.
+: >"$EVIDENCE"
+if [[ -n "$EVIDENCE_LATEST" && "$EVIDENCE_LATEST" != "$EVIDENCE" ]]; then
+    ln -sfn "$EVIDENCE" "$EVIDENCE_LATEST"
+fi
+echo "Recording this run to $EVIDENCE"
+
+refuse() {
+    reason="$1"
+    shift
+    {
+        printf 'sophia_mixed_output_gate schema=1 status=refused stage=preflight reason=%s\n' \
+            "$reason"
+        printf '%s\n' "$@"
+    } | tee -a "$EVIDENCE" >&2
+    exit 2
+}
+
 # shellcheck source=tools/lib/drm_master_guard.sh
 . "$ROOT_DIR/tools/lib/drm_master_guard.sh"
 
 if [[ "$MIRROR_PRIMARY" == "$MIRROR_MEMBER" \
     || "$MIRROR_PRIMARY" == "$EXTENDED" \
     || "$MIRROR_MEMBER" == "$EXTENDED" ]]; then
-    echo "The three mixed-topology connector labels must be distinct." >&2
-    exit 2
+    refuse connector_labels "The three mixed-topology connector labels must be distinct."
 fi
 if [[ "$KITTY_BIN" != /* || ! -x "$KITTY_BIN" ]]; then
-    echo "Set SOPHIA_MIXED_KITTY to an absolute executable Kitty path." >&2
-    exit 2
+    refuse kitty_binary "Set SOPHIA_MIXED_KITTY to an absolute executable Kitty path: $KITTY_BIN"
 fi
 if [[ ! -r "$CORE_CONFIG" || ! -r "$DESKTOP_PROFILE" ]]; then
-    echo "The mixed-output proof configuration is missing from the signed tree." >&2
-    exit 2
+    refuse configuration "The mixed-output proof configuration is missing from the signed tree."
 fi
 if [[ ! "$RUNTIME_MSEC" =~ ^[0-9]+$ ]] || (( RUNTIME_MSEC < 15000 )); then
-    echo "SOPHIA_MIXED_RUNTIME_MSEC must be an integer of at least 15000." >&2
-    exit 2
+    refuse runtime_msec "SOPHIA_MIXED_RUNTIME_MSEC must be an integer of at least 15000: $RUNTIME_MSEC"
 fi
 if [[ "$(tty)" != "$TTY_REQUIRED" ]]; then
-    echo "Run this real-modeset gate from $TTY_REQUIRED; current TTY is $(tty)." >&2
-    exit 2
+    refuse tty "Run this real-modeset gate from $TTY_REQUIRED; current TTY is $(tty)."
 fi
 
 mapfile -t connected_labels < <(
@@ -115,36 +139,28 @@ mapfile -t connected_labels < <(
     done | sort
 )
 if (( ${#connected_labels[@]} != 3 )); then
-    echo "The mixed proof requires exactly three connected physical heads; observed ${#connected_labels[@]}." >&2
-    printf '  %s\n' "${connected_labels[@]}" >&2
-    exit 2
+    refuse connected_heads \
+        "The mixed proof requires exactly three connected physical heads; observed ${#connected_labels[@]}." \
+        "${connected_labels[@]}"
 fi
 for required in "$MIRROR_PRIMARY" "$MIRROR_MEMBER" "$EXTENDED"; do
     printf '%s\n' "${connected_labels[@]}" | grep -Fxq "$required" || {
-        echo "Configured proof connector is not connected: $required" >&2
-        exit 2
+        refuse connector_absent "Configured proof connector is not connected: $required" \
+            "${connected_labels[@]}"
     }
 done
 
 if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
-    echo "Sophia worktree must be clean before a signed physical gate." >&2
-    exit 2
+    refuse worktree_dirty "Sophia worktree must be clean before a signed physical gate."
 fi
 source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
-    echo "Sophia HEAD must have a valid cryptographic signature." >&2
-    exit 2
+    refuse unsigned_head "Sophia HEAD must have a valid cryptographic signature."
 }
-if [[ -z "$EVIDENCE" ]]; then
-    if [[ "$OPTIMIZE_FOR_LABEL" == "$MIRROR_MEMBER_LABEL" ]]; then
-        optimized_connector="$MIRROR_MEMBER"
-    else
-        optimized_connector="$MIRROR_PRIMARY"
-    fi
-    EVIDENCE="/tmp/sophia-mixed-output-${optimized_connector}-$(date +%Y%m%d-%H%M%S).log"
-fi
 
-sophia_require_drm_master_available SOPHIA_MIXED_FORCE || exit 1
+if ! drm_master_refusal="$(sophia_require_drm_master_available SOPHIA_MIXED_FORCE 2>&1)"; then
+    refuse drm_master "$drm_master_refusal"
+fi
 
 echo "Building the signed mixed-topology candidate..."
 (
@@ -166,11 +182,6 @@ sophia_bin="$ROOT_DIR/target/release/sophia"
 wm_bin="$ROOT_DIR/target/release/sophia-wm-demo"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 wm_sha256="$(sha256sum "$wm_bin" | awk '{ print $1 }')"
-: >"$EVIDENCE"
-if [[ -n "$EVIDENCE_LATEST" && "$EVIDENCE_LATEST" != "$EVIDENCE" ]]; then
-    ln -sfn "$EVIDENCE" "$EVIDENCE_LATEST"
-fi
-echo "Recording this run to $EVIDENCE"
 printf 'sophia_mixed_output_gate schema=1 status=starting source_commit=%s sophia_sha256=%s wm_sha256=%s heads=3 groups=2\n' \
     "$source_commit" "$sophia_sha256" "$wm_sha256" | tee -a "$EVIDENCE"
 
