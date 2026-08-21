@@ -767,6 +767,23 @@ impl LivePublicPolicyState {
             );
             return Ok(());
         }
+        // A committed topology is the desk from now on, so the transport's
+        // copy has to become it. Only the client that submitted learns the new
+        // epoch from its outcome; everyone who connects later -- a restarted
+        // policy, a second tool -- is answered from the service's stored
+        // snapshot, and a session died three restarts deep resubmitting a
+        // candidate built against the topology this replaces.
+        if settlement.outcome.kind == sophia_protocol::OutputV1OutcomeKind::Committed
+            && let Some(published) = settlement.published_snapshot.clone()
+        {
+            let topology_epoch = published.topology_epoch;
+            let (transaction, transport_published) =
+                self.publish_snapshot_to_transport(published, "committed_snapshot_transport")?;
+            println!(
+                "sophia_live_output_authority schema=2 status=committed_snapshot_published transaction={} topology_epoch={topology_epoch} transport_published={transport_published}",
+                transaction.raw(),
+            );
+        }
         if let Err(error) = self.send_output_settlement(settlement.clone()) {
             // The reducer is already terminal. In particular, a committed
             // topology has crossed physical first presentation and cannot be
@@ -836,6 +853,39 @@ impl LivePublicPolicyState {
             .map(|(_, reason)| reason.as_str())
     }
 
+    /// Hands a snapshot to the transport that answers future connections.
+    ///
+    /// The service keeps its own copy and sends it to whoever connects, so a
+    /// snapshot never pushed here is invisible to anyone arriving later --
+    /// including a policy the supervisor restarts, which then reasons about a
+    /// desk that no longer exists.
+    fn publish_snapshot_to_transport(
+        &mut self,
+        snapshot: sophia_protocol::OutputAuthoritySnapshot,
+        degraded_reason: &str,
+    ) -> Result<(TransactionId, bool), Box<dyn std::error::Error>> {
+        let transaction = TransactionId::from_raw(self.next_output_snapshot_transaction);
+        self.next_output_snapshot_transaction = self
+            .next_output_snapshot_transaction
+            .checked_add(1)
+            .ok_or("output snapshot transaction exhausted")?;
+        let published = self.output_service.as_ref().is_some_and(|service| {
+            service
+                .command(sophia_runtime::OutputTransportServiceCommand::PublishSnapshot {
+                    transaction,
+                    snapshot,
+                })
+                .is_ok()
+        });
+        if !published {
+            self.output_service.take();
+            tracing::warn!(
+                "sophia_live_output_authority schema=2 status=degraded reason={degraded_reason} preserved_topology=true"
+            );
+        }
+        Ok((transaction, published))
+    }
+
     fn publish_output_authority_snapshot(
         &mut self,
         snapshot: sophia_protocol::OutputAuthoritySnapshot,
@@ -849,28 +899,10 @@ impl LivePublicPolicyState {
         }
         let mut replacement = authority.clone();
         replacement.replace_published_snapshot(snapshot.clone())?;
-        let transaction = TransactionId::from_raw(self.next_output_snapshot_transaction);
-        let next_transaction = self
-            .next_output_snapshot_transaction
-            .checked_add(1)
-            .ok_or("output snapshot transaction exhausted")?;
-        let transport_published = self.output_service.as_ref().is_some_and(|service| {
-            service
-                .command(sophia_runtime::OutputTransportServiceCommand::PublishSnapshot {
-                    transaction,
-                    snapshot,
-                })
-                .is_ok()
-        });
-        if !transport_published {
-            self.output_service.take();
-            tracing::warn!(
-                "sophia_live_output_authority schema=2 status=degraded reason=hardware_snapshot_transport preserved_topology=true"
-            );
-        }
+        let (transaction, transport_published) =
+            self.publish_snapshot_to_transport(snapshot, "hardware_snapshot_transport")?;
         self.output_authority = Some(replacement);
         self.output_capabilities = capabilities;
-        self.next_output_snapshot_transaction = next_transaction;
         println!(
             "sophia_live_output_authority schema=2 status=hardware_snapshot_published transaction={} topology_epoch={} heads={} groups={} first_presented=true transport_published={transport_published}",
             transaction.raw(),

@@ -13169,3 +13169,30 @@ The restart itself is left alone. Twelve seconds of silence from a policy
 client is a long time, restarting a wedged one is the designed recovery, and
 loosening that on one observation would trade a working mechanism for a guess.
 It is on the roadmap as something to distinguish if it recurs.
+
+## The desk changed and the transport kept answering with the old one
+
+The idempotence fix did not stop the restart cascade, and the reason is one
+line that never appears in any of these logs:
+`sophia_live_output_authority status=hardware_snapshot_published`. A snapshot
+reaches output clients only through the hardware path -- a rescan or a hotplug
+-- and a policy-driven topology commit does not take it.
+
+So the compositor committed epoch 2, advanced its own published snapshot, told
+the submitting client the new epoch in its outcome, and left the output
+transport service holding epoch 1. That stored copy is what every future
+connection is answered with. The restarted proof therefore received a desk
+from before the change, saw its topology was not applied -- correctly, given
+what it was told -- rebuilt the candidate against epoch 1, and was refused as
+stale. Three times.
+
+The idempotence check was still worth having and stays; it just could not
+answer a question it was being lied to about. What was missing is that a
+committed topology becomes the desk, so the transport's copy has to become it
+too. `finish_output_settlement` now publishes the settled snapshot through the
+same path the hardware publication uses, which the two now share rather than
+each keeping its own transaction counter and degradation warning.
+
+The shape is familiar by now: one fact -- what the outputs currently are --
+living in two places, with only one of them updated. The compositor's authority
+knew. The service that answers clients did not.
