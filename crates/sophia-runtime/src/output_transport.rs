@@ -38,14 +38,24 @@ pub enum OutputTransportError {
 /// listening socket with it. A client is entitled to close as soon as it has
 /// what it asked for; publishing a snapshot to one that just did is ordinary.
 fn write_failure(error: std::io::Error) -> OutputTransportError {
-    match error.kind() {
-        std::io::ErrorKind::BrokenPipe
-        | std::io::ErrorKind::ConnectionReset
-        | std::io::ErrorKind::ConnectionAborted
-        | std::io::ErrorKind::NotConnected
-        | std::io::ErrorKind::UnexpectedEof => OutputTransportError::PeerDisconnected,
-        _ => OutputTransportError::Io(error.to_string()),
+    if peer_departed(&error) {
+        return OutputTransportError::PeerDisconnected;
     }
+    OutputTransportError::Io(error.to_string())
+}
+
+/// Whether this error is the peer having gone rather than the link having
+/// broken. A unix stream reports a departed reader on the write side; a reader
+/// that closed cleanly is the `Ok(0)` above, so this is a write-side question.
+fn peer_departed(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::NotConnected
+            | std::io::ErrorKind::UnexpectedEof
+    )
 }
 
 impl core::fmt::Display for OutputTransportError {

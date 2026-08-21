@@ -13344,3 +13344,30 @@ problem.
 Recorded in `docs/multi-monitor-composition.md` beside the per-head rules,
 since it is a property of how a group is composed rather than a story about one
 run.
+
+## The socket the next client needed
+
+The disconnect fix did not stop the cascade, and the reason is worth recording
+because I stopped one step short of the failure twice.
+
+Writing to a departed client was one of five write sites; I guarded two. The
+log then showed the same `Io("Connection reset by peer")` degradation, and I
+guessed the read path next -- wrote the classification, wrote a test, and the
+test passed with the classification removed. That is the whole answer to
+whether I was right: a unix stream reports a departed reader on the *write*
+side, and a reader that closed cleanly is an ordinary end of stream, so the
+read arm was unreachable code with a test that proved nothing. Both are gone.
+
+Writing a test that reproduces the production chain found the rest of it in one
+run. Settling to a client that has left retires the connection -- and then the
+owner sends its next command, which met `return Err("output settlement arrived
+without a client")`. The service ended, its listening socket went with it, and
+the restarted policy found `Io(NotFound)` three times until the supervisor gave
+up. The owner commands from its own turn and learns about a departure on the
+next one, so an answer for a client that has already gone is ordinary; it is
+dropped now.
+
+Every write shares one retirement rule, because which frame happens to meet a
+close is timing rather than meaning. The negative controls are the part worth
+keeping: a test that passes when the code it covers is deleted is not evidence,
+and running that check is what separated the real fix from the invented one.

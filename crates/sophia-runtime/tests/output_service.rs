@@ -156,6 +156,10 @@ fn publishing_to_a_departed_client_retires_the_connection_and_keeps_serving() {
         }
     );
 
+    // Closed while a frame was still in flight to it, which is what a client
+    // that has its answer does: the next write draws a reset rather than a
+    // clean end, and the read after it sees the same reset.
+    client.write_all(&[0u8; 8]).unwrap();
     drop(client);
     let mut replacement = snapshot();
     replacement.topology_epoch = 2;
@@ -185,6 +189,68 @@ fn publishing_to_a_departed_client_retires_the_connection_and_keeps_serving() {
     decode_output_v1_server_welcome_frame(&read_frame(&mut successor)).unwrap();
     let (_, observed) = decode_output_v1_snapshot_frame(&read_frame(&mut successor)).unwrap();
     assert_eq!(observed.snapshot, replacement);
+}
+
+/// Settling to a client that already left retires the connection too.
+///
+/// This is the site a live session met: the policy asked its question, and
+/// between the question and the answer its process was restarted. Every write
+/// shares one retirement rule for that reason -- which frame happens to meet
+/// the close is timing, not meaning.
+#[test]
+fn settling_to_a_departed_client_retires_the_connection_and_keeps_serving() {
+    let directory = temporary_directory("settle-after-close");
+    let peer = PolicyPeerIdentity {
+        uid: rustix::process::geteuid().as_raw(),
+        pid: std::process::id(),
+    };
+    let transport = OutputSessionTransport::bind(&directory, peer).unwrap();
+    let socket_path = transport.socket_path().to_owned();
+    let initial = snapshot();
+    let service =
+        OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), initial.clone())
+            .unwrap();
+    let mut client = connect_output_client(&socket_path);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    decode_output_v1_server_welcome_frame(&read_frame(&mut client)).unwrap();
+    decode_output_v1_snapshot_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(1)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: 1
+        }
+    );
+
+    drop(client);
+    for transaction in [5, 6] {
+        service
+            .command(OutputTransportServiceCommand::Settle {
+                transaction: TransactionId::from_raw(transaction),
+                outcome: OutputV1Outcome {
+                    connection_epoch: 1,
+                    topology_epoch: initial.topology_epoch,
+                    kind: OutputV1OutcomeKind::Committed,
+                    reason: 0,
+                },
+            })
+            .unwrap();
+    }
+
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(2)).unwrap(),
+        OutputTransportServiceEvent::Disconnected {
+            connection_epoch: 1
+        }
+    );
+
+    let mut successor = connect_output_client(&socket_path);
+    successor
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    decode_output_v1_server_welcome_frame(&read_frame(&mut successor)).unwrap();
+    decode_output_v1_snapshot_frame(&read_frame(&mut successor)).unwrap();
 }
 
 #[test]

@@ -172,6 +172,30 @@ impl Drop for OutputTransportService {
 /// The same steps the read path takes when a peer closes: drop the connection,
 /// tell the owner, and advance the epoch so nothing from the departed client is
 /// mistaken for the next one's.
+/// Performs one write to the client, retiring the connection if it has gone.
+///
+/// Returns whether the frame was written. Every write shares this because a
+/// client may close as soon as it has what it asked for, and which frame
+/// happens to meet that close is timing, not meaning. Ending the service on one
+/// of them ends its listening socket too, and the next client -- a restarted
+/// policy -- then finds nothing to connect to.
+fn write_or_retire(
+    written: Result<(), OutputTransportError>,
+    transport: &mut OutputSessionTransport,
+    connected: &mut bool,
+    connection_epoch: &mut u64,
+    events: &Sender<OutputTransportServiceEvent>,
+) -> Result<bool, String> {
+    match written {
+        Ok(()) => Ok(true),
+        Err(OutputTransportError::PeerDisconnected) => {
+            retire_connection(transport, connected, connection_epoch, events)?;
+            Ok(false)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn retire_connection(
     transport: &mut OutputSessionTransport,
     connected: &mut bool,
@@ -269,39 +293,37 @@ fn run_output_transport_service(
                         // the listening socket with it, and the next client --
                         // a restarted policy -- would find nothing to connect
                         // to.
-                        match transport.send_snapshot(snapshot_transaction, &snapshot) {
-                            Ok(()) => {}
-                            Err(OutputTransportError::PeerDisconnected) => {
-                                retire_connection(
-                                    transport,
-                                    &mut connected,
-                                    &mut connection_epoch,
-                                    events,
-                                )?;
-                            }
-                            Err(error) => return Err(error.to_string()),
-                        }
+                        let written = transport.send_snapshot(snapshot_transaction, &snapshot);
+                        write_or_retire(
+                            written,
+                            transport,
+                            &mut connected,
+                            &mut connection_epoch,
+                            events,
+                        )?;
                     }
                 }
                 OutputTransportServiceCommand::Settle {
                     transaction,
                     outcome,
                 } => {
+                    // The owner commands from its own turn and learns about a
+                    // departure on the next one, so an answer for a client that
+                    // has already gone is ordinary and is dropped. It was fatal,
+                    // which meant a client leaving mid-question ended the
+                    // service and removed the socket its successor needed.
                     if !connected {
-                        return Err("output settlement arrived without a client".to_owned());
+                        continue;
                     }
-                    match transport.send_outcome(transaction, outcome) {
-                        Ok(()) => {}
-                        Err(OutputTransportError::PeerDisconnected) => {
-                            retire_connection(
-                                transport,
-                                &mut connected,
-                                &mut connection_epoch,
-                                events,
-                            )?;
-                            continue;
-                        }
-                        Err(error) => return Err(error.to_string()),
+                    let written = transport.send_outcome(transaction, outcome);
+                    if !write_or_retire(
+                        written,
+                        transport,
+                        &mut connected,
+                        &mut connection_epoch,
+                        events,
+                    )? {
+                        continue;
                     }
                     if let Some(promoted) = transport
                         .settle_active(transaction)
@@ -318,11 +340,16 @@ fn run_output_transport_service(
                     outcome,
                 } => {
                     if !connected {
-                        return Err("output reply arrived without a client".to_owned());
+                        continue;
                     }
-                    transport
-                        .send_outcome(transaction, outcome)
-                        .map_err(|error| error.to_string())?;
+                    let written = transport.send_outcome(transaction, outcome);
+                    write_or_retire(
+                        written,
+                        transport,
+                        &mut connected,
+                        &mut connection_epoch,
+                        events,
+                    )?;
                 }
                 OutputTransportServiceCommand::Stop => return Ok(()),
             }
@@ -336,12 +363,18 @@ fn run_output_transport_service(
             match transport.accept_and_negotiate(connection_epoch, Duration::from_millis(20)) {
                 Ok(()) => {
                     connected = true;
-                    transport
-                        .send_snapshot(snapshot_transaction, &snapshot)
-                        .map_err(|error| error.to_string())?;
-                    events
-                        .send(OutputTransportServiceEvent::Connected { connection_epoch })
-                        .map_err(|_| "output owner event channel disconnected".to_owned())?;
+                    let written = transport.send_snapshot(snapshot_transaction, &snapshot);
+                    if write_or_retire(
+                        written,
+                        transport,
+                        &mut connected,
+                        &mut connection_epoch,
+                        events,
+                    )? {
+                        events
+                            .send(OutputTransportServiceEvent::Connected { connection_epoch })
+                            .map_err(|_| "output owner event channel disconnected".to_owned())?;
+                    }
                 }
                 Err(OutputTransportError::Endpoint(PolicyRoleEndpointError::AcceptTimedOut)) => {}
                 Err(error) => {
@@ -364,17 +397,22 @@ fn run_output_transport_service(
                 .map_err(|_| "output owner event channel disconnected".to_owned())?,
             Ok(None) => std::thread::sleep(Duration::from_millis(2)),
             Err(OutputTransportError::ProposalRejected { transaction, error }) => {
-                transport
-                    .send_outcome(
-                        transaction,
-                        OutputV1Outcome {
-                            connection_epoch,
-                            topology_epoch: snapshot.topology_epoch,
-                            kind: OutputV1OutcomeKind::Rejected,
-                            reason: SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT,
-                        },
-                    )
-                    .map_err(|send_error| send_error.to_string())?;
+                let written = transport.send_outcome(
+                    transaction,
+                    OutputV1Outcome {
+                        connection_epoch,
+                        topology_epoch: snapshot.topology_epoch,
+                        kind: OutputV1OutcomeKind::Rejected,
+                        reason: SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT,
+                    },
+                );
+                write_or_retire(
+                    written,
+                    transport,
+                    &mut connected,
+                    &mut connection_epoch,
+                    events,
+                )?;
                 events
                     .send(OutputTransportServiceEvent::ProposalRejected {
                         transaction,
