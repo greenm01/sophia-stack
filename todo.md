@@ -1314,6 +1314,18 @@ hardware, the second only decides which screen looks best.
   this is not being loosened without evidence that the peer was healthy. It is
   worth distinguishing if restarts recur: what the owner was waiting for is not
   in the line, only that it waited.
+- [ ] Demand rasters at the extent that was presented into, not at the raster's
+  own extent. With a raster now stating its own size, `raster_requirements`
+  briefly asks the authority to re-raster at a stale client's extent instead of
+  the extent it was asked to fill. It self-corrects on the client's next frame,
+  and fixing it properly means carrying the presentation extent on
+  `CommittedSurfaceState` as well.
+- [ ] Classify sampling by extent, not by density alone. `sampling_class`
+  compares `density_millis` against the projected density and never looks at
+  whether the raster spans the geometry it is placed into, so a stale frame
+  scaled up still reports `Exact`. The mixed-output gate's sharpness criterion
+  reads that field, which means it is currently provable by a frame that was
+  visibly resampled.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while

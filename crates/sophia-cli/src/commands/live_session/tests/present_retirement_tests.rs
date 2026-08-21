@@ -107,6 +107,10 @@ fn explicit_software_present_completes_resize_only_after_native_retirement() {
         surface,
         namespace: None,
         target_geometry,
+        presentation_extent: Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: buffer },
             sophia_protocol::Size {
@@ -162,6 +166,10 @@ fn cpu_present_admission_remains_fenced_until_exact_native_retirement() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 862 },
             size,

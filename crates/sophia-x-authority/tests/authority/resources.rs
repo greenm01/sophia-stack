@@ -122,6 +122,52 @@ fn authority_restack_preserves_explicit_bottom_to_top_order() {
     assert!(lowered.stack_rank < windows.get(second).unwrap().stack_rank);
 }
 
+/// A present states the pixmap it carries and the window it filled, separately.
+///
+/// A client that has not answered its last configure presents the buffer it
+/// already has. Declaring the window's extent for that raster put a size
+/// nobody had measured into committed content, and the compositor ended a
+/// session comparing the declaration against the buffer it actually held.
+#[test]
+fn present_buffer_update_states_the_pixmap_and_the_window_it_filled() {
+    let namespace = NamespaceId::from_raw(8);
+    let window = XResourceId::new(0x60, 1);
+    let mut windows = window_table_with_surface(window, namespace);
+    windows
+        .apply(XWindowLifecycleEvent::Mapped {
+            id: window,
+            generation: 2,
+        })
+        .unwrap();
+    let presented_into = Size {
+        width: 1920,
+        height: 1080,
+    };
+    let stale_raster = Size {
+        width: 1280,
+        height: 1440,
+    };
+
+    let transaction = surface_transaction_from_drawing_update(
+        &windows,
+        XDrawingUpdate::present_buffer(
+            TransactionId::from_raw(11),
+            namespace,
+            window,
+            BufferSource::DmaBuf { handle: 0x901 },
+            presented_into,
+            stale_raster,
+            Region::empty(),
+            4,
+            250,
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(transaction.raster_extent(), stale_raster);
+    assert_eq!(transaction.presentation_extent, presented_into);
+}
+
 #[test]
 fn present_pixmap_update_becomes_ready_surface_transaction() {
     let namespace = NamespaceId::from_raw(7);

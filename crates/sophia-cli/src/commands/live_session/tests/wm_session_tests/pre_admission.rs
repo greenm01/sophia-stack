@@ -17,6 +17,10 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 44 }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,

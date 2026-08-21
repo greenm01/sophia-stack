@@ -30,6 +30,10 @@ fn inset_present_content_proves_the_outer_layout_extent_without_scaling() {
         surface,
         namespace: None,
         target_geometry: outer,
+        // A descendant content window projected onto a larger policy-managed
+        // surface: the authority presented into the child, so that is the
+        // extent it filled, and the geometry beside it is the toplevel.
+        presentation_extent: content,
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: buffer.raw(),
@@ -66,6 +70,10 @@ fn mismatched_present_content_cannot_prove_the_outer_layout_extent() {
         surface: SurfaceId::new(771, 1),
         namespace: None,
         target_geometry: rect(1276, 1422),
+        presentation_extent: Size {
+            width: (rect(1276, 1422)).width,
+            height: (rect(1276, 1422)).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: buffer.raw(),
@@ -89,6 +97,55 @@ fn mismatched_present_content_cannot_prove_the_outer_layout_extent() {
     );
 }
 
+/// A client that has not answered its configure has not reached its size.
+///
+/// The window is already 1920x1080 and the client presents the 1280x1440
+/// pixmap it still has. Both facts are now stated: the raster spans 1280x1440,
+/// and it was presented into 1920x1080. The gate compares one measurement
+/// against another and stays closed, where it once compared a measurement
+/// against a declaration that had been filled in from the window.
+#[test]
+fn a_stale_present_does_not_prove_the_extent_it_was_presented_into() {
+    let buffer = BufferHandle::from_raw(773);
+    let stale_raster = Size {
+        width: 1280,
+        height: 1440,
+    };
+    let presented_into = Size {
+        width: 1920,
+        height: 1080,
+    };
+    let transaction = SurfaceTransaction {
+        transaction: TransactionId::from_raw(773),
+        authority: AuthorityKind::SophiaX,
+        surface: SurfaceId::new(773, 1),
+        namespace: None,
+        target_geometry: rect(presented_into.width, presented_into.height),
+        presentation_extent: presented_into,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+            stale_raster,
+        ),
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let dma_buf_sizes = BTreeMap::from([(buffer, stale_raster)]);
+
+    assert_eq!(
+        live_transaction_observed_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        stale_raster
+    );
+    // And the compositor is told what the buffer is, not what it was asked for.
+    assert_eq!(
+        live_transaction_raster_size(&transaction, &dma_buf_sizes, &BTreeMap::new()),
+        stale_raster
+    );
+}
+
 /// The raster size is the buffer's, even when the buffer satisfies its extent.
 ///
 /// `live_transaction_observed_size` reports the logical extent in that case, on
@@ -109,6 +166,8 @@ fn raster_size_reports_the_buffer_rather_than_the_configured_extent() {
         surface: SurfaceId::new(772, 1),
         namespace: None,
         target_geometry: rect(1276, 1422),
+        // Presented into the child extent it filled; the toplevel is beside it.
+        presentation_extent: raster,
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: buffer.raw(),
@@ -143,6 +202,10 @@ fn unresolved_x_pixmap_is_not_presented_buffer_evidence() {
         surface: SurfaceId::new(79, 1),
         namespace: None,
         target_geometry: rect(500, 500),
+        presentation_extent: Size {
+            width: (rect(500, 500)).width,
+            height: (rect(500, 500)).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::XPixmap { pixmap: 0x220001 },
             sophia_protocol::Size {
@@ -174,6 +237,10 @@ fn presented_cpu_snapshot_is_complete_present_evidence() {
         surface: SurfaceId::new(78, 1),
         namespace: None,
         target_geometry: rect(500, 500),
+        presentation_extent: Size {
+            width: (rect(500, 500)).width,
+            height: (rect(500, 500)).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 780 },
             sophia_protocol::Size {
@@ -218,6 +285,10 @@ fn backing_snapshot_cannot_impersonate_same_transaction_present() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: dma_buffer.raw(),
@@ -236,7 +307,7 @@ fn backing_snapshot_cannot_impersonate_same_transaction_present() {
     let backing = SurfaceTransaction {
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: cpu_handle },
-            dma.target_content_size(),
+            dma.raster_extent(),
         ),
         ..dma.clone()
     };
@@ -323,6 +394,10 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: initial,
+        presentation_extent: Size {
+            width: (initial).width,
+            height: (initial).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: present_buffer.raw(),
@@ -367,6 +442,10 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         surface,
         namespace: None,
         target_geometry: tiled,
+        presentation_extent: Size {
+            width: (tiled).width,
+            height: (tiled).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer {
                 handle: backing_handle,

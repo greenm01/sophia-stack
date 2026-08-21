@@ -200,6 +200,10 @@ fn present_request_preserves_complete_frame_evidence_for_cpu_storage() {
             width: 500,
             height: 500,
         },
+        presentation_extent: sophia_protocol::Size {
+            width: 500,
+            height: 500,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 90 },
             sophia_protocol::Size {

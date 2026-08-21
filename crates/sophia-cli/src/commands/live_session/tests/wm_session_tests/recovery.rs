@@ -86,6 +86,9 @@ fn inset_present_retires_the_standing_outer_target_and_releases_recovery() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        // An inset present: the authority filled the descendant content window
+        // and projected it onto the larger policy-managed surface.
+        presentation_extent: content,
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
             handle: buffer.raw(),
         }, content),

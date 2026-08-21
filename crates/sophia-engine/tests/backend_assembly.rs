@@ -56,6 +56,10 @@ fn headless_backend_assembly_drains_input_commits_authority_and_renders_cpu_fram
             width: 160,
             height: 90,
         },
+        presentation_extent: Size {
+            width: 160,
+            height: 90,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 900 },
             sophia_protocol::Size {

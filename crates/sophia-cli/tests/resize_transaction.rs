@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use sophia_cli::resize_transaction::{
     PendingLayoutGeometryAuthority, PendingLayoutObservationMerge, ResizeRollbackCoordinator,
     ResizeVisualCommit, ResizeVisualCommitTracker, merge_unrequested_layout_observation,
-    present_pixels_conflict_with_requested_sizes, project_authority_batch_onto_layout,
+    project_authority_batch_onto_layout,
 };
 
 fn visual_candidate(
@@ -285,6 +285,10 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
             width: 640,
             height: 800,
         },
+        presentation_extent: Size {
+            width: 640,
+            height: 800,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 9 },
             sophia_protocol::Size {
@@ -374,56 +378,6 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
     );
     assert_eq!(projected.cpu_buffer_updates, vec![update]);
 }
-
-#[test]
-fn wrong_size_present_conflicts_but_matching_pixels_can_enter_resize_quarantine() {
-    let surface = SurfaceId::new(6, 1);
-    let handle = BufferHandle::from_raw(12);
-    let requested = BTreeMap::from([(surface, size(2560, 1440))]);
-    let mut buffers = BTreeMap::from([(handle, size(1280, 1440))]);
-    let mut batch = XAuthorityObservedTransactionBatch {
-        client: None,
-        admission: None,
-        transaction: TransactionId::from_raw(119),
-        transactions: Vec::new(),
-        surface_presentations: Vec::new(),
-        presentation_intents: Vec::new(),
-        removed_surfaces: Vec::new(),
-        surface_output_reservations: Vec::new(),
-        cpu_buffer_updates: Vec::new(),
-        raster_responses: Vec::new(),
-        dma_buf_registrations: Vec::new(),
-        fence_registrations: Vec::new(),
-        present_submissions: Vec::new(),
-        software_present_submissions: Vec::new(),
-        released_dma_bufs: Vec::new(),
-        released_fences: Vec::new(),
-        protocol_errors: Vec::new(),
-        expected_protocol_errors: Vec::new(),
-        metadata: Vec::new(),
-        selection_owner_change: false,
-        selection_conversion: false,
-    };
-    batch.present_submissions.push(XAuthorityPresentSubmission {
-        transaction: TransactionId::from_raw(120),
-        surface,
-        buffer: handle,
-        x_offset: 0,
-        y_offset: 0,
-        acquire_fence: None,
-        idle_fence: None,
-    });
-
-    assert!(present_pixels_conflict_with_requested_sizes(
-        &requested, &buffers, &batch
-    ));
-
-    buffers.insert(handle, size(2560, 1440));
-    assert!(!present_pixels_conflict_with_requested_sizes(
-        &requested, &buffers, &batch
-    ));
-}
-
 #[test]
 fn pending_layout_retains_surface_admitted_during_resize() {
     let existing = SurfaceId::new(7, 1);

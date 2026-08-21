@@ -75,6 +75,10 @@ fn live_session_composition_transaction(transaction: TransactionId) -> SurfaceTr
             width: 640,
             height: 480,
         },
+        presentation_extent: sophia_protocol::Size {
+            width: 640,
+            height: 480,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 0x990 }, sophia_protocol::Size {
             width: 640,
             height: 480,

@@ -800,6 +800,10 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
         surface,
         namespace: None,
         target_geometry,
+        presentation_extent: Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer {
                 handle: backing_handle,
@@ -840,6 +844,10 @@ fn presented_resize_ignores_exact_backing_snapshot_until_present_retires() {
         surface,
         namespace: None,
         target_geometry,
+        presentation_extent: Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: present_buffer.raw(),
@@ -920,6 +928,10 @@ fn backing_resize_still_commits_for_cpu_only_surface() {
         surface,
         namespace: None,
         target_geometry,
+        presentation_extent: Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: buffer },
             sophia_protocol::Size {
@@ -1231,6 +1243,10 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
         surface: firefox,
         namespace: None,
         target_geometry: fallback_geometry,
+        presentation_extent: Size {
+            width: (fallback_geometry).width,
+            height: (fallback_geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf {
                 handle: pixel_buffer.raw(),

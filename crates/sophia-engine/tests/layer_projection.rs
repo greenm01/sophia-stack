@@ -17,6 +17,10 @@ fn authority_transaction_template_preserves_namespace_and_order() {
             width: 64,
             height: 64,
         },
+        presentation_extent: sophia_protocol::Size {
+            width: 64,
+            height: 64,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer {
                 handle: u64::from(index),

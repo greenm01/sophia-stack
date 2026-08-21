@@ -128,6 +128,10 @@ fn production_surface_batch(transaction: u64) -> AuthorityTransactionIntake {
                 width: 320,
                 height: 200,
             },
+            presentation_extent: Size {
+                width: 320,
+                height: 200,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 900 }, sophia_protocol::Size {
                 width: 320,
                 height: 200,
@@ -190,6 +194,10 @@ fn present_candidate_preserves_unrelated_committed_surface_identity() {
         target_geometry: Rect {
             x: 0,
             y: 14,
+            width: 1280,
+            height: 1426,
+        },
+        presentation_extent: Size {
             width: 1280,
             height: 1426,
         },

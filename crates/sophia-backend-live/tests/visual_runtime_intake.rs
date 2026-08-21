@@ -42,6 +42,10 @@ fn initial_transaction(previous_committed_generation: u64) -> SurfaceTransaction
             width: 640,
             height: 480,
         },
+        presentation_extent: sophia_protocol::Size {
+            width: 640,
+            height: 480,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 1 },
             sophia_protocol::Size {
@@ -534,7 +538,7 @@ fn gpu_scanout_preservation_follows_post_batch_active_transactions() {
     let mut gpu = initial_transaction(0);
     gpu.content = sophia_protocol::SurfaceContentSet::singleton(
         BufferSource::DmaBuf { handle: 7 },
-        gpu.target_content_size(),
+        gpu.raster_extent(),
     );
     let cpu = initial_transaction(0);
 

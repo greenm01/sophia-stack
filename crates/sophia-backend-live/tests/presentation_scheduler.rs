@@ -64,6 +64,10 @@ fn scheduler_batch(
                     width: 64,
                     height: 48,
                 },
+                presentation_extent: sophia_protocol::Size {
+                    width: 64,
+                    height: 48,
+                },
                 content: sophia_protocol::SurfaceContentSet::singleton(
                     BufferSource::DmaBuf {
                         handle: handle.raw(),
@@ -153,6 +157,10 @@ fn in_flight_present_for_outputs(
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             buffer,
             sophia_protocol::Size {
@@ -424,6 +432,10 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
                 target_geometry: Rect {
                     x: 0,
                     y: 0,
+                    width: 2560,
+                    height: 14,
+                },
+                presentation_extent: sophia_protocol::Size {
                     width: 2560,
                     height: 14,
                 },

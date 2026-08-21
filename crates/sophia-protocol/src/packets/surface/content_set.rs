@@ -224,10 +224,29 @@ impl SurfaceContentSet {
 
     /// The one-variant normalization every current producer uses: a single
     /// raster at identity density whose pixels span the logical extent.
+    ///
+    /// `logical_extent` is the extent this raster actually spans, not the
+    /// extent it was asked to fill. Those are the same for a producer that has
+    /// answered its last configure and differ for one that has not, and a
+    /// caller with only the second to hand is holding the wrong number: the
+    /// transaction states that one separately.
+    ///
+    /// Built through `new` so the invariant relating extent, density and pixel
+    /// size is enforced here too. It cannot fail for these arguments -- one
+    /// identity-density variant of the extent satisfies every rule -- except
+    /// for a non-positive extent, which no producer may assert.
     pub fn singleton(source: BufferSource, logical_extent: Size) -> Self {
-        Self {
+        Self::singleton_checked(source, logical_extent)
+            .expect("a single identity-density raster spans its own positive extent")
+    }
+
+    fn singleton_checked(
+        source: BufferSource,
+        logical_extent: Size,
+    ) -> Result<Self, SurfaceContentSetError> {
+        Self::new(
             logical_extent,
-            variants: vec![SurfaceContentVariant {
+            vec![SurfaceContentVariant {
                 variant: 1,
                 source,
                 pixel_size: logical_extent,
@@ -241,7 +260,7 @@ impl SurfaceContentSet {
                     height: logical_extent.height,
                 }),
             }],
-        }
+        )
     }
 
     pub const fn logical_extent(&self) -> Size {

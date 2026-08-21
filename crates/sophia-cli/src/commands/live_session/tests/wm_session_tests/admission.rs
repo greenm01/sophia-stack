@@ -148,6 +148,10 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
             y: 0,
             ..geometry
         },
+        presentation_extent: sophia_protocol::Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 45 }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,
@@ -296,6 +300,10 @@ fn released_admission_precedes_newer_same_surface_current_batch() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            presentation_extent: Size {
+                width: (geometry).width,
+                height: (geometry).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 target_buffer,
                 Size {
@@ -414,6 +422,10 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
             handle: buffer.raw(),
         }, sophia_protocol::Size {
@@ -753,6 +765,10 @@ fn selected_present_settles_older_present_group_without_committing_it() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            presentation_extent: Size {
+                width: (geometry).width,
+                height: (geometry).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::DmaBuf {
                 handle: buffer.raw(),
             }, sophia_protocol::Size {
@@ -881,6 +897,10 @@ fn backing_admission_releases_cpu_replacement_before_selected_patch() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,

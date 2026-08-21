@@ -21,6 +21,10 @@ fn renderer_residency_tracks_only_cpu_buffers_owned_by_admission_groups() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            presentation_extent: Size {
+                width: (geometry).width,
+                height: (geometry).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::CpuBuffer { handle: 369 },
                 sophia_protocol::Size {
@@ -74,6 +78,10 @@ fn released_admission_pixels_wait_for_policy_assignment() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            presentation_extent: Size {
+                width: (geometry).width,
+                height: (geometry).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::CpuBuffer { handle: 371 },
                 sophia_protocol::Size {
@@ -209,6 +217,10 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
             surface,
             namespace: None,
             target_geometry: geometry,
+            presentation_extent: Size {
+                width: (geometry).width,
+                height: (geometry).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::DmaBuf {
                     handle: transaction.raw(),

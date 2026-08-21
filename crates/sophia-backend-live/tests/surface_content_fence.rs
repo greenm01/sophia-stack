@@ -27,6 +27,10 @@ fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
                 width: 1276,
                 height: 1422,
             },
+            presentation_extent: Size {
+                width: 1276,
+                height: 1422,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::CpuBuffer {
                     handle: transaction.raw(),
@@ -244,6 +248,10 @@ fn later_same_surface_authority_cannot_stale_the_retiring_resize_present() {
         surface: firefox,
         namespace: None,
         target_geometry,
+        presentation_extent: sophia_protocol::Size {
+            width: target_geometry.width,
+            height: target_geometry.height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::DmaBuf { handle: 805 },
             sophia_protocol::Size {

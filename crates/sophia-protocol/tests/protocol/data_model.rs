@@ -266,7 +266,7 @@ fn committed_state_keeps_the_raster_size_not_the_placement() {
                 250,
                 2,
             )
-            .target_content_size(),
+            .raster_extent(),
         Size {
             width: 1280,
             height: 1440,
@@ -399,7 +399,7 @@ fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
     assert_eq!(transaction.surface, SurfaceId::new(4, 1));
     assert_eq!(transaction.target_geometry.width, 800);
     assert_eq!(
-        transaction.target_content_size(),
+        transaction.raster_extent(),
         Size {
             width: 800,
             height: 600,
@@ -736,6 +736,10 @@ fn dma_buf_pairing_covers_every_variant_of_a_content_set() {
         surface: SurfaceId::new(1, 1),
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: SurfaceContentSet::new(
             extent,
             vec![

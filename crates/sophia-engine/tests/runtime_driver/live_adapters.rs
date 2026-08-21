@@ -108,6 +108,10 @@ fn live_runtime_driver_adapter_commits_authority_batches_before_rendering() {
             width: 140,
             height: 90,
         },
+        presentation_extent: Size {
+            width: 140,
+            height: 90,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 700 }, sophia_protocol::Size {
             width: 140,
             height: 90,

@@ -504,6 +504,56 @@ fn x_authority_request_codec_round_trips_create_window() {
 }
 
 #[test]
+/// Both extents survive the wire, including where they disagree.
+///
+/// A transaction states what its raster spans and, separately, what the
+/// authority presented it into. They differ for as long as a client has not
+/// answered a configure, and a codec that carried only one of them would hand
+/// the compositor a raster size nobody measured -- which is how a live session
+/// ended, comparing a declared 1920x1080 against a held 1280x1440.
+#[test]
+fn x_authority_response_codec_keeps_a_raster_apart_from_what_it_filled() {
+    let mut response = XAuthorityResponsePacket::accepted(TransactionId::from_raw(140));
+    let raster = sophia_protocol::Size {
+        width: 1280,
+        height: 1440,
+    };
+    let presented_into = sophia_protocol::Size {
+        width: 1920,
+        height: 1080,
+    };
+    response.transactions.push(sophia_protocol::SurfaceTransaction {
+        transaction: TransactionId::from_raw(140),
+        authority: sophia_protocol::AuthorityKind::SophiaX,
+        surface: sophia_protocol::SurfaceId::new(140, 1),
+        namespace: Some(sophia_protocol::NamespaceId::from_raw(22)),
+        target_geometry: sophia_protocol::Rect {
+            x: 0,
+            y: 0,
+            width: presented_into.width,
+            height: presented_into.height,
+        },
+        presentation_extent: presented_into,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            sophia_protocol::BufferSource::DmaBuf { handle: 140 },
+            raster,
+        ),
+        damage: sophia_protocol::Region::empty(),
+        readiness: sophia_protocol::SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    });
+
+    let decoded =
+        decode_x_authority_response_frame(&encode_x_authority_response_frame(&response).unwrap())
+            .unwrap();
+
+    assert_eq!(decoded, response);
+    assert_eq!(decoded.transactions[0].raster_extent(), raster);
+    assert_eq!(decoded.transactions[0].presentation_extent, presented_into);
+}
+
+#[test]
 fn x_authority_response_codec_round_trips_runtime_outputs() {
     let namespace = NamespaceId::from_raw(22);
     let mut runtime = XAuthorityRuntime::new();

@@ -436,6 +436,10 @@ mod tests {
                 width: 200,
                 height: 100,
             },
+            presentation_extent: sophia_protocol::Size {
+                width: 200,
+                height: 100,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::CpuBuffer { handle: 77 },
                 sophia_protocol::Size {

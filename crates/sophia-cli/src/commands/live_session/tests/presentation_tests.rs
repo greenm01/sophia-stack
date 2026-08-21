@@ -257,6 +257,10 @@ fn authority_batch_commits_once_and_fans_out_one_snapshot() {
             width: 632,
             height: 464,
         },
+        presentation_extent: Size {
+            width: 632,
+            height: 464,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 18 },
             sophia_protocol::Size {
@@ -327,6 +331,10 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 192 },
             sophia_protocol::Size {
@@ -413,6 +421,10 @@ fn duplicate_software_present_fails_before_renderer_registration() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 195 },
             sophia_protocol::Size {

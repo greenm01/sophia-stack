@@ -386,7 +386,8 @@ fn encode_surface_transaction(
     encode_surface_id(transaction.surface, out);
     encode_optional_namespace_id(transaction.namespace, out);
     encode_rect(transaction.target_geometry, out);
-    encode_size(transaction.target_content_size(), out);
+    encode_size(transaction.raster_extent(), out);
+    encode_size(transaction.presentation_extent, out);
     encode_buffer_source(transaction.target_buffer(), out);
     encode_region(&transaction.damage, out)?;
     encode_readiness(transaction.readiness, out);
@@ -398,6 +399,7 @@ fn encode_surface_transaction(
 fn decode_surface_transaction(
     cursor: &mut Cursor<'_>,
 ) -> Result<SurfaceTransaction, IpcCodecError> {
+    let presentation_extent;
     Ok(SurfaceTransaction {
         transaction: decode_transaction_id(cursor)?,
         authority: decode_authority_kind(cursor.u16()?)?,
@@ -405,12 +407,14 @@ fn decode_surface_transaction(
         namespace: decode_optional_namespace_id(cursor)?,
         target_geometry: decode_rect(cursor)?,
         content: {
-            let target_content_size = decode_size(cursor)?;
+            let raster_extent = decode_size(cursor)?;
+            presentation_extent = decode_size(cursor)?;
             sophia_protocol::SurfaceContentSet::singleton(
                 decode_buffer_source(cursor)?,
-                target_content_size,
+                raster_extent,
             )
         },
+        presentation_extent,
         damage: decode_region(cursor)?,
         readiness: decode_readiness(cursor.u16()?)?,
         timeout_msec: cursor.u32()?,

@@ -146,6 +146,10 @@ fn direct_map_batch(
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: cpu_buffer }, sophia_protocol::Size {
             width: geometry.width,
             height: geometry.height,

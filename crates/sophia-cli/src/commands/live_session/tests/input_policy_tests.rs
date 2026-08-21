@@ -856,6 +856,10 @@ fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
         surface,
         namespace: None,
         target_geometry: geometry,
+        presentation_extent: Size {
+            width: (geometry).width,
+            height: (geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 1 },
             sophia_protocol::Size {

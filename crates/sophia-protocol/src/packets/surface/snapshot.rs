@@ -52,9 +52,9 @@ impl SurfaceSnapshot {
             surface: self.surface,
             namespace: self.namespace,
             target_geometry: self.geometry,
-            // An X window's raster is its window-sized pixmap, so geometry is
-            // the size here. `LayerSnapshot` carries a measured size instead,
-            // because a layer outlives the configure that resized it.
+            // An X window's raster is its window-sized pixmap, so one size
+            // serves both here. `LayerSnapshot` carries a measured raster
+            // instead, because a layer outlives the configure that resized it.
             content: SurfaceContentSet::singleton(
                 self.source,
                 Size {
@@ -62,6 +62,10 @@ impl SurfaceSnapshot {
                     height: self.geometry.height,
                 },
             ),
+            presentation_extent: Size {
+                width: self.geometry.width,
+                height: self.geometry.height,
+            },
             damage: self.damage.clone(),
             readiness,
             timeout_msec,
@@ -116,6 +120,11 @@ impl LayerSnapshot {
             namespace: self.namespace,
             target_geometry: self.geometry,
             content: SurfaceContentSet::singleton(self.source, self.source_size),
+            // The layer's placement is what this raster was asked to fill.
+            presentation_extent: Size {
+                width: self.geometry.width,
+                height: self.geometry.height,
+            },
             damage: self.damage.clone(),
             readiness,
             timeout_msec,

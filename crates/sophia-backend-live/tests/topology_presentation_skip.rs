@@ -76,6 +76,10 @@ fn group(
             surface,
             namespace: None,
             target_geometry: geometry(),
+            presentation_extent: Size {
+                width: (geometry()).width,
+                height: (geometry()).height,
+            },
             content: sophia_protocol::SurfaceContentSet::singleton(
                 BufferSource::DmaBuf {
                     handle: handle.raw(),

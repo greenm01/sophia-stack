@@ -18,8 +18,8 @@ fn live_transaction_pixel_size(
 /// How big this transaction's raster actually is.
 ///
 /// Deliberately not `live_transaction_observed_size`, which answers a different
-/// question: that one reports the *logical* extent whenever a client produced
-/// the content it declared, because resize and admission gates ask whether a
+/// question: that one reports the *logical* extent whenever a client filled
+/// what it was asked to fill, because resize and admission gates ask whether a
 /// surface has reached its configured size. A raster size is what the buffer
 /// registry measured, and a client that has answered no configure yet holds a
 /// buffer of its own size at a geometry of somebody else's choosing. Only a
@@ -34,7 +34,7 @@ fn live_transaction_raster_size(
         dma_buf_sizes,
         cpu_buffer_sizes,
     )
-    .unwrap_or_else(|| transaction.target_content_size())
+    .unwrap_or_else(|| transaction.raster_extent())
 }
 
 fn live_transaction_observed_size(
@@ -53,12 +53,17 @@ fn live_transaction_observed_size(
     ) else {
         return logical;
     };
-    if source == transaction.target_content_size() {
+    if source == transaction.presentation_extent {
         logical
     } else {
-        // An old or partial buffer cannot satisfy a new logical extent. Keep
-        // reporting its physical size so exact resize and admission gates
-        // remain closed until the authority publishes matching content.
+        // An old or partial buffer does not fill what it was asked to fill.
+        // Keep reporting its physical size so exact resize and admission gates
+        // remain closed until the client produces matching content.
+        //
+        // The yardstick is the extent the authority presented into, not the
+        // extent the content declares. Those were one field until a stale
+        // Present declared a raster it did not have; comparing a measurement
+        // against a measurement is what makes this test mean something.
         source
     }
 }

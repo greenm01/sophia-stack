@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use sophia_protocol::{
-    BufferHandle, LayerSnapshot, Size, SurfaceId, SurfaceTransactionKey, TransactionId,
-};
+use sophia_protocol::{LayerSnapshot, Size, SurfaceId, SurfaceTransactionKey, TransactionId};
 use sophia_x_authority::XAuthorityObservedTransactionBatch;
 
 pub use sophia_engine::{
@@ -102,6 +100,10 @@ impl ResizeVisualCommitTracker {
 
 /// Projects authority pixels onto the current layout without dropping any
 /// generation-bearing transaction or associated buffer update.
+///
+/// Placement only. The authority's two extents -- what its raster spans and
+/// what it was presented into -- are measurements it owns, and a layout that
+/// moved underneath them does not change either one.
 pub fn project_authority_batch_onto_layout(
     mut batch: XAuthorityObservedTransactionBatch,
     layers: &BTreeMap<SurfaceId, LayerSnapshot>,
@@ -112,19 +114,6 @@ pub fn project_authority_batch_onto_layout(
         }
     }
     batch
-}
-
-pub fn present_pixels_conflict_with_requested_sizes(
-    requested_sizes: &BTreeMap<SurfaceId, Size>,
-    dma_buf_sizes: &BTreeMap<BufferHandle, Size>,
-    batch: &XAuthorityObservedTransactionBatch,
-) -> bool {
-    batch.present_submissions.iter().any(|submission| {
-        requested_sizes
-            .get(&submission.surface)
-            .zip(dma_buf_sizes.get(&submission.buffer))
-            .is_some_and(|(expected, actual)| actual != expected)
-    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

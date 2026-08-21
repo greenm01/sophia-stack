@@ -21,7 +21,16 @@ pub struct XDrawingUpdate {
     pub buffer: BufferSource,
     /// Pixel extent of the drawing window before any descendant-to-toplevel
     /// presentation projection.
-    pub target_content_size: Option<Size>,
+    ///
+    /// This is what the content was asked to fill. It is not a measurement of
+    /// the buffer: a client that has not answered its last configure presents
+    /// the pixmap it already has, and the two part company for as long as that
+    /// takes.
+    pub presentation_extent: Option<Size>,
+    /// Measured extent of the raster being presented, where the producer knows
+    /// it. `None` leaves the content extent to follow the presentation extent,
+    /// which is correct only for a raster the authority itself sized.
+    pub raster_extent: Option<Size>,
     pub damage: Region,
     pub previous_committed_generation: u64,
     pub timeout_msec: u32,
@@ -43,7 +52,8 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::PresentPixmap,
             buffer: BufferSource::XPixmap { pixmap },
-            target_content_size: None,
+            presentation_extent: None,
+            raster_extent: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -55,7 +65,8 @@ impl XDrawingUpdate {
         requester_namespace: NamespaceId,
         target_window: XResourceId,
         buffer: BufferSource,
-        target_content_size: Size,
+        presentation_extent: Size,
+        raster_extent: Size,
         damage: Region,
         previous_committed_generation: u64,
         timeout_msec: u32,
@@ -66,7 +77,8 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::PresentPixmap,
             buffer,
-            target_content_size: Some(target_content_size),
+            presentation_extent: Some(presentation_extent),
+            raster_extent: Some(raster_extent),
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -88,7 +100,8 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::ShmPutImage,
             buffer: BufferSource::CpuBuffer { handle },
-            target_content_size: None,
+            presentation_extent: None,
+            raster_extent: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -110,7 +123,8 @@ impl XDrawingUpdate {
             target_window,
             kind: XDrawingUpdateKind::CoreDraw,
             buffer: BufferSource::CpuBuffer { handle },
-            target_content_size: None,
+            presentation_extent: None,
+            raster_extent: None,
             damage,
             previous_committed_generation,
             timeout_msec,
@@ -146,11 +160,18 @@ pub fn surface_transaction_from_drawing_update(
         return Err(XAuthorityAccessError::InvalidSurface);
     }
 
-    let target_content_size = update.target_content_size.unwrap_or(Size {
+    let presentation_extent = update.presentation_extent.unwrap_or(Size {
         width: window.geometry.width,
         height: window.geometry.height,
     });
-    if target_content_size.width <= 0 || target_content_size.height <= 0 {
+    // Without a measurement the authority sized this raster itself, so it spans
+    // what it was asked to fill. With one, it is whatever the client presented.
+    let raster_extent = update.raster_extent.unwrap_or(presentation_extent);
+    if presentation_extent.width <= 0
+        || presentation_extent.height <= 0
+        || raster_extent.width <= 0
+        || raster_extent.height <= 0
+    {
         return Err(XAuthorityAccessError::InvalidResource);
     }
 
@@ -160,7 +181,8 @@ pub fn surface_transaction_from_drawing_update(
         surface: window.surface,
         namespace: Some(window.namespace),
         target_geometry: window.geometry,
-        content: sophia_protocol::SurfaceContentSet::singleton(update.buffer, target_content_size),
+        content: sophia_protocol::SurfaceContentSet::singleton(update.buffer, raster_extent),
+        presentation_extent,
         damage: update.damage,
         readiness: SurfaceTransactionReadiness::Ready,
         timeout_msec: update.timeout_msec,

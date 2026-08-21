@@ -47,6 +47,10 @@ fn transaction(surface: sophia_protocol::SurfaceId, handle: u64) -> SurfaceTrans
             width: 120,
             height: 52,
         },
+        presentation_extent: sophia_protocol::Size {
+            width: 120,
+            height: 52,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(sophia_protocol::BufferSource::CpuBuffer { handle }, sophia_protocol::Size {
             width: 120,
             height: 52,

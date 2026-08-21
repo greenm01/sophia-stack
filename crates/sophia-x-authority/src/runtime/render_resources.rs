@@ -448,18 +448,26 @@ impl XAuthorityRuntime {
                     damage,
                 )
             };
-        let target_content_size = Size {
+        // Two extents, and they are not the same question. The drawing window
+        // is what this present was asked to fill; the pixmap is what the client
+        // actually handed over. A client that has not answered its last
+        // configure presents the buffer it already has, and declaring the
+        // window's size for it put a raster nobody had measured into committed
+        // content -- which the compositor later compared against the buffer and
+        // ended the session over.
+        let presentation_extent = Size {
             width: record.geometry.width,
             height: record.geometry.height,
         };
         self.raster_store
-            .invalidate_unjournaled_presentation(target_window, target_content_size);
+            .invalidate_unjournaled_presentation(target_window, presentation_extent);
         self.finish_drawing_update(XDrawingUpdate::present_buffer(
             transaction,
             namespace,
             target_window,
             buffer,
-            target_content_size,
+            presentation_extent,
+            pixmap_size,
             damage,
             target_generation,
             250,

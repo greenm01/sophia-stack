@@ -217,6 +217,10 @@ fn merge_surface_transaction(index: u64) -> SurfaceTransaction {
             width: 4,
             height: 4,
         },
+        presentation_extent: Size {
+            width: 4,
+            height: 4,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             BufferSource::CpuBuffer { handle: 1 },
             Size {

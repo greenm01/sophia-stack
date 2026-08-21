@@ -662,6 +662,10 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
         surface,
         namespace: None,
         target_geometry: committed.geometry,
+        presentation_extent: Size {
+            width: (committed.geometry).width,
+            height: (committed.geometry).height,
+        },
         content: sophia_protocol::SurfaceContentSet::singleton(
             committed.buffer(),
             sophia_protocol::Size {

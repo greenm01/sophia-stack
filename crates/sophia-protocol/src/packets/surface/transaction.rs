@@ -10,12 +10,20 @@ pub struct SurfaceTransaction {
     pub target_geometry: Rect,
     /// The bounded raster content asserted for this surface generation.
     ///
-    /// The set's logical extent is the exact pixel extent the geometry
-    /// presents. Protocol authorities may project a descendant content window
-    /// onto a larger policy-managed surface; keeping the content extent
-    /// distinct from the geometry lets the Engine retain pixel-exact
-    /// presentation without teaching it a client protocol's window hierarchy.
+    /// The set's logical extent is the extent its pixels actually span, which
+    /// is not always what the authority was asked to fill: a client that has
+    /// not yet answered a configure presents the buffer it already has.
     pub content: SurfaceContentSet,
+    /// The extent the authority presented this content into.
+    ///
+    /// Equal to the content's extent whenever the producer is current, larger
+    /// while it is behind, and for a protocol authority projecting a descendant
+    /// content window onto a larger policy-managed surface, that descendant's
+    /// extent. Keeping it apart from the content is what lets a reader tell
+    /// those two apart: they were one field until a stale Present declared a
+    /// raster it did not have, and the compositor ended a session comparing the
+    /// declaration against the buffer.
+    pub presentation_extent: Size,
     pub damage: Region,
     pub readiness: SurfaceTransactionReadiness,
     pub timeout_msec: u32,
@@ -104,7 +112,11 @@ impl SurfaceTransaction {
         self.content.canonical_source()
     }
 
-    pub fn target_content_size(&self) -> Size {
+    /// The extent this transaction's raster spans.
+    ///
+    /// Deliberately not `presentation_extent`, which is the extent it was
+    /// presented into.
+    pub fn raster_extent(&self) -> Size {
         self.content.logical_extent()
     }
 

@@ -397,7 +397,7 @@ fn surface_transaction_readiness_allows_null_buffer_unmap_after_mapping() {
     let mut missing_buffer = ready.clone();
     missing_buffer.content = sophia_protocol::SurfaceContentSet::singleton(
         BufferSource::None,
-        missing_buffer.target_content_size(),
+        missing_buffer.raster_extent(),
     );
     let mut empty_geometry = ready.clone();
     empty_geometry.target_geometry.width = 0;
@@ -448,7 +448,7 @@ fn null_buffer_unmaps_but_malformed_geometry_does_not_commit() {
     );
     missing_buffer.content = sophia_protocol::SurfaceContentSet::singleton(
         BufferSource::None,
-        missing_buffer.target_content_size(),
+        missing_buffer.raster_extent(),
     );
 
     let commit = engine.commit_surface_transactions(
@@ -498,7 +498,7 @@ fn slow_client_timeout_preserves_committed_state_by_default() {
     timed_out.target_geometry.width = 700;
     timed_out.content = sophia_protocol::SurfaceContentSet::singleton(
         BufferSource::DmaBuf { handle: 700 },
-        timed_out.target_content_size(),
+        timed_out.raster_extent(),
     );
 
     assert_eq!(
@@ -531,7 +531,7 @@ fn slow_client_timeout_replans_without_admitting_pending_pixels() {
     timed_out.target_geometry.width = 701;
     timed_out.content = sophia_protocol::SurfaceContentSet::singleton(
         BufferSource::DmaBuf { handle: 701 },
-        timed_out.target_content_size(),
+        timed_out.raster_extent(),
     );
 
     let SlowClientVisualDecision::ReplanAtCommittedExtent {

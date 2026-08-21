@@ -646,7 +646,10 @@ impl XAuthorityRuntime {
             update.buffer = sophia_protocol::BufferSource::CpuBuffer {
                 handle: presentation_update.handle(),
             };
-            update.target_content_size = Some(presentation_update.size());
+            // The authority composed this raster itself, at the presentation
+            // buffer's size, so it spans exactly what it fills.
+            update.presentation_extent = Some(presentation_update.size());
+            update.raster_extent = Some(presentation_update.size());
             update.damage = Region {
                 rects: update
                     .damage
@@ -799,6 +802,9 @@ impl XAuthorityRuntime {
             namespace: Some(record.namespace),
             target_geometry: record.geometry,
             content,
+            // Engine asked for this raster at this extent and the store
+            // produced it, so what it fills is what it spans.
+            presentation_extent: requirements.logical_extent,
             damage: Region::single(Rect {
                 x: 0,
                 y: 0,
