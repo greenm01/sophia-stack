@@ -44,9 +44,21 @@ fn write_failure(error: std::io::Error) -> OutputTransportError {
     OutputTransportError::Io(error.to_string())
 }
 
+fn read_failure(error: std::io::Error) -> OutputTransportError {
+    if peer_departed(&error) {
+        return OutputTransportError::PeerDisconnected;
+    }
+    OutputTransportError::Io(error.to_string())
+}
+
 /// Whether this error is the peer having gone rather than the link having
-/// broken. A unix stream reports a departed reader on the write side; a reader
-/// that closed cleanly is the `Ok(0)` above, so this is a write-side question.
+/// broken.
+///
+/// A unix stream says so differently depending on which way the socket was
+/// being used: a write to a departed reader breaks the pipe, a read with
+/// nothing left ends unexpectedly, and a close that discarded frames still
+/// queued for that peer resets the connection. One predicate, because they are
+/// one situation.
 fn peer_departed(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
@@ -335,6 +347,13 @@ impl OutputSessionTransport {
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                // The departure this reader meets: a client that closed while
+                // frames were still queued for it discards them, and the poll
+                // that follows draws a reset rather than the clean end above.
+                Err(error) if peer_departed(&error) => {
+                    self.peer_closed = true;
+                    break;
+                }
                 Err(error) => {
                     result = Err(OutputTransportError::Io(error.to_string()));
                     break;
@@ -368,9 +387,11 @@ fn buffered_output_frame_len(buffer: &[u8]) -> Result<Option<usize>, OutputTrans
 
 fn read_output_frame(stream: &mut UnixStream) -> Result<Vec<u8>, OutputTransportError> {
     let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream
-        .read_exact(&mut header)
-        .map_err(|error| OutputTransportError::Io(error.to_string()))?;
+    // A departed peer reaches a reader two ways, and `read_exact` turns both
+    // into errors: no bytes at all is `UnexpectedEof`, and a close that
+    // discarded frames still queued for it is a reset. Neither is a broken
+    // link, and reading them as one ended the service that owns the socket.
+    stream.read_exact(&mut header).map_err(read_failure)?;
     let payload_len = u32::from_le_bytes(
         header[16..20]
             .try_into()
@@ -386,6 +407,6 @@ fn read_output_frame(stream: &mut UnixStream) -> Result<Vec<u8>, OutputTransport
     frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
     stream
         .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .map_err(|error| OutputTransportError::Io(error.to_string()))?;
+        .map_err(read_failure)?;
     Ok(frame)
 }

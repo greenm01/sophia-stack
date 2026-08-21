@@ -156,23 +156,21 @@ fn publishing_to_a_departed_client_retires_the_connection_and_keeps_serving() {
         }
     );
 
-    // Closed while a frame was still in flight to it, which is what a client
-    // that has its answer does: the next write draws a reset rather than a
-    // clean end, and the read after it sees the same reset.
-    client.write_all(&[0u8; 8]).unwrap();
-    drop(client);
+    // The order a live session produces: the snapshot goes out first and the
+    // client leaves without reading it, so the close discards a queued frame
+    // and the poll that follows is what meets the departure. Publishing after
+    // the close would instead break the pipe on the write, which is a different
+    // path with the same meaning.
     let mut replacement = snapshot();
     replacement.topology_epoch = 2;
-    // Two publications: the first meets a socket the peer has closed, and the
-    // second proves the service is still there to receive it.
-    for transaction in [3, 4] {
-        service
-            .command(OutputTransportServiceCommand::PublishSnapshot {
-                transaction: TransactionId::from_raw(transaction),
-                snapshot: replacement.clone(),
-            })
-            .unwrap();
-    }
+    service
+        .command(OutputTransportServiceCommand::PublishSnapshot {
+            transaction: TransactionId::from_raw(3),
+            snapshot: replacement.clone(),
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    drop(client);
 
     assert_eq!(
         service.event_timeout(Duration::from_secs(1)).unwrap(),

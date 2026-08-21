@@ -13371,3 +13371,32 @@ Every write shares one retirement rule, because which frame happens to meet a
 close is timing rather than meaning. The negative controls are the part worth
 keeping: a test that passes when the code it covers is deleted is not evidence,
 and running that check is what separated the real fix from the invented one.
+
+## The test that could not fail, and the one that could
+
+Four attempts at one defect, and the difference between the failed ones and the
+last was never the reasoning -- it was whether the test could tell me I was
+wrong.
+
+The reproduction that matters is an ordering: the service writes a snapshot,
+the client leaves without reading it, and the *poll that follows* meets the
+departure. Every earlier test dropped the client first and published after, so
+the write broke the pipe and retired the connection before any read happened.
+Those tests passed with the code they covered deleted, which is the definition
+of proving nothing, and twice I read that pass as confirmation.
+
+With the order corrected the test reported exactly what the physical runs had:
+`Failed { message: "Io(\\"Connection reset by peer (os error 104)\\")" }` where
+`Disconnected` belonged. A unix stream has two readers here -- a blocking
+`read_exact` for negotiation and proposals, and a non-blocking drain for the
+poll loop -- and only the second is on this path. I had classified the first,
+deleted the arm for the second as unreachable, and been wrong about which.
+
+A departed peer reaches a socket three ways: a write to it breaks the pipe, a
+read with nothing left ends unexpectedly, and a close that discarded frames
+still queued for it resets the connection. One predicate covers them because
+they are one situation, and every reader and writer now uses it.
+
+The rule this leaves behind: a negative control is not a formality. Deleting
+the code under test and watching the test still pass is the cheapest way to
+find out that the test and the defect never met.
