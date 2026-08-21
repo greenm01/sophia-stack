@@ -42,6 +42,16 @@ pub enum RuntimeDeadlineKeyDrainDecision {
     BeginRelease,
     Waiting,
     Complete,
+    /// The wait expired owing nothing but a policy answer.
+    ///
+    /// Separate from `TimedOut` because the two obligations end differently. A
+    /// key the session believes a client holds is a fault if it is never
+    /// released -- somebody is left with a stuck key. A projection request the
+    /// session asked at the boundary has no consumer once the session stops,
+    /// so waiting for it is worth a bounded try and abandoning it is not a
+    /// failure. Ending a thirty-second run in error over one unanswered
+    /// request is what made the distinction necessary.
+    AbandonedPolicyRequests(usize),
     TimedOut,
 }
 
@@ -52,12 +62,12 @@ impl RuntimeDeadlineKeyDrain {
 
     /// Observes what the session still owes at its runtime deadline.
     ///
-    /// `pending_policy_requests` is counted alongside the key state because a
+    /// `pending_policy_requests` is waited for alongside the key state because a
     /// deadline lands at an arbitrary instant: a focus request raised by the
-    /// last pointer motion before it cannot settle in the same tick, and
-    /// ending on it discards the user's final intent and reports outstanding
-    /// work that was never stuck. Draining is still bounded, so a request that
-    /// genuinely cannot settle still times out and is still reported.
+    /// last pointer motion before it cannot settle in the same tick, and ending
+    /// on it discards the user's final intent and reports outstanding work that
+    /// was never stuck. It parts company with key state when the wait expires:
+    /// a key nobody released is a fault, an answer nobody will read is not.
     pub fn observe(
         &mut self,
         now_msec: u64,
@@ -85,7 +95,13 @@ impl RuntimeDeadlineKeyDrain {
             }
             Self::Draining { .. } if !pending => RuntimeDeadlineKeyDrainDecision::Complete,
             Self::Draining { deadline_msec } if now_msec >= deadline_msec => {
-                RuntimeDeadlineKeyDrainDecision::TimedOut
+                if pressed_keys == 0 && pending_deliveries == 0 && release_barriers == 0 {
+                    RuntimeDeadlineKeyDrainDecision::AbandonedPolicyRequests(
+                        pending_policy_requests,
+                    )
+                } else {
+                    RuntimeDeadlineKeyDrainDecision::TimedOut
+                }
             }
             Self::Draining { .. } => RuntimeDeadlineKeyDrainDecision::Waiting,
         }

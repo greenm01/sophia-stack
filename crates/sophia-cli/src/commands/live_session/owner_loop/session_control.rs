@@ -306,6 +306,12 @@ macro_rules! service_runtime_deadline_key_drain {
                 }
                 break;
             }
+            RuntimeDeadlineKeyDrainDecision::AbandonedPolicyRequests(requests) => {
+                println!(
+                    "sophia_live_session_keys schema=3 status=deadline_drained pending=0 release_barrier_pending=0 abandoned_policy_requests={requests}"
+                );
+                break;
+            }
             RuntimeDeadlineKeyDrainDecision::TimedOut => {
                 return Err(format!(
                     "runtime deadline key-release barrier timed out: pressed={} pending_deliveries={} release_barrier_pending={} policy_requests={}",

@@ -205,12 +205,14 @@ fn state_only_release_retires_key_from_a_removed_surface() {
 /// A deadline lands at an arbitrary instant, and the last pointer motion
 /// before it can raise a focus request that cannot settle in the same tick.
 ///
-/// Ending there discards the user's final intent and reports work as
-/// outstanding that was never stuck. The drain waits for it on the same
-/// bounded terms as held keys, so a request that genuinely cannot settle is
-/// still reported.
+/// The drain waits for it on the same bounded terms as held keys, so the user's
+/// final intent gets its chance. Where the two part company is at expiry: a key
+/// the session believes a client holds is a fault if nobody released it, while
+/// an answer nobody will read once the session stops is not. A thirty-second
+/// run that ended in error owing exactly one projection request is what made
+/// that difference worth stating.
 #[test]
-fn runtime_deadline_waits_for_a_policy_request_raised_at_the_boundary() {
+fn runtime_deadline_waits_for_a_policy_request_but_does_not_fail_on_one() {
     let mut drain = RuntimeDeadlineKeyDrain::default();
     // No keys owed, one policy request in flight.
     assert_eq!(
@@ -228,17 +230,34 @@ fn runtime_deadline_waits_for_a_policy_request_raised_at_the_boundary() {
         RuntimeDeadlineKeyDrainDecision::Complete,
     );
 
-    // One that never settles is still bounded and still reported.
-    let mut stuck = RuntimeDeadlineKeyDrain::default();
+    // One that never settles is abandoned, named, and not a failure.
+    let mut unanswered = RuntimeDeadlineKeyDrain::default();
     assert_eq!(
-        stuck.observe(4_000, 0, 0, 0, 1),
+        unanswered.observe(4_000, 0, 0, 0, 1),
         RuntimeDeadlineKeyDrainDecision::Waiting,
     );
     assert_eq!(
-        stuck.observe(
+        unanswered.observe(
             4_000 + RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC,
             0,
             0,
+            0,
+            1
+        ),
+        RuntimeDeadlineKeyDrainDecision::AbandonedPolicyRequests(1),
+    );
+
+    // A delivery still owed at the same instant is a fault, request or not.
+    let mut stuck = RuntimeDeadlineKeyDrain::default();
+    assert_eq!(
+        stuck.observe(5_000, 1, 0, 0, 1),
+        RuntimeDeadlineKeyDrainDecision::BeginRelease,
+    );
+    assert_eq!(
+        stuck.observe(
+            5_000 + RUNTIME_DEADLINE_KEY_RELEASE_TIMEOUT_MSEC,
+            0,
+            1,
             0,
             1
         ),
