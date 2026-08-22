@@ -8,6 +8,7 @@ firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
 seat="${SOPHIA_OUTPUT_TOPOLOGY_SEAT:-}"
 display="${SOPHIA_OUTPUT_TOPOLOGY_DISPLAY:-:293}"
 runtime_msec="${SOPHIA_OUTPUT_TOPOLOGY_RUNTIME_MSEC:-180000}"
+sequence_timeout_msec="${SOPHIA_OUTPUT_TOPOLOGY_SEQUENCE_TIMEOUT_MSEC:-$runtime_msec}"
 evidence="${SOPHIA_OUTPUT_TOPOLOGY_EVIDENCE:-/tmp/sophia-output-topology-physical.log}"
 proof_text="${SOPHIA_OUTPUT_TOPOLOGY_TEXT:-topologyproof}"
 
@@ -33,6 +34,11 @@ if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
 fi
 if [[ ! "$runtime_msec" =~ ^[0-9]+$ ]] || (( runtime_msec < 60000 )); then
     echo "SOPHIA_OUTPUT_TOPOLOGY_RUNTIME_MSEC must be at least 60000" >&2
+    exit 2
+fi
+if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
+    || (( sequence_timeout_msec < 60000 || sequence_timeout_msec > 600000 )); then
+    echo "SOPHIA_OUTPUT_TOPOLOGY_SEQUENCE_TIMEOUT_MSEC must be 60000-600000" >&2
     exit 2
 fi
 if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
@@ -86,6 +92,7 @@ SOPHIA_LIVE_SESSION_VERIFY_MODE=caller \
     --wm-interface=sophia_wm_v1 \
     "--input-seat=$seat" \
     "--expect-physical-text=$proof_text" \
+    "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
     --exit-after-input-proof
 
 require_count() {
