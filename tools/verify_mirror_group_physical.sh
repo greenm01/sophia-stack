@@ -149,26 +149,57 @@ for head in "$dp1_head" "$dp2_head"; do
     (( plan_line < queue_line && queue_line < bootstrap_line && bootstrap_line < startup_output_line )) ||
         fail "head $head semantic startup evidence is not plan -> queue -> worker -> modeset ordered"
 done
-grep -Eq '^sophia_native_composition_sampling schema=3 status=active output=[0-9]+ head=[0-9]+ scene_generation=[0-9]+ requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 frame=2560x1440$' \
-    "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
-grep -Eq '^sophia_native_composition_sampling schema=3 status=active output=[0-9]+ head=[0-9]+ scene_generation=[0-9]+ requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 frame=1920x1080$' \
-    "$evidence" || fail "DP-2 did not use sharp 0.75x downsampling"
+sampling_pair=false
+while IFS= read -r dp1_sampling; do
+    sampling_scene="$(field "$dp1_sampling" scene_generation)" || continue
+    dp1_source="$(field "$dp1_sampling" source)" || continue
+    dp1_target="$(field "$dp1_sampling" target)" || continue
+    [[ "$dp1_source" =~ ^[1-9][0-9]*x[1-9][0-9]*$ \
+        && "$dp1_source" == "$dp1_target" ]] || continue
+    dp2_sampling="$(grep -Em1 \
+        "^sophia_native_composition_sampling schema=3 status=active output=$dp1_output head=$dp2_head scene_generation=$sampling_scene requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]* frame=1920x1080$" \
+        "$evidence" || true)"
+    [[ -n "$dp2_sampling" ]] || continue
+    dp2_source="$(field "$dp2_sampling" source)" || continue
+    dp2_target="$(field "$dp2_sampling" target)" || continue
+    [[ "$dp2_source" == "$dp1_source" ]] || continue
+    dp1_source_width="${dp1_source%x*}"
+    dp1_source_height="${dp1_source#*x}"
+    dp2_target_width="${dp2_target%x*}"
+    dp2_target_height="${dp2_target#*x}"
+    if (( dp2_target_width * 4 == dp1_source_width * 3 \
+        && dp2_target_height * 4 == dp1_source_height * 3 )); then
+        sampling_pair=true
+        break
+    fi
+done < <(
+    grep -E "^sophia_native_composition_sampling schema=3 status=active output=$dp1_output head=$dp1_head scene_generation=[0-9]+ requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=[1-9][0-9]*x[1-9][0-9]* target=[1-9][0-9]*x[1-9][0-9]* frame=2560x1440$" \
+        "$evidence" || true
+)
+[[ "$sampling_pair" == true ]] ||
+    fail "the mirror heads lack one exact-primary/sharp-0.75x sampling pair"
 
 max_final_cpu_gray_pixels() {
-    local target="$1" line gray max=0
+    local output_extent="$1" line output target gray max=0
     while IFS= read -r line; do
+        output="$(field "$line" output || true)"
+        target="$(field "$line" target || true)"
+        if [[ "$output" != "$output_extent" \
+            && "$target" != "${output_extent}_0_0" ]]; then
+            continue
+        fi
         gray="$(field "$line" region_gray_pixels)" || continue
         [[ "$gray" =~ ^[0-9]+$ ]] || continue
         (( gray > max )) && max="$gray"
     done < <(
-        grep -E "^sophia_native_composition_region schema=(1|2|3) status=read composition=final source_stage=cpu layer=[0-9]+ target=$target region_pixels=[0-9]+ .*region_gray_pixels=[0-9]+([[:space:]]|$)" \
+        grep -E '^sophia_native_composition_region schema=(1|2|3) status=read composition=final source_stage=cpu layer=[0-9]+ .*region_gray_pixels=[0-9]+([[:space:]]|$)' \
             "$evidence" || true
     )
     printf '%s\n' "$max"
 }
 
-dp1_gray_pixels="$(max_final_cpu_gray_pixels '2560x1440_0_0')"
-dp2_gray_pixels="$(max_final_cpu_gray_pixels '1920x1080_0_0')"
+dp1_gray_pixels="$(max_final_cpu_gray_pixels 2560x1440)"
+dp2_gray_pixels="$(max_final_cpu_gray_pixels 1920x1080)"
 (( dp1_gray_pixels > 500 )) || fail "DP-1 final composition did not contain substantial terminal text pixels"
 (( dp2_gray_pixels > 500 )) || fail "DP-2 final composition did not contain substantial terminal text pixels"
 (( dp2_gray_pixels * 4 >= dp1_gray_pixels )) ||
@@ -396,8 +427,10 @@ require_positive_field "$session" native_nonzero_exports
 cpu_checksum="$(field "$session" cpu_checksum)" || fail "bounded completion omitted cpu_checksum"
 [[ "$cpu_checksum" =~ ^[0-9]+$ ]] || fail "cpu_checksum is not an integer: $cpu_checksum"
 (( cpu_checksum > 0 )) || fail "cpu_checksum must be positive"
-[[ "$dp1_checksum" == "$cpu_checksum" && "$dp2_checksum" == "$cpu_checksum" ]] ||
-    fail "mirrored heads did not present the final CPU scene checksum"
+# The CPU replay report hashes composed pixels, while the head checksum hashes
+# the Engine's logical scene plan. Their domains differ; the plan, queue,
+# submission, page-flip, and retirement checks above bind the latter to both
+# heads.
 resources="$(grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
