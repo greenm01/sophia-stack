@@ -43,14 +43,15 @@ for status in /sys/class/drm/card*-*/status; do
         connected_outputs=$((connected_outputs + 1))
     fi
 done
-if (( connected_outputs != 2 )); then
-    echo "connect exactly two physical outputs before running this gate (observed $connected_outputs)" >&2
+if (( connected_outputs < 2 )); then
+    echo "connect at least two physical outputs before running this gate (observed $connected_outputs)" >&2
     exit 2
 fi
+loss_outputs=$((connected_outputs - 1))
 
 echo "Sophia physical output-topology gate"
 echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
-echo "After Kitty is visibly settled on two outputs:"
+echo "After Kitty is visibly settled on all $connected_outputs outputs:"
 echo "  1. Disconnect one non-primary output and wait for the desktop to settle."
 echo "  2. Reconnect that output and wait for the desktop to settle again."
 echo "  3. Confirm Kitty survived, then type '$proof_text' into Kitty."
@@ -101,12 +102,12 @@ require_count 'sophia_live_output_topology schema=1 status=policy_committed' 2 \
 require_count 'sophia_live_output_topology schema=1 status=settled .*input=enabled' 2 \
     'post-policy topology presentations'
 
-if ! grep -Eq 'sophia_live_output_topology schema=1 status=published .*generation=2 .*outputs=1 ' "$evidence"; then
-    echo "one-output loss publication is missing" >&2
+if ! grep -Eq "sophia_live_output_topology schema=1 status=published .*generation=2 .*outputs=$loss_outputs " "$evidence"; then
+    echo "$loss_outputs-output loss publication is missing" >&2
     exit 1
 fi
-if ! grep -Eq 'sophia_live_output_topology schema=1 status=published .*generation=3 .*outputs=2 ' "$evidence"; then
-    echo "two-output return publication is missing or did not advance generation" >&2
+if ! grep -Eq "sophia_live_output_topology schema=1 status=published .*generation=3 .*outputs=$connected_outputs " "$evidence"; then
+    echo "$connected_outputs-output return publication is missing or did not advance generation" >&2
     exit 1
 fi
 if ! grep -Eq '^sophia_live_output_topology_health schema=1 status=clean quarantined=false$' "$evidence"; then

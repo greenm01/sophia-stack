@@ -1944,7 +1944,7 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   reservation lifecycle and require no stale gap, overlap, resize timeout, or
   focus change. Pair dynamic output-topology behavior with the later physical
   multi-output hotplug gate. `tools/output_topology_physical_gate.sh` now arms
-  that exact two-output loss/return procedure and requires two input-epoch
+  that exact multi-output loss/return procedure and requires two input-epoch
   barriers, generation-advancing complete publications, policy settlement,
   later page flips, client survival, and clean final topology health. It has
   not been run or promoted as evidence. The recovery-safe one-command entry

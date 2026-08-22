@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-command signed physical proof for two-output loss and return. This gate
+# One-command signed physical proof for output loss and return. This gate
 # performs a real modeset and therefore runs only from a recovery-safe TTY.
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -16,7 +16,7 @@ usage() {
     cat <<USAGE
 usage: tools/run_output_topology_gate_tty4.sh
 
-From tty4, run the complete signed two-output disconnect/reconnect gate with
+From tty4, run the complete signed output disconnect/reconnect gate with
 safe defaults. Hagia is discovered from PATH, $INSTALL_PREFIX/current, or the
 adjacent Hagia checkout. Environment overrides remain available through the
 SOPHIA_OUTPUT_TOPOLOGY_*, SOPHIA_HAGIA_BIN, SOPHIA_TERMINAL_BIN, and
@@ -84,8 +84,8 @@ mapfile -t connected_outputs < <(
         basename "$connector" | sed -E 's/^card[0-9]+-//'
     done | sort
 )
-if (( ${#connected_outputs[@]} != 2 )); then
-    refuse "connect exactly two physical outputs (observed ${#connected_outputs[@]}: ${connected_outputs[*]:-none})."
+if (( ${#connected_outputs[@]} < 2 )); then
+    refuse "connect at least two physical outputs (observed ${#connected_outputs[@]}: ${connected_outputs[*]:-none})."
 fi
 
 # shellcheck source=tools/lib/drm_master_guard.sh
