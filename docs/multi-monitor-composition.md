@@ -997,12 +997,15 @@ same class while emitting output/head/scene-keyed evidence. Public chrome also
 reconciles outer policy allocation and content geometry in one transaction, and
 the post-commit topology path has deterministic coverage for forced repaint,
 stale parked publication, transition overlap, and head-keyed startup readiness.
-The proof is still not promotion-complete because the current source identity
-has no retained signed passing run and head loss and return remain unproved.
-After that gate is truthful and complete, mirror members must advance at their
-own refresh rates without releasing a buffer before the last head that scanned
-it retires. The executable
-slices and exit criteria stay ordered in `todo.md`.
+Signed source `3d19e2e67cfe2e43eb643d219be11a3251fe7176` now has a passing
+three-head physical run: the public policy settled two surfaces across two
+logical outputs, the extended head's exact keyed draw retired, post-policy
+presentation released input quarantine, final health and cleanup were clean,
+and visual confirmation passed. The proof is still not promotion-complete
+because head loss and return remain unproved. After that gate completes, mirror
+members must advance at their own refresh rates without releasing a buffer
+before the last head that scanned it retires. The executable slices and exit
+criteria stay ordered in `todo.md`.
 
 ### Target
 

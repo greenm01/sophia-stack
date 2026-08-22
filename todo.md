@@ -883,8 +883,13 @@ Detailed physical-run diagnoses remain in
   private raster journal when post-publication density demand arrived. Standard
   pixmap and DRI3 Present now invalidate semantic replay, so stale extent or
   unsupported-command demand becomes a bounded sampled fallback instead of an
-  X Authority process failure or falsely exact pixels. The physical rerun,
-  archive verifier, head-loss phase, and visible-pixel acceptance remain open.
+  X Authority process failure or falsely exact pixels. Signed attempt
+  `3d19e2e67cfe2e43eb643d219be11a3251fe7176` then passed the physical runtime,
+  archive verifier, and visible-pixel acceptance: two logical outputs settled,
+  the extended head's exact draw retired, topology input quarantine released,
+  health and cleanup were clean, and the operator confirmed matching mirror
+  content plus sharp extended text. Only the separate head-loss/return phase of
+  this combined item remains open.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
@@ -1469,7 +1474,8 @@ hardware, the second only decides which screen looks best.
   An installed target already owned by `ResizeVisualCommitTracker` now removes
   only that duplicate resize request. A standing recovery target whose geometry
   is not installed still configures normally. Both sides have deterministic
-  regressions; the successor still needs the signed mixed physical rerun.
+  regressions. The signed `3d19e2e6` rerun passed runtime, telemetry, and visual
+  confirmation; this resize race is physically closed.
 
 - [x] Give the composition-region trace a head. The line carried a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
