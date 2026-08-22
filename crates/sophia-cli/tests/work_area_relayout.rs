@@ -91,3 +91,34 @@ fn a_public_placement_is_converted_to_content_geometry_before_it_becomes_a_layer
         "assigning the allocation as geometry is the defect this replaced"
     );
 }
+
+/// Converting the geometry without requesting the size is half a change.
+///
+/// A public peer omits a content-size request when it believes the client's
+/// content need not move. Chrome clearance changing under a stable allocation
+/// moves it anyway, and the reconciler adds requests only where the peer already
+/// made one, so nothing else in this path would tell the client. Shipping the
+/// conversion alone shrank every surface and left the layout waiting on an
+/// acknowledgement that could not arrive: the transaction timed out once per
+/// cycle and the session ended with the work still pending.
+#[test]
+fn a_content_extent_that_moved_carries_a_size_request_with_it() {
+    let convert = PUBLIC_PROPOSAL
+        .find("sophia_engine::surface_content_geometry(placement.geometry")
+        .expect("the public path converts the allocation");
+    let request = PUBLIC_PROPOSAL[convert..]
+        .find("requested_sizes.insert(")
+        .expect("a converted extent is accompanied by a size request");
+    let push = PUBLIC_PROPOSAL[convert..]
+        .find("layers.push(layer);")
+        .expect("the layer is pushed after it is built");
+    assert!(
+        request < push,
+        "the size request must be decided before the layer is committed"
+    );
+    assert!(
+        PUBLIC_PROPOSAL.contains("layer.geometry.width != previous.width"),
+        "the request is raised by comparing the converted extent with the one \
+         the surface already had, not by assuming every placement changed it"
+    );
+}
