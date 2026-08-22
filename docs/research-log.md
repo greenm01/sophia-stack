@@ -14137,3 +14137,22 @@ are now validated as nonzero decimal strings instead of shell integers. The
 fixture suite accepts `u64::MAX` and still rejects zero. Run `0028` then passes
 the verifier end to end, but remains diagnostic because the gate correctly
 recorded the verifier's original rejection.
+
+## 2026-08-22: a departed surface does not turn disclosure into authority
+
+Signed source `e0f43071103febb40ea16c948a9a16f4230df430` produced and
+independently re-verified mirror promotion archive `0001`. The following
+three-head mixed run then stopped during startup when a short-lived proof client
+closed its X window before X Authority received the broker's
+`PublishMetadataRule` control. The frontend returned `UnknownSurface` in two
+milliseconds; the owner treated it as a policy rejection and ended an otherwise
+recoverable session.
+
+This is the same bounded-handoff distinction already made for closing a departed
+surface. A disclosure rule has no effect without its exact surface, and the
+broker retires the admitted surface when the frontend's removal batch arrives.
+`UnknownSurface` is therefore a stale completion for
+`PublishMetadataRule`, while `AuthorityRejected`, malformed rule identity,
+timeouts, and failures for live targets remain fatal. The session-control
+regression names that one additional stale pair and continues to reject
+`UnknownSurface` for focus.

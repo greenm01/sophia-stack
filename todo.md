@@ -79,8 +79,12 @@ promotion gate.
    primary-owned Present completion and last-head buffer retirement, then
    re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
    the mixed gate now writes a signature-checked archive containing both exact
-   binaries and its signed configuration. Clean signed mirror and mixed-output
-   reruns remain the promotion gate.
+   binaries and its signed configuration. Mirror archive `0001` passed and
+   independently re-verified on signed source
+   `e0f43071103febb40ea16c948a9a16f4230df430`. The following mixed run exposed
+   a short-lived-client race in metadata-rule publication; the narrow stale-
+   target retirement is implemented, and a fresh signed sequence remains the
+   promotion gate because it changes the Sophia executable.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
@@ -117,7 +121,10 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    writes and re-verifies a durable archive. The mixed run must show both mirror
    heads pixel-exact inside their borders and a focus ring that stays on the
    output owning the window. The first two runs close row 2; the final run closes
-   row 3.
+   row 3. The last sequence produced the first verified mirror archive, then
+   stopped when a proof client departed before X Authority received its
+   metadata disclosure rule. That stale reply now retires without ending the
+   session; all three rows must be rerun on the resulting signed executable.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area
@@ -1395,8 +1402,11 @@ hardware, the second only decides which screen looks best.
   mixed verifiers require ordered `primary_presented -> released` evidence, and
   their visual prompts judge convergence only after motion settles. Engine,
   backend feature, verifier-fixture, and TLA checks are local prerequisites;
-  this item stays open until clean signed mirror and mixed physical reruns prove
-  the implementation on real mismatched heads.
+  signed source `e0f43071103febb40ea16c948a9a16f4230df430` passed mirror
+  archive `0001`, including the ordered primary-presentation/last-head-release
+  proof. This item stays open until the changed executable repeats that mirror
+  proof and a clean signed mixed physical run proves the implementation on real
+  mismatched heads.
 - [x] Make the optimized head a property of a mirror group, as macOS does. The
   choice turned out to be expressible already: a group proposal carries one
   logical rect and a mapping per member, so optimizing for a head is sizing the

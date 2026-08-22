@@ -1014,12 +1014,19 @@ three-to-two-to-three head loss/return gate, and mirror members now advance at
 their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
-fresh signed physical reruns. The mixed runner now archives the raw log, exact
-Sophia and reference-WM digests, signed source commit, and signed-tree
-configuration behind a checksum and standalone verifier. The tty4 critical-path
-runner orders the mirror rerun before the centered mixed rerun and refuses a
-source change between them. The executable slices and exit criteria stay
-ordered in `todo.md`.
+fresh signed physical reruns. Signed source
+`e0f43071103febb40ea16c948a9a16f4230df430` produced verified mirror archive
+`0001`: both independently paced heads presented one logical checksum, the
+primary owned logical presentation, and the last head released the generation
+before clean shutdown. The immediately following mixed run found an unrelated
+metadata-rule lifecycle race and ended before topology publication. Fixing that
+race changes the executable, so the mirror and mixed proofs must still be
+repeated together on the next signed candidate. The mixed runner archives the
+raw log, exact Sophia and reference-WM digests, signed source commit, and
+signed-tree configuration behind a checksum and standalone verifier. The tty4
+critical-path runner orders the mirror rerun before the centered mixed rerun and
+refuses a source change between them. The executable slices and exit criteria
+stay ordered in `todo.md`.
 
 ### Target
 

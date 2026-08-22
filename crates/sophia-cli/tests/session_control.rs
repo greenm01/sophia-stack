@@ -407,6 +407,9 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
             .failure
             .is_some_and(|failure| failure.is_stale_target_for(completions[0].key.kind))
     );
+    assert!(completions[0].failure.is_some_and(|failure| {
+        failure.is_stale_target_for(XAuthorityControlKind::PublishMetadataRule)
+    }));
     assert!(
         completions[0].failure.is_some_and(
             |failure| !failure.is_stale_target_for(XAuthorityControlKind::FocusSurface)

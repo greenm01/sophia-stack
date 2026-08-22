@@ -60,14 +60,17 @@ pub enum SessionControlFailure {
 
 impl SessionControlFailure {
     /// Returns true when an acknowledged command lost its target during the
-    /// bounded Engine-to-frontend handoff.
+    /// bounded Engine-to-frontend handoff. Closing and metadata publication are
+    /// harmless after departure; other unknown targets expose broken ordering.
     pub const fn is_stale_target_for(self, kind: XAuthorityControlKind) -> bool {
         matches!(self, Self::Rejected(XAuthorityControlOutcome::ClientGone))
-            || matches!(kind, XAuthorityControlKind::CloseSurface)
-                && matches!(
-                    self,
-                    Self::Rejected(XAuthorityControlOutcome::UnknownSurface)
-                )
+            || matches!(
+                kind,
+                XAuthorityControlKind::CloseSurface | XAuthorityControlKind::PublishMetadataRule
+            ) && matches!(
+                self,
+                Self::Rejected(XAuthorityControlOutcome::UnknownSurface)
+            )
     }
 }
 
