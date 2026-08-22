@@ -1393,17 +1393,39 @@ hardware, the second only decides which screen looks best.
   space -- one monitor's window border appearing on another monitor, and none on
   its own.
 
-- [x] Convert a public policy's placement into content geometry. The public
-  API separates an outer allocation from an optional content-size request, and
-  the code said so in a comment three lines above where it assigned the
-  allocation straight into the layer as geometry. The private path has always
-  converted through `apply_surface_chrome_clearance`; the public path never did,
-  so every surface it placed filled its whole allocation and the chrome drawn
-  around it had nowhere to go. A focused window allocated an entire output put
-  its focus ring wholly outside that output, and the only part visible anywhere
-  was the sliver crossing into a neighbouring one. `surface_content_geometry` is
-  the single-rect form of that conversion, so both paths now read one
-  implementation instead of one converting and one assigning.
+- [ ] Convert a public policy's placement into content geometry. Diagnosed and
+  attempted; reverted because it regressed the physical gate, and the diagnosis
+  is worth more than the attempt was.
+
+  The defect is real and located. A public policy's placement is an outer
+  allocation, chrome included -- the code says so in a comment directly above the
+  line that assigns it into the layer as content geometry. The private path
+  converts through `apply_surface_chrome_clearance`; the public path assigns it
+  raw, so every surface it places fills its whole allocation and the chrome drawn
+  around it has nowhere to go. A focused window allocated an entire output puts
+  its focus ring wholly outside that output, visible only where it crosses into a
+  neighbouring one, which is exactly what the rig shows.
+
+  The conversion reached the geometry -- a surface was observed at 1916x1076 --
+  and the session then failed. Layout timeouts went from one per run to seven,
+  and the session ended with `wm_layout=1` pending. Adding a content-size request
+  alongside the converted extent did not help, which is the fact that matters:
+  the second attempt assumed the client was never told to resize, and it made no
+  difference, so that is not the whole reason either.
+
+  What to check next, in this order. Whether `layout.layers` still holds the
+  pre-transaction geometry when the next cycle reads it, because if a timed-out
+  transaction never commits, `previous` never advances and every cycle re-requests
+  the same resize -- a loop that would produce exactly the observed repetition.
+  Whether the two surfaces sitting at 1280x1440 through the failure are stranded
+  from the previous topology rather than from clearance at all. And whether the
+  conversion belongs before `reconcile_public_policy_proposal` instead of after
+  it, so the reconciler sees content geometry and bounds and raises its own
+  requests, which is the shape the private path has.
+
+  Do not attempt this again from the geometry alone. The evidence that would
+  settle it is per-cycle: what the peer proposed, what was requested of the
+  client, and what the client acknowledged, none of which is currently traced.
 
 - [ ] Give the composition-region trace a head. The line carries a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`

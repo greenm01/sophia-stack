@@ -13719,47 +13719,33 @@ kept paying for a physical run to test a guess instead of paying once to make th
 system able to answer. Evidence that names the thing you are debugging is cheaper
 than the third guess about it.
 
-## The comment three lines above the bug
+## Reverting the fourth attempt
 
-The border fix before this one did not change what the operator saw, and neither
-did the one before that. The second attempt is the instructive one: I had a
-mechanism that plausibly explained the symptom -- a relayout flag written in
-three places and read in one, behind an early return the gate always took -- and
-I shipped it without checking that repairing it would move the geometry. It could
-not have. If the path never applies chrome clearance at all, relaying out
-produces exactly the same un-inset rectangle, and the flag being unreachable was
-a real but separate defect.
+The chrome diagnosis is right and the change is out of the tree. Layout timeouts
+went from one per run to seven the moment the conversion landed, and the session
+ended with a layout transaction still pending. A follow-up that sent a
+content-size request alongside the converted extent changed nothing, which is the
+useful part: my explanation for the regression -- that the client was never told
+to resize -- predicted an improvement and produced none, so it was wrong too.
 
-The actual cause was four lines away from where I had been reading:
+Four attempts, and the count is worth being exact about. Two fixed real defects
+that were not the reported one. One shipped a regression. One repaired half of
+that regression and did not repair it. The reported symptom is unchanged from
+where it started, and the operator has spent six physical runs on it.
 
-    // Public policy separates outer geometry from an optional
-    // client-content request.
-    ...
-    layer.geometry = placement.geometry;
+What went wrong is not any single mistaken diagnosis; those are ordinary. It is
+that I kept treating a plausible mechanism as a finished one. The check that
+would have caught three of the four costs nothing: take the proposed repair, work
+the arithmetic forward to the geometry the evidence reports, and see whether it
+lands there. Relaying out could not have moved a rectangle on a path that never
+applies clearance. A size request could not have been the missing piece when
+adding it changed no number in the log.
 
-The comment states the distinction and the code drops it. A public policy's
-placement is an outer allocation, chrome included; the private path converts it
-into client-content geometry through `apply_surface_chrome_clearance`, and the
-public path assigned it raw. So a surface filled its whole allocation, and chrome
--- drawn outside the content rect, the way an X border_width is -- landed outside
-the allocation. When the allocation was a whole output, the chrome landed outside
-the output, where the only thing that could show any of it was a neighbouring
-output whose viewport the ring crossed in root space.
-
-Two lessons, and the second is the one that cost the runs.
-
-A candidate cause is not a diagnosis until it is shown to produce the symptom.
-Twice I found a genuine defect in the neighbourhood of the right answer, fixed
-it, and reported it as the fix. Both were worth fixing and neither was the bug.
-The check I skipped is cheap: work the arithmetic forward from the proposed
-repair to the observed geometry, and see whether it lands where the evidence
-says. Doing that here would have shown immediately that relayout changes nothing
-while the conversion is absent.
-
-And the class is now familiar enough to name on sight: an operation applied on
-one path and omitted on another, where both paths carry the same value under the
-same name. This session has met it in the raster that could not say what extent
-it spanned, the counter that could not distinguish degraded from enlarged, the
-clip bounded by a framebuffer instead of a scene, and now an allocation assigned
-as geometry. The tell is a comment explaining a distinction that the code beneath
-it does not make.
+The revert is the right end to it rather than a fifth attempt, because the next
+step is not a guess about geometry, it is evidence that does not exist yet: what
+the peer proposed, what was requested of the client, and what the client
+acknowledged, per cycle. Three diagnoses stalled earlier in this same area for
+the same reason, and adding `sophia_live_head_border` turned the fourth into
+reading a log rather than inferring one. The lesson did not generalise on its own
+and is written down here instead: when a second attempt at one symptom fails,
+stop fixing and start instrumenting.

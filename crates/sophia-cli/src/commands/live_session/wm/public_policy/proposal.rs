@@ -86,7 +86,6 @@ fn public_live_proposal(
     transaction: TransactionId,
     source: LiveWmProposalSource,
     settlement: LivePolicySettlementIdentity,
-    chrome: sophia_engine::SurfaceChromeStyle,
 ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
     let mut layers = layout
         .layers
@@ -134,35 +133,10 @@ fn public_live_proposal(
                     resize_sync: ResizeSyncCapability::ImplicitOnly,
                 }
             };
-            // The placement is an outer allocation, as the comment above says
-            // and as the private path has always treated it. Assigning it here
-            // as content geometry gave every surface its whole allocation and
-            // left the chrome drawn around it nowhere to go: a focused window
-            // filling its output had its focus ring land wholly outside that
-            // output, visible only where it crossed into a neighbour.
-            let previous = layer.geometry;
-            layer.geometry = sophia_engine::surface_content_geometry(placement.geometry, chrome)?;
+            layer.geometry = placement.geometry;
             layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
             if let Some(size) = placement.requested_size {
                 requested_sizes.insert(placement.surface, size);
-            } else if layer.geometry.width != previous.width
-                || layer.geometry.height != previous.height
-            {
-                // The content extent moved without the peer asking, which is
-                // what a clearance change does under an allocation that did not
-                // move: the reconciler adds a request only where the peer
-                // already made one, so nothing else here would tell the client.
-                // Converting the geometry alone shrank the surface and left the
-                // layout waiting on an acknowledgement that could not arrive,
-                // which timed out once per cycle until the session ended with
-                // the work still pending.
-                requested_sizes.insert(
-                    placement.surface,
-                    sophia_protocol::Size {
-                        width: layer.geometry.width,
-                        height: layer.geometry.height,
-                    },
-                );
             }
             layers.push(layer);
         }

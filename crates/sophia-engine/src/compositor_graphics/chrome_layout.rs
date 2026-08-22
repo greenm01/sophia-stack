@@ -57,22 +57,6 @@ pub fn outer_surface_constraints(
     })
 }
 
-/// Converts one outer allocation into the client-content geometry inside it.
-///
-/// The single-rect form of `apply_surface_chrome_clearance`, and the exact
-/// inverse of `outer_surface_geometry`. It exists because a policy that reports
-/// placements one at a time rather than as a layout transaction still has to
-/// make this conversion, and doing it by hand at that call site is how one path
-/// ends up treating an allocation as content geometry while the other converts
-/// it. Chrome is drawn outside the content rect, so a surface handed its whole
-/// allocation leaves its own border nowhere to go.
-pub fn surface_content_geometry(
-    allocation: Rect,
-    style: SurfaceChromeStyle,
-) -> Result<Rect, ChromeLayoutError> {
-    inset_rect(allocation, style.clearance())
-}
-
 /// Converts committed client-content geometry back to the outer allocation
 /// geometry understood by a blind WM.
 pub fn outer_surface_geometry(
