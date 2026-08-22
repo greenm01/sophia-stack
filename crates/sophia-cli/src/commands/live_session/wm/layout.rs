@@ -693,8 +693,18 @@ impl PersistentLiveLayout {
             }
         }
         proposal.requested_sizes.retain(|surface, size| {
+            let installed_visual_target = self
+                .layers
+                .get(surface)
+                .is_some_and(|layer| {
+                    layer.geometry.width == size.width && layer.geometry.height == size.height
+                })
+                && self
+                    .awaiting_visual_commits
+                    .surface_layout_awaiting(*surface, *size);
             self.surface_awaits_visual_candidate(*surface)
-                || (self.layout_epochs.request_allowed(*surface, *size)
+                || (!installed_visual_target
+                    && self.layout_epochs.request_allowed(*surface, *size)
                     && self.layout_epochs.committed_size(*surface) != Some(*size))
         });
         let mut staged_transactions = BTreeMap::new();

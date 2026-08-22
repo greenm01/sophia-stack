@@ -1460,6 +1460,17 @@ hardware, the second only decides which screen looks best.
   reconciled, acknowledged, and settled stages, and regressions cover the
   outer/content split, generated configure, and post-settlement materialization.
 
+  Signed mixed attempt from `7ff94e20` proved the projection arithmetic and
+  exposed one remaining ownership race. A second public relayout arrived after
+  the first resize epoch had installed its content geometry and armed exact
+  pixels, but before one surface's native retirement committed its size. The
+  staging filter compared only with the last retired size, treated the identical
+  target as new, and sent a second configure that displaced the armed candidate.
+  An installed target already owned by `ResizeVisualCommitTracker` now removes
+  only that duplicate resize request. A standing recovery target whose geometry
+  is not installed still configures normally. Both sides have deterministic
+  regressions; the successor still needs the signed mixed physical rerun.
+
 - [x] Give the composition-region trace a head. The line carried a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
   rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at

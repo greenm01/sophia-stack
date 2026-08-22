@@ -261,6 +261,142 @@ fn recovery_reseed_reasserts_geometry_when_only_committed_pixels_are_stale() {
 }
 
 #[test]
+fn duplicate_target_awaiting_retirement_does_not_send_a_second_configure() {
+    let surface = SurfaceId::new(6, 1);
+    let old = Size {
+        width: 1920,
+        height: 1080,
+    };
+    let target = Size {
+        width: 1276,
+        height: 1436,
+    };
+    let geometry = Rect {
+        x: 2,
+        y: 2,
+        width: target.width,
+        height: target.height,
+    };
+    let visual_transaction = TransactionId::from_raw(545);
+    let visual_buffer = BufferHandle::from_raw(9);
+    let candidate = dma_candidate(visual_transaction, surface, visual_buffer);
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout.layout_epochs.record_committed(surface, old);
+    layout
+        .awaiting_visual_commits
+        .arm(ResizeVisualCommit {
+            candidate,
+            size: target,
+            layout_size: target,
+        })
+        .unwrap();
+    let transaction = TransactionId::from_raw(11);
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::from([(surface, target)]),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+        policy_settlement: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_some());
+    assert!(layout.pending.is_none());
+    assert_eq!(controls.pending_len(), 0);
+    assert!(layout.awaiting_visual_commits.exact_candidate(candidate, target));
+    assert_eq!(layout.layout_epochs.committed_size(surface), Some(old));
+}
+
+#[test]
+fn standing_visual_target_still_configures_geometry_that_is_not_installed() {
+    let surface = SurfaceId::new(7, 1);
+    let old = Size {
+        width: 1920,
+        height: 1080,
+    };
+    let old_geometry = Rect {
+        x: 2,
+        y: 2,
+        width: old.width,
+        height: old.height,
+    };
+    let target = Size {
+        width: 1276,
+        height: 1436,
+    };
+    let target_geometry = Rect {
+        width: target.width,
+        height: target.height,
+        ..old_geometry
+    };
+    let candidate = dma_candidate(
+        TransactionId::from_raw(546),
+        surface,
+        BufferHandle::from_raw(10),
+    );
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout
+        .layers
+        .insert(surface, test_layer(surface, old_geometry));
+    layout.layout_epochs.record_committed(surface, old);
+    layout
+        .awaiting_visual_commits
+        .arm(ResizeVisualCommit {
+            candidate,
+            size: target,
+            layout_size: target,
+        })
+        .unwrap();
+    let transaction = TransactionId::from_raw(12);
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(surface, target_geometry)],
+        requested_sizes: BTreeMap::from([(surface, target)]),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+        policy_settlement: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+    assert_eq!(
+        layout.pending.as_ref().unwrap().requested_sizes,
+        BTreeMap::from([(surface, target)])
+    );
+    assert_eq!(controls.pending_len(), 1);
+}
+
+#[test]
 fn resize_timeout_restores_the_complete_committed_rectangle() {
     let surface = SurfaceId::new(6, 1);
     let committed = Rect {
