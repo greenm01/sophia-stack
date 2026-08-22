@@ -1376,6 +1376,23 @@ hardware, the second only decides which screen looks best.
   failure mode -- an invented band at the clip edge -- and enumerating the cases
   showed it does not happen; the surviving off-screen band does.
 
+- [x] Relay out for a public policy when the work area moves. The check sat
+  below the early return into the public path, so it ran only for a private
+  policy: three places set `work_area_relayout_required` and one read it, and
+  that reader was unreachable in every session running a public policy client --
+  which is every session running the reference WM. `enqueue_relayout` opens by
+  handling the public case, so the capability was always present and only the
+  ordering kept it from being reached.
+
+  What it cost was window chrome. Chrome clearance going from zero to two raised
+  the flag when a focus ring first appeared; nothing consumed it, so windows
+  stayed placed against the old clearance while the ring was drawn against the
+  new one. A ring is drawn outside the window geometry, and the window filled its
+  output exactly, so the ring landed wholly outside that output. The only part
+  visible anywhere was the sliver crossing into a neighbouring output in root
+  space -- one monitor's window border appearing on another monitor, and none on
+  its own.
+
 - [ ] Give the composition-region trace a head. The line carries a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
   rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at

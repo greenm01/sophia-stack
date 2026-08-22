@@ -1022,9 +1022,18 @@ impl LiveWmSession {
         output: sophia_engine::HeadlessOutput,
         allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
-        if self.public.is_some() {
-            return self.poll_public_request(layout, output, allow_new_cycle);
-        }
+        // Ahead of the public branch, not behind it. A work area that has moved
+        // invalidates the geometry every policy computed from it, and which kind
+        // of policy that was is not part of the question. `enqueue_relayout`
+        // opens by handling the public case, so it was written for this path;
+        // the check that reaches it simply sat below the early return and never
+        // did. Chrome clearance changing from zero to two raised this flag, three
+        // writers set it and one reader read it, and that reader was unreachable
+        // whenever a public policy was driving -- which is every session that
+        // runs one. Windows stayed placed against the old clearance while their
+        // focus ring was drawn against the new one, so the ring landed outside
+        // the output it belonged to and only the sliver that crossed into a
+        // neighbouring output was ever visible.
         if self.work_area_relayout_required {
             match self.enqueue_relayout(layout, output)? {
                 LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {}
@@ -1032,6 +1041,9 @@ impl LiveWmSession {
                     return Err("WM work-area relayout exceeded the owner request capacity".into());
                 }
             }
+        }
+        if self.public.is_some() {
+            return self.poll_public_request(layout, output, allow_new_cycle);
         }
         self.pump_transport(layout, output)?;
         let completion = match self

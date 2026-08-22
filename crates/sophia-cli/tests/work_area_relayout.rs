@@ -1,0 +1,68 @@
+const WM_SESSION: &str = include_str!("../src/commands/live_session/wm/session.rs");
+const PUBLIC_POLICY: &str = include_str!("../src/commands/live_session/wm/public_policy.rs");
+
+fn offset(haystack: &str, needle: &str) -> usize {
+    haystack
+        .find(needle)
+        .unwrap_or_else(|| panic!("missing {needle:?}"))
+}
+
+/// A work area that moved must be relaid out whoever is driving policy.
+///
+/// The relayout check sat below the early return into the public path, so it ran
+/// only for a private policy. Three places set `work_area_relayout_required` and
+/// one place read it, and that reader was unreachable in every session running a
+/// public policy client -- which is every session that runs the reference WM.
+///
+/// The visible cost was window chrome. Chrome clearance changing from zero to
+/// two raised the flag, nothing consumed it, and windows stayed placed against
+/// the old clearance while their focus ring was drawn against the new one. The
+/// ring is drawn outside the window geometry, so it landed outside the output
+/// entirely, and the only part visible anywhere was the sliver that crossed into
+/// a neighbouring output in root space -- a border from one monitor's window
+/// appearing on another monitor, and no border at all on its own.
+///
+/// `enqueue_relayout` opens by handling the public case, so the capability was
+/// always there; only the ordering kept it from being reached.
+#[test]
+fn a_moved_work_area_is_relaid_out_for_public_and_private_policy_alike() {
+    let relayout = offset(&WM_SESSION[..], "if self.work_area_relayout_required {");
+    let public_return = offset(
+        &WM_SESSION[..],
+        "return self.poll_public_request(layout, output, allow_new_cycle);",
+    );
+    assert!(
+        relayout < public_return,
+        "the relayout check must precede the public early return, or a public \
+         policy never sees a work-area change"
+    );
+
+    // The reader is still the only one, so its position is the whole guarantee.
+    assert_eq!(
+        WM_SESSION
+            .matches("if self.work_area_relayout_required {")
+            .count(),
+        1,
+        "a second reader would make the ordering above insufficient"
+    );
+    // And the capability it reaches genuinely covers the public case.
+    let enqueue = offset(&WM_SESSION[..], "fn enqueue_relayout(");
+    let public_branch = WM_SESSION[enqueue..]
+        .find("if let Some(public) = self.public.as_mut() {")
+        .expect("enqueue_relayout handles the public policy case");
+    let private_work = WM_SESSION[enqueue..]
+        .find("if self.has_current_relayout_request(layout) {")
+        .expect("enqueue_relayout also handles the private case");
+    assert!(
+        public_branch < private_work,
+        "enqueue_relayout answers the public case before falling through"
+    );
+
+    // Nothing in the public path consumes the flag itself, which is why the
+    // ordering above is what makes it reachable at all.
+    assert!(
+        !PUBLIC_POLICY.contains("work_area_relayout_required = true"),
+        "the public path does not raise this flag; it is raised by chrome, \
+         commit, and work-area changes and consumed in one place"
+    );
+}
