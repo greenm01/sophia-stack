@@ -191,6 +191,10 @@ where
     Ok(true)
 }
 
+const fn hardware_output_snapshot_is_stale(snapshot_epoch: u64, current_epoch: u64) -> bool {
+    snapshot_epoch <= current_epoch
+}
+
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
@@ -446,7 +450,9 @@ fn run_session_loop(
     let startup_ready_deadline = config
         .startup_ready_timeout
         .map(|timeout| started + timeout);
-    let mut startup_required_submissions: Option<Vec<usize>> = None;
+    let mut startup_required_submissions: Option<
+        BTreeMap<sophia_engine::RenderHeadId, usize>,
+    > = None;
     let mut retired_present_surfaces = BTreeMap::new();
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
     let mut startup_ready_reported = false;

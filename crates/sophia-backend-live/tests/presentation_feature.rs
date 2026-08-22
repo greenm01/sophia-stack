@@ -176,6 +176,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         clip: None,
         transform: sophia_protocol::Transform::IDENTITY,
         alpha: 1.0,
+        sampling: sophia_engine::HeadSamplingClass::Exact,
     };
     let frame = || LiveOwnedMultiPlaneDmaBufFrame {
         width: 64,
@@ -201,6 +202,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
             placement: placement(64),
         }],
         output_damage_snapshot: None,
+        trace: None,
     };
 
     let composed = compose_full_state_mixed_frame(
@@ -268,6 +270,7 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
             },
         }],
         output_damage_snapshot: Some(snapshot.clone()),
+        trace: None,
     };
 
     let cloned = try_clone_mixed_frame(&frame).unwrap();
@@ -324,9 +327,11 @@ fn mixed_frame_clone_shares_immutable_cpu_pixels() {
                 clip: None,
                 transform: sophia_protocol::Transform::IDENTITY,
                 alpha: 1.0,
+                sampling: sophia_engine::HeadSamplingClass::Exact,
             },
         }],
         output_damage_snapshot: None,
+        trace: None,
     };
 
     let cloned = try_clone_mixed_frame(&frame).unwrap();
@@ -401,6 +406,7 @@ fn retained_renderer_image_preserves_pixel_aligned_placement() {
             clip: None,
             transform: sophia_protocol::Transform::IDENTITY,
             alpha: 1.0,
+            sampling: sophia_engine::HeadSamplingClass::Exact,
         },
     };
 

@@ -161,6 +161,36 @@ fn unequal_mirror_heads_select_native_density_variants_from_one_scene() {
 }
 
 #[test]
+fn sampling_classifies_each_axis_instead_of_collapsing_to_one_density() {
+    assert_eq!(
+        head_sampling_class(
+            Size {
+                width: 1_280,
+                height: 1_440,
+            },
+            Size {
+                width: 1_920,
+                height: 1_080,
+            },
+        ),
+        HeadSamplingClass::Mixed,
+    );
+    assert_eq!(
+        head_sampling_class(
+            Size {
+                width: 1_920,
+                height: 1_080,
+            },
+            Size {
+                width: 1_920,
+                height: 1_080,
+            },
+        ),
+        HeadSamplingClass::Exact,
+    );
+}
+
+#[test]
 fn fit_adds_explicit_bars_and_projects_damage_with_filter_footprint() {
     let mut snapshot = scene();
     snapshot.surfaces[0].content = SurfaceContentSet::singleton(

@@ -5,7 +5,8 @@ use crate::{
     LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
     LiveRendererScanoutBufferPlanes, Size,
 };
-use sophia_engine::CompositorRgb8;
+use sophia_engine::{CompositorRgb8, HeadSamplingClass, RenderHeadId};
+use sophia_protocol::OutputId;
 use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, Rect, Transform};
 
 mod renderer_images;
@@ -157,6 +158,8 @@ pub struct LiveCompositionPlacement {
     pub clip: Option<Rect>,
     pub transform: Transform,
     pub alpha: f32,
+    /// Sampling required by the realized source extent, not merely the plan.
+    pub sampling: HeadSamplingClass,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -207,6 +210,14 @@ pub enum LiveOwnedMixedCompositionLayer {
 pub struct LiveOwnedMixedCompositionFrame {
     pub layers: Vec<LiveOwnedMixedCompositionLayer>,
     pub output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+    pub trace: Option<LiveCompositionTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveCompositionTrace {
+    pub output: OutputId,
+    pub head: RenderHeadId,
+    pub scene_generation: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -558,6 +569,21 @@ where
         layers: &[LiveMixedCompositionLayer<'_>],
         preferred_modifiers: &[u64],
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
+        self.export_mixed_owned_scanout_buffer_with_modifiers_and_trace(
+            target,
+            layers,
+            preferred_modifiers,
+            None,
+        )
+    }
+
+    fn export_mixed_owned_scanout_buffer_with_modifiers_and_trace(
+        &mut self,
+        target: LiveGbmEglFrameTargetRecord,
+        layers: &[LiveMixedCompositionLayer<'_>],
+        preferred_modifiers: &[u64],
+        trace: Option<LiveCompositionTrace>,
+    ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !target.is_valid_scanout_target() {
             return Err(LiveMixedCompositionError::InvalidOutput);
         }
@@ -582,6 +608,7 @@ where
                             target: native_rect(placement.target),
                             clip: placement.clip.map(native_rect),
                             alpha: placement.alpha,
+                            sampling: native_sampling(placement.sampling),
                         },
                     ))
                 }
@@ -624,6 +651,7 @@ where
                             target: native_rect(placement.target),
                             clip: placement.clip.map(native_rect),
                             alpha: placement.alpha,
+                            sampling: native_sampling(placement.sampling),
                         },
                     ))
                 }
@@ -645,6 +673,7 @@ where
                                 target: native_rect(placement.target),
                                 clip: placement.clip.map(native_rect),
                                 alpha: placement.alpha,
+                                sampling: native_sampling(placement.sampling),
                             },
                         ),
                     )
@@ -669,6 +698,13 @@ where
                         width: target.size.width as u32,
                         height: target.size.height as u32,
                         layers: &native_layers,
+                        trace: trace.map(|trace| {
+                            sophia_renderer_native_egl::NativeCompositionTrace {
+                                output: trace.output.raw(),
+                                head: trace.head.raw(),
+                                scene_generation: trace.scene_generation,
+                            }
+                        }),
                     },
                     preferred_modifiers,
                 ),
@@ -758,7 +794,12 @@ where
                 }
             })
             .collect::<Vec<_>>();
-        self.export_mixed_owned_scanout_buffer_with_modifiers(target, &layers, preferred_modifiers)
+        self.export_mixed_owned_scanout_buffer_with_modifiers_and_trace(
+            target,
+            &layers,
+            preferred_modifiers,
+            frame.trace,
+        )
     }
 
     pub fn export_rendered_owned_scanout_buffer_with_modifiers_from_backend_device_result<
@@ -805,6 +846,25 @@ const fn native_rect(rect: Rect) -> sophia_renderer_native_egl::NativeCompositio
         y: rect.y,
         width: rect.width,
         height: rect.height,
+    }
+}
+
+const fn native_sampling(
+    sampling: HeadSamplingClass,
+) -> sophia_renderer_native_egl::NativeCompositionSampling {
+    match sampling {
+        HeadSamplingClass::Exact => {
+            sophia_renderer_native_egl::NativeCompositionSampling::ExactNearest
+        }
+        HeadSamplingClass::Downsampled => {
+            sophia_renderer_native_egl::NativeCompositionSampling::SharpDownscale
+        }
+        HeadSamplingClass::Upsampled => {
+            sophia_renderer_native_egl::NativeCompositionSampling::SharpUpscale
+        }
+        HeadSamplingClass::Mixed => {
+            sophia_renderer_native_egl::NativeCompositionSampling::SharpMixed
+        }
     }
 }
 

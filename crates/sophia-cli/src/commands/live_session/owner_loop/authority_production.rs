@@ -323,10 +323,13 @@
                                                 rects_intersect(geometry, *bounds)
                                             })
                                         });
-                                    startup_submission_requirement(
-                                        head.submissions,
-                                        head.presented_submissions,
-                                        intersects,
+                                    (
+                                        head.head,
+                                        startup_submission_requirement(
+                                            head.submissions,
+                                            head.presented_submissions,
+                                            intersects,
+                                        ),
                                     )
                                 })
                                 .collect()

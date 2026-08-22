@@ -207,6 +207,7 @@ fn in_flight_present_for_outputs(
                 clip: None,
                 transform: Transform::IDENTITY,
                 alpha: 1.0,
+                sampling: sophia_engine::HeadSamplingClass::Exact,
             },
         },
     )

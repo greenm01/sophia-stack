@@ -982,30 +982,27 @@ prefix back in reverse order on failure. A previously disabled connected head
 remains in the native model and has an explicit rollback-disable owner rather
 than a fabricated framebuffer.
 
-The active critical path is X Authority replay coverage. Core `PutImage` is now
-replayable within its bounded subset, so the remaining protocol replay gap is
-cross-drawable `CopyArea`, which has no bounded source-generation dependency and
-therefore publishes the canonical raster as sampled compatibility content. A
-`PutImage` outside the replayable subset does the same. Both are correct
-fail-visible fallbacks with named causes, but neither is the target
-architecture.
+Core `PutImage` replay and the unequal-density mirror proof are complete. Signed
+attempt `0025` selected distinct exact 1000- and 750-density authority rasters
+for one logical generation with zero sampled fallback and complete per-head
+retirement. Cross-drawable `CopyArea` remains a named fail-visible fallback and
+is not active work unless a later retained workload reports that cause.
 
-Signed gate attempt `0019` on `a5d916279c9fb8cd03415945d0dfeb11515c1a32`
-established the boundary: both native heads rendered and retired cleanly, but
-the 750-density head selected the 1000-density canonical handle and emitted 76
-`sampled_fallback` records, because a traced real xterm issues opcode 72
-(`PutImage`) during startup before later text and line operations. Deterministic
-regressions now drive that same order — upload, ImageText8, PolyText8, line,
-same-drawable scroll, then late 750 and 1000 demand — and require both classes
-to publish distinct native-size authority rasters with zero sampled fallback.
-The gate must be re-run on hardware to convert that into promotion evidence; its
-fallback causes then decide whether cross-drawable `CopyArea` must precede a
-passing run.
-
-The remaining system evidence gaps are a verifier-approved exact 1000/750
-unequal-mirror run and a complete mixed mirror-plus-extended `sophia_output_v1`
-cutover. Their ordered implementation and exit criteria are maintained in the
-linked active roadmap.
+The active critical path is the mixed mirror-plus-extended
+`sophia_output_v1` cutover. Earlier signed candidates committed and visibly
+confirmed that topology. The code-side evidence defect is closed: Engine
+classifies realized source and target extents per axis, lowering corrects the
+class after retained-image realization, and the native renderer consumes that
+same class while emitting output/head/scene-keyed evidence. Public chrome also
+reconciles outer policy allocation and content geometry in one transaction, and
+the post-commit topology path has deterministic coverage for forced repaint,
+stale parked publication, transition overlap, and head-keyed startup readiness.
+The proof is still not promotion-complete because the current source identity
+has no retained signed passing run and head loss and return remain unproved.
+After that gate is truthful and complete, mirror members must advance at their
+own refresh rates without releasing a buffer before the last head that scanned
+it retires. The executable
+slices and exit criteria stay ordered in `todo.md`.
 
 ### Target
 

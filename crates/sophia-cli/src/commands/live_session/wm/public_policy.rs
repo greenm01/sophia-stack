@@ -847,6 +847,12 @@ impl LivePublicPolicyState {
         self.output_effect_dispatched || self.output_cancel_requested.is_some()
     }
 
+    fn output_authority_topology_epoch(&self) -> Option<u64> {
+        self.output_authority
+            .as_ref()
+            .map(|authority| authority.published().topology_epoch)
+    }
+
     fn output_candidate_cancellation_reason(
         &self,
         transaction: TransactionId,
@@ -1306,6 +1312,7 @@ impl LivePublicPolicyState {
     fn snapshot(
         &self,
         layout: &PersistentLiveLayout,
+        chrome: sophia_engine::SurfaceChromeStyle,
     ) -> Result<sophia_protocol::PolicySceneSnapshot, Box<dyn std::error::Error>> {
         let previous = self.reducer.scene();
         let mut current_output = BTreeMap::new();
@@ -1323,6 +1330,7 @@ impl LivePublicPolicyState {
             &current_output,
             &committed_geometry,
             &committed_presentation,
+            chrome,
         )?;
         println!(
             "sophia_live_wm_snapshot schema=1 status=complete surfaces={} minimized={} unassigned={}",
@@ -1389,6 +1397,7 @@ fn public_policy_surface_snapshots(
         SurfaceId,
         sophia_protocol::PolicyPresentationState,
     >,
+    chrome: sophia_engine::SurfaceChromeStyle,
 ) -> Result<Vec<sophia_protocol::PolicySurfaceSnapshot>, Box<dyn std::error::Error>> {
     let mut surface_ids = layout
         .layers
@@ -1427,7 +1436,7 @@ fn public_policy_surface_snapshots(
             current_output: current_output.get(&surface).copied(),
             kind,
             capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
-            constraints: facts.constraints,
+            constraints: sophia_engine::outer_surface_constraints(facts.constraints, chrome)?,
             exact_size: None,
             requested_state: committed_presentation
                 .get(&surface)
@@ -1441,7 +1450,8 @@ fn public_policy_surface_snapshots(
             geometry: committed_geometry
                 .get(&surface)
                 .copied()
-                .unwrap_or(facts.geometry),
+                .map(Ok)
+                .unwrap_or_else(|| sophia_engine::outer_surface_geometry(facts.geometry, chrome))?,
         });
     }
     surfaces.sort_by_key(|surface| surface.surface);
@@ -1488,6 +1498,12 @@ impl LiveWmSession {
         self.public
             .as_ref()
             .is_some_and(LivePublicPolicyState::output_candidate_active)
+    }
+
+    fn output_authority_topology_epoch(&self) -> Option<u64> {
+        self.public
+            .as_ref()
+            .and_then(LivePublicPolicyState::output_authority_topology_epoch)
     }
 
     fn publish_output_authority_snapshot(
@@ -1888,6 +1904,7 @@ impl LiveWmSession {
         _output: sophia_engine::HeadlessOutput,
         allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        let chrome_style = self.candidate_chrome_style();
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;
         public.flush_deferred_command()?;
@@ -1963,7 +1980,7 @@ impl LiveWmSession {
                 // canonical scene before touching response placements so a
                 // proposal derived from the retired snapshot is rejected as
                 // stale instead of trying to materialize a dead surface.
-                let current_scene = public.snapshot(layout)?;
+                let current_scene = public.snapshot(layout, chrome_style)?;
                 if current_scene.generation > public.reducer.scene().generation {
                     public.reducer.observe_scene(current_scene)?;
                 }
@@ -1983,18 +2000,20 @@ impl LiveWmSession {
                     if let LiveWmProposalSource::Manage(surface) = source {
                         layout.prime_admission_extent(surface);
                     }
-                    let (projection, adjusted_surfaces) = reconcile_public_policy_proposal(
+                    let reconciliation = reconcile_public_policy_proposal(
                         layout,
                         &projection,
                         &public.work_areas,
+                        chrome_style,
                     )?;
-                    if adjusted_surfaces != 0 {
+                    if reconciliation.adjusted_surfaces != 0 {
                         println!(
-                            "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={adjusted_surfaces}",
-                            projection.transaction.raw(),
+                            "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={}",
+                            reconciliation.policy.transaction.raw(),
+                            reconciliation.adjusted_surfaces,
                         );
                     }
-                    match public.reducer.stage_proposal(&projection) {
+                    match public.reducer.stage_proposal(&reconciliation.policy) {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
                             LiveWmProposalSource::Action(action) => public
@@ -2024,11 +2043,12 @@ impl LiveWmSession {
                             projection.transaction,
                             source,
                             identity,
+                            &reconciliation.content,
                         )?)
                     }
                     Err(outcome) => {
                         defer_cycle = true;
-                        public.settle_rejected_projection(&projection, outcome)?;
+                        public.settle_rejected_projection(&reconciliation.policy, outcome)?;
                         None
                     }
                     }
@@ -2117,7 +2137,7 @@ impl LiveWmSession {
             && public.deferred_command.is_none()
             && !public.queue.is_empty()
         {
-            let scene = public.snapshot(layout)?;
+            let scene = public.snapshot(layout, chrome_style)?;
             if scene.generation > public.reducer.scene().generation {
                 public.reducer.observe_scene(scene.clone())?;
             }
@@ -2361,6 +2381,7 @@ impl LiveWmSession {
             full_bounds.iter().copied(),
             &layout.active_output_reservations(),
         );
+        let chrome_style = self.candidate_chrome_style();
         let public = self.public.as_mut().expect("public WM state is present");
         let next_live = outputs
             .iter()
@@ -2440,7 +2461,7 @@ impl LiveWmSession {
         // the retired output set is stale as soon as the owner accepts the new
         // topology; waiting until the next cycle would leave a click-through
         // window in which that response could still stage.
-        let scene = public.snapshot(layout)?;
+        let scene = public.snapshot(layout, chrome_style)?;
         if scene.generation > public.reducer.scene().generation {
             public.reducer.observe_scene(scene)?;
         }
@@ -2477,6 +2498,12 @@ impl LiveWmSession {
             .into());
         }
         public.prepared = Some(identity);
+        println!(
+            "sophia_live_wm_chrome schema=2 status=acknowledged transaction={} request_id={} scene_generation={}",
+            identity.transaction.raw(),
+            identity.request_id,
+            identity.scene_generation,
+        );
         Ok(())
     }
 

@@ -1,13 +1,13 @@
 use sophia_engine::{
-    HeadCompositionPlan, HeadCompositorCommand, compositor_border_bands,
-    head_output_damage_snapshot,
+    HeadCompositionPlan, HeadCompositorCommand, HeadSamplingClass, compositor_border_bands,
+    head_output_damage_snapshot, head_sampling_class,
 };
 use sophia_protocol::{BufferSource, Rect, Size, SurfaceId, Transform};
 
 use crate::{
-    LiveCompositionPlacement, LiveCpuPresentationLayer, LiveOwnedMixedCompositionFrame,
-    LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame, LiveRendererImageId,
-    LiveSharedCpuBufferSource,
+    LiveCompositionPlacement, LiveCompositionTrace, LiveCpuPresentationLayer,
+    LiveOwnedMixedCompositionFrame, LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
+    LiveRendererImageId, LiveSharedCpuBufferSource,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,6 +170,7 @@ pub fn lower_head_composition_plan(
             clip: Some(cursor.geometry),
             transform: Transform::IDENTITY,
             alpha: 1.0,
+            sampling: HeadSamplingClass::Exact,
         };
         layers.push(lower_owned_source(
             cursor.source,
@@ -178,9 +179,23 @@ pub fn lower_head_composition_plan(
             source_size(source)?,
         )?);
     }
+    let mut output_damage_snapshot = head_output_damage_snapshot(plan);
+    for surface in &mut output_damage_snapshot.surfaces {
+        if let Some(source) = sources
+            .iter()
+            .find(|source| source.surface == surface.surface)
+        {
+            surface.source_size = source_size(source)?;
+        }
+    }
     Ok(LiveOwnedMixedCompositionFrame {
         layers,
-        output_damage_snapshot: Some(head_output_damage_snapshot(plan)),
+        output_damage_snapshot: Some(output_damage_snapshot),
+        trace: Some(LiveCompositionTrace {
+            output: plan.output,
+            head: plan.head,
+            scene_generation: plan.scene_generation,
+        }),
     })
 }
 
@@ -216,6 +231,7 @@ fn lower_surface_source(
             clip: Some(binding.native_clip),
             transform: Transform::IDENTITY,
             alpha: f32::from(binding.opacity_millis) / 1_000.0,
+            sampling: binding.requested_sampling,
         },
         binding.source_pixel_size,
     )
@@ -248,13 +264,20 @@ pub const fn requires_exact_source_size(kind: &LiveOwnedHeadCompositionSourceKin
 fn lower_owned_source(
     expected: BufferSource,
     source: &LiveOwnedHeadCompositionSource,
-    placement: LiveCompositionPlacement,
+    mut placement: LiveCompositionPlacement,
     expected_size: Size,
 ) -> Result<LiveOwnedMixedCompositionLayer, LiveHeadCompositionLoweringError> {
     if source.source != expected {
         return Err(LiveHeadCompositionLoweringError::MissingSource(expected));
     }
     let actual_size = source_size(source)?;
+    placement.sampling = head_sampling_class(
+        actual_size,
+        Size {
+            width: placement.target.width,
+            height: placement.target.height,
+        },
+    );
     // A renderer image is the compositor's own copy of an earlier generation,
     // carried under the identity of the surface's committed buffer. Its size is
     // its own fact, not a measurement of that buffer, so comparing the two asks

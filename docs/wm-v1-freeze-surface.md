@@ -182,7 +182,7 @@ opaque side channel reaches them. Section 3 remains pre-freeze-only work.
 
 ## Enumeration
 
-Twenty-seven retained rows across four authority tables. Wire-impact classes:
+Twenty-eight retained rows across four authority tables. Wire-impact classes:
 
 - **None** — closes inside an authority with no `sophia_wm_v1` change.
 - **Enum** — needs a value in an existing enum or bitfield. Pre-freeze only.
@@ -233,7 +233,8 @@ anyway, because it is the only shell question with a back-edge into shared code.
 | 3 | Output mode, scale, position, transform, VRR, enablement, power, reservations | Partial | None, **conditional on Decision 4** |
 | 4 | Launch, startup environment, configured processes, shell supervision | Partial | None — opaque session-operation tokens |
 | 5 | Lock, logout, session exit, idle inhibition, shortcut inhibition | Open | None — `connection_epoch` is already on every message, which is the barrier these transitions advance |
-| 6 | Configuration discovery, validation, activation, reload, rollback | Open | **Message** — the separate visibility and recovery protocol required before watched reload should take new message kinds at 53 and above, not new fields |
+| 6 | Cursor theme, visibility, inactivity, and find feedback | Open | None — Engine owns the cursor; configuration and shell feedback stay outside WM policy |
+| 7 | Configuration discovery, validation, activation, reload, rollback | Open | **Message** — the separate visibility and recovery protocol required before watched reload should take new message kinds at 53 and above, not new fields |
 
 ### Brokers And Portals
 
@@ -246,7 +247,7 @@ anyway, because it is the only shell question with a back-edge into shared code.
 
 ### Result
 
-Twenty-three of twenty-seven rows need no `sophia_wm_v1` change. The residue is
+Twenty-four of twenty-eight rows need no `sophia_wm_v1` change. The residue is
 four decisions, below. That is the useful output of this pass: the wire risk is
 bounded and small, but it is not zero, and three of the four must be settled
 before the freeze rather than discovered after it.

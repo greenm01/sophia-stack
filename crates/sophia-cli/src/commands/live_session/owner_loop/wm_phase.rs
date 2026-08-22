@@ -715,6 +715,7 @@
             && pending_wm_update.is_none()
             && layout.pending.is_none()
             && wm.ordinary_policy_settlement_idle()
+            && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
             && let Some(effect) = wm.take_output_topology_effect()
         {
             if output_topology_owner.begin_policy_change()? {

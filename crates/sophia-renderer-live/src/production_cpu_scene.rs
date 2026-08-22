@@ -156,6 +156,12 @@ impl LiveProductionCpuScene {
         self.compose_ordered(committed_surfaces, None, raised_surface, cursor_position)
     }
 
+    /// Invalidates retained damage identity so the next composition repaints
+    /// the complete output even when scene facts are otherwise unchanged.
+    pub fn force_full_repaint(&mut self) {
+        self.last_output_damage_snapshot = None;
+    }
+
     pub fn compose_visible(
         &mut self,
         committed_surfaces: &[CommittedSurfaceState],

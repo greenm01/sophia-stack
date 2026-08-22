@@ -65,6 +65,7 @@ fn pixel_aligned_dma_buf_placement(
         clip,
         transform: Transform::IDENTITY,
         alpha,
+        sampling: sophia_engine::HeadSamplingClass::Exact,
     }
 }
 
@@ -155,6 +156,7 @@ pub fn try_clone_mixed_frame(
     Ok(LiveOwnedMixedCompositionFrame {
         layers,
         output_damage_snapshot: frame.output_damage_snapshot.clone(),
+        trace: frame.trace,
     })
 }
 
@@ -290,6 +292,7 @@ impl LivePresentationResourceSession {
                     clip: None,
                     transform: Transform::IDENTITY,
                     alpha: 1.0,
+                    sampling: sophia_engine::HeadSamplingClass::Exact,
                 },
             });
         }
@@ -308,6 +311,7 @@ impl LivePresentationResourceSession {
         Ok(LiveOwnedMixedCompositionFrame {
             layers,
             output_damage_snapshot: None,
+            trace: None,
         })
     }
 

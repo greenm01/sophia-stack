@@ -44,7 +44,9 @@ pub(crate) const fn composition_draw_plan(
             status: "active",
             texture_filter: glow::NEAREST,
         },
-        NativeCompositionSampling::SharpDownscale | NativeCompositionSampling::SharpUpscale => {
+        NativeCompositionSampling::SharpDownscale
+        | NativeCompositionSampling::SharpUpscale
+        | NativeCompositionSampling::SharpMixed => {
             if reconstruction_available {
                 CompositionDrawPlan {
                     program: CompositionProgram::Reconstruction,
@@ -91,7 +93,9 @@ pub(crate) const fn sampling_evidence_index(
         NativeCompositionSampling::SharpDownscale => 4,
         NativeCompositionSampling::SharpUpscale if !status_is_fallback => 6,
         NativeCompositionSampling::SharpUpscale => 8,
-        NativeCompositionSampling::LinearFallback => 10,
+        NativeCompositionSampling::SharpMixed if !status_is_fallback => 10,
+        NativeCompositionSampling::SharpMixed => 12,
+        NativeCompositionSampling::LinearFallback => 14,
     };
     class + if premultiplied { 1 } else { 0 }
 }

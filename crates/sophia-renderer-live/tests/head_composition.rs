@@ -113,6 +113,8 @@ fn lowers_the_selected_variant_at_head_native_geometry() {
     assert_eq!(buffer.handle, 42);
     assert_eq!(placement.target.width, 600);
     assert_eq!(placement.target.height, 450);
+    assert_eq!(placement.sampling, HeadSamplingClass::Exact);
+    assert_eq!(frame.trace.unwrap().head, RenderHeadId::from_raw(7));
     let damage = frame.output_damage_snapshot.unwrap();
     assert_eq!(damage.output.size.width, 1_920);
     assert_eq!(
@@ -191,6 +193,14 @@ fn retained_renderer_image_may_hold_a_generation_of_another_size() {
         panic!("retained copy of another generation did not lower")
     };
     assert_eq!(placement.target, plan.layers[0].native_geometry);
+    assert_eq!(placement.sampling, HeadSamplingClass::Upsampled);
+    assert_eq!(
+        frame.output_damage_snapshot.unwrap().surfaces[0].source_size,
+        Size {
+            width: 300,
+            height: 450,
+        },
+    );
 }
 
 /// A buffer the plan measured must be the buffer that arrives.

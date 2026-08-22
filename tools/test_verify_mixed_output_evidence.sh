@@ -12,13 +12,15 @@ write_fixture() {
     {
         echo 'sophia_live_native_head schema=2 status=ready output=2 head=22 connector=DP-2 connector_id=4 mode=1920x1080 refresh_millihz=60000 mirrored=false'
         echo 'sophia_live_output_authority schema=1 status=effect_pending transaction=7 preserved_topology=true'
-        echo 'sophia_live_head_composition_plan schema=1 status=ready output=2 head=22 scene_generation=9 target_generation=2 width=1920 height=1080 mapping=exact exact=0 downsampled=0 upsampled=0 active=0 fallback=0 unavailable=0 compositor_primitives=0 damage_rects=0 logical_content_checksum=1'
+        echo 'sophia_live_head_composition_plan schema=2 status=ready output=2 head=22 scene_generation=9 target_generation=2 width=1920 height=1080 mapping=exact exact=0 downsampled=0 upsampled=0 mixed=0 active=0 fallback=0 unavailable=0 compositor_primitives=0 damage_rects=0 logical_content_checksum=1'
+        echo 'sophia_live_head_composition_queue schema=1 status=queued output=2 head=22 frame=43 scene_generation=9 target_generation=2 mapping=exact width=1920 height=1080 logical_content_checksum=1 source=topology_candidate'
         echo 'sophia_live_output_authority schema=2 status=first_presented transaction=7 outputs=2 published=false rollback_retained=true'
         echo 'sophia_live_output_authority schema=2 status=committed transaction=7 topology_epoch=2 outputs=2 policy_required=true input=quarantined'
         echo 'sophia_output_v1_reference schema=1 status=settled kind=Committed topology_epoch=2 heads=3 groups=2'
         echo 'sophia_wm_v1_reference schema=1 status=settled outputs=2 surfaces=2 placement=1,1'
-        echo "sophia_live_head_composition_plan schema=1 status=ready output=2 head=22 scene_generation=10 target_generation=2 width=1920 height=1080 mapping=exact exact=1 downsampled=0 upsampled=0 active=$active fallback=0 unavailable=0 compositor_primitives=1 damage_rects=1 logical_content_checksum=2"
+        echo "sophia_live_head_composition_plan schema=2 status=ready output=2 head=22 scene_generation=10 target_generation=2 width=1920 height=1080 mapping=exact exact=1 downsampled=0 upsampled=0 mixed=0 active=$active fallback=0 unavailable=0 compositor_primitives=1 damage_rects=1 logical_content_checksum=2"
         echo 'sophia_live_head_composition_queue schema=1 status=queued output=2 head=22 frame=44 scene_generation=10 target_generation=2 mapping=exact width=1920 height=1080 logical_content_checksum=2 source=head_plan'
+        echo 'sophia_native_composition_sampling schema=3 status=active output=2 head=22 scene_generation=10 requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=1920x1080 target=1920x1080 frame=1920x1080'
         echo 'sophia_live_native_head_page_flip schema=2 status=submitted output=2 head=22 submission=3 content=Some(HeadComposition) frame=44'
         echo 'sophia_live_native_head_page_flip schema=2 status=callback_accepted output=2 head=22 callbacks=1 kernel_sequence=3'
         if [[ "$include_retirement" == yes ]]; then

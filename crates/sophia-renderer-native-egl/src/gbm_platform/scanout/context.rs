@@ -553,12 +553,14 @@ where
             },
             clip: None,
             alpha: 1.0,
+            sampling: crate::NativeCompositionSampling::ExactNearest,
         });
         let layers = [layer];
         let frame = NativeCompositionFrame {
             width: source.width,
             height: source.height,
             layers: &layers,
+            trace: None,
         };
         let mut last_detail = NativeGbmScanoutBufferExportDetail::EglConfigUnavailable;
         for candidate in rendered_scanout_candidates(&[])

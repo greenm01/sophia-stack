@@ -23,7 +23,8 @@ ledger.
 
 ## Completion Rule
 
-Revision 1 remains experimental while **any** retained row is partial or open.
+Interface revision 3 remains experimental while **any** retained row is partial
+or open.
 The gate closes only when every Triad feature family is classified as retained or
 excluded; every retained family works through its assigned authority with no
 hidden River, Wayland, Triad, or Niri runtime dependency; the retained default
@@ -37,13 +38,13 @@ implemented" is not an exclusion.
 
 ## Row States
 
-Twenty-seven retained rows across four authority tables:
+Twenty-eight retained rows across four authority tables:
 
 | Table | Rows | Complete | Partial | Open |
 | --- | --- | --- | --- | --- |
 | Spatial Policy — Hagia | 12 | 3 | 7 | 2 |
 | Visible Desktop — Hagia Shell | 5 | 0 | 0 | **5** |
-| Session And Dedicated Sophia Authorities | 6 | 0 | 4 | 2 |
+| Session And Dedicated Sophia Authorities | 7 | 0 | 4 | 3 |
 | Brokers And Portals | 4 | 0 | 0 | **4** |
 
 The shell and broker/portal tables are entirely open, and they are inside the
@@ -75,7 +76,7 @@ underestimate it by nine rows. `hagia-shell` does not exist as source.
 ## Binding Capacity Is Not The Constraint
 
 The ledger records the binding inventory carefully, and it is easy to misread.
-Revision 1 admits **256** binding registrations. Hagia's compiled profile
+Interface revision 3 admits **256** binding registrations. Hagia's compiled profile
 contains 50 Sophia-owned chords resolved against its 66-entry action catalog,
 while Triad's baseline default holds 132 key and 137 total physical bindings, of
 which the semantic migrator emits 39 key plus 2 pointer bindings today. The

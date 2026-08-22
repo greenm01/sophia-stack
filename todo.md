@@ -64,6 +64,34 @@ The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
 active roadmap item.
 
+### Active Critical Path
+
+Work proceeds in this order. Later rows do not justify bypassing an earlier
+promotion gate.
+
+1. Make the mixed mirror-plus-extended evidence truthful: classify sampling
+   from realized source and target extents, finish the public-policy chrome
+   transaction, audit the post-commit topology path, and prove head loss and
+   return on a signed candidate.
+2. Let mirror heads pace independently while preserving primary-owned Present
+   completion and last-head buffer retirement, then re-run the affected
+   physical gates.
+3. Host the already proven metadata-reduction chain through its own broker
+   interface and enforce protection domains before admitting a metadata-bearing
+   shell.
+4. Build the minimum display-list, target-resolved-input, indicator, and
+   reservation path needed to close Hagia's retained-behavior ledger. The
+   authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
+   open.
+5. Run the complete reconnect/restart corpus, freeze experimental interface
+   revision 3, migrate the xmonad recovery profile through the public projection
+   adapter, and only then remove API v7 and Engine-owned workspace policy.
+
+Cross-drawable `CopyArea` replay, alternative upscale kernels, linear-light
+fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
+efficiency work stay off this path unless a named gate produces evidence that
+promotes one of them.
+
 ## Installed Hagia Promotion Contract
 
 Sophia/Hagia becomes the ordinary physical session when one packaged candidate
@@ -214,7 +242,8 @@ future compatibility target, not a prerequisite.
 - [x] Compile an independent C client and run it against the same golden and
   malformed-frame corpus as the Rust codec. Reject unknown, excessive,
   partial, duplicate, reordered, stale, and trailing data without mutation.
-- [x] Complete draft revision 1 before stability: add output work rectangles;
+- [x] Complete the draft revision line before stability (currently revision 3):
+  add output work rectangles;
   reduced surface kind, presentation request/current state, and exact-size
   constraints; projection presentation decisions; request causes; policy
   configuration; Engine chrome; session-operation tokens; reduced
@@ -225,7 +254,7 @@ future compatibility target, not a prerequisite.
   closed, and emits a bounded diagnostic.
 - [x] Regenerate and re-run the Rust/C golden and malformed corpora, then update
   Hagia's independent Nim codec without adding a Sophia build dependency.
-- [x] Add the indicator descriptor to revision 1 before the 13.4 freeze.
+- [x] Add the indicator descriptor before the 13.4 freeze.
   `capability "indicators" bit=8`, record kinds `ProjectionIndicator` (max 256)
   and `ProjectionOutputStatus` (max 16), and `indicator_count`/`status_count`
   fields in `ProjectionBegin` are in the schema with generated Rust and C99
@@ -294,7 +323,7 @@ future compatibility target, not a prerequisite.
 
 ### 13.4 Prove The Draft Boundary And Port Triad
 
-Revision 1 remains experimental throughout this section. The fixed nine-view
+Interface revision 3 remains experimental throughout this section. The fixed nine-view
 scroller proves the public boundary and supports daily use, but it is not the
 feature ceiling. Before any freeze, close Hagia's retained-behavior port ledger
 across spatial policy, Hagia Shell, Sophia session/dedicated authorities, and
@@ -369,7 +398,7 @@ is excluded; retained product behavior is not.
   implemented in Hagia's action catalog; configured workspace naming remains
   partial because `setWorkspaceName` has no bound action. The transitions
   remain unbound until configuration migration preserves Triad's existing chord
-  meanings. Revision 1 admits 256 binding registrations, so capacity is not the
+  meanings. Interface revision 3 admits 256 binding registrations, so capacity is not the
   constraint: the bootstrap emits 39 key plus 2 pointer bindings from Triad's
   baseline 132 key plus 5 pointer bindings, and the other 96 classify into
   shell, broker, portal, and session authorities that do not exist yet. That
@@ -942,10 +971,10 @@ Detailed physical-run diagnoses remain in
   archived compatibility client before both conditions hold.
   The first condition is defined by Hagia's `docs/triad-port-ledger.md` at Triad
   baseline `fb8fb27e`; `docs/triad-port-ledger-pointer.md` locates it and
-  summarizes its 27 retained rows. The shell and broker/portal tables are
+  summarizes its 28 retained rows. The shell and broker/portal tables are
   entirely open and are inside the gate, so the freeze is not near.
   Before it lands, settle the wire decisions enumerated in
-  `docs/wm-v1-freeze-surface.md`. Twenty-three of the 27 rows need no wire change;
+  `docs/wm-v1-freeze-surface.md`. Twenty-four of the 28 rows need no wire change;
   the residue was workspace-name projection, broker classification shape, the
   continuous-pointer payload, and the output logical-space contract. Two of the four
   are now settled and normative in `docs/sophia-policy-ipc.md`. The output
@@ -1092,13 +1121,21 @@ why they survived review and only surfaced under execution, and it is what makes
 a bounded model asserting `Gate => HandlerPrecondition` the right instrument
 where the types cannot be made to carry the agreement.
 
-- [ ] Audit the post-commit topology path statically before running it again.
+- [x] Audit the post-commit topology path statically before running it again.
   `mark_policy_committed` -> `observe_presentation` -> `Stable` has never
   executed, so every defect on it is latent, and the physical gate surfaces
   exactly one per manual thirty-second run. Enumerate each guard and every
   fallible step between the commit log and `Stable`, and judge which are
   satisfiable in a normal commit, rather than discovering them one run at a
-  time.
+  time. The audit closed four latent failures before another physical run:
+  policy commitment now forces a full repaint after taking its retirement
+  baseline; parked hardware snapshots from an equal or older authority epoch
+  are dropped rather than ending the session; a second policy topology effect
+  cannot begin until the owner is `Stable`; and startup submission requirements
+  are keyed and re-derived by opaque head identity when scanout is replaced.
+  Deterministic regressions cover the stale-publication decision, back-to-back
+  owner transition, and same-count head reordering. The signed head-loss/return
+  run remains the promotion proof, not this audit.
 - [x] Do *not* collapse `output_topology_preparation_quiescent` (scanout) and
   `topology_rebind_quiescent` (runtime), which an audit showed would break the
   working path. They read as two definitions of one question but answer
@@ -1393,9 +1430,8 @@ hardware, the second only decides which screen looks best.
   space -- one monitor's window border appearing on another monitor, and none on
   its own.
 
-- [ ] Convert a public policy's placement into content geometry. Diagnosed and
-  attempted; reverted because it regressed the physical gate, and the diagnosis
-  is worth more than the attempt was.
+- [x] Convert a public policy's placement into content geometry without losing
+  the outer allocation that blind policy owns.
 
   The defect is real and located. A public policy's placement is an outer
   allocation, chrome included -- the code says so in a comment directly above the
@@ -1413,21 +1449,18 @@ hardware, the second only decides which screen looks best.
   the second attempt assumed the client was never told to resize, and it made no
   difference, so that is not the whole reason either.
 
-  What to check next, in this order. Whether `layout.layers` still holds the
-  pre-transaction geometry when the next cycle reads it, because if a timed-out
-  transaction never commits, `previous` never advances and every cycle re-requests
-  the same resize -- a loop that would produce exactly the observed repetition.
-  Whether the two surfaces sitting at 1280x1440 through the failure are stranded
-  from the previous topology rather than from clearance at all. And whether the
-  conversion belongs before `reconcile_public_policy_proposal` instead of after
-  it, so the reconciler sees content geometry and bounds and raises its own
-  requests, which is the shape the private path has.
+  The missing boundary was transaction ownership. Reconciliation now carries
+  both projections: the outer geometry remains the policy/reducer value, while
+  chrome clearance is applied before layout-epoch reconciliation and produces
+  the content geometry plus any client configure request. The public proposal
+  materializes that content projection, but the reducer stages and commits only
+  the outer projection after layout settlement. An omitted policy configure may
+  therefore still generate the content resize that chrome requires without
+  making an unacknowledged geometry current. Schema-2 chrome records expose the
+  reconciled, acknowledged, and settled stages, and regressions cover the
+  outer/content split, generated configure, and post-settlement materialization.
 
-  Do not attempt this again from the geometry alone. The evidence that would
-  settle it is per-cycle: what the peer proposed, what was requested of the
-  client, and what the client acknowledged, none of which is currently traced.
-
-- [ ] Give the composition-region trace a head. The line carries a rect and no
+- [x] Give the composition-region trace a head. The line carried a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
   rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at
   `mapping=fit`. Their records are indistinguishable, so a before-and-after keyed
@@ -1438,7 +1471,11 @@ hardware, the second only decides which screen looks best.
   which is luck rather than method. `trace_final_composition_region` takes the
   pipeline, stage, layer index and rect; the output identity has to reach it.
   Same class as the raster/presentation split -- a record that does not carry the
-  fact needed to read it.
+  fact needed to read it. `LiveCompositionTrace` now carries output, opaque head,
+  and scene generation through lowering into the native renderer. Sampling
+  evidence is schema 3 and keyed by all three, so the verifier correlates the
+  exact draw between that head's queue and submit records instead of selecting
+  an arbitrary equal-sized region.
 
 - [ ] Filter the blend in linear light too, and the opacity multiply with it.
   The fixed-function ROP mixes `dst*(1-src.a)` on gamma-encoded destination
@@ -1492,7 +1529,7 @@ hardware, the second only decides which screen looks best.
   the extent it was asked to fill. It self-corrects on the client's next frame,
   and fixing it properly means carrying the presentation extent on
   `CommittedSurfaceState` as well.
-- [ ] Classify sampling by extent, not by density alone. `sampling_class`
+- [x] Classify sampling by extent, not by density alone. `sampling_class`
   compares `density_millis` against the projected density and never looks at
   whether the raster spans the geometry it is placed into, so a stale frame
   scaled up still reports `Exact`. The mixed-output gate's sharpness criterion
@@ -1523,6 +1560,16 @@ hardware, the second only decides which screen looks best.
   same defect class as the raster/presentation extent split -- one fact derived
   in two places with nothing forcing agreement -- and the fix is to make one
   derivation the source and the other read it.
+
+  Engine now classifies each axis from realized source pixels and native target
+  pixels, including an explicit mixed-axis class. Lowering recomputes that class
+  after the actual retained image extent is known, passes it unchanged to the
+  native renderer, and records the realized source extent in damage evidence.
+  The mixed-output verifier requires a schema-2 plan with zero mixed draws and a
+  keyed schema-3 renderer `exact` draw between queue and submit; legacy or
+  fallback-only sampling lines fail closed. Exact, upscale, downscale, mixed,
+  stale-retained-image, and verifier-mutation regressions pass. A signed physical
+  candidate is still required before the mixed gate is promotion evidence.
 - [ ] Apply the timeout-is-not-a-fault distinction to the two remaining socket
   transports. Four places set `SO_RCVTIMEO`/`SO_SNDTIMEO`; the session's policy
   transport and the reference policy client are now fixed, while
@@ -1530,7 +1577,7 @@ hardware, the second only decides which screen looks best.
   `sophia-wm-demo/src/output_v1.rs` still treat an expired window as an I/O
   failure. Neither has bitten yet because the output role completes early, but
   the class has now cost two separate sessions.
-- [ ] Decide whether a topology commit should also force a repaint rather than
+- [x] Force a topology commit to repaint rather than
   relying on the relayout to generate one. The first full run settled naturally
   -- presentation baseline 26, retirements 27 -- so the relayout did produce the
   flip, and the bounded wait added alongside never fired. Nothing guarantees
@@ -1547,22 +1594,28 @@ hardware, the second only decides which screen looks best.
   baseline overwrite is deliberate and the invariant behind it is right -- a
   presentation that retired before the projection committed cannot release the
   quarantine -- so the fix must make the flip happen rather than weaken the
-  requirement. This is the worst remaining symptom on the path: a hung desktop
-  rather than a clean exit.
-- [ ] Give `pending_hardware_output_publication` the same treatment as the
+  requirement. `mark_policy_committed` now clears the CPU damage baseline and
+  queues one full repaint after taking that baseline, making the required newer
+  presentation causal instead of timing-dependent.
+- [x] Give `pending_hardware_output_publication` the same treatment as the
   policy cause. It is parked across a candidate by design and its topology-epoch
   check is a hard error (`StalePublishedSnapshot`), so a snapshot parked before
   a commit that advances the epoch ends the session rather than being resolved
-  or dropped.
-- [ ] Guard `begin_policy_change` at its call site on the owner being `Stable`.
+  or dropped. Publication now compares against the current authority topology
+  epoch and drops an equal or older parked snapshot with a named record.
+- [x] Guard `begin_policy_change` at its call site on the owner being `Stable`.
   There is no phase check there, so a second `sophia_output_v1` proposal
   promoted while the owner is `Published` or `AwaitingPresentation` fails with
-  "live policy topology change overlaps another transition". Only reachable for
-  back-to-back topology changes, not a single-change gate run.
-- [ ] Re-derive `startup_required_submissions` when the scanout is replaced. It
-  is positional over head indices with absolute submission counters, and only a
-  length check guards it, so a same-count reordering compares against the wrong
-  head and a replacement scanout makes the requirement permanently unsatisfiable.
+  "live policy topology change overlaps another transition". Promotion now
+  waits for `Stable`; a regression proves a second candidate cannot begin until
+  post-commit presentation settles.
+- [x] Re-derive `startup_required_submissions` when the scanout is replaced. It
+  was positional over head indices with absolute submission counters, and only a
+  length check guarded it, so a same-count reordering compared against the wrong
+  head and a replacement scanout made the requirement permanently
+  unsatisfiable. Requirements are now a map keyed by `RenderHeadId`, validated
+  against exact head coverage, and rebuilt from the replacement scanout's head
+  counters and focused geometry.
 - [ ] Stamp work queued across a topology transition with the epoch it was built
   in, and revalidate or rebuild it on mismatch, rather than fixing instances.
   An inventory found the class runs wider than the two already fixed: absolute

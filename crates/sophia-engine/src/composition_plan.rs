@@ -44,6 +44,8 @@ pub enum HeadSamplingClass {
     Exact,
     Downsampled,
     Upsampled,
+    /// One axis reduces while the other enlarges.
+    Mixed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -396,7 +398,15 @@ pub fn build_head_composition_plan(
     for surface in &snapshot.surfaces {
         let variant = select_variant(&surface.content, target_density)
             .ok_or(HeadCompositionPlanError::UnavailableSurfaceVariant)?;
-        let requested_sampling = sampling_class(variant.density_millis, target_density);
+        let native_geometry =
+            transform.project_root_rect(snapshot.logical_viewport, surface.geometry);
+        let requested_sampling = head_sampling_class(
+            variant.pixel_size,
+            Size {
+                width: native_geometry.width,
+                height: native_geometry.height,
+            },
+        );
         layers.push(HeadLayerBinding {
             surface: surface.surface,
             committed_generation: surface.committed_generation,
@@ -405,8 +415,7 @@ pub fn build_head_composition_plan(
             source_pixel_size: variant.pixel_size,
             density_millis: variant.density_millis,
             opacity_millis: surface.opacity_millis,
-            native_geometry: transform
-                .project_root_rect(snapshot.logical_viewport, surface.geometry),
+            native_geometry,
             native_clip: intersect_rect(
                 transform.project_root_rect(snapshot.logical_viewport, surface.clip),
                 painted,
@@ -681,10 +690,20 @@ fn select_variant(
         })
 }
 
-const fn sampling_class(source: u32, target: u32) -> HeadSamplingClass {
-    if source == target {
+/// Classifies the actual raster extent against the rectangle it will fill.
+///
+/// Density selects an authority variant; it does not say what the renderer
+/// draws. A stale or inset raster may have the requested density while spanning
+/// a different extent, so sampling evidence and filter damage must compare the
+/// two pixel rectangles directly.
+pub const fn head_sampling_class(source: Size, target: Size) -> HeadSamplingClass {
+    let reduces = target.width < source.width || target.height < source.height;
+    let enlarges = target.width > source.width || target.height > source.height;
+    if !reduces && !enlarges {
         HeadSamplingClass::Exact
-    } else if source > target {
+    } else if reduces && enlarges {
+        HeadSamplingClass::Mixed
+    } else if reduces {
         HeadSamplingClass::Downsampled
     } else {
         HeadSamplingClass::Upsampled

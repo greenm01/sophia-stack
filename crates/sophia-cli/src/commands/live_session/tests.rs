@@ -1,4 +1,5 @@
 #![cfg(test)]
+use super::startup_readiness::startup_required_submission_for_head;
 use super::startup_readiness::{
     StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,
     all_startup_outputs_presented, startup_native_recovery_reason, startup_surface_visual_detail,

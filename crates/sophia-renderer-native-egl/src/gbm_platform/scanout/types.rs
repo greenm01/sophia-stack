@@ -131,6 +131,7 @@ pub struct NativeCpuCompositionLayer<'a> {
     pub target: NativeCompositionRect,
     pub clip: Option<NativeCompositionRect>,
     pub alpha: f32,
+    pub sampling: crate::NativeCompositionSampling,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -140,6 +141,7 @@ pub struct NativeDmaBufCompositionLayer<'a> {
     pub target: NativeCompositionRect,
     pub clip: Option<NativeCompositionRect>,
     pub alpha: f32,
+    pub sampling: crate::NativeCompositionSampling,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,6 +150,7 @@ pub struct NativeRendererImageCompositionLayer {
     pub target: NativeCompositionRect,
     pub clip: Option<NativeCompositionRect>,
     pub alpha: f32,
+    pub sampling: crate::NativeCompositionSampling,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,6 +172,14 @@ pub struct NativeCompositionFrame<'a> {
     pub width: u32,
     pub height: u32,
     pub layers: &'a [NativeCompositionLayer<'a>],
+    pub trace: Option<NativeCompositionTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeCompositionTrace {
+    pub output: u64,
+    pub head: u64,
+    pub scene_generation: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

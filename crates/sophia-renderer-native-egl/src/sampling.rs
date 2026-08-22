@@ -12,6 +12,8 @@ pub enum NativeCompositionSampling {
     /// one program serving both directions means one place where light is
     /// decoded and re-encoded rather than two that could drift apart.
     SharpUpscale,
+    /// Reconstructs a draw that reduces one axis and enlarges the other.
+    SharpMixed,
     /// Hardware bilinear, reached only when the reconstruction shader is absent.
     ///
     /// Its own variant rather than a reuse of the upscale name, because a
@@ -49,6 +51,7 @@ pub struct NativeCompositionSamplingStats {
     pub exact_nearest_draws: usize,
     pub sharp_downscale_draws: usize,
     pub sharp_upscale_draws: usize,
+    pub sharp_mixed_draws: usize,
     /// Draws that fell back to hardware bilinear, in either direction.
     ///
     /// This replaces a pair that could not agree: the old upscale counter was
@@ -73,6 +76,9 @@ impl NativeCompositionSamplingStats {
             sharp_upscale_draws: self
                 .sharp_upscale_draws
                 .saturating_add(other.sharp_upscale_draws),
+            sharp_mixed_draws: self
+                .sharp_mixed_draws
+                .saturating_add(other.sharp_mixed_draws),
             linear_fallback_draws: self
                 .linear_fallback_draws
                 .saturating_add(other.linear_fallback_draws),
@@ -86,23 +92,25 @@ impl NativeCompositionSampling {
             Self::ExactNearest => "exact_nearest",
             Self::SharpDownscale => "sharp_downscale",
             Self::SharpUpscale => "sharp_upscale",
+            Self::SharpMixed => "sharp_mixed",
             Self::LinearFallback => "linear_fallback",
         }
     }
 
     /// Whether this draw is served by the reconstruction shader.
     pub const fn is_reconstructed(self) -> bool {
-        matches!(self, Self::SharpDownscale | Self::SharpUpscale)
+        matches!(
+            self,
+            Self::SharpDownscale | Self::SharpUpscale | Self::SharpMixed
+        )
     }
 }
 
 /// Selects sampling without consulting renderer state.
 ///
-/// A reduction on either axis needs reconstruction. Mirror projection is
-/// uniform today, but treating a future mixed-axis transform as a downscale is
-/// the conservative choice because it prevents source rows from being dropped.
-/// The physical rig already produces one: a 1280x1440 raster drawn at 1920x1080
-/// enlarges in x while reducing in y.
+/// A reduction on either axis needs reconstruction. Mixed-axis projection is a
+/// separate fact because calling it a reduction made evidence unable to say
+/// that the other axis was enlarged.
 ///
 /// Never returns `LinearFallback`. Nothing about a rectangle asks for a degraded
 /// draw -- that is a fact about whether a shader compiled, which this function
@@ -111,9 +119,13 @@ pub const fn native_composition_sampling(
     source: (u32, u32),
     target: (u32, u32),
 ) -> NativeCompositionSampling {
-    if source.0 == target.0 && source.1 == target.1 {
+    let reduces = target.0 < source.0 || target.1 < source.1;
+    let enlarges = target.0 > source.0 || target.1 > source.1;
+    if !reduces && !enlarges {
         NativeCompositionSampling::ExactNearest
-    } else if target.0 < source.0 || target.1 < source.1 {
+    } else if reduces && enlarges {
+        NativeCompositionSampling::SharpMixed
+    } else if reduces {
         NativeCompositionSampling::SharpDownscale
     } else {
         NativeCompositionSampling::SharpUpscale

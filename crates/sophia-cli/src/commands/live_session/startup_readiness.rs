@@ -73,27 +73,42 @@ pub(super) struct StartupOutputEvidence {
 
 pub(super) fn startup_output_evidence(
     native: &sophia_backend_live::LiveProductionNativeScanout,
-    required_submissions: Option<&[usize]>,
+    required_submissions: Option<&BTreeMap<sophia_engine::RenderHeadId, usize>>,
 ) -> Option<Vec<StartupOutputEvidence>> {
-    if required_submissions.is_some_and(|required| required.len() != native.heads.len()) {
+    if required_submissions.is_some_and(|required| {
+        required.len() != native.heads.len()
+            || native
+                .heads
+                .iter()
+                .any(|head| !required.contains_key(&head.head))
+    }) {
         return None;
     }
     Some(
         native
             .heads
             .iter()
-            .enumerate()
-            .map(|(index, head)| StartupOutputEvidence {
-                required_submission: required_submissions
-                    .and_then(|required| required.get(index))
-                    .copied()
-                    .unwrap_or(0),
+            .map(|head| StartupOutputEvidence {
+                required_submission: startup_required_submission_for_head(
+                    required_submissions,
+                    head.head,
+                )
+                .unwrap_or(0),
                 presented_submissions: head.presented_submissions,
                 callbacks: head.callback_accepted,
                 synchronous_modeset: head.initial_modeset_submission.is_some(),
             })
             .collect(),
     )
+}
+
+pub(super) fn startup_required_submission_for_head(
+    required: Option<&BTreeMap<sophia_engine::RenderHeadId, usize>>,
+    head: sophia_engine::RenderHeadId,
+) -> Option<usize> {
+    required
+        .map(|required| required.get(&head).copied())
+        .unwrap_or(Some(0))
 }
 
 pub(super) fn all_startup_outputs_presented(outputs: &[StartupOutputEvidence]) -> bool {

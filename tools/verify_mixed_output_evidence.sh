@@ -30,7 +30,7 @@ if grep -Eq '(^Error:|panicked at|status=(failed|degraded|rolled_back)([[:space:
     echo "Mixed-output evidence contains a failure, degradation, or rollback." >&2
     exit 1
 fi
-if grep -Eq 'sophia_native_composition_sampling schema=2 status=(fallback|unavailable)([[:space:]]|$)' \
+if grep -Eq 'sophia_native_composition_sampling schema=(2|3) status=(fallback|unavailable)([[:space:]]|$)' \
     "$EVIDENCE"; then
     echo "Mixed-output evidence contains a composition sampling fallback." >&2
     exit 1
@@ -76,17 +76,17 @@ sed -n "${effect_line},${first_presented_line}p" "$EVIDENCE" \
 # Where a plan does exist -- every frame after the topology committed -- the
 # extended head must still bind at its own scale: no sampling, no fallback.
 if sed -n "$((first_presented_line + 1)),\$p" "$EVIDENCE" \
-    | grep -E "sophia_live_head_composition_plan schema=1 status=ready .* head=$extended_head " \
-    | grep -qvE " mapping=exact .* downsampled=0 upsampled=0 .* fallback=0 unavailable=0 "; then
+    | grep -E "sophia_live_head_composition_plan schema=2 status=ready .* head=$extended_head " \
+    | grep -qvE " mapping=exact .* downsampled=0 upsampled=0 mixed=0 .* fallback=0 unavailable=0 "; then
     echo "The extended head composed a sampled or fallback frame after the topology committed." >&2
     exit 1
 fi
 
 exact_plan="$(awk -v start="$placement_line" -v head="$extended_head" '
-    NR > start && $0 ~ "sophia_live_head_composition_plan schema=1 status=ready" \
+    NR > start && $0 ~ "sophia_live_head_composition_plan schema=2 status=ready" \
         && $0 ~ (" head=" head " ") && $0 ~ " mapping=exact " \
         && $0 ~ " exact=1 " && $0 ~ " downsampled=0 " \
-        && $0 ~ " upsampled=0 " && $0 ~ " active=1 " \
+        && $0 ~ " upsampled=0 " && $0 ~ " mixed=0 " && $0 ~ " active=1 " \
         && $0 ~ " fallback=0 unavailable=0 " { print NR ":" $0; exit }
 ' "$EVIDENCE")"
 if [[ -z "$exact_plan" ]]; then
@@ -128,6 +128,19 @@ retire_line="$(awk -v start="$callback_line" -v output="$extended_output" -v hea
 ' "$EVIDENCE")"
 if [[ -z "$frame" || -z "$submit_line" || -z "$callback_line" || -z "$retire_line" ]]; then
     echo "The exact extended-head frame did not complete queue-to-retirement." >&2
+    exit 1
+fi
+
+sampling_line="$(awk -v start="$queue_line" -v stop="$submit_line" -v output="$extended_output" -v head="$extended_head" -v scene="$scene_generation" '
+    NR > start && NR < stop \
+        && $0 ~ "sophia_native_composition_sampling schema=3 status=active" \
+        && $0 ~ (" output=" output " ") && $0 ~ (" head=" head " ") \
+        && $0 ~ (" scene_generation=" scene " ") \
+        && $0 ~ " requested=exact_nearest " \
+        && $0 ~ " effective=exact_nearest " { print NR; exit }
+' "$EVIDENCE")"
+if [[ -z "$sampling_line" ]]; then
+    echo "The extended head lacks realized exact-sampling evidence before submission." >&2
     exit 1
 fi
 

@@ -13749,3 +13749,35 @@ the same reason, and adding `sophia_live_head_border` turned the fourth into
 reading a log rather than inferring one. The lesson did not generalise on its own
 and is written down here instead: when a second attempt at one symptom fails,
 stop fixing and start instrumenting.
+
+## 2026-08-21: the mixed-output candidate is code-complete but not physically promoted
+
+- Sampling evidence now describes the pixels actually drawn. Engine classifies
+  source and native-target extents independently on both axes, including a
+  mixed-axis result. Lowering repeats that calculation only after retained-image
+  realization, then the native renderer consumes the resulting class rather than
+  deriving a competing one. The realized source extent also enters the damage
+  snapshot, so filtering footprint and evidence agree with the draw.
+- The proof chain is head-keyed. Output, opaque head, and scene generation travel
+  through live lowering into schema-3 native sampling records. The mixed verifier
+  now requires the exact renderer draw to occur between the same head's queue and
+  submit records, rejects legacy/fallback evidence, and requires the schema-2 plan
+  to report no mixed-axis draw. Mutation fixtures cover stale and unkeyed claims.
+- Public chrome is one transaction with two projections. Blind policy and the
+  reducer retain outer allocation; clearance is applied before layout
+  reconciliation to derive content geometry and any client configure. Only the
+  content projection is materialized, while the outer projection commits after
+  acknowledgement and settlement. Schema-2 records expose those stages, including
+  the case where policy omitted a configure but chrome generated one.
+- The static post-commit topology audit closed four faults before spending another
+  physical run: commitment forces a full repaint after its retirement baseline;
+  stale parked hardware publications are dropped by authority epoch; overlapping
+  policy candidates wait for `Stable`; and startup submission barriers are keyed
+  and rebuilt by `RenderHeadId` after scanout replacement. Regressions cover stale
+  publication, back-to-back effects, and same-count head reordering.
+- `cargo fmt --all --check`, `git diff --check`, offline metadata, the sampling
+  verifier fixtures, and `cargo test --offline -q --all-features` pass. This is not
+  physical acceptance evidence. The next promotion action still requires a clean,
+  signed candidate from the dedicated target TTY, visual confirmation of the
+  mixed mirror-plus-extended run, and manual head loss and return. Per-head pacing
+  remains ordered after that gate.

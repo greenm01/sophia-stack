@@ -480,6 +480,8 @@ fn render_native_target_composition(
                         },
                         layer.target.into(),
                         layer.clip.map(Into::into),
+                        layer.sampling,
+                        frame.trace,
                     )
                     .map_err(|_| NativeGbmScanoutBufferExportDetail::CpuLayerUploadFailed);
                 if result.is_ok() {
@@ -516,6 +518,8 @@ fn render_native_target_composition(
                                 } else {
                                     crate::NativeCompositionAlphaMode::Opaque
                                 },
+                                layer.sampling,
+                                frame.trace,
                             )
                             .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
                     });
@@ -565,6 +569,7 @@ fn render_native_target_composition(
                         target: layer.target,
                         clip: layer.clip,
                         alpha: layer.alpha,
+                        sampling: layer.sampling,
                     };
                     let texture = import_cache.texture(egl, display, &target.pipeline, imported)?;
                     target
@@ -580,6 +585,8 @@ fn render_native_target_composition(
                             } else {
                                 crate::NativeCompositionAlphaMode::Opaque
                             },
+                            layer.sampling,
+                            frame.trace,
                         )
                         .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
                 })();

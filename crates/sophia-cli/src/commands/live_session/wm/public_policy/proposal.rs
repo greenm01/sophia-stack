@@ -1,9 +1,17 @@
+struct ReconciledPublicPolicyProposal {
+    policy: sophia_protocol::PolicyProjectionProposal,
+    content: BTreeMap<SurfaceId, sophia_protocol::PolicySurfacePlacement>,
+    adjusted_surfaces: usize,
+}
+
 fn reconcile_public_policy_proposal(
     layout: &PersistentLiveLayout,
     proposal: &sophia_protocol::PolicyProjectionProposal,
     work_areas: &BTreeMap<sophia_protocol::OutputId, Rect>,
-) -> Result<(sophia_protocol::PolicyProjectionProposal, usize), Box<dyn std::error::Error>> {
+    chrome: sophia_engine::SurfaceChromeStyle,
+) -> Result<ReconciledPublicPolicyProposal, Box<dyn std::error::Error>> {
     let mut reconciled = proposal.clone();
+    let mut content = BTreeMap::new();
     let mut adjusted_surfaces = BTreeSet::new();
     for output in &mut reconciled.outputs {
         let bounds = work_areas
@@ -45,6 +53,7 @@ fn reconcile_public_policy_proposal(
             timeout_msec: u32::try_from(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC)
                 .unwrap_or(u32::MAX),
         };
+        let transaction = sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
         let reconciliation = layout
             .layout_epochs
             .reconcile_transaction(&transaction, bounds)?;
@@ -61,22 +70,53 @@ fn reconcile_public_policy_proposal(
             .map(|request| (request.surface, request.size))
             .collect::<BTreeMap<_, _>>();
         for placement in &mut output.placements {
-            let geometry = geometries[&placement.surface];
-            let requested_size = placement
-                .requested_size
-                .and_then(|_| requested_sizes.get(&placement.surface).copied());
-            if placement.geometry != geometry || placement.requested_size != requested_size {
+            let content_geometry = geometries[&placement.surface];
+            let content_requested_size = requested_sizes.get(&placement.surface).copied();
+            let outer_geometry = sophia_engine::outer_surface_geometry(content_geometry, chrome)?;
+            let outer_requested_size = placement.requested_size.map(|_| sophia_protocol::Size {
+                width: outer_geometry.width,
+                height: outer_geometry.height,
+            });
+            if placement.geometry != outer_geometry
+                || placement.requested_size != outer_requested_size
+            {
                 adjusted_surfaces.insert(placement.surface);
             }
-            placement.geometry = geometry;
-            // Public policy separates outer geometry from an optional
-            // client-content request. The generic API-v7 reconciler adds a
-            // request when geometry changes, so preserve omission unless the
-            // public peer actually requested a content size.
-            placement.requested_size = requested_size;
+            let mut content_placement = placement.clone();
+            content_placement.geometry = content_geometry;
+            content_placement.requested_size = content_requested_size;
+            content.insert(placement.surface, content_placement);
+            // The reducer remains an outer-allocation model. Only the proposal
+            // materialized into Engine layers and configure requests crosses
+            // the chrome boundary into content coordinates.
+            placement.geometry = outer_geometry;
+            placement.requested_size = outer_requested_size;
+            println!(
+                "sophia_live_wm_chrome schema=2 status=reconciled transaction={} output={} surface={} clearance={} outer={}x{}_{}_{} content={}x{}_{}_{} request={} adjusted={}",
+                proposal.transaction.raw(),
+                output.output.raw(),
+                placement.surface.index(),
+                chrome.clearance(),
+                placement.geometry.width,
+                placement.geometry.height,
+                placement.geometry.x,
+                placement.geometry.y,
+                content_geometry.width,
+                content_geometry.height,
+                content_geometry.x,
+                content_geometry.y,
+                content_requested_size
+                    .map(|size| format!("{}x{}", size.width, size.height))
+                    .unwrap_or_else(|| "none".to_owned()),
+                adjusted_surfaces.contains(&placement.surface),
+            );
         }
     }
-    Ok((reconciled, adjusted_surfaces.len()))
+    Ok(ReconciledPublicPolicyProposal {
+        policy: reconciled,
+        content,
+        adjusted_surfaces: adjusted_surfaces.len(),
+    })
 }
 
 fn public_live_proposal(
@@ -86,6 +126,7 @@ fn public_live_proposal(
     transaction: TransactionId,
     source: LiveWmProposalSource,
     settlement: LivePolicySettlementIdentity,
+    content: &BTreeMap<SurfaceId, sophia_protocol::PolicySurfacePlacement>,
 ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
     let mut layers = layout
         .layers
@@ -102,6 +143,9 @@ fn public_live_proposal(
         .and_then(|projection| projection.focus);
     for projection in projections {
         for placement in projection.placements {
+            let materialized = content
+                .get(&placement.surface)
+                .ok_or("public WM projection has no reconciled content placement")?;
             applied_surfaces.push(placement.surface);
             presentation_states.insert(placement.surface, placement.presentation);
             if placement.presentation.minimized {
@@ -133,9 +177,9 @@ fn public_live_proposal(
                     resize_sync: ResizeSyncCapability::ImplicitOnly,
                 }
             };
-            layer.geometry = placement.geometry;
+            layer.geometry = materialized.geometry;
             layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
-            if let Some(size) = placement.requested_size {
+            if let Some(size) = materialized.requested_size {
                 requested_sizes.insert(placement.surface, size);
             }
             layers.push(layer);

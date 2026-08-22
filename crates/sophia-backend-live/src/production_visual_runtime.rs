@@ -28,9 +28,14 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         .count();
     let upsampled = plan
         .layers
-        .len()
-        .saturating_sub(exact)
-        .saturating_sub(downsampled);
+        .iter()
+        .filter(|layer| layer.requested_sampling == sophia_engine::HeadSamplingClass::Upsampled)
+        .count();
+    let mixed = plan
+        .layers
+        .iter()
+        .filter(|layer| layer.requested_sampling == sophia_engine::HeadSamplingClass::Mixed)
+        .count();
     let active = plan
         .layers
         .iter()
@@ -38,7 +43,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         .count();
     let fallback = plan.layers.len().saturating_sub(active);
     tracing::info!(
-        "sophia_live_head_composition_plan schema=1 status=ready output={} head={} scene_generation={} target_generation={} width={} height={} mapping={} exact={} downsampled={} upsampled={} active={} fallback={} unavailable=0 compositor_primitives={} damage_rects={} logical_content_checksum={}",
+        "sophia_live_head_composition_plan schema=2 status=ready output={} head={} scene_generation={} target_generation={} width={} height={} mapping={} exact={} downsampled={} upsampled={} mixed={} active={} fallback={} unavailable=0 compositor_primitives={} damage_rects={} logical_content_checksum={}",
         plan.output.raw(),
         plan.head.raw(),
         plan.scene_generation,
@@ -49,6 +54,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         exact,
         downsampled,
         upsampled,
+        mixed,
         active,
         fallback,
         plan.compositor.len(),
@@ -109,6 +115,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
                     sophia_engine::HeadSamplingClass::Exact => "exact",
                     sophia_engine::HeadSamplingClass::Downsampled => "downsampled",
                     sophia_engine::HeadSamplingClass::Upsampled => "upsampled",
+                    sophia_engine::HeadSamplingClass::Mixed => "mixed",
                 },
                 match layer.outcome {
                     sophia_engine::HeadBindingOutcome::Active => "authority_raster",
@@ -260,6 +267,10 @@ pub struct LiveAuthorityTransactionRun<'a> {
 }
 
 impl LiveProductionVisualRuntime {
+    pub const fn focused_surface(&self) -> Option<SurfaceId> {
+        self.focused_surface
+    }
+
     pub fn new(
         outputs: &[sophia_engine::HeadlessOutput],
         native_scanout: Option<&mut LiveProductionNativeScanout>,

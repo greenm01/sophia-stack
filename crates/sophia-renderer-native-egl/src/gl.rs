@@ -21,8 +21,8 @@ use crate::NativeEglDrawSmokeStatus;
 #[cfg(feature = "gbm-platform")]
 use crate::{
     NativeCompositionAlphaMode, NativeCompositionPixelMetrics, NativeCompositionSampling,
-    NativeCompositionSamplingStats, NativeGbmScanoutBufferExportDetail,
-    native_composition_gl_read_y, native_composition_pixel_metrics, native_composition_sampling,
+    NativeCompositionSamplingStats, NativeCompositionTrace, NativeGbmScanoutBufferExportDetail,
+    native_composition_gl_read_y, native_composition_pixel_metrics,
 };
 #[cfg(feature = "gbm-platform")]
 use std::cell::Cell;
@@ -46,6 +46,7 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     exact_nearest_draws: Cell<usize>,
     sharp_downscale_draws: Cell<usize>,
     sharp_upscale_draws: Cell<usize>,
+    sharp_mixed_draws: Cell<usize>,
     linear_fallback_draws: Cell<usize>,
     width: u32,
     height: u32,
@@ -209,6 +210,7 @@ impl PersistentXrgb8888GlPipeline {
             exact_nearest_draws: Cell::new(0),
             sharp_downscale_draws: Cell::new(0),
             sharp_upscale_draws: Cell::new(0),
+            sharp_mixed_draws: Cell::new(0),
             linear_fallback_draws: Cell::new(0),
             width,
             height,
@@ -303,6 +305,8 @@ impl PersistentXrgb8888GlPipeline {
         layer: GlCpuLayer<'_>,
         target: GlCompositionRect,
         clip: Option<GlCompositionRect>,
+        sampling: NativeCompositionSampling,
+        trace: Option<NativeCompositionTrace>,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
         let GlCpuLayer {
             width,
@@ -333,7 +337,6 @@ impl PersistentXrgb8888GlPipeline {
         // filter comes from the same resolution that picks the program, so a
         // reconstructed draw is guaranteed the unfiltered texels its kernel
         // gathers rather than a hardware blend of them.
-        let sampling = sampling_for_rect((width, height), target);
         let filter = self.draw_plan(sampling).texture_filter;
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
@@ -372,7 +375,15 @@ impl PersistentXrgb8888GlPipeline {
                 self.cpu_layer_texture_height.set(height);
             }
         }
-        self.draw_bound_texture(target, clip, alpha, alpha_mode, (width, height), sampling)
+        self.draw_bound_texture(
+            target,
+            clip,
+            alpha,
+            alpha_mode,
+            (width, height),
+            sampling,
+            trace,
+        )
     }
 
     pub(crate) fn draw_solid_layer(
@@ -470,6 +481,7 @@ impl PersistentXrgb8888GlPipeline {
             NativeCompositionAlphaMode::Opaque,
             (self.width, self.height),
             NativeCompositionSampling::ExactNearest,
+            None,
         );
         unsafe {
             self.gl.bind_texture(glow::TEXTURE_2D, None);
@@ -527,11 +539,12 @@ impl PersistentXrgb8888GlPipeline {
         clip: Option<GlCompositionRect>,
         alpha: f32,
         alpha_mode: NativeCompositionAlphaMode,
+        sampling: NativeCompositionSampling,
+        trace: Option<NativeCompositionTrace>,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
         // Same reasoning as the CPU layer: the filter and the program are one
         // decision, so the shader never samples texels the hardware already
         // blended in gamma-encoded space.
-        let sampling = sampling_for_rect(source, target);
         let filter = self.draw_plan(sampling).texture_filter;
         unsafe {
             self.gl.active_texture(glow::TEXTURE0);
@@ -541,7 +554,7 @@ impl PersistentXrgb8888GlPipeline {
             self.gl
                 .tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, filter as i32);
         }
-        self.draw_bound_texture(target, clip, alpha, alpha_mode, source, sampling)
+        self.draw_bound_texture(target, clip, alpha, alpha_mode, source, sampling, trace)
     }
 
     pub(crate) unsafe fn delete_texture(&self, texture: glow::NativeTexture) {
@@ -575,6 +588,7 @@ impl PersistentXrgb8888GlPipeline {
             exact_nearest_draws: self.exact_nearest_draws.get(),
             sharp_downscale_draws: self.sharp_downscale_draws.get(),
             sharp_upscale_draws: self.sharp_upscale_draws.get(),
+            sharp_mixed_draws: self.sharp_mixed_draws.get(),
             linear_fallback_draws: self.linear_fallback_draws.get(),
         }
     }
@@ -647,6 +661,7 @@ impl PersistentXrgb8888GlPipeline {
         alpha_mode: NativeCompositionAlphaMode,
         source: (u32, u32),
         requested_sampling: NativeCompositionSampling,
+        trace: Option<NativeCompositionTrace>,
     ) -> Result<(), NativeEglDrawSmokeStatus> {
         if target.width <= 0 || target.height <= 0 || !alpha.is_finite() || alpha <= 0.0 {
             return Ok(());
@@ -682,6 +697,7 @@ impl PersistentXrgb8888GlPipeline {
             source,
             target,
             alpha_mode,
+            trace,
         );
         unsafe {
             if alpha_mode.is_premultiplied() || alpha < 1.0 {
@@ -756,6 +772,7 @@ impl PersistentXrgb8888GlPipeline {
         source: (u32, u32),
         target: GlCompositionRect,
         alpha_mode: NativeCompositionAlphaMode,
+        trace: Option<NativeCompositionTrace>,
     ) {
         // One counter per outcome, incremented once. The fallback used to be
         // tallied twice -- as an upscale and as a fallback -- which left the
@@ -764,6 +781,7 @@ impl PersistentXrgb8888GlPipeline {
             NativeCompositionSampling::ExactNearest => &self.exact_nearest_draws,
             NativeCompositionSampling::SharpDownscale => &self.sharp_downscale_draws,
             NativeCompositionSampling::SharpUpscale => &self.sharp_upscale_draws,
+            NativeCompositionSampling::SharpMixed => &self.sharp_mixed_draws,
             NativeCompositionSampling::LinearFallback => &self.linear_fallback_draws,
         };
         counter.set(counter.get().saturating_add(1));
@@ -773,35 +791,42 @@ impl PersistentXrgb8888GlPipeline {
             alpha_mode == NativeCompositionAlphaMode::Premultiplied,
         );
         let bit = 1u16 << evidence_index;
-        if self.sampling_evidence.get() & bit != 0 {
+        if trace.is_none() && self.sampling_evidence.get() & bit != 0 {
             return;
         }
         self.sampling_evidence
             .set(self.sampling_evidence.get() | bit);
-        tracing::info!(
-            "sophia_native_composition_sampling schema=2 status={status} requested={} effective={} alpha_mode={} source={}x{} target={}x{} output={}x{}",
-            requested.reduced_name(),
-            effective.reduced_name(),
-            alpha_mode.reduced_name(),
-            source.0,
-            source.1,
-            target.width,
-            target.height,
-            self.width,
-            self.height,
-        );
+        if let Some(trace) = trace {
+            tracing::info!(
+                "sophia_native_composition_sampling schema=3 status={status} output={} head={} scene_generation={} requested={} effective={} alpha_mode={} source={}x{} target={}x{} frame={}x{}",
+                trace.output,
+                trace.head,
+                trace.scene_generation,
+                requested.reduced_name(),
+                effective.reduced_name(),
+                alpha_mode.reduced_name(),
+                source.0,
+                source.1,
+                target.width,
+                target.height,
+                self.width,
+                self.height,
+            );
+        } else {
+            tracing::info!(
+                "sophia_native_composition_sampling schema=2 status={status} requested={} effective={} alpha_mode={} source={}x{} target={}x{} output={}x{}",
+                requested.reduced_name(),
+                effective.reduced_name(),
+                alpha_mode.reduced_name(),
+                source.0,
+                source.1,
+                target.width,
+                target.height,
+                self.width,
+                self.height,
+            );
+        }
     }
-}
-
-#[cfg(feature = "gbm-platform")]
-fn sampling_for_rect(source: (u32, u32), target: GlCompositionRect) -> NativeCompositionSampling {
-    native_composition_sampling(
-        source,
-        (
-            u32::try_from(target.width).unwrap_or(0),
-            u32::try_from(target.height).unwrap_or(0),
-        ),
-    )
 }
 
 pub(crate) fn smoke_current_gl_context_with_loader<F>(

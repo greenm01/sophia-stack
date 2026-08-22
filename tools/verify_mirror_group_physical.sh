@@ -140,7 +140,7 @@ for head in "$dp1_head" "$dp2_head"; do
     fi
     queue="$(grep -Em1 "^sophia_live_head_composition_queue schema=1 status=queued output=$dp1_output head=$head frame=$frame scene_generation=$scene target_generation=$(field "$bootstrap" target_generation) mapping=fit " "$evidence" || true)"
     [[ -n "$queue" ]] || fail "head $head semantic startup omitted matching queue identity"
-    plan="$(grep -Em1 "^sophia_live_head_composition_plan schema=1 status=ready output=$dp1_output head=$head scene_generation=$scene target_generation=$(field "$bootstrap" target_generation) " "$evidence" || true)"
+    plan="$(grep -Em1 "^sophia_live_head_composition_plan schema=2 status=ready output=$dp1_output head=$head scene_generation=$scene target_generation=$(field "$bootstrap" target_generation) " "$evidence" || true)"
     [[ -n "$plan" ]] || fail "head $head semantic startup omitted matching plan identity"
     plan_line="$(grep -nFm1 "$plan" "$evidence" | cut -d: -f1)"
     queue_line="$(grep -nFm1 "$queue" "$evidence" | cut -d: -f1)"
@@ -149,9 +149,9 @@ for head in "$dp1_head" "$dp2_head"; do
     (( plan_line < queue_line && queue_line < bootstrap_line && bootstrap_line < startup_output_line )) ||
         fail "head $head semantic startup evidence is not plan -> queue -> worker -> modeset ordered"
 done
-grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 output=2560x1440' \
+grep -Eq '^sophia_native_composition_sampling schema=3 status=active output=[0-9]+ head=[0-9]+ scene_generation=[0-9]+ requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=2560x1440 target=2560x1440 frame=2560x1440$' \
     "$evidence" || fail "DP-1 did not preserve exact 1:1 sampling"
-grep -Fxq 'sophia_native_composition_sampling schema=2 status=active requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 output=1920x1080' \
+grep -Eq '^sophia_native_composition_sampling schema=3 status=active output=[0-9]+ head=[0-9]+ scene_generation=[0-9]+ requested=sharp_downscale effective=sharp_downscale alpha_mode=opaque source=2560x1440 target=1920x1080 frame=1920x1080$' \
     "$evidence" || fail "DP-2 did not use sharp 0.75x downsampling"
 
 max_final_cpu_gray_pixels() {
@@ -268,7 +268,7 @@ mirror_frame_has_head_composition_plan() {
             return 1
         fi
         mapfile -t records < <(
-            grep -E "^sophia_live_head_composition_plan schema=1 status=ready output=$dp1_output head=$head scene_generation=$scene_generation " \
+            grep -E "^sophia_live_head_composition_plan schema=2 status=ready output=$dp1_output head=$head scene_generation=$scene_generation " \
                 "$evidence" || true
         )
         (( ${#records[@]} == 1 )) || return 1

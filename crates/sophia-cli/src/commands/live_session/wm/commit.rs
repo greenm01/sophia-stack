@@ -232,6 +232,12 @@ impl LiveWmSession {
                 expect_session_operation: settlement.expect_session_operation,
             })?;
         public.settle_public_projection(outcome);
+        println!(
+            "sophia_live_wm_chrome schema=2 status=settled transaction={} request_id={} scene_generation={} outcome={outcome:?}",
+            settlement.transaction.raw(),
+            settlement.request_id,
+            public.reducer.scene().generation,
+        );
         if outcome != sophia_protocol::PolicyProjectionOutcome::Committed
             || !settlement.expect_session_operation
         {

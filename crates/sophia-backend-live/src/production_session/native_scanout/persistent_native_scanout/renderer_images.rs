@@ -639,6 +639,13 @@ impl LiveProductionNativeScanout {
                         clip: None,
                         transform: sophia_protocol::Transform::IDENTITY,
                         alpha: 1.0,
+                        sampling: sophia_engine::head_sampling_class(
+                            source.size,
+                            sophia_protocol::Size {
+                                width: target.width,
+                                height: target.height,
+                            },
+                        ),
                     },
                 };
                 LiveProductionQueuedMirrorHeadFrame {
@@ -650,6 +657,7 @@ impl LiveProductionNativeScanout {
                     frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame {
                         layers: vec![layer],
                         output_damage_snapshot: output_damage_snapshot.clone(),
+                        trace: None,
                     },
                     output_damage_snapshot,
                     cpu_nonzero_pixel_bytes: frame.nonzero_pixel_bytes,

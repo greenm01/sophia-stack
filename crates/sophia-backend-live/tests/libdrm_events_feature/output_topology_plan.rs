@@ -860,6 +860,7 @@ fn topology_composition_frame(
                 },
                 software_cursor: None,
             }),
+            trace: None,
         },
     }
 }
@@ -890,6 +891,7 @@ fn identified_head_composition_frame(
                 },
                 software_cursor: None,
             }),
+            trace: None,
         },
     }
 }
@@ -976,6 +978,7 @@ fn topology_renderer_image_requirements_are_scoped_per_physical_head() {
         clip: None,
         transform: sophia_protocol::Transform::IDENTITY,
         alpha: 1.0,
+        sampling: sophia_engine::HeadSamplingClass::Exact,
     };
     for image_id in [2, 1, 2] {
         first_frame.frame.layers.push(

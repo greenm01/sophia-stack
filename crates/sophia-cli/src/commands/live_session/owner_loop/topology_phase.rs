@@ -190,6 +190,38 @@
                 // A replacement snapshot owes its own presentation before it
                 // may be published, so it does not inherit the previous one's.
                 hardware_output_publication_presented = false;
+                if !startup_ready_reported {
+                    startup_required_submissions = startup_readiness.surface.and_then(|surface| {
+                        let geometry = runtime
+                            .committed_surfaces()
+                            .iter()
+                            .find(|committed| committed.surface == surface)?
+                            .geometry;
+                        let bounds = wm_output_bounds(&outputs);
+                        Some(
+                            replacement
+                                .heads
+                                .iter()
+                                .map(|head| {
+                                    let intersects = bounds
+                                        .iter()
+                                        .find(|(output, _)| *output == head.output.id)
+                                        .is_some_and(|(_, bounds)| {
+                                            rects_intersect(geometry, *bounds)
+                                        });
+                                    (
+                                        head.head,
+                                        startup_submission_requirement(
+                                            head.submissions,
+                                            head.presented_submissions,
+                                            intersects,
+                                        ),
+                                    )
+                                })
+                                .collect(),
+                        )
+                    });
+                }
                 *native_scanout = Some(replacement);
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",
@@ -214,6 +246,22 @@
             .as_ref()
             .map_or(0, |native| native.retirements);
         output_topology_owner.mark_policy_committed(presentation_baseline)?;
+        if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
+            let focused = runtime.focused_surface();
+            scene.force_full_repaint();
+            let forced = runtime.run_cpu_repaint(
+                &mut scene,
+                focused,
+                pointer.position(),
+                &outputs,
+                native,
+            )?;
+            tracing::info!(
+                "sophia_live_output_topology schema=2 status=repaint_forced transition={} presentation_baseline={presentation_baseline} checksum={} reason=policy_committed",
+                output_topology_owner.transition,
+                forced.composition.checksum,
+            );
+        }
         topology_presentation_deadline =
             Some(Instant::now() + OUTPUT_TOPOLOGY_PRESENTATION_TIMEOUT);
         tracing::info!(
@@ -273,6 +321,16 @@
         && let Some((snapshot, capabilities)) = pending_hardware_output_publication.take()
     {
         hardware_output_publication_presented = false;
-        let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
+        if wm.output_authority_topology_epoch().is_some_and(|current| {
+            hardware_output_snapshot_is_stale(snapshot.topology_epoch, current)
+        }) {
+            tracing::warn!(
+                "sophia_live_output_authority schema=2 status=hardware_snapshot_dropped snapshot_epoch={} current_epoch={} reason=stale_after_candidate",
+                snapshot.topology_epoch,
+                wm.output_authority_topology_epoch().unwrap_or(0),
+            );
+        } else {
+            let _ = wm.publish_output_authority_snapshot(snapshot, capabilities)?;
+        }
     }
 }

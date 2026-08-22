@@ -1,7 +1,7 @@
 use super::super::{
     LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
     LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild,
-    begin_output_topology_first_presentation_rollback,
+    begin_output_topology_first_presentation_rollback, hardware_output_snapshot_is_stale,
 };
 use sophia_protocol::{OutputId, Size, TransactionId};
 use std::cell::RefCell;
@@ -416,4 +416,28 @@ fn a_presentation_wait_can_be_released_without_its_flip() {
 
     // Claimed once; a second call is not a second release.
     assert!(!owner.release_presentation_wait());
+}
+
+#[test]
+fn parked_hardware_publication_is_dropped_after_an_equal_or_newer_policy_epoch() {
+    assert!(!hardware_output_snapshot_is_stale(3, 2));
+    assert!(hardware_output_snapshot_is_stale(3, 3));
+    assert!(hardware_output_snapshot_is_stale(2, 3));
+}
+
+#[test]
+fn a_second_policy_change_waits_until_post_commit_presentation_settles() {
+    let mut owner = LiveOutputTopologyOwner::new_at_generation(
+        vec![output(1, 1280)],
+        vec![(OutputId::from_raw(1), 1)],
+        1,
+    )
+    .unwrap();
+    owner.begin_policy_change().unwrap();
+    observe_policy_unmirrored(&mut owner, vec![output(1, 1920)], 2).unwrap();
+    owner.mark_published(4, false).unwrap();
+
+    assert!(owner.begin_policy_change().is_err());
+    assert!(owner.observe_presentation(5));
+    assert_eq!(owner.begin_policy_change(), Ok(true));
 }

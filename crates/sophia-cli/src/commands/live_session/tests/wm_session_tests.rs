@@ -163,7 +163,7 @@ use crate::commands::live_session::{
     LiveWmResponseLifetime, PendingLiveWmLayout, PersistentLiveLayout, ResizeVisualCommit,
     committed_relayout_nodes, enqueue_public_policy_cause, enqueue_public_policy_security_cancel,
     live_layout_node_from_facts, ordered_wm_action_request, planning_state_for_response,
-    public_policy_surface_snapshots, reconcile_public_policy_proposal,
+    public_live_proposal, public_policy_surface_snapshots, reconcile_public_policy_proposal,
     wm_transport_requires_reseed,
 };
 use sophia_engine::WmWorkspaceState;
@@ -342,6 +342,7 @@ fn public_policy_snapshot_retains_an_admitted_surface_while_it_is_hidden() {
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
+        sophia_engine::SurfaceChromeStyle::default(),
     )
     .unwrap();
 
@@ -349,7 +350,14 @@ fn public_policy_snapshot_retains_an_admitted_surface_while_it_is_hidden() {
     assert_eq!(surfaces[0].surface, surface);
     assert_eq!(surfaces[0].generation, 7);
     assert_eq!(surfaces[0].current_output, None);
-    assert_eq!(surfaces[0].geometry, geometry);
+    assert_eq!(
+        surfaces[0].geometry,
+        sophia_engine::outer_surface_geometry(
+            geometry,
+            sophia_engine::SurfaceChromeStyle::default(),
+        )
+        .unwrap()
+    );
 
     let mut withdrawn =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(3));
@@ -383,6 +391,7 @@ fn public_policy_snapshot_retains_an_admitted_surface_while_it_is_hidden() {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            sophia_engine::SurfaceChromeStyle::default(),
         )
         .unwrap()
         .is_empty()
@@ -556,7 +565,8 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
         output_statuses: Vec::new(),
     };
 
-    let (reconciled, adjusted) = reconcile_public_policy_proposal(
+    let chrome = sophia_engine::SurfaceChromeStyle::default();
+    let reconciled = reconcile_public_policy_proposal(
         &layout,
         &proposal,
         &BTreeMap::from([(
@@ -568,23 +578,28 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
                 height: proposed.height,
             },
         )]),
+        chrome,
     )
     .unwrap();
 
-    assert_eq!(adjusted, 1);
+    assert_eq!(reconciled.adjusted_surfaces, 1);
     assert_eq!(
-        reconciled.outputs[0].placements[0].requested_size,
-        Some(safe)
+        reconciled.policy.outputs[0].placements[0].requested_size,
+        Some(Size {
+            width: safe.width + chrome.clearance() * 2,
+            height: safe.height + chrome.clearance() * 2,
+        })
     );
     assert_eq!(
-        reconciled.outputs[0].placements[0].geometry,
+        reconciled.content[&surface].geometry,
         Rect {
-            x: 0,
-            y: 0,
+            x: chrome.clearance(),
+            y: chrome.clearance(),
             width: safe.width,
             height: safe.height,
         }
     );
+    assert_eq!(reconciled.content[&surface].requested_size, Some(safe));
     assert_eq!(
         proposal.outputs[0].placements[0].requested_size,
         Some(proposed)
@@ -592,7 +607,7 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
 }
 
 #[test]
-fn public_policy_reconciliation_preserves_an_omitted_content_size_request() {
+fn public_policy_reconciliation_keeps_policy_omission_but_drives_changed_content() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(9, 1);
     let geometry = Rect {
@@ -624,7 +639,8 @@ fn public_policy_reconciliation_preserves_an_omitted_content_size_request() {
         output_statuses: Vec::new(),
     };
 
-    let (reconciled, adjusted) = reconcile_public_policy_proposal(
+    let chrome = sophia_engine::SurfaceChromeStyle::default();
+    let reconciled = reconcile_public_policy_proposal(
         &PersistentLiveLayout::default(),
         &proposal,
         &BTreeMap::from([(
@@ -636,12 +652,95 @@ fn public_policy_reconciliation_preserves_an_omitted_content_size_request() {
                 height: 1440,
             },
         )]),
+        chrome,
     )
     .unwrap();
 
-    assert_eq!(adjusted, 0);
-    assert_eq!(reconciled.outputs[0].placements[0].geometry, geometry);
-    assert_eq!(reconciled.outputs[0].placements[0].requested_size, None);
+    assert_eq!(reconciled.adjusted_surfaces, 0);
+    assert_eq!(
+        reconciled.policy.outputs[0].placements[0].geometry,
+        geometry
+    );
+    assert_eq!(
+        reconciled.policy.outputs[0].placements[0].requested_size,
+        None
+    );
+    assert_eq!(
+        reconciled.content[&surface].geometry,
+        Rect {
+            x: geometry.x + chrome.clearance(),
+            y: geometry.y + chrome.clearance(),
+            width: geometry.width - chrome.clearance() * 2,
+            height: geometry.height - chrome.clearance() * 2,
+        }
+    );
+    assert_eq!(
+        reconciled.content[&surface].requested_size,
+        Some(Size {
+            width: geometry.width - chrome.clearance() * 2,
+            height: geometry.height - chrome.clearance() * 2,
+        })
+    );
+}
+
+#[test]
+fn public_policy_materializes_reconciled_content_without_committing_content_to_the_reducer() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(10, 1);
+    let outer = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.layers.insert(surface, test_layer(surface, outer));
+    let proposal = sophia_protocol::PolicyProjectionProposal {
+        transaction: TransactionId::from_raw(11),
+        connection_epoch: 1,
+        request_id: 2,
+        base_generation: 3,
+        active_output: output,
+        outputs: vec![policy_projection(output, surface)],
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
+    };
+    let chrome = sophia_engine::SurfaceChromeStyle::default();
+    let reconciled = reconcile_public_policy_proposal(
+        &layout,
+        &proposal,
+        &BTreeMap::from([(output, outer)]),
+        chrome,
+    )
+    .unwrap();
+    let settlement = LivePolicySettlementIdentity {
+        connection_epoch: 1,
+        request_id: 2,
+        scene_generation: 3,
+        transaction: proposal.transaction,
+        expect_session_operation: false,
+        session_operation: false,
+    };
+    let live = public_live_proposal(
+        &layout,
+        output,
+        reconciled.policy.outputs.clone(),
+        proposal.transaction,
+        LiveWmProposalSource::Manage(surface),
+        settlement,
+        &reconciled.content,
+    )
+    .unwrap();
+
+    assert_eq!(reconciled.policy.outputs[0].placements[0].geometry, outer);
+    assert_eq!(
+        live.layers.last().unwrap().geometry,
+        reconciled.content[&surface].geometry
+    );
+    assert_eq!(
+        live.requested_sizes.get(&surface),
+        reconciled.content[&surface].requested_size.as_ref(),
+    );
 }
 
 #[test]

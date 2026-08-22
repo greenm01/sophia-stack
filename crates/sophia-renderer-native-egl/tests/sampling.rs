@@ -25,11 +25,11 @@ fn composition_sampling_preserves_exact_pixels_and_reconstructs_reductions() {
         NativeCompositionSampling::SharpUpscale,
     );
     // The physical rig produces this one: a 1280x1440 raster drawn at 1920x1080
-    // enlarges in x while reducing in y. A reduction on either axis wins,
-    // because dropping source rows is the worse failure.
+    // enlarges in x while reducing in y. Keep that distinct in telemetry so
+    // neither single-axis label overclaims what was rendered.
     assert_eq!(
         native_composition_sampling((1280, 1440), (1920, 1080)),
-        NativeCompositionSampling::SharpDownscale,
+        NativeCompositionSampling::SharpMixed,
     );
 }
 
@@ -46,6 +46,10 @@ fn sampling_names_are_stable_evidence_values() {
     assert_eq!(
         NativeCompositionSampling::SharpUpscale.reduced_name(),
         "sharp_upscale"
+    );
+    assert_eq!(
+        NativeCompositionSampling::SharpMixed.reduced_name(),
+        "sharp_mixed"
     );
     assert_eq!(
         NativeCompositionSampling::LinearFallback.reduced_name(),
@@ -72,6 +76,7 @@ fn geometry_never_requests_the_degraded_path() {
     }
     assert!(NativeCompositionSampling::SharpDownscale.is_reconstructed());
     assert!(NativeCompositionSampling::SharpUpscale.is_reconstructed());
+    assert!(NativeCompositionSampling::SharpMixed.is_reconstructed());
     assert!(!NativeCompositionSampling::ExactNearest.is_reconstructed());
     assert!(!NativeCompositionSampling::LinearFallback.is_reconstructed());
 }

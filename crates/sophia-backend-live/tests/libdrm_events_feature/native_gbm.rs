@@ -5,6 +5,7 @@ fn pending_renderer_work_can_be_discarded_only_before_worker_ownership() {
     exporter.set_pending_mixed_frame(sophia_renderer_live::LiveOwnedMixedCompositionFrame {
         layers: Vec::new(),
         output_damage_snapshot: None,
+        trace: None,
     });
 
     assert!(exporter.pending_frame());
