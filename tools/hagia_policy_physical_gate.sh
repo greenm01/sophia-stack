@@ -16,6 +16,11 @@ evidence="${SOPHIA_HAGIA_PHYSICAL_EVIDENCE:-/tmp/sophia-hagia-policy-physical.lo
 proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"
 restart_marker="${evidence}.restart"
 guide="${SOPHIA_HAGIA_PHYSICAL_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_physical_guide.sh}"
+hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+source_commit="${SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT:-}"
+hagia_commit="${SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT:-}"
+recorded_sophia_sha256="${SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256:-}"
+recorded_hagia_sha256="${SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256:-}"
 
 if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
     echo "SOPHIA_HAGIA_PHYSICAL_TEXT must contain 1-24 lowercase ASCII letters" >&2
@@ -45,6 +50,17 @@ if [[ ! -x "$guide" ]]; then
     echo "set SOPHIA_HAGIA_PHYSICAL_GUIDE to the executable proof guide" >&2
     exit 2
 fi
+if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
+    || ! "$hagia_commit" =~ ^[0-9a-f]{40}$ \
+    || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind both signed source and binary identities" >&2
+    exit 2
+fi
+if [[ ! -d "$hagia_root/.git" ]]; then
+    echo "Hagia checkout not found at $hagia_root" >&2
+    exit 2
+fi
 if [[ ! "$runtime_msec" =~ ^[0-9]+$ ]] || (( runtime_msec < 30000 )); then
     echo "SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC must be at least 30000" >&2
     exit 2
@@ -54,6 +70,33 @@ if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
     echo "SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC must be 1000-600000" >&2
     exit 2
 fi
+
+verify_bound_identity() {
+    if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
+        || -n "$(git -C "$hagia_root" status --short)" \
+        || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" \
+        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" ]]; then
+        echo "Sophia or Hagia source identity changed during the physical proof." >&2
+        exit 1
+    fi
+    git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
+        echo "Sophia physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
+    git -C "$hagia_root" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
+        echo "Hagia physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
+    sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
+    hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+    if [[ "$sophia_sha256" != "$recorded_sophia_sha256" \
+        || "$hagia_sha256" != "$recorded_hagia_sha256" ]]; then
+        echo "Sophia or Hagia binary does not match its bound physical-proof identity." >&2
+        exit 1
+    fi
+}
+
+verify_bound_identity
 
 echo "Hagia installed physical policy gate"
 echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
@@ -99,8 +142,14 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
     --exit-after-input-proof
 
+verify_bound_identity
+printf 'sophia_hagia_policy_identity schema=1 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s\n' \
+    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" \
+    | tee -a "$evidence"
+
 "$ROOT_DIR/tools/verify_hagia_policy_physical.sh" "$evidence" "$proof_text"
 SOPHIA_HAGIA_BIN="$hagia_bin" \
+SOPHIA_HAGIA_ROOT="$hagia_root" \
     "$ROOT_DIR/tools/archive_hagia_policy_physical_run.sh" \
     "$evidence" "$proof_text"
 echo "Hagia physical policy gate passed"

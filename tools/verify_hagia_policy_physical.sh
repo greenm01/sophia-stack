@@ -62,6 +62,34 @@ require_line() {
     fi
 }
 
+if [[ "$(grep -Ec '^sophia_hagia_policy_identity schema=1 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64}$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one exact Sophia/Hagia identity" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=[1-9][0-9]* revision=1$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one protected metadata-broker admission" >&2
+    exit 1
+fi
+if ! grep -Eq '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' "$evidence"; then
+    echo "Hagia physical policy evidence lacks a redacted descriptor commit" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one clean metadata-broker shutdown" >&2
+    exit 1
+fi
+if grep -Eq '(protected metadata broker exited|^sophia_live_metadata_broker schema=1 status=failed )' "$evidence"; then
+    echo "Hagia physical policy evidence contains a metadata-broker failure" >&2
+    exit 1
+fi
+broker_ready_line="$(grep -nEm1 '^sophia_live_metadata_broker schema=1 status=ready ' "$evidence" | cut -d: -f1)"
+broker_descriptor_line="$(grep -nEm1 '^sophia_live_metadata_broker schema=1 status=descriptor_committed ' "$evidence" | cut -d: -f1)"
+broker_stopped_line="$(grep -nEm1 '^sophia_live_metadata_broker schema=1 status=stopped ' "$evidence" | cut -d: -f1)"
+if (( broker_ready_line >= broker_descriptor_line || broker_descriptor_line >= broker_stopped_line )); then
+    echo "Hagia metadata-broker lifecycle is not ready -> descriptor -> stopped" >&2
+    exit 1
+fi
+
 require_before "fullscreen action" \
     '^sophia_live_wm schema=1 status=physical_action_committed action=37$'
 require_before "layout-cycle action" \

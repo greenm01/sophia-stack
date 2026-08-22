@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFIER="$ROOT_DIR/tools/verify_mixed_output_evidence.sh"
-FIXTURE="$(mktemp)"
-trap 'rm -f "$FIXTURE"' EXIT
+TEMP_DIR="$(mktemp -d)"
+FIXTURE="$TEMP_DIR/evidence.log"
+trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
 write_fixture() {
     local active="${1:-1}"
@@ -38,6 +39,60 @@ write_fixture() {
 
 write_fixture
 bash "$VERIFIER" "$FIXTURE" DP-2 >/dev/null
+
+sophia_bin="$TEMP_DIR/sophia"
+wm_bin="$TEMP_DIR/sophia-wm-demo"
+cp /usr/bin/true "$sophia_bin"
+cp /usr/bin/false "$wm_bin"
+source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
+wm_sha256="$(sha256sum "$wm_bin" | awk '{ print $1 }')"
+archive_evidence="$TEMP_DIR/archive-evidence.log"
+{
+    printf 'sophia_mixed_output_gate schema=1 status=starting source_commit=%s sophia_sha256=%s wm_sha256=%s heads=3 groups=2\n' \
+        "$source_commit" "$sophia_sha256" "$wm_sha256"
+    cat "$FIXTURE"
+    printf '%s\n' \
+        'sophia_mixed_output_visual schema=1 status=confirmed mirror_content=matched extended_text=sharp resampling=none heads=3 groups=2' \
+        'sophia_mixed_output_gate schema=1 status=passed exit=0'
+} >"$archive_evidence"
+archive_output="$(env \
+    XDG_STATE_HOME="$TEMP_DIR/state" \
+    SOPHIA_MIXED_SOPHIA_BIN="$sophia_bin" \
+    SOPHIA_MIXED_WM_BIN="$wm_bin" \
+    "$ROOT_DIR/tools/archive_mixed_output_physical_run.sh" \
+    "$archive_evidence" DP-2)"
+run_dir="${archive_output##*: }"
+"$ROOT_DIR/tools/verify_mixed_output_physical_archive.sh" "$run_dir" >/dev/null
+
+cp "$run_dir/manifest" "$TEMP_DIR/manifest"
+sed -i \
+    's/^wm_binary_sha256=.*/wm_binary_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/' \
+    "$run_dir/manifest"
+(
+    cd "$run_dir"
+    sha256sum core.kdl desktop-profile.kdl manifest result.kdl session.log >SHA256SUMS
+)
+if "$ROOT_DIR/tools/verify_mixed_output_physical_archive.sh" \
+    "$run_dir" >/dev/null 2>&1; then
+    echo 'Mixed-output archive accepted a WM digest different from its evidence.' >&2
+    exit 1
+fi
+cp "$TEMP_DIR/manifest" "$run_dir/manifest"
+printf '\n// not from the signed source commit\n' >>"$run_dir/desktop-profile.kdl"
+desktop_profile_sha256="$(sha256sum "$run_dir/desktop-profile.kdl" | awk '{ print $1 }')"
+sed -i \
+    "s/^desktop_profile_sha256=.*/desktop_profile_sha256=$desktop_profile_sha256/" \
+    "$run_dir/manifest"
+(
+    cd "$run_dir"
+    sha256sum core.kdl desktop-profile.kdl manifest result.kdl session.log >SHA256SUMS
+)
+if "$ROOT_DIR/tools/verify_mixed_output_physical_archive.sh" \
+    "$run_dir" >/dev/null 2>&1; then
+    echo 'Mixed-output archive accepted a profile outside its signed commit.' >&2
+    exit 1
+fi
 
 write_fixture 0
 if bash "$VERIFIER" "$FIXTURE" DP-2 >/dev/null 2>&1; then

@@ -25,14 +25,31 @@ fi
 
 sophia_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 hagia_commit="$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
+for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; do
+    repo="${repo_and_commit%:*}"
+    commit="${repo_and_commit##*:}"
+    git -C "$repo" verify-commit "$commit" >/dev/null 2>&1 || {
+        echo "Physical-proof HEAD lacks a valid signature: $repo" >&2
+        exit 1
+    }
+    upstream="$(git -C "$repo" rev-parse --verify refs/remotes/origin/master 2>/dev/null || true)"
+    if [[ -z "$upstream" || "$commit" != "$upstream" ]]; then
+        echo "Physical-proof HEAD must equal the locally known origin/master: $repo" >&2
+        echo "  HEAD:          $commit" >&2
+        echo "  origin/master: ${upstream:-missing}" >&2
+        exit 1
+    fi
+done
 hagia_bin="${TMPDIR:-/tmp}/hagia-policy-${hagia_commit:0:12}"
+hagia_nimcache="${TMPDIR:-/tmp}/hagia-policy-nimcache-${hagia_commit:0:12}"
 
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
 echo "Hagia:  $hagia_commit"
 (
     cd "$HAGIA_ROOT"
-    nim c -d:release --path:src -o:"$hagia_bin" src/hagia.nim
+    nim c -d:release --path:src --nimcache:"$hagia_nimcache" \
+        -o:"$hagia_bin" src/hagia.nim
 )
 (
     cd "$ROOT_DIR"
@@ -40,8 +57,34 @@ echo "Hagia:  $hagia_commit"
         --features atomic-scanout-live
 )
 "$hagia_bin" config check
-sha256sum "$hagia_bin"
+
+if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
+    || -n "$(git -C "$HAGIA_ROOT" status --short)" \
+    || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$sophia_commit" \
+    || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$hagia_commit" ]]; then
+    echo "Sophia or Hagia source identity changed during the physical-proof build." >&2
+    exit 1
+fi
+git -C "$ROOT_DIR" verify-commit "$sophia_commit" >/dev/null 2>&1 || {
+    echo "Sophia signature no longer verifies after the build." >&2
+    exit 1
+}
+git -C "$HAGIA_ROOT" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
+    echo "Hagia signature no longer verifies after the build." >&2
+    exit 1
+}
+
+sophia_bin="$ROOT_DIR/target/release/sophia"
+sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
+hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+echo "Sophia binary: $sophia_sha256"
+echo "Hagia binary:  $hagia_sha256"
 
 export SOPHIA_HAGIA_BIN="$hagia_bin"
+export SOPHIA_HAGIA_ROOT="$HAGIA_ROOT"
+export SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT="$sophia_commit"
+export SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT="$hagia_commit"
+export SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256="$sophia_sha256"
+export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256="$hagia_sha256"
 export SOPHIA_LIVE_SESSION_SKIP_BUILD=1
 exec "$ROOT_DIR/tools/start_sophia_hagia_policy_tty4.sh"

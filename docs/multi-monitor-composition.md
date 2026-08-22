@@ -994,9 +994,9 @@ for one logical generation with zero sampled fallback and complete per-head
 retirement. Cross-drawable `CopyArea` remains a named fail-visible fallback and
 is not active work unless a later retained workload reports that cause.
 
-The active critical path is the mixed mirror-plus-extended
-`sophia_output_v1` cutover. Earlier signed candidates committed and visibly
-confirmed that topology. The code-side evidence defect is closed: Engine
+The mixed mirror-plus-extended `sophia_output_v1` cutover and its cable-loss
+recovery are physically complete on their earlier signed candidates. The
+code-side evidence defect is closed: Engine
 classifies realized source and target extents per axis, lowering corrects the
 class after retained-image realization, and the native renderer consumes that
 same class while emitting output/head/scene-keyed evidence. Public chrome also
@@ -1008,10 +1008,18 @@ three-head physical run: the public policy settled two surfaces across two
 logical outputs, the extended head's exact keyed draw retired, post-policy
 presentation released input quarantine, final health and cleanup were clean,
 and visual confirmation passed. The proof is still not promotion-complete
-because head loss and return remain unproved. After that gate completes, mirror
-members must advance at their own refresh rates without releasing a buffer
-before the last head that scanned it retires. The executable slices and exit
-criteria stay ordered in `todo.md`.
+on the current candidate: signed source
+`66bc0dd71a40e249eb00cd98f6080cf0f6aa9c54` subsequently passed the
+three-to-two-to-three head loss/return gate, and mirror members now advance at
+their own refresh rates without releasing a buffer before the last scanning
+head retires. That pacing
+change affects both the two-head mirror and three-head mixed gates, so both need
+fresh signed physical reruns. The mixed runner now archives the raw log, exact
+Sophia and reference-WM digests, signed source commit, and signed-tree
+configuration behind a checksum and standalone verifier. The tty4 critical-path
+runner orders the mirror rerun before the centered mixed rerun and refuses a
+source change between them. The executable slices and exit criteria stay
+ordered in `todo.md`.
 
 ### Target
 

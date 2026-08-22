@@ -461,8 +461,13 @@ portable configuration.
 
 From a logged-in tty4, `tools/hagia-proof` is the one-shot current-checkout
 launcher. It requires clean Sophia and Hagia trees, builds both exact commits
-before takeover, validates the compiled profile, resolves the configured
-terminal and browser executables, and then enters the guarded gate. The
+before takeover, verifies both signatures and their locally known
+`origin/master` identities, validates the compiled profile, resolves the
+configured terminal and browser executables, and then enters the guarded gate.
+The resulting evidence binds both commits and binary digests. Its verifier also
+requires the protected metadata broker to reach ready, commit at least one
+redacted descriptor, and stop cleanly in that order; the archive independently
+rechecks both commit signatures and every cross-record identity. The
 underlying build launcher is `tools/run_current_hagia_policy_gate_tty4.sh`; the
 opt-in installed gate is
 `tools/hagia_policy_physical_gate.sh`. It requires

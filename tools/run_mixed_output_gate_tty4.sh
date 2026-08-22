@@ -308,4 +308,5 @@ fi
 printf 'sophia_mixed_output_visual schema=1 status=confirmed mirror_content=matched extended_text=sharp resampling=none heads=3 groups=2\n' \
     | tee -a "$EVIDENCE"
 printf 'sophia_mixed_output_gate schema=1 status=passed exit=0\n' | tee -a "$EVIDENCE"
+"$ROOT_DIR/tools/archive_mixed_output_physical_run.sh" "$EVIDENCE" "$EXTENDED"
 echo "Verified candidate evidence: $EVIDENCE"

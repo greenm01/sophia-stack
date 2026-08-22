@@ -217,7 +217,26 @@ impl LiveMetadataBroker {
 
 impl Drop for LiveMetadataBroker {
     fn drop(&mut self) {
-        let _ = self.transport.disconnect();
-        let _ = self.supervisor.terminate();
+        let transport_stopped = self.transport.disconnect().is_ok();
+        let process_stopped = self.supervisor.terminate().is_ok();
+        if transport_stopped && process_stopped {
+            println!(
+                "sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated"
+            );
+        } else {
+            eprintln!(
+                "sophia_live_metadata_broker schema=1 status=failed stage=shutdown transport={} process={}",
+                if transport_stopped {
+                    "disconnected"
+                } else {
+                    "failed"
+                },
+                if process_stopped {
+                    "terminated"
+                } else {
+                    "failed"
+                },
+            );
+        }
     }
 }

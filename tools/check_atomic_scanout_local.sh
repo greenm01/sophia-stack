@@ -74,6 +74,8 @@ bash -n tools/run_mirror_group_gate_tty4.sh \
 tools/check_mirror_group_physical_verifier.sh
 bash -n tools/run_mixed_output_gate_tty4.sh \
     tools/verify_mixed_output_evidence.sh \
+    tools/archive_mixed_output_physical_run.sh \
+    tools/verify_mixed_output_physical_archive.sh \
     tools/test_verify_mixed_output_evidence.sh
 bash tools/test_verify_mixed_output_evidence.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
@@ -337,7 +339,10 @@ bash -n tools/installed/sophia-hagia-session \
     tools/check_installed_hagia_ledger.sh \
     tools/hagia_policy_physical_gate.sh \
     tools/verify_hagia_policy_physical.sh \
-    tools/archive_hagia_policy_physical_run.sh
+    tools/archive_hagia_policy_physical_run.sh \
+    tools/verify_hagia_policy_physical_archive.sh \
+    tools/run_current_hagia_policy_gate_tty4.sh \
+    tools/run_current_critical_path_tty4.sh
 tools/check_installed_hagia_ledger.sh
 grep -Fq 'hagia-policy) tools/hagia_policy_physical_gate.sh' \
     tools/start_sophia_tty3.sh

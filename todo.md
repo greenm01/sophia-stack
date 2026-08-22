@@ -78,14 +78,18 @@ promotion gate.
 2. **Current.** Let mirror heads pace independently while preserving
    primary-owned Present completion and last-head buffer retirement, then
    re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
-   clean signed mirror and mixed-output reruns remain the promotion gate.
+   the mixed gate now writes a signature-checked archive containing both exact
+   binaries and its signed configuration. Clean signed mirror and mixed-output
+   reruns remain the promotion gate.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
    production Hagia host, executable isolation smoke, and the role socket's
    refusal to admit a metadata-bearing peer without launch evidence all pass
-   locally; retain a real-session proof after the physical display gate before
-   calling this row promoted.
+   locally. The physical verifier now requires the real protected broker's
+   ready, redacted-descriptor, and clean-stop lifecycle plus signed Sophia and
+   Hagia source/binary identities; retain that run after the display gates
+   before calling this row promoted.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -104,14 +108,21 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Re-run the affected physical display gates on one clean signed
-   candidate.** Run the two-head mirror gate first, then the three-head
-   mixed-output gate under `--optimize-for=center-unscaled`. The latter must
-   show both mirror heads pixel-exact inside their borders and a focus ring that
-   stays on the output owning the window. The window-chrome defect that exposed
-   this topology is closed: reconciliation carries outer and content projections
-   separately, applies clearance before layout-epoch reconciliation, and commits
-   only the outer value. These runs close active critical-path row 2.
+1. **Run the signed physical sequence from tty4.**
+   `tools/run_current_critical_path_tty4.sh` checks that both repositories are
+   clean, signed, and synchronized with their locally known `origin/master`,
+   then prompts for each cable state. It runs the two-head mirror gate, the
+   three-head mixed gate under `--optimize-for=center-unscaled`, and only after
+   both display gates pass, the two-head Hagia/broker gate. Each passing gate
+   writes and re-verifies a durable archive. The mixed run must show both mirror
+   heads pixel-exact inside their borders and a focus ring that stays on the
+   output owning the window. The first two runs close row 2; the final run closes
+   row 3.
+2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
+   Assemble Hagia's existing bounded indicator/status projection into Engine's
+   production chrome display list, add target-resolved input and work-area
+   reservation, and retain deterministic display-list and interaction evidence
+   before another physical promotion candidate.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
