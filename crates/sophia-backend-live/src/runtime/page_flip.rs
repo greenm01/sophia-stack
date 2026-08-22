@@ -13,6 +13,10 @@ where
         self.primary_output_state().page_flip_event
     }
 
+    // Gated to match its only caller. `production_session::native_scanout` is
+    // compiled under these two features, so without them this method has no
+    // consumer and reads as dead code -- which is what it was being reported as.
+    #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
     pub(crate) fn set_page_flip_observation(&mut self, event: LivePageFlipEvent) {
         self.primary_output_state_mut().page_flip_event = event;
     }
@@ -107,6 +111,10 @@ where
     /// connectors. The group coordinator must join those callbacks before the
     /// Engine can observe `Presented`; the ordinary queue drain publishes each
     /// accepted callback immediately and is therefore only correct for one head.
+    // Same gate as above, plus `test`: the module at the foot of this file
+    // exercises it whatever features are selected, so gating on the features
+    // alone would delete it out from under its own tests.
+    #[cfg(any(test, all(feature = "libdrm-events", feature = "gbm-probe")))]
     pub(crate) fn drain_mirror_page_flip_callback_queue(
         &mut self,
     ) -> LivePageFlipCallbackQueueReport {
