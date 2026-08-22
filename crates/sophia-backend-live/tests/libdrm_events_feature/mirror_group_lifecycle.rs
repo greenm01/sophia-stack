@@ -83,6 +83,41 @@ fn lagging_head_coalesces_to_the_newest_generation() {
 }
 
 #[test]
+fn ordinary_successor_waits_until_the_primary_owns_a_present_generation() {
+    let present = LiveProductionNativeFrameId::from_raw(77);
+    let transaction = TransactionId::from_raw(574);
+    let content = LiveProductionScanoutContent::MixedPresent {
+        frame: present,
+        transaction,
+        nonzero_rgb_pixels: 0,
+    };
+
+    assert_eq!(
+        reduce_live_production_mirror_generation_queue(Some(present), None, Some(content)),
+        LiveProductionMirrorGenerationQueue::DeferUntilPrimarySubmission
+    );
+    assert_eq!(
+        reduce_live_production_mirror_generation_queue(
+            Some(present),
+            Some(present),
+            Some(content)
+        ),
+        LiveProductionMirrorGenerationQueue::Install
+    );
+    assert_eq!(
+        reduce_live_production_mirror_generation_queue(
+            Some(present),
+            None,
+            Some(LiveProductionScanoutContent::RetainedMixed {
+                frame: present,
+                nonzero_rgb_pixels: 0,
+            })
+        ),
+        LiveProductionMirrorGenerationQueue::Install
+    );
+}
+
+#[test]
 fn mirror_group_rejects_unknown_stale_and_duplicate_work() {
     let output = OutputId::from_raw(7);
     let first = LiveProductionNativeFrameId::from_raw(41);

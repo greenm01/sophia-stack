@@ -375,6 +375,33 @@ pub enum LiveProductionScanoutContent {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionMirrorGenerationQueue {
+    Install,
+    DeferUntilPrimarySubmission,
+}
+
+/// Keeps an unsubmitted Present generation from being silently coalesced.
+///
+/// Once the primary owns the generation, a successor may advance normally:
+/// the primary will produce logical presentation and any lagging secondary can
+/// skip directly to the successor. Before that point, replacing the generation
+/// would leave the Present scheduler waiting for pixels no head can submit.
+pub fn reduce_live_production_mirror_generation_queue(
+    active_frame: Option<LiveProductionNativeFrameId>,
+    primary_owned_frame: Option<LiveProductionNativeFrameId>,
+    active_content: Option<LiveProductionScanoutContent>,
+) -> LiveProductionMirrorGenerationQueue {
+    match (active_frame, active_content) {
+        (Some(active), Some(LiveProductionScanoutContent::MixedPresent { frame, .. }))
+            if frame == active && primary_owned_frame != Some(active) =>
+        {
+            LiveProductionMirrorGenerationQueue::DeferUntilPrimarySubmission
+        }
+        _ => LiveProductionMirrorGenerationQueue::Install,
+    }
+}
+
 impl LiveProductionScanoutContent {
     pub const fn frame(self) -> LiveProductionNativeFrameId {
         match self {

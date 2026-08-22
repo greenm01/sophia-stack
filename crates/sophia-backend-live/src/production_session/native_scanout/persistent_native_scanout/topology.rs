@@ -2490,6 +2490,7 @@ impl LiveProductionNativeScanout {
         self.output_callbacks = receivers;
         self.output_lifecycles = lifecycles;
         self.output_cohorts.clear();
+        self.deferred_mirror_generations.clear();
         self.production_page_flips = crate::LiveProductionPageFlipTracker::from_outputs(&registry);
         self.kernel_page_flip_ust.clear();
         Ok(logical_outputs)

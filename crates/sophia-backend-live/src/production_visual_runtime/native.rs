@@ -687,6 +687,7 @@ impl LiveProductionVisualRuntime {
                                 .resources_mut()
                                 .mark_submitted(transaction)?;
                         }
+                        native_scanout.activate_deferred_mirror_generation(selected_output)?;
                     }
                     LiveProductionNativeSubmissionOwner::InvalidDmaOwnership => {
                         return Err(

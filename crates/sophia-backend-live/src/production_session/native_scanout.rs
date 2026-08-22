@@ -72,6 +72,10 @@ mod persistent_native_scanout {
             (OutputId, LiveProductionNativeFrameId),
             sophia_engine::OutputPresentationCohort,
         >,
+        /// Latest ordinary successor held behind a Present generation until
+        /// the primary head owns that Present in KMS.
+        deferred_mirror_generations:
+            BTreeMap<OutputId, renderer_images::LiveProductionQueuedMirrorGeneration>,
         /// Candidate and rollback owners for one live output-topology effect.
         /// Ordinary frame scheduling is quarantined while this is present.
         output_topology_preparation: Option<LiveProductionNativeTopologyPreparation>,
@@ -648,6 +652,7 @@ mod persistent_native_scanout {
                 output_callbacks,
                 output_lifecycles,
                 output_cohorts: BTreeMap::new(),
+                deferred_mirror_generations: BTreeMap::new(),
                 output_topology_preparation: None,
                 output_topology_cleanup: Vec::new(),
                 head_table,
@@ -2200,6 +2205,7 @@ mod persistent_native_scanout {
                 .into());
             }
             trace_live_native_lifecycle("displayed_scanout_owner_released");
+            self.deferred_mirror_generations.remove(&output);
             for ((cohort_output, frame), _) in self
                 .output_cohorts
                 .iter()
@@ -2809,23 +2815,24 @@ mod persistent_native_scanout {
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
     LiveProductionCpuFrameQueueStatus, LiveProductionHeadCompositionFrame,
-    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
-    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
-    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
-    LiveProductionNativeTopologyApplyCoordinator, LiveProductionNativeTopologyApplyPhase,
-    LiveProductionNativeTopologyApplyTransition, LiveProductionNativeTopologyCandidateResource,
-    LiveProductionNativeTopologyCurrentHead, LiveProductionNativeTopologyDisposition,
-    LiveProductionNativeTopologyHeadPlan, LiveProductionNativeTopologyPlan,
-    LiveProductionNativeTopologyPlanError, LiveProductionNativeTopologyPreparationPhase,
-    LiveProductionNativeTopologyPreparationReport, LiveProductionNativeTopologyResourceCohort,
-    LiveProductionNativeTopologyResourceRejection, LiveProductionNativeTopologyResourceTransition,
-    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
-    LiveProductionScanoutContent, LiveProductionSemanticStartupBarrier,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, live_topology_frame_renderer_image_requirements,
-    plan_live_production_native_topology, project_live_production_published_topology,
-    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
+    LiveProductionMirrorGenerationQueue, LiveProductionMirrorGroupBegin,
+    LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
+    LiveProductionNativeFrameId, LiveProductionNativeFrameRetirement, LiveProductionNativeHead,
+    LiveProductionNativeScanout, LiveProductionNativeTopologyApplyCoordinator,
+    LiveProductionNativeTopologyApplyPhase, LiveProductionNativeTopologyApplyTransition,
+    LiveProductionNativeTopologyCandidateResource, LiveProductionNativeTopologyCurrentHead,
+    LiveProductionNativeTopologyDisposition, LiveProductionNativeTopologyHeadPlan,
+    LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
+    LiveProductionNativeTopologyPreparationPhase, LiveProductionNativeTopologyPreparationReport,
+    LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
+    LiveProductionNativeTopologyResourceTransition, LiveProductionPageFlipWatchdogStatus,
+    LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
+    LiveProductionSemanticStartupBarrier, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
+    project_live_production_published_topology, project_mirror_output_damage_snapshot,
+    project_native_cursor_logical_viewport, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_head_render_target, reduce_live_production_mirror_generation_queue,
     reduce_live_production_page_flip_watchdog, reduce_live_production_semantic_startup_barrier,
     validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
     validate_live_production_topology_frames,

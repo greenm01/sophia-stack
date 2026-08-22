@@ -1015,22 +1015,24 @@ their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
 fresh signed physical reruns. Signed source
-`598fd27a76d538af682416ec1939260fd65690bd` produced verified mirror archive
-`0002`: both independently paced heads presented one logical checksum, the
+`b21b7692df82096e24ccd652d293c5f0527517d3` produced verified mirror archive
+`0003`: both independently paced heads presented one logical checksum, the
 primary owned logical presentation, and the last head released the generation
-before clean shutdown. The immediately following mixed run proved the earlier
-metadata-rule lifecycle fix, then found that recovery reconciliation used the
-outer work area after chrome had converted the proposal to content geometry.
-A 2558-by-1438 recovery extent therefore expanded to 2562 by 1442 when chrome
-was restored, and the policy reducer correctly rejected it. Engine now exposes
-the inset content bounds, and both WM paths reconcile against them. That fix
-again changes the executable, so mirror and mixed must be repeated together on
-the next signed candidate. The mixed runner archives the raw log, exact Sophia
-and reference-WM digests, signed source commit, and signed-tree configuration
-behind a checksum and standalone verifier. The tty4 critical-path runner orders
-the mirror rerun before the centered mixed rerun and refuses a source change
-between them. The executable slices and exit criteria stay ordered in
-`todo.md`.
+before clean shutdown. The immediately following mixed run proved metadata
+retirement and chrome reconciliation, then reached the committed two-output
+topology. There, mirror coalescing replaced Present frame 77 with ordinary
+frames before the primary submitted it. Native ownership released frame 77,
+but the Present scheduler still expected it and correctly rejected the later
+retained submission as unrelated. An unsubmitted Present generation now stays
+active while one latest ordinary successor waits behind it. Once the primary
+owns the Present in KMS, the successor advances and lagging heads may skip to
+it. That fix again changes the executable, so mirror and mixed must be repeated
+together on the next signed candidate. The mixed runner archives the raw log,
+exact Sophia and reference-WM digests, signed source commit, and signed-tree
+configuration behind a checksum and standalone verifier. The tty4 critical-
+path runner orders the mirror rerun before the centered mixed rerun and refuses
+a source change between them. The executable slices and exit criteria stay
+ordered in `todo.md`.
 
 ### Target
 

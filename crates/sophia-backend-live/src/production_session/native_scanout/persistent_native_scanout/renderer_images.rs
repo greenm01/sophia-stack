@@ -301,6 +301,27 @@ impl LiveProductionNativeScanout {
             })
     }
 
+    fn mirror_generation_content(
+        &self,
+        output: OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) -> Option<LiveProductionScanoutContent> {
+        self.head_indices(output)
+            .into_iter()
+            .find_map(|head_index| {
+                let head = &self.heads[head_index];
+                [
+                    head.pending_content,
+                    head.rendering_content,
+                    head.submitted_content,
+                    head.presented_content,
+                ]
+                .into_iter()
+                .flatten()
+                .find(|content| content.frame() == frame)
+            })
+    }
+
     fn install_mirror_generation(
         &mut self,
         generation: LiveProductionQueuedMirrorGeneration,
@@ -392,10 +413,34 @@ impl LiveProductionNativeScanout {
     ) -> Result<(), &'static str> {
         let output = generation.output;
         let frame = generation.frame;
-        let previous = self
+        let lifecycle = self
             .output_lifecycles
             .get(&output)
-            .and_then(LiveProductionMirrorGroupLifecycle::active_frame);
+            .ok_or("mirror generation targets an unregistered output")?;
+        let previous = lifecycle.active_frame();
+        let primary_owned = lifecycle
+            .logically_submitted_frame()
+            .or_else(|| lifecycle.displayed_frame(lifecycle.primary_head()));
+        let active_content =
+            previous.and_then(|frame| self.mirror_generation_content(output, frame));
+        if reduce_live_production_mirror_generation_queue(previous, primary_owned, active_content)
+            == LiveProductionMirrorGenerationQueue::DeferUntilPrimarySubmission
+        {
+            let replaced = self
+                .deferred_mirror_generations
+                .insert(output, generation)
+                .map(|generation| generation.frame);
+            tracing::info!(
+                "sophia_live_mirror_pacing schema=1 status=deferred output={} frame={} blocked_by={} replaced={}",
+                output.raw(),
+                frame.raw(),
+                previous
+                    .expect("deferred generation has an active predecessor")
+                    .raw(),
+                replaced.map_or_else(|| "none".to_owned(), |frame| frame.raw().to_string()),
+            );
+            return Ok(());
+        }
         self.install_mirror_generation(
             generation,
             if previous.is_some() {
@@ -413,6 +458,22 @@ impl LiveProductionNativeScanout {
             );
         }
         Ok(())
+    }
+
+    pub fn activate_deferred_mirror_generation(
+        &mut self,
+        output: OutputId,
+    ) -> Result<bool, &'static str> {
+        let Some(generation) = self.deferred_mirror_generations.remove(&output) else {
+            return Ok(false);
+        };
+        let frame = generation.frame;
+        self.queue_mirror_generation(generation)?;
+        Ok(self
+            .output_lifecycles
+            .get(&output)
+            .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
+            == Some(frame))
     }
 
     pub fn queue_present_cpu_frame(

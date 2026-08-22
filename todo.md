@@ -79,14 +79,16 @@ promotion gate.
    primary-owned Present completion and last-head buffer retirement, then
    re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
    the mixed gate now writes a signature-checked archive containing both exact
-   binaries and its signed configuration. Mirror archive `0002` passed and
+   binaries and its signed configuration. Mirror archive `0003` passed and
    independently re-verified on signed source
-   `598fd27a76d538af682416ec1939260fd65690bd`. The following mixed run proved
-   the short-lived metadata target retires cleanly, then exposed chrome
-   reconciliation against the outer work area instead of its inset content
-   bounds. Both WM paths now use Engine's content bounds, with the physical
-   2560-by-1440 case retained as a regression. A fresh signed sequence remains
-   the promotion gate because that fix changes the Sophia executable.
+   `b21b7692df82096e24ccd652d293c5f0527517d3`. The following mixed run proved
+   chrome reconciliation and reached the committed two-output topology. It
+   then exposed a Present generation that native mirror coalescing released
+   before its primary head submitted while the Present scheduler retained its
+   owner. An unsubmitted Present now pins the active generation; only the latest
+   ordinary successor waits behind it until the primary owns the Present. A
+   fresh signed sequence remains the promotion gate because that fix changes
+   the Sophia executable.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
@@ -123,11 +125,11 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    writes and re-verifies a durable archive. The mixed run must show both mirror
    heads pixel-exact inside their borders and a focus ring that stays on the
    output owning the window. The first two runs close row 2; the final run closes
-   row 3. The last sequence produced verified mirror archive `0002`; its mixed
-   run then proved stale metadata retirement and stopped when a 2558-by-1438
-   admission extent, plus two pixels of chrome on each edge, escaped the
-   2560-by-1440 work area. Reconciliation now happens inside the inset content
-   bounds. All three gates must be rerun on that signed executable.
+   row 3. The last sequence produced verified mirror archive `0003`; its mixed
+   run proved chrome reconciliation, then stopped when mirror coalescing
+   displaced Present frame 77 before primary submission. Native scheduling now
+   holds the latest ordinary successor behind that Present instead of silently
+   releasing its frame. All three gates must be rerun on the signed executable.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area
