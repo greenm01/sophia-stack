@@ -79,16 +79,16 @@ promotion gate.
    primary-owned Present completion and last-head buffer retirement, then
    re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
    the mixed gate now writes a signature-checked archive containing both exact
-   binaries and its signed configuration. Mirror archive `0005` passed and
+   binaries and its signed configuration. Mirror archive `0006` passed and
    independently re-verified on signed source
-   `f085774a7bf755b0ecd4b97d9396112db5950a65`. Its following mixed run proved
-   that requested region evidence refreshes the persistent per-head light
-   proof: all three heads had nonzero exports, balanced asynchronous retirement,
-   and verified native completion after the Present deferral. The session then
-   refused its clean control drain because one expected stale metadata target
-   remained in the aggregate rejection count. Stale targets now have a separate
-   terminal count; true rejections remain fatal. A fresh signed sequence remains
-   the promotion gate because that correction changes the Sophia executable.
+   `231847abefca878e2aa40794f902ac28468df447`. Its following mixed run exposed
+   one more output-local Present phase error. Output 2 had submitted and retired
+   its reserved Present frame, but output 1 still kept the transaction cohort
+   alive. Output 2's next ordinary topology repaint was therefore compared with
+   a Present obligation it had already discharged and rejected. Submission
+   ownership now asks for the output's unsubmitted frame, not merely the whole
+   cohort's in-flight frame. A fresh signed sequence remains the promotion gate
+   because that correction changes the Sophia executable.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
@@ -125,12 +125,11 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    writes and re-verifies a durable archive. The mixed run must show both mirror
    heads pixel-exact inside their borders and a focus ring that stays on the
    output owning the window. The first two runs close row 2; the final run closes
-   row 3. The last sequence produced verified mirror archive `0005`; its mixed
-   run proved the late per-head light fix, pinned-Present ordering, and clean
-   three-head native completion. It stopped only because the terminal control
-   ledger counted an intentionally retired stale metadata target as rejection
-   debt. That accounting is corrected locally. All three gates must be rerun on
-   the signed executable.
+   row 3. The last sequence produced verified mirror archive `0006`; its mixed
+   run stopped when output 2's ordinary repaint was compared with the live
+   transaction cohort after output 2 had already submitted and retired its own
+   Present frame. The ownership query is corrected locally. All three gates
+   must be rerun on the signed executable.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area

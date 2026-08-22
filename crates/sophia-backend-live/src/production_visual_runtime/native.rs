@@ -670,7 +670,7 @@ impl LiveProductionVisualRuntime {
                     .ok_or("native submit did not retain its content identity")?;
                 let expected_present = self
                     .present_scheduler
-                    .in_flight_frame(selected_output)
+                    .unsubmitted_frame(selected_output)
                     .zip(self.present_scheduler.in_flight_transaction());
                 match reduce_live_production_native_submission_owner(
                     submitted_content,

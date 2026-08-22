@@ -560,6 +560,20 @@ impl LiveProductionPresentScheduler {
         }
     }
 
+    /// Returns the frame whose first KMS submission this output still owes.
+    /// Other outputs may keep the Present cohort alive after this output has
+    /// acquired KMS ownership, but their wait must not block its later frames.
+    pub fn unsubmitted_frame(
+        &self,
+        output: sophia_protocol::OutputId,
+    ) -> Option<LiveProductionNativeFrameId> {
+        if self.submitted_frame(output).is_some() {
+            None
+        } else {
+            self.in_flight_frame(output)
+        }
+    }
+
     pub fn in_flight_displayed_layer(
         &self,
     ) -> Option<(SurfaceId, &crate::LiveRetainedRendererImageLayer)> {

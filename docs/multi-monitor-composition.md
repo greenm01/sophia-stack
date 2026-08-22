@@ -1015,24 +1015,23 @@ their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
 fresh signed physical reruns. Signed source
-`f085774a7bf755b0ecd4b97d9396112db5950a65` produced verified mirror archive
-`0005`: both independently paced heads presented one logical checksum, the
+`231847abefca878e2aa40794f902ac28468df447` produced verified mirror archive
+`0006`: both independently paced heads presented one logical checksum, the
 primary owned logical presentation, and the last head released the generation
-before clean shutdown. The immediately following mixed run proved the late
-pixel fix. Its three physical heads reported nonzero exports and balanced
-asynchronous submissions, callbacks, and retirements; native completion
-verified all three after the pinned Present reached KMS ahead of its deferred
-ordinary successor.
+before clean shutdown. The immediately following mixed run committed and
+settled the three-head topology, then exposed an output-local Present phase
+error. Output 2 submitted and retired Present frame 56 while output 1 still held
+frame 55 for the same transaction. Output 2 then submitted ordinary topology
+repaint frame 60. The ownership check consulted the transaction's in-flight
+frame, which remains present until the entire cohort retires, and wrongly
+treated frame 60 as a replacement for frame 56.
 
-The run stopped after native completion because one short-lived surface left
-before its metadata rule arrived. The owner correctly retired that expected
-stale target, but the terminal aggregate still counted every non-delivery as a
-rejection and therefore refused an otherwise clean `19/19/18` control ledger.
-Stale target acknowledgements now have a distinct terminal count. Clean drain
-requires dispatched controls to equal delivered plus stale-retired controls,
-while any true rejection remains fatal. This changes the executable, so mirror
-and mixed must be repeated together on the next signed candidate. The mixed
-runner archives the raw log,
+Submission ownership now consults the output's unsubmitted frame. Once one
+output has acquired KMS ownership for its Present frame, later ordinary frames
+on that output remain independent while other outputs finish the cohort. A
+tagged Present with no matching unsubmitted reservation still fails closed.
+This changes the executable, so mirror and mixed must be repeated together on
+the next signed candidate. The mixed runner archives the raw log,
 exact Sophia and reference-WM digests, signed source commit, and signed-tree
 configuration behind a checksum and standalone verifier. The tty4 critical-
 path runner orders the mirror rerun before the centered mixed rerun and refuses

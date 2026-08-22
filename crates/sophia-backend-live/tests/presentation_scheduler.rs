@@ -239,7 +239,17 @@ fn submitted_present_joins_outputs_after_independent_submission_and_retirement()
     assert_eq!(scheduler.mark_output_submitted(output_a).unwrap(), None);
     assert!(scheduler.submitted_frame(output_a).is_some());
     assert_eq!(scheduler.submitted_frame(output_b), None);
+    assert_eq!(scheduler.unsubmitted_frame(output_a), None);
+    assert_eq!(
+        scheduler.unsubmitted_frame(output_b),
+        Some(LiveProductionNativeFrameId::from_raw(2))
+    );
     assert_eq!(scheduler.mark_output_retired(output_a, 900).unwrap(), None);
+    assert_eq!(scheduler.unsubmitted_frame(output_a), None);
+    assert_eq!(
+        scheduler.unsubmitted_frame(output_b),
+        Some(LiveProductionNativeFrameId::from_raw(2))
+    );
     assert_eq!(
         scheduler.mark_output_submitted(output_b).unwrap(),
         Some(transaction)
