@@ -14,7 +14,6 @@ runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-660000}"
 sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-600000}"
 evidence="${SOPHIA_HAGIA_PHYSICAL_EVIDENCE:-/tmp/sophia-hagia-policy-physical.log}"
 proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"
-restart_marker="${evidence}.restart"
 guide="${SOPHIA_HAGIA_PHYSICAL_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_physical_guide.sh}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 source_commit="${SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT:-}"
@@ -108,13 +107,6 @@ echo "  4. Press Super+Y, Super+N, Super+M twice, Super+I, Super+R, Super+Left, 
 echo "  5. Only after step 4, type '$proof_text' and press Enter."
 echo "     The phrase is the final signal and ends the session immediately."
 
-rm -f "$restart_marker"
-trap 'rm -f "$restart_marker"' EXIT
-
-SOPHIA_HAGIA_BIN="$hagia_bin" \
-SOPHIA_HAGIA_RESTART_MARKER="$restart_marker" \
-SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37 \
-SOPHIA_HAGIA_RESTART_AFTER_ACTION=66 \
 SOPHIA_LIVE_SESSION_DISPLAY="$display" \
 SOPHIA_LIVE_SESSION_RUNTIME_MSEC="$runtime_msec" \
 SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
@@ -135,8 +127,9 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     --session-app-arg=terminal=--override \
     --session-app-arg=terminal=remember_window_size=no \
     "--session-app-arg=terminal=$guide" \
-    "--wm-process=$ROOT_DIR/tools/fixtures/hagia_restart_once.sh" \
+    "--wm-process=$hagia_bin" \
     --wm-interface=sophia_wm_v1 \
+    --wm-proof-restart-after-action=66 \
     "--input-seat=$seat" \
     "--expect-physical-text=$proof_text" \
     "--physical-sequence-timeout-ms=$sequence_timeout_msec" \

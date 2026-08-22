@@ -67,6 +67,32 @@ enum PublicPolicyFaultPoint {
     TerminalOutcomeQueued,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PolicyCheckpointIdentity {
+    device: u64,
+    inode: u64,
+}
+
+fn policy_checkpoint_identity(
+    path: &std::path::Path,
+) -> Result<Option<PolicyCheckpointIdentity>, std::io::Error> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => Ok(Some(PolicyCheckpointIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn policy_checkpoint_replaced(
+    before: Option<PolicyCheckpointIdentity>,
+    current: Option<PolicyCheckpointIdentity>,
+) -> bool {
+    current.is_some() && before != current
+}
+
 impl PublicPolicyFaultPoint {
     fn parse(value: &str) -> Result<Self, Box<dyn std::error::Error>> {
         match value {
@@ -136,6 +162,9 @@ struct LivePublicPolicyState {
     transport_unavailable: bool,
     proof_fault_after: Option<PublicPolicyFaultPoint>,
     proof_fault_triggered: bool,
+    proof_restart_after_action: Option<WmActionId>,
+    proof_restart_checkpoint_before: Option<Option<PolicyCheckpointIdentity>>,
+    proof_restart_triggered: bool,
 }
 
 struct PreparedPublicPolicyLaunch {
@@ -1877,6 +1906,9 @@ impl LiveWmSession {
             transport_unavailable: false,
             proof_fault_after: config.wm_public_fault_after,
             proof_fault_triggered: false,
+            proof_restart_after_action: config.wm_public_restart_after_action,
+            proof_restart_checkpoint_before: None,
+            proof_restart_triggered: false,
         };
         public.queue.push_back(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,
@@ -2242,6 +2274,7 @@ impl LiveWmSession {
         if self.degraded {
             return Ok(None);
         }
+        self.poll_public_proof_restart()?;
         let restart_requested = self.force_transport_restart;
         let process_exited = self.supervisor.poll()?.is_some();
         let settlement_pending = public_policy_restart_settlement_pending(
@@ -2551,6 +2584,30 @@ impl LiveWmSession {
             );
         }
         trigger
+    }
+
+    fn poll_public_proof_restart(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(public) = self.public.as_mut() else {
+            return Ok(());
+        };
+        let Some(before) = public.proof_restart_checkpoint_before else {
+            return Ok(());
+        };
+        let current = policy_checkpoint_identity(&public.checkpoint_path)?;
+        if !policy_checkpoint_replaced(before, current) {
+            return Ok(());
+        }
+        let action = public
+            .proof_restart_after_action
+            .expect("an armed checkpoint restart has an action");
+        public.proof_restart_checkpoint_before = None;
+        public.proof_restart_triggered = true;
+        self.request_transport_restart("public_policy_checkpoint_proof", None);
+        println!(
+            "sophia_live_wm schema=4 status=proof_restart_triggered adapter=sophia_wm_v1 phase=checkpoint_saved action={} preserved_layout=true",
+            action.raw(),
+        );
+        Ok(())
     }
 
     fn public_settlement_abort_required(&self) -> bool {

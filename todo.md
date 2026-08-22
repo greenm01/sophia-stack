@@ -75,21 +75,15 @@ promotion gate.
    prove head loss and return on a signed candidate. Signed mixed-output source
    `3d19e2e67cfe2e43eb643d219be11a3251fe7176` and signed head-loss/return
    source `66bc0dd71a40e249eb00cd98f6080cf0f6aa9c54` passed their physical gates.
-2. **Current.** Let mirror heads pace independently while preserving
+2. **Complete.** Let mirror heads pace independently while preserving
    primary-owned Present completion and last-head buffer retirement, then
-   re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
-   the mixed gate now writes a signature-checked archive containing both exact
-   binaries and its signed configuration. Mirror archive `0006` passed and
-   independently re-verified on signed source
-   `231847abefca878e2aa40794f902ac28468df447`. Its following mixed run exposed
-   one more output-local Present phase error. Output 2 had submitted and retired
-   its reserved Present frame, but output 1 still kept the transaction cohort
-   alive. Output 2's next ordinary topology repaint was therefore compared with
-   a Present obligation it had already discharged and rejected. Submission
-   ownership now asks for the output's unsubmitted frame, not merely the whole
-   cohort's in-flight frame. A fresh signed sequence remains the promotion gate
-   because that correction changes the Sophia executable.
-3. **Locally implemented behind step 2.** Host the metadata-reduction chain
+   re-run the affected physical gates. Signed source
+   `e946cc725bf731515a477c86e9a575554965418c` produced and independently
+   re-verified mirror archive `0007` and mixed archive `0001`. Both mirror heads
+   paced independently, the primary owned Present completion, the last scanning
+   head owned release, and the mixed topology finished with clean health and
+   output-local Present submission ownership.
+3. **Current.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
    production Hagia host, executable isolation smoke, and the role socket's
@@ -97,7 +91,13 @@ promotion gate.
    locally. The physical verifier now requires the real protected broker's
    ready, redacted-descriptor, and clean-stop lifecycle plus signed Sophia and
    Hagia source/binary identities; retain that run after the display gates
-   before calling this row promoted.
+   before calling this row promoted. The first run on the row-2 candidate
+   stopped before Kitty appeared because its old restart wrapper depended on
+   ambient variables and the host `/tmp`, both correctly absent from the
+   protected policy domain. The gate now launches Hagia directly. A bounded
+   proof flag arms on committed action 66 and asks the session-owned supervisor
+   for one replacement only after Hagia atomically replaces its private
+   checkpoint; Sophia observes the checkpoint inode, not its contents.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -116,7 +116,7 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Run the signed physical sequence from tty4.**
+1. **Sign the restart-harness correction, then run the physical sequence from tty4.**
    `tools/run_current_critical_path_tty4.sh` checks that both repositories are
    clean, signed, and synchronized with their locally known `origin/master`,
    then prompts for each cable state. It runs the two-head mirror gate, the
@@ -125,11 +125,12 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    writes and re-verifies a durable archive. The mixed run must show both mirror
    heads pixel-exact inside their borders and a focus ring that stays on the
    output owning the window. The first two runs close row 2; the final run closes
-   row 3. The last sequence produced verified mirror archive `0006`; its mixed
-   run stopped when output 2's ordinary repaint was compared with the live
-   transaction cohort after output 2 had already submitted and retired its own
-   Present frame. The ownership query is corrected locally. All three gates
-   must be rerun on the signed executable.
+   row 3. The last sequence produced verified mirror archive `0007` and mixed
+   archive `0001` on `e946cc725bf731515a477c86e9a575554965418c`, closing row 2.
+   Its Hagia gate then exposed the restart wrapper's dependence on state hidden
+   by Bubblewrap. The replacement is session-owned and local. Because it
+   changes the Sophia executable, all three gates must run on the next signed
+   candidate before row 3 is promoted.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area
@@ -1380,7 +1381,7 @@ surface), then per-head pacing (model first), then mode matching (its own gate
 run). Correct pacing outranks sharper mirroring: the first is wrong on ordinary
 hardware, the second only decides which screen looks best.
 
-- [ ] Let a mirror group's heads flip at their own refresh rates. One generation
+- [x] Let a mirror group's heads flip at their own refresh rates. One generation
   is held until every required head has flipped
   (`LiveProductionMirrorGroupLifecycle` completes on the `flipped` set covering
   `required`), so mirroring 144Hz beside 60Hz would run both at 60. Mixed
@@ -1407,11 +1408,10 @@ hardware, the second only decides which screen looks best.
   mixed verifiers require ordered `primary_presented -> released` evidence, and
   their visual prompts judge convergence only after motion settles. Engine,
   backend feature, verifier-fixture, and TLA checks are local prerequisites;
-  signed source `e0f43071103febb40ea16c948a9a16f4230df430` passed mirror
-  archive `0001`, including the ordered primary-presentation/last-head-release
-  proof. This item stays open until the changed executable repeats that mirror
-  proof and a clean signed mixed physical run proves the implementation on real
-  mismatched heads.
+  signed source `e946cc725bf731515a477c86e9a575554965418c` passed and
+  independently re-verified mirror archive `0007` and mixed archive `0001`,
+  including ordered primary-presentation/last-head-release evidence on the real
+  mismatched topology.
 - [x] Make the optimized head a property of a mirror group, as macOS does. The
   choice turned out to be expressible already: a group proposal carries one
   logical rect and a mapping per member, so optimizing for a head is sizing the

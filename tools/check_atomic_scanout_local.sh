@@ -359,9 +359,9 @@ grep -Fq 'runtime_msec="${SOPHIA_HAGIA_PHYSICAL_RUNTIME_MSEC:-660000}"' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'sequence_timeout_msec="${SOPHIA_HAGIA_PHYSICAL_SEQUENCE_TIMEOUT_MSEC:-600000}"' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq 'SOPHIA_HAGIA_RESTART_REQUIRES_ACTION=37' \
+grep -Fq -- '--wm-proof-restart-after-action=66' \
     tools/hagia_policy_physical_gate.sh
-grep -Fq 'SOPHIA_HAGIA_RESTART_AFTER_ACTION=66' \
+grep -Fq '"--wm-process=$hagia_bin"' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq 'tools/verify_hagia_policy_physical.sh' \
     tools/hagia_policy_physical_gate.sh

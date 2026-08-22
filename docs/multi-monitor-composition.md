@@ -1030,13 +1030,27 @@ Submission ownership now consults the output's unsubmitted frame. Once one
 output has acquired KMS ownership for its Present frame, later ordinary frames
 on that output remain independent while other outputs finish the cohort. A
 tagged Present with no matching unsubmitted reservation still fails closed.
-This changes the executable, so mirror and mixed must be repeated together on
-the next signed candidate. The mixed runner archives the raw log,
+Signed source `e946cc725bf731515a477c86e9a575554965418c` subsequently produced
+and independently re-verified mirror archive `0007` and mixed archive `0001`.
+The mirror run retained independently paced heads, primary-owned logical
+presentation, and last-head release. The mixed run retained those properties
+beside the extended output, exercised output-local Present ownership, and
+finished with clean native and session health. This promotes the pacing slice.
+
+The mixed runner archives the raw log,
 exact Sophia and reference-WM digests, signed source commit, and signed-tree
 configuration behind a checksum and standalone verifier. The tty4 critical-
-path runner orders the mirror rerun before the centered mixed rerun and refuses
-a source change between them. The executable slices and exit criteria stay
-ordered in `todo.md`.
+path runner orders the mirror run before the centered mixed run and refuses a
+source change between them. The following protected Hagia gate found a separate
+proof-harness defect: its restart wrapper depended on ambient variables and the
+host `/tmp`, which the policy protection domain deliberately removes. The
+replacement launches Hagia directly and lets the session owner request one
+supervised replacement after committed action 66 produces an atomic private-
+checkpoint inode change. It never reads Hagia's private checkpoint contents or
+widens the Bubblewrap domain. Because that correction changes the Sophia
+executable, the three-gate sequence must bind the next signed candidate before
+the metadata-broker row can be promoted. The executable slices and exit
+criteria stay ordered in `todo.md`.
 
 ### Target
 

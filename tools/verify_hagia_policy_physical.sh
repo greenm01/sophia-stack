@@ -94,14 +94,18 @@ require_before "fullscreen action" \
     '^sophia_live_wm schema=1 status=physical_action_committed action=37$'
 require_before "layout-cycle action" \
     '^sophia_live_wm schema=1 status=physical_action_committed action=66$'
+require_before "checkpoint restart arm" \
+    '^sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action=66$'
 require_before "nonempty checkpoint" \
     "$checkpoint_saved"
+require_before "checkpoint restart trigger" \
+    '^sophia_live_wm schema=4 status=proof_restart_triggered adapter=sophia_wm_v1 phase=checkpoint_saved action=66 preserved_layout=true$'
 
-layout_line="$(awk -v limit="$restart_line" \
-    'NR < limit && /^sophia_live_wm schema=1 status=physical_action_committed action=66$/ { print NR; exit }' \
+restart_arm_line="$(awk -v limit="$restart_line" \
+    'NR < limit && /^sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action=66$/ { print NR; exit }' \
     "$evidence")"
-if [[ -z "$layout_line" ]] || ! awk \
-    -v lower="$layout_line" -v upper="$restart_line" -v pattern="$checkpoint_saved" \
+if [[ -z "$restart_arm_line" ]] || ! awk \
+    -v lower="$restart_arm_line" -v upper="$restart_line" -v pattern="$checkpoint_saved" \
     'NR > lower && NR < upper && $0 ~ pattern { found = 1; exit } END { exit found ? 0 : 1 }' \
     "$evidence"; then
     echo "Hagia layout cycle was not checkpointed before restart" >&2

@@ -224,6 +224,25 @@ impl LiveWmSession {
             public.staged = None;
             public.reducer.timeout(settlement.request_id)
         };
+        let proof_restart_action = if outcome
+            == sophia_protocol::PolicyProjectionOutcome::Committed
+        {
+            match result.source {
+                Some(LiveWmProposalSource::Action(action))
+                    if !public.proof_restart_triggered
+                        && public.proof_restart_checkpoint_before.is_none()
+                        && public.proof_restart_after_action == Some(action) =>
+                {
+                    Some(action)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let proof_restart_checkpoint_before = proof_restart_action
+            .map(|_| policy_checkpoint_identity(&public.checkpoint_path))
+            .transpose()?;
         public.submit_or_defer(PolicyTransportCommand::ProjectionOutcome {
                 transaction: settlement.transaction,
                 request_id: settlement.request_id,
@@ -245,6 +264,17 @@ impl LiveWmSession {
         }
         if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
             public.active_output = public.reducer.scene().active_output;
+        }
+        if let (Some(action), Some(before)) =
+            (proof_restart_action, proof_restart_checkpoint_before)
+        {
+            public.proof_restart_checkpoint_before = Some(before);
+            println!(
+                "sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action={}",
+                action.raw(),
+            );
+        }
+        if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
             self.mark_committed();
         } else {
             self.stale_responses = self.stale_responses.saturating_add(1);

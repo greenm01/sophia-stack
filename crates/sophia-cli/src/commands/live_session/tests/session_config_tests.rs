@@ -656,6 +656,54 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
         .to_string()
         .contains("expects proposal_staged")
     );
+
+    let restart = PersistentXtermSessionConfig::from_args(&[
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        "--max-runtime-ms=1000".to_owned(),
+        "--wm-proof-restart-after-action=66".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(
+        restart.wm_public_restart_after_action,
+        Some(WmActionId::from_raw(66))
+    );
+
+    for arguments in [
+        vec![
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--max-runtime-ms=1000".to_owned(),
+            "--wm-proof-restart-after-action=0".to_owned(),
+        ],
+        vec![
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--max-runtime-ms=1000".to_owned(),
+            "--wm-proof-fault-after=prepared".to_owned(),
+            "--wm-proof-restart-after-action=66".to_owned(),
+        ],
+    ] {
+        assert!(PersistentXtermSessionConfig::from_args(&arguments).is_err());
+    }
+}
+
+#[test]
+fn checkpoint_restart_waits_for_an_atomic_replacement() {
+    let first = PolicyCheckpointIdentity {
+        device: 1,
+        inode: 2,
+    };
+    let second = PolicyCheckpointIdentity {
+        device: 1,
+        inode: 3,
+    };
+
+    assert!(!policy_checkpoint_replaced(None, None));
+    assert!(!policy_checkpoint_replaced(Some(first), None));
+    assert!(!policy_checkpoint_replaced(Some(first), Some(first)));
+    assert!(policy_checkpoint_replaced(None, Some(first)));
+    assert!(policy_checkpoint_replaced(Some(first), Some(second)));
 }
 
 #[test]

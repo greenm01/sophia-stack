@@ -14,7 +14,9 @@ printf '%s\n' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=7 content=redacted' \
     'sophia_live_wm schema=1 status=physical_action_committed action=37' \
     'sophia_live_wm schema=1 status=physical_action_committed action=66' \
+    'sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action=66' \
     '2026-08-09T00:00:00Z INF hagia event=checkpoint status=saved detail="candidate_nonempty=true"' \
+    'sophia_live_wm schema=4 status=proof_restart_triggered adapter=sophia_wm_v1 phase=checkpoint_saved action=66 preserved_layout=true' \
     'sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch=2 restarts=1 preserved_layout=true' \
     '2026-08-09T00:00:01Z INF hagia event=checkpoint status=loaded detail="candidate_nonempty=true"' \
     '2026-08-09T00:00:01Z INF hagia event=checkpoint status=reconciled detail="candidate_nonempty=true"' \
