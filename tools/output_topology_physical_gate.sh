@@ -9,7 +9,7 @@ seat="${SOPHIA_OUTPUT_TOPOLOGY_SEAT:-}"
 display="${SOPHIA_OUTPUT_TOPOLOGY_DISPLAY:-:293}"
 runtime_msec="${SOPHIA_OUTPUT_TOPOLOGY_RUNTIME_MSEC:-180000}"
 evidence="${SOPHIA_OUTPUT_TOPOLOGY_EVIDENCE:-/tmp/sophia-output-topology-physical.log}"
-proof_text="${SOPHIA_OUTPUT_TOPOLOGY_TEXT:-topology-proof}"
+proof_text="${SOPHIA_OUTPUT_TOPOLOGY_TEXT:-topologyproof}"
 
 if [[ "${SOPHIA_OUTPUT_TOPOLOGY_ARM:-0}" != "1" ]]; then
     echo "set SOPHIA_OUTPUT_TOPOLOGY_ARM=1 to acknowledge exclusive DRM/input use and physical connector changes" >&2
@@ -33,6 +33,10 @@ if [[ -z "$firefox_bin" || ! -x "$firefox_bin" ]]; then
 fi
 if [[ ! "$runtime_msec" =~ ^[0-9]+$ ]] || (( runtime_msec < 60000 )); then
     echo "SOPHIA_OUTPUT_TOPOLOGY_RUNTIME_MSEC must be at least 60000" >&2
+    exit 2
+fi
+if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
+    echo "SOPHIA_OUTPUT_TOPOLOGY_TEXT must contain 1-24 lowercase ASCII letters" >&2
     exit 2
 fi
 
