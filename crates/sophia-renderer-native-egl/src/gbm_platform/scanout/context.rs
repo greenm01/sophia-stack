@@ -11,6 +11,7 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     gbm_device: gbm::Device<T>,
     stats: NativeGbmPersistentRenderStats,
     last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
+    proven_composition_nonzero_rgb_pixels: usize,
     composition_pixel_proof_attempts: usize,
     composition_target: Option<PersistentCompositionTarget>,
     import_cache_capacity: usize,
@@ -123,6 +124,7 @@ where
             gbm_device,
             stats: NativeGbmPersistentRenderStats::default(),
             last_composition_pixel_metrics: None,
+            proven_composition_nonzero_rgb_pixels: 0,
             composition_pixel_proof_attempts: 0,
             composition_target: None,
             import_cache_capacity,
@@ -143,6 +145,10 @@ where
 
     pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
         self.last_composition_pixel_metrics
+    }
+
+    pub const fn composition_nonzero_rgb_pixels(&self) -> usize {
+        self.proven_composition_nonzero_rgb_pixels
     }
 
     pub fn evict_renderer_image(

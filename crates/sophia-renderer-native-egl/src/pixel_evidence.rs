@@ -90,6 +90,29 @@ pub const fn native_composition_pixel_proof_capture(attempts: usize, layers: usi
     attempts < NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS && layers > 0
 }
 
+/// Retains the strongest nonzero-pixel proof a renderer context has observed.
+///
+/// A requested region trace reads the same finished composition as the
+/// bounded full-frame proof. It therefore remains useful evidence after the
+/// full-frame budget is exhausted, and a later black frame must not erase an
+/// earlier proof that this head emitted light.
+pub const fn retain_native_composition_nonzero_proof(
+    previous: usize,
+    captured_frame: usize,
+    traced_region: usize,
+) -> usize {
+    let observed = if captured_frame > traced_region {
+        captured_frame
+    } else {
+        traced_region
+    };
+    if previous > observed {
+        previous
+    } else {
+        observed
+    }
+}
+
 /// Convert a top-left composition region into OpenGL's bottom-left readback Y.
 pub const fn native_composition_gl_read_y(frame_height: u32, top: u32, height: u32) -> Option<u32> {
     match top.checked_add(height) {

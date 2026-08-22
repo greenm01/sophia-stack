@@ -67,7 +67,18 @@ where
             );
             self.stats.import_cache = persistent.import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
-            let pixel_metrics = rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
+            let render_evidence = rendered
+                .as_ref()
+                .ok()
+                .map(|(_, evidence)| *evidence)
+                .unwrap_or_default();
+            let pixel_metrics = render_evidence.captured_pixels;
+            self.proven_composition_nonzero_rgb_pixels =
+                retain_native_composition_nonzero_proof(
+                    self.proven_composition_nonzero_rgb_pixels,
+                    pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
+                    render_evidence.traced_nonzero_rgb_pixels,
+                );
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);
@@ -148,7 +159,18 @@ where
             );
             self.stats.import_cache = import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
-            let pixel_metrics = rendered.as_ref().ok().and_then(|(_, metrics)| *metrics);
+            let render_evidence = rendered
+                .as_ref()
+                .ok()
+                .map(|(_, evidence)| *evidence)
+                .unwrap_or_default();
+            let pixel_metrics = render_evidence.captured_pixels;
+            self.proven_composition_nonzero_rgb_pixels =
+                retain_native_composition_nonzero_proof(
+                    self.proven_composition_nonzero_rgb_pixels,
+                    pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
+                    render_evidence.traced_nonzero_rgb_pixels,
+                );
             if capture_pixels {
                 self.composition_pixel_proof_attempts =
                     self.composition_pixel_proof_attempts.saturating_add(1);

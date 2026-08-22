@@ -2,6 +2,7 @@ use sophia_renderer_native_egl::{
     NATIVE_COMPOSITION_LUMINANCE_BUCKETS, NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS,
     native_composition_gl_read_y, native_composition_luminance, native_composition_pixel_metrics,
     native_composition_pixel_metrics_from_rows, native_composition_pixel_proof_capture,
+    retain_native_composition_nonzero_proof,
 };
 #[cfg(feature = "gbm-platform")]
 use sophia_renderer_native_egl::{NativeCpuTextureUpload, native_cpu_texture_upload};
@@ -233,4 +234,14 @@ fn pixel_proof_attempts_are_spent_only_on_compositions_with_layers() {
         NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS,
         1
     ));
+}
+
+#[test]
+fn a_late_region_readback_refreshes_and_retains_the_nonzero_proof() {
+    let proven = retain_native_composition_nonzero_proof(0, 0, 53_676);
+    assert_eq!(proven, 53_676);
+    assert_eq!(
+        retain_native_composition_nonzero_proof(proven, 0, 0),
+        53_676
+    );
 }

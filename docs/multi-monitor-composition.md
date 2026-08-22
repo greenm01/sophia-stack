@@ -1015,19 +1015,21 @@ their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
 fresh signed physical reruns. Signed source
-`b21b7692df82096e24ccd652d293c5f0527517d3` produced verified mirror archive
-`0003`: both independently paced heads presented one logical checksum, the
+`8cfd831b9b2354e2253e4a470803cc30ff24a27f` produced verified mirror archive
+`0004`: both independently paced heads presented one logical checksum, the
 primary owned logical presentation, and the last head released the generation
-before clean shutdown. The immediately following mixed run proved metadata
-retirement and chrome reconciliation, then reached the committed two-output
-topology. There, mirror coalescing replaced Present frame 77 with ordinary
-frames before the primary submitted it. Native ownership released frame 77,
-but the Present scheduler still expected it and correctly rejected the later
-retained submission as unrelated. An unsubmitted Present generation now stays
-active while one latest ordinary successor waits behind it. Once the primary
-owns the Present in KMS, the successor advances and lagging heads may skip to
-it. That fix again changes the executable, so mirror and mixed must be repeated
-together on the next signed candidate. The mixed runner archives the raw log,
+before clean shutdown. The immediately following mixed run exercised the
+Present pin and deferred ordinary successor, committed the two-output topology,
+and drained every physical head with one synchronous modeset plus balanced
+asynchronous submissions, callbacks, and retirements. It then exposed a stale
+pixel-proof cache: head 2's three bounded full-frame probes all ran while its
+composition was blank, but a later requested region readback measured 53,676
+nonzero pixels. Because only the early full-frame result fed `nonzero_exports`,
+completion refused the otherwise clean head. Requested region readbacks now
+refresh the same persistent per-head light proof and cannot be erased by a
+later black frame; the bounded full-frame budget is unchanged. That fix again
+changes the executable, so mirror and mixed must be repeated together on the
+next signed candidate. The mixed runner archives the raw log,
 exact Sophia and reference-WM digests, signed source commit, and signed-tree
 configuration behind a checksum and standalone verifier. The tty4 critical-
 path runner orders the mirror rerun before the centered mixed rerun and refuses

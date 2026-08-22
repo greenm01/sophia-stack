@@ -24,6 +24,7 @@ use crate::{
     NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS, NativeCompositionPixelMetrics,
     NativeGbmRenderedScanoutContextStatus, NativeGbmScanoutBufferExportDetail,
     NativeGbmScanoutBufferExportStatus, native_composition_pixel_proof_capture,
+    retain_native_composition_nonzero_proof,
 };
 
 include!("scanout/buffer.rs");

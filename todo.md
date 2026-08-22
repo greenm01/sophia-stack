@@ -79,16 +79,17 @@ promotion gate.
    primary-owned Present completion and last-head buffer retirement, then
    re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
    the mixed gate now writes a signature-checked archive containing both exact
-   binaries and its signed configuration. Mirror archive `0003` passed and
+   binaries and its signed configuration. Mirror archive `0004` passed and
    independently re-verified on signed source
-   `b21b7692df82096e24ccd652d293c5f0527517d3`. The following mixed run proved
-   chrome reconciliation and reached the committed two-output topology. It
-   then exposed a Present generation that native mirror coalescing released
-   before its primary head submitted while the Present scheduler retained its
-   owner. An unsubmitted Present now pins the active generation; only the latest
-   ordinary successor waits behind it until the primary owns the Present. A
-   fresh signed sequence remains the promotion gate because that fix changes
-   the Sophia executable.
+   `8cfd831b9b2354e2253e4a470803cc30ff24a27f`. The following mixed run exercised
+   the new Present deferral, committed the two-output topology, and completed
+   cleanly with all three heads balanced at one synchronous modeset plus their
+   asynchronous retirements. Its completion gate still refused head 2 because
+   three early blank full-frame probes exhausted the bounded pixel budget even
+   though a later requested region readback measured 53,676 nonzero pixels.
+   Requested region evidence now refreshes the persistent per-head light proof
+   without adding full-frame readbacks. A fresh signed sequence remains the
+   promotion gate because that correction changes the Sophia executable.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
@@ -125,11 +126,11 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    writes and re-verifies a durable archive. The mixed run must show both mirror
    heads pixel-exact inside their borders and a focus ring that stays on the
    output owning the window. The first two runs close row 2; the final run closes
-   row 3. The last sequence produced verified mirror archive `0003`; its mixed
-   run proved chrome reconciliation, then stopped when mirror coalescing
-   displaced Present frame 77 before primary submission. Native scheduling now
-   holds the latest ordinary successor behind that Present instead of silently
-   releasing its frame. All three gates must be rerun on the signed executable.
+   row 3. The last sequence produced verified mirror archive `0004`; its mixed
+   run proved that the pinned Present reaches KMS before its deferred ordinary
+   successor, then stopped on stale per-head light accounting after the runtime
+   had drained cleanly. The renderer now retains later nonzero region readbacks
+   as head proof. All three gates must be rerun on the signed executable.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area

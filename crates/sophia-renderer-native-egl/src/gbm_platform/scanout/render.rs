@@ -398,6 +398,12 @@ fn render_native_target_dmabuf(
     result
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct NativeCompositionRenderEvidence {
+    captured_pixels: Option<NativeCompositionPixelMetrics>,
+    traced_nonzero_rgb_pixels: usize,
+}
+
 fn render_native_target_composition(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
@@ -409,10 +415,7 @@ fn render_native_target_composition(
     capture_pixels: bool,
     preserve_target_alpha: bool,
 ) -> Result<
-    (
-        NativeGbmOwnedScanoutBuffer,
-        Option<NativeCompositionPixelMetrics>,
-    ),
+    (NativeGbmOwnedScanoutBuffer, NativeCompositionRenderEvidence),
     NativeGbmScanoutBufferExportDetail,
 > {
     let egl_surface = surface.egl_surface();
@@ -619,7 +622,7 @@ fn render_native_target_composition(
             }
         };
     }
-    let mut pixel_metrics = None;
+    let mut evidence = NativeCompositionRenderEvidence::default();
     let result = draw_result
         .and_then(|()| {
             target
@@ -639,13 +642,17 @@ fn render_native_target_composition(
                         }
                         NativeCompositionLayer::Solid(layer) => ("solid", layer.target),
                     };
-                    trace_final_composition_region(
+                    if let Some(nonzero_rgb_pixels) = trace_final_composition_region(
                         &target.pipeline,
                         source_stage,
                         layer_index,
                         layer_target,
                         (target.width, target.height),
-                    );
+                    ) {
+                        evidence.traced_nonzero_rgb_pixels = evidence
+                            .traced_nonzero_rgb_pixels
+                            .max(nonzero_rgb_pixels);
+                    }
                 }
             }
             if capture_pixels {
@@ -661,7 +668,7 @@ fn render_native_target_composition(
                             metrics.luminance_mean_millis(),
                             metrics.checksum,
                         );
-                        pixel_metrics = Some(metrics);
+                        evidence.captured_pixels = Some(metrics);
                     }
                     Err(_) => tracing::warn!(
                         "sophia_native_composition_frame schema=2 status=unverified width={} height={}",
@@ -688,7 +695,7 @@ fn render_native_target_composition(
                 None,
             )?;
             buffer._frame_surface = Some(surface.clone());
-            Ok((buffer, pixel_metrics))
+            Ok((buffer, evidence))
         });
     let _ = egl.make_current(display, None, None, None);
     result
@@ -750,40 +757,46 @@ fn trace_final_composition_region(
     layer: usize,
     target: NativeCompositionRect,
     output: (u32, u32),
-) {
+) -> Option<usize> {
     match pipeline.read_composition_region_pixels(target.into()) {
-        Ok(region) => tracing::info!(
-            "sophia_native_composition_region schema=3 status=read composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
-            output.0,
-            output.1,
-            target.width,
-            target.height,
-            target.x,
-            target.y,
-            region.pixels,
-            region.nonzero_rgb_pixels,
-            region.red_pixels,
-            region.green_pixels,
-            region.blue_pixels,
-            region.yellow_pixels,
-            region.cyan_pixels,
-            region.magenta_pixels,
-            region.gray_pixels,
-            region.other_pixels,
-            region.luminance_sum,
-            region.luminance_mean_millis(),
-            region.luminance_histogram_field(),
-            region.checksum,
-        ),
-        Err(_) => tracing::warn!(
-            "sophia_native_composition_region schema=3 status=unavailable composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{}",
-            output.0,
-            output.1,
-            target.width,
-            target.height,
-            target.x,
-            target.y,
-        ),
+        Ok(region) => {
+            tracing::info!(
+                "sophia_native_composition_region schema=3 status=read composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
+                output.0,
+                output.1,
+                target.width,
+                target.height,
+                target.x,
+                target.y,
+                region.pixels,
+                region.nonzero_rgb_pixels,
+                region.red_pixels,
+                region.green_pixels,
+                region.blue_pixels,
+                region.yellow_pixels,
+                region.cyan_pixels,
+                region.magenta_pixels,
+                region.gray_pixels,
+                region.other_pixels,
+                region.luminance_sum,
+                region.luminance_mean_millis(),
+                region.luminance_histogram_field(),
+                region.checksum,
+            );
+            Some(region.nonzero_rgb_pixels)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "sophia_native_composition_region schema=3 status=unavailable composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{}",
+                output.0,
+                output.1,
+                target.width,
+                target.height,
+                target.x,
+                target.y,
+            );
+            None
+        }
     }
 }
 
