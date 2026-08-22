@@ -844,6 +844,13 @@
         input_delivery.pending.len(),
         wm_session.as_ref().is_some_and(|wm| wm.degraded),
     );
+    if let Some(monitor) = output_topology_monitor.as_ref() {
+        let stats = monitor.stats();
+        println!(
+            "sophia_live_output_topology_monitor schema=1 source=kernel status=complete observed={} coalesced={} delivered={}",
+            stats.observed, stats.coalesced, stats.delivered,
+        );
+    }
     println!(
         "sophia_live_output_topology_health schema=1 status=clean quarantined={}",
         output_topology_owner.input_quarantined(),

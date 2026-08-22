@@ -1950,7 +1950,13 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   not been run or promoted as evidence. The recovery-safe one-command entry
   point is `tools/run_output_topology_gate_tty4.sh`; it supplies the routine
   arm, seat, matching signed Hagia and Sophia builds, and timestamped evidence
-  defaults so the operator carries no shell state between TTY sessions.
+  defaults so the operator carries no shell state between TTY sessions. Attempt
+  `/tmp/sophia-output-topology-20260821-231655.log` exposed a real ingress
+  blocker before any publication: this host has a readable persisted udev
+  database but no running `udevd`, while the topology monitor subscribed to the
+  daemon's userspace rebroadcast group. DRM hotplug now subscribes directly to
+  kernel uevents and reports observed/coalesced/delivered monitor totals at
+  shutdown. A successor signed physical run remains required.
 
 ---
 

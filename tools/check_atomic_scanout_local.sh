@@ -398,6 +398,10 @@ grep -Fq 'SOPHIA_LIVE_SESSION_VERIFY_MODE=caller' \
     tools/output_topology_physical_gate.sh
 grep -Fq '"--physical-sequence-timeout-ms=$sequence_timeout_msec"' \
     tools/output_topology_physical_gate.sh
+grep -Fq 'udev::MonitorBuilder::new_kernel()' \
+    crates/sophia-backend-live/src/drm/topology_monitor.rs
+grep -Fq 'sophia_live_output_topology_monitor schema=1 source=kernel status=complete' \
+    crates/sophia-cli/src/commands/live_session/owner_loop/completion.rs
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof

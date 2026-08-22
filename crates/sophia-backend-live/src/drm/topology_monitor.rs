@@ -52,7 +52,10 @@ impl LiveDrmTopologyMonitor {
         let worker_observed = Arc::clone(&observed);
         let worker_coalesced = Arc::clone(&coalesced);
         let worker = std::thread::spawn(move || {
-            let monitor = udev::MonitorBuilder::new()
+            // Hotplug is a kernel authority event. The userspace `udev`
+            // multicast group is only a daemon rebroadcast and can be absent
+            // even while the persisted udev database remains readable.
+            let monitor = udev::MonitorBuilder::new_kernel()
                 .and_then(|builder| builder.match_subsystem("drm"))
                 .and_then(udev::MonitorBuilder::listen);
             let monitor = match monitor {
