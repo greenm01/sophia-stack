@@ -56,15 +56,18 @@ loss_outputs=$((connected_outputs - 1))
 echo "Sophia physical output-topology gate"
 echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
 echo "After Kitty is visibly settled on all $connected_outputs outputs:"
-echo "  1. Disconnect one non-primary output and wait for the desktop to settle."
+echo "  1. Unplug one non-primary DP/HDMI cable; powering the display off may not emit hotplug."
+echo "     Wait for the remaining desktop to visibly settle at $loss_outputs outputs."
 echo "  2. Reconnect that output and wait for the desktop to settle again."
-echo "  3. Confirm Kitty survived, then type '$proof_text' into Kitty."
+echo "  3. Only after all $connected_outputs outputs return and settle, confirm Kitty survived,"
+echo "     then type '$proof_text' into Kitty."
 
 RUST_LOG="${RUST_LOG:-sophia=info,sophia_backend_live=info}" \
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_LIVE_SESSION_DISPLAY="$display" \
 SOPHIA_LIVE_SESSION_RUNTIME_MSEC="$runtime_msec" \
 SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
+SOPHIA_LIVE_SESSION_VERIFY_MODE=caller \
     "$ROOT_DIR/tools/live_session_persistent_hardware_proof.sh" \
     --no-config \
     --session-mode=normal \
