@@ -1,6 +1,7 @@
 use sophia_engine::{
-    LayoutEpochCoordinator, SurfaceAdmissionState, SurfaceVisualEvidence,
-    SurfaceVisualExtentDisposition, classify_surface_visual_extent,
+    LayoutEpochCoordinator, SurfaceAdmissionState, SurfaceChromeStyle, SurfaceVisualEvidence,
+    SurfaceVisualExtentDisposition, apply_surface_chrome_clearance, classify_surface_visual_extent,
+    content_surface_geometry, outer_surface_geometry,
 };
 use sophia_protocol::{
     BufferSource, LayoutTransaction, Rect, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
@@ -645,5 +646,33 @@ fn an_oversized_recovery_extent_yields_to_declared_constraints() {
             .geometry
             .height
             <= 1080
+    );
+}
+
+#[test]
+fn recovery_extent_is_reconciled_within_chrome_content_bounds() {
+    let surface = SurfaceId::new(81, 1);
+    let outer_bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let chrome = SurfaceChromeStyle::default();
+    let content_bounds = content_surface_geometry(outer_bounds, chrome).unwrap();
+    let outer_transaction = layout_transaction([(surface, outer_bounds)]);
+    let content_transaction = apply_surface_chrome_clearance(&outer_transaction, chrome).unwrap();
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.set_recovery_extent(surface, size(2558, 1438));
+
+    let reconciled = coordinator
+        .reconcile_transaction(&content_transaction, content_bounds)
+        .expect("a recovery extent outside content bounds must yield");
+    let content_geometry = reconciled.transaction.render_positions[0].geometry;
+
+    assert_eq!(content_geometry, content_bounds);
+    assert_eq!(
+        outer_surface_geometry(content_geometry, chrome).unwrap(),
+        outer_bounds
     );
 }

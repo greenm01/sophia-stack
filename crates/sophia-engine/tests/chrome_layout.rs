@@ -1,8 +1,8 @@
 use sophia_engine::{
     ChromeLayoutError, CompositorNodeId, FocusRingStyle, SurfaceChromeRole, SurfaceChromeStyle,
     SurfaceFrameStyle, apply_surface_chrome_clearance, compositor_border_bands,
-    outer_surface_constraints, outer_surface_geometry, surface_chrome_display_list,
-    surface_chrome_display_list_for_surfaces,
+    content_surface_geometry, outer_surface_constraints, outer_surface_geometry,
+    surface_chrome_display_list, surface_chrome_display_list_for_surfaces,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, LayoutTransaction, OutputId, Rect, Region, Size,
@@ -102,6 +102,29 @@ fn chrome_clearance_insets_wm_allocations_once_and_preserves_outer_extent() {
             .into_iter()
             .all(|band| !rects_overlap(band.geometry, ring.inner))
     );
+}
+
+#[test]
+fn content_bounds_round_trip_to_their_outer_allocation() {
+    let outer = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let style = SurfaceChromeStyle::default();
+
+    let content = content_surface_geometry(outer, style).unwrap();
+    assert_eq!(
+        content,
+        Rect {
+            x: 2,
+            y: 2,
+            width: 2556,
+            height: 1436,
+        }
+    );
+    assert_eq!(outer_surface_geometry(content, style).unwrap(), outer);
 }
 
 #[test]

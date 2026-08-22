@@ -1015,18 +1015,22 @@ their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
 fresh signed physical reruns. Signed source
-`e0f43071103febb40ea16c948a9a16f4230df430` produced verified mirror archive
-`0001`: both independently paced heads presented one logical checksum, the
+`598fd27a76d538af682416ec1939260fd65690bd` produced verified mirror archive
+`0002`: both independently paced heads presented one logical checksum, the
 primary owned logical presentation, and the last head released the generation
-before clean shutdown. The immediately following mixed run found an unrelated
-metadata-rule lifecycle race and ended before topology publication. Fixing that
-race changes the executable, so the mirror and mixed proofs must still be
-repeated together on the next signed candidate. The mixed runner archives the
-raw log, exact Sophia and reference-WM digests, signed source commit, and
-signed-tree configuration behind a checksum and standalone verifier. The tty4
-critical-path runner orders the mirror rerun before the centered mixed rerun and
-refuses a source change between them. The executable slices and exit criteria
-stay ordered in `todo.md`.
+before clean shutdown. The immediately following mixed run proved the earlier
+metadata-rule lifecycle fix, then found that recovery reconciliation used the
+outer work area after chrome had converted the proposal to content geometry.
+A 2558-by-1438 recovery extent therefore expanded to 2562 by 1442 when chrome
+was restored, and the policy reducer correctly rejected it. Engine now exposes
+the inset content bounds, and both WM paths reconcile against them. That fix
+again changes the executable, so mirror and mixed must be repeated together on
+the next signed candidate. The mixed runner archives the raw log, exact Sophia
+and reference-WM digests, signed source commit, and signed-tree configuration
+behind a checksum and standalone verifier. The tty4 critical-path runner orders
+the mirror rerun before the centered mixed rerun and refuses a source change
+between them. The executable slices and exit criteria stay ordered in
+`todo.md`.
 
 ### Target
 

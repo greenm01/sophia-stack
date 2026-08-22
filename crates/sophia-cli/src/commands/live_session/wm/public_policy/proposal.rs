@@ -18,6 +18,7 @@ fn reconcile_public_policy_proposal(
             .get(&output.output)
             .copied()
             .ok_or("public WM projection has no Engine work area")?;
+        let content_bounds = sophia_engine::content_surface_geometry(bounds, chrome)?;
         let transaction = sophia_protocol::LayoutTransaction {
             transaction: proposal.transaction,
             requested_sizes: output
@@ -56,7 +57,7 @@ fn reconcile_public_policy_proposal(
         let transaction = sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
         let reconciliation = layout
             .layout_epochs
-            .reconcile_transaction(&transaction, bounds)?;
+            .reconcile_transaction(&transaction, content_bounds)?;
         let geometries = reconciliation
             .transaction
             .render_positions

@@ -33,9 +33,22 @@ pub fn apply_surface_chrome_clearance(
         request.size = inset_size(request.size, clearance)?;
     }
     for placement in &mut content.render_positions {
-        placement.geometry = inset_rect(placement.geometry, clearance)?;
+        placement.geometry = content_surface_geometry(placement.geometry, style)?;
     }
     Ok(content)
+}
+
+/// Converts a WM-owned outer allocation into the bounds available to client
+/// content after Engine-owned chrome is reserved.
+pub fn content_surface_geometry(
+    geometry: Rect,
+    style: SurfaceChromeStyle,
+) -> Result<Rect, ChromeLayoutError> {
+    let clearance = style.clearance();
+    if clearance < 0 {
+        return Err(ChromeLayoutError::InvalidClearance);
+    }
+    inset_rect(geometry, clearance)
 }
 
 /// Converts client-content constraints into the outer allocation constraints

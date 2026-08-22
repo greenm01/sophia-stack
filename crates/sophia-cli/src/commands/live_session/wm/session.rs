@@ -1156,11 +1156,10 @@ impl LiveWmSession {
             .output(output.id)
             .ok_or("WM output is not configured")?
             .bounds;
+        let chrome = self.candidate_chrome_style();
+        let content_bounds = sophia_engine::content_surface_geometry(bounds, chrome)?;
         let plan = planning_state.plan_response(&response, &self.session_actions)?;
-        let transaction = sophia_engine::apply_surface_chrome_clearance(
-            &plan.layout,
-            self.candidate_chrome_style(),
-        )?;
+        let transaction = sophia_engine::apply_surface_chrome_clearance(&plan.layout, chrome)?;
         let standing_targets = transaction
             .requested_sizes
             .iter()
@@ -1174,7 +1173,7 @@ impl LiveWmSession {
             .collect::<Vec<_>>();
         let reconciliation = layout
             .layout_epochs
-            .reconcile_transaction(&transaction, bounds)?;
+            .reconcile_transaction(&transaction, content_bounds)?;
         let transaction = reconciliation.transaction;
         if !reconciliation.adjusted_surfaces.is_empty() {
             println!(
@@ -1183,7 +1182,7 @@ impl LiveWmSession {
                 reconciliation.adjusted_surfaces.len(),
             );
         }
-        validate_live_wm_transaction(&transaction, layout, bounds)?;
+        validate_live_wm_transaction(&transaction, layout, content_bounds)?;
         // A WM response may only introduce planning surfaces represented by
         // its own candidate workspace state. This matters when restart reseed
         // queues a committed relayout ahead of a pending ManageSurface: the

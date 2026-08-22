@@ -2315,7 +2315,7 @@ impl LiveWmSession {
         self.supervisor_state = state;
         let started = match self.supervisor.apply(command) {
             Ok(Some(started)) => started,
-            Ok(None) => return Err("public WM supervisor did not restart Hagia".into()),
+            Ok(None) => return Err("public WM supervisor did not restart the policy process".into()),
             Err(error) => {
                 if self.committed == 0 {
                     return Err(error.into());
