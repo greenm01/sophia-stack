@@ -286,7 +286,7 @@ grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpect
     "$SESSION_LOG" ||
     fail "session recorded an unexpected X protocol error"
 mapfile -t session_control_records < <(
-    grep -E '^sophia_live_session_control schema=1 status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_session_control schema=(1|2) status=complete ' "$SESSION_LOG"
 )
 (( ${#session_control_records[@]} == 1 )) ||
     fail "expected one session-control completion record"
@@ -298,9 +298,14 @@ done
 control_enqueued="$(field "$session_control" enqueued)"
 control_dispatched="$(field "$session_control" dispatched)"
 control_delivered="$(field "$session_control" delivered)"
+control_stale_retired=0
+if [[ "$(field "$session_control" schema)" == 2 ]]; then
+    control_stale_retired="$(field "$session_control" stale_retired)"
+fi
 control_queue_dwell="$(field "$session_control" max_queue_dwell_msec)"
 control_ack_latency="$(field "$session_control" max_ack_msec)"
-(( control_enqueued == control_dispatched && control_dispatched == control_delivered )) ||
+(( control_enqueued == control_dispatched &&
+    control_dispatched == control_delivered + control_stale_retired )) ||
     fail "session-control enqueue, dispatch, and delivery counts diverged"
 (( control_queue_dwell <= 100 && control_ack_latency <= 100 )) ||
     fail "session-control latency exceeded 100ms"

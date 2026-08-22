@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 
 use sophia_cli::session_control::{
     SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT, SESSION_CONTROL_CAPACITY,
-    SESSION_CONTROL_QUEUE_TIMEOUT, SessionControlFailure, SessionControlQueue,
+    SESSION_CONTROL_QUEUE_TIMEOUT, SessionControlFailure, SessionControlMetrics,
+    SessionControlQueue,
 };
 use sophia_protocol::{
     MetadataDisclosure, MetadataDisclosureRule, SurfaceId, TransactionId, TrustLevel,
@@ -372,7 +373,7 @@ fn duplicate_and_over_capacity_controls_fail_closed() {
 }
 
 #[test]
-fn rejected_acknowledgement_is_reported_as_a_completion() {
+fn stale_target_acknowledgements_retire_without_rejection_debt() {
     let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
     let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
     let now = Instant::now();
@@ -401,7 +402,8 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
             XAuthorityControlOutcome::UnknownSurface
         ))
     );
-    assert_eq!(queue.metrics().rejected, 1);
+    assert_eq!(queue.metrics().stale_targets_retired, 1);
+    assert_eq!(queue.metrics().rejected, 0);
     assert!(
         completions[0]
             .failure
@@ -437,6 +439,66 @@ fn rejected_acknowledgement_is_reported_as_a_completion() {
         completions[1]
             .failure
             .is_some_and(|failure| failure.is_stale_target_for(completions[1].key.kind))
+    );
+    assert_eq!(queue.metrics().stale_targets_retired, 2);
+    assert_eq!(queue.metrics().rejected, 0);
+    assert!(queue.metrics().is_drained(queue.pending_len()));
+}
+
+#[test]
+fn unexpected_target_rejection_remains_terminal_debt() {
+    let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let now = Instant::now();
+    let command = control(1, 1, surface(1), XAuthorityControlKind::FocusSurface);
+    let mut queue = SessionControlQueue::default();
+    queue.enqueue(command, now).unwrap();
+    let mut completions = Vec::new();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    let _ = commands.recv().unwrap();
+    let mut rejected = acknowledgement(command);
+    rejected.acknowledgement.outcome = XAuthorityControlOutcome::UnknownSurface;
+    acknowledgements.send(rejected).unwrap();
+    queue
+        .service(
+            &sender,
+            &receiver,
+            now + Duration::from_millis(1),
+            &mut completions,
+        )
+        .unwrap();
+
+    assert_eq!(
+        completions[0].failure,
+        Some(SessionControlFailure::Rejected(
+            XAuthorityControlOutcome::UnknownSurface
+        ))
+    );
+    assert_eq!(queue.metrics().stale_targets_retired, 0);
+    assert_eq!(queue.metrics().rejected, 1);
+    assert!(!queue.metrics().is_drained(queue.pending_len()));
+}
+
+#[test]
+fn terminal_accounting_accepts_the_physical_stale_metadata_shape() {
+    let metrics = SessionControlMetrics {
+        enqueued: 19,
+        dispatched: 19,
+        delivered: 18,
+        stale_targets_retired: 1,
+        ..SessionControlMetrics::default()
+    };
+
+    assert!(metrics.is_drained(0));
+    assert!(
+        !SessionControlMetrics {
+            stale_targets_retired: 0,
+            rejected: 1,
+            ..metrics
+        }
+        .is_drained(0)
     );
 }
 

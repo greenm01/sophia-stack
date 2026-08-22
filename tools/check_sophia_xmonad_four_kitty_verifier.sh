@@ -30,7 +30,7 @@ sophia_live_wm schema=1 status=layout_committed transaction=5 surfaces=5 moved_s
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
-sophia_live_session_control schema=1 status=complete enqueued=10 dispatched=10 delivered=10 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=3 max_queue_dwell_msec=4 max_ack_msec=8
+sophia_live_session_control schema=2 status=complete enqueued=10 dispatched=10 delivered=9 stale_retired=1 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=3 max_queue_dwell_msec=4 max_ack_msec=8
 sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=3 synthetic_releases=2 state_only_releases=1 orphan_releases_suppressed=1 removed_surface_keys=0 repeat_active_seats=0 repeat_armed=0 repeat_routed=0 repeat_pulses=0 repeat_coalesced=0 repeat_cancelled=0 repeat_capacity_exhausted=0
 sophia_session_launches schema=1 status=complete peak_depth=3 rejected=0 admission_timeouts=0
 sophia_live_owner_timing schema=2 status=complete max_child_reap_msec=25 max_input_phase_msec=12
@@ -159,8 +159,11 @@ expect_rejected admission_timeout \
     'admission_timeouts=0' \
     'admission_timeouts=1'
 expect_rejected control_rejection \
-    'delivered=10 rejected=0' \
-    'delivered=9 rejected=1'
+    'delivered=9 stale_retired=1 rejected=0' \
+    'delivered=9 stale_retired=0 rejected=1'
+expect_rejected control_stale_imbalance \
+    'delivered=9 stale_retired=1 rejected=0' \
+    'delivered=9 stale_retired=0 rejected=0'
 expect_rejected control_latency \
     'max_ack_msec=8' \
     'max_ack_msec=101'

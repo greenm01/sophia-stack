@@ -4,6 +4,17 @@ set -euo pipefail
 evidence=${1:-/tmp/sophia-qemu-xmonad-m8-mix.log}
 [[ -s "$evidence" ]] || { echo "missing M8 mix evidence: $evidence" >&2; exit 1; }
 
+field() {
+    local line="$1" key="$2" token
+    for token in $line; do
+        if [[ "$token" == "$key="* ]]; then
+            printf '%s\n' "${token#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 for app in terminal vulkan firefox launcher; do
     grep -q "^sophia_session_app schema=1 status=started id=$app " "$evidence" || {
         echo "M8 mix did not start $app" >&2
@@ -92,7 +103,19 @@ grep -q '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 
 [[ "$(grep -c '^sophia_live_output schema=1 status=complete ' "$evidence" || true)" -eq 2 ]]
 grep -q '^sophia_live_wm schema=1 status=restarted .*preserved_layout=true' "$evidence"
 grep -q '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' "$evidence"
-grep -Eq '^sophia_live_session_control schema=1 status=complete .*timed_out=0 unexpected=0 pending=0 ' "$evidence"
+control="$(grep -E '^sophia_live_session_control schema=(1|2) status=complete ' "$evidence" | tail -n 1)"
+[[ -n "$control" ]]
+enqueued="$(field "$control" enqueued)"
+dispatched="$(field "$control" dispatched)"
+delivered="$(field "$control" delivered)"
+stale_retired=0
+if [[ "$(field "$control" schema)" == 2 ]]; then
+    stale_retired="$(field "$control" stale_retired)"
+fi
+(( enqueued == dispatched && dispatched == delivered + stale_retired ))
+for assignment in rejected=0 timed_out=0 unexpected=0 pending=0; do
+    [[ " $control " == *" $assignment "* ]]
+done
 grep -Eq '^sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 .*state_only_releases=[1-9][0-9]* ' "$evidence"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' "$evidence"
 grep -q '^sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed$' "$evidence"

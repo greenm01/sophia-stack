@@ -87,12 +87,24 @@ pub struct SessionControlMetrics {
     pub enqueued: usize,
     pub dispatched: usize,
     pub delivered: usize,
+    pub stale_targets_retired: usize,
     pub rejected: usize,
     pub timed_out: usize,
     pub unexpected: usize,
     pub peak_depth: usize,
     pub max_queue_dwell: Duration,
     pub max_acknowledgement_latency: Duration,
+}
+
+impl SessionControlMetrics {
+    pub const fn is_drained(self, pending: usize) -> bool {
+        pending == 0
+            && self.enqueued == self.dispatched
+            && self.dispatched == self.delivered.saturating_add(self.stale_targets_retired)
+            && self.rejected == 0
+            && self.timed_out == 0
+            && self.unexpected == 0
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -248,10 +260,14 @@ impl SessionControlQueue {
                     self.metrics.delivered += 1;
                     None
                 } else {
-                    self.metrics.rejected += 1;
-                    Some(SessionControlFailure::Rejected(
-                        acknowledgement.acknowledgement.outcome,
-                    ))
+                    let failure =
+                        SessionControlFailure::Rejected(acknowledgement.acknowledgement.outcome);
+                    if failure.is_stale_target_for(key.kind) {
+                        self.metrics.stale_targets_retired += 1;
+                    } else {
+                        self.metrics.rejected += 1;
+                    }
+                    Some(failure)
                 };
             completions.push(SessionControlCompletion {
                 key,

@@ -34,7 +34,7 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
     echo 'sophia_live_present_cadence schema=1 status=complete samples=70 advancing_intervals=69 nonadvancing=0 overflowed=false mean_fps=60.000 p95_frame_msec=16.667'
     echo 'sophia_live_present_progress schema=1 complete_copy=70 complete_flip=0 complete_skip=18 idle=88'
     echo 'sophia_live_session schema=16 status=bounded_complete authority_batches_dropped=0 native_submissions=41 native_submit_failures=0 native_retirements=40 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_in_flight=false native_cleanup_pending=false wm_policy=external wm_restarts=0 wm_degraded=false present_complete_copy=70 present_complete_flip=0 present_complete_skip=18 present_idle=88 present_complete_routed=88 present_idle_routed=88 present_route_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 present_controlled_rejections=2'
-    echo 'sophia_live_session_control schema=1 status=complete enqueued=3 dispatched=3 delivered=3 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=1 max_queue_dwell_msec=1 max_ack_msec=2'
+    echo 'sophia_live_session_control schema=2 status=complete enqueued=3 dispatched=3 delivered=2 stale_retired=1 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=1 max_queue_dwell_msec=1 max_ack_msec=2'
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=10 submissions=41 retirements=40 callbacks=40 nonzero_exports=41'
     echo 'sophia_live_output schema=1 status=complete output=2 checksum=20 submissions=1 retirements=0 callbacks=0 nonzero_exports=1'
     echo 'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false'

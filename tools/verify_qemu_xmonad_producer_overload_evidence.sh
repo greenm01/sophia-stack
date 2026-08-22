@@ -297,13 +297,18 @@ for pair in \
     [[ "$actual" == "${pair#*=}" ]] || fail "${pair%%=*} is $actual, expected ${pair#*=}"
 done
 
-control="$(grep -E '^sophia_live_session_control schema=1 status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+control="$(grep -E '^sophia_live_session_control schema=(1|2) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$control" ]] || fail "session-control completion is missing"
 enqueued="$(field "$control" enqueued)" || fail "control completion lacks enqueued"
-for key in dispatched delivered; do
-    actual="$(field "$control" "$key")" || fail "control completion lacks $key"
-    [[ "$actual" == "$enqueued" ]] || fail "$key is not balanced with enqueued controls"
-done
+dispatched="$(field "$control" dispatched)" || fail "control completion lacks dispatched"
+delivered="$(field "$control" delivered)" || fail "control completion lacks delivered"
+stale_retired=0
+if [[ "$(field "$control" schema)" == 2 ]]; then
+    stale_retired="$(field "$control" stale_retired)" ||
+        fail "schema-2 control completion lacks stale_retired"
+fi
+(( dispatched == enqueued && delivered + stale_retired == dispatched )) ||
+    fail "control completion is not balanced"
 for pair in rejected=0 timed_out=0 unexpected=0 pending=0; do
     actual="$(field "$control" "${pair%%=*}")" || fail "control completion lacks ${pair%%=*}"
     [[ "$actual" == "${pair#*=}" ]] || fail "${pair%%=*} is $actual, expected ${pair#*=}"

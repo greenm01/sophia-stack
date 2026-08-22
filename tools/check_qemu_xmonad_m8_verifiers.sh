@@ -65,7 +65,7 @@ if ! "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2
     echo "M8 mix verifier rejected a close whose keys were already clear" >&2
     exit 1
 fi
-sed '/sophia_live_session_control schema=1 status=complete /d' "$mix" > "$tmp"
+sed -E '/sophia_live_session_control schema=(1|2) status=complete /d' "$mix" > "$tmp"
 if "$ROOT_DIR/tools/verify_qemu_xmonad_m8_mix_evidence.sh" "$tmp" >/dev/null 2>&1; then
     echo "M8 mix verifier accepted missing control-drain evidence" >&2
     exit 1

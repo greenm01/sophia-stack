@@ -1015,21 +1015,24 @@ their own refresh rates without releasing a buffer before the last scanning
 head retires. That pacing
 change affects both the two-head mirror and three-head mixed gates, so both need
 fresh signed physical reruns. Signed source
-`8cfd831b9b2354e2253e4a470803cc30ff24a27f` produced verified mirror archive
-`0004`: both independently paced heads presented one logical checksum, the
+`f085774a7bf755b0ecd4b97d9396112db5950a65` produced verified mirror archive
+`0005`: both independently paced heads presented one logical checksum, the
 primary owned logical presentation, and the last head released the generation
-before clean shutdown. The immediately following mixed run exercised the
-Present pin and deferred ordinary successor, committed the two-output topology,
-and drained every physical head with one synchronous modeset plus balanced
-asynchronous submissions, callbacks, and retirements. It then exposed a stale
-pixel-proof cache: head 2's three bounded full-frame probes all ran while its
-composition was blank, but a later requested region readback measured 53,676
-nonzero pixels. Because only the early full-frame result fed `nonzero_exports`,
-completion refused the otherwise clean head. Requested region readbacks now
-refresh the same persistent per-head light proof and cannot be erased by a
-later black frame; the bounded full-frame budget is unchanged. That fix again
-changes the executable, so mirror and mixed must be repeated together on the
-next signed candidate. The mixed runner archives the raw log,
+before clean shutdown. The immediately following mixed run proved the late
+pixel fix. Its three physical heads reported nonzero exports and balanced
+asynchronous submissions, callbacks, and retirements; native completion
+verified all three after the pinned Present reached KMS ahead of its deferred
+ordinary successor.
+
+The run stopped after native completion because one short-lived surface left
+before its metadata rule arrived. The owner correctly retired that expected
+stale target, but the terminal aggregate still counted every non-delivery as a
+rejection and therefore refused an otherwise clean `19/19/18` control ledger.
+Stale target acknowledgements now have a distinct terminal count. Clean drain
+requires dispatched controls to equal delivered plus stale-retired controls,
+while any true rejection remains fatal. This changes the executable, so mirror
+and mixed must be repeated together on the next signed candidate. The mixed
+runner archives the raw log,
 exact Sophia and reference-WM digests, signed source commit, and signed-tree
 configuration behind a checksum and standalone verifier. The tty4 critical-
 path runner orders the mirror rerun before the centered mixed rerun and refuses
