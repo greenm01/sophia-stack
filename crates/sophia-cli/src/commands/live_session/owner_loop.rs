@@ -8,6 +8,7 @@ struct SessionLoopChannels<'a> {
     route_lease_updates: &'a Receiver<XAuthorityRouteLeaseUpdate>,
     route_lease_releases: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     frontend_service: &'a SyncSender<XServerFrontendServiceCommand>,
+    metadata_candidates: &'a Receiver<sophia_x_authority::XAuthorityClientMetadataCandidate>,
 }
 
 struct SessionLoopResources<'a> {
@@ -17,6 +18,7 @@ struct SessionLoopResources<'a> {
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
     seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
+    metadata_broker: &'a mut Option<LiveMetadataBroker>,
     /// Which connectors share one logical output, from the profile loaded at
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
@@ -211,6 +213,7 @@ fn run_session_loop(
         route_lease_updates: route_lease_update_receiver,
         route_lease_releases: route_lease_release_sender,
         frontend_service: frontend_service_sender,
+        metadata_candidates: metadata_candidate_receiver,
     } = channels;
     let SessionLoopResources {
         mut child,
@@ -219,6 +222,7 @@ fn run_session_loop(
         native_scanout,
         seat_controller,
         wm_session,
+        metadata_broker,
         mirror_grouping,
         initial_head_mapping,
     } = resources;

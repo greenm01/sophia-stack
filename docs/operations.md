@@ -27,6 +27,10 @@ An installed candidate requires:
   daily-driver proof also requires a pointer.
 - The runtime libraries used by the packaged binary: libdrm, GBM/Mesa,
   libseat, libudev, libinput, and libxkbcommon.
+- Bubblewrap 0.11.2 or newer at `/usr/bin/bwrap` for Hagia candidates. The
+  installer verifies this before changing an installed release; public Hagia
+  policy and its metadata broker will not launch without their protection
+  domains.
 - Bash, Python 3, GNU core utilities, procps, Kitty, Helium, and xterm on
   `PATH`. Helium is required by the retained Hagia revision-3 desktop profile;
   other profiles require it only for named browser scenarios. Xmonad and xmobar are

@@ -380,12 +380,13 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     let spec = public_policy_launch_spec(
         &config,
         "/usr/bin/hagia",
-        std::path::Path::new("/run/user/1000/sophia/policy/endpoint"),
-        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/endpoint/wm.sock"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/hagia-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         false,
         None,
-    );
+    )
+    .unwrap();
     assert!(spec.environment.contains(&(
         "HAGIA_POLICY_CANDIDATE".into(),
         "/run/user/1000/sophia/policy/policy.profile.kdl".into()
@@ -400,18 +401,48 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
             .iter()
             .all(|(name, _)| name != "HAGIA_POLICY_PROFILE_ACTIVATION")
     );
+    let domain = spec
+        .protection_domain
+        .as_ref()
+        .expect("public policy always has a protection domain");
+    assert_eq!(
+        domain.roles(),
+        &[sophia_runtime::ProtectionDomainRole::SpatialPolicy]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(
+        domain.network(),
+        sophia_runtime::ProtectionNetworkAccess::Denied
+    );
+    assert_eq!(domain.paths().len(), 3);
+    assert_eq!(
+        domain.paths()[0],
+        sophia_runtime::ProtectionPath::read_only(
+            "/run/user/1000/sophia/policy/policy.profile.kdl"
+        )
+    );
+    assert_eq!(
+        domain.paths()[1],
+        sophia_runtime::ProtectionPath::read_only("/run/user/1000/sophia/policy/endpoint")
+    );
+    assert_eq!(
+        domain.paths()[2],
+        sophia_runtime::ProtectionPath::read_write("/run/user/1000/sophia/policy/checkpoint")
+    );
 
     let activated = public_policy_launch_spec(
         &config,
         "/usr/bin/hagia",
-        std::path::Path::new("/run/user/1000/sophia/policy/endpoint"),
-        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/endpoint/wm.sock"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/hagia-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         true,
         Some(std::path::Path::new(
-            "/run/user/1000/sophia/policy/output.sock",
+            "/run/user/1000/sophia/policy/output-endpoint/output.sock",
         )),
-    );
+    )
+    .unwrap();
     assert!(
         activated
             .environment
@@ -419,8 +450,24 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     );
     assert!(activated.environment.contains(&(
         sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV.into(),
-        "/run/user/1000/sophia/policy/output.sock".into(),
+        "/run/user/1000/sophia/policy/output-endpoint/output.sock".into(),
     )));
+    let domain = activated.protection_domain.as_ref().unwrap();
+    assert!(
+        domain
+            .roles()
+            .contains(&sophia_runtime::ProtectionDomainRole::SpatialPolicy)
+    );
+    assert!(
+        domain
+            .roles()
+            .contains(&sophia_runtime::ProtectionDomainRole::OutputAuthority)
+    );
+    assert_eq!(domain.paths().len(), 4);
+    assert_eq!(
+        domain.paths()[3],
+        sophia_runtime::ProtectionPath::read_only("/run/user/1000/sophia/policy/output-endpoint")
+    );
 }
 
 #[test]

@@ -135,6 +135,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let xkb_state_details = Arc::new(AtomicU16::new(0));
     let xkb_modifiers = Arc::new(AtomicU16::new(0));
     let surface_windows = Arc::new(Mutex::new(BTreeMap::new()));
+    let metadata_rules = Arc::new(Mutex::new(BTreeMap::new()));
+    let metadata_generations = Arc::new(Mutex::new(BTreeMap::new()));
     let output_stream = Arc::new(Mutex::new(stream.try_clone().map_err(|error| {
         X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
     })?));
@@ -201,6 +203,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 event_sequence.clone(),
                 focused_surface_window.clone(),
                 surface_windows.clone(),
+                metadata_rules.clone(),
+                metadata_generations.clone(),
                 core_event_selections.clone(),
                 xkb_modifiers.clone(),
                 state.atoms.clone(),
@@ -487,6 +491,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     };
                     let output_reservation_property = match &request {
+                        crate::XWireRequest::ChangeProperty(change) => {
+                            Some((change.window, change.property))
+                        }
+                        crate::XWireRequest::DeleteProperty { window, property } => {
+                            Some((*window, *property))
+                        }
+                        _ => None,
+                    };
+                    let metadata_property_update = match &request {
                         crate::XWireRequest::ChangeProperty(change) => {
                             Some((change.window, change.property))
                         }
@@ -797,6 +810,21 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     windows.remove(surface);
                                 }
                             }
+                            {
+                                let mut rules = metadata_rules.lock().map_err(|_| {
+                                    X11SetupSocketError::new("X11 metadata rule lock poisoned")
+                                })?;
+                                let mut generations =
+                                    metadata_generations.lock().map_err(|_| {
+                                        X11SetupSocketError::new(
+                                            "X11 metadata generation lock poisoned",
+                                        )
+                                    })?;
+                                for surface in &removed_surface_routes {
+                                    rules.remove(surface);
+                                    generations.remove(surface);
+                                }
+                            }
                             if let Some(routing) = protocol_routing.as_ref() {
                                 for surface in &removed_surface_routes {
                                     routing.remove_surface(client, *surface).map_err(|error| {
@@ -1064,6 +1092,60 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         })
                         .into_iter()
                         .collect();
+                    if dispatch_succeeded
+                        && let Some((window, property)) = metadata_property_update
+                        && atoms
+                            .name(property)
+                            .is_some_and(crate::is_metadata_candidate_name)
+                        && let Some(routing) = protocol_routing.as_ref()
+                    {
+                        let surface = surface_windows
+                            .lock()
+                            .map_err(|_| {
+                                X11SetupSocketError::new("X11 surface/window map lock poisoned")
+                            })?
+                            .iter()
+                            .find_map(|(surface, candidate)| {
+                                (*candidate == window).then_some(*surface)
+                            });
+                        if let Some(surface) = surface {
+                            let rule = metadata_rules
+                                .lock()
+                                .map_err(|_| {
+                                    X11SetupSocketError::new("X11 metadata rule lock poisoned")
+                                })?
+                                .get(&surface)
+                                .copied();
+                            if let Some(rule) = rule {
+                                let generation = next_x11_metadata_generation(
+                                    &metadata_generations,
+                                    surface,
+                                )?;
+                                let mut candidate = crate::reduce_window_metadata(
+                                    &properties,
+                                    &atoms,
+                                    namespace,
+                                    window,
+                                    surface,
+                                    Some(rule),
+                                )
+                                .unwrap_or(sophia_protocol::ReducedMetadataCandidate {
+                                    surface,
+                                    label: None,
+                                    disclosure: rule.disclosure,
+                                    generation,
+                                });
+                                candidate.generation = generation;
+                                routing.emit_metadata_candidate(client, candidate).map_err(
+                                    |error| {
+                                        X11SetupSocketError::client_failure(format!(
+                                            "failed to publish reduced X11 metadata: {error:?}"
+                                        ))
+                                    },
+                                )?;
+                            }
+                        }
+                    }
                     (
                         output,
                         cpu_buffer_updates,

@@ -1,4 +1,5 @@
 mod authority;
+mod broker_v1;
 mod chrome;
 mod input;
 mod namespace;
@@ -10,6 +11,7 @@ mod surface;
 mod wm;
 
 pub use authority::*;
+pub use broker_v1::*;
 pub use chrome::*;
 pub use input::*;
 pub use namespace::*;

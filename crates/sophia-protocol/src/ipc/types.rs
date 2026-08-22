@@ -46,6 +46,10 @@ pub enum IpcMessageKind {
     OutputV1Snapshot = 66,
     OutputV1Proposal = 67,
     OutputV1Outcome = 68,
+    BrokerV1ClientHello = 80,
+    BrokerV1ServerWelcome = 81,
+    BrokerV1Request = 82,
+    BrokerV1Response = 83,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

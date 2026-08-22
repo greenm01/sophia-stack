@@ -482,8 +482,12 @@ semantics:
 
 What leaves is a reduced label. The broker publishes a `MetadataDisclosureRule` per
 surface, this authority applies it to text it already legitimately holds, and only
-the result crosses. The existing metadata candidate is already shaped for this: it
-carries the property's name, type, and byte length, never its bytes.
+the result crosses. A `ClassOnly` rule reduces the complete retained window identity
+to `WM_CLASS` even when a later title property changes; `Full` prefers
+`_NET_WM_NAME`, then `WM_NAME`, then the class. The emitted
+`ReducedMetadataCandidate` carries only the bounded display label (if one is
+permitted), disclosure level, opaque surface, and private monotonic generation.
+Property names, types, bytes, XIDs, and namespace identity do not cross this route.
 
 The reason is least privilege. Concentrating raw identity in the broker would be
 convenient — one sanitizer, one policy — but it would move every client's title,
@@ -495,6 +499,13 @@ places.
 The broker still owns what only it can: disclosure policy, trust assignment, icon
 tokens, and aggregation across authorities. It emits sanitized `ChromeDescriptor`
 data. Sophia Engine owns the chrome presentation and chrome hit-testing.
+
+Production Hagia sessions host this loop over `sophia_broker_v1`. The session admits
+the surface to its protected metadata-broker process, routes the returned rule to
+the exact X frontend client, and commits only the broker's sanitized descriptor to
+Engine's `ChromeDescriptorTable`. Removal retires the same surface on both sides.
+The current production default is `ClassOnly`; descriptor rendering by a native
+shell remains a later milestone.
 
 ## Input Delivery
 

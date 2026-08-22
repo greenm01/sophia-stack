@@ -369,6 +369,8 @@ fn spawn_x11_control_writer(
     sequence: Arc<AtomicU16>,
     focused_surface_window: Arc<AtomicU64>,
     surface_windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
+    metadata_rules: Arc<Mutex<BTreeMap<SurfaceId, MetadataDisclosureRule>>>,
+    metadata_generations: Arc<Mutex<BTreeMap<SurfaceId, u64>>>,
     core_event_selections: Arc<Mutex<XCoreEventSelectionState>>,
     xkb_modifiers: Arc<AtomicU16>,
     atoms: Arc<Mutex<XAtomTable>>,
@@ -472,6 +474,61 @@ fn spawn_x11_control_writer(
 
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {
+                XAuthorityControlCommand::PublishMetadataRule { rule, .. } => {
+                    if rule.surface != surface {
+                        channels.send_ack(
+                            client,
+                            XAuthorityControlAck {
+                                kind,
+                                transaction,
+                                surface,
+                                outcome: XAuthorityControlOutcome::AuthorityRejected,
+                            },
+                        )?;
+                        continue;
+                    }
+                    let atoms = atoms
+                        .lock()
+                        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
+                    let properties = properties.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 property table lock poisoned")
+                    })?;
+                    metadata_rules
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 metadata rule lock poisoned")
+                        })?
+                        .insert(surface, rule);
+                    let generation = next_x11_metadata_generation(
+                        &metadata_generations,
+                        surface,
+                    )?;
+                    let mut candidate = crate::reduce_window_metadata(
+                        &properties,
+                        &atoms,
+                        namespace,
+                        window,
+                        surface,
+                        Some(rule),
+                    )
+                    .unwrap_or(sophia_protocol::ReducedMetadataCandidate {
+                        surface,
+                        label: None,
+                        disclosure: rule.disclosure,
+                        generation,
+                    });
+                    candidate.generation = generation;
+                    drop(properties);
+                    drop(atoms);
+                    if let Some(routing) = protocol_routing.as_ref() {
+                        routing.emit_metadata_candidate(client, candidate).map_err(|error| {
+                            X11SetupSocketError::client_failure(format!(
+                                "failed to publish reduced X11 metadata: {error:?}"
+                            ))
+                        })?;
+                    }
+                    Vec::new()
+                }
                 XAuthorityControlCommand::AdmitSurface { geometry, .. } => {
                     let geometry = match lock_x11_control_runtime(
                         &runtime,
@@ -837,6 +894,24 @@ fn spawn_x11_control_writer(
         Ok(())
     });
     Ok(X11ControlWriter { stop, thread })
+}
+
+#[cfg(unix)]
+fn next_x11_metadata_generation(
+    generations: &Mutex<BTreeMap<SurfaceId, u64>>,
+    surface: SurfaceId,
+) -> Result<u64, X11SetupSocketError> {
+    let mut generations = generations
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 metadata generation lock poisoned"))?;
+    let next = generations
+        .get(&surface)
+        .copied()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| X11SetupSocketError::new("X11 metadata generation exhausted"))?;
+    generations.insert(surface, next);
+    Ok(next)
 }
 
 #[cfg(unix)]

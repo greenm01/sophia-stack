@@ -1,9 +1,14 @@
 use sophia_protocol::{
     MetadataDisclosure, MetadataDisclosureRule, NamespaceId, SurfaceId, TrustLevel,
 };
-use sophia_x_authority::{XAtomTable, XPropertyRecord, XResourceId, reduce_metadata_property};
+use sophia_x_authority::{
+    XAtomTable, XPropertyChange, XPropertyMode, XPropertyRecord, XPropertyTable, XResourceId,
+    reduce_metadata_property, reduce_window_metadata,
+};
 
 const SURFACE: SurfaceId = SurfaceId::new(9, 1);
+const NAMESPACE: NamespaceId = NamespaceId::from_raw(7);
+const WINDOW: XResourceId = XResourceId::new(0x22_0010, 1);
 
 fn atoms() -> XAtomTable {
     XAtomTable::new()
@@ -24,14 +29,37 @@ fn record(
         .expect("atom name is valid")
         .expect("interning creates the atom");
     XPropertyRecord {
-        namespace: NamespaceId::from_raw(7),
-        window: XResourceId::new(0x22_0010, 1),
+        namespace: NAMESPACE,
+        window: WINDOW,
         property,
         property_type,
         format: 8,
         bytes: bytes.to_vec(),
         generation: 4,
     }
+}
+
+fn retain(
+    properties: &mut XPropertyTable,
+    atoms: &mut XAtomTable,
+    property: &str,
+    property_type: &str,
+    bytes: &[u8],
+) {
+    let record = record(atoms, property, property_type, bytes);
+    properties
+        .apply_change(
+            NAMESPACE,
+            XPropertyChange {
+                mode: XPropertyMode::Replace,
+                window: WINDOW,
+                property: record.property,
+                property_type: record.property_type,
+                format: record.format,
+                bytes: record.bytes,
+            },
+        )
+        .unwrap();
 }
 
 fn rule(disclosure: MetadataDisclosure) -> MetadataDisclosureRule {
@@ -118,6 +146,126 @@ fn full_reaches_the_title() {
             MetadataDisclosure::Full,
         ),
         Some("Quarterly Review".to_owned())
+    );
+}
+
+#[test]
+fn class_only_reduces_the_window_to_class_even_when_a_title_is_present() {
+    let mut atoms = atoms();
+    let mut properties = XPropertyTable::new();
+    retain(
+        &mut properties,
+        &mut atoms,
+        "WM_CLASS",
+        "STRING",
+        b"soffice\0LibreOffice\0",
+    );
+    retain(
+        &mut properties,
+        &mut atoms,
+        "_NET_WM_NAME",
+        "UTF8_STRING",
+        b"Quarterly Salary Review.ods",
+    );
+
+    let reduced = reduce_window_metadata(
+        &properties,
+        &atoms,
+        NAMESPACE,
+        WINDOW,
+        SURFACE,
+        Some(rule(MetadataDisclosure::ClassOnly)),
+    )
+    .unwrap();
+
+    assert_eq!(
+        reduced.label.as_ref().map(|label| label.text.as_str()),
+        Some("LibreOffice")
+    );
+    assert_eq!(reduced.disclosure, MetadataDisclosure::ClassOnly);
+}
+
+#[test]
+fn full_window_reduction_prefers_ewmh_title_over_class() {
+    let mut atoms = atoms();
+    let mut properties = XPropertyTable::new();
+    retain(
+        &mut properties,
+        &mut atoms,
+        "WM_CLASS",
+        "STRING",
+        b"soffice\0LibreOffice\0",
+    );
+    retain(
+        &mut properties,
+        &mut atoms,
+        "WM_NAME",
+        "STRING",
+        b"Legacy title",
+    );
+    retain(
+        &mut properties,
+        &mut atoms,
+        "_NET_WM_NAME",
+        "UTF8_STRING",
+        b"Current title",
+    );
+
+    let reduced = reduce_window_metadata(
+        &properties,
+        &atoms,
+        NAMESPACE,
+        WINDOW,
+        SURFACE,
+        Some(rule(MetadataDisclosure::Full)),
+    )
+    .unwrap();
+
+    assert_eq!(
+        reduced.label.as_ref().map(|label| label.text.as_str()),
+        Some("Current title")
+    );
+}
+
+#[test]
+fn full_window_reduction_falls_back_when_the_preferred_title_is_invalid() {
+    let mut atoms = atoms();
+    let mut properties = XPropertyTable::new();
+    retain(
+        &mut properties,
+        &mut atoms,
+        "WM_CLASS",
+        "STRING",
+        b"soffice\0LibreOffice\0",
+    );
+    retain(
+        &mut properties,
+        &mut atoms,
+        "WM_NAME",
+        "STRING",
+        b"Legacy title",
+    );
+    retain(
+        &mut properties,
+        &mut atoms,
+        "_NET_WM_NAME",
+        "UTF8_STRING",
+        &[0xff, 0xfe],
+    );
+
+    let reduced = reduce_window_metadata(
+        &properties,
+        &atoms,
+        NAMESPACE,
+        WINDOW,
+        SURFACE,
+        Some(rule(MetadataDisclosure::Full)),
+    )
+    .unwrap();
+
+    assert_eq!(
+        reduced.label.as_ref().map(|label| label.text.as_str()),
+        Some("Legacy title")
     );
 }
 

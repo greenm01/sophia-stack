@@ -3,6 +3,8 @@
 //! Libraries emit structured diagnostics through `tracing`; binaries decide
 //! when and how to install a subscriber.
 
+#[cfg(target_os = "linux")]
+mod broker_transport;
 mod error;
 mod output_ipc;
 #[cfg(target_os = "linux")]
@@ -34,6 +36,8 @@ mod prelude {
     pub(crate) use crate::{SophiaErrorExt, SophiaErrorKind};
 }
 
+#[cfg(target_os = "linux")]
+pub use broker_transport::*;
 pub use error::*;
 pub use output_ipc::*;
 #[cfg(target_os = "linux")]

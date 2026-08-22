@@ -46,6 +46,16 @@ fn endpoint_is_owner_only_and_admits_only_the_supervised_peer() {
 }
 
 #[test]
+fn broker_endpoint_uses_the_same_owner_only_admission_boundary() {
+    let directory = unique_directory("broker-admission");
+    let peer = current_peer();
+    let endpoint = PolicyRoleEndpoint::bind_role(&directory, PolicyRole::Broker, peer).unwrap();
+    assert_eq!(endpoint.socket_path(), directory.join("broker.sock"));
+    drop(endpoint);
+    assert!(!directory.exists());
+}
+
+#[test]
 fn credential_mismatch_fails_without_claiming_the_role() {
     let directory = unique_directory("credentials");
     let mut expected = current_peer();

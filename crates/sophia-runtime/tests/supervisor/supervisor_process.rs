@@ -258,3 +258,29 @@ fn process_supervisor_rejects_start_while_child_is_running() {
     supervisor.terminate().unwrap();
     assert_eq!(supervisor.child_id(), None);
 }
+
+#[test]
+fn bubblewrap_supervisor_reports_the_actual_role_peer() {
+    if std::env::var_os("SOPHIA_RUN_PROTECTION_DOMAIN_SMOKE").is_none() {
+        return;
+    }
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::SpatialPolicy]).unwrap();
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::WindowManager,
+        ProcessLaunchSpec::new("/usr/bin/sleep")
+            .arg("5")
+            .protection_domain(domain),
+    );
+    supervisor
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::WindowManager,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    let launcher = supervisor.child_id().unwrap();
+    let peer = supervisor.peer_id().unwrap();
+    assert_ne!(launcher, peer);
+    assert_eq!(supervisor.protection_evidence().unwrap().peer_pid, peer);
+    assert!(std::path::Path::new(&format!("/proc/{peer}/ns/pid")).exists());
+    supervisor.terminate().unwrap();
+}

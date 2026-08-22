@@ -19,6 +19,7 @@ struct XServerFrontendRouteRegistry {
     xkb_worker: XkbKeyboardWorker,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
+    metadata_candidate_sender: SyncSender<XAuthorityClientMetadataCandidate>,
     route_lease_update_sender: Option<SyncSender<XAuthorityRouteLeaseUpdate>>,
     per_client_input_capacity: NonZeroUsize,
     per_client_control_capacity: NonZeroUsize,
@@ -349,6 +350,23 @@ impl XServerFrontendRouteRegistry {
             }
             Some(_) => Err(XServerFrontendRouteError::UnknownSurface { surface }),
             None => Ok(false),
+        }
+    }
+
+    fn emit_metadata_candidate(
+        &self,
+        client: XServerFrontendClientId,
+        candidate: sophia_protocol::ReducedMetadataCandidate,
+    ) -> Result<(), XServerFrontendRouteError> {
+        match self
+            .metadata_candidate_sender
+            .try_send(XAuthorityClientMetadataCandidate { client, candidate })
+        {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(XServerFrontendRouteError::MetadataQueueFull),
+            Err(TrySendError::Disconnected(_)) => {
+                Err(XServerFrontendRouteError::MetadataQueueDisconnected)
+            }
         }
     }
 

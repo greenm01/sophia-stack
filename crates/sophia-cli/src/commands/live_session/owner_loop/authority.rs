@@ -138,6 +138,43 @@
                         batch.raster_responses.clear();
                     }
                 }
+                if let Some(broker) = metadata_broker.as_mut() {
+                    for batch in &authority_run {
+                        if let (Some(client), Some(admission)) = (batch.client, batch.admission) {
+                            let mut surfaces = BTreeSet::new();
+                            surfaces.extend(
+                                batch
+                                    .surface_presentations
+                                    .iter()
+                                    .map(|presentation| presentation.surface),
+                            );
+                            surfaces.extend(
+                                batch
+                                    .transactions
+                                    .iter()
+                                    .map(|transaction| transaction.surface),
+                            );
+                            for surface in surfaces {
+                                if let Some(command) = broker.admit_surface(
+                                    client,
+                                    surface,
+                                    admission.namespace.profile,
+                                )? {
+                                    session_controls
+                                        .enqueue(command, Instant::now())
+                                        .map_err(|error| {
+                                            format!(
+                                                "failed to queue metadata disclosure rule: {error:?}"
+                                            )
+                                        })?;
+                                }
+                            }
+                        }
+                        for surface in &batch.removed_surfaces {
+                            broker.retire_surface(*surface)?;
+                        }
+                    }
+                }
                 for batch in &authority_run {
                     for error in &batch.protocol_errors {
                         metrics.protocol_error_count = metrics.protocol_error_count.saturating_add(1);

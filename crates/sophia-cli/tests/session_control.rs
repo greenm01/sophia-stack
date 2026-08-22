@@ -5,7 +5,9 @@ use sophia_cli::session_control::{
     SESSION_CONTROL_ACKNOWLEDGEMENT_TIMEOUT, SESSION_CONTROL_CAPACITY,
     SESSION_CONTROL_QUEUE_TIMEOUT, SessionControlFailure, SessionControlQueue,
 };
-use sophia_protocol::{SurfaceId, TransactionId};
+use sophia_protocol::{
+    MetadataDisclosure, MetadataDisclosureRule, SurfaceId, TransactionId, TrustLevel,
+};
 use sophia_x_authority::{
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityControlAck,
     XAuthorityControlCommand, XAuthorityControlKind, XAuthorityControlOutcome,
@@ -24,6 +26,19 @@ fn control(
 ) -> XAuthorityClientControlCommand {
     let transaction = TransactionId::from_raw(transaction);
     let command = match kind {
+        XAuthorityControlKind::PublishMetadataRule => {
+            XAuthorityControlCommand::PublishMetadataRule {
+                transaction,
+                surface,
+                rule: MetadataDisclosureRule {
+                    surface,
+                    disclosure: MetadataDisclosure::ClassOnly,
+                    trust_level: TrustLevel::Unknown,
+                    icon: None,
+                    generation: 1,
+                },
+            }
+        }
         XAuthorityControlKind::AdmitSurface => XAuthorityControlCommand::AdmitSurface {
             transaction,
             surface,

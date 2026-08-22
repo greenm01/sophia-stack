@@ -156,6 +156,11 @@ pub struct XAuthorityClientInputDelivery {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityControlCommand {
+    PublishMetadataRule {
+        transaction: TransactionId,
+        surface: SurfaceId,
+        rule: sophia_protocol::MetadataDisclosureRule,
+    },
     AdmitSurface {
         transaction: TransactionId,
         surface: SurfaceId,
@@ -196,6 +201,7 @@ pub enum XAuthorityControlCommand {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum XAuthorityControlKind {
+    PublishMetadataRule,
     AdmitSurface,
     ConfigureSurface,
     SetPresentationState,
@@ -209,6 +215,7 @@ pub enum XAuthorityControlKind {
 impl XAuthorityControlCommand {
     pub const fn kind(self) -> XAuthorityControlKind {
         match self {
+            Self::PublishMetadataRule { .. } => XAuthorityControlKind::PublishMetadataRule,
             Self::AdmitSurface { .. } => XAuthorityControlKind::AdmitSurface,
             Self::ConfigureSurface { .. } => XAuthorityControlKind::ConfigureSurface,
             Self::SetPresentationState { .. } => XAuthorityControlKind::SetPresentationState,
@@ -224,7 +231,8 @@ impl XAuthorityControlCommand {
 
     pub const fn transaction(self) -> TransactionId {
         match self {
-            Self::AdmitSurface { transaction, .. }
+            Self::PublishMetadataRule { transaction, .. }
+            | Self::AdmitSurface { transaction, .. }
             | Self::ConfigureSurface { transaction, .. }
             | Self::SetPresentationState { transaction, .. }
             | Self::RestorePresentationState { transaction, .. }
@@ -237,7 +245,8 @@ impl XAuthorityControlCommand {
 
     pub const fn surface(self) -> SurfaceId {
         match self {
-            Self::AdmitSurface { surface, .. }
+            Self::PublishMetadataRule { surface, .. }
+            | Self::AdmitSurface { surface, .. }
             | Self::ConfigureSurface { surface, .. }
             | Self::SetPresentationState { surface, .. }
             | Self::RestorePresentationState { surface, .. }
@@ -253,6 +262,12 @@ impl XAuthorityControlCommand {
 pub struct XAuthorityClientControlCommand {
     pub client: XServerFrontendClientId,
     pub command: XAuthorityControlCommand,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XAuthorityClientMetadataCandidate {
+    pub client: XServerFrontendClientId,
+    pub candidate: sophia_protocol::ReducedMetadataCandidate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,6 +324,8 @@ pub enum XServerFrontendRouteError {
     ClientQueueDisconnected {
         client: XServerFrontendClientId,
     },
+    MetadataQueueFull,
+    MetadataQueueDisconnected,
     DuplicateClient {
         client: XServerFrontendClientId,
     },
@@ -388,6 +405,10 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 "X11 route queue disconnected for client {}",
                 client.raw()
             ),
+            Self::MetadataQueueFull => formatter.write_str("X11 reduced metadata queue is full"),
+            Self::MetadataQueueDisconnected => {
+                formatter.write_str("X11 reduced metadata queue disconnected")
+            }
             Self::DuplicateClient { client } => {
                 write!(
                     formatter,

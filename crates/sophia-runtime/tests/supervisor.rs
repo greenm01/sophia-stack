@@ -5,9 +5,10 @@ use sophia_protocol::{
 };
 use sophia_runtime::{
     MAX_SESSION_RUNTIME_OBSERVATION_BATCH, ProcessLaunchSpec, ProcessSupervisor,
-    ProcessSupervisorError, RestartPolicy, RuntimeAuthorityHealth, RuntimeAuthoritySupervisor,
-    RuntimeBrokerHealth, RuntimeBrokerSupervisors, RuntimeScanoutState, SessionRuntimeCommand,
-    SessionRuntimeEvent, SessionRuntimeEventBatch, SessionRuntimeLoop, SessionRuntimeObservation,
+    ProcessSupervisorError, ProtectionDomainRole, ProtectionDomainSpec, RestartPolicy,
+    RuntimeAuthorityHealth, RuntimeAuthoritySupervisor, RuntimeBrokerHealth,
+    RuntimeBrokerSupervisors, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeEvent,
+    SessionRuntimeEventBatch, SessionRuntimeLoop, SessionRuntimeObservation,
     SessionRuntimeObservationError, SessionRuntimePhase, SessionRuntimeState,
     SupervisedProcessKind, SupervisorCommand, SupervisorEvent, SupervisorState,
     update_session_runtime, update_supervisor,

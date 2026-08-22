@@ -77,10 +77,14 @@ promotion gate.
    source `66bc0dd71a40e249eb00cd98f6080cf0f6aa9c54` passed their physical gates.
 2. **Current.** Let mirror heads pace independently while preserving
    primary-owned Present completion and last-head buffer retirement, then
-   re-run the affected physical gates.
-3. Host the already proven metadata-reduction chain through its own broker
-   interface and enforce protection domains before admitting a metadata-bearing
-   shell.
+   re-run the affected physical gates. The Rust/TLA/verifier slice is complete;
+   clean signed mirror and mixed-output reruns remain the promotion gate.
+3. **Locally implemented behind step 2.** Host the metadata-reduction chain
+   through broker interface revision 1 and enforce Bubblewrap protection
+   domains before admitting a metadata-bearing shell. The protected transport,
+   production Hagia host, and executable isolation smoke pass locally; retain a
+   real-session proof after the physical display gate before calling this row
+   promoted.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -370,13 +374,18 @@ is excluded; retained product behavior is not.
   — authority reduction, broker, `ChromeDescriptorTable` — including that a title
   never reaches Engine under a `ClassOnly` rule, and that the Engine ingress needed
   no widening to accept broker output.
-  **Not yet hosted.** Neither `ChromeDescriptorTable` nor `MetadataBroker` has a
-  production instance; both live in tests. Hosting them needs a session owner and,
-  because they are separate authorities, the broker interface family's own wire —
-  schema, codec, and revision line under clause 3, which is its own tranche rather
-  than a loose end of this one. Until that lands the chain is proven and unwired,
-  which is worth stating plainly: no running session produces a chrome descriptor
-  today.
+  **The broker tranche is now hosted.** `sophia_broker_v1` has its own bounded
+  schema, strict codec, revision negotiation, owner-only role socket, and exact
+  protected-peer admission. A production Hagia session starts `MetadataBroker`
+  in a distinct Bubblewrap domain. The broker publishes a per-surface rule to the
+  X Authority; only the authority's reduced candidate returns; and the sanitized
+  descriptor commits to the session owner's real Engine
+  `ChromeDescriptorTable`. The default production rule is `ClassOnly`, and a
+  protected executable smoke proves no title escalation, ambient display/session
+  bus, inherited descriptor, host-home/temporary-file visibility, or outbound
+  network. This does not complete the umbrella item: no shell-role transport,
+  display list, or descriptor rendering surface has landed yet, and the hosted
+  path still needs its ordered real-session proof after the display gate.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its
@@ -1802,11 +1811,17 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   projection promote as one exact presented bundle. Alloy and
   `ShellWorkAreaCoordination` retain focused negative controls. This is target
   architecture, not a shipped shell or sandbox.
-- [ ] Enforce protection domains in session supervision before admitting a
-  metadata-bearing shell: close ambient descriptors, prohibit conflicting role
-  composition and unsupervised cross-domain IPC/shared writable state, and add
-  executable isolation tests. Exact UID/PID socket admission alone is not this
-  gate.
+- [x] Enforce protection domains in session supervision before admitting a
+  metadata-bearing shell. The Bubblewrap backend rejects blind-policy domains
+  composed with shell, broker/portal, or frontend roles; launches public Hagia
+  and the production metadata broker with cleared environments, stdio-only
+  inherited descriptors, private PID/user/network/IPC/UTS/cgroup namespaces,
+  no ambient home or temporary tree, and only explicit read-only socket/profile
+  paths plus Hagia's private writable checkpoint directory. Exact host peer PID
+  is recovered for role-socket admission, and the protected broker smoke is the
+  executable negative control. Bubblewrap 0.11.2 is now a checked Hagia install
+  prerequisite. A future metadata shell must receive its own separately
+  supervised role/domain; this checkbox does not claim that shell exists.
 - [ ] Implement issuer-scoped action-capability validation and the atomic
   shell-reservation/work-area/WM coordinator with the eventual shell schema.
   Preserve the prior complete presented bundle on ordinary failure and keep

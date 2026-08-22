@@ -739,6 +739,10 @@ let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        if let Some(broker) = metadata_broker.as_mut() {
+            broker.poll()?;
+            broker.drain_candidates(metadata_candidate_receiver)?;
+        }
         if let Some(wm) = wm_session.as_mut() {
             wm.service_policy_update()?;
         }

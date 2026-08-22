@@ -11,7 +11,7 @@
 //! one `match` arm.
 
 use sophia_protocol::{
-    DisplayLabel, MAX_CHROME_LABEL_LEN, MetadataDisclosure, MetadataDisclosureRule,
+    DisplayLabel, MAX_CHROME_LABEL_LEN, MetadataDisclosure, MetadataDisclosureRule, NamespaceId,
     ReducedMetadataCandidate, SurfaceId,
 };
 
@@ -20,6 +20,7 @@ use crate::atom::{
     XAtomTable,
 };
 use crate::property::XPropertyRecord;
+use crate::{XPropertyTable, XResourceId};
 
 /// Applies a disclosure rule to one retained property record.
 ///
@@ -47,6 +48,52 @@ pub fn reduce_metadata_property(
         disclosure,
         generation: record.generation,
     }
+}
+
+/// Reduces one window's retained identity after any metadata property changes.
+///
+/// A descriptor is a view of the window, not of the last property packet. Under
+/// `ClassOnly`, a later title update must therefore retain the class label rather
+/// than replacing it with an empty descriptor. The candidate generation still
+/// advances to the newest relevant property so broker ordering remains monotonic.
+pub fn reduce_window_metadata(
+    properties: &XPropertyTable,
+    atoms: &XAtomTable,
+    namespace: NamespaceId,
+    window: XResourceId,
+    surface: SurfaceId,
+    rule: Option<MetadataDisclosureRule>,
+) -> Option<ReducedMetadataCandidate> {
+    let mut records = properties
+        .properties_for_window(namespace, window)
+        .into_iter()
+        .filter_map(|property| properties.get(namespace, window, property))
+        .filter(|record| {
+            atoms
+                .name(record.property)
+                .is_some_and(crate::is_metadata_candidate_name)
+        })
+        .collect::<Vec<_>>();
+    let generation = records.iter().map(|record| record.generation).max()?;
+    let disclosure = rule
+        .filter(|rule| rule.surface == surface)
+        .map_or(MetadataDisclosure::None, |rule| rule.disclosure);
+    let priority = |record: &&XPropertyRecord| match atoms.name(record.property) {
+        Some(X_ATOM_NAME_NET_WM_NAME) if disclosure == MetadataDisclosure::Full => 0,
+        Some(X_ATOM_NAME_WM_NAME) if disclosure == MetadataDisclosure::Full => 1,
+        Some(X_ATOM_NAME_WM_CLASS) if disclosure.discloses_text() => 2,
+        _ => 3,
+    };
+    records.sort_by_key(priority);
+    let mut candidate = records
+        .iter()
+        .find_map(|record| {
+            let candidate = reduce_metadata_property(record, atoms, surface, rule);
+            candidate.label.is_some().then_some(candidate)
+        })
+        .unwrap_or_else(|| reduce_metadata_property(records[0], atoms, surface, rule));
+    candidate.generation = generation;
+    Some(candidate)
 }
 
 /// The whole disclosure decision, in one place.

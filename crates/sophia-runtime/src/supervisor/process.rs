@@ -7,6 +7,7 @@ pub struct ProcessLaunchSpec {
     pub args: Vec<OsString>,
     pub environment: Vec<(OsString, OsString)>,
     pub process_group: bool,
+    pub protection_domain: Option<ProtectionDomainSpec>,
 }
 
 impl ProcessLaunchSpec {
@@ -16,6 +17,7 @@ impl ProcessLaunchSpec {
             args: Vec::new(),
             environment: Vec::new(),
             process_group: false,
+            protection_domain: None,
         }
     }
 
@@ -31,6 +33,11 @@ impl ProcessLaunchSpec {
 
     pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
         self.environment.push((key.into(), value.into()));
+        self
+    }
+
+    pub fn protection_domain(mut self, protection_domain: ProtectionDomainSpec) -> Self {
+        self.protection_domain = Some(protection_domain);
         self
     }
 }
@@ -49,6 +56,10 @@ pub enum ProcessSupervisorError {
         message: String,
     },
     WaitFailed {
+        process: SupervisedProcessKind,
+        message: String,
+    },
+    ProtectionDomainFailed {
         process: SupervisedProcessKind,
         message: String,
     },
@@ -71,6 +82,9 @@ impl fmt::Display for ProcessSupervisorError {
             Self::WaitFailed { process, message } => {
                 write!(f, "failed to wait for {process:?}: {message}")
             }
+            Self::ProtectionDomainFailed { process, message } => {
+                write!(f, "failed to isolate {process:?}: {message}")
+            }
         }
     }
 }
@@ -87,7 +101,14 @@ impl SophiaErrorExt for ProcessSupervisorError {
 pub struct ProcessSupervisor {
     process: SupervisedProcessKind,
     spec: ProcessLaunchSpec,
-    child: Option<Child>,
+    child: Option<ManagedChild>,
+}
+
+#[derive(Debug)]
+struct ManagedChild {
+    child: Child,
+    peer_pid: u32,
+    protection: Option<ProtectionDomainEvidence>,
 }
 
 impl ProcessSupervisor {
@@ -104,7 +125,17 @@ impl ProcessSupervisor {
     }
 
     pub fn child_id(&self) -> Option<u32> {
-        self.child.as_ref().map(Child::id)
+        self.child.as_ref().map(|child| child.child.id())
+    }
+
+    pub fn peer_id(&self) -> Option<u32> {
+        self.child.as_ref().map(|child| child.peer_pid)
+    }
+
+    pub fn protection_evidence(&self) -> Option<&ProtectionDomainEvidence> {
+        self.child
+            .as_ref()
+            .and_then(|child| child.protection.as_ref())
     }
 
     pub fn apply(
@@ -129,7 +160,7 @@ impl ProcessSupervisor {
             return Ok(None);
         };
 
-        match child.try_wait() {
+        match child.child.try_wait() {
             Ok(Some(_status)) => {
                 self.child = None;
                 Ok(Some(SupervisorEvent::ProcessExited))
@@ -143,9 +174,10 @@ impl ProcessSupervisor {
     }
 
     pub fn terminate(&mut self) -> Result<(), ProcessSupervisorError> {
-        let Some(mut child) = self.child.take() else {
+        let Some(mut managed) = self.child.take() else {
             return Ok(());
         };
+        let child = &mut managed.child;
 
         let running = child
             .try_wait()
@@ -207,20 +239,40 @@ impl ProcessSupervisor {
             std::thread::sleep(delay);
         }
 
-        let mut command = Command::new(&self.spec.program);
-        command.args(&self.spec.args);
-        command.envs(self.spec.environment.iter().cloned());
-        #[cfg(unix)]
-        if self.spec.process_group {
-            std::os::unix::process::CommandExt::process_group(&mut command, 0);
-        }
-        let child = command
-            .spawn()
-            .map_err(|error| ProcessSupervisorError::SpawnFailed {
-                process: self.process,
-                message: error.to_string(),
-            })?;
-        self.child = Some(child);
+        let managed = if let Some(domain) = &self.spec.protection_domain {
+            let protected =
+                spawn_bubblewrap(self.process, &self.spec, domain).map_err(|error| {
+                    ProcessSupervisorError::ProtectionDomainFailed {
+                        process: self.process,
+                        message: error.to_string(),
+                    }
+                })?;
+            ManagedChild {
+                peer_pid: protected.evidence.peer_pid,
+                child: protected.child,
+                protection: Some(protected.evidence),
+            }
+        } else {
+            let mut command = Command::new(&self.spec.program);
+            command.args(&self.spec.args);
+            command.envs(self.spec.environment.iter().cloned());
+            #[cfg(unix)]
+            if self.spec.process_group {
+                std::os::unix::process::CommandExt::process_group(&mut command, 0);
+            }
+            let child = command
+                .spawn()
+                .map_err(|error| ProcessSupervisorError::SpawnFailed {
+                    process: self.process,
+                    message: error.to_string(),
+                })?;
+            ManagedChild {
+                peer_pid: child.id(),
+                child,
+                protection: None,
+            }
+        };
+        self.child = Some(managed);
         Ok(SupervisorEvent::ProcessStarted)
     }
 
@@ -238,6 +290,9 @@ impl ProcessSupervisor {
 
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
+        // Startup can fail after the child exists but before the caller receives a
+        // fully constructed role transport. Process ownership must remain with the
+        // supervisor even on that partial path.
         let _ = self.terminate();
     }
 }

@@ -36,6 +36,25 @@ release_id="$(sed -n 's/^release_id=//p' "$artifact/manifest" | head -n 1)"
     echo "Artifact has an invalid release_id." >&2
     exit 1
 }
+hagia_included="$(sed -n 's/^hagia_included=//p' "$artifact/manifest" | head -n 1)"
+if [[ "$hagia_included" == true ]]; then
+    [[ -x /usr/bin/bwrap ]] || {
+        echo "Hagia requires Bubblewrap at /usr/bin/bwrap (minimum 0.11.2)." >&2
+        exit 1
+    }
+    bwrap_version="$(/usr/bin/bwrap --version 2>/dev/null || true)"
+    [[ "$bwrap_version" =~ ^bubblewrap\ ([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || {
+        echo "Could not verify the installed Bubblewrap version: $bwrap_version" >&2
+        exit 1
+    }
+    bwrap_major="${BASH_REMATCH[1]}"
+    bwrap_minor="${BASH_REMATCH[2]}"
+    bwrap_patch="${BASH_REMATCH[3]}"
+    if (( bwrap_major == 0 && (bwrap_minor < 11 || (bwrap_minor == 11 && bwrap_patch < 2)) )); then
+        echo "Hagia requires Bubblewrap 0.11.2 or newer; found $bwrap_version." >&2
+        exit 1
+    fi
+fi
 (
     cd "$artifact"
     sha256sum -c SHA256SUMS
@@ -91,7 +110,6 @@ commands=(
     sophia-verify-xmobar-work-area
     sophia-verify-soak
 )
-hagia_included="$(sed -n 's/^hagia_included=//p' "$artifact/manifest" | head -n 1)"
 if [[ "$hagia_included" == true ]]; then
     commands+=(
         sophia-hagia-session

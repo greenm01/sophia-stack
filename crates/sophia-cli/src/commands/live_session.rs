@@ -84,6 +84,7 @@ use std::time::{Duration, Instant};
 
 mod authority_file;
 pub(super) mod input_guard;
+mod metadata_broker;
 mod native_retirement;
 mod policy_transport_worker;
 mod process_supervision;
@@ -93,6 +94,7 @@ mod wm_transport_worker;
 mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
+use metadata_broker::LiveMetadataBroker;
 use native_retirement::{
     NativePresentRetirementObservation, correlate_physical_input_page_flip,
     record_native_present_retirement, record_native_software_present_retirement,
@@ -518,7 +520,7 @@ pub(crate) fn run_persistent_xterm_session(
     let (input_delivery_sender, input_delivery_receiver) = channel();
     let (route_lease_update_sender, route_lease_update_receiver) =
         sync_channel(SESSION_CONTROL_CAPACITY);
-    let broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
+    let mut broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
         XServerFrontendRouteCapacities::new(
             NonZeroUsize::new(SESSION_KEY_CAPACITY)
                 .expect("session input route capacity is nonzero"),
@@ -534,6 +536,9 @@ pub(crate) fn run_persistent_xterm_session(
         route_lease_update_sender,
         config.xkb_config.clone(),
     )?;
+    let metadata_candidate_receiver = broker
+        .take_metadata_candidate_receiver()
+        .ok_or("X frontend omitted its reduced metadata route")?;
     println!(
         "sophia_live_x11_route_capacity schema=1 input={} control={} protocol={} presentations={}",
         SESSION_KEY_CAPACITY,
@@ -556,6 +561,10 @@ pub(crate) fn run_persistent_xterm_session(
         )
     }));
     wait_for_x_server_socket(&config.socket_path, &mut server)?;
+    let mut metadata_broker = (config.wm_interface
+        == sophia_config::ExternalWmInterface::SophiaWmV1)
+        .then(LiveMetadataBroker::start)
+        .transpose()?;
 
     let input_proof_result = (config.input_proof_requested() && config.client.is_none())
         .then(|| LiveInputProofResult::create(display_number))
@@ -855,6 +864,7 @@ pub(crate) fn run_persistent_xterm_session(
             route_lease_updates: &route_lease_update_receiver,
             route_lease_releases: &route_lease_release_sender,
             frontend_service: &service_command_sender,
+            metadata_candidates: &metadata_candidate_receiver,
         },
         SessionLoopResources {
             child: primary_child,
@@ -863,6 +873,7 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout: &mut native_scanout,
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
+            metadata_broker: &mut metadata_broker,
             mirror_grouping: &mirror_grouping,
             initial_head_mapping,
         },

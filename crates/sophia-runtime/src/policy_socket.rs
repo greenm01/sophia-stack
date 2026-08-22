@@ -118,24 +118,34 @@ impl PolicyRoleEndpoint {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                 return Err(PolicyRoleEndpointError::PathAlreadyExists);
             }
-            Err(error) => return Err(PolicyRoleEndpointError::Io(error.to_string())),
+            Err(error) => {
+                return Err(PolicyRoleEndpointError::Io(format!(
+                    "create role directory: {error}"
+                )));
+            }
         }
         if let Err(error) = fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)) {
             let _ = fs::remove_dir(&directory);
-            return Err(PolicyRoleEndpointError::Io(error.to_string()));
+            return Err(PolicyRoleEndpointError::Io(format!(
+                "set role directory permissions: {error}"
+            )));
         }
         let socket_path = directory.join(role.socket_file_name());
         let listener = match UnixListener::bind(&socket_path) {
             Ok(listener) => listener,
             Err(error) => {
                 let _ = fs::remove_dir(&directory);
-                return Err(PolicyRoleEndpointError::Io(error.to_string()));
+                return Err(PolicyRoleEndpointError::Io(format!(
+                    "bind role socket: {error}"
+                )));
             }
         };
         if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)) {
             let _ = fs::remove_file(&socket_path);
             let _ = fs::remove_dir(&directory);
-            return Err(PolicyRoleEndpointError::Io(error.to_string()));
+            return Err(PolicyRoleEndpointError::Io(format!(
+                "set role socket permissions: {error}"
+            )));
         }
         Ok(Self {
             directory,

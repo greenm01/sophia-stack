@@ -428,7 +428,7 @@ impl PreparedPublicPolicyLaunch {
                 .path(sophia_config::DesktopAuthority::Policy),
             profile_key.is_some(),
             output_socket_path.as_deref(),
-        );
+        )?;
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec);
         let restart_policy = RestartPolicy::default();
         let mut supervisor_state =
@@ -443,7 +443,7 @@ impl PreparedPublicPolicyLaunch {
             .apply(command)?
             .ok_or("public WM supervisor did not start Hagia")?;
         let child_pid = supervisor
-            .child_id()
+            .peer_id()
             .ok_or("public WM supervisor did not retain Hagia's PID")?;
         transport.authorize_supervised_pid(child_pid)?;
         if let Some(output_transport) = output_transport.as_mut() {
@@ -1705,7 +1705,7 @@ fn public_policy_launch_spec(
     candidate_path: &std::path::Path,
     require_profile_activation: bool,
     output_socket_path: Option<&std::path::Path>,
-) -> ProcessLaunchSpec {
+) -> Result<ProcessLaunchSpec, sophia_runtime::ProtectionDomainSpecError> {
     let spec = ProcessLaunchSpec::new(process)
         .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
         .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
@@ -1724,10 +1724,38 @@ fn public_policy_launch_spec(
     } else {
         spec
     };
-    config.wm_process_args.iter().fold(
+    let spec = config.wm_process_args.iter().fold(
         spec,
         |spec, argument| spec.arg(argument),
-    )
+    );
+    let roles = if output_socket_path.is_some() {
+        vec![
+            sophia_runtime::ProtectionDomainRole::SpatialPolicy,
+            sophia_runtime::ProtectionDomainRole::OutputAuthority,
+        ]
+    } else {
+        vec![sophia_runtime::ProtectionDomainRole::SpatialPolicy]
+    };
+    let mut domain = sophia_runtime::ProtectionDomainSpec::bubblewrap(roles)?
+        .path(sophia_runtime::ProtectionPath::read_only(candidate_path))?
+        .path(sophia_runtime::ProtectionPath::read_only(
+            socket_path
+                .parent()
+                .expect("a public policy socket always has a parent"),
+        ))?
+        .path(sophia_runtime::ProtectionPath::read_write(
+            checkpoint_path
+                .parent()
+                .expect("a public policy checkpoint always has a parent"),
+        ))?;
+    if let Some(output_socket_path) = output_socket_path {
+        domain = domain.path(sophia_runtime::ProtectionPath::read_only(
+            output_socket_path
+                .parent()
+                .expect("an output authority socket always has a parent"),
+        ))?;
+    }
+    Ok(spec.protection_domain(domain))
 }
 
 impl LiveWmSession {
@@ -2302,7 +2330,7 @@ impl LiveWmSession {
         };
         let pid = self
             .supervisor
-            .child_id()
+            .peer_id()
             .ok_or("restarted public WM has no supervised PID")?;
         transport.authorize_supervised_pid(pid)?;
         if let Some(output_service) = public.output_service.as_ref() {

@@ -25,6 +25,7 @@ pub struct XServerFrontendRouteBroker {
     control_sender: SyncSender<XAuthorityClientControlCommand>,
     control_receiver: Receiver<XAuthorityClientControlCommand>,
     acknowledgement_receiver: Option<Receiver<XAuthorityClientControlAck>>,
+    metadata_candidate_receiver: Option<Receiver<XAuthorityClientMetadataCandidate>>,
     source_payload_receiver: Receiver<crate::ClipboardSourcePayload>,
     raster_sender: SyncSender<sophia_protocol::SurfaceRasterRequirements>,
     raster_receiver: Receiver<sophia_protocol::SurfaceRasterRequirements>,
@@ -328,6 +329,8 @@ impl XServerFrontendRouteBroker {
         let (route_lease_release_sender, route_lease_release_receiver) =
             sync_channel(capacities.control.get());
         let (control_sender, control_receiver) = sync_channel(capacities.control.get());
+        let (metadata_candidate_sender, metadata_candidate_receiver) =
+            sync_channel(capacities.control.get());
         let (source_payload_sender, source_payload_receiver) =
             sync_channel(capacities.input.get());
         let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
@@ -348,6 +351,7 @@ impl XServerFrontendRouteBroker {
                 xkb_worker: XkbKeyboardWorker::spawn(crate::XkbRmlvoConfig::default()),
                 acknowledgement_sender,
                 input_delivery_sender,
+                metadata_candidate_sender,
                 route_lease_update_sender,
                 per_client_input_capacity: capacities.input,
                 per_client_control_capacity: capacities.control,
@@ -367,6 +371,7 @@ impl XServerFrontendRouteBroker {
             control_sender,
             control_receiver,
             acknowledgement_receiver,
+            metadata_candidate_receiver: Some(metadata_candidate_receiver),
             source_payload_receiver,
             raster_sender,
             raster_receiver,
@@ -397,6 +402,12 @@ impl XServerFrontendRouteBroker {
         XServerFrontendControlRouter {
             registry: self.registry.clone(),
         }
+    }
+
+    pub fn take_metadata_candidate_receiver(
+        &mut self,
+    ) -> Option<Receiver<XAuthorityClientMetadataCandidate>> {
+        self.metadata_candidate_receiver.take()
     }
 
     pub fn raster_router(&self) -> XServerFrontendRasterRouter {

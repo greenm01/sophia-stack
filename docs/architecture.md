@@ -141,6 +141,22 @@ or layout policy.
   broker IPC, policy-provider IPC, expiry/revocation lifecycle, and the first
   native-X `CLIPBOARD`/`PRIMARY` source-proxy executor are complete. The other
   portal kinds do not yet have complete native executors.
+- Metadata broker interface revision 1 is a bounded, owner-only production
+  transport. In a Hagia session the broker runs as its own protected process,
+  publishes `MetadataDisclosureRule` records to the X Authority, receives only
+  reduced candidates, and returns sanitized descriptors to Engine's session-owned
+  `ChromeDescriptorTable`. The production default is `ClassOnly`; raw titles,
+  classes, PIDs, paths, and icons remain authority-private. The descriptor table
+  is not yet rendered by a native shell, so this closes broker hosting rather than
+  the larger shell/display-list milestone.
+- Public Hagia policy and the metadata broker are launched through the production
+  Bubblewrap protection backend. The backend rejects forbidden role composition,
+  clears the ambient environment, inherits only selected standard streams, denies
+  networking, creates private user/PID/IPC/UTS/cgroup namespaces and filesystem
+  roots, and exposes only declared role paths. The session authenticates each role
+  socket against the actual host peer PID inside the wrapper. Bubblewrap 0.11.2 is
+  the installed-session floor. Other future external authorities must opt into an
+  appropriate separately supervised domain before production admission.
 - Standard DRI3 1.2 carries FD-bearing `Open`, modifier-bearing multi-plane
   pixmaps, xshmfences, and Present submissions through bounded frontend batches.
   A Mesa RADV `vkcube` trace reaches an Engine transaction without an X11 error.
@@ -958,8 +974,14 @@ debugging. Blind WM policy may not share one with a metadata-bearing shell,
 metadata/portal broker, or application frontend. A desktop family may share
 source and executables only by launching separately supervised, sandboxed
 processes without such ambient channels. Exact UID/PID endpoint admission is
-authentication, not proof of that isolation; the current draft transport tests
-claim only the former.
+authentication, not proof of that isolation. Production public Hagia policy and
+metadata-broker processes therefore also run in separate Bubblewrap domains.
+Their environments and inherited descriptors are cleared, networking and the
+ambient host filesystem are unavailable, and only explicit read-only role/profile
+paths plus Hagia's private checkpoint directory are bound. A protected broker
+executable smoke checks those negative claims. This backend establishes the
+current external-role floor; it does not imply that the deferred shell role or
+every future broker has already been admitted.
 
 Engine mints transaction IDs, validates every proposal, and keeps the last
 committed layout when the WM is absent, malformed, timed out, or restarting. A
