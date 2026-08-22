@@ -1947,7 +1947,10 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   that exact two-output loss/return procedure and requires two input-epoch
   barriers, generation-advancing complete publications, policy settlement,
   later page flips, client survival, and clean final topology health. It has
-  not been run or promoted as evidence.
+  not been run or promoted as evidence. The recovery-safe one-command entry
+  point is `tools/run_output_topology_gate_tty4.sh`; it supplies the routine
+  arm, seat, Hagia discovery, signed-source build, and timestamped evidence
+  defaults so the operator carries no shell state between TTY sessions.
 
 ---
 

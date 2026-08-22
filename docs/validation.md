@@ -207,17 +207,17 @@ exclusive DRM/input ownership and asks the operator to disconnect and reconnect
 one of two outputs:
 
 ```sh
-SOPHIA_OUTPUT_TOPOLOGY_ARM=1 \
-SOPHIA_OUTPUT_TOPOLOGY_SEAT=seat0 \
-SOPHIA_HAGIA_BIN=~/dev/hagia/hagia \
-  tools/output_topology_physical_gate.sh
+tools/run_output_topology_gate_tty4.sh
 ```
 
-It requires one security-epoch barrier per change, complete one-output loss and
-two-output return publications with advancing generations, matching policy
-settlements, later page-flip retirements, a surviving Kitty input proof, and
-clean non-quarantined shutdown. Merely compiling or running the unarmed script
-does not claim physical hotplug evidence.
+Run it from `/dev/tty4` with exactly two connected physical outputs. It supplies
+the arm and `seat0` defaults, discovers Hagia from `PATH`, `/opt/sophia/current`,
+or an adjacent checkout, builds the clean signed Sophia revision, and preserves
+timestamped evidence under `/tmp`. Environment variables remain available for
+nonstandard rigs. The gate requires one security-epoch barrier per change,
+complete one-output loss and two-output return publications with advancing
+generations, matching policy settlements, later page-flip retirements, a
+surviving Kitty input proof, and clean non-quarantined shutdown.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

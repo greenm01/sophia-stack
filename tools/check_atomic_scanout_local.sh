@@ -386,7 +386,8 @@ bash -n tools/hagia_live_session_smoke.sh \
     tools/fixtures/hagia_restart_once.sh \
     tools/fixtures/hagia_physical_guide.sh \
     tools/check_hagia_physical_matchers.sh \
-    tools/output_topology_physical_gate.sh
+    tools/output_topology_physical_gate.sh \
+    tools/run_output_topology_gate_tty4.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof
