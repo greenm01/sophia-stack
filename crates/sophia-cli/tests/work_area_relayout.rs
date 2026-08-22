@@ -66,3 +66,28 @@ fn a_moved_work_area_is_relaid_out_for_public_and_private_policy_alike() {
          commit, and work-area changes and consumed in one place"
     );
 }
+
+const PUBLIC_PROPOSAL: &str =
+    include_str!("../src/commands/live_session/wm/public_policy/proposal.rs");
+
+/// A public policy's placement is an allocation, not client geometry.
+///
+/// The public API separates an outer allocation from an optional content-size
+/// request -- the code says so in a comment three lines above where it used to
+/// assign the allocation straight into the layer as geometry. The private path
+/// has always converted, through `apply_surface_chrome_clearance`. The public
+/// path did not, so every surface it placed occupied its whole allocation and
+/// the chrome drawn around that had nowhere to go: a focused window filling an
+/// output put its focus ring wholly outside that output, and the only part
+/// anyone saw was the sliver crossing into a neighbouring one.
+#[test]
+fn a_public_placement_is_converted_to_content_geometry_before_it_becomes_a_layer() {
+    assert!(
+        PUBLIC_PROPOSAL.contains("sophia_engine::surface_content_geometry(placement.geometry"),
+        "the public path must convert an allocation into content geometry"
+    );
+    assert!(
+        !PUBLIC_PROPOSAL.contains("layer.geometry = placement.geometry;"),
+        "assigning the allocation as geometry is the defect this replaced"
+    );
+}

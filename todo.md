@@ -1393,6 +1393,18 @@ hardware, the second only decides which screen looks best.
   space -- one monitor's window border appearing on another monitor, and none on
   its own.
 
+- [x] Convert a public policy's placement into content geometry. The public
+  API separates an outer allocation from an optional content-size request, and
+  the code said so in a comment three lines above where it assigned the
+  allocation straight into the layer as geometry. The private path has always
+  converted through `apply_surface_chrome_clearance`; the public path never did,
+  so every surface it placed filled its whole allocation and the chrome drawn
+  around it had nowhere to go. A focused window allocated an entire output put
+  its focus ring wholly outside that output, and the only part visible anywhere
+  was the sliver crossing into a neighbouring one. `surface_content_geometry` is
+  the single-rect form of that conversion, so both paths now read one
+  implementation instead of one converting and one assigning.
+
 - [ ] Give the composition-region trace a head. The line carries a rect and no
   output identity, and on the three-head rig two heads compose a `1920x1080_0_0`
   rect -- DP-2 extended at `mapping=exact` and the DP-3 mirror member at

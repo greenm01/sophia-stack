@@ -13718,3 +13718,48 @@ statement moved above another. Three diagnoses stalled on a missing fact, and I
 kept paying for a physical run to test a guess instead of paying once to make the
 system able to answer. Evidence that names the thing you are debugging is cheaper
 than the third guess about it.
+
+## The comment three lines above the bug
+
+The border fix before this one did not change what the operator saw, and neither
+did the one before that. The second attempt is the instructive one: I had a
+mechanism that plausibly explained the symptom -- a relayout flag written in
+three places and read in one, behind an early return the gate always took -- and
+I shipped it without checking that repairing it would move the geometry. It could
+not have. If the path never applies chrome clearance at all, relaying out
+produces exactly the same un-inset rectangle, and the flag being unreachable was
+a real but separate defect.
+
+The actual cause was four lines away from where I had been reading:
+
+    // Public policy separates outer geometry from an optional
+    // client-content request.
+    ...
+    layer.geometry = placement.geometry;
+
+The comment states the distinction and the code drops it. A public policy's
+placement is an outer allocation, chrome included; the private path converts it
+into client-content geometry through `apply_surface_chrome_clearance`, and the
+public path assigned it raw. So a surface filled its whole allocation, and chrome
+-- drawn outside the content rect, the way an X border_width is -- landed outside
+the allocation. When the allocation was a whole output, the chrome landed outside
+the output, where the only thing that could show any of it was a neighbouring
+output whose viewport the ring crossed in root space.
+
+Two lessons, and the second is the one that cost the runs.
+
+A candidate cause is not a diagnosis until it is shown to produce the symptom.
+Twice I found a genuine defect in the neighbourhood of the right answer, fixed
+it, and reported it as the fix. Both were worth fixing and neither was the bug.
+The check I skipped is cheap: work the arithmetic forward from the proposed
+repair to the observed geometry, and see whether it lands where the evidence
+says. Doing that here would have shown immediately that relayout changes nothing
+while the conversion is absent.
+
+And the class is now familiar enough to name on sight: an operation applied on
+one path and omitted on another, where both paths carry the same value under the
+same name. This session has met it in the raster that could not say what extent
+it spanned, the counter that could not distinguish degraded from enlarged, the
+clip bounded by a framebuffer instead of a scene, and now an allocation assigned
+as geometry. The tell is a comment explaining a distinction that the code beneath
+it does not make.

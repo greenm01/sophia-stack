@@ -86,6 +86,7 @@ fn public_live_proposal(
     transaction: TransactionId,
     source: LiveWmProposalSource,
     settlement: LivePolicySettlementIdentity,
+    chrome: sophia_engine::SurfaceChromeStyle,
 ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
     let mut layers = layout
         .layers
@@ -133,7 +134,13 @@ fn public_live_proposal(
                     resize_sync: ResizeSyncCapability::ImplicitOnly,
                 }
             };
-            layer.geometry = placement.geometry;
+            // The placement is an outer allocation, as the comment above says
+            // and as the private path has always treated it. Assigning it here
+            // as content geometry gave every surface its whole allocation and
+            // left the chrome drawn around it nowhere to go: a focused window
+            // filling its output had its focus ring land wholly outside that
+            // output, visible only where it crossed into a neighbour.
+            layer.geometry = sophia_engine::surface_content_geometry(placement.geometry, chrome)?;
             layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
             if let Some(size) = placement.requested_size {
                 requested_sizes.insert(placement.surface, size);

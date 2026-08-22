@@ -1888,6 +1888,10 @@ impl LiveWmSession {
         _output: sophia_engine::HeadlessOutput,
         allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        // Bound before `self.public` is taken, and named apart from the chrome
+        // module. This is the same style the private path converts allocations
+        // with; both paths reading one value is the point of passing it down.
+        let chrome_style = self.candidate_chrome_style();
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;
         public.flush_deferred_command()?;
@@ -2024,6 +2028,7 @@ impl LiveWmSession {
                             projection.transaction,
                             source,
                             identity,
+                            chrome_style,
                         )?)
                     }
                     Err(outcome) => {
@@ -2235,6 +2240,10 @@ impl LiveWmSession {
         if restart_requested && !process_exited {
             self.supervisor.terminate()?;
         }
+        // Bound before `self.public` is taken, and named apart from the chrome
+        // module. This is the same style the private path converts allocations
+        // with; both paths reading one value is the point of passing it down.
+        let chrome_style = self.candidate_chrome_style();
         let mut public = self.public.take().expect("public WM state is present");
         public.worker.take();
         let _ = public.reducer.disconnect(public.connection_epoch);

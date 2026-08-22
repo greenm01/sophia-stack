@@ -2,7 +2,7 @@ use sophia_engine::{
     ChromeLayoutError, CompositorNodeId, FocusRingStyle, SurfaceChromeRole, SurfaceChromeStyle,
     SurfaceFrameStyle, apply_surface_chrome_clearance, compositor_border_bands,
     outer_surface_constraints, outer_surface_geometry, surface_chrome_display_list,
-    surface_chrome_display_list_for_surfaces,
+    surface_chrome_display_list_for_surfaces, surface_content_geometry,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, LayoutTransaction, OutputId, Rect, Region, Size,
@@ -282,4 +282,100 @@ fn rects_overlap(first: Rect, second: Rect) -> bool {
         && second.x < first.x.saturating_add(first.width)
         && first.y < second.y.saturating_add(second.height)
         && second.y < first.y.saturating_add(first.height)
+}
+
+/// A surface given a whole allocation must leave room for its own chrome.
+///
+/// Chrome is drawn outside the content rect, so content that fills its
+/// allocation puts the chrome outside the allocation -- and when the allocation
+/// is a whole output, outside the output, where nothing can show it. The
+/// conversion is what reserves that room, and the property worth pinning is that
+/// the chrome lands back exactly on the allocation rather than anywhere near it.
+#[test]
+fn content_inside_an_allocation_leaves_its_chrome_exactly_on_the_allocation() {
+    let style = SurfaceChromeStyle {
+        focus_ring: FocusRingStyle {
+            width: 2,
+            ..FocusRingStyle::default()
+        },
+        ..SurfaceChromeStyle::default()
+    };
+    assert_eq!(style.clearance(), 2);
+
+    // The case from the physical rig: one window allocated an entire output.
+    let allocation = Rect {
+        x: 0,
+        y: 0,
+        width: 1_920,
+        height: 1_080,
+    };
+    let content = surface_content_geometry(allocation, style).unwrap();
+    assert_eq!(
+        content,
+        Rect {
+            x: 2,
+            y: 2,
+            width: 1_916,
+            height: 1_076
+        }
+    );
+    // Outsetting the content by the same clearance is the ring, and it lands on
+    // the allocation to the pixel -- so nothing is drawn outside the output.
+    assert_eq!(outer_surface_geometry(content, style).unwrap(), allocation);
+
+    // Assigning the allocation as content instead is the defect: the ring then
+    // starts two pixels above and left of the output it belongs to.
+    let unconverted = outer_surface_geometry(allocation, style).unwrap();
+    assert_eq!(unconverted.x, -2);
+    assert_eq!(unconverted.y, -2);
+    assert!(
+        unconverted.x < allocation.x && unconverted.y < allocation.y,
+        "an unconverted allocation puts its chrome outside the output"
+    );
+}
+
+/// The conversion is an exact inverse in both directions, at every clearance.
+#[test]
+fn allocation_and_content_geometry_round_trip_at_every_clearance() {
+    for width in [0, 1, 2, 7] {
+        let style = SurfaceChromeStyle {
+            focus_ring: FocusRingStyle {
+                width,
+                ..FocusRingStyle::default()
+            },
+            ..SurfaceChromeStyle::default()
+        };
+        let allocation = Rect {
+            x: 100,
+            y: 40,
+            width: 800,
+            height: 600,
+        };
+        let content = surface_content_geometry(allocation, style).unwrap();
+        assert_eq!(outer_surface_geometry(content, style).unwrap(), allocation);
+        assert_eq!(content.x, allocation.x + width);
+        assert_eq!(content.width, allocation.width - 2 * width);
+    }
+
+    // An allocation too small to hold its own chrome is refused rather than
+    // silently inverted into a negative extent.
+    let style = SurfaceChromeStyle {
+        focus_ring: FocusRingStyle {
+            width: 40,
+            ..FocusRingStyle::default()
+        },
+        ..SurfaceChromeStyle::default()
+    };
+    assert_eq!(
+        surface_content_geometry(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 60,
+                height: 60
+            },
+            style
+        ),
+        Err(ChromeLayoutError::AllocationTooSmall)
+    );
 }
