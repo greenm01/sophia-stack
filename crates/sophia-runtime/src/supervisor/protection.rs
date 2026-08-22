@@ -331,16 +331,39 @@ fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
     }
 }
 
+/// The bubblewrap flags one network policy requires.
+///
+/// Kept in this backend rather than on `ProtectionNetworkAccess`, because the
+/// policy is backend-neutral by design and `--unshare-net` is a bubblewrap
+/// spelling of it. A Landlock-based backend would satisfy the same `Denied` with
+/// a handled-access mask instead, and `docs/pnut-evaluation.md` names that as the
+/// intended second occupant of this seam.
+fn network_arguments(network: ProtectionNetworkAccess) -> Vec<OsString> {
+    match network {
+        ProtectionNetworkAccess::Denied => vec!["--unshare-net".into()],
+    }
+}
+
 fn bubblewrap_arguments(
     launch: &ProcessLaunchSpec,
     domain: &ProtectionDomainSpec,
     program: &Path,
 ) -> Result<Vec<OsString>, ProtectionDomainLaunchError> {
-    let mut args = vec![
+    let mut args: Vec<OsString> = vec![
         "--unshare-user".into(),
         "--unshare-ipc".into(),
         "--unshare-pid".into(),
-        "--unshare-net".into(),
+    ];
+    // In the slot the literal `--unshare-net` used to occupy, so the emitted
+    // command line is byte-identical and this change is provably inert. The
+    // flag and the field agreed only because the enum has one variant, and
+    // nothing made them: a second variant would have been accepted by the
+    // builder and dropped here, which is the shape of the fail-open the Pnut
+    // audit found -- a network policy whose configuration never reached
+    // enforcement. This is the one isolation claim the spec lets a caller
+    // state, so it is the one that has to be read back.
+    args.extend(network_arguments(domain.network()));
+    args.extend([
         "--unshare-uts".into(),
         "--unshare-cgroup".into(),
         "--disable-userns".into(),
@@ -380,7 +403,7 @@ fn bubblewrap_arguments(
         "/run".into(),
         "--dir".into(),
         "/home".into(),
-    ];
+    ]);
 
     let mut created = BTreeSet::new();
     created.extend([

@@ -59,3 +59,61 @@ fn wm_may_hold_the_output_role_in_its_own_domain() {
     );
     assert_eq!(spec.network(), ProtectionNetworkAccess::Denied);
 }
+
+/// The launcher reads the network policy rather than restating it.
+///
+/// `--unshare-net` used to sit as a literal in the argument prelude while
+/// `ProtectionNetworkAccess` was stored, exposed by a getter, and never consulted.
+/// With one variant the two agreed, but nothing made them agree: a second variant
+/// would have been accepted by the builder and silently dropped at spawn.
+///
+/// That is the fail-open the Pnut audit found one step further along -- a network
+/// policy whose configuration did not reach enforcement, where an explicitly
+/// empty allowlist read as "unrestricted" instead of "deny all"
+/// (`docs/pnut-evaluation.md`). Sophia's version was the same class with the
+/// configuration reaching enforcement not at all.
+///
+/// Asserted against the source because the mapping is private to the bubblewrap
+/// backend and belongs there: the policy is backend-neutral, and `--unshare-net`
+/// is one backend's spelling of it. Making the builder public to observe it would
+/// widen this crate's API for a test, and with a single variant a behavioural
+/// assertion could only restate the mapping. What needs guarding is that the
+/// mapping is consulted at all.
+#[test]
+fn the_launcher_derives_network_isolation_from_the_policy() {
+    const BACKEND: &str = include_str!("../src/supervisor/protection.rs");
+
+    let builder = BACKEND
+        .find("fn bubblewrap_arguments(")
+        .expect("the bubblewrap backend builds its own argument list");
+    let prelude = &BACKEND[builder..];
+
+    assert!(
+        prelude.contains("args.extend(network_arguments(domain.network()));"),
+        "the argument list must take its network flags from the policy"
+    );
+    assert!(
+        !prelude.contains("\"--unshare-net\".into(),"),
+        "no network flag may be restated as a literal beside the policy that \
+         decides it"
+    );
+
+    // The mapping itself is exhaustive over the policy, so a new variant is a
+    // compile error here rather than a flag that quietly stops being emitted.
+    let mapping = BACKEND
+        .find("fn network_arguments(")
+        .expect("the backend maps a policy to its own flags");
+    let mapping = &BACKEND[mapping..];
+    assert!(
+        mapping.contains("match network {"),
+        "the mapping must be a match on the policy, not a conditional"
+    );
+    assert!(
+        mapping.contains("ProtectionNetworkAccess::Denied => vec![\"--unshare-net\".into()]"),
+        "the denied policy must still emit the flag it always emitted"
+    );
+
+    // And the value a caller can actually construct is still the denied one.
+    let spec = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataBroker]).unwrap();
+    assert_eq!(spec.network(), ProtectionNetworkAccess::Denied);
+}
