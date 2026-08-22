@@ -128,5 +128,9 @@ if ! grep -Eq '^sophia_live_output_topology_health schema=1 status=clean quarant
     echo "clean settled topology health evidence is missing" >&2
     exit 1
 fi
+if ! grep -Eq '^sophia_live_native_completion schema=1 status=verified profile=topology_replacement ' "$evidence"; then
+    echo "topology-replacement native completion evidence is missing" >&2
+    exit 1
+fi
 
 echo "Sophia physical output-topology gate passed"

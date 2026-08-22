@@ -44,7 +44,11 @@ where
         &self,
         connector: drm::control::connector::Handle,
     ) -> io::Result<LibdrmNativeConnectorSnapshot> {
-        let info = self.get_connector(connector, false)?;
+        // Selection runs at startup and when rebuilding after a hotplug. DRM's
+        // cached connector state is not authoritative at either boundary; the
+        // API requires the current master to force a probe there so connection
+        // state, modes, and EDID reflect the physical connector.
+        let info = self.get_connector(connector, true)?;
         let selected_mode = info
             .modes()
             .iter()

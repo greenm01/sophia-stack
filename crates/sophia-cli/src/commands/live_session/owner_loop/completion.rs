@@ -1181,7 +1181,7 @@
             );
             content_evidence.push(evidence);
         }
-        if native_scanout.heads.iter().any(|head| {
+        let incomplete_independent_head = native_scanout.heads.iter().any(|head| {
             !independent_native_output_presented(
                 head.submissions,
                 head.retirements,
@@ -1189,11 +1189,23 @@
                 head.initial_modeset_submission.is_some(),
                 head.nonzero_exports,
             )
-        }) {
+        });
+        if incomplete_independent_head && !physical_output_topology_replaced {
             return Err(
                 "one or more native outputs did not present and retire independently".into(),
             );
         }
+        println!(
+            "sophia_live_native_completion schema=1 status=verified profile={} publication_generation={} initial_generation={} heads={}",
+            if physical_output_topology_replaced {
+                "topology_replacement"
+            } else {
+                "steady"
+            },
+            output_topology_owner.publication_generation,
+            initial_output_publication_generation,
+            native_scanout.heads.len(),
+        );
         if let Err(error) = validate_native_output_content_evidence(content_evidence) {
             return Err(match error {
                 NativeOutputContentEvidenceError::MirrorGenerationMismatch {

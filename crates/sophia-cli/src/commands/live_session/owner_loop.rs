@@ -261,6 +261,7 @@ fn run_session_loop(
         heads,
         initial_output_publication_generation,
     )?;
+    let mut physical_output_topology_replaced = false;
     let mut output_topology_monitor = native_scanout
         .is_some()
         .then(sophia_backend_live::LiveDrmTopologyMonitor::open)

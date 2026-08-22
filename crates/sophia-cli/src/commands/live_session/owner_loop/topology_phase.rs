@@ -112,6 +112,7 @@
                 let rebuild = output_topology_owner
                     .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
                 let topology_changed = rebuild == LiveOutputTopologyRebuild::TopologyChanged;
+                physical_output_topology_replaced |= topology_changed;
                 let replacement_capabilities = replacement.output_capabilities()?;
                 let replacement_authority = replacement.output_authority_snapshot(
                     output_topology_owner.topology_epoch,

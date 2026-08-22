@@ -400,8 +400,16 @@ grep -Fq '"--physical-sequence-timeout-ms=$sequence_timeout_msec"' \
     tools/output_topology_physical_gate.sh
 grep -Fq 'udev::MonitorBuilder::new_kernel()' \
     crates/sophia-backend-live/src/drm/topology_monitor.rs
+grep -Fq 'let info = self.get_connector(connector, true)?;' \
+    crates/sophia-backend-live/src/drm/native_kms/device.rs
 grep -Fq 'sophia_live_output_topology_monitor schema=1 source=kernel status=complete' \
     crates/sophia-cli/src/commands/live_session/owner_loop/completion.rs
+grep -Fq 'sophia_live_native_completion schema=1 status=verified profile=' \
+    crates/sophia-cli/src/commands/live_session/owner_loop/completion.rs
+grep -Fq 'physical_output_topology_replaced |= topology_changed;' \
+    crates/sophia-cli/src/commands/live_session/owner_loop/topology_phase.rs
+grep -Fq 'profile=topology_replacement' \
+    tools/output_topology_physical_gate.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof

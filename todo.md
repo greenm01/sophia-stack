@@ -1951,12 +1951,17 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   point is `tools/run_output_topology_gate_tty4.sh`; it supplies the routine
   arm, seat, matching signed Hagia and Sophia builds, and timestamped evidence
   defaults so the operator carries no shell state between TTY sessions. Attempt
-  `/tmp/sophia-output-topology-20260821-231655.log` exposed a real ingress
-  blocker before any publication: this host has a readable persisted udev
-  database but no running `udevd`, while the topology monitor subscribed to the
-  daemon's userspace rebroadcast group. DRM hotplug now subscribes directly to
-  kernel uevents and reports observed/coalesced/delivered monitor totals at
-  shutdown. A successor signed physical run remains required.
+  `/tmp/sophia-output-topology-20260821-231655.log` exposed a missing-`udevd`
+  rebroadcast dependency, and attempt
+  `/tmp/sophia-output-topology-20260821-232830.log` proved the direct kernel
+  replacement observed and delivered both cable events. Both rebuilds still
+  published the stale three-head topology because native KMS discovery used a
+  cached connector query even though DRM requires a forced probe at startup and
+  after hotplug. Discovery now force-probes, and completion recognizes a
+  generation-advanced topology replacement rather than applying the steady
+  session's current-head content lifecycle to newly recreated heads. The caller
+  gate still requires the full changed `3 -> 2 -> 3` publication, policy, and
+  presentation chain. A successor signed physical run remains required.
 
 ---
 
