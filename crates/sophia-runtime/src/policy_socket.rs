@@ -1,9 +1,12 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+use crate::{ProtectionDomainEvidence, ProtectionDomainRole};
 
 pub const SOPHIA_WM_SOCKET_ENV: &str = "SOPHIA_WM_SOCKET";
 pub const SOPHIA_SHELL_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
@@ -56,6 +59,38 @@ impl PolicyRole {
             Self::Output => SOPHIA_OUTPUT_SOCKET_ENV,
         }
     }
+
+    /// The protection-domain role a peer must carry to hold this policy role.
+    ///
+    /// Total rather than optional, so evidence is checked the same way for every
+    /// role and a later role cannot be added without answering the question.
+    pub const fn domain_role(self) -> ProtectionDomainRole {
+        match self {
+            Self::Wm => ProtectionDomainRole::SpatialPolicy,
+            Self::Shell => ProtectionDomainRole::MetadataShell,
+            Self::Broker => ProtectionDomainRole::MetadataBroker,
+            Self::Output => ProtectionDomainRole::OutputAuthority,
+        }
+    }
+
+    /// Whether a peer holding this role can observe application metadata.
+    ///
+    /// `docs/architecture.md` forbids blind spatial policy from sharing a
+    /// protection domain with a metadata-bearing shell, broker, or application
+    /// frontend. `ProtectionDomainSpec` refuses to build such a domain, but that
+    /// check only fires for a caller that builds one: a caller that built none
+    /// got no boundary and no complaint. These roles therefore refuse admission
+    /// on a supervised PID alone and take `authorize_protected_peer` instead.
+    ///
+    /// The blind spatial-policy and output roles stay admissible without a
+    /// domain. Requiring one everywhere is the separate decision about hosts
+    /// with no `bwrap`, not a side effect of this rule.
+    pub const fn is_metadata_bearing(self) -> bool {
+        match self {
+            Self::Wm | Self::Output => false,
+            Self::Shell | Self::Broker => true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +111,16 @@ pub enum PolicyRoleEndpointError {
     WrongReleasedPeer,
     PeerNotAuthorized,
     AcceptTimedOut,
+    /// A metadata-bearing role was offered a peer with no protection domain.
+    ProtectionDomainRequired {
+        role: PolicyRole,
+        required: ProtectionDomainRole,
+    },
+    /// A protection domain exists but does not carry this endpoint's role.
+    ProtectionRoleMissing {
+        required: ProtectionDomainRole,
+        observed: BTreeSet<ProtectionDomainRole>,
+    },
 }
 
 impl core::fmt::Display for PolicyRoleEndpointError {
@@ -90,6 +135,7 @@ impl std::error::Error for PolicyRoleEndpointError {}
 pub struct PolicyRoleEndpoint {
     directory: PathBuf,
     socket_path: PathBuf,
+    role: PolicyRole,
     listener: UnixListener,
     expected_uid: u32,
     expected_pid: Option<u32>,
@@ -107,10 +153,31 @@ impl PolicyRoleEndpoint {
     /// Binds the owner-only listener for one role beneath a fresh mode-0700
     /// directory. The directory must not already exist, so two roles bind under
     /// separate parents rather than sharing one.
+    ///
+    /// A metadata-bearing role is refused here rather than at accept time.
+    /// Naming an expected PID up front is admission on supervision alone, which
+    /// is the boundary those roles may not cross; they bind through
+    /// `bind_role_for_supervised_uid` and admit through
+    /// `authorize_protected_peer`.
     pub fn bind_role(
         directory: impl AsRef<Path>,
         role: PolicyRole,
         expected_peer: PolicyPeerIdentity,
+    ) -> Result<Self, PolicyRoleEndpointError> {
+        if role.is_metadata_bearing() {
+            return Err(PolicyRoleEndpointError::ProtectionDomainRequired {
+                role,
+                required: role.domain_role(),
+            });
+        }
+        Self::bind_role_inner(directory, role, expected_peer.uid, Some(expected_peer.pid))
+    }
+
+    fn bind_role_inner(
+        directory: impl AsRef<Path>,
+        role: PolicyRole,
+        expected_uid: u32,
+        expected_pid: Option<u32>,
     ) -> Result<Self, PolicyRoleEndpointError> {
         let directory = directory.as_ref().to_path_buf();
         match fs::create_dir(&directory) {
@@ -150,9 +217,10 @@ impl PolicyRoleEndpoint {
         Ok(Self {
             directory,
             socket_path,
+            role,
             listener,
-            expected_uid: expected_peer.uid,
-            expected_pid: Some(expected_peer.pid),
+            expected_uid,
+            expected_pid,
             active_peer: None,
         })
     }
@@ -164,21 +232,60 @@ impl PolicyRoleEndpoint {
         Self::bind_role_for_supervised_uid(directory, PolicyRole::Wm, expected_uid)
     }
 
+    /// Binds a role whose peer is not known until session supervision spawns it.
+    ///
+    /// Open to every role, including the metadata-bearing ones: this constructor
+    /// names no PID, so it makes no admission claim. The claim is made later, by
+    /// whichever `authorize_*` call the role allows.
     pub fn bind_role_for_supervised_uid(
         directory: impl AsRef<Path>,
         role: PolicyRole,
         expected_uid: u32,
     ) -> Result<Self, PolicyRoleEndpointError> {
-        let placeholder = PolicyPeerIdentity {
-            uid: expected_uid,
-            pid: u32::MAX,
-        };
-        let mut endpoint = Self::bind_role(directory, role, placeholder)?;
-        endpoint.expected_pid = None;
-        Ok(endpoint)
+        Self::bind_role_inner(directory, role, expected_uid, None)
     }
 
+    /// Admits a supervised peer by PID alone.
+    ///
+    /// Authentication, not isolation. A PID says which process connects, not what
+    /// it can reach through ambient IPC, shared memory, inherited descriptors, or
+    /// debugging. Metadata-bearing roles refuse this path.
     pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), PolicyRoleEndpointError> {
+        if self.role.is_metadata_bearing() {
+            return Err(PolicyRoleEndpointError::ProtectionDomainRequired {
+                role: self.role,
+                required: self.role.domain_role(),
+            });
+        }
+        self.set_expected_pid(pid)
+    }
+
+    /// Admits the peer a protection domain actually launched.
+    ///
+    /// The PID and the domain roles are read from one launch record rather than
+    /// correlated by the caller, so a supervisor that spawned the process
+    /// unprotected has no evidence to offer and cannot reach this call.
+    ///
+    /// `ProtectionDomainEvidence` stays a passive record whose fields any caller
+    /// can write, so this is a declaration the supervisor makes, not a proof the
+    /// endpoint verifies. The boundary it closes is silent omission: building no
+    /// domain used to admit anyway. Hand-writing evidence that contradicts the
+    /// launch is a visible lie in the source instead.
+    pub fn authorize_protected_peer(
+        &mut self,
+        evidence: &ProtectionDomainEvidence,
+    ) -> Result<(), PolicyRoleEndpointError> {
+        let required = self.role.domain_role();
+        if !evidence.roles.contains(&required) {
+            return Err(PolicyRoleEndpointError::ProtectionRoleMissing {
+                required,
+                observed: evidence.roles.clone(),
+            });
+        }
+        self.set_expected_pid(evidence.peer_pid)
+    }
+
+    fn set_expected_pid(&mut self, pid: u32) -> Result<(), PolicyRoleEndpointError> {
         if pid == 0 || self.active_peer.is_some() {
             return Err(PolicyRoleEndpointError::PeerNotAuthorized);
         }
@@ -271,6 +378,10 @@ impl PolicyRoleEndpoint {
 
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    pub const fn role(&self) -> PolicyRole {
+        self.role
     }
 
     pub const fn active_peer(&self) -> Option<PolicyPeerIdentity> {

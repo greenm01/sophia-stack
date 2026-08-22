@@ -47,12 +47,16 @@ impl LiveMetadataBroker {
             delay: Duration::ZERO,
         })?;
         let ready = (|| -> Result<_, Box<dyn std::error::Error>> {
-            let peer_pid = supervisor
-                .peer_id()
-                .ok_or("metadata broker supervisor omitted its protected peer PID")?;
-            transport.authorize_supervised_pid(peer_pid)?;
+            // Admission takes the launch record, not the PID read off it: the
+            // broker is a metadata-bearing role, so the transport requires
+            // evidence that the domain above actually carries MetadataBroker.
+            let evidence = supervisor
+                .protection_evidence()
+                .ok_or("metadata broker supervisor omitted its protection domain")?
+                .clone();
+            transport.authorize_protected_peer(&evidence)?;
             let welcome = transport.accept_and_negotiate(1, Duration::from_secs(5))?;
-            Ok((peer_pid, welcome))
+            Ok((evidence.peer_pid, welcome))
         })();
         let (peer_pid, welcome) = match ready {
             Ok(ready) => ready,

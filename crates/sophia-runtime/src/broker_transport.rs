@@ -13,7 +13,7 @@ use sophia_protocol::{
     encode_broker_v1_response_frame, encode_broker_v1_server_welcome_frame,
 };
 
-use crate::{PolicyPeerIdentity, PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError};
+use crate::{PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError, ProtectionDomainEvidence};
 
 const BROKER_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -55,17 +55,6 @@ pub struct MetadataBrokerSessionTransport {
 }
 
 impl MetadataBrokerSessionTransport {
-    pub fn bind(
-        directory: impl AsRef<Path>,
-        expected_peer: PolicyPeerIdentity,
-    ) -> Result<Self, BrokerTransportError> {
-        Ok(Self {
-            endpoint: PolicyRoleEndpoint::bind_role(directory, PolicyRole::Broker, expected_peer)?,
-            stream: None,
-            connection_epoch: 0,
-        })
-    }
-
     pub fn bind_for_supervised_uid(
         directory: impl AsRef<Path>,
         expected_uid: u32,
@@ -81,8 +70,17 @@ impl MetadataBrokerSessionTransport {
         })
     }
 
-    pub fn authorize_supervised_pid(&mut self, pid: u32) -> Result<(), BrokerTransportError> {
-        self.endpoint.authorize_supervised_pid(pid)?;
+    /// Admits the broker process its supervisor launched into a protection
+    /// domain.
+    ///
+    /// There is no PID-only counterpart on this transport. The metadata broker
+    /// is a metadata-bearing role, so a caller that spawned it unprotected has
+    /// nothing to pass here and fails to compile rather than admitting quietly.
+    pub fn authorize_protected_peer(
+        &mut self,
+        evidence: &ProtectionDomainEvidence,
+    ) -> Result<(), BrokerTransportError> {
+        self.endpoint.authorize_protected_peer(evidence)?;
         Ok(())
     }
 

@@ -974,7 +974,10 @@ debugging. Blind WM policy may not share one with a metadata-bearing shell,
 metadata/portal broker, or application frontend. A desktop family may share
 source and executables only by launching separately supervised, sandboxed
 processes without such ambient channels. Exact UID/PID endpoint admission is
-authentication, not proof of that isolation. Production public Hagia policy and
+authentication, not proof of that isolation, so the metadata-bearing role
+sockets refuse it outright: they admit only the peer their supervisor launched
+into a domain carrying that role, while the blind policy and output roles still
+admit on a supervised PID. Production public Hagia policy and
 metadata-broker processes therefore also run in separate Bubblewrap domains.
 Their environments and inherited descriptors are cleared, networking and the
 ambient host filesystem are unavailable, and only explicit read-only role/profile

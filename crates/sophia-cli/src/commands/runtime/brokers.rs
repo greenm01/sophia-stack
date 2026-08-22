@@ -81,12 +81,26 @@ fn run_metadata_broker_transport_smoke(
     .map_err(|error| format!("metadata broker bind failed: {error:?}"))?;
     let socket = transport.socket_path().to_path_buf();
     let executable = std::env::current_exe()?;
+    // The broker role admits only a peer carrying protection evidence, so the
+    // domain is unconditional here rather than selected by a flag. `--protected`
+    // now chooses the in-sandbox negative probe, which is the part that costs
+    // host markers and a probe run; the smoke needs bwrap either way.
+    let probe = args.iter().any(|arg| arg == "--protected");
     let mut hidden_paths = Vec::new();
+    let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
+        sophia_runtime::ProtectionDomainRole::MetadataBroker,
+    ])?
+    .path(sophia_runtime::ProtectionPath::read_only(
+        socket
+            .parent()
+            .expect("metadata broker socket has a parent"),
+    ))?;
     let mut spec = ProcessLaunchSpec::new(&executable)
         .arg("metadata-broker-serve")
         .env(sophia_runtime::SOPHIA_BROKER_SOCKET_ENV, &socket)
-        .process_group();
-    if args.iter().any(|arg| arg == "--protected") {
+        .process_group()
+        .protection_domain(domain);
+    if probe {
         let tmp_marker = std::env::temp_dir().join(format!(
             "sophia-protection-host-marker-{}",
             std::process::id()
@@ -97,19 +111,10 @@ fn run_metadata_broker_transport_smoke(
         ));
         std::fs::write(&tmp_marker, b"host-only")?;
         std::fs::write(&home_marker, b"host-only")?;
-        let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
-            sophia_runtime::ProtectionDomainRole::MetadataBroker,
-        ])?
-        .path(sophia_runtime::ProtectionPath::read_only(
-            socket
-                .parent()
-                .expect("metadata broker socket has a parent"),
-        ))?;
         spec = spec
             .env("SOPHIA_PROTECTION_PROBE", "required")
             .env("SOPHIA_PROTECTION_HIDDEN_TMP_PATH", &tmp_marker)
-            .env("SOPHIA_PROTECTION_HIDDEN_HOME_PATH", &home_marker)
-            .protection_domain(domain);
+            .env("SOPHIA_PROTECTION_HIDDEN_HOME_PATH", &home_marker);
         hidden_paths.extend([tmp_marker, home_marker]);
     }
     let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::MetadataBroker, spec);
@@ -119,11 +124,13 @@ fn run_metadata_broker_transport_smoke(
             delay: Duration::ZERO,
         })
         .map_err(|error| format!("metadata broker spawn failed: {error:?}"))?;
-    let peer_pid = supervisor
-        .peer_id()
-        .ok_or("metadata broker supervisor omitted peer PID")?;
+    let evidence = supervisor
+        .protection_evidence()
+        .ok_or("metadata broker supervisor omitted its protection domain")?
+        .clone();
+    let peer_pid = evidence.peer_pid;
     transport
-        .authorize_supervised_pid(peer_pid)
+        .authorize_protected_peer(&evidence)
         .map_err(|error| format!("metadata broker authorization failed: {error:?}"))?;
     let welcome = transport
         .accept_and_negotiate(1, Duration::from_secs(5))
@@ -238,10 +245,8 @@ fn run_metadata_broker_transport_smoke(
         std::fs::remove_file(hidden_path)?;
     }
     println!(
-        "metadata-broker-transport-smoke status=passed protected={} peer_pid={} revision={} secret_title_rejected=true descriptor_label=LibreOffice descriptor_redacted=true retired=true",
-        args.iter().any(|arg| arg == "--protected"),
-        peer_pid,
-        welcome.selected_revision,
+        "metadata-broker-transport-smoke status=passed protected=true probe={} peer_pid={} revision={} secret_title_rejected=true descriptor_label=LibreOffice descriptor_redacted=true retired=true",
+        probe, peer_pid, welcome.selected_revision,
     );
     Ok(true)
 }

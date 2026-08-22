@@ -117,8 +117,29 @@ Matching an expected UID and PID authenticates an endpoint; it does not prove
 protection-domain separation. Before any metadata-bearing shell role is
 installed, session supervision must also enforce the forbidden role
 compositions above, close unneeded inherited descriptors, and apply the
-project's chosen process-isolation mechanism. The current draft socket tests
-cover exact peer admission only and make no sandbox claim.
+project's chosen process-isolation mechanism.
+
+The role socket enforces the first of those. A metadata-bearing role -- shell or
+metadata broker -- refuses admission on a supervised PID alone and takes instead
+the launch evidence its supervisor produced, which must carry that role's
+protection-domain role. A supervisor that built no domain has no evidence to
+offer and cannot admit. Naming an expected PID at bind time is refused for the
+same reason, so the constructor is not a second door into the rule. The metadata
+broker transport publishes no PID-only call at all, which makes the omission a
+compile error rather than a quiet admission.
+
+This requirement lives at the socket because the forbidden-composition check
+lives in `ProtectionDomainSpec`, where it fires only for a caller that builds a
+domain. Building none used to produce no boundary and no complaint.
+
+Evidence is a passive record whose fields any caller can write. It is therefore a
+declaration the supervisor makes, not a proof the socket verifies: it closes
+silent omission, not deliberate misreporting.
+
+The blind spatial-policy and output roles still admit on a supervised PID.
+Requiring a domain for every role has to answer for hosts with no `bwrap`, and
+that decision stays separate from this rule rather than arriving as a side
+effect of it.
 
 ## Versioning
 

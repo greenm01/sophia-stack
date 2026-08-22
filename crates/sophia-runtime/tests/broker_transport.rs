@@ -2,7 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sophia_protocol::{BrokerV1Request, BrokerV1Response, SurfaceId, TransactionId};
 use sophia_runtime::{
-    MetadataBrokerClientTransport, MetadataBrokerSessionTransport, PolicyPeerIdentity,
+    MetadataBrokerClientTransport, MetadataBrokerSessionTransport, ProtectionBackendKind,
+    ProtectionDomainEvidence, ProtectionDomainRole,
 };
 
 #[test]
@@ -15,14 +16,23 @@ fn an_idle_broker_connection_outlives_the_request_timeout() {
             .unwrap()
             .as_nanos()
     ));
-    let mut session = MetadataBrokerSessionTransport::bind(
+    let mut session = MetadataBrokerSessionTransport::bind_for_supervised_uid(
         &directory,
-        PolicyPeerIdentity {
-            uid: rustix::process::geteuid().as_raw(),
-            pid: std::process::id(),
-        },
+        rustix::process::geteuid().as_raw(),
     )
     .unwrap();
+    // The broker role admits only a peer with protection evidence. This test
+    // measures the idle read bound rather than the sandbox, so it stands in for
+    // the supervisor and names itself as the launched peer; spawning a real
+    // domain here would make a timeout test depend on bwrap.
+    session
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataBroker].into_iter().collect(),
+        })
+        .unwrap();
     let socket = session.socket_path().to_path_buf();
     let client = std::thread::spawn(move || {
         let mut client = MetadataBrokerClientTransport::connect(socket).unwrap();

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use sophia_runtime::{
     PolicyPeerIdentity, PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError,
-    SOPHIA_WM_SOCKET_ENV,
+    ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole, SOPHIA_WM_SOCKET_ENV,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -48,11 +48,134 @@ fn endpoint_is_owner_only_and_admits_only_the_supervised_peer() {
 #[test]
 fn broker_endpoint_uses_the_same_owner_only_admission_boundary() {
     let directory = unique_directory("broker-admission");
-    let peer = current_peer();
-    let endpoint = PolicyRoleEndpoint::bind_role(&directory, PolicyRole::Broker, peer).unwrap();
+    let endpoint = PolicyRoleEndpoint::bind_role_for_supervised_uid(
+        &directory,
+        PolicyRole::Broker,
+        current_peer().uid,
+    )
+    .unwrap();
     assert_eq!(endpoint.socket_path(), directory.join("broker.sock"));
     drop(endpoint);
     assert!(!directory.exists());
+}
+
+/// A metadata-bearing role may not be handed a peer identity at bind time.
+///
+/// Naming a PID up front is admission on supervision alone, so refusing it here
+/// is the same rule as `authorize_supervised_pid`, applied at the other door.
+/// Without this the constructor stayed a way in for exactly what the admission
+/// call rejects.
+#[test]
+fn a_metadata_bearing_role_cannot_bind_against_a_bare_peer_identity() {
+    for role in [PolicyRole::Broker, PolicyRole::Shell] {
+        let directory = unique_directory("metadata-bind");
+        assert_eq!(
+            PolicyRoleEndpoint::bind_role(&directory, role, current_peer()).err(),
+            Some(PolicyRoleEndpointError::ProtectionDomainRequired {
+                role,
+                required: role.domain_role(),
+            })
+        );
+        // A refused bind leaves nothing behind to collide with the retry.
+        assert!(!directory.exists());
+    }
+}
+
+/// The gap this rule closes: a supervisor that builds no protection domain used
+/// to admit a metadata-bearing peer with no boundary and no complaint, because
+/// the forbidden-composition check only fires for a caller that builds a domain.
+#[test]
+fn a_metadata_bearing_role_refuses_a_bare_supervised_pid() {
+    for role in [PolicyRole::Broker, PolicyRole::Shell] {
+        let directory = unique_directory("metadata-pid");
+        let mut endpoint =
+            PolicyRoleEndpoint::bind_role_for_supervised_uid(&directory, role, current_peer().uid)
+                .unwrap();
+        assert_eq!(
+            endpoint.authorize_supervised_pid(current_peer().pid).err(),
+            Some(PolicyRoleEndpointError::ProtectionDomainRequired {
+                role,
+                required: role.domain_role(),
+            })
+        );
+        // Refused authorization leaves the endpoint unarmed rather than half-armed.
+        assert_eq!(
+            endpoint
+                .accept_expected_timeout(Duration::from_millis(20))
+                .err(),
+            Some(PolicyRoleEndpointError::PeerNotAuthorized)
+        );
+    }
+}
+
+/// Evidence admits only for the role the domain actually carries. A blind
+/// spatial-policy domain cannot stand in for a broker's.
+#[test]
+fn a_metadata_bearing_role_admits_only_evidence_carrying_its_role() {
+    let directory = unique_directory("metadata-evidence");
+    let peer = current_peer();
+    let mut endpoint =
+        PolicyRoleEndpoint::bind_role_for_supervised_uid(&directory, PolicyRole::Broker, peer.uid)
+            .unwrap();
+
+    assert_eq!(
+        endpoint
+            .authorize_protected_peer(&evidence(peer.pid, [ProtectionDomainRole::SpatialPolicy]))
+            .err(),
+        Some(PolicyRoleEndpointError::ProtectionRoleMissing {
+            required: ProtectionDomainRole::MetadataBroker,
+            observed: [ProtectionDomainRole::SpatialPolicy].into_iter().collect(),
+        })
+    );
+
+    endpoint
+        .authorize_protected_peer(&evidence(peer.pid, [ProtectionDomainRole::MetadataBroker]))
+        .unwrap();
+    let client = UnixStream::connect(endpoint.socket_path()).unwrap();
+    let accepted = endpoint.accept_expected().unwrap();
+    assert_eq!(endpoint.active_peer(), Some(peer));
+    drop((client, accepted));
+}
+
+/// The blind roles keep admitting on supervision alone.
+///
+/// Requiring a domain everywhere is a separate decision that has to answer for
+/// hosts with no `bwrap`; this test is what keeps it from arriving as a side
+/// effect of the metadata-bearing rule.
+#[test]
+fn blind_roles_still_admit_a_supervised_pid_without_a_domain() {
+    for role in [PolicyRole::Wm, PolicyRole::Output] {
+        assert!(!role.is_metadata_bearing());
+        let directory = unique_directory("blind-pid");
+        let peer = current_peer();
+        let mut endpoint =
+            PolicyRoleEndpoint::bind_role_for_supervised_uid(&directory, role, peer.uid).unwrap();
+        endpoint.authorize_supervised_pid(peer.pid).unwrap();
+        let client = UnixStream::connect(endpoint.socket_path()).unwrap();
+        let accepted = endpoint.accept_expected().unwrap();
+        assert_eq!(endpoint.active_peer(), Some(peer));
+        drop((client, accepted));
+    }
+}
+
+/// One domain holding both roles admits on both endpoints, which is how a WM
+/// granted the output authority connects twice without widening either role.
+#[test]
+fn one_domain_admits_every_role_it_carries() {
+    let peer = current_peer();
+    let both = evidence(
+        peer.pid,
+        [
+            ProtectionDomainRole::SpatialPolicy,
+            ProtectionDomainRole::OutputAuthority,
+        ],
+    );
+    for role in [PolicyRole::Wm, PolicyRole::Output] {
+        let directory = unique_directory("shared-domain");
+        let mut endpoint =
+            PolicyRoleEndpoint::bind_role_for_supervised_uid(&directory, role, peer.uid).unwrap();
+        endpoint.authorize_protected_peer(&both).unwrap();
+    }
 }
 
 #[test]
@@ -131,6 +254,18 @@ fn expected_peer_accept_is_bounded_when_no_client_connects() {
     );
     assert!(started.elapsed() < Duration::from_secs(1));
     assert_eq!(endpoint.active_peer(), None);
+}
+
+fn evidence(
+    peer_pid: u32,
+    roles: impl IntoIterator<Item = ProtectionDomainRole>,
+) -> ProtectionDomainEvidence {
+    ProtectionDomainEvidence {
+        backend: ProtectionBackendKind::Bubblewrap,
+        supervisor_pid: std::process::id(),
+        peer_pid,
+        roles: roles.into_iter().collect(),
+    }
 }
 
 fn current_peer() -> PolicyPeerIdentity {

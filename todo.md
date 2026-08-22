@@ -81,10 +81,11 @@ promotion gate.
    clean signed mirror and mixed-output reruns remain the promotion gate.
 3. **Locally implemented behind step 2.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
-   domains before admitting a metadata-bearing shell. The protected transport,
-   production Hagia host, and executable isolation smoke pass locally; retain a
-   real-session proof after the physical display gate before calling this row
-   promoted.
+   domains before admitting a metadata-bearing role. The protected transport,
+   production Hagia host, executable isolation smoke, and the role socket's
+   refusal to admit a metadata-bearing peer without launch evidence all pass
+   locally; retain a real-session proof after the physical display gate before
+   calling this row promoted.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -103,35 +104,31 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Upstream the Pnut Landlock fix.** The only item here that decays. A
-   fail-open where the natural spelling of deny-all produced unrestricted access
-   is fixed, tested, and sitting on a local branch with no upstream tracking, so
-   every other user of that library still has it and Sophia carries a patch it
-   must rebase. Finished work currently benefiting nobody. See
-   [`docs/pnut-evaluation.md`](docs/pnut-evaluation.md); the branch is
-   `fix/landlock-empty-network-deny-all` in the Pnut checkout. This is a decision
-   about publishing rather than engineering.
-2. **Enforce protection domains before admitting a metadata-bearing role**,
-   which is row 3 of the ordering above. The spec, launcher, role-composition
-   rule, PID handshake, and in-sandbox probe all exist and pass; nothing yet
-   *requires* them. The invariant is enforced where domains are constructed
-   rather than where roles are admitted, so a caller that simply builds no domain
-   gets no boundary and no complaint. That is what turns this tranche from a
-   capability into a posture.
-3. **Re-run the mixed-output gate against the settled chrome split.** The
-   window-chrome defect is closed: reconciliation now carries the outer and
-   content projections separately, applying clearance before layout-epoch
-   reconciliation while the reducer stages and commits only the outer value, so
-   a generated content resize no longer makes an unacknowledged geometry
-   current. What remains is operator confirmation on the rig under
-   `--optimize-for=center-unscaled`, which is the topology that exposed it: both
-   mirror heads pixel-exact inside their borders, and a focus ring that stays on
-   the output owning the window.
+1. **Re-run the affected physical display gates on one clean signed
+   candidate.** Run the two-head mirror gate first, then the three-head
+   mixed-output gate under `--optimize-for=center-unscaled`. The latter must
+   show both mirror heads pixel-exact inside their borders and a focus ring that
+   stays on the output owning the window. The window-chrome defect that exposed
+   this topology is closed: reconciliation carries outer and content projections
+   separately, applies clearance before layout-epoch reconciliation, and commits
+   only the outer value. These runs close active critical-path row 2.
+
+Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
+was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
+from signed commit `70c8ea8a9fb419ca9808caae4615d6bbeb5dd973`; see
+[`docs/pnut-evaluation.md`](docs/pnut-evaluation.md). Protection domains are now
+required where roles are admitted rather than only where domains are
+constructed: the metadata-bearing role sockets refuse a supervised PID, refuse
+an expected peer identity at bind time, and admit only the launch evidence
+carrying their domain role. A caller that builds no domain no longer gets
+admission without a boundary and without a complaint. See the ratified entry
+below.
 
 Not yet: making the protection domain the default rather than opt-in. It reads
-as the obvious next step now that the probe passes, and it belongs after row 2,
-with a deliberate decision about hosts that have no `bwrap` rather than arriving
-as a side effect.
+as the obvious next step now that the metadata-bearing roles require one, and it
+still owes a deliberate decision about hosts that have no `bwrap` rather than
+arriving as a side effect. The blind spatial-policy and output roles are what
+that decision governs; they still admit on a supervised PID today.
 
 ## Installed Hagia Promotion Contract
 
@@ -1857,6 +1854,17 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   executable negative control. Bubblewrap 0.11.2 is now a checked Hagia install
   prerequisite. A future metadata shell must receive its own separately
   supervised role/domain; this checkbox does not claim that shell exists.
+- [x] Require that domain where roles are admitted, not only where domains are
+  constructed. The shell and metadata-broker sockets refuse a supervised PID,
+  refuse an expected peer identity at bind time, and admit only the launch
+  evidence their supervisor produced, which must carry that role's
+  protection-domain role. The metadata broker transport publishes no PID-only
+  call, so a caller that spawns it unprotected fails to compile rather than
+  admitting quietly. The blind spatial-policy and output roles are unchanged and
+  still admit on a supervised PID; requiring a domain everywhere remains the
+  separate `bwrap`-availability decision. Evidence is a passive record whose
+  fields any caller can write, so this closes silent omission rather than
+  deliberate misreporting.
 - [ ] Implement issuer-scoped action-capability validation and the atomic
   shell-reservation/work-area/WM coordinator with the eventual shell schema.
   Preserve the prior complete presented bundle on ordinary failure and keep
