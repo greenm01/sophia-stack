@@ -8,7 +8,7 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 TTY_REQUIRED="${SOPHIA_OUTPUT_TOPOLOGY_TTY:-/dev/tty4}"
 SEAT="${SOPHIA_OUTPUT_TOPOLOGY_SEAT:-seat0}"
-INSTALL_PREFIX="${SOPHIA_INSTALL_PREFIX:-/opt/sophia}"
+HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 EVIDENCE="${SOPHIA_OUTPUT_TOPOLOGY_EVIDENCE:-/tmp/sophia-output-topology-$(date +%Y%m%d-%H%M%S).log}"
 EVIDENCE_LATEST="${SOPHIA_OUTPUT_TOPOLOGY_EVIDENCE_LATEST:-/tmp/sophia-output-topology-physical.log}"
 
@@ -17,10 +17,10 @@ usage() {
 usage: tools/run_output_topology_gate_tty4.sh
 
 From tty4, run the complete signed output disconnect/reconnect gate with
-safe defaults. Hagia is discovered from PATH, $INSTALL_PREFIX/current, or the
-adjacent Hagia checkout. Environment overrides remain available through the
-SOPHIA_OUTPUT_TOPOLOGY_*, SOPHIA_HAGIA_BIN, SOPHIA_TERMINAL_BIN, and
-SOPHIA_FIREFOX_BIN variables.
+safe defaults. Hagia is built from the clean signed checkout at $HAGIA_ROOT so
+its policy wire matches current Sophia. Environment overrides remain available
+through SOPHIA_OUTPUT_TOPOLOGY_*, SOPHIA_HAGIA_ROOT, SOPHIA_HAGIA_BIN,
+SOPHIA_TERMINAL_BIN, and SOPHIA_FIREFOX_BIN.
 USAGE
 }
 
@@ -61,21 +61,29 @@ git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 ||
 
 if [[ -n "${SOPHIA_HAGIA_BIN:-}" ]]; then
     HAGIA_BIN="$SOPHIA_HAGIA_BIN"
+    BUILD_HAGIA=0
+    HAGIA_SOURCE_COMMIT=external
 else
-    HAGIA_BIN="$(command -v hagia || true)"
-    for candidate in \
-        "$INSTALL_PREFIX/current/target/release/hagia" \
-        "$ROOT_DIR/../hagia/target/release/hagia" \
-        "$ROOT_DIR/../hagia/hagia"; do
-        if [[ -z "$HAGIA_BIN" && -x "$candidate" ]]; then
-            HAGIA_BIN="$candidate"
-        fi
-    done
+    [[ -d "$HAGIA_ROOT/.git" ]] ||
+        refuse "Hagia checkout not found at $HAGIA_ROOT; set SOPHIA_HAGIA_ROOT or SOPHIA_HAGIA_BIN."
+    if [[ -n "$(git -C "$HAGIA_ROOT" status --porcelain --untracked-files=all)" ]]; then
+        refuse "Hagia worktree must be clean before a signed physical gate."
+    fi
+    HAGIA_SOURCE_COMMIT="$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
+    git -C "$HAGIA_ROOT" verify-commit "$HAGIA_SOURCE_COMMIT" >/dev/null 2>&1 ||
+        refuse "Hagia HEAD must have a valid cryptographic signature."
+    command -v nim >/dev/null 2>&1 ||
+        refuse "Nim is required to build the current Hagia policy client."
+    HAGIA_BIN="${TMPDIR:-/tmp}/hagia-output-topology-${HAGIA_SOURCE_COMMIT:0:12}"
+    HAGIA_NIMCACHE="${TMPDIR:-/tmp}/hagia-output-topology-nimcache-${HAGIA_SOURCE_COMMIT:0:12}"
+    BUILD_HAGIA=1
 fi
-if [[ -z "$HAGIA_BIN" || ! -x "$HAGIA_BIN" ]]; then
+if (( ! BUILD_HAGIA )) && [[ -z "$HAGIA_BIN" || ! -x "$HAGIA_BIN" ]]; then
     refuse "Hagia was not found; set SOPHIA_HAGIA_BIN to its executable path."
 fi
-HAGIA_BIN="$(readlink -f "$HAGIA_BIN")"
+if (( ! BUILD_HAGIA )); then
+    HAGIA_BIN="$(readlink -f "$HAGIA_BIN")"
+fi
 
 mapfile -t connected_outputs < <(
     for status in /sys/class/drm/card*-*/status; do
@@ -92,6 +100,21 @@ fi
 . "$ROOT_DIR/tools/lib/drm_master_guard.sh"
 if ! drm_master_refusal="$(sophia_require_drm_master_available SOPHIA_OUTPUT_TOPOLOGY_FORCE 2>&1)"; then
     refuse "$drm_master_refusal"
+fi
+
+if (( BUILD_HAGIA )); then
+    echo "Building signed Hagia source $HAGIA_SOURCE_COMMIT before DRM takeover..."
+    (
+        cd "$HAGIA_ROOT"
+        nim c -d:release --path:src --nimcache:"$HAGIA_NIMCACHE" \
+            -o:"$HAGIA_BIN" src/hagia.nim
+    )
+    if [[ -n "$(git -C "$HAGIA_ROOT" status --porcelain --untracked-files=all)" \
+        || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$HAGIA_SOURCE_COMMIT" ]]; then
+        refuse "Hagia source identity changed during the physical-gate build."
+    fi
+    git -C "$HAGIA_ROOT" verify-commit "$HAGIA_SOURCE_COMMIT" >/dev/null 2>&1 ||
+        refuse "Hagia HEAD signature no longer verifies after the build."
 fi
 
 echo "Building signed Sophia source $source_commit before DRM takeover..."
@@ -113,6 +136,7 @@ if [[ -n "$EVIDENCE_LATEST" && "$EVIDENCE_LATEST" != "$EVIDENCE" ]]; then
 fi
 
 echo "Hagia:   $HAGIA_BIN"
+echo "Hagia source: $HAGIA_SOURCE_COMMIT"
 echo "Evidence: $EVIDENCE"
 export SOPHIA_OUTPUT_TOPOLOGY_ARM=1
 export SOPHIA_OUTPUT_TOPOLOGY_SEAT="$SEAT"
@@ -128,5 +152,13 @@ if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" \
 fi
 git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 ||
     refuse "Sophia HEAD signature no longer verifies after the gate."
+if (( BUILD_HAGIA )); then
+    if [[ -n "$(git -C "$HAGIA_ROOT" status --porcelain --untracked-files=all)" \
+        || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$HAGIA_SOURCE_COMMIT" ]]; then
+        refuse "Hagia source identity changed during the physical gate."
+    fi
+    git -C "$HAGIA_ROOT" verify-commit "$HAGIA_SOURCE_COMMIT" >/dev/null 2>&1 ||
+        refuse "Hagia HEAD signature no longer verifies after the gate."
+fi
 
-echo "Signed output-topology gate passed for $source_commit"
+echo "Signed output-topology gate passed for Sophia $source_commit and Hagia $HAGIA_SOURCE_COMMIT"

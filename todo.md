@@ -1949,7 +1949,7 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   later page flips, client survival, and clean final topology health. It has
   not been run or promoted as evidence. The recovery-safe one-command entry
   point is `tools/run_output_topology_gate_tty4.sh`; it supplies the routine
-  arm, seat, Hagia discovery, signed-source build, and timestamped evidence
+  arm, seat, matching signed Hagia and Sophia builds, and timestamped evidence
   defaults so the operator carries no shell state between TTY sessions.
 
 ---

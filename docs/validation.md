@@ -211,13 +211,14 @@ tools/run_output_topology_gate_tty4.sh
 ```
 
 Run it from `/dev/tty4` with at least two connected physical outputs. It supplies
-the arm and `seat0` defaults, discovers Hagia from `PATH`, `/opt/sophia/current`,
-or an adjacent checkout, builds the clean signed Sophia revision, and preserves
-timestamped evidence under `/tmp`. Environment variables remain available for
-nonstandard rigs. The gate requires one security-epoch barrier per change,
-complete `N - 1` loss and `N` return publications with advancing generations,
-matching policy settlements, later page-flip retirements, a surviving Kitty
-input proof, and clean non-quarantined shutdown.
+the arm and `seat0` defaults, builds Hagia from the adjacent clean signed
+checkout so its policy wire matches current Sophia, builds the clean signed
+Sophia revision, and preserves timestamped evidence under `/tmp`. Environment
+variables remain available for nonstandard rigs. The gate requires one
+security-epoch barrier per change, complete `N - 1` loss and `N` return
+publications with advancing generations, matching policy settlements, later
+page-flip retirements, a surviving Kitty input proof, and clean
+non-quarantined shutdown.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

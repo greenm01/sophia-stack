@@ -388,6 +388,12 @@ bash -n tools/hagia_live_session_smoke.sh \
     tools/check_hagia_physical_matchers.sh \
     tools/output_topology_physical_gate.sh \
     tools/run_output_topology_gate_tty4.sh
+grep -Fq 'HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"' \
+    tools/run_output_topology_gate_tty4.sh
+grep -Fq 'HAGIA_BIN="${TMPDIR:-/tmp}/hagia-output-topology-${HAGIA_SOURCE_COMMIT:0:12}"' \
+    tools/run_output_topology_gate_tty4.sh
+grep -Fq 'nim c -d:release --path:src --nimcache:"$HAGIA_NIMCACHE"' \
+    tools/run_output_topology_gate_tty4.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof
 grep -Fq 'SOPHIA_INSTALLED_ATTEMPT_MODE=firefox' \
     tools/installed/sophia-firefox-proof
