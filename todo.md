@@ -69,13 +69,15 @@ active roadmap item.
 Work proceeds in this order. Later rows do not justify bypassing an earlier
 promotion gate.
 
-1. Make the mixed mirror-plus-extended evidence truthful: classify sampling
-   from realized source and target extents, finish the public-policy chrome
-   transaction, audit the post-commit topology path, and prove head loss and
-   return on a signed candidate.
-2. Let mirror heads pace independently while preserving primary-owned Present
-   completion and last-head buffer retirement, then re-run the affected
-   physical gates.
+1. **Complete.** Make the mixed mirror-plus-extended evidence truthful:
+   classify sampling from realized source and target extents, finish the
+   public-policy chrome transaction, audit the post-commit topology path, and
+   prove head loss and return on a signed candidate. Signed mixed-output source
+   `3d19e2e67cfe2e43eb643d219be11a3251fe7176` and signed head-loss/return
+   source `66bc0dd71a40e249eb00cd98f6080cf0f6aa9c54` passed their physical gates.
+2. **Current.** Let mirror heads pace independently while preserving
+   primary-owned Present completion and last-head buffer retirement, then
+   re-run the affected physical gates.
 3. Host the already proven metadata-reduction chain through its own broker
    interface and enforce protection domains before admitting a metadata-bearing
    shell.
@@ -832,7 +834,7 @@ Detailed physical-run diagnoses remain in
   topology below, where a window is rendered at its own head's density and
   nothing is resampled. See
   [Research Log](docs/research-log.md) for the ink-density evidence.
-- [ ] Prove the same architecture for a mixed mirror-plus-extended topology
+- [x] Prove the same architecture for a mixed mirror-plus-extended topology
   driven through `sophia_output_v1`. This now also carries the visual
   acceptance withdrawn from the mirror gate: a window resident on the
   lower-density head must be rendered at that head's density with no
@@ -888,8 +890,12 @@ Detailed physical-run diagnoses remain in
   archive verifier, and visible-pixel acceptance: two logical outputs settled,
   the extended head's exact draw retired, topology input quarantine released,
   health and cleanup were clean, and the operator confirmed matching mirror
-  content plus sharp extended text. Only the separate head-loss/return phase of
-  this combined item remains open.
+  content plus sharp extended text. Signed head-loss/return source
+  `66bc0dd71a40e249eb00cd98f6080cf0f6aa9c54` then passed the physical
+  `3 -> 2 -> 3` cable gate: both kernel notices produced changed,
+  generation-advancing publications, Hagia policy commitments, later
+  presentations, released input quarantine, and clean topology and session
+  teardown. That closes the combined item.
 - [ ] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
@@ -1946,22 +1952,19 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   multi-output hotplug gate. `tools/output_topology_physical_gate.sh` now arms
   that exact multi-output loss/return procedure and requires two input-epoch
   barriers, generation-advancing complete publications, policy settlement,
-  later page flips, client survival, and clean final topology health. It has
-  not been run or promoted as evidence. The recovery-safe one-command entry
-  point is `tools/run_output_topology_gate_tty4.sh`; it supplies the routine
-  arm, seat, matching signed Hagia and Sophia builds, and timestamped evidence
-  defaults so the operator carries no shell state between TTY sessions. Attempt
-  `/tmp/sophia-output-topology-20260821-231655.log` exposed a missing-`udevd`
-  rebroadcast dependency, and attempt
-  `/tmp/sophia-output-topology-20260821-232830.log` proved the direct kernel
-  replacement observed and delivered both cable events. Both rebuilds still
-  published the stale three-head topology because native KMS discovery used a
-  cached connector query even though DRM requires a forced probe at startup and
-  after hotplug. Discovery now force-probes, and completion recognizes a
-  generation-advanced topology replacement rather than applying the steady
-  session's current-head content lifecycle to newly recreated heads. The caller
-  gate still requires the full changed `3 -> 2 -> 3` publication, policy, and
-  presentation chain. A successor signed physical run remains required.
+  later page flips, client survival, and clean final topology health. The
+  recovery-safe one-command entry point is
+  `tools/run_output_topology_gate_tty4.sh`; it supplies the routine arm, seat,
+  matching signed Hagia and Sophia builds, and timestamped evidence defaults so
+  the operator carries no shell state between TTY sessions. Failed attempts
+  `/tmp/sophia-output-topology-20260821-231655.log` and
+  `/tmp/sophia-output-topology-20260821-232830.log` exposed the missing-`udevd`
+  rebroadcast and stale connector-cache dependencies respectively. Signed run
+  `/tmp/sophia-output-topology-20260821-233802.log` passed the exact changed
+  `3 -> 2 -> 3` publication, policy, presentation, completion, and clean-health
+  predicates. The dynamic-output half is promoted; this checkbox remains open
+  for the exhaustive xmobar reservation lifecycle after a relevant work-area,
+  output-policy, or seat change, not for head-loss/return.
 
 ---
 
