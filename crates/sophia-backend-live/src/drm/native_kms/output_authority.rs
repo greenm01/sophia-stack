@@ -62,6 +62,9 @@ pub struct LiveOutputAuthorityLogicalViewport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveResolvedOutputTopology {
     pub primary_output: OutputId,
+    /// Ordered first member of each logical group. Its vblank owns logical
+    /// presentation and refresh reporting; other members pace independently.
+    pub primary_heads: BTreeMap<OutputId, RenderHeadId>,
     pub outputs: Vec<HeadlessOutput>,
     /// Desktop-space origin and extent for each logical output. `HeadlessOutput`
     /// intentionally has no position, so retaining only that value would make
@@ -403,9 +406,23 @@ pub fn resolve_live_output_topology_candidate(
     }))
     .map_err(LiveOutputAuthorityProjectionError::InvalidMirrorGrouping)?;
     let primary_output = output_ids[usize::from(candidate.primary_group_index)];
+    let primary_heads = candidate
+        .groups
+        .iter()
+        .enumerate()
+        .map(|(index, group)| {
+            let primary = group
+                .members
+                .first()
+                .expect("validated output group is nonempty")
+                .head;
+            (output_ids[index], RenderHeadId::from_raw(primary.raw()))
+        })
+        .collect();
     *allocator = candidate_allocator;
     Ok(LiveResolvedOutputTopology {
         primary_output,
+        primary_heads,
         outputs,
         logical_viewports,
         disabled_heads,
@@ -434,6 +451,7 @@ pub fn project_live_output_authority_candidate_snapshot(
         || resolved.outputs.len() != candidate.groups.len()
         || resolved.targets.len() != candidate.heads.len()
         || resolved.logical_viewports.len() != candidate.groups.len()
+        || resolved.primary_heads.len() != candidate.groups.len()
     {
         return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
     }
@@ -470,6 +488,16 @@ pub fn project_live_output_authority_candidate_snapshot(
     let mut groups = Vec::with_capacity(candidate.groups.len());
     for (index, group) in candidate.groups.iter().enumerate() {
         let output = resolved.outputs[index].id;
+        let primary = group
+            .members
+            .first()
+            .expect("validated output group is nonempty")
+            .head;
+        if resolved.primary_heads.get(&output).copied()
+            != Some(RenderHeadId::from_raw(primary.raw()))
+        {
+            return Err(LiveOutputAuthorityProjectionError::CandidateSnapshotMismatch);
+        }
         if resolved.logical_viewports[index]
             != (LiveOutputAuthorityLogicalViewport {
                 output,

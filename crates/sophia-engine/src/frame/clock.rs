@@ -71,8 +71,8 @@ impl PerOutputFrameClock {
         let clocks = outputs
             .outputs()
             .map(|output| {
-                // A mirror group paces at its slowest head, which is what the
-                // registry's logical refresh reports.
+                // The primary head owns the logical clock. Mirror siblings
+                // consume its generations independently at their own vblanks.
                 let refresh_millihz = outputs.logical_refresh_millihz(output);
                 let interval_msec = if refresh_millihz == 0 {
                     fallback.frame_interval_msec()

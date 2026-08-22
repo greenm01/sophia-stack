@@ -200,7 +200,16 @@ fn output_authority_resolves_independent_modes_with_mirror_and_extended_groups()
     assert_eq!(resolved.targets[1].timing.width, 1_920);
     assert_eq!(resolved.targets[0].output, resolved.targets[1].output);
     assert_ne!(resolved.targets[1].output, resolved.targets[2].output);
+    assert_eq!(
+        resolved.primary_heads.get(&resolved.targets[0].output),
+        Some(&resolved.targets[0].head)
+    );
+    assert_eq!(
+        resolved.primary_heads.get(&resolved.targets[2].output),
+        Some(&resolved.targets[2].head)
+    );
     assert!(resolved.mirror_grouping.is_mirrored("DP-1"));
+    assert!(resolved.mirror_grouping.is_group_primary("DP-1"));
     assert!(!resolved.mirror_grouping.is_mirrored("HDMI-A-1"));
     let render_targets = resolved.head_render_targets();
     assert_eq!(render_targets[1].native_size.width, 1_920);

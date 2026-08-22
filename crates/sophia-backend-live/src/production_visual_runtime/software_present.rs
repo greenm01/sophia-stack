@@ -108,11 +108,10 @@ impl LiveProductionVisualRuntime {
             .logical_viewports()
             .map(|(output, _)| output)
             .collect::<Vec<_>>();
-        if required_outputs.iter().any(|output| {
-            native_scanout.pending_frame(*output)
-                || native_scanout.output_in_flight(*output)
-                || native_scanout.output_cleanup_pending(*output)
-        }) {
+        if required_outputs
+            .iter()
+            .any(|output| !native_scanout.frame_queue_ready(*output))
+        {
             return Ok(false);
         }
         let Some(_) = self.software_present_frames_waiting.front() else {

@@ -154,5 +154,23 @@ if [[ "${completed_outputs[*]}" != "1 2" ]]; then
     exit 1
 fi
 
+# The mirrored group is intentionally not a joint-vblank barrier. Its primary
+# head owns logical presentation; the generation remains physically retained
+# until the last independently paced member has moved on (or shutdown releases
+# the displayed owner). Require both halves of that contract in the same run.
+primary_pacing="$(grep -E 'sophia_live_mirror_pacing schema=1 status=primary_presented output=[0-9]+ primary=[0-9]+ frame=[0-9]+$' "$EVIDENCE" | tail -n1 || true)"
+mirror_output="$(sed -n 's/.* output=\([0-9][0-9]*\) .*/\1/p' <<<"$primary_pacing")"
+mirror_frame="$(sed -n 's/.* frame=\([0-9][0-9]*\)$/\1/p' <<<"$primary_pacing")"
+primary_pacing_line="$(grep -nF "$primary_pacing" "$EVIDENCE" | tail -n1 | cut -d: -f1 || true)"
+release_pacing_line="$(awk -v start="$primary_pacing_line" -v output="$mirror_output" -v frame="$mirror_frame" '
+    NR > start && $0 ~ "sophia_live_mirror_pacing schema=1 status=released" \
+        && $0 ~ (" output=" output " ") && $0 ~ (" frame=" frame "$") { print NR; exit }
+' "$EVIDENCE")"
+if [[ -z "$primary_pacing" || -z "$mirror_output" || -z "$mirror_frame" \
+    || -z "$primary_pacing_line" || -z "$release_pacing_line" ]]; then
+    echo "The mirror group lacks an ordered primary-presentation/last-head-release proof." >&2
+    exit 1
+fi
+
 printf 'sophia_mixed_output_evidence schema=1 status=verified extended_head=%s output=%s scene_generation=%s frame=%s retired=true\n' \
     "$extended_head" "$extended_output" "$scene_generation" "$frame"

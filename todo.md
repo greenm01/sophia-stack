@@ -1335,7 +1335,16 @@ hardware, the second only decides which screen looks best.
   `stable_present` stops
   quantifying over every head of the output and names the primary; and the
   mirror gate's matching-content criterion must permit the bounded lag or it
-  will fail correct runs.
+  will fail correct runs. The Rust slice is now implemented: topology carries
+  an explicit primary per logical output, the prepare-all cohort completes
+  logical presentation on that primary, each head independently submits the
+  newest complete generation and coalesces stale unsubmitted work, and native
+  owners release only after the last scanning head moves on. The mirror and
+  mixed verifiers require ordered `primary_presented -> released` evidence, and
+  their visual prompts judge convergence only after motion settles. Engine,
+  backend feature, verifier-fixture, and TLA checks are local prerequisites;
+  this item stays open until clean signed mirror and mixed physical reruns prove
+  the implementation on real mismatched heads.
 - [x] Make the optimized head a property of a mirror group, as macOS does. The
   choice turned out to be expressible already: a group proposal carries one
   logical rect and a mapping per member, so optimizing for a head is sizing the

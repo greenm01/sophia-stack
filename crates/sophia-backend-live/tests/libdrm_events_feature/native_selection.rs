@@ -474,6 +474,8 @@ fn connectors_in_one_group_share_a_logical_output() {
     assert_eq!(grouping.group_of("DP-1"), grouping.group_of("DP-2"));
     assert_ne!(grouping.group_of("DP-1"), grouping.group_of("DP-3"));
     assert!(grouping.is_mirrored("DP-1"));
+    assert!(grouping.is_group_primary("DP-1"));
+    assert!(!grouping.is_group_primary("DP-2"));
     // A one-member group shares its output with nobody, so it is not mirrored even
     // though it was named. Reporting it as mirrored would make the mirror path
     // reachable for a desktop that asked for nothing.

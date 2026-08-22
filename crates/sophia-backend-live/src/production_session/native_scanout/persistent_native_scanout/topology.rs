@@ -180,6 +180,7 @@ pub struct LiveProductionNativeTopologyHeadPlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveProductionNativeTopologyPlan {
     pub primary_output: OutputId,
+    pub primary_heads: BTreeMap<OutputId, sophia_engine::RenderHeadId>,
     pub outputs: Vec<sophia_engine::HeadlessOutput>,
     pub logical_viewports: Vec<crate::LiveOutputAuthorityLogicalViewport>,
     pub heads: Vec<LiveProductionNativeTopologyHeadPlan>,
@@ -790,6 +791,7 @@ pub enum LiveProductionNativeTopologyPlanError {
     MissingCurrentHead(sophia_engine::RenderHeadId),
     MissingCandidateHead(sophia_engine::RenderHeadId),
     InvalidOutput(OutputId),
+    InvalidPrimaryHead(OutputId),
     InvalidGeneration(sophia_engine::RenderHeadId),
     ModeUnavailable(sophia_engine::RenderHeadId),
     PublishedSnapshotMismatch,
@@ -882,6 +884,28 @@ pub fn plan_live_production_native_topology(
             })
             .expect("a shorter map proves a duplicate");
         return Err(LiveProductionNativeTopologyPlanError::DuplicateCandidateHead(duplicate));
+    }
+    if resolved.primary_heads.len() != output_ids.len()
+        || resolved
+            .primary_heads
+            .keys()
+            .any(|output| !output_ids.contains(output))
+    {
+        return Err(LiveProductionNativeTopologyPlanError::InvalidPrimaryHead(
+            resolved.primary_output,
+        ));
+    }
+    for output in &output_ids {
+        let Some(primary) = resolved.primary_heads.get(output) else {
+            return Err(LiveProductionNativeTopologyPlanError::InvalidPrimaryHead(
+                *output,
+            ));
+        };
+        if enabled.get(primary).map(|target| target.output) != Some(*output) {
+            return Err(LiveProductionNativeTopologyPlanError::InvalidPrimaryHead(
+                *output,
+            ));
+        }
     }
     let disabled = resolved
         .disabled_heads
@@ -1003,6 +1027,7 @@ pub fn plan_live_production_native_topology(
     }
     Ok(LiveProductionNativeTopologyPlan {
         primary_output: resolved.primary_output,
+        primary_heads: resolved.primary_heads.clone(),
         outputs: resolved.outputs.clone(),
         logical_viewports: resolved.logical_viewports.clone(),
         heads,
@@ -1118,6 +1143,18 @@ pub fn project_live_production_published_topology(
         .collect::<Vec<_>>();
     Ok(crate::LiveResolvedOutputTopology {
         primary_output: snapshot.primary_output,
+        primary_heads: snapshot
+            .groups
+            .iter()
+            .filter_map(|group| {
+                group.members.first().map(|member| {
+                    (
+                        group.output,
+                        sophia_engine::RenderHeadId::from_raw(member.head.raw()),
+                    )
+                })
+            })
+            .collect(),
         outputs,
         logical_viewports,
         disabled_heads,
@@ -1545,11 +1582,11 @@ impl LiveProductionNativeScanout {
     /// needs. It was also unreachable: nothing drains a queued frame while the
     /// owner is quarantined waiting on this predicate, so the wait could only
     /// end by expiring. What must still retire is everything holding a renderer
-    /// lease or a KMS resource.
+    /// lease or an in-flight KMS resource. A cohort retaining only the currently
+    /// displayed owner is intentionally allowed: topology apply replaces that
+    /// owner, just as it did before cohorts tracked last-head release.
     pub fn output_topology_preparation_quiescent(&self) -> bool {
         self.output_topology_preparation.is_none()
-            && self.queued_mirror_successors.is_empty()
-            && self.output_cohorts.is_empty()
             && self.heads.iter().all(|head| {
                 head.rendering_content.is_none()
                     && head.submitted_content.is_none()
@@ -1561,26 +1598,16 @@ impl LiveProductionNativeScanout {
                 .exporters
                 .iter()
                 .all(|exporter| !exporter.worker_in_flight())
-            && self
-                .output_lifecycles
-                .values()
-                .all(|lifecycle| lifecycle.active_frame().is_none())
     }
 
     /// Names the first unmet clause of `output_topology_preparation_quiescent`,
     /// or `None` when quiescent.
     ///
     /// A wait that reports only that it timed out sends its reader back to the
-    /// source to guess which of eight owners was still holding a frame.
+    /// source to guess which owner was still holding a frame.
     pub fn output_topology_preparation_quiescence_blocker(&self) -> Option<&'static str> {
         if self.output_topology_preparation.is_some() {
             return Some("topology_preparation");
-        }
-        if !self.queued_mirror_successors.is_empty() {
-            return Some("queued_mirror_successors");
-        }
-        if !self.output_cohorts.is_empty() {
-            return Some("output_cohorts");
         }
         for head in &self.heads {
             if head.rendering_content.is_some() {
@@ -1605,13 +1632,6 @@ impl LiveProductionNativeScanout {
             .any(|exporter| exporter.worker_in_flight())
         {
             return Some("exporter_worker_in_flight");
-        }
-        if self
-            .output_lifecycles
-            .values()
-            .any(|lifecycle| lifecycle.active_frame().is_some())
-        {
-            return Some("output_lifecycle_active_frame");
         }
         None
     }
@@ -2376,14 +2396,26 @@ impl LiveProductionNativeScanout {
         if registry.output_count() != logical_outputs.len() {
             return Err("installed topology has a logical output without a physical head".into());
         }
+        for (output, primary) in &state.plan.primary_heads {
+            if registry.set_primary_head(*output, *primary)
+                != sophia_engine::EngineLogicalOutputUpdate::Updated
+            {
+                return Err("installed topology names a primary outside its output".into());
+            }
+        }
 
         let mut lifecycles = BTreeMap::new();
         for output in logical_by_id.keys().copied() {
-            let members = installed
+            let mut members = installed
                 .iter()
                 .filter(|head| head.enabled && head.output == output)
                 .map(|head| self.heads[head.index].head)
                 .collect::<Vec<_>>();
+            if let Some(primary) = state.plan.primary_heads.get(&output)
+                && let Some(index) = members.iter().position(|head| head == primary)
+            {
+                members.swap(0, index);
+            }
             let mut lifecycle = LiveProductionMirrorGroupLifecycle::new(output, members.clone())
                 .ok_or("installed logical output has no lifecycle members")?;
             for head in members {
@@ -2458,7 +2490,6 @@ impl LiveProductionNativeScanout {
         self.output_callbacks = receivers;
         self.output_lifecycles = lifecycles;
         self.output_cohorts.clear();
-        self.queued_mirror_successors.clear();
         self.production_page_flips = crate::LiveProductionPageFlipTracker::from_outputs(&registry);
         self.kernel_page_flip_ust.clear();
         Ok(logical_outputs)

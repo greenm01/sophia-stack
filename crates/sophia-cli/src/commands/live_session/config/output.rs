@@ -66,12 +66,15 @@ pub(super) fn output_topology_from_resolved_at_generation(
                 .iter()
                 .find(|output| output.id == viewport.output)
                 .ok_or("resolved topology viewport has no logical output")?;
+            let primary = resolved
+                .primary_heads
+                .get(&viewport.output)
+                .ok_or("resolved topology output has no primary head")?;
             let refresh_millihz = resolved
                 .targets
                 .iter()
-                .filter(|target| target.output == viewport.output)
+                .find(|target| target.output == viewport.output && target.head == *primary)
                 .map(|target| target.timing.refresh_millihz)
-                .min()
                 .ok_or("resolved topology output has no enabled head")?;
             Ok(sophia_protocol::OutputTopologyEntry {
                 output: output.id,
@@ -111,18 +114,19 @@ pub(super) fn output_topology_from_authority_at_generation(
         .groups
         .iter()
         .map(|group| {
-            let refresh_millihz = group
+            let member = group
                 .members
-                .iter()
-                .filter_map(|member| {
-                    let head = heads.get(&member.head)?;
+                .first()
+                .ok_or("authority output group has no primary head")?;
+            let refresh_millihz = heads
+                .get(&member.head)
+                .and_then(|head| {
                     let current = head.current_mode?;
                     head.modes
                         .iter()
                         .find(|mode| mode.mode == current)
                         .map(|mode| mode.refresh_millihz)
                 })
-                .min()
                 .ok_or("authority output group has no enabled mode")?;
             Ok(sophia_protocol::OutputTopologyEntry {
                 output: group.output,

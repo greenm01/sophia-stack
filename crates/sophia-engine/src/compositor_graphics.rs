@@ -352,9 +352,9 @@ impl OutputFramePresentationState {
         if self.rendering.is_some() {
             return Err(OutputFramePresentationError::RenderingInFlight);
         }
-        if self.submitted.is_some() {
-            return Err(OutputFramePresentationError::SubmissionInFlight);
-        }
+        // Rendering owns a different native target from the submitted frame.
+        // Keeping both slots live lets a mirror head prepare its successor
+        // while the current KMS commit waits for that head's vblank.
         self.rendering = Some(
             self.pending
                 .take()

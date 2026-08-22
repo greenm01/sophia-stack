@@ -81,6 +81,35 @@ fn presentation_state(output: OutputId) -> OutputFramePresentationState {
     OutputFramePresentationState::new(headless_output(output)).unwrap()
 }
 
+#[test]
+fn presentation_state_prepares_a_successor_while_submission_waits() {
+    let output = OutputId::from_raw(7);
+    let mut presentation = presentation_state(output);
+    presentation
+        .queue(frame_snapshot(
+            output,
+            sophia_engine::CompositorDisplayList::empty(output),
+            &[],
+        ))
+        .unwrap();
+    presentation.mark_submitted().unwrap();
+    presentation
+        .queue(frame_snapshot(
+            output,
+            sophia_engine::CompositorDisplayList::empty(output),
+            &[],
+        ))
+        .unwrap();
+
+    assert!(presentation.mark_rendering().is_ok());
+    assert!(presentation.submitted().is_some());
+    assert!(presentation.rendering().is_some());
+    assert_eq!(
+        presentation.promote_rendering_to_submitted(),
+        Err(OutputFramePresentationError::SubmissionInFlight)
+    );
+}
+
 fn frame_snapshot(
     output: OutputId,
     display_list: sophia_engine::CompositorDisplayList,

@@ -318,6 +318,25 @@ done < <(
 [[ "$common_frame" == "$dp1_scene_generation" ]] ||
     fail "completed head evidence does not name the causally proven logical generation"
 
+mapfile -t primary_presented_records < <(
+    grep -E "^sophia_live_mirror_pacing schema=1 status=primary_presented output=$dp1_output primary=$dp1_head frame=$common_frame$" \
+        "$evidence" || true
+)
+(( ${#primary_presented_records[@]} == 1 )) ||
+    fail "the causally proven frame was not presented exactly once by the configured primary head"
+mapfile -t release_records < <(
+    grep -E "^sophia_live_mirror_pacing schema=1 status=released output=$dp1_output frame=$common_frame$" \
+        "$evidence" || true
+)
+(( ${#release_records[@]} == 1 )) ||
+    fail "the causally proven frame did not cross the last-head release barrier"
+primary_presented_line="$(grep -nFm1 "${primary_presented_records[0]}" "$evidence" | cut -d: -f1)"
+release_line="$(grep -nFm1 "${release_records[0]}" "$evidence" | cut -d: -f1)"
+primary_retire_line="$(grep -nEm1 "^sophia_live_native_head_page_flip schema=2 status=retired output=$dp1_output head=$dp1_head submission=[0-9]+ frame=$common_frame$" "$evidence" | cut -d: -f1)"
+last_common_retire_line="$(grep -nE "^sophia_live_native_head_page_flip schema=2 status=retired output=$dp1_output head=($dp1_head|$dp2_head) submission=[0-9]+ frame=$common_frame$" "$evidence" | tail -n1 | cut -d: -f1)"
+(( primary_retire_line < primary_presented_line && last_common_retire_line < release_line )) ||
+    fail "primary presentation and last-head release are not causally ordered"
+
 common_scene="$(
     grep -Em1 "^sophia_live_head_composition_queue schema=1 status=queued output=$dp1_output head=$dp1_head frame=$common_frame " "$evidence" \
         | sed -n 's/.* scene_generation=\([0-9][0-9]*\) .*/\1/p'

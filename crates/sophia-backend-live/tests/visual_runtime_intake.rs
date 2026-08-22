@@ -223,6 +223,12 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
     };
     let resolved = LiveResolvedOutputTopology {
         primary_output: left,
+        primary_heads: [
+            (left, RenderHeadId::from_raw(11)),
+            (right, RenderHeadId::from_raw(12)),
+        ]
+        .into_iter()
+        .collect(),
         outputs: vec![
             HeadlessOutput {
                 id: left,

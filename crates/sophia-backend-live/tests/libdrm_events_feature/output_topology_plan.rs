@@ -56,6 +56,7 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
     ];
     let resolved = sophia_backend_live::LiveResolvedOutputTopology {
         primary_output: output_one,
+        primary_heads: [(output_one, head_one)].into_iter().collect(),
         outputs: vec![sophia_engine::HeadlessOutput {
             id: output_one,
             size: large,
@@ -131,6 +132,7 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
         },
     );
     split.disabled_heads.clear();
+    split.primary_heads.insert(output_two, head_two);
     split.targets.push(LiveOutputAuthorityHeadTarget {
         head: head_two,
         target_generation: 8,
@@ -151,6 +153,20 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
         split_plan.heads[1].disposition,
         LiveProductionNativeTopologyDisposition::Enabled { output, .. } if output == output_two
     ));
+
+    split.primary_heads.insert(output_two, head_one);
+    assert_eq!(
+        sophia_backend_live::plan_live_production_native_topology(
+            &current,
+            &split,
+            |_current, _timing| Ok(Some(topology_plan_mode())),
+        ),
+        Err(
+            sophia_backend_live::LiveProductionNativeTopologyPlanError::InvalidPrimaryHead(
+                output_two,
+            )
+        )
+    );
 }
 
 #[test]
@@ -188,6 +204,7 @@ fn live_native_topology_plan_rejects_incomplete_coverage_and_stale_generations()
     ];
     let mut resolved = sophia_backend_live::LiveResolvedOutputTopology {
         primary_output: output,
+        primary_heads: [(output, head_one)].into_iter().collect(),
         outputs: vec![sophia_engine::HeadlessOutput {
             id: output,
             size,
@@ -259,6 +276,7 @@ fn topology_apply_plan(card_indices: &[usize]) -> sophia_backend_live::LiveProdu
     };
     LiveProductionNativeTopologyPlan {
         primary_output: output,
+        primary_heads: [(output, RenderHeadId::from_raw(1))].into_iter().collect(),
         outputs: vec![sophia_engine::HeadlessOutput {
             id: output,
             size,

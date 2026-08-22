@@ -133,6 +133,7 @@ impl EngineHeadRegistryUpdate {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EngineHeadRegistry {
     heads: BTreeMap<OutputId, Vec<HeadRenderTarget>>,
+    primary_heads: BTreeMap<OutputId, RenderHeadId>,
     logical_outputs: BTreeMap<OutputId, HeadlessOutput>,
 }
 
@@ -187,6 +188,9 @@ impl EngineHeadRegistry {
             return EngineHeadRegistryUpdate::HeadCapacityExceeded;
         }
         heads.push(target);
+        self.primary_heads
+            .entry(target.output)
+            .or_insert(target.head);
         self.logical_outputs
             .entry(target.output)
             .or_insert(HeadlessOutput {
@@ -208,12 +212,19 @@ impl EngineHeadRegistry {
         if let Some(target) = removed
             && !self.heads.contains_key(&target.output)
         {
+            self.primary_heads.remove(&target.output);
             self.logical_outputs.remove(&target.output);
+        } else if let Some(target) = removed
+            && self.primary_heads.get(&target.output) == Some(&target.head)
+            && let Some(replacement) = self.output_heads(target.output).first()
+        {
+            self.primary_heads.insert(target.output, replacement.head);
         }
         removed
     }
 
     pub fn remove_output(&mut self, output: OutputId) -> usize {
+        self.primary_heads.remove(&output);
         self.logical_outputs.remove(&output);
         self.heads
             .remove(&output)
@@ -233,6 +244,33 @@ impl EngineHeadRegistry {
             .get(&output)
             .map(Vec::as_slice)
             .unwrap_or_default()
+    }
+
+    /// The physical head whose vblank defines logical presentation for an
+    /// output. The first admitted member is primary until topology replaces
+    /// the group; callers may name a different already-admitted member while
+    /// applying that replacement.
+    pub fn primary_head(&self, output: OutputId) -> Option<RenderHeadId> {
+        self.primary_heads.get(&output).copied()
+    }
+
+    pub fn set_primary_head(
+        &mut self,
+        output: OutputId,
+        primary: RenderHeadId,
+    ) -> EngineLogicalOutputUpdate {
+        if !output.is_valid() || !primary.is_valid() {
+            return EngineLogicalOutputUpdate::InvalidOutput;
+        }
+        if !self
+            .output_heads(output)
+            .iter()
+            .any(|target| target.head == primary)
+        {
+            return EngineLogicalOutputUpdate::UnknownOutput;
+        }
+        self.primary_heads.insert(output, primary);
+        EngineLogicalOutputUpdate::Updated
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = OutputId> + '_ {
@@ -279,16 +317,13 @@ impl EngineHeadRegistry {
         self.logical_outputs.get(&output).copied()
     }
 
-    /// Refresh pacing for one logical output: the slowest head's rate. A
-    /// mirror group advances at its slowest required head, so a faster
-    /// sibling must not shorten the logical frame interval. Heads reporting
-    /// an unknown (zero) rate are ignored; zero means no head knows.
+    /// Refresh pacing for one logical output: the primary head's rate.
+    /// Secondary mirror heads consume generations at their own vblanks and do
+    /// not throttle the logical clock.
     pub fn logical_refresh_millihz(&self, output: OutputId) -> u32 {
-        self.output_heads(output)
-            .iter()
+        self.primary_head(output)
+            .and_then(|primary| self.head(primary))
             .map(|head| head.refresh_millihz)
-            .filter(|refresh| *refresh != 0)
-            .min()
             .unwrap_or(0)
     }
 

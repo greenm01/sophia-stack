@@ -238,6 +238,9 @@ impl LiveProductionVisualRuntime {
             .primary_output()
             .ok_or("persistent backend runtime has no primary output")?;
         let software_frame_waiting = self.software_present_frames_waiting.front();
+        let presentation_queued = software_frame_waiting.is_none()
+            && self.diagnostics().present_queued
+            && !self.diagnostics().present_scheduling_blocked;
         let outputs = (0..self.output_count())
             .map(|index| {
                 let output = self
@@ -249,16 +252,29 @@ impl LiveProductionVisualRuntime {
                 // one. Reading only the runtime reported a grouped output as Idle
                 // forever, so the frame service never polled it for retirement and
                 // Present completions were never routed back to the client.
+                let pending_frame = native_scanout.pending_frame(output);
+                let logical_work_waiting = pending_frame
+                    || (output == primary
+                        && (presentation_queued || software_frame_waiting.is_some()));
+                let primary_lane = native_scanout.is_mirror_output(output) && logical_work_waiting;
                 let in_flight = self
                     .outputs
                     .output_native_scanout_in_flight(index)
                     .ok_or("production output in-flight state was not registered")?
-                    || native_scanout.output_in_flight(output);
+                    || if primary_lane {
+                        native_scanout.primary_scanout_in_flight(output)
+                    } else {
+                        native_scanout.output_in_flight(output)
+                    };
                 let cleanup_pending = self
                     .outputs
                     .output_native_cleanup_pending(index)
                     .ok_or("production output cleanup state was not registered")?
-                    || native_scanout.output_cleanup_pending(output);
+                    || if primary_lane {
+                        native_scanout.primary_cleanup_pending(output)
+                    } else {
+                        native_scanout.output_cleanup_pending(output)
+                    };
                 Ok(OutputFrameServiceObservation {
                     output,
                     primary: output == primary,
@@ -267,15 +283,13 @@ impl LiveProductionVisualRuntime {
                     // present is reported once on the request instead, so the
                     // reducer can tell "this output owes a frame" apart from
                     // "something global is pending".
-                    pending_frame: native_scanout.pending_frame(output),
+                    pending_frame,
                 })
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         Ok(OutputFrameServiceRequest {
             outputs,
-            presentation_queued: software_frame_waiting.is_none()
-                && self.diagnostics().present_queued
-                && !self.diagnostics().present_scheduling_blocked,
+            presentation_queued,
             software_frame_waiting: software_frame_waiting.is_some(),
         })
     }

@@ -231,13 +231,15 @@ retirement instant. Subsystem-specific shortcuts around that path are
 forbidden.
 
 A logical output may be backed by more than one head, which is what output
-mirroring is. Retirement is therefore **joint within a mirror group and
-independent between groups**: every head owns a native candidate for the same
-logical scene generation, the logical output retires only when its last head
-flips, and each head's target stays leased through its own retirement. This
-rule is deliberately independent of whether native source resources can be
-shared. The unit of retirement is still one logical output, and distinct
-logical outputs still retire independently on their own page-flip timelines.
+mirroring is. Preparation is a group barrier: no head may submit a generation
+until every required head has a valid native candidate for it. Presentation is
+then **primary-owned and independently paced**: the configured primary head's
+callback retires the logical output generation, while every other head takes
+the newest completely prepared generation on its own vblank and coalesces any
+intermediate generations it missed. Each head's target stays leased until that
+head has moved off it, so physical release of a generation remains a last-head
+barrier even though logical presentation does not. Distinct logical outputs
+also remain independent on their own page-flip timelines.
 Sophia continues to claim no globally simultaneous multi-output retirement
 instant. The scene-to-head fan-out and client-content quality contract are
 defined in [Multi-Monitor Per-Head
@@ -246,8 +248,9 @@ Composition](multi-monitor-composition.md).
 A head that disappears mid-flight drops its lease without counting as a flip,
 and the candidate fails closed instead of committing a partial group; a
 surviving-head topology is a new candidate, not a salvaged one.
-`validation/tla/VisualRetirement.tla` carries the head layer and checks both
-properties.
+`validation/tla/VisualRetirement.tla` carries the topology-retirement layer.
+`validation/tla/MirrorHeadPacing.tla` checks independent successor selection,
+primary progress, bounded lag, and last-head generation retention.
 
 ## Current Rust Module Map
 

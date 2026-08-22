@@ -592,29 +592,34 @@ direct-CPU lowering may satisfy this requirement; a blank, speculative, or
 primary-scaled bootstrap cannot. The cohort records that its first submissions
 are initial modesets rather than creating a separate startup lifecycle.
 
-A mirror output owns one active generation and one output-scoped latest-wins
-successor. It advances at the slowest required head. Faster heads may continue
-scanning their previous buffer while waiting, but they cannot advance to a
-newer logical generation independently. Asynchronous secondary advancement is
-outside the initial contract.
+A mirror output owns a monotonically increasing newest complete generation.
+Every head prepares that generation before any head may submit it, preserving
+the atomic scene/content contract. After preparation, each idle head may submit
+the newest generation without waiting for a sibling's older KMS callback. A
+lagging head skips directly to the newest generation; it never relabels stale
+renderer work and never submits two generations concurrently.
 
 Head preparation may execute concurrently through a bounded worker set. The
 bound is derived from admitted live heads and target slots; the scheduler does
 not spawn unbounded work per layer, surface, or frame. Backpressure preserves
-the active cohort and coalesces only its complete latest successor.
+every already-submitted native owner and coalesces only unsubmitted work to the
+complete latest successor.
 
-Retirement remains joint within a mirror group and independent between logical
-outputs. A transaction affecting several logical outputs may derive their
-cohorts from one immutable candidate, while each cohort keeps its own
-prepare-before-submit barrier and its KMS retirement remains a separate physical
-instant. Engine publishes transaction feedback and cross-output input state
-only after the applicable logical-output retirement set completes. Sophia does
-not claim globally simultaneous multi-output presentation.
+The primary head's callback owns logical presentation within a mirror group.
+Other heads remain physical owners only: their callbacks advance their own
+displayed generation and release older generations, but do not delay frame
+feedback to the primary's refresh. A transaction affecting several logical
+outputs may derive their cohorts from one immutable candidate, while each
+cohort keeps its own prepare-before-submit barrier and its KMS retirement
+remains a separate physical instant. Engine publishes transaction feedback and
+cross-output input state only after the applicable logical-output presentation
+set completes. Sophia does not claim globally simultaneous multi-output
+presentation.
 
-Page-flip timing remains physical evidence. The logical completion time is no
-earlier than the last required head callback; the logical sequence is the scene
-or cohort generation rather than a fabricated combination of CRTC-local
-sequences.
+Page-flip timing remains physical evidence. Logical completion uses the primary
+head's callback UST and the scene/cohort generation, never a fabricated
+combination of CRTC-local sequences. Per-head callback and release records prove
+that independently paced secondary owners subsequently converge and drain.
 
 ## Extended Desktops and Spanning Surfaces
 
@@ -842,7 +847,8 @@ parallel multi-monitor subsystem.
   duplicate heads, checksum disagreement, or head-local damage with the wrong
   native extent.
 - `OutputPresentationCohort` and `OutputTopologyTransaction` are implemented as
-  Engine reducers. They enforce prepare-before-submit, joint flip/cleanup,
+  Engine reducers. They enforce prepare-before-submit, primary-owned logical
+  presentation, last-head cleanup,
   fail-closed head loss, partial-apply rollback, and a first-presentation barrier
   before topology publication. The live multi-head scheduler now renders and
   creates each head's framebuffer/import/blob and atomic request as an affine

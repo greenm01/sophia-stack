@@ -4,21 +4,21 @@ use crate::{HeadFrameCandidate, HeadFrameCandidateId, RenderHeadId};
 /// Engine-owned state of one immutable logical-output presentation cohort.
 ///
 /// Native targets and KMS owners deliberately do not live here. The reducer
-/// only proves that every required opaque head prepared, submitted, flipped,
-/// and settled cleanup for the same scene generation before logical
-/// presentation is published.
+/// proves the prepare-all barrier, primary-owned logical presentation, and
+/// last-head native-owner release for one scene generation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputPresentationCohort {
     output: OutputId,
     scene_generation: u64,
+    primary: RenderHeadId,
     required: BTreeSet<RenderHeadId>,
     prepared: BTreeMap<RenderHeadId, HeadFrameCandidate>,
     submitted: BTreeSet<RenderHeadId>,
     flipped: BTreeSet<RenderHeadId>,
     cleanup_complete: BTreeSet<RenderHeadId>,
+    skipped: BTreeSet<RenderHeadId>,
     lost: BTreeSet<RenderHeadId>,
     logical_content_checksum: Option<u64>,
-    max_flip_ust_usec: Option<u64>,
     terminal: Option<OutputPresentationTerminal>,
 }
 
@@ -73,6 +73,7 @@ impl OutputPresentationCohort {
     pub fn new(
         output: OutputId,
         scene_generation: u64,
+        primary: RenderHeadId,
         heads: impl IntoIterator<Item = RenderHeadId>,
     ) -> Option<Self> {
         let required = heads.into_iter().collect::<BTreeSet<_>>();
@@ -80,18 +81,21 @@ impl OutputPresentationCohort {
             && required.len() <= crate::MAX_HEADS_PER_OUTPUT
             && output.is_valid()
             && scene_generation != 0
+            && primary.is_valid()
+            && required.contains(&primary)
             && required.iter().all(|head| head.is_valid()))
         .then_some(Self {
             output,
             scene_generation,
+            primary,
             required,
             prepared: BTreeMap::new(),
             submitted: BTreeSet::new(),
             flipped: BTreeSet::new(),
             cleanup_complete: BTreeSet::new(),
+            skipped: BTreeSet::new(),
             lost: BTreeSet::new(),
             logical_content_checksum: None,
-            max_flip_ust_usec: None,
             terminal: None,
         })
     }
@@ -102,6 +106,10 @@ impl OutputPresentationCohort {
 
     pub const fn scene_generation(&self) -> u64 {
         self.scene_generation
+    }
+
+    pub const fn primary_head(&self) -> RenderHeadId {
+        self.primary
     }
 
     pub fn required_heads(&self) -> impl Iterator<Item = RenderHeadId> + '_ {
@@ -125,7 +133,15 @@ impl OutputPresentationCohort {
     }
 
     pub fn all_cleanup_complete(&self) -> bool {
-        self.cleanup_complete == self.required
+        self.required
+            .iter()
+            .all(|head| self.cleanup_complete.contains(head) || self.skipped.contains(head))
+    }
+
+    /// Whether no physical head can retain this generation's native owner.
+    /// Logical presentation may precede this boundary by several head vblanks.
+    pub fn generation_releasable(&self) -> bool {
+        self.all_cleanup_complete()
     }
 
     /// Whether every physical owner the backend accepted has subsequently
@@ -166,14 +182,15 @@ impl OutputPresentationCohort {
     }
 
     pub fn head_may_submit(&self, head: RenderHeadId) -> bool {
-        self.terminal.is_none()
+        !matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_)))
             && self.all_prepared()
             && self.required.contains(&head)
             && !self.submitted.contains(&head)
+            && !self.skipped.contains(&head)
     }
 
     pub fn mark_prepared(&mut self, candidate: HeadFrameCandidate) -> OutputPresentationTransition {
-        if self.terminal.is_some() {
+        if matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_))) {
             return OutputPresentationTransition::Terminal;
         }
         if candidate.output != self.output {
@@ -218,7 +235,7 @@ impl OutputPresentationCohort {
     }
 
     pub fn mark_submitted(&mut self, head: RenderHeadId) -> OutputPresentationTransition {
-        if self.terminal.is_some() {
+        if matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_))) {
             return OutputPresentationTransition::Terminal;
         }
         if !self.required.contains(&head) {
@@ -229,6 +246,9 @@ impl OutputPresentationCohort {
         }
         if !self.prepared.contains_key(&head) {
             return OutputPresentationTransition::NotPrepared;
+        }
+        if self.skipped.contains(&head) {
+            return OutputPresentationTransition::Terminal;
         }
         if !self.submitted.insert(head) {
             return OutputPresentationTransition::Duplicate;
@@ -245,12 +265,6 @@ impl OutputPresentationCohort {
         head: RenderHeadId,
         ust_usec: u64,
     ) -> OutputPresentationTransition {
-        if matches!(
-            self.terminal,
-            Some(OutputPresentationTerminal::Presented { .. })
-        ) {
-            return OutputPresentationTransition::Terminal;
-        }
         if !self.required.contains(&head) {
             return OutputPresentationTransition::UnknownHead;
         }
@@ -260,14 +274,13 @@ impl OutputPresentationCohort {
         if !self.flipped.insert(head) {
             return OutputPresentationTransition::Duplicate;
         }
-        self.max_flip_ust_usec = Some(
-            self.max_flip_ust_usec
-                .map_or(ust_usec, |current| current.max(ust_usec)),
-        );
-        if self.terminal.is_none() && self.all_flipped() {
-            self.finish_if_ready();
+        if self.terminal.is_none() && head == self.primary {
+            self.terminal = Some(OutputPresentationTerminal::Presented {
+                logical_sequence: self.scene_generation,
+                ust_usec,
+            });
             OutputPresentationTransition::PhaseReady
-        } else if self.terminal.is_some() && self.accepted_owners_settled() {
+        } else if self.generation_releasable() {
             OutputPresentationTransition::PhaseReady
         } else {
             OutputPresentationTransition::Accepted
@@ -275,12 +288,6 @@ impl OutputPresentationCohort {
     }
 
     pub fn mark_cleanup_complete(&mut self, head: RenderHeadId) -> OutputPresentationTransition {
-        if matches!(
-            self.terminal,
-            Some(OutputPresentationTerminal::Presented { .. })
-        ) {
-            return OutputPresentationTransition::Terminal;
-        }
         if !self.required.contains(&head) {
             return OutputPresentationTransition::UnknownHead;
         }
@@ -290,15 +297,33 @@ impl OutputPresentationCohort {
         if !self.cleanup_complete.insert(head) {
             return OutputPresentationTransition::Duplicate;
         }
-        if self.terminal.is_none() {
-            self.finish_if_ready();
-        }
-        if matches!(
-            self.terminal,
-            Some(OutputPresentationTerminal::Presented { .. })
-        ) || (matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_)))
-            && self.accepted_owners_settled())
+        if self.generation_releasable()
+            || (matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_)))
+                && self.accepted_owners_settled())
         {
+            OutputPresentationTransition::PhaseReady
+        } else {
+            OutputPresentationTransition::Accepted
+        }
+    }
+
+    /// Drops a prepared candidate that this head never submitted because a
+    /// newer complete generation replaced it. Submitted or displayed work is
+    /// never skippable; it must reach physical cleanup.
+    pub fn mark_skipped(&mut self, head: RenderHeadId) -> OutputPresentationTransition {
+        if matches!(self.terminal, Some(OutputPresentationTerminal::Failed(_))) {
+            return OutputPresentationTransition::Terminal;
+        }
+        if !self.required.contains(&head) {
+            return OutputPresentationTransition::UnknownHead;
+        }
+        if self.submitted.contains(&head) || self.flipped.contains(&head) {
+            return OutputPresentationTransition::Terminal;
+        }
+        if !self.skipped.insert(head) {
+            return OutputPresentationTransition::Duplicate;
+        }
+        if self.generation_releasable() {
             OutputPresentationTransition::PhaseReady
         } else {
             OutputPresentationTransition::Accepted
@@ -322,14 +347,5 @@ impl OutputPresentationCohort {
         }
         self.terminal = Some(OutputPresentationTerminal::Failed(failure));
         true
-    }
-
-    fn finish_if_ready(&mut self) {
-        if self.all_flipped() && self.all_cleanup_complete() {
-            self.terminal = Some(OutputPresentationTerminal::Presented {
-                logical_sequence: self.scene_generation,
-                ust_usec: self.max_flip_ust_usec.unwrap_or_default(),
-            });
-        }
     }
 }

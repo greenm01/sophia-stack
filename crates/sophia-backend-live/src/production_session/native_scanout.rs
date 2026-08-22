@@ -16,7 +16,6 @@ mod persistent_native_scanout {
     pub use cursor::project_native_cursor_logical_viewport;
     pub use frame_damage::project_mirror_output_damage_snapshot;
     use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
-    use renderer_images::LiveProductionQueuedMirrorGeneration;
     pub use renderer_images::{
         LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
         live_topology_frame_renderer_image_requirements,
@@ -60,23 +59,19 @@ mod persistent_native_scanout {
                 crate::RealAtomicScanoutRenderDeviceDiscovery,
             >,
         >,
-        /// One latest-wins successor per logical mirror output.
-        ///
-        /// The active generation owns every physical head until the group join.
-        /// Keeping its successor here, rather than independently in head slots,
-        /// makes it impossible for a cleanup-blocked head to retain a different
-        /// logical generation from its siblings.
-        queued_mirror_successors: BTreeMap<OutputId, LiveProductionQueuedMirrorGeneration>,
         /// One callback channel per logical output, taken once when its runtime is
         /// built. Per output rather than per head because a mirror group's heads
         /// feed one runtime: two queues would make the group's flips arrive as two
         /// unrelated streams that nothing joins back up.
         output_callbacks: BTreeMap<OutputId, Receiver<crate::LivePageFlipCallback>>,
-        /// Physical-head joins for logical mirror generations.
+        /// Primary presentation and last-head ownership for mirror generations.
         output_lifecycles: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
         /// Engine-owned prepare/submit/flip barrier for the active generation
         /// of each multi-head logical output.
-        output_cohorts: BTreeMap<OutputId, sophia_engine::OutputPresentationCohort>,
+        output_cohorts: BTreeMap<
+            (OutputId, LiveProductionNativeFrameId),
+            sophia_engine::OutputPresentationCohort,
+        >,
         /// Candidate and rollback owners for one live output-topology effect.
         /// Ordinary frame scheduling is quarantined while this is present.
         output_topology_preparation: Option<LiveProductionNativeTopologyPreparation>,
@@ -168,6 +163,7 @@ mod persistent_native_scanout {
         /// outputs keep that owner in the logical runtime; mirror groups transfer
         /// every connector's owner here after initialization.
         pub(crate) displayed_scanout: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
+        pub(crate) displayed_group_frame: Option<LiveProductionNativeFrameId>,
         pub(crate) scanout_submission: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
         pub(crate) prepared_scanout: Option<
             crate::LivePreparedRenderedPrimaryPlaneScanout<crate::NativeGbmRenderedScanoutOwner>,
@@ -175,6 +171,7 @@ mod persistent_native_scanout {
         pub(crate) prepared_group_frame: Option<LiveProductionNativeFrameId>,
         pub(crate) prepared_worker_was_in_flight: bool,
         pub(crate) scanout_cleanup: Option<crate::BoxedRenderedPrimaryPlaneScanoutCleanup>,
+        pub(crate) scanout_cleanup_group_frame: Option<LiveProductionNativeFrameId>,
         pub(crate) scanout_in_flight_ticks: u64,
         pub(crate) last_callback_serial: Option<u64>,
         pub(crate) submitted_group_frame: Option<LiveProductionNativeFrameId>,
@@ -453,6 +450,19 @@ mod persistent_native_scanout {
                     }
                 }
             }
+            for record in &sessions.head_records {
+                if grouping.is_group_primary(&record.connector_name)
+                    && presentation_outputs.set_primary_head(record.output, record.head)
+                        != sophia_engine::EngineLogicalOutputUpdate::Updated
+                {
+                    return Err(format!(
+                        "configured mirror primary is not an admitted head: head={} output={}",
+                        record.head.raw(),
+                        record.output.raw(),
+                    )
+                    .into());
+                }
+            }
             if presentation_outputs.output_count() != sessions.output_count {
                 return Err(format!(
                     "persistent native connector mapping is incomplete: mapped={} native={}",
@@ -542,11 +552,13 @@ mod persistent_native_scanout {
                         nonzero_exports: 0,
                         last_submit_report: None,
                         displayed_scanout: None,
+                        displayed_group_frame: None,
                         scanout_submission: None,
                         prepared_scanout: None,
                         prepared_group_frame: None,
                         prepared_worker_was_in_flight: false,
                         scanout_cleanup: None,
+                        scanout_cleanup_group_frame: None,
                         scanout_in_flight_ticks: 0,
                         last_callback_serial: None,
                         submitted_group_frame: None,
@@ -576,7 +588,13 @@ mod persistent_native_scanout {
             // silently retargets exporters whenever discovery order differs from
             // logical-output order.
             let mut head_exporters = heads.into_iter().zip(exporters).collect::<Vec<_>>();
-            head_exporters.sort_by_key(|(head, _)| (head.output.id, head.selection.connector_id()));
+            head_exporters.sort_by_key(|(head, _)| {
+                (
+                    head.output.id,
+                    presentation_outputs.primary_head(head.output.id) != Some(head.head),
+                    head.selection.connector_id(),
+                )
+            });
             let mut sorted_heads = Vec::with_capacity(head_exporters.len());
             let mut sorted_exporters = Vec::with_capacity(head_exporters.len());
             for (head, exporter) in head_exporters {
@@ -627,7 +645,6 @@ mod persistent_native_scanout {
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
                 exporters,
-                queued_mirror_successors: BTreeMap::new(),
                 output_callbacks,
                 output_lifecycles,
                 output_cohorts: BTreeMap::new(),
@@ -672,17 +689,27 @@ mod persistent_native_scanout {
             self.logical_outputs.clone()
         }
 
-        /// The first head driving a logical output.
+        /// The configured primary head driving a logical output.
         ///
         /// Named for what it returns. It was `output_index`, which read like a
         /// position in the output list and was passed one by four callers -- a
         /// coincidence that holds only while every output has exactly one head.
         ///
-        /// Correct only where any head of a group will do: reading a card, or a
-        /// selection's connector and CRTC. A caller that submits, retires, or
-        /// releases per head must use `head_indices` instead, or it will address
-        /// head zero and silently ignore the rest of a mirror group.
+        /// Correct only for logical-output authority: reading the primary card,
+        /// connector, or CRTC. A caller that submits, retires, or releases per
+        /// head must use `head_indices` instead, or it will silently ignore the
+        /// rest of a mirror group.
         pub fn primary_head_index(&self, output: OutputId) -> Option<usize> {
+            if let Some(primary) = self
+                .output_lifecycles
+                .get(&output)
+                .map(LiveProductionMirrorGroupLifecycle::primary_head)
+                && let Some(index) = self.heads.iter().position(|head| {
+                    head.enabled && head.output.id == output && head.head == primary
+                })
+            {
+                return Some(index);
+            }
             self.heads
                 .iter()
                 .position(|head| head.enabled && head.output.id == output)
@@ -827,11 +854,10 @@ mod persistent_native_scanout {
             )
         }
 
-        /// The exporter backing an output's first head, for reads.
+        /// The exporter backing an output's configured primary head, for reads.
         ///
-        /// Addressing an output rather than a head is correct only where any head
-        /// of a group will do. A caller that composes or exports per head must
-        /// resolve the head first, or a group's other connectors get nothing.
+        /// A caller that composes or exports per head must resolve the head
+        /// first, or a group's other connectors get nothing.
         fn exporter(
             &self,
             output: OutputId,
@@ -843,7 +869,7 @@ mod persistent_native_scanout {
             self.exporters.get(self.primary_head_index(output)?)
         }
 
-        /// The exporter backing an output's first head.
+        /// The exporter backing an output's configured primary head.
         fn exporter_mut(
             &mut self,
             output: OutputId,
@@ -1124,7 +1150,7 @@ mod persistent_native_scanout {
             }
 
             // Admit physical callbacks without publishing a per-head logical
-            // page flip. The group lifecycle below joins all required heads.
+            // page flip. The group lifecycle below publishes only the primary.
             let page_flip_callbacks = runtime.drain_mirror_page_flip_callback_queue();
             self.callback_rejected = self.callback_rejected.saturating_add(
                 page_flip_callbacks.rejected_unexpected_output
@@ -1191,6 +1217,14 @@ mod persistent_native_scanout {
                     submitted_ust_usec.unwrap_or_default();
                 self.heads[head_index].presented_page_flip_ust_usec = callback_ust;
                 self.heads[head_index].presented_submit_to_page_flip = submit_to_page_flip;
+                let Some(frame) = self.heads[head_index].submitted_group_frame.take() else {
+                    errors.push(format!(
+                        "mirror head {} callback has no logical generation",
+                        callback.head.raw()
+                    ));
+                    continue;
+                };
+                let previous_frame = self.heads[head_index].displayed_group_frame.replace(frame);
                 if let Some(previous) = self.heads[head_index].displayed_scanout.replace(submission)
                 {
                     let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
@@ -1205,9 +1239,13 @@ mod persistent_native_scanout {
                                 scanout_buffer,
                                 primary_plane,
                             });
+                        self.heads[head_index].scanout_cleanup_group_frame = previous_frame;
+                    } else if let Some(previous_frame) = previous_frame
+                        && let Some(cohort) = self.output_cohorts.get_mut(&(output, previous_frame))
+                    {
+                        let _ = cohort.mark_cleanup_complete(callback.head);
                     }
                 }
-                let frame = self.heads[head_index].submitted_group_frame.take();
                 self.heads[head_index].submitted_at = None;
                 self.heads[head_index].scanout_in_flight_ticks = 0;
                 self.heads[head_index].retirements =
@@ -1225,14 +1263,27 @@ mod persistent_native_scanout {
                 if let Some(submission) = self.heads[head_index].submitted_sequence.take() {
                     self.heads[head_index].presented_submissions = submission;
                 }
-                let Some(frame) = frame else {
-                    errors.push(format!(
-                        "mirror head {} callback has no logical generation",
-                        callback.head.raw()
-                    ));
-                    continue;
-                };
-                if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                if self.heads[head_index].output_frames.submitted().is_some() {
+                    match self.heads[head_index].output_frames.mark_presented() {
+                        Ok(presented) => {
+                            trace_presented_output_damage(
+                                "presented",
+                                self.heads[head_index].output.id,
+                                &presented,
+                            );
+                            trace_presented_mirror_head_damage(
+                                output,
+                                callback.head,
+                                frame,
+                                &presented,
+                            );
+                        }
+                        Err(error) => errors.push(format!(
+                            "mirror display-list presentation transition failed: {error}"
+                        )),
+                    }
+                }
+                if let Some(cohort) = self.output_cohorts.get_mut(&(output, frame)) {
                     let transition = cohort.mark_flipped(callback.head, callback_ust);
                     if !matches!(
                         transition,
@@ -1243,18 +1294,6 @@ mod persistent_native_scanout {
                             "mirror head {} entered invalid cohort flip transition {transition:?}",
                             callback.head.raw(),
                         ));
-                    } else if self.heads[head_index].scanout_cleanup.is_none() {
-                        let cleanup = cohort.mark_cleanup_complete(callback.head);
-                        if !matches!(
-                            cleanup,
-                            sophia_engine::OutputPresentationTransition::Accepted
-                                | sophia_engine::OutputPresentationTransition::PhaseReady
-                        ) {
-                            errors.push(format!(
-                                "mirror head {} entered invalid cohort cleanup transition {cleanup:?}",
-                                callback.head.raw(),
-                            ));
-                        }
                     }
                 }
                 tracing::info!(
@@ -1282,7 +1321,12 @@ mod persistent_native_scanout {
                     .output_lifecycles
                     .get_mut(&output)
                     .expect("mirror output has a lifecycle");
-                if !lifecycle.observe_flip_timing(frame, callback.frame_serial, callback_ust) {
+                if !lifecycle.observe_flip_timing(
+                    callback.head,
+                    frame,
+                    callback.frame_serial,
+                    callback_ust,
+                ) {
                     errors.push(format!(
                         "mirror head {} callback timing named the wrong generation",
                         callback.head.raw()
@@ -1302,7 +1346,7 @@ mod persistent_native_scanout {
                             );
                             continue;
                         };
-                        let mut joined = true;
+                        let mut presented = true;
                         if let Err(error) = self.production_page_flips.observe_page_flip(
                             output,
                             logical_serial,
@@ -1314,75 +1358,35 @@ mod persistent_native_scanout {
                             errors.push(format!(
                                 "mirror logical page-flip retirement was rejected: {error:?}"
                             ));
-                            joined = false;
+                            presented = false;
                         }
-                        // Physical heads may flip in either order, but the
-                        // logical scene becomes presented only after the join.
-                        for joined_index in self.head_indices(output) {
-                            if self.heads[joined_index].output_frames.submitted().is_none() {
-                                continue;
-                            }
-                            match self.heads[joined_index].output_frames.mark_presented() {
-                                Ok(presented) => {
-                                    trace_presented_output_damage(
-                                        "presented",
-                                        self.heads[joined_index].output.id,
-                                        &presented,
-                                    );
-                                    trace_presented_mirror_head_damage(
-                                        output,
-                                        self.heads[joined_index].head,
-                                        frame,
-                                        &presented,
-                                    );
-                                }
-                                Err(error) => {
-                                    errors.push(format!(
-                                        "mirror display-list presentation transition failed: {error}"
-                                    ));
-                                    joined = false;
-                                }
-                            }
+                        let presented_content = self.heads[head_index].presented_content;
+                        let presented_logical_checksum =
+                            self.heads[head_index].presented_logical_checksum;
+                        if presented_content.is_none_or(|content| content.frame() != frame) {
+                            errors.push(
+                                "mirror primary presented the wrong content identity".to_owned(),
+                            );
+                            presented = false;
                         }
-                        if joined {
-                            let presented_content = indices
-                                .first()
-                                .and_then(|index| self.heads[*index].presented_content);
-                            let presented_logical_checksum = indices
-                                .first()
-                                .map(|index| self.heads[*index].presented_logical_checksum)
-                                .unwrap_or_default();
-                            if presented_content.is_none_or(|content| content.frame() != frame)
-                                || indices.iter().any(|index| {
-                                    self.heads[*index]
-                                        .presented_content
-                                        .zip(presented_content)
-                                        .is_none_or(|(head, logical)| {
-                                            !head.same_logical_identity(logical)
-                                        })
-                                        || self.heads[*index].presented_logical_checksum
-                                            != presented_logical_checksum
-                                })
-                            {
-                                errors.push(
-                                    "joined mirror heads disagree on presented content identity"
-                                        .to_owned(),
-                                );
-                                joined = false;
-                            }
-                            if let Some(content) = presented_content
-                                && joined
-                            {
-                                tracing::info!(
-                                    "sophia_live_mirror_generation schema=2 status=presented output={} frame={} source={} logical_content_checksum={}",
-                                    output.raw(),
-                                    frame.raw(),
-                                    content.source_label(),
-                                    presented_logical_checksum,
-                                );
-                            }
+                        if let Some(content) = presented_content
+                            && presented
+                        {
+                            tracing::info!(
+                                "sophia_live_mirror_pacing schema=1 status=primary_presented output={} primary={} frame={}",
+                                output.raw(),
+                                callback.head.raw(),
+                                frame.raw(),
+                            );
+                            tracing::info!(
+                                "sophia_live_mirror_generation schema=2 status=presented output={} frame={} source={} logical_content_checksum={}",
+                                output.raw(),
+                                frame.raw(),
+                                content.source_label(),
+                                presented_logical_checksum,
+                            );
                         }
-                        if joined {
+                        if presented {
                             completed_retire = Some(crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
                                 status: crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip,
                                 destroy: None,
@@ -1413,7 +1417,10 @@ mod persistent_native_scanout {
                     self.heads[head_index].scanout_cleanup = retried.cleanup;
                     if self.heads[head_index].scanout_cleanup.is_some() {
                         self.retire_failures = self.retire_failures.saturating_add(1);
-                    } else if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                    } else if let Some(cleanup_frame) =
+                        self.heads[head_index].scanout_cleanup_group_frame.take()
+                        && let Some(cohort) = self.output_cohorts.get_mut(&(output, cleanup_frame))
+                    {
                         let transition = cohort.mark_cleanup_complete(self.heads[head_index].head);
                         if !matches!(
                             transition,
@@ -1428,6 +1435,19 @@ mod persistent_native_scanout {
                     }
                 }
             }
+
+            self.output_cohorts
+                .retain(|(cohort_output, frame), cohort| {
+                    let releasable = *cohort_output == output && cohort.generation_releasable();
+                    if releasable {
+                        tracing::info!(
+                            "sophia_live_mirror_pacing schema=1 status=released output={} frame={}",
+                            output.raw(),
+                            frame.raw(),
+                        );
+                    }
+                    !releasable
+                });
 
             LiveProductionMirrorRetirementReport {
                 page_flip_callbacks,
@@ -1447,7 +1467,7 @@ mod persistent_native_scanout {
                 && self
                     .output_lifecycles
                     .get(&output)
-                    .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
+                    .and_then(LiveProductionMirrorGroupLifecycle::logically_submitted_frame)
                     .is_none()
             {
                 return None;
@@ -1467,12 +1487,17 @@ mod persistent_native_scanout {
         fn finish_mirror_presentation_cohort(
             &mut self,
             output: OutputId,
+            frame: LiveProductionNativeFrameId,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            if let Some(cohort) = self.output_cohorts.remove(&output)
-                && !matches!(
-                    cohort.terminal(),
-                    Some(sophia_engine::OutputPresentationTerminal::Presented { .. })
-                )
+            if !self
+                .output_cohorts
+                .get(&(output, frame))
+                .is_some_and(|cohort| {
+                    matches!(
+                        cohort.terminal(),
+                        Some(sophia_engine::OutputPresentationTerminal::Presented { .. })
+                    )
+                })
             {
                 return Err("mirror generation joined before its Engine cohort presented".into());
             }
@@ -1518,9 +1543,11 @@ mod persistent_native_scanout {
             }
             let completed_retire = retirement.completed_retire;
             let completed_serial = retirement.completed_serial;
-            if completed_serial.is_some() {
-                self.finish_mirror_presentation_cohort(output)?;
-                self.promote_queued_mirror_generation(output)?;
+            if let Some(completed_serial) = completed_serial {
+                self.finish_mirror_presentation_cohort(
+                    output,
+                    LiveProductionNativeFrameId::from_raw(completed_serial),
+                )?;
             }
 
             for head_index in indices.iter().copied() {
@@ -1534,28 +1561,13 @@ mod persistent_native_scanout {
                     // earlier head's retired framebuffer.
                     continue;
                 }
-                if self
-                    .output_lifecycles
-                    .get(&output)
-                    .is_some_and(LiveProductionMirrorGroupLifecycle::awaiting_flips)
-                {
-                    break;
-                }
                 let head_id = self.heads[head_index].head;
                 if self.heads[head_index].scanout_submission.is_some() {
                     self.heads[head_index].scanout_in_flight_ticks = self.heads[head_index]
                         .scanout_in_flight_ticks
                         .saturating_add(1);
-                    continue;
                 }
-                if !self
-                    .output_lifecycles
-                    .get(&output)
-                    .is_some_and(|lifecycle| lifecycle.head_may_submit(head_id))
-                {
-                    // A fast head may already have flipped while a sibling is
-                    // still rendering this generation. Keep its successor queued
-                    // until the group join clears the active generation.
+                if self.heads[head_index].scanout_cleanup.is_some() {
                     continue;
                 }
                 let already_prepared = self.heads[head_index].prepared_scanout.is_some();
@@ -1577,41 +1589,39 @@ mod persistent_native_scanout {
                     )
                 }
                 .ok_or("mirror head has renderer work without frame identity")?;
-                let active_frame = self
-                    .output_lifecycles
-                    .get(&output)
-                    .and_then(LiveProductionMirrorGroupLifecycle::active_frame);
-                if !self
-                    .output_lifecycles
-                    .get(&output)
-                    .is_some_and(|lifecycle| lifecycle.head_may_submit_frame(head_id, work_frame))
-                {
-                    // Polling here would consume a successor renderer result and
-                    // relabel it as the active generation. The sibling that still
-                    // owns `active` must submit and flip first.
-                    continue;
-                }
-                let logical_frame = active_frame.unwrap_or(work_frame);
-                if self
+                let newest_frame = self
                     .output_lifecycles
                     .get(&output)
                     .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
-                    .is_none()
-                {
-                    let _ = self
-                        .output_lifecycles
-                        .get_mut(&output)
-                        .expect("mirror output has a lifecycle")
-                        .begin(logical_frame);
-                }
+                    .ok_or("mirror renderer work has no ready generation")?;
+                let logical_frame = work_frame;
                 let selection = self.heads[head_index].selection;
                 let size = self.heads[head_index].output.size;
                 let head_group = self.heads[head_index].group;
                 let submit = if let Some(prepared) = self.heads[head_index].prepared_scanout.take()
                 {
+                    if logical_frame != newest_frame {
+                        let worker_owned = self.heads[head_index].prepared_worker_was_in_flight;
+                        self.cancel_prepared_head_owner(head_index, prepared);
+                        if worker_owned {
+                            self.heads[head_index].rendering_content = None;
+                            self.heads[head_index].output_frames.discard_rendering();
+                        }
+                        if let Some(cohort) = self.output_cohorts.get_mut(&(output, logical_frame))
+                        {
+                            let _ = cohort.mark_skipped(head_id);
+                        }
+                        continue;
+                    }
+                    if self.heads[head_index].scanout_submission.is_some()
+                        || self.heads[head_index].scanout_cleanup.is_some()
+                    {
+                        self.heads[head_index].prepared_scanout = Some(prepared);
+                        continue;
+                    }
                     if !self
                         .output_cohorts
-                        .get(&output)
+                        .get(&(output, logical_frame))
                         .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
                     {
                         self.heads[head_index].prepared_scanout = Some(prepared);
@@ -1640,14 +1650,20 @@ mod persistent_native_scanout {
                     }
                     mirror_tracked_submit_report(&result, size)
                 } else {
-                    if !self.output_cohorts.contains_key(&output) {
+                    if !self.output_cohorts.contains_key(&(output, logical_frame)) {
+                        let primary = self
+                            .output_lifecycles
+                            .get(&output)
+                            .map(LiveProductionMirrorGroupLifecycle::primary_head)
+                            .ok_or("mirror generation has no configured primary head")?;
                         let cohort = sophia_engine::OutputPresentationCohort::new(
                             output,
                             logical_frame.raw(),
+                            primary,
                             indices.iter().map(|index| self.heads[*index].head),
                         )
                         .ok_or("mirror generation could not create a preparation cohort")?;
-                        self.output_cohorts.insert(output, cohort);
+                        self.output_cohorts.insert((output, logical_frame), cohort);
                     }
                     let mut prepare = {
                         let device = self.groups[head_group].session.card();
@@ -1672,6 +1688,26 @@ mod persistent_native_scanout {
                             }));
                     }
                     if let Some(prepared) = prepare.prepared.take() {
+                        if logical_frame != newest_frame {
+                            self.cancel_prepared_head_owner(head_index, prepared);
+                            if worker_was_in_flight {
+                                self.heads[head_index].rendering_content = None;
+                                self.heads[head_index].output_frames.discard_rendering();
+                            }
+                            if let Some(cohort) =
+                                self.output_cohorts.get_mut(&(output, logical_frame))
+                            {
+                                let _ = cohort.mark_skipped(head_id);
+                            }
+                            tracing::info!(
+                                "sophia_live_mirror_pacing schema=1 status=coalesced output={} head={} skipped={} newest={}",
+                                output.raw(),
+                                head_id.raw(),
+                                logical_frame.raw(),
+                                newest_frame.raw(),
+                            );
+                            continue;
+                        }
                         let content = if worker_was_in_flight {
                             self.heads[head_index].rendering_content
                         } else {
@@ -1694,7 +1730,7 @@ mod persistent_native_scanout {
                         };
                         let transition = self
                             .output_cohorts
-                            .get_mut(&output)
+                            .get_mut(&(output, logical_frame))
                             .expect("mirror preparation cohort exists")
                             .mark_prepared(candidate);
                         if !matches!(
@@ -1723,7 +1759,7 @@ mod persistent_native_scanout {
                             head_id.raw(),
                             logical_frame.raw(),
                             self.output_cohorts
-                                .get(&output)
+                                .get(&(output, logical_frame))
                                 .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared),
                         );
                         if tick.rendered_primary_plane_scanout_submit.is_none() {
@@ -1819,7 +1855,7 @@ mod persistent_native_scanout {
                         );
                         let cohort_transition = self
                             .output_cohorts
-                            .get_mut(&output)
+                            .get_mut(&(output, logical_frame))
                             .ok_or("submitted mirror generation has no preparation cohort")?
                             .mark_submitted(head_id);
                         if !matches!(
@@ -1904,17 +1940,17 @@ mod persistent_native_scanout {
                             self.heads[head_index].pending_content = None;
                         }
                         self.submit_failures = self.submit_failures.saturating_add(1);
-                        self.queued_mirror_successors.remove(&output);
                         let cohort_failure = if self
                             .output_cohorts
-                            .get(&output)
+                            .get(&(output, logical_frame))
                             .is_some_and(sophia_engine::OutputPresentationCohort::all_prepared)
                         {
                             sophia_engine::OutputPresentationFailure::Submission
                         } else {
                             sophia_engine::OutputPresentationFailure::Preparation
                         };
-                        if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                        if let Some(cohort) = self.output_cohorts.get_mut(&(output, logical_frame))
+                        {
                             cohort.fail(cohort_failure);
                         }
                         for prepared_index in indices.iter().copied() {
@@ -1956,16 +1992,16 @@ mod persistent_native_scanout {
                     .map(|index| {
                         let head = &self.heads[*index];
                         format!(
-                            "head={} kms={} cleanup={} worker={} pending={:?} rendering={:?} successor={:?}",
+                            "head={} kms={} cleanup={} worker={} pending={:?} rendering={:?} newest={:?}",
                             head.head.raw(),
                             head.scanout_submission.is_some(),
                             head.scanout_cleanup.is_some(),
                             self.exporters[*index].worker_in_flight(),
                             head.pending_content.map(LiveProductionScanoutContent::frame),
                             head.rendering_content.map(LiveProductionScanoutContent::frame),
-                            self.queued_mirror_successors
+                            self.output_lifecycles
                                 .get(&output)
-                                .map(|generation| generation.frame),
+                                .and_then(LiveProductionMirrorGroupLifecycle::active_frame),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -2024,9 +2060,11 @@ mod persistent_native_scanout {
                 }
                 self.ensure_page_flip_progress()?;
                 self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
-                if retirement.completed_serial.is_some() {
-                    self.finish_mirror_presentation_cohort(output)?;
-                    self.promote_queued_mirror_generation(output)?;
+                if let Some(completed_serial) = retirement.completed_serial {
+                    self.finish_mirror_presentation_cohort(
+                        output,
+                        LiveProductionNativeFrameId::from_raw(completed_serial),
+                    )?;
                 }
                 if self.mirror_poison_drained(output) {
                     return Err("mirror generation failed after physical ownership drained".into());
@@ -2124,7 +2162,6 @@ mod persistent_native_scanout {
                 runtime_cleanup_pending = cleanup.cleanup_pending;
             }
             let mut mirror_cleanup_pending = false;
-            self.queued_mirror_successors.remove(&output);
             for head_index in self.head_indices(output) {
                 if let Some(prepared) = self.heads[head_index].prepared_scanout.take() {
                     self.cancel_prepared_head_owner(head_index, prepared);
@@ -2163,7 +2200,23 @@ mod persistent_native_scanout {
                 .into());
             }
             trace_live_native_lifecycle("displayed_scanout_owner_released");
-            self.output_cohorts.remove(&output);
+            for ((cohort_output, frame), _) in self
+                .output_cohorts
+                .iter()
+                .filter(|((cohort_output, _), _)| *cohort_output == output)
+            {
+                tracing::info!(
+                    "sophia_live_mirror_pacing schema=1 status=released output={} frame={}",
+                    cohort_output.raw(),
+                    frame.raw(),
+                );
+            }
+            self.output_cohorts
+                .retain(|(cohort_output, _), _| *cohort_output != output);
+            for head_index in self.head_indices(output) {
+                self.heads[head_index].displayed_group_frame = None;
+                self.heads[head_index].scanout_cleanup_group_frame = None;
+            }
             Ok(())
         }
 
@@ -2177,7 +2230,13 @@ mod persistent_native_scanout {
                 cancelled = cancelled.saturating_add(1);
             }
             if cancelled > 0 {
-                if let Some(cohort) = self.output_cohorts.get_mut(&output) {
+                for cohort in
+                    self.output_cohorts
+                        .iter_mut()
+                        .filter_map(|((cohort_output, _), cohort)| {
+                            (*cohort_output == output).then_some(cohort)
+                        })
+                {
                     cohort.fail(sophia_engine::OutputPresentationFailure::StaleTopology);
                 }
                 tracing::info!(
@@ -2422,14 +2481,6 @@ mod persistent_native_scanout {
                         )
                     })
                     .collect::<Vec<_>>();
-                if self
-                    .queued_mirror_successors
-                    .get(&output)
-                    .and_then(LiveProductionQueuedMirrorGeneration::cpu_checksum)
-                    == Some(frame.checksum)
-                {
-                    return LiveProductionCpuFrameQueueStatus::UnchangedPending;
-                }
                 for unchanged in [
                     LiveProductionCpuFrameQueueStatus::UnchangedPending,
                     LiveProductionCpuFrameQueueStatus::UnchangedSubmitted,
@@ -2534,14 +2585,37 @@ mod persistent_native_scanout {
         }
 
         pub fn pending_frame(&self, output: OutputId) -> bool {
-            if self.queued_mirror_successors.contains_key(&output) {
-                return true;
-            }
+            let mirror = self.head_indices(output).len() > 1;
             self.head_indices(output).into_iter().any(|index| {
                 self.exporters[index].pending_frame()
                     || self.heads[index].prepared_scanout.is_some()
-                    || self.heads[index].scanout_submission.is_some()
+                    || self.heads[index].pending_content.is_some()
+                    || self.heads[index].rendering_content.is_some()
+                    || (!mirror && self.heads[index].scanout_submission.is_some())
             })
+        }
+
+        pub fn is_mirror_output(&self, output: OutputId) -> bool {
+            self.head_indices(output).len() > 1
+        }
+
+        pub fn primary_scanout_in_flight(&self, output: OutputId) -> bool {
+            self.primary_head_index(output)
+                .is_some_and(|index| self.heads[index].scanout_submission.is_some())
+        }
+
+        pub fn primary_cleanup_pending(&self, output: OutputId) -> bool {
+            self.primary_head_index(output)
+                .is_some_and(|index| self.heads[index].scanout_cleanup.is_some())
+        }
+
+        pub fn frame_queue_ready(&self, output: OutputId) -> bool {
+            if self.is_mirror_output(output) {
+                return !self.mirror_generation_failed(output);
+            }
+            !self.pending_frame(output)
+                && !self.output_in_flight(output)
+                && !self.output_cleanup_pending(output)
         }
 
         pub fn scanout_in_flight(&self, output: OutputId) -> bool {
@@ -2625,30 +2699,13 @@ mod persistent_native_scanout {
         }
 
         pub fn presented_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
-            let indices = self.head_indices(output);
-            let first = indices.first().and_then(|index| {
-                self.heads[*index]
-                    .presented_content
-                    .map(LiveProductionScanoutContent::frame)
-            })?;
-            indices
-                .into_iter()
-                .all(|index| {
-                    self.heads[index]
-                        .presented_content
-                        .is_some_and(|content| content.frame() == first)
-                })
-                .then_some(first)
+            self.heads[self.primary_head_index(output)?]
+                .presented_content
+                .map(LiveProductionScanoutContent::frame)
         }
 
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
-            let indices = self.head_indices(output);
-            if indices.is_empty() {
-                return false;
-            }
-            // Every head of the output must show it: a mirror group is
-            // presented when each of its screens is, not when one is.
-            indices.into_iter().all(|index| {
+            self.primary_head_index(output).is_some_and(|index| {
                 live_production_scanout_is_stable_present(
                     self.heads[index].presented_content,
                     transaction,
@@ -2657,24 +2714,21 @@ mod persistent_native_scanout {
         }
 
         pub fn presented_mixed_nonzero_rgb_pixels(&self, transaction: TransactionId) -> usize {
-            for output in self.outputs() {
-                let pixels = self
-                    .head_indices(output.id)
-                    .into_iter()
-                    .map(|index| match self.heads[index].presented_content {
+            self.outputs()
+                .into_iter()
+                .filter_map(|output| {
+                    let index = self.primary_head_index(output.id)?;
+                    match self.heads[index].presented_content {
                         Some(LiveProductionScanoutContent::MixedPresent {
                             transaction: presented,
                             nonzero_rgb_pixels,
                             ..
                         }) if presented == transaction => Some(nonzero_rgb_pixels),
                         _ => None,
-                    })
-                    .collect::<Option<Vec<_>>>();
-                if let Some(pixels) = pixels {
-                    return pixels.into_iter().min().unwrap_or(0);
-                }
-            }
-            0
+                    }
+                })
+                .max()
+                .unwrap_or(0)
         }
 
         pub fn poll_group_callbacks(
@@ -2755,25 +2809,23 @@ mod persistent_native_scanout {
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
     LiveProductionCpuFrameQueueStatus, LiveProductionHeadCompositionFrame,
-    LiveProductionMirrorGenerationQueueTarget, LiveProductionMirrorGroupBegin,
-    LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
-    LiveProductionNativeFrameId, LiveProductionNativeFrameRetirement, LiveProductionNativeHead,
-    LiveProductionNativeScanout, LiveProductionNativeTopologyApplyCoordinator,
-    LiveProductionNativeTopologyApplyPhase, LiveProductionNativeTopologyApplyTransition,
-    LiveProductionNativeTopologyCandidateResource, LiveProductionNativeTopologyCurrentHead,
-    LiveProductionNativeTopologyDisposition, LiveProductionNativeTopologyHeadPlan,
-    LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
-    LiveProductionNativeTopologyPreparationPhase, LiveProductionNativeTopologyPreparationReport,
-    LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
-    LiveProductionNativeTopologyResourceTransition, LiveProductionPageFlipWatchdogStatus,
-    LiveProductionRendererImageHandoff, LiveProductionScanoutContent,
-    LiveProductionSemanticStartupBarrier, finish_live_production_native_initialization,
-    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
-    live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
-    project_live_production_published_topology, project_mirror_output_damage_snapshot,
-    project_native_cursor_logical_viewport, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_head_render_target,
-    reduce_live_production_mirror_generation_queue_target,
+    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
+    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionNativeTopologyApplyCoordinator, LiveProductionNativeTopologyApplyPhase,
+    LiveProductionNativeTopologyApplyTransition, LiveProductionNativeTopologyCandidateResource,
+    LiveProductionNativeTopologyCurrentHead, LiveProductionNativeTopologyDisposition,
+    LiveProductionNativeTopologyHeadPlan, LiveProductionNativeTopologyPlan,
+    LiveProductionNativeTopologyPlanError, LiveProductionNativeTopologyPreparationPhase,
+    LiveProductionNativeTopologyPreparationReport, LiveProductionNativeTopologyResourceCohort,
+    LiveProductionNativeTopologyResourceRejection, LiveProductionNativeTopologyResourceTransition,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
+    LiveProductionScanoutContent, LiveProductionSemanticStartupBarrier,
+    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
+    live_production_scanout_is_stable_present, live_topology_frame_renderer_image_requirements,
+    plan_live_production_native_topology, project_live_production_published_topology,
+    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
     reduce_live_production_page_flip_watchdog, reduce_live_production_semantic_startup_barrier,
     validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
     validate_live_production_topology_frames,

@@ -169,6 +169,7 @@ echo "  - DP-1 still 2560x1440 and DP-2 still 1920x1080, neither downgraded"
 echo "  - DP-2 may show black bars if the aspects differ; that is 'fit' working"
 echo "  - xterm will scroll 40 numbered mixed-case rows, then print the exact marker"
 echo "    'Sophia Mirror AaZz 0123456789' and leave an interactive shell"
+echo "  - while rows move, independently paced heads may differ by a transient frame"
 echo "  - Wait for the scene to settle, then verify identical logical content and"
 echo "    letter case, stable legibility, and white-on-black presentation on both"
 echo "  - DP-2's scaled glyph edges should look sharp and smooth, not blocky or stepped"
@@ -230,7 +231,8 @@ fi
 grep -E "sophia_live_native_page_flip|sophia_live_output|mirror|head" "$EVIDENCE" \
     | tail -20 || true
 echo
-echo "Did both monitors show the same scene at their native modes, including stable,"
+echo "After the marker settled, did both monitors converge to the same scene at"
+echo "their native modes, including stable,"
 echo "legible white-on-black text with identical logical content and letter case,"
 echo "and did DP-2's scaled text look sharp rather than blocky or stair-stepped?"
 echo "Type yes to record visible-pixel acceptance."

@@ -641,12 +641,15 @@ impl LiveProductionVisualRuntime {
             .replace_committed_surfaces(committed);
         // Per-head state as well as the runtime's, or this guard is blind to a
         // mirror group and would tick an output whose heads are still in flight.
+        let mirror = native_scanout.is_mirror_output(selected_output);
         if output.runtime.rendered_primary_plane_scanout_in_flight()
-            || native_scanout.output_in_flight(selected_output)
+            || (!mirror && native_scanout.output_in_flight(selected_output))
             || output
                 .runtime
                 .rendered_primary_plane_scanout_cleanup_pending()
-            || native_scanout.output_cleanup_pending(selected_output)
+            || (!mirror && native_scanout.output_cleanup_pending(selected_output))
+            || (mirror && native_scanout.primary_scanout_in_flight(selected_output))
+            || (mirror && native_scanout.primary_cleanup_pending(selected_output))
             || !native_scanout.pending_frame(selected_output)
         {
             return Err("frame service selected an output that is not ready".into());

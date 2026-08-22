@@ -274,7 +274,7 @@ fn rendered_mirror_cohort_submits_nothing_until_every_head_is_prepared() {
     let selection = select_native_primary_plane_target(&device);
     let output = OutputId::from_raw(4);
     let heads = [RenderHeadId::from_raw(11), RenderHeadId::from_raw(12)];
-    let mut cohort = OutputPresentationCohort::new(output, 9, heads).unwrap();
+    let mut cohort = OutputPresentationCohort::new(output, 9, heads[0], heads).unwrap();
 
     let mut first_exporter = FakeRenderedScanoutExporter::exported(size);
     let mut first = prepare_rendered_primary_plane_scanout_from_target_and_selection_with(

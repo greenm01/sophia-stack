@@ -77,6 +77,17 @@ impl NativeMirrorGrouping {
             .is_some_and(|index| self.groups[index].len() > 1)
     }
 
+    /// Whether this connector is the ordered primary of its mirror group.
+    /// Single connectors have no grouping policy and are primary by default in
+    /// the Engine registry.
+    pub fn is_group_primary(&self, connector: &str) -> bool {
+        self.group_of(connector).is_some_and(|index| {
+            self.groups[index]
+                .first()
+                .is_some_and(|primary| primary == connector)
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.groups.is_empty()
     }

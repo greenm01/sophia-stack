@@ -54,7 +54,14 @@ fn engine_head_registry_tracks_heads_and_logical_views() {
             scale: 2,
         })
     );
-    // A mirror group paces at its slowest head.
+    // The first admitted member owns logical pacing; the sibling consumes the
+    // resulting generations independently.
+    assert_eq!(registry.primary_head(output), Some(first.head));
+    assert_eq!(registry.logical_refresh_millihz(output), 60_000);
+    assert_eq!(
+        registry.set_primary_head(output, sibling.head),
+        EngineLogicalOutputUpdate::Updated
+    );
     assert_eq!(registry.logical_refresh_millihz(output), 59_000);
     assert_eq!(
         registry.remove_head(RenderHeadId::from_raw(2)),

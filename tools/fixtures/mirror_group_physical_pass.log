@@ -27,10 +27,12 @@ sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=2 subm
 sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=1 callbacks=1 kernel_sequence=80 frame=7
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=1 submission=2 frame=7
 sophia_live_mirror_head_damage schema=2 status=presented output=1 head=1 frame=7 width=2560 height=1440 mode=full rects=1 pixels=3686400
+sophia_live_mirror_pacing schema=1 status=primary_presented output=1 primary=1 frame=7
+sophia_live_mirror_generation schema=2 status=presented output=1 frame=7 source=head_composition logical_content_checksum=111
 sophia_live_native_head_page_flip schema=2 status=callback_accepted output=1 head=2 callbacks=1 kernel_sequence=81 frame=7
 sophia_live_native_head_page_flip schema=2 status=retired output=1 head=2 submission=2 frame=7
 sophia_live_mirror_head_damage schema=2 status=presented output=1 head=2 frame=7 width=1920 height=1080 mode=full rects=1 pixels=2073600
-sophia_live_mirror_generation schema=2 status=presented output=1 frame=7 source=head_composition logical_content_checksum=111
+sophia_live_mirror_pacing schema=1 status=released output=1 frame=7
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_output_topology_health schema=1 status=clean quarantined=false
 sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none

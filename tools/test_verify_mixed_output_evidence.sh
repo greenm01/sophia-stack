@@ -26,6 +26,8 @@ write_fixture() {
         if [[ "$include_retirement" == yes ]]; then
             echo 'sophia_live_native_head_page_flip schema=2 status=retired output=2 head=22 submission=3 frame=44'
         fi
+        echo 'sophia_live_mirror_pacing schema=1 status=primary_presented output=1 primary=11 frame=45'
+        echo 'sophia_live_mirror_pacing schema=1 status=released output=1 frame=45'
         echo 'sophia_live_native_head schema=3 status=complete output=1 head=11'
         echo 'sophia_live_native_head schema=3 status=complete output=1 head=13'
         echo 'sophia_live_native_head schema=3 status=complete output=2 head=22'
@@ -46,6 +48,13 @@ fi
 write_fixture 1 no
 if bash "$VERIFIER" "$FIXTURE" DP-2 >/dev/null 2>&1; then
     echo 'Verifier accepted an exact frame without retirement.' >&2
+    exit 1
+fi
+
+write_fixture
+sed -i '/status=released output=1 frame=45/d' "$FIXTURE"
+if bash "$VERIFIER" "$FIXTURE" DP-2 >/dev/null 2>&1; then
+    echo 'Verifier accepted a mirror generation without last-head release.' >&2
     exit 1
 fi
 

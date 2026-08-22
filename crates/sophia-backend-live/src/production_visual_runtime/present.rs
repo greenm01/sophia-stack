@@ -89,7 +89,7 @@ impl LiveProductionVisualRuntime {
                 .output_native_cleanup_pending(index)
                 .ok_or("Present output cleanup state was not registered")?;
             let pending_frame = native_scanout.pending_frame(*output);
-            if in_flight || cleanup_pending || pending_frame {
+            if in_flight || cleanup_pending || !native_scanout.frame_queue_ready(*output) {
                 // The primary can no longer reach this: the reducer withholds
                 // the presentation effect while it owes a native frame. A
                 // cohort spanning outputs can still find a secondary busy, and

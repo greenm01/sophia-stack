@@ -522,23 +522,24 @@ fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
     assert_eq!(group.begin(frame), LiveProductionMirrorGroupBegin::Started);
     assert_eq!(
         group.mark_submitted(sophia_engine::RenderHeadId::from_raw(94), frame),
-        LiveProductionMirrorHeadTransition::Accepted
+        LiveProductionMirrorHeadTransition::GroupReady
     );
     assert_eq!(
         group.mark_flipped(sophia_engine::RenderHeadId::from_raw(94), frame),
-        LiveProductionMirrorHeadTransition::Accepted
+        LiveProductionMirrorHeadTransition::GroupReady
     );
     assert_eq!(
         group.mark_submitted(sophia_engine::RenderHeadId::from_raw(104), frame),
-        LiveProductionMirrorHeadTransition::GroupReady
+        LiveProductionMirrorHeadTransition::Accepted
     );
     assert!(group.awaiting_flips());
 
-    // Fatal intake stops here. The bounded drain must retain the sibling owner
-    // until its callback joins the logical generation.
+    // Fatal intake stops here. Logical presentation already belongs to the
+    // primary, but the bounded drain must retain the sibling's physical owner
+    // until its callback releases that head's KMS submission.
     assert_eq!(
         group.mark_flipped(sophia_engine::RenderHeadId::from_raw(104), frame),
-        LiveProductionMirrorHeadTransition::GroupReady
+        LiveProductionMirrorHeadTransition::Accepted
     );
     assert_eq!(group.take_completed_frame(), Some(frame));
     let evidence = SessionFatalCleanupEvidence {

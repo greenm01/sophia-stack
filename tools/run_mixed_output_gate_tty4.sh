@@ -203,6 +203,8 @@ echo "  extended: $EXTENDED"
 echo "  authority labels: $MIRROR_PRIMARY_LABEL + $MIRROR_MEMBER_LABEL; $EXTENDED_LABEL"
 echo "One Kitty should remain on the mirrored output; the other should move to the"
 echo "right-hand extended output. The extended Kitty is the native-sharp visual gate."
+echo "During motion the mirror members may differ by a transient frame; judge them"
+echo "only after the marker and windows have settled and the members have converged."
 
 set +e
 (
@@ -296,7 +298,7 @@ else
 fi
 echo "  $EXTENDED (extended, native): shows its own terminal with the"
 echo "    SOPHIA MIXED NATIVE SHARP marker, crisp, with no soft resampling."
-echo "Type yes if all three held."
+echo "Type yes if all three held after the scene settled."
 confirmation=
 if ! read -r confirmation </dev/tty || [[ "$confirmation" != yes ]]; then
     printf 'sophia_mixed_output_gate schema=1 status=failed stage=visual_confirmation exit=1\n' \

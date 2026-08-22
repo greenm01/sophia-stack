@@ -1,6 +1,6 @@
 use sophia_engine::RenderHeadId;
 use sophia_protocol::{OutputId, TransactionId};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 pub const LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL: Duration = Duration::from_millis(500);
@@ -62,65 +62,46 @@ pub enum LiveProductionMirrorHeadTransition {
     NotSubmitted,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LiveProductionMirrorGenerationQueueTarget {
-    Active,
-    Successor,
-    ReplaceSuccessor(LiveProductionNativeFrameId),
-}
-
-/// Admits one logical generation without exposing per-head queue state.
+/// Paces the physical heads of one logical mirror output independently.
 ///
-/// An active generation is immutable. While it joins, the group owns one
-/// latest-wins successor that replaces an older successor atomically.
-pub fn reduce_live_production_mirror_generation_queue_target(
-    active: Option<LiveProductionNativeFrameId>,
-    successor: Option<LiveProductionNativeFrameId>,
-) -> LiveProductionMirrorGenerationQueueTarget {
-    match (active, successor) {
-        (None, _) => LiveProductionMirrorGenerationQueueTarget::Active,
-        (Some(_), None) => LiveProductionMirrorGenerationQueueTarget::Successor,
-        (Some(_), Some(successor)) => {
-            LiveProductionMirrorGenerationQueueTarget::ReplaceSuccessor(successor)
-        }
-    }
-}
-
-/// Joins independently serviced physical heads back into one logical frame.
-///
-/// Rendering and KMS ownership remain per physical head. The Engine-facing
-/// frame is complete only after every head that began the generation has
-/// submitted and flipped it. A second generation cannot enter this coordinator while the
-/// first is active, so a fast head cannot race ahead and display a newer logical
-/// frame than a slower sibling.
+/// `newest` is the latest generation with complete per-head renderer input.
+/// The Engine cohort separately enforces prepare-all before the first submit.
+/// Each idle head may then submit `newest` without consulting a sibling's KMS
+/// state, and a lagging head skips directly to it. The primary head alone
+/// produces logical presentation; native owners remain head-scoped outside
+/// this passive reducer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveProductionMirrorGroupLifecycle {
     output: OutputId,
+    primary: RenderHeadId,
     required: BTreeSet<RenderHeadId>,
     initialized: BTreeSet<RenderHeadId>,
-    active: Option<LiveProductionNativeFrameId>,
+    newest: Option<LiveProductionNativeFrameId>,
     active_progress_at: Option<std::time::Instant>,
-    submitted: BTreeSet<RenderHeadId>,
-    flipped: BTreeSet<RenderHeadId>,
-    max_flip_ust_usec: Option<u64>,
+    inflight: BTreeMap<RenderHeadId, LiveProductionNativeFrameId>,
+    displayed: BTreeMap<RenderHeadId, LiveProductionNativeFrameId>,
     failed: bool,
     completed: Option<LiveProductionNativeFrameId>,
+    completed_ust_usec: Option<u64>,
 }
 
 impl LiveProductionMirrorGroupLifecycle {
     pub fn new(output: OutputId, heads: impl IntoIterator<Item = RenderHeadId>) -> Option<Self> {
-        let required = heads.into_iter().collect::<BTreeSet<_>>();
+        let ordered = heads.into_iter().collect::<Vec<_>>();
+        let primary = *ordered.first()?;
+        let required = ordered.into_iter().collect::<BTreeSet<_>>();
         (!required.is_empty() && required.iter().all(|head| head.is_valid())).then_some(Self {
             output,
+            primary,
             required,
             initialized: BTreeSet::new(),
-            active: None,
+            newest: None,
             active_progress_at: None,
-            submitted: BTreeSet::new(),
-            flipped: BTreeSet::new(),
-            max_flip_ust_usec: None,
+            inflight: BTreeMap::new(),
+            displayed: BTreeMap::new(),
             failed: false,
             completed: None,
+            completed_ust_usec: None,
         })
     }
 
@@ -130,6 +111,10 @@ impl LiveProductionMirrorGroupLifecycle {
 
     pub fn heads(&self) -> impl Iterator<Item = RenderHeadId> + '_ {
         self.required.iter().copied()
+    }
+
+    pub const fn primary_head(&self) -> RenderHeadId {
+        self.primary
     }
 
     pub fn initialized(&self) -> bool {
@@ -154,20 +139,16 @@ impl LiveProductionMirrorGroupLifecycle {
         if self.failed {
             return LiveProductionMirrorGroupBegin::Poisoned;
         }
-        if self.active.is_some() {
+        if self.newest.is_some_and(|newest| frame <= newest) {
             return LiveProductionMirrorGroupBegin::GenerationInFlight;
         }
-        self.active = Some(frame);
+        self.newest = Some(frame);
         self.active_progress_at = Some(std::time::Instant::now());
-        self.submitted.clear();
-        self.flipped.clear();
-        self.max_flip_ust_usec = None;
-        self.completed = None;
         LiveProductionMirrorGroupBegin::Started
     }
 
     pub const fn active_frame(&self) -> Option<LiveProductionNativeFrameId> {
-        self.active
+        self.newest
     }
 
     /// Age since the reserved generation last made physical progress.
@@ -175,7 +156,9 @@ impl LiveProductionMirrorGroupLifecycle {
     /// a head submits, or a head flips, so a head that never reaches
     /// `submitted_at` cannot evade the group watchdog.
     pub fn active_age(&self) -> Option<Duration> {
-        self.active_progress_at.map(|progress| progress.elapsed())
+        (!self.converged())
+            .then(|| self.active_progress_at.map(|progress| progress.elapsed()))
+            .flatten()
     }
 
     pub fn active_generation_hard_stalled(&self, hard_stall: Duration) -> bool {
@@ -183,7 +166,7 @@ impl LiveProductionMirrorGroupLifecycle {
     }
 
     pub fn observe_physical_progress(&mut self, frame: LiveProductionNativeFrameId) -> bool {
-        if self.active != Some(frame) {
+        if self.newest != Some(frame) {
             return false;
         }
         self.active_progress_at = Some(std::time::Instant::now());
@@ -195,22 +178,21 @@ impl LiveProductionMirrorGroupLifecycle {
     }
 
     pub fn awaiting_flips(&self) -> bool {
-        self.active.is_some() && self.submitted == self.required
+        !self.inflight.is_empty()
     }
 
-    /// Logical identity retained after every required head has submitted and
-    /// until the final physical callback completes the group join.
+    /// Logical identity currently submitted on the primary head.
     pub fn logically_submitted_frame(&self) -> Option<LiveProductionNativeFrameId> {
-        self.awaiting_flips().then_some(self.active).flatten()
+        self.inflight.get(&self.primary).copied()
     }
 
     /// Whether this head may consume renderer work for the current turn.
     ///
-    /// A physical callback clears the head's KMS submission before its siblings
-    /// necessarily finish the logical generation. Membership in `submitted`
-    /// therefore remains the generation fence even after that early callback.
+    /// A physical callback clears this head's KMS submission independently of
+    /// its siblings. The per-head in-flight map is therefore the generation
+    /// fence.
     pub fn head_may_submit(&self, head: RenderHeadId) -> bool {
-        self.required.contains(&head) && (self.active.is_none() || !self.submitted.contains(&head))
+        !self.failed && self.required.contains(&head) && !self.inflight.contains_key(&head)
     }
 
     /// Whether this head may submit this exact logical generation.
@@ -223,7 +205,12 @@ impl LiveProductionMirrorGroupLifecycle {
         head: RenderHeadId,
         frame: LiveProductionNativeFrameId,
     ) -> bool {
-        self.head_may_submit(head) && self.active.is_none_or(|active| active == frame)
+        self.head_may_submit(head)
+            && self.newest == Some(frame)
+            && self
+                .displayed
+                .get(&head)
+                .is_none_or(|displayed| *displayed < frame)
     }
 
     /// Poisons a partially submitted generation.
@@ -232,7 +219,7 @@ impl LiveProductionMirrorGroupLifecycle {
     /// drain, but no later tick may submit another logical generation or publish
     /// this one as presented.
     pub fn abort(&mut self, frame: LiveProductionNativeFrameId) -> bool {
-        if self.active != Some(frame) {
+        if self.newest != Some(frame) && !self.inflight.values().any(|active| *active == frame) {
             return false;
         }
         self.failed = true;
@@ -247,14 +234,15 @@ impl LiveProductionMirrorGroupLifecycle {
         if !self.required.contains(&head) {
             return LiveProductionMirrorHeadTransition::UnknownHead;
         }
-        if self.active != Some(frame) {
+        if self.newest != Some(frame) {
             return LiveProductionMirrorHeadTransition::WrongGeneration;
         }
-        if !self.submitted.insert(head) {
+        if !self.head_may_submit_frame(head, frame) {
             return LiveProductionMirrorHeadTransition::Duplicate;
         }
+        self.inflight.insert(head, frame);
         self.active_progress_at = Some(std::time::Instant::now());
-        if self.submitted == self.required {
+        if head == self.primary {
             LiveProductionMirrorHeadTransition::GroupReady
         } else {
             LiveProductionMirrorHeadTransition::Accepted
@@ -269,19 +257,17 @@ impl LiveProductionMirrorGroupLifecycle {
         if !self.required.contains(&head) {
             return LiveProductionMirrorHeadTransition::UnknownHead;
         }
-        if self.active != Some(frame) {
-            return LiveProductionMirrorHeadTransition::WrongGeneration;
+        match self.inflight.get(&head) {
+            None => return LiveProductionMirrorHeadTransition::NotSubmitted,
+            Some(submitted) if *submitted != frame => {
+                return LiveProductionMirrorHeadTransition::WrongGeneration;
+            }
+            Some(_) => {}
         }
-        if !self.submitted.contains(&head) {
-            return LiveProductionMirrorHeadTransition::NotSubmitted;
-        }
-        if !self.flipped.insert(head) {
-            return LiveProductionMirrorHeadTransition::Duplicate;
-        }
+        self.inflight.remove(&head);
+        self.displayed.insert(head, frame);
         self.active_progress_at = Some(std::time::Instant::now());
-        if self.flipped == self.required {
-            self.active = None;
-            self.active_progress_at = None;
+        if head == self.primary {
             self.completed = Some(frame);
             LiveProductionMirrorHeadTransition::GroupReady
         } else {
@@ -296,31 +282,24 @@ impl LiveProductionMirrorGroupLifecycle {
     /// coherent output-wide sequence.
     pub fn observe_flip_timing(
         &mut self,
+        head: RenderHeadId,
         frame: LiveProductionNativeFrameId,
         _serial: u64,
         ust_usec: u64,
     ) -> bool {
-        if self.active != Some(frame) {
+        if self.inflight.get(&head) != Some(&frame) {
             return false;
         }
-        self.max_flip_ust_usec = Some(
-            self.max_flip_ust_usec
-                .map_or(ust_usec, |old| old.max(ust_usec)),
-        );
+        if head == self.primary {
+            self.completed_ust_usec = Some(ust_usec);
+        }
         true
     }
 
     pub const fn flip_timing(&self) -> Option<(u64, u64)> {
-        let frame = match self.completed {
-            Some(frame) => frame,
-            None => match self.active {
-                Some(frame) => frame,
-                None => return None,
-            },
-        };
-        match self.max_flip_ust_usec {
-            Some(ust_usec) => Some((frame.raw(), ust_usec)),
-            None => None,
+        match (self.completed, self.completed_ust_usec) {
+            (Some(frame), Some(ust_usec)) => Some((frame.raw(), ust_usec)),
+            _ => None,
         }
     }
 
@@ -329,7 +308,30 @@ impl LiveProductionMirrorGroupLifecycle {
     }
 
     pub fn take_completed_frame(&mut self) -> Option<LiveProductionNativeFrameId> {
-        self.completed.take()
+        let completed = self.completed.take();
+        if completed.is_some() {
+            self.completed_ust_usec = None;
+        }
+        completed
+    }
+
+    pub fn displayed_frame(&self, head: RenderHeadId) -> Option<LiveProductionNativeFrameId> {
+        self.displayed.get(&head).copied()
+    }
+
+    pub fn generation_is_scanned(&self, frame: LiveProductionNativeFrameId) -> bool {
+        self.inflight
+            .values()
+            .chain(self.displayed.values())
+            .any(|owned| *owned == frame)
+    }
+
+    pub fn converged(&self) -> bool {
+        self.newest.is_some_and(|newest| {
+            self.required
+                .iter()
+                .all(|head| self.displayed.get(head) == Some(&newest))
+        })
     }
 }
 

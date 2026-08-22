@@ -446,9 +446,13 @@ Fields should describe:
 A `HeadFrameCandidate` binds a reduced target descriptor and affine lease token
 to the exact head-plan identity it realizes. Renderer/backend-private state
 behind that token retains the native resources; neither the candidate nor the
-cohort exposes native handles. The cohort owns only the transition that decides
-when the shared logical generation is presented. Retirement is joint across
-heads of one mirrored output and independent between logical outputs.
+cohort exposes native handles. The cohort owns only the transitions that decide
+when the shared logical generation is presented and when its last native owner
+is releasable. The configured primary head owns logical presentation. Other
+heads consume the newest complete generation on their own vblank and may
+coalesce generations they missed; a generation's resources remain retained
+until every head that scanned it has moved on. Logical outputs remain
+independent of one another.
 
 ### FrameClockTick
 
