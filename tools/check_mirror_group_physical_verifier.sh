@@ -108,6 +108,10 @@ sed 's/head=1 scene_generation=7 logical_content_checksum=111 head_pixel_checksu
     "$fixture" >"$work/distinct-head-pixels.log"
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/distinct-head-pixels.log" >/dev/null
 
+sed 's/cpu_checksum=111/cpu_checksum=18446744073709551615/' \
+    "$fixture" >"$work/unsigned-checksum.log"
+"$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/unsigned-checksum.log" >/dev/null
+
 sed $'s/^sophia_live_native_head_page_flip /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_native_head_page_flip /; s/^sophia_live_mirror_head_damage /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_head_damage /; s/^sophia_live_mirror_generation /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_scanout: \033[0m sophia_live_mirror_generation /; s/^sophia_native_composition_sampling /\033[2m2026-08-15T12:57:29Z\033[0m INFO native_renderer: \033[0m sophia_native_composition_sampling /' \
     "$fixture" >"$work/tracing-prefixed.log"
 "$ROOT_DIR/tools/verify_mirror_group_physical.sh" "$work/tracing-prefixed.log" >/dev/null

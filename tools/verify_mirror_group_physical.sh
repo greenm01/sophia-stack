@@ -52,8 +52,7 @@ require_field() {
 require_positive_field() {
     local line="$1" key="$2" actual
     actual="$(field "$line" "$key")" || fail "record is missing $key"
-    [[ "$actual" =~ ^[0-9]+$ ]] || fail "$key is not an integer: $actual"
-    (( actual > 0 )) || fail "$key must be positive"
+    [[ "$actual" =~ ^[1-9][0-9]*$ ]] || fail "$key must be a positive integer: $actual"
 }
 
 if grep -Eqi '(^Error:|panicked at|status=(failed|degraded)([[:space:]]|$)|status=(hard_stall|head_lost)([[:space:]]|$))' \
@@ -424,9 +423,7 @@ require_positive_field "$session" native_submissions
 require_positive_field "$session" native_retirements
 require_positive_field "$session" native_callback_accepted
 require_positive_field "$session" native_nonzero_exports
-cpu_checksum="$(field "$session" cpu_checksum)" || fail "bounded completion omitted cpu_checksum"
-[[ "$cpu_checksum" =~ ^[0-9]+$ ]] || fail "cpu_checksum is not an integer: $cpu_checksum"
-(( cpu_checksum > 0 )) || fail "cpu_checksum must be positive"
+require_positive_field "$session" cpu_checksum
 # The CPU replay report hashes composed pixels, while the head checksum hashes
 # the Engine's logical scene plan. Their domains differ; the plan, queue,
 # submission, page-flip, and retirement checks above bind the latter to both

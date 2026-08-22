@@ -14128,3 +14128,12 @@ checksum through both heads' plans, queues, submissions, page flips, and
 retirements. The saved diagnostic run passes with those corrections, but the
 physical gate remains open until the corrected verifier and exact signed source
 produce a new passing archive.
+
+The next signed attempt, diagnostic run `0028`, exposed one more representation
+mistake after the runtime and visual proof again passed. Its CPU checksum,
+`13820492447675412724`, is a valid `u64` but exceeds Bash's signed arithmetic
+range, so `(( checksum > 0 ))` treated it as negative. Positive telemetry fields
+are now validated as nonzero decimal strings instead of shell integers. The
+fixture suite accepts `u64::MAX` and still rejects zero. Run `0028` then passes
+the verifier end to end, but remains diagnostic because the gate correctly
+recorded the verifier's original rejection.
