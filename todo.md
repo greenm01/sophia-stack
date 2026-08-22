@@ -98,6 +98,41 @@ fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
 efficiency work stay off this path unless a named gate produces evidence that
 promotes one of them.
 
+### Immediate Next
+
+Ordering for the next few sessions. Each row points at where its detail already
+lives rather than restating it; this is a priority index, not a second roadmap.
+
+1. **Upstream the Pnut Landlock fix.** The only item here that decays. A
+   fail-open where the natural spelling of deny-all produced unrestricted access
+   is fixed, tested, and sitting on a local branch with no upstream tracking, so
+   every other user of that library still has it and Sophia carries a patch it
+   must rebase. Finished work currently benefiting nobody. See
+   [`docs/pnut-evaluation.md`](docs/pnut-evaluation.md); the branch is
+   `fix/landlock-empty-network-deny-all` in the Pnut checkout. This is a decision
+   about publishing rather than engineering.
+2. **Enforce protection domains before admitting a metadata-bearing role**,
+   which is row 3 of the ordering above. The spec, launcher, role-composition
+   rule, PID handshake, and in-sandbox probe all exist and pass; nothing yet
+   *requires* them. The invariant is enforced where domains are constructed
+   rather than where roles are admitted, so a caller that simply builds no domain
+   gets no boundary and no complaint. That is what turns this tranche from a
+   capability into a posture.
+3. **Re-run the mixed-output gate against the settled chrome split.** The
+   window-chrome defect is closed: reconciliation now carries the outer and
+   content projections separately, applying clearance before layout-epoch
+   reconciliation while the reducer stages and commits only the outer value, so
+   a generated content resize no longer makes an unacknowledged geometry
+   current. What remains is operator confirmation on the rig under
+   `--optimize-for=center-unscaled`, which is the topology that exposed it: both
+   mirror heads pixel-exact inside their borders, and a focus ring that stays on
+   the output owning the window.
+
+Not yet: making the protection domain the default rather than opt-in. It reads
+as the obvious next step now that the probe passes, and it belongs after row 2,
+with a deliberate decision about hosts that have no `bwrap` rather than arriving
+as a side effect.
+
 ## Installed Hagia Promotion Contract
 
 Sophia/Hagia becomes the ordinary physical session when one packaged candidate
