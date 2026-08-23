@@ -337,6 +337,21 @@ impl XAuthorityObservedTransactionBatch {
                 })
             })
             .collect::<Vec<_>>();
+        // A frontend can report passive facts for every X surface touched by
+        // a request. Only surfaces that actually cross the presentation
+        // boundary need an Engine route. Keeping route-only helper windows out
+        // preserves the public WM's blind surface vocabulary.
+        let routed_surfaces = transactions
+            .iter()
+            .map(|transaction| transaction.surface)
+            .chain(presentation_intents.iter().map(|intent| intent.surface))
+            .collect::<std::collections::BTreeSet<_>>();
+        let surface_routes = trace
+            .surface_routes
+            .iter()
+            .filter(|route| routed_surfaces.contains(&route.surface))
+            .copied()
+            .collect::<Vec<_>>();
         if transactions.is_empty()
             && surface_presentations.is_empty()
             && presentation_intents.is_empty()
@@ -359,7 +374,7 @@ impl XAuthorityObservedTransactionBatch {
         Some(Self {
             client: Some(trace.client),
             admission: trace.admission,
-            surface_routes: trace.surface_routes.clone(),
+            surface_routes,
             transaction: trace.transaction,
             transactions,
             surface_presentations,

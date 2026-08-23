@@ -6,8 +6,9 @@ use sophia_protocol::{
 use sophia_x_authority::{
     X_ATOM_NONE, X_RANDR_GET_OUTPUT_PROPERTY_MINOR_OPCODE, X_RANDR_MAJOR_OPCODE,
     X11DispatchObservation, X11ObservedRequestStage, XAuthorityObservedTransactionBatch,
-    XAuthorityResponsePacket, XAuthoritySoftwarePresentSubmission, XClientError, XClientOutput,
-    XDispatchResult, XErrorCode, XServerFrontendClientId, XWireClientResourceRange,
+    XAuthorityResponsePacket, XAuthoritySoftwarePresentSubmission,
+    XAuthoritySurfaceRouteObservation, XClientError, XClientOutput, XDispatchResult, XErrorCode,
+    XServerFrontendClientId, XWireClientResourceRange,
 };
 
 fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
@@ -85,6 +86,98 @@ fn reparent_to_client_positioned_emits_policy_withdrawal() {
                 && intent.kind == SurfacePresentationIntentKind::Withdraw
                 && intent.role == SurfacePresentationRole::ClientPositioned
     ));
+}
+
+#[test]
+fn passive_helper_surface_routes_do_not_enter_the_engine_route_table() {
+    let presented = SurfaceId::new(0x0020_0103, 1);
+    let helper = SurfaceId::new(0x0020_0104, 1);
+    let client = XServerFrontendClientId::from_raw(1);
+    let mut trace = observation(Vec::new());
+    let mut response = XAuthorityResponsePacket::accepted(TransactionId::from_raw(1));
+    response.transactions.push(SurfaceTransaction {
+        transaction: TransactionId::from_raw(1),
+        authority: AuthorityKind::SophiaX,
+        surface: presented,
+        namespace: Some(NamespaceId::from_raw(1)),
+        target_geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        },
+        presentation_extent: sophia_protocol::Size {
+            width: 640,
+            height: 480,
+        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::None,
+            sophia_protocol::Size {
+                width: 640,
+                height: 480,
+            },
+        ),
+        damage: Region::default(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    });
+    for surface in [presented, helper] {
+        response.surfaces.push(AuthoritySurface {
+            authority: AuthorityKind::SophiaX,
+            local_id: AuthorityLocalId::new(surface.index().into(), surface.generation()),
+            surface,
+            namespace: Some(NamespaceId::from_raw(1)),
+            presentation: SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            mapped: false,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 480,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    }
+    trace.result.response = Some(response);
+    trace.surface_routes = vec![
+        XAuthoritySurfaceRouteObservation {
+            surface: presented,
+            client,
+            admission: None,
+        },
+        XAuthoritySurfaceRouteObservation {
+            surface: helper,
+            client,
+            admission: None,
+        },
+    ];
+
+    let batch = XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace).unwrap();
+
+    assert_eq!(
+        batch.surface_routes,
+        [XAuthoritySurfaceRouteObservation {
+            surface: presented,
+            client,
+            admission: None,
+        }]
+    );
+    assert!(
+        batch
+            .surface_presentations
+            .iter()
+            .any(|surface| surface.surface == helper),
+        "the frontend may report helper facts without granting them a WM route"
+    );
 }
 
 fn error(sequence: u16, major_code: u8, resource_id: u32) -> XClientOutput {

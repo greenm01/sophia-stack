@@ -155,8 +155,12 @@ promotion gate.
    surface. Frontend batches now carry a separate authoritative owner route;
    input, control, and metadata admission no longer follow the causing client,
    and exact retired identities reject late route or metadata observations.
-   Local two-client and all-feature regressions pass; the corrected signed
-   physical rerun remains open. Reservations are deliberately still absent.
+   The first signed rerun then exposed an overbroad route domain: passive Kitty
+   helper windows entered the public WM snapshot, all resizes timed out, and the
+   guide never appeared. Engine batches now retain owner routes only for actual
+   transaction or presentation-intent surfaces. Focused helper-window and
+   two-client regressions pass; the corrected signed physical rerun remains
+   open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client

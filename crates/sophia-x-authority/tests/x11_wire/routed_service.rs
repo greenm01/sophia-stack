@@ -199,8 +199,7 @@ fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it(
     let surface = created.surface_presentations[0].surface;
     let creator_admission = created.admission.expect("creator admission");
     assert_eq!(created.client.map(XServerFrontendClientId::raw), Some(1));
-    assert_eq!(created.surface_routes[0].client.raw(), 1);
-    assert_eq!(created.surface_routes[0].admission, Some(creator_admission));
+    assert!(created.surface_routes.is_empty());
 
     let mut peer = connect_x_socket(&socket_path);
     peer.write_all(&setup_request(
@@ -228,8 +227,45 @@ fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it(
         }
     };
     assert_ne!(mapped.admission, Some(creator_admission));
+    assert!(mapped.surface_routes.is_empty());
+
+    let peer_gc = 0x0040_0e02;
+    peer.write_all(&create_gc_values_request(
+        XByteOrder::LittleEndian,
+        peer_gc,
+        window,
+        3,
+        u32::MAX,
+        0x00ff_ffff,
+        0,
+        0,
+        0,
+    ))
+    .unwrap();
+    peer.write_all(&image_text8_request(
+        XByteOrder::LittleEndian,
+        window,
+        peer_gc,
+        4,
+        16,
+        b"peer",
+    ))
+    .unwrap();
+    let drawn = loop {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch.client.map(XServerFrontendClientId::raw) == Some(2)
+            && batch
+                .transactions
+                .iter()
+                .any(|transaction| transaction.surface == surface)
+        {
+            break batch;
+        }
+    };
     assert_eq!(
-        mapped.surface_routes,
+        drawn.surface_routes,
         [XAuthoritySurfaceRouteObservation {
             surface,
             client: XServerFrontendClientId::from_raw(1),
@@ -237,15 +273,14 @@ fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it(
         }]
     );
     let mut routes = XAuthorityClientSurfaceRoutes::default();
-    routes.observe(&created).unwrap();
-    routes.observe(&mapped).unwrap();
+    routes.observe(&drawn).unwrap();
     assert_eq!(
         routes
             .client_for_surface(surface)
             .map(XServerFrontendClientId::raw),
         Some(1)
     );
-    let mut conflicting = mapped.clone();
+    let mut conflicting = drawn.clone();
     conflicting.surface_routes[0].client = XServerFrontendClientId::from_raw(2);
     assert!(matches!(
         routes.observe(&conflicting),
@@ -273,7 +308,7 @@ fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it(
     assert!(removed.surface_routes.is_empty());
     routes.observe(&removed).unwrap();
     assert!(routes.is_empty());
-    routes.observe(&mapped).unwrap();
+    routes.observe(&drawn).unwrap();
     assert!(routes.is_empty());
 
     drop(peer);
