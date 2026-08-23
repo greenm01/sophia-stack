@@ -105,6 +105,13 @@ promotion gate.
    shortcut ownership now binds fullscreen to `Super+Shift+F`. The corrected
    guide also names the public `Super+Shift+B` minimize and `Super+Alt+B`
    restore chords, and a local matcher ties all three to the compiled profile.
+   The next run on signed source
+   `de0daad96cac0285e56602c0254642f7ba0ed84e` completed the restart, all ten
+   requested actions, exact text, 13 ms input-to-page-flip proof, clean broker,
+   and clean teardown. Its final native aggregate correctly refused DP-2's
+   `nonzero_exports=0`: focus-output actions changed the active output but never
+   moved Kitty there. The guide now adds the public move-to-output actions and
+   waits for a nonzero DP-2 submission before moving Kitty back.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -123,19 +130,21 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Sign the guide correction, then retry only the Hagia/broker gate from tty4.**
+1. **Sign the output-move proof correction, then retry only the Hagia/broker gate from tty4.**
    Signed source `eeef531a33564391765c1ec9fecddf6d06dcd4cc` produced and
    independently re-verified mirror archive `0008` and mixed archive `0002`
    with Sophia binary digest
    `9b60c57d7ffa2feb1a1ea00b8e24e24a9ecc90fa2d545ffb46737432f434c854`.
-   Its Hagia run reached the real session but failed on the guide's first
-   retired shortcut instruction, before any action commit. The correction
-   changes only the operator fixture and its checks: it does not change the
-   executable, compiled policy, or supervised application set, so the two
-   display archives remain candidate evidence under the rebuild rule. After a
-   signed commit, `tools/hagia-proof` rebuilds and binds the current Sophia and
-   Hagia source identities; the resulting Sophia digest must remain the one
-   above. A passing two-output archive closes row 3.
+   The corrected-chord run then completed its interaction and broker claims but
+   exposed an impossible final condition in the procedure: focus-only actions
+   cannot produce nonzero content on an empty secondary output. The guide now
+   moves Kitty with `Super+Shift+Right`, waits for a real nonzero DP-2 KMS
+   submission, moves it back with `Super+Shift+Left`, and only then performs the
+   focus actions. The verifier requires both move commits and bounds the DP-2
+   submission between them. This changes only the operator fixture and checks,
+   so the display archives remain candidate evidence. After a signed commit,
+   `tools/hagia-proof` must reproduce the binary digest above; a passing
+   two-output archive closes row 3.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area

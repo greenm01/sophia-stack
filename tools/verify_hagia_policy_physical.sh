@@ -118,10 +118,24 @@ require_after "checkpoint reconciliation" \
     "$checkpoint_reconciled"
 require_after "generation-2 policy refresh" \
     "$policy_refresh"
-for action in 37 66 39 40 33 34; do
+for action in 37 66 39 40 5 6 33 34; do
     require_after "physical action $action" \
         "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
 done
+
+move_to_output_line="$(awk -v limit="$restart_line" \
+    'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=5$/ { print NR; exit }' \
+    "$evidence")"
+move_back_line="$(awk -v limit="$move_to_output_line" \
+    'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=6$/ { print NR; exit }' \
+    "$evidence")"
+if [[ -z "$move_to_output_line" || -z "$move_back_line" ]] || ! awk \
+    -v lower="$move_to_output_line" -v upper="$move_back_line" \
+    'NR > lower && NR < upper && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels=[1-9][0-9]*.*$/ { found = 1; exit } END { exit found ? 0 : 1 }' \
+    "$evidence"; then
+    echo "Hagia output move did not produce a nonzero secondary-head submission" >&2
+    exit 1
+fi
 
 restore_line="$(awk -v limit="$restart_line" \
     'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=40$/ { print NR; exit }' \

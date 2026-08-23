@@ -53,6 +53,20 @@ wait_for_nonempty_restore() {
     done
 }
 
+wait_for_secondary_nonzero_submission() {
+    while ! awk '
+        /^sophia_live_wm schema=1 status=physical_action_committed action=5$/ {
+            moved = 1
+        }
+        moved && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels=[1-9][0-9]*.*$/ {
+            presented = 1
+        }
+        END { exit presented ? 0 : 1 }
+    ' "$evidence" 2>/dev/null; do
+        sleep 0.1
+    done
+}
+
 show_step() {
     printf '\033[2J\033[H'
     printf '%s\n\n%s\n\n%s\n' \
@@ -85,6 +99,13 @@ show_step 'IMPORTANT — READ ALL THREE LINES BEFORE ACTING
 wait_for_action_count 39 1
 wait_for_action_count 40 1
 wait_for_nonempty_restore
+
+show_step 'Press Super+Shift+Right once. Confirm the window moves to the other output.'
+wait_for_action_count 5 1
+wait_for_secondary_nonzero_submission
+
+show_step 'The other output presented the window. Press Super+Shift+Left once to move it back.'
+wait_for_action_count 6 1
 
 show_step 'Press Super+Left once.'
 wait_for_action_count 33 1

@@ -473,8 +473,9 @@ opt-in installed gate is
 `tools/hagia_policy_physical_gate.sh`. It requires
 an explicit arm variable, real Hagia and Kitty binaries, a named input seat,
 and two connected outputs. The operator exercises fullscreen, native layout
-cycling, maximize, minimize/restore, and active-output actions around one
-checkpoint-triggered supervised restart; the verifier requires ordered commits,
+cycling, maximize, minimize/restore, output movement, and active-output actions
+around one checkpoint-triggered supervised restart; the verifier requires
+ordered commits,
 nonempty checkpoint load/reconciliation, output-change evidence, physical text,
 and clean session health. Restart injection is correlated to the first committed
 layout-cycle action after the committed fullscreen action, and waits for the
@@ -493,6 +494,11 @@ The guide names the compiled public shortcut candidate's exact chords:
 `Super+Alt+B` for restore. A local matcher ties those instructions to the
 compiled profile so a retired protocol binding cannot silently return to the
 physical procedure.
+After restore, the guide moves Kitty to the secondary output and does not
+advance until that head submits nonzero content. It then moves Kitty back
+before exercising the two focus-only output actions. This keeps movement and
+focus semantics distinct while satisfying the gate's per-head presentation
+claim.
 After the restore commits, both the guide and final verifier require Hagia's
 next private checkpoint to remain nonempty. This binds the action record to
 retained surface ownership instead of accepting a committed no-op. Sophia's

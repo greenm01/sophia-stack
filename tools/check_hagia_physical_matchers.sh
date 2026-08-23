@@ -11,6 +11,10 @@ grep -Fq 'bind "Super+Shift+b" "policy:minimize"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq 'bind "Super+Alt+b" "policy:restore-minimized"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'bind "Super+Shift+Right" "policy:move-to-output-next"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'bind "Super+Shift+Left" "policy:move-to-output-prev"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq "show_step 'Press Super+Shift+F once." \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 grep -Fq '1. Press and release Super+Shift+B.' \
@@ -41,6 +45,9 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=39' \
     'sophia_live_wm schema=1 status=physical_action_committed action=40' \
     '2026-08-09T00:00:01Z INF hagia event=checkpoint status=saved detail="candidate_nonempty=true"' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=5' \
+    '2026-08-09T00:00:01Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=2 head=2 submission=9 content=Some(MixedPresent { frame: LiveProductionNativeFrameId(93), transaction: TransactionId(61), nonzero_rgb_pixels=2246 }) frame=93' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=6' \
     'sophia_live_wm schema=1 status=physical_action_committed action=33' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
@@ -92,6 +99,9 @@ for missing in \
     'sophia_live_metadata_broker schema=1 status=ready' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed' \
     'sophia_live_metadata_broker schema=1 status=stopped' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=5' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=6' \
+    'nonzero_rgb_pixels=2246' \
     'sophia_hagia_policy_identity schema=1 status=bound'; do
     rejected="$temp_dir/rejected.log"
     grep -vF "$missing" "$evidence" >"$rejected"

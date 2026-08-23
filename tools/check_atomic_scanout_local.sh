@@ -376,6 +376,8 @@ grep -Fq '"--session-app-arg=terminal=$guide"' \
     tools/hagia_policy_physical_gate.sh
 grep -Fq "show_step 'Press Super+Shift+F once." \
     tools/fixtures/hagia_physical_guide.sh
+grep -Fq 'wait_for_secondary_nonzero_submission' \
+    tools/fixtures/hagia_physical_guide.sh
 grep -Fq 'proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"' \
     tools/fixtures/hagia_physical_guide.sh
 grep -Fq 'printf '\''%s'\'' "$proof_text" >"$proof_result"' \

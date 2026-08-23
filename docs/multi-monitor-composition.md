@@ -1056,8 +1056,13 @@ following Hagia attempt exposed only a stale operator instruction: the guide
 still named an old protocol shortcut after physical matching moved into the
 public shortcut owner. Its correction changes neither the executable nor the
 compiled policy, so the display archives remain valid while the Hagia gate
-binds the corrected signed harness and the same executable digest. The
-executable slices and exit criteria stay ordered in `todo.md`.
+binds the corrected signed harness and the same executable digest. The next
+Hagia run completed every interaction and broker claim, then correctly failed
+its per-head aggregate because focus-only output actions left DP-2 blank. The
+guide now moves Kitty to DP-2, waits for a nonzero native-head submission, and
+moves it back before the focus actions. This adds the missing physical content
+claim without weakening independent per-head completion. The executable slices
+and exit criteria stay ordered in `todo.md`.
 
 ### Target
 
