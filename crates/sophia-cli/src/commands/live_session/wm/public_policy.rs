@@ -2083,6 +2083,7 @@ impl LiveWmSession {
                         layout,
                         &projection,
                         &public.work_areas,
+                        &public.output_bounds,
                         chrome_style,
                     )?;
                     if reconciliation.adjusted_surfaces != 0 {

@@ -578,6 +578,15 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
                 height: proposed.height,
             },
         )]),
+        &BTreeMap::from([(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: proposed.width,
+                height: proposed.height,
+            },
+        )]),
         chrome,
     )
     .unwrap();
@@ -652,6 +661,15 @@ fn public_policy_reconciliation_keeps_policy_omission_but_drives_changed_content
                 height: 1440,
             },
         )]),
+        &BTreeMap::from([(
+            output,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+        )]),
         chrome,
     )
     .unwrap();
@@ -684,6 +702,107 @@ fn public_policy_reconciliation_keeps_policy_omission_but_drives_changed_content
 }
 
 #[test]
+fn public_policy_fullscreen_reconciliation_preserves_the_full_output() {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(10, 1);
+    let sibling = SurfaceId::new(11, 1);
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let work = Rect {
+        x: 0,
+        y: sophia_engine::INDICATOR_STRIP_HEIGHT,
+        width: 2560,
+        height: 1440 - sophia_engine::INDICATOR_STRIP_HEIGHT,
+    };
+    let proposal = sophia_protocol::PolicyProjectionProposal {
+        transaction: TransactionId::from_raw(11),
+        connection_epoch: 1,
+        request_id: 1,
+        base_generation: 1,
+        active_output: output,
+        outputs: vec![sophia_protocol::PolicyOutputProjection {
+            output,
+            placements: vec![
+                sophia_protocol::PolicySurfacePlacement {
+                    surface,
+                    surface_generation: 1,
+                    geometry: full,
+                    requested_size: Some(Size {
+                        width: full.width,
+                        height: full.height,
+                    }),
+                    crop: None,
+                    transform: sophia_protocol::PolicyTransform::Identity,
+                    presentation: sophia_protocol::PolicyPresentationState {
+                        fullscreen: true,
+                        ..Default::default()
+                    },
+                },
+                sophia_protocol::PolicySurfacePlacement {
+                    surface: sibling,
+                    surface_generation: 1,
+                    geometry: full,
+                    requested_size: Some(Size {
+                        width: full.width,
+                        height: full.height,
+                    }),
+                    crop: None,
+                    transform: sophia_protocol::PolicyTransform::Identity,
+                    presentation: Default::default(),
+                },
+            ],
+            focus: Some(surface),
+        }],
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
+    };
+
+    let chrome = sophia_engine::SurfaceChromeStyle::default();
+    let reconciled = reconcile_public_policy_proposal(
+        &PersistentLiveLayout::default(),
+        &proposal,
+        &BTreeMap::from([(output, work)]),
+        &BTreeMap::from([(output, full)]),
+        chrome,
+    )
+    .unwrap();
+
+    assert_eq!(reconciled.adjusted_surfaces, 1);
+    let outer = &reconciled.policy.outputs[0].placements[0];
+    assert_eq!(outer.geometry, full);
+    assert_eq!(
+        outer.requested_size,
+        Some(Size {
+            width: full.width,
+            height: full.height,
+        })
+    );
+    assert!(outer.presentation.fullscreen);
+    assert_eq!(
+        reconciled.content[&surface].geometry,
+        Rect {
+            x: chrome.clearance(),
+            y: chrome.clearance(),
+            width: full.width - chrome.clearance() * 2,
+            height: full.height - chrome.clearance() * 2,
+        }
+    );
+    let sibling_outer = &reconciled.policy.outputs[0].placements[1];
+    assert_eq!(sibling_outer.geometry, work);
+    assert_eq!(
+        sibling_outer.requested_size,
+        Some(Size {
+            width: work.width,
+            height: work.height,
+        })
+    );
+}
+
+#[test]
 fn public_policy_materializes_reconciled_content_without_committing_content_to_the_reducer() {
     let output = OutputId::from_raw(1);
     let surface = SurfaceId::new(10, 1);
@@ -709,6 +828,7 @@ fn public_policy_materializes_reconciled_content_without_committing_content_to_t
     let reconciled = reconcile_public_policy_proposal(
         &layout,
         &proposal,
+        &BTreeMap::from([(output, outer)]),
         &BTreeMap::from([(output, outer)]),
         chrome,
     )

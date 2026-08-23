@@ -8,71 +8,75 @@ fn reconcile_public_policy_proposal(
     layout: &PersistentLiveLayout,
     proposal: &sophia_protocol::PolicyProjectionProposal,
     work_areas: &BTreeMap<sophia_protocol::OutputId, Rect>,
+    output_bounds: &BTreeMap<sophia_protocol::OutputId, Rect>,
     chrome: sophia_engine::SurfaceChromeStyle,
 ) -> Result<ReconciledPublicPolicyProposal, Box<dyn std::error::Error>> {
     let mut reconciled = proposal.clone();
     let mut content = BTreeMap::new();
     let mut adjusted_surfaces = BTreeSet::new();
     for output in &mut reconciled.outputs {
-        let bounds = work_areas
+        let work_bounds = work_areas
             .get(&output.output)
             .copied()
             .ok_or("public WM projection has no Engine work area")?;
-        let content_bounds = sophia_engine::content_surface_geometry(bounds, chrome)?;
-        let transaction = sophia_protocol::LayoutTransaction {
-            transaction: proposal.transaction,
-            requested_sizes: output
-                .placements
-                .iter()
-                .filter_map(|placement| {
-                    placement
-                        .requested_size
-                        .map(|size| sophia_protocol::SurfaceSizeRequest {
+        let full_bounds = output_bounds
+            .get(&output.output)
+            .copied()
+            .ok_or("public WM projection has no Engine output bounds")?;
+        for (index, placement) in output.placements.iter_mut().enumerate() {
+            // Fullscreen remains a full-output allocation and is occluded by
+            // compositor chrome. Every other placement is constrained to the
+            // reserved work area. Reconciling them separately prevents one
+            // fullscreen surface from widening its siblings' authority.
+            let allocation_bounds = if placement.presentation.fullscreen {
+                full_bounds
+            } else {
+                work_bounds
+            };
+            let content_bounds =
+                sophia_engine::content_surface_geometry(allocation_bounds, chrome)?;
+            let transaction = sophia_protocol::LayoutTransaction {
+                transaction: proposal.transaction,
+                requested_sizes: placement
+                    .requested_size
+                    .map(|size| {
+                        vec![sophia_protocol::SurfaceSizeRequest {
                             surface: placement.surface,
                             size,
-                        })
-                })
-                .collect(),
-            focus: output.focus,
-            render_positions: output
-                .placements
-                .iter()
-                .enumerate()
-                .map(|(index, placement)| {
-                    Ok(sophia_protocol::SurfacePlacement {
-                        surface: placement.surface,
-                        geometry: placement.geometry,
-                        z_index: i32::try_from(index)
-                            .map_err(|_| "public WM projection stack is excessive")?,
-                        crop: placement.crop,
-                        transform: match placement.transform {
-                            sophia_protocol::PolicyTransform::Identity => Transform::IDENTITY,
-                        },
+                        }]
                     })
-                })
-                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?,
-            timeout_msec: u32::try_from(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC)
-                .unwrap_or(u32::MAX),
-        };
-        let transaction = sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
-        let reconciliation = layout
-            .layout_epochs
-            .reconcile_transaction(&transaction, content_bounds)?;
-        let geometries = reconciliation
-            .transaction
-            .render_positions
-            .into_iter()
-            .map(|placement| (placement.surface, placement.geometry))
-            .collect::<BTreeMap<_, _>>();
-        let requested_sizes = reconciliation
-            .transaction
-            .requested_sizes
-            .into_iter()
-            .map(|request| (request.surface, request.size))
-            .collect::<BTreeMap<_, _>>();
-        for placement in &mut output.placements {
-            let content_geometry = geometries[&placement.surface];
-            let content_requested_size = requested_sizes.get(&placement.surface).copied();
+                    .unwrap_or_default(),
+                focus: output.focus,
+                render_positions: vec![sophia_protocol::SurfacePlacement {
+                    surface: placement.surface,
+                    geometry: placement.geometry,
+                    z_index: i32::try_from(index)
+                        .map_err(|_| "public WM projection stack is excessive")?,
+                    crop: placement.crop,
+                    transform: match placement.transform {
+                        sophia_protocol::PolicyTransform::Identity => Transform::IDENTITY,
+                    },
+                }],
+                timeout_msec: u32::try_from(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC)
+                    .unwrap_or(u32::MAX),
+            };
+            let transaction =
+                sophia_engine::apply_surface_chrome_clearance(&transaction, chrome)?;
+            let reconciliation = layout
+                .layout_epochs
+                .reconcile_transaction(&transaction, content_bounds)?;
+            let content_geometry = reconciliation
+                .transaction
+                .render_positions
+                .first()
+                .map(|placement| placement.geometry)
+                .ok_or("public WM reconciliation dropped a placement")?;
+            let content_requested_size = reconciliation
+                .transaction
+                .requested_sizes
+                .iter()
+                .find(|request| request.surface == placement.surface)
+                .map(|request| request.size);
             let outer_geometry = sophia_engine::outer_surface_geometry(content_geometry, chrome)?;
             let outer_requested_size = placement.requested_size.map(|_| sophia_protocol::Size {
                 width: outer_geometry.width,

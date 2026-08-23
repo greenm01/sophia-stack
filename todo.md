@@ -143,9 +143,10 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    the protected broker dependency. The successor now assembles Hagia's bounded
    indicator/status projection into Engine's production chrome display list,
    renders it independently per head, reserves its fixed work area, and routes
-   clicks from the applicable last-presented projection. The local all-features
-   and cross-repository gates are green. Sign and push the candidate, then run
-   `tools/hagia-proof` on tty4.
+   clicks from the applicable last-presented projection. The first physical
+   attempt exposed and now covers a fullscreen/work-area reconciliation split.
+   The local all-features and cross-repository gates are green; the next action
+   is `tools/hagia-proof` on tty4 from the signed, pushed candidate.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)

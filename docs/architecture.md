@@ -1013,9 +1013,12 @@ clearing descriptor content cannot create a reservation cycle.
 
 The full output rectangle remains the composition and hit-test space for the
 client-positioned surface. The reduced work rectangle is policy input for
-managed surfaces. Native Sophia WMs and the optional X11 WM bridge receive the
-same `bounds` field, so neither Engine nor the bridge contains an xmobar,
-xmonad, dock, or toolkit branch.
+managed surfaces. A fullscreen managed placement remains a full-output
+allocation; fixed Tier-0 chrome is composited above it. Nonfullscreen siblings,
+including maximized placements, remain confined to the reduced work rectangle.
+Native Sophia WMs and the optional X11 WM bridge receive the same `bounds`
+field, so neither Engine nor the bridge contains an xmobar, xmonad, dock, or
+toolkit branch.
 
 Manage state such as size, focus, fullscreen, and workspace assignment is
 separate from compositor-only render state such as position, z-order, crop,
