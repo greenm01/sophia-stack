@@ -130,7 +130,7 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Sign the output-move proof correction, then retry only the Hagia/broker gate from tty4.**
+1. **Sign the proof-record matcher correction, then retry only the Hagia/broker gate from tty4.**
    Signed source `eeef531a33564391765c1ec9fecddf6d06dcd4cc` produced and
    independently re-verified mirror archive `0008` and mixed archive `0002`
    with Sophia binary digest
@@ -141,8 +141,13 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    moves Kitty with `Super+Shift+Right`, waits for a real nonzero DP-2 KMS
    submission, moves it back with `Super+Shift+Left`, and only then performs the
    focus actions. The verifier requires both move commits and bounds the DP-2
-   submission between them. This changes only the operator fixture and checks,
-   so the display archives remain candidate evidence. After a signed commit,
+   submission between them. Signed source
+   `c9248e73bd8085c1296fbe110c8c47087f5f9c17` then committed action 5 and
+   submitted 11,499 nonzero pixels on DP-2, but the guide remained on that step:
+   its matcher expected an equals sign where the producer's Rust debug record
+   uses a colon. The guide, verifier, and regression fixture now agree with the
+   real record. This changes only the operator fixture and checks, so the
+   display archives remain candidate evidence. After a signed commit,
    `tools/hagia-proof` must reproduce the binary digest above; a passing
    two-output archive closes row 3.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**

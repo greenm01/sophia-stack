@@ -498,7 +498,9 @@ After restore, the guide moves Kitty to the secondary output and does not
 advance until that head submits nonzero content. It then moves Kitty back
 before exercising the two focus-only output actions. This keeps movement and
 focus semantics distinct while satisfying the gate's per-head presentation
-claim.
+claim. The native submission embeds the count in a Rust debug record as
+`nonzero_rgb_pixels: N`; the guide, verifier, and local fixture all match that
+producer form.
 After the restore commits, both the guide and final verifier require Hagia's
 next private checkpoint to remain nonempty. This binds the action record to
 retained surface ownership instead of accepting a committed no-op. Sophia's

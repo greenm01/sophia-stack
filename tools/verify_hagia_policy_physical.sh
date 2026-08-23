@@ -131,7 +131,7 @@ move_back_line="$(awk -v limit="$move_to_output_line" \
     "$evidence")"
 if [[ -z "$move_to_output_line" || -z "$move_back_line" ]] || ! awk \
     -v lower="$move_to_output_line" -v upper="$move_back_line" \
-    'NR > lower && NR < upper && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels=[1-9][0-9]*.*$/ { found = 1; exit } END { exit found ? 0 : 1 }' \
+    'NR > lower && NR < upper && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels: [1-9][0-9]*.*$/ { found = 1; exit } END { exit found ? 0 : 1 }' \
     "$evidence"; then
     echo "Hagia output move did not produce a nonzero secondary-head submission" >&2
     exit 1

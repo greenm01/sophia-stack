@@ -58,7 +58,7 @@ wait_for_secondary_nonzero_submission() {
         /^sophia_live_wm schema=1 status=physical_action_committed action=5$/ {
             moved = 1
         }
-        moved && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels=[1-9][0-9]*.*$/ {
+        moved && /^.*sophia_live_native_head_page_flip schema=2 status=submitted output=2 .*nonzero_rgb_pixels: [1-9][0-9]*.*$/ {
             presented = 1
         }
         END { exit presented ? 0 : 1 }

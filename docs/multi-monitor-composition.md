@@ -1061,8 +1061,12 @@ Hagia run completed every interaction and broker claim, then correctly failed
 its per-head aggregate because focus-only output actions left DP-2 blank. The
 guide now moves Kitty to DP-2, waits for a nonzero native-head submission, and
 moves it back before the focus actions. This adds the missing physical content
-claim without weakening independent per-head completion. The executable slices
-and exit criteria stay ordered in `todo.md`.
+claim without weakening independent per-head completion. The first run of that
+guide proved the movement and submitted 11,499 nonzero pixels on DP-2, but its
+watcher expected `nonzero_rgb_pixels=` while the producer's Rust debug record
+uses `nonzero_rgb_pixels: `. The guide, final verifier, and regression fixture
+now match the producer form. The executable slices and exit criteria stay
+ordered in `todo.md`.
 
 ### Target
 
