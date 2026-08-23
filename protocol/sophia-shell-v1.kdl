@@ -1,0 +1,97 @@
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=1 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 {
+    capability "descriptor_switcher" bit=0
+
+    outcome "prepared" value=1
+    outcome "presented" value=2
+    outcome "rejected" value=3
+    outcome "superseded" value=4
+
+    activation-disposition "consumed" value=1
+    activation-disposition "rejected_stale" value=2
+
+    // Every action is issued for one broker epoch, revoked as a class by one
+    // broker revocation epoch, narrowed to one shell connection, and bound to
+    // one opaque descriptor slot and generation. Surface ids never cross.
+    record "ToplevelActionCapability" {
+        field "token" type="u64"
+        field "issuer_epoch" type="u64"
+        field "issuer_revocation_epoch" type="u64"
+        field "recipient_epoch" type="u64"
+        field "target_slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "target_generation" type="u64"
+    }
+
+    message "ClientHello" kind=96 direction="shell-to-session" transaction="zero" {
+        field "minimum_revision" type="u16"
+        field "maximum_revision" type="u16"
+        field "required_capabilities" type="u64"
+    }
+    message "ServerWelcome" kind=97 direction="session-to-shell" transaction="zero" {
+        field "selected_revision" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "connection_epoch" type="u64"
+        field "capabilities" type="u64"
+        field "max_descriptors" type="u16"
+        field "max_label_bytes" type="u16"
+        field "max_pending_activations" type="u16"
+        field "trailing_reserved" type="u16" reserved=#true
+    }
+    message "DescriptorSnapshot" kind=98 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "output_generation" type="u64"
+        field "broker_epoch" type="u64"
+        field "broker_revocation_epoch" type="u64"
+        field "descriptor_count" type="u16" max=16
+        field "reserved" type="u16" reserved=#true
+        repeated "descriptor" count="descriptor_count" {
+            field "slot" type="u16"
+            field "trust_level" type="u8"
+            field "attention" type="u8"
+            field "generation" type="u64"
+            record-ref "action" record="ToplevelActionCapability"
+            field "label_present" type="bool-u8"
+            field "label_len" type="u16" max=128
+            field "label" type="utf8" length="label_len"
+            field "label_redacted" type="bool-u8" present-if="label_present"
+        }
+    }
+    message "Candidate" kind=99 direction="shell-to-session" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "visible" type="bool-u8"
+        field "byte_reserved" type="u8" reserved=#true
+        field "selected_slot" type="u16" zero="none"
+        field "entry_count" type="u16" max=16
+        field "reserved" type="u16" reserved=#true
+        repeated "entry" count="entry_count" {
+            field "slot" type="u16"
+            field "reserved" type="u16" reserved=#true
+            field "generation" type="u64"
+        }
+    }
+    message "CandidateOutcome" kind=100 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64" zero="unless-presented"
+        field "outcome" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "Activation" kind=101 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        record-ref "action" record="ToplevelActionCapability"
+    }
+    message "ActivationAck" kind=102 direction="shell-to-session" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "activation" type="u64"
+        field "disposition" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+}

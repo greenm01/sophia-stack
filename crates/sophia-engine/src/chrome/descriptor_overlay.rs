@@ -1,4 +1,6 @@
-use sophia_protocol::{AttentionState, OutputId, Rect, SurfaceId, TrustLevel};
+use sophia_protocol::{
+    AttentionState, OutputId, Rect, SurfaceId, ToplevelActionCapabilityRef, TrustLevel,
+};
 
 use crate::{
     ChromeDescriptorTable, CompositorDisplayCommand, CompositorNodeId, CompositorRect,
@@ -14,22 +16,6 @@ pub const DESCRIPTOR_OVERLAY_PADDING: i32 = 8;
 pub const DESCRIPTOR_OVERLAY_FONT_SIZE_MILLIS: u32 = 12_000;
 
 const PANEL_SLOT: u16 = u16::MAX;
-
-/// Opaque authority-scoped action reference attached to one toplevel target.
-///
-/// The type implies the broker-to-shell action family. Input routing may return
-/// this value, but only its later issuer-owned resolver can recover an operation
-/// or surface. No resolver or wire representation is part of this reference
-/// slice.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ToplevelActionCapabilityRef {
-    pub token: u64,
-    pub issuer_epoch: u64,
-    pub issuer_revocation_epoch: u64,
-    pub recipient_epoch: u64,
-    pub target_slot: u16,
-    pub target_generation: u64,
-}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PresentedChromeTargetId {

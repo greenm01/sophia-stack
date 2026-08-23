@@ -66,7 +66,7 @@ fn run_chain(
         .update(MetadataBrokerEvent::CandidateReduced(candidate))
         .expect("the candidate matches its rule")
     {
-        if let MetadataBrokerCommand::EmitDescriptor(descriptor) = command {
+        if let MetadataBrokerCommand::EmitDescriptor { descriptor, .. } = command {
             table.apply_metadata(descriptor);
         }
     }

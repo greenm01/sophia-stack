@@ -327,6 +327,7 @@ fn required_role(process: SupervisedProcessKind) -> ProtectionDomainRole {
         SupervisedProcessKind::WindowManager => ProtectionDomainRole::SpatialPolicy,
         SupervisedProcessKind::PortalBroker => ProtectionDomainRole::PortalBroker,
         SupervisedProcessKind::MetadataBroker => ProtectionDomainRole::MetadataBroker,
+        SupervisedProcessKind::Shell => ProtectionDomainRole::MetadataShell,
         SupervisedProcessKind::SophiaXAuthority => ProtectionDomainRole::ApplicationFrontend,
     }
 }

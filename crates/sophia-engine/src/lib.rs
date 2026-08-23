@@ -90,5 +90,6 @@ pub use transaction_presentation::*;
 pub use visual_state::*;
 pub use wm::*;
 
+pub use sophia_protocol::ToplevelActionCapabilityRef;
 pub use sophia_runtime::{RuntimeScanoutState, SessionRuntimeObservation};
 pub use wm_policy::*;

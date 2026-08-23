@@ -7,6 +7,7 @@ mod output;
 mod output_configuration;
 mod policy;
 mod portal;
+mod shell_v1;
 mod surface;
 mod wm;
 
@@ -19,5 +20,6 @@ pub use output::*;
 pub use output_configuration::*;
 pub use policy::*;
 pub use portal::*;
+pub use shell_v1::*;
 pub use surface::*;
 pub use wm::*;

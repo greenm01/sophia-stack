@@ -50,6 +50,13 @@ pub enum IpcMessageKind {
     BrokerV1ServerWelcome = 81,
     BrokerV1Request = 82,
     BrokerV1Response = 83,
+    ShellV1ClientHello = 96,
+    ShellV1ServerWelcome = 97,
+    ShellV1DescriptorSnapshot = 98,
+    ShellV1Candidate = 99,
+    ShellV1CandidateOutcome = 100,
+    ShellV1Activation = 101,
+    ShellV1ActivationAck = 102,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,4 +102,5 @@ pub enum IpcCodecError {
         field: &'static str,
         value: u8,
     },
+    InvalidRecord(&'static str),
 }

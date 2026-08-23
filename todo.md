@@ -1927,6 +1927,11 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   shell-reservation/work-area/WM coordinator with the eventual shell schema.
   Preserve the prior complete presented bundle on ordinary failure and keep
   lock/session security takeover independent of shell or WM acknowledgement.
+  Experimental `sophia_shell_v1` revision 1 now carries nonzero, nonreused
+  broker action grants through exact broker, revocation, recipient, target, and
+  descriptor generations; its model and transport revoke interaction on shell
+  loss while retaining prior pixels. Issuer-side live dispatch and the atomic
+  reservation/WM coordinator remain open.
 - [ ] Repair native application input before shell coexistence.
   - [x] In the installed primary-output pointer domain, derive hit-test layers
     from the immutable output-frame snapshot only after accepted page-flip
@@ -1983,7 +1988,11 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   the Hagia Shell port before the WM freeze so retained workflows can falsify
   both contracts. Derive the vocabulary from a driving client with a retained
   scene graph rather than from first principles; see
-  `docs/sophia-shell-v1-direction.md`.
+  `docs/sophia-shell-v1-direction.md`. Revision 1 is now published as an
+  explicitly experimental descriptor-switcher schema with strict Rust codecs,
+  a generated golden/malformed corpus, an independent C proof client, and a
+  23,582,243-state lifecycle check. Permanent compatibility, broader display
+  lists, reservation coordination, and live evidence remain open.
 - [ ] Settle the remaining display-list vocabulary before schema work. Admit
   generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget
@@ -1991,7 +2000,10 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   bandwidth, and power cost of that texture path before relying on it.
 - [ ] Build `hagia-shell` as one ordinary separately authorized shell client
   for tabs, overview, switchers, previews, and other visible furniture. Shell
-  metadata must never leak into Hagia's blind spatial-policy projection.
+  metadata must never leak into Hagia's blind spatial-policy projection. The
+  standalone Nim executable and reducer now pass the shared corpus and a
+  protected title-only cross-process proof without linking Hagia policy. Live
+  launch, shortcut admission, reconnect, and richer furniture remain open.
 - [ ] Add trusted classification, launch, lock, capture, output, and transfer
   services through brokers, session capabilities, and portals. Hagia may
   request opaque actions but may not receive executable paths, client

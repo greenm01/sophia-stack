@@ -194,6 +194,14 @@ does not promise progress while either optional desktop component is absent and
 does not correspond to a production shell runtime. Its bounded configuration
 explores 189,816 generated states and 12,278 distinct states to depth 23.
 
+`ShellDescriptorLifecycle.tla` fixes the first experimental shell transport's
+descriptor-switcher lifecycle. It separates retained pixels from live target
+authority, binds preparation and capture to exact shell, broker, revocation,
+and snapshot generations, burns ambiguous activations on disconnect, and
+revokes a saturated recipient epoch rather than replaying ordered input. Its
+bounded configuration explores 23,582,243 generated states and 241,549
+distinct states to depth 20.
+
 `LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
 workspace assignment, workspace activation, and delayed private Configure or
 Focus requests. It requires cached membership to remain unique, mapping to
@@ -406,6 +414,17 @@ Its actions map to the following target boundaries:
 | `PrepareCurrentCandidate`, `SettlePreparedCandidate` | non-mutating staged revalidation followed by one reducer/layout settlement |
 | `RejectSupersededCandidate` | stale topology terminal outcome preserving the prior complete projection |
 | `AdmitDirty`, `IssueRefresh`, `StageProposal`, `SettleProposal` in `PolicyRefreshLifecycle.tla` | `PolicyDirty` admission/coalescing, complete refresh issuance, and atomic staged reducer/layout settlement in the public owner |
+
+The descriptor-shell model maps to the experimental implementation as follows:
+
+| Model action | Rust boundary |
+| --- | --- |
+| `Connect`, `Disconnect`, `Saturate` | `ShellSessionTransport` protected admission, epoch reset, and bounded activation queue |
+| `PublishSnapshot`, `SubmitCandidate` | strict shell snapshot/candidate codecs and `request_candidate` exact-snapshot validation |
+| `PrepareCandidate`, `PresentCandidate`, `RejectCandidate` | transport-enforced candidate outcome order and the Engine descriptor projection reducer |
+| `BeginCapture`, `ReleaseCapture` | last-presented chrome capture and exact opaque activation construction |
+| `Acknowledge` | ordered exact-transaction activation acknowledgement |
+| `RevokeBroker` | broker action grant and issuer/revocation generation validation |
 
 This map fixes ownership before the Rust names exist. Update the right column
 when implementation establishes the final module names; do not move an action

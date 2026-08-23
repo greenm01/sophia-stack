@@ -18,6 +18,8 @@ mod policy_socket;
 #[cfg(target_os = "linux")]
 mod policy_transport;
 mod session;
+#[cfg(target_os = "linux")]
+mod shell_transport;
 mod supervisor;
 mod tracing;
 
@@ -51,5 +53,7 @@ pub use policy_socket::*;
 #[cfg(target_os = "linux")]
 pub use policy_transport::*;
 pub use session::*;
+#[cfg(target_os = "linux")]
+pub use shell_transport::*;
 pub use supervisor::*;
 pub use tracing::*;

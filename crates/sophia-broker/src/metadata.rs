@@ -14,8 +14,9 @@
 use std::collections::BTreeMap;
 
 use sophia_protocol::{
-    AttentionState, IconTokenId, IdAllocator, MetadataDisclosure, MetadataDisclosureRule,
-    NamespaceProfile, ReducedMetadataCandidate, SanitizedChromeMetadata, SurfaceId,
+    AttentionState, BrokerToplevelActionGrant, IconTokenId, IdAllocator, MetadataDisclosure,
+    MetadataDisclosureRule, NamespaceProfile, ReducedMetadataCandidate, SanitizedChromeMetadata,
+    SurfaceId,
 };
 
 use crate::trust::{trust_for_namespace_profile, unknown_trust};
@@ -52,7 +53,10 @@ pub enum MetadataBrokerCommand {
     /// Give this rule to the authority owning the surface.
     PublishRule(MetadataDisclosureRule),
     /// Give this descriptor to Engine.
-    EmitDescriptor(SanitizedChromeMetadata),
+    EmitDescriptor {
+        descriptor: SanitizedChromeMetadata,
+        action: BrokerToplevelActionGrant,
+    },
     /// Drop everything about this surface.
     RetireSurface { surface: SurfaceId },
 }
@@ -82,6 +86,7 @@ struct BrokerSurface {
     label: Option<String>,
     label_redacted: bool,
     generation: u64,
+    action_token: u64,
 }
 
 /// Per-surface metadata state and the tokens it owns.
@@ -89,6 +94,7 @@ struct BrokerSurface {
 pub struct MetadataBroker {
     surfaces: BTreeMap<SurfaceId, BrokerSurface>,
     icons: IdAllocator<IconTokenId>,
+    next_action_token: u64,
 }
 
 impl Default for MetadataBroker {
@@ -102,6 +108,7 @@ impl MetadataBroker {
         Self {
             surfaces: BTreeMap::new(),
             icons: IdAllocator::new(),
+            next_action_token: 1,
         }
     }
 
@@ -147,6 +154,17 @@ impl MetadataBroker {
                 self.icons.next_id()
             }
         };
+        let action_token = match self.surfaces.get(&surface) {
+            Some(existing) => existing.action_token,
+            None => {
+                let token = self.next_action_token;
+                self.next_action_token = self
+                    .next_action_token
+                    .checked_add(1)
+                    .expect("broker action identity exhausted");
+                token
+            }
+        };
         let entry = self.surfaces.entry(surface).or_insert(BrokerSurface {
             profile: None,
             disclosure: MetadataDisclosure::None,
@@ -155,6 +173,7 @@ impl MetadataBroker {
             label: None,
             label_redacted: false,
             generation: 0,
+            action_token,
         });
         entry.profile = Some(profile);
         entry.icon = icon;
@@ -178,7 +197,7 @@ impl MetadataBroker {
         let Some(entry) = self.surfaces.get_mut(&candidate.surface) else {
             return Err(MetadataBrokerRejection::UnknownSurface);
         };
-        if candidate.generation < entry.generation {
+        if candidate.generation == 0 || candidate.generation < entry.generation {
             return Err(MetadataBrokerRejection::StaleGeneration);
         }
         if candidate.disclosure > entry.disclosure {
@@ -195,8 +214,8 @@ impl MetadataBroker {
         entry.label.clone_from(&label);
         entry.label_redacted = label_redacted;
 
-        Ok(vec![MetadataBrokerCommand::EmitDescriptor(
-            SanitizedChromeMetadata {
+        Ok(vec![MetadataBrokerCommand::EmitDescriptor {
+            descriptor: SanitizedChromeMetadata {
                 surface: candidate.surface,
                 label,
                 label_redacted,
@@ -205,7 +224,12 @@ impl MetadataBroker {
                 attention: entry.attention,
                 generation: candidate.generation,
             },
-        )])
+            action: BrokerToplevelActionGrant {
+                token: entry.action_token,
+                revocation_epoch: 1,
+                target_generation: candidate.generation,
+            },
+        }])
     }
 
     fn set_attention(
@@ -220,11 +244,14 @@ impl MetadataBroker {
             return Ok(Vec::new());
         }
         entry.attention = attention;
+        if entry.generation == 0 {
+            return Ok(Vec::new());
+        }
         // Attention is not identity, so it needs no candidate and no new rule. The
         // descriptor is reissued at the same generation because nothing about the
         // label changed.
-        Ok(vec![MetadataBrokerCommand::EmitDescriptor(
-            SanitizedChromeMetadata {
+        Ok(vec![MetadataBrokerCommand::EmitDescriptor {
+            descriptor: SanitizedChromeMetadata {
                 surface,
                 label: entry.label.clone(),
                 label_redacted: entry.label_redacted,
@@ -235,7 +262,12 @@ impl MetadataBroker {
                 attention,
                 generation: entry.generation,
             },
-        )])
+            action: BrokerToplevelActionGrant {
+                token: entry.action_token,
+                revocation_epoch: 1,
+                target_generation: entry.generation,
+            },
+        }])
     }
 
     fn retire(
@@ -260,20 +292,27 @@ impl MetadataBroker {
         let Some(entry) = self.surfaces.get_mut(&surface) else {
             return Err(MetadataBrokerRejection::UnknownSurface);
         };
-        let replacement = if disclosure < entry.disclosure {
+        let replacement = if disclosure < entry.disclosure && entry.generation != 0 {
             entry.label = None;
             entry.label_redacted = false;
-            Some(SanitizedChromeMetadata {
-                surface,
-                label: None,
-                label_redacted: false,
-                icon: Some(entry.icon),
-                trust_level: entry
-                    .profile
-                    .map_or_else(unknown_trust, trust_for_namespace_profile),
-                attention: entry.attention,
-                generation: entry.generation,
-            })
+            Some((
+                SanitizedChromeMetadata {
+                    surface,
+                    label: None,
+                    label_redacted: false,
+                    icon: Some(entry.icon),
+                    trust_level: entry
+                        .profile
+                        .map_or_else(unknown_trust, trust_for_namespace_profile),
+                    attention: entry.attention,
+                    generation: entry.generation,
+                },
+                BrokerToplevelActionGrant {
+                    token: entry.action_token,
+                    revocation_epoch: 1,
+                    target_generation: entry.generation,
+                },
+            ))
         } else {
             None
         };
@@ -281,8 +320,8 @@ impl MetadataBroker {
         let mut commands = vec![MetadataBrokerCommand::PublishRule(
             self.rule_for(surface).expect("the surface exists"),
         )];
-        if let Some(replacement) = replacement {
-            commands.push(MetadataBrokerCommand::EmitDescriptor(replacement));
+        if let Some((descriptor, action)) = replacement {
+            commands.push(MetadataBrokerCommand::EmitDescriptor { descriptor, action });
         }
         Ok(commands)
     }

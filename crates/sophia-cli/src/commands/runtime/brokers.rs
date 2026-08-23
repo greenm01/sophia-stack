@@ -329,10 +329,11 @@ fn run_metadata_broker_server() -> Result<(), Box<dyn std::error::Error>> {
                 connection_epoch,
                 rule,
             },
-            Some(MetadataBrokerCommand::EmitDescriptor(descriptor)) => {
+            Some(MetadataBrokerCommand::EmitDescriptor { descriptor, action }) => {
                 BrokerV1Response::EmitDescriptor {
                     connection_epoch,
                     descriptor,
+                    action,
                 }
             }
             Some(MetadataBrokerCommand::RetireSurface { surface }) => {

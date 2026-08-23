@@ -23,7 +23,7 @@ pub const SOPHIA_OUTPUT_SOCKET_ENV: &str = "SOPHIA_OUTPUT_SOCKET";
 pub enum PolicyRole {
     /// `sophia_wm_v1`, the spatial-policy family.
     Wm,
-    /// The reserved shell family. Its interface is not yet published.
+    /// `sophia_shell_v1`, the metadata-bearing shell family.
     Shell,
     /// The metadata broker family.
     ///

@@ -430,15 +430,25 @@ required before the interface revision can be called stable.
 ## Shell Interfaces
 
 The protocol family reserves a distinct shell role and endpoint, not placeholder
-shell messages in the WM interface. `sophia_shell_v1` will be modeled and
-specified only when retained shell workflows establish its smallest useful
-display-list, hit-target, presentation-data, and action vocabulary.
+shell messages in the WM interface. Experimental `sophia_shell_v1` revision 1
+is now modeled and specified for the smallest title-only descriptor-switcher
+workflow. It is a falsifiable pre-stability contract, not the complete shell
+display-list, reservation, or service vocabulary.
 
 Its minimum boundary is already fixed: Engine retains rendering and hit-testing;
 brokers retain metadata sanitization; the shell receives only authorized
 presentation facts and emits bounded shell proposals or opaque actions. Shell
 authority cannot set application placement or focus, and WM authority cannot
 acquire shell metadata.
+
+Revision 1 sends complete bounded snapshots of opaque slots, sanitized labels,
+trust, attention, and issuer-scoped action capabilities. It never sends a
+surface identity, coordinate, icon, PID, path, class, namespace identity, or
+raw input. The shell returns ordering, selection, and visibility; Engine
+privately resolves and renders the candidate, owns hit testing and capture, and
+delivers an exact presented activation. Prepared and Presented are separate
+outcomes. Disconnect and queue saturation revoke interaction immediately even
+when Engine retains the last pixels until a later complete presentation.
 
 Shell reservations also cannot race policy projection as independent commits.
 The target transaction chain is shell candidate and reservation, exact Engine

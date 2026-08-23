@@ -3,8 +3,8 @@ use sophia_broker::{
     trust_for_namespace_profile,
 };
 use sophia_protocol::{
-    AttentionState, DisplayLabel, MetadataDisclosure, NamespaceProfile, ReducedMetadataCandidate,
-    SanitizedChromeMetadata, SurfaceId, TrustLevel,
+    AttentionState, BrokerToplevelActionGrant, DisplayLabel, MetadataDisclosure, NamespaceProfile,
+    ReducedMetadataCandidate, SanitizedChromeMetadata, SurfaceId, TrustLevel,
 };
 
 const SURFACE: SurfaceId = SurfaceId::new(4, 1);
@@ -40,10 +40,24 @@ fn descriptor(commands: Vec<MetadataBrokerCommand>) -> SanitizedChromeMetadata {
     commands
         .into_iter()
         .find_map(|command| match command {
-            MetadataBrokerCommand::EmitDescriptor(descriptor) => Some(descriptor),
+            MetadataBrokerCommand::EmitDescriptor { descriptor, .. } => Some(descriptor),
             _ => None,
         })
         .expect("a descriptor was emitted")
+}
+
+fn descriptor_and_action(
+    commands: Vec<MetadataBrokerCommand>,
+) -> (SanitizedChromeMetadata, BrokerToplevelActionGrant) {
+    commands
+        .into_iter()
+        .find_map(|command| match command {
+            MetadataBrokerCommand::EmitDescriptor { descriptor, action } => {
+                Some((descriptor, action))
+            }
+            _ => None,
+        })
+        .expect("a descriptor and action were emitted")
 }
 
 #[test]
@@ -156,6 +170,46 @@ fn a_retired_surface_never_gets_its_token_back() {
 }
 
 #[test]
+fn an_action_grant_is_stable_for_updates_and_never_reused_after_retirement() {
+    let mut broker = admitted(NamespaceProfile::ClassicShared);
+    broker
+        .set_disclosure(SURFACE, MetadataDisclosure::Full)
+        .expect("surface is admitted");
+    let (_, first) = descriptor_and_action(
+        broker
+            .update(candidate(MetadataDisclosure::Full, Some("One"), 1))
+            .expect("candidate is accepted"),
+    );
+    let (_, updated) = descriptor_and_action(
+        broker
+            .update(candidate(MetadataDisclosure::Full, Some("Two"), 2))
+            .expect("candidate is accepted"),
+    );
+    assert_eq!(updated.token, first.token);
+    assert_eq!(updated.revocation_epoch, first.revocation_epoch);
+    assert_eq!(updated.target_generation, 2);
+
+    broker
+        .update(MetadataBrokerEvent::SurfaceRemoved { surface: SURFACE })
+        .expect("surface is retired");
+    broker
+        .update(MetadataBrokerEvent::SurfaceAdmitted {
+            surface: SURFACE,
+            profile: NamespaceProfile::ClassicShared,
+        })
+        .expect("surface is readmitted");
+    broker
+        .set_disclosure(SURFACE, MetadataDisclosure::Full)
+        .expect("surface is admitted");
+    let (_, replacement) = descriptor_and_action(
+        broker
+            .update(candidate(MetadataDisclosure::Full, Some("Three"), 1))
+            .expect("candidate is accepted"),
+    );
+    assert_ne!(replacement.token, first.token);
+}
+
+#[test]
 fn a_stale_candidate_is_rejected_without_changing_anything() {
     let mut broker = admitted(NamespaceProfile::ClassicShared);
     broker
@@ -187,23 +241,26 @@ fn an_unknown_surface_is_refused_rather_than_invented() {
 }
 
 #[test]
-fn attention_changes_without_a_candidate_and_without_a_new_rule() {
-    // Attention is not identity, so it does not pass through disclosure and does not
-    // advance the label's generation.
+fn attention_before_the_first_candidate_is_retained_without_an_invalid_grant() {
+    // There is no target generation to bind yet. Retain the state for the first
+    // descriptor instead of emitting an action that cannot name a target.
     let mut broker = admitted(NamespaceProfile::Confined);
 
-    let emitted = descriptor(
+    assert!(
         broker
             .update(MetadataBrokerEvent::AttentionChanged {
                 surface: SURFACE,
                 attention: AttentionState::Critical,
             })
-            .expect("accepted"),
+            .expect("accepted")
+            .is_empty()
     );
-
+    let emitted = descriptor(
+        broker
+            .update(candidate(MetadataDisclosure::None, None, 1))
+            .expect("the first candidate is accepted"),
+    );
     assert_eq!(emitted.attention, AttentionState::Critical);
-    assert_eq!(emitted.label, None);
-    assert_eq!(emitted.generation, 0);
 }
 
 #[test]

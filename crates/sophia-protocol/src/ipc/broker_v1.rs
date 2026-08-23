@@ -1,8 +1,8 @@
 use crate::{
-    AttentionState, BrokerV1ClientHello, BrokerV1Rejection, BrokerV1Request, BrokerV1Response,
-    BrokerV1ServerWelcome, DisplayLabel, IconTokenId, MAX_CHROME_LABEL_LEN, MetadataDisclosure,
-    MetadataDisclosureRule, NamespaceProfile, ReducedMetadataCandidate, SanitizedChromeMetadata,
-    TransactionId, TrustLevel,
+    AttentionState, BrokerToplevelActionGrant, BrokerV1ClientHello, BrokerV1Rejection,
+    BrokerV1Request, BrokerV1Response, BrokerV1ServerWelcome, DisplayLabel, IconTokenId,
+    MAX_CHROME_LABEL_LEN, MetadataDisclosure, MetadataDisclosureRule, NamespaceProfile,
+    ReducedMetadataCandidate, SanitizedChromeMetadata, TransactionId, TrustLevel,
 };
 
 use super::cursor::{Cursor, push_u8, push_u16, push_u32, push_u64};
@@ -218,8 +218,16 @@ pub fn encode_broker_v1_response_frame(
     push_u64(&mut payload, response.connection_epoch());
     match response {
         BrokerV1Response::PublishRule { rule, .. } => encode_rule(rule, &mut payload),
-        BrokerV1Response::EmitDescriptor { descriptor, .. } => {
-            encode_descriptor(descriptor, &mut payload)?
+        BrokerV1Response::EmitDescriptor {
+            descriptor, action, ..
+        } => {
+            if action.target_generation != descriptor.generation {
+                return Err(IpcCodecError::InvalidRecord(
+                    "broker_toplevel_action_target",
+                ));
+            }
+            encode_descriptor(descriptor, &mut payload)?;
+            encode_action_grant(*action, &mut payload)?;
         }
         BrokerV1Response::RetireSurface { surface, .. } => {
             encode_surface_id(*surface, &mut payload);
@@ -247,10 +255,20 @@ pub fn decode_broker_v1_response_frame(
             connection_epoch,
             rule: decode_rule(&mut cursor)?,
         },
-        2 => BrokerV1Response::EmitDescriptor {
-            connection_epoch,
-            descriptor: decode_descriptor(&mut cursor)?,
-        },
+        2 => {
+            let descriptor = decode_descriptor(&mut cursor)?;
+            let action = decode_action_grant(&mut cursor)?;
+            if action.target_generation != descriptor.generation {
+                return Err(IpcCodecError::InvalidRecord(
+                    "broker_toplevel_action_target",
+                ));
+            }
+            BrokerV1Response::EmitDescriptor {
+                connection_epoch,
+                descriptor,
+                action,
+            }
+        }
         3 => BrokerV1Response::RetireSurface {
             connection_epoch,
             surface: decode_surface_id(&mut cursor)?,
@@ -327,6 +345,37 @@ fn decode_descriptor(cursor: &mut Cursor<'_>) -> Result<SanitizedChromeMetadata,
         attention: decode_attention(cursor.u16()?)?,
         generation: cursor.u64()?,
     })
+}
+
+fn encode_action_grant(
+    grant: BrokerToplevelActionGrant,
+    out: &mut Vec<u8>,
+) -> Result<(), IpcCodecError> {
+    validate_action_grant(grant)?;
+    push_u64(out, grant.token);
+    push_u64(out, grant.revocation_epoch);
+    push_u64(out, grant.target_generation);
+    Ok(())
+}
+
+fn decode_action_grant(
+    cursor: &mut Cursor<'_>,
+) -> Result<BrokerToplevelActionGrant, IpcCodecError> {
+    let grant = BrokerToplevelActionGrant {
+        token: cursor.u64()?,
+        revocation_epoch: cursor.u64()?,
+        target_generation: cursor.u64()?,
+    };
+    validate_action_grant(grant)?;
+    Ok(grant)
+}
+
+fn validate_action_grant(grant: BrokerToplevelActionGrant) -> Result<(), IpcCodecError> {
+    if grant.token == 0 || grant.revocation_epoch == 0 || grant.target_generation == 0 {
+        Err(IpcCodecError::InvalidRecord("broker_toplevel_action_grant"))
+    } else {
+        Ok(())
+    }
 }
 
 fn encode_optional_icon(icon: Option<IconTokenId>, out: &mut Vec<u8>) {

@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 use kdl::{KdlDocument, KdlNode};
 
 const SCHEMA_PATH: &str = "protocol/sophia-wm-v1.kdl";
+const SHELL_SCHEMA_PATH: &str = "protocol/sophia-shell-v1.kdl";
 const RUST_PATH: &str = "crates/sophia-protocol/src/ipc/wm_v1.rs";
 const C_HEADER_PATH: &str = "bindings/c/sophia_wm_v1.h";
 const C_SOURCE_PATH: &str = "bindings/c/sophia_wm_v1.c";
@@ -116,6 +117,9 @@ fn run() -> Result<(), String> {
     let schema_text = fs::read_to_string(root.join(SCHEMA_PATH))
         .map_err(|error| format!("read {SCHEMA_PATH}: {error}"))?;
     let schema = parse_schema(&schema_text)?;
+    let shell_schema_text = fs::read_to_string(root.join(SHELL_SCHEMA_PATH))
+        .map_err(|error| format!("read {SHELL_SCHEMA_PATH}: {error}"))?;
+    validate_shell_schema(&shell_schema_text)?;
     let outputs = render_outputs(&schema)?;
 
     let mut stale = Vec::new();
@@ -139,6 +143,70 @@ fn run() -> Result<(), String> {
     } else {
         Err(format!("generated files are stale: {}", stale.join(", ")))
     }
+}
+
+fn validate_shell_schema(text: &str) -> Result<(), String> {
+    let document: KdlDocument = text.parse().map_err(|error: kdl::KdlError| {
+        let details = error
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("parse shell schema: {details}")
+    })?;
+    let protocol = document
+        .get("protocol")
+        .ok_or("shell schema must contain one protocol node")?;
+    if string_arg(protocol, 0)? != "sophia_shell_v1"
+        || integer_property(protocol, "frame-version")? != 1
+        || integer_property(protocol, "interface-major")? != 1
+        || integer_property(protocol, "interface-revision")? != 1
+        || integer_property(protocol, "max-descriptors")? != 16
+        || integer_property(protocol, "max-label-bytes")? != 128
+        || integer_property(protocol, "max-pending-activations")? != 16
+    {
+        return Err("shell schema envelope or revision constants drifted".into());
+    }
+    let children = protocol
+        .children()
+        .ok_or("shell protocol node must have children")?;
+    let expected = BTreeMap::from([
+        ("ClientHello", (96, "shell-to-session", "zero")),
+        ("ServerWelcome", (97, "session-to-shell", "zero")),
+        ("DescriptorSnapshot", (98, "session-to-shell", "required")),
+        ("Candidate", (99, "shell-to-session", "required")),
+        ("CandidateOutcome", (100, "session-to-shell", "required")),
+        ("Activation", (101, "session-to-shell", "required")),
+        ("ActivationAck", (102, "shell-to-session", "required")),
+    ]);
+    let mut actual = BTreeMap::new();
+    for message in children
+        .nodes()
+        .iter()
+        .filter(|node| node.name().value() == "message")
+    {
+        actual.insert(
+            string_arg(message, 0)?,
+            (
+                integer_property(message, "kind")?,
+                string_property(message, "direction")?,
+                string_property(message, "transaction")?,
+            ),
+        );
+    }
+    for (name, (kind, direction, transaction)) in expected {
+        let Some(actual) = actual.get(name) else {
+            return Err(format!("shell schema omits message `{name}`"));
+        };
+        if actual.0 != kind || actual.1 != direction || actual.2 != transaction {
+            return Err(format!("shell schema message `{name}` drifted"));
+        }
+    }
+    if actual.len() != 7 {
+        return Err("shell schema must define exactly seven revision-1 messages".into());
+    }
+    Ok(())
 }
 
 fn parse_schema(text: &str) -> Result<Protocol, String> {

@@ -5,6 +5,7 @@ mod frame;
 mod output_v1;
 mod portal;
 mod primitives;
+mod shell_v1;
 mod types;
 mod wm;
 mod wm_v1;
@@ -20,6 +21,7 @@ pub use portal::{
     decode_portal_clipboard_payload_frame, encode_portal_broker_request_frame,
     encode_portal_broker_response_frame, encode_portal_clipboard_payload_frame,
 };
+pub use shell_v1::*;
 pub use types::*;
 pub use wm::{
     decode_wm_hello_frame, decode_wm_policy_ack_frame, decode_wm_policy_update_frame,

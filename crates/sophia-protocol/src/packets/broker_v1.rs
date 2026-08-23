@@ -3,8 +3,15 @@ use crate::{
     ReducedMetadataCandidate, SanitizedChromeMetadata, SurfaceId,
 };
 
-pub const SOPHIA_BROKER_INTERFACE_REVISION: u16 = 1;
+pub const SOPHIA_BROKER_INTERFACE_REVISION: u16 = 2;
 pub const SOPHIA_BROKER_MAX_SURFACES: u32 = 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BrokerToplevelActionGrant {
+    pub token: u64,
+    pub revocation_epoch: u64,
+    pub target_generation: u64,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BrokerV1ClientHello {
@@ -87,6 +94,7 @@ pub enum BrokerV1Response {
     EmitDescriptor {
         connection_epoch: u64,
         descriptor: SanitizedChromeMetadata,
+        action: BrokerToplevelActionGrant,
     },
     RetireSurface {
         connection_epoch: u64,

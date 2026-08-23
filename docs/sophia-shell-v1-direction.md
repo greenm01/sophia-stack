@@ -1,18 +1,20 @@
 # Sophia Shell Interface Direction
 
-**Role:** design note recording how `sophia_shell_v1` should be specified.
-**Status:** design note for future work; non-normative.
+**Role:** direction and experimental-contract note for `sophia_shell_v1`.
+**Status:** revision 1 descriptor-switcher experiment; not stable.
 
-This note does not specify the shell interface. It records a method for
-specifying it, the external evidence that method draws on, and where the work
-sits in the roadmap. `docs/architecture.md`, `docs/sophia-policy-ipc.md`, and
-`docs/compositor-graphics.md` remain authoritative wherever this note appears
-to disagree with them.
+The experimental wire contract is `protocol/sophia-shell-v1.kdl`. This note
+records how broader shell vocabulary will be derived, the external evidence
+that method draws on, and where the work sits in the roadmap. Revision 1 is a
+falsifiable title-only slice, not a compatibility promise. `docs/architecture.md`,
+`docs/sophia-policy-ipc.md`, and `docs/compositor-graphics.md` remain
+authoritative wherever this note appears to disagree with them.
 
 ## The Decision
 
-Derive `sophia_shell_v1` from a complete, working shell rather than from first
-principles. Use Noctalia as the driving client.
+Derive the complete `sophia_shell_v1` from a working shell rather than from
+first principles. Use Noctalia as the broad vocabulary driver and the separate
+Hagia Shell as the first small implementation that can falsify the lifecycle.
 
 `docs/sophia-policy-ipc.md` already fixes the gating condition:
 `sophia_shell_v1` will be modeled and specified "only when retained shell
@@ -20,6 +22,29 @@ workflows establish its smallest useful display-list, hit-target,
 presentation-data, and action vocabulary." This note proposes Noctalia as the
 retained workflow that establishes it, and records what that workflow already
 demonstrates.
+
+## The First Experimental Slice
+
+Revision 1 carries one complete, bounded descriptor snapshot from Sophia to a
+separately protected shell. Each row contains an opaque slot, sanitized label,
+trust and attention state, exact generation, and a broker-issued action narrowed
+to the shell connection. It does not disclose a `SurfaceId`, coordinates, icon,
+PID, path, class, namespace identity, or raw input.
+
+The shell returns ordering, selection, and visibility as one complete candidate.
+Engine alone resolves slots to private surfaces, lays out and renders the list,
+publishes hit targets, captures physical input, and creates an activation from
+the exact presented target. Prepared and presented outcomes are separate. A
+shell disconnect retains the prior pixels but immediately revokes capture,
+queued activations, and the recipient epoch.
+
+The bounded TLA+ model checks that distinction through disconnect, broker
+revocation, queue saturation, stale candidates, and acknowledgements. The
+shared golden corpus is decoded independently by Rust and Nim, and the protected
+cross-process proof runs both C and Hagia clients through presentation,
+activation, and complete withdrawal. The next slice is live shortcut admission
+and issuer-side action dispatch; previews, icons, work-area reservations, and
+the larger display-list vocabulary remain out of revision 1.
 
 ## Why A Driving Client
 
