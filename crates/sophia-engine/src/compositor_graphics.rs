@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{HeadlessOutput, OutputFrameDamageSnapshot, output_frame_damage};
+use crate::{HeadlessOutput, IndicatorChromeStrip, OutputFrameDamageSnapshot, output_frame_damage};
 
 #[path = "compositor_graphics/chrome_layout.rs"]
 mod chrome_layout;
@@ -23,6 +23,9 @@ pub enum CompositorNodeId {
     SurfaceChrome {
         surface: SurfaceId,
         role: SurfaceChromeRole,
+    },
+    IndicatorStrip {
+        output: OutputId,
     },
 }
 
@@ -48,10 +51,18 @@ pub struct CompositorBorder {
     pub color: CompositorRgb8,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositorIndicatorStrip {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub strip: IndicatorChromeStrip,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand {
     Surface { surface: SurfaceId },
     Border(CompositorBorder),
+    IndicatorStrip(CompositorIndicatorStrip),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,7 +82,15 @@ impl CompositorDisplayList {
     pub fn borders(&self) -> impl Iterator<Item = CompositorBorder> + '_ {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Border(border) => Some(*border),
-            CompositorDisplayCommand::Surface { .. } => None,
+            CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+        })
+    }
+
+    pub fn indicator_strips(&self) -> impl Iterator<Item = &CompositorIndicatorStrip> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
+            CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::Border(_) => None,
         })
     }
 }
@@ -690,22 +709,22 @@ pub fn compositor_display_list_damage(
     previous: &CompositorDisplayList,
     current: &CompositorDisplayList,
 ) -> Region {
-    let previous = previous
+    let previous_borders = previous
         .borders()
         .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
-    let current = current
+    let current_borders = current
         .borders()
         .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
     let mut damage = Region::empty();
-    for node in previous
+    for node in previous_borders
         .keys()
-        .chain(current.keys())
+        .chain(current_borders.keys())
         .copied()
         .collect::<BTreeSet<_>>()
     {
-        match (previous.get(&node), current.get(&node)) {
+        match (previous_borders.get(&node), current_borders.get(&node)) {
             (Some(before), Some(after)) if before == after => {}
             (Some(before), Some(after)) => {
                 push_border_damage(&mut damage, *before);
@@ -713,6 +732,31 @@ pub fn compositor_display_list_damage(
             }
             (Some(before), None) => push_border_damage(&mut damage, *before),
             (None, Some(after)) => push_border_damage(&mut damage, *after),
+            (None, None) => unreachable!("node came from one display list"),
+        }
+    }
+    let previous_strips = previous
+        .indicator_strips()
+        .map(|strip| (strip.node, strip))
+        .collect::<BTreeMap<_, _>>();
+    let current_strips = current
+        .indicator_strips()
+        .map(|strip| (strip.node, strip))
+        .collect::<BTreeMap<_, _>>();
+    for node in previous_strips
+        .keys()
+        .chain(current_strips.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+    {
+        match (previous_strips.get(&node), current_strips.get(&node)) {
+            (Some(before), Some(after)) if before == after => {}
+            (Some(before), Some(after)) => {
+                damage.push(before.strip.geometry);
+                damage.push(after.strip.geometry);
+            }
+            (Some(before), None) => damage.push(before.strip.geometry),
+            (None, Some(after)) => damage.push(after.strip.geometry),
             (None, None) => unreachable!("node came from one display list"),
         }
     }

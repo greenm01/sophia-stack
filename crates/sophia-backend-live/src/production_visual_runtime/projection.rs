@@ -32,7 +32,36 @@ impl LiveProductionVisualRuntime {
             &self.surface_metadata,
         );
         for index in 0..self.input_projections.len() {
-            self.replace_presented_input_layers(index, input_layers.clone());
+            let (chrome_targets, chrome_occlusion) = self
+                .outputs
+                .output_id(index)
+                .and_then(|output| {
+                    self.outputs
+                        .logical_viewport(output)
+                        .map(|bounds| (output, bounds))
+                })
+                .and_then(|(output, bounds)| {
+                    self.indicator_strip_enabled
+                        .then_some(self.indicator_publication.as_ref())
+                        .flatten()
+                        .and_then(|publication| {
+                            sophia_engine::indicator_strip_display_command(
+                                publication,
+                                output,
+                                bounds,
+                            )
+                        })
+                })
+                .map_or_else(
+                    || (Vec::new(), None),
+                    |command| direct_chrome_projection(&command),
+                );
+            self.replace_presented_input_projection(
+                index,
+                input_layers.clone(),
+                chrome_targets,
+                chrome_occlusion,
+            );
         }
         tracing::trace!(
             committed_scene_surfaces = self.production.committed_surfaces().len(),
@@ -52,17 +81,30 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
-            let (input_layers, presented_scene_surfaces) =
+            let (input_layers, chrome_targets, chrome_occlusion, presented_scene_surfaces) =
                 native_scanout.presented_output_frame(output).map_or_else(
-                    || (Vec::new(), 0),
+                    || (Vec::new(), Vec::new(), None, 0),
                     |presented| {
+                        let logical_viewport = self
+                            .outputs
+                            .logical_viewport(output)
+                            .unwrap_or(Rect::default());
+                        let (chrome_targets, chrome_occlusion) =
+                            presented_chrome_projection(presented, logical_viewport);
                         (
                             presented_input_layer_snapshots(presented, &self.surface_metadata),
+                            chrome_targets,
+                            chrome_occlusion,
                             presented.surfaces.len(),
                         )
                     },
                 );
-            self.replace_presented_input_layers(index, input_layers);
+            self.replace_presented_input_projection(
+                index,
+                input_layers,
+                chrome_targets,
+                chrome_occlusion,
+            );
             tracing::trace!(
                 output = output.raw(),
                 presented_scene_surfaces,
@@ -72,17 +114,28 @@ impl LiveProductionVisualRuntime {
         }
     }
 
-    fn replace_presented_input_layers(&mut self, index: usize, input_layers: Vec<LayerSnapshot>) {
+    fn replace_presented_input_projection(
+        &mut self,
+        index: usize,
+        input_layers: Vec<LayerSnapshot>,
+        chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
+        chrome_occlusion: Option<Rect>,
+    ) {
         let Some(projection) = self.input_projections.get_mut(index) else {
             return;
         };
-        if !same_interaction_projection(&projection.layers, &input_layers) {
+        if !same_interaction_projection(&projection.layers, &input_layers)
+            || projection.chrome_targets != chrome_targets
+            || projection.chrome_occlusion != chrome_occlusion
+        {
             projection.epoch = projection
                 .epoch
                 .checked_add(1)
                 .expect("presented input epoch exhausted");
         }
         projection.layers = input_layers;
+        projection.chrome_targets = chrome_targets;
+        projection.chrome_occlusion = chrome_occlusion;
     }
 
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {
@@ -104,6 +157,42 @@ impl LiveProductionVisualRuntime {
         let templates = committed_layer_snapshots(&committed, &self.surface_metadata);
         (templates, committed)
     }
+}
+
+fn direct_chrome_projection(
+    command: &sophia_engine::CompositorDisplayCommand,
+) -> (Vec<sophia_engine::IndicatorChromeHitTarget>, Option<Rect>) {
+    match command {
+        sophia_engine::CompositorDisplayCommand::IndicatorStrip(strip) => {
+            (strip.strip.hit_targets.clone(), Some(strip.strip.geometry))
+        }
+        sophia_engine::CompositorDisplayCommand::Surface { .. }
+        | sophia_engine::CompositorDisplayCommand::Border(_) => (Vec::new(), None),
+    }
+}
+
+fn presented_chrome_projection(
+    presented: &OutputFrameDamageSnapshot,
+    logical_viewport: Rect,
+) -> (Vec<sophia_engine::IndicatorChromeHitTarget>, Option<Rect>) {
+    let Some(strip) = presented.compositor_display_list.indicator_strips().last() else {
+        return (Vec::new(), None);
+    };
+    if strip.strip.geometry.is_empty() || logical_viewport.is_empty() {
+        return (Vec::new(), None);
+    }
+    let logical_strip = Rect {
+        x: logical_viewport.x,
+        y: logical_viewport.y,
+        width: logical_viewport.width,
+        height: sophia_engine::INDICATOR_STRIP_HEIGHT.min(logical_viewport.height),
+    };
+    let targets = sophia_engine::project_indicator_chrome_targets(
+        &strip.strip.hit_targets,
+        strip.strip.geometry,
+        logical_strip,
+    );
+    (targets, Some(logical_strip))
 }
 
 fn same_interaction_projection(previous: &[LayerSnapshot], next: &[LayerSnapshot]) -> bool {
@@ -399,20 +488,35 @@ mod tests {
             resize_sync: ResizeSyncCapability::ImplicitOnly,
         };
 
-        runtime.replace_presented_input_layers(0, vec![layer_for(surface(40, 1), 1)]);
+        runtime.replace_presented_input_projection(
+            0,
+            vec![layer_for(surface(40, 1), 1)],
+            Vec::new(),
+            None,
+        );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 0);
 
-        runtime.replace_presented_input_layers(1, vec![layer_for(surface(41, 1), 2)]);
+        runtime.replace_presented_input_projection(
+            1,
+            vec![layer_for(surface(41, 1), 2)],
+            Vec::new(),
+            None,
+        );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
 
         // A buffer-only presentation is visual, not a lease-identity change.
-        runtime.replace_presented_input_layers(0, vec![layer_for(surface(40, 1), 99)]);
+        runtime.replace_presented_input_projection(
+            0,
+            vec![layer_for(surface(40, 1), 99)],
+            Vec::new(),
+            None,
+        );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
 
-        runtime.replace_presented_input_layers(0, Vec::new());
+        runtime.replace_presented_input_projection(0, Vec::new(), Vec::new(), None);
         assert_eq!(runtime.input_projections()[0].epoch, 2);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
         assert_eq!(

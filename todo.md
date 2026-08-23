@@ -118,11 +118,13 @@ promotion gate.
    causal epoch-two restart, all twelve requested action commits, nonzero
    presentation on both outputs, exact 34-event text, clean health, and clean
    teardown. Its Sophia digest matches display archives `0008` and `0002`.
-4. **Current.** Build the minimum display-list, target-resolved-input,
-   indicator, and reservation path needed to close Hagia's retained-behavior
-   ledger. The
-   authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
-   open.
+4. **Current; implementation complete, physical promotion pending.** The
+   Tier-0 display list, per-head raster, fixed work-area reservation, and
+   last-presented captured-input path are implemented with deterministic tests.
+   `tools/hagia-proof` now requires pointer activation of views 2 and 1 after
+   the supervised restart. A signed passing run remains the promotion gate.
+   The authoritative retained-behavior ledger currently has 28 rows: 3
+   complete, 12 partial, and 13 open.
 5. Run the complete reconnect/restart corpus, freeze experimental interface
    revision 3, migrate the xmonad recovery profile through the public projection
    adapter, and only then remove API v7 and Engine-owned workspace policy.
@@ -137,13 +139,13 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Start row 4 with Tier-0 indicators.** Hagia archive `0004` closes the
-   protected broker row on the same Sophia binary digest as mirror archive
-   `0008` and mixed archive `0002`. No further physical rerun blocks this step.
-   Assemble Hagia's existing bounded indicator/status projection into Engine's
-   production chrome display list, add target-resolved input and work-area
-   reservation, and retain deterministic display-list and interaction evidence
-   before another physical promotion candidate.
+1. **Promote row 4 with the one-shot Hagia gate.** Hagia archive `0004` closed
+   the protected broker dependency. The successor now assembles Hagia's bounded
+   indicator/status projection into Engine's production chrome display list,
+   renders it independently per head, reserves its fixed work area, and routes
+   clicks from the applicable last-presented projection. The local all-features
+   and cross-repository gates are green. Sign and push the candidate, then run
+   `tools/hagia-proof` on tty4.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -1982,14 +1984,17 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   them and no broker has an upstream source. Output and supervised-component
   health remain session-owned and still need a path. See
   `docs/sophia-indicator-descriptor.md`.
-- [ ] Render tier-0 indicator chrome in Engine from the committed descriptor,
+- [x] Render tier-0 indicator chrome in Engine from the committed descriptor,
   reusing the existing `capability "chrome"` path and the renderer-neutral
-  display list. Admit no new primitive. Add a verifier in the shape of
-  `tools/verify_sophia_native_chrome.sh` plus one physical TTY3 proof. This
-  replaces xmobar's role without any client interface.
-- [ ] Emit indicators from Hagia's private tags, keeping tags private and
-  crossing only labels, state bits, and action tokens. Extend the
-  cross-repository conformance gate to cover them.
+  display list. The private semantic strip lowers through ordinary CPU layers,
+  uses one bundled font, reserves 14 logical pixels before the first public WM
+  snapshot, and publishes exact last-presented hit targets. The existing
+  `tools/hagia-proof` one-shot now requires two pointer activations and their
+  committed policy actions. Deterministic verification passes; the signed
+  physical tty4 run remains pending.
+- [x] Emit indicators from Hagia's private tags, keeping tags private and
+  crossing only labels, state bits, and action tokens. Hagia's independent Nim
+  codec and the cross-repository conformance gate cover the records.
 - [ ] Register a new bounded opaque launcher action and decide whether the
   compatibility UI is dmenu or native Engine/shell chrome. Do not reuse the
   established xmonad layout-action IDs.

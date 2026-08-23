@@ -9,6 +9,11 @@ struct PhysicalInputRouteReport {
     ingress_saturation: RoutedInputIngressSaturation,
     events: usize,
     wm_actions: Vec<WmActionId>,
+    chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
+    chrome_captures_started: usize,
+    chrome_actions_activated: usize,
+    chrome_captures_cancelled: usize,
+    chrome_events_consumed: usize,
     wm_pointer_gestures: Vec<sophia_protocol::WmPointerGestureCompleted>,
     wm_pointer_interactions: Vec<FloatingPointerPolicyInteraction>,
     floating_outline: FloatingPointerOutlineUpdate,
@@ -167,6 +172,8 @@ fn input_projection_for_pointer<'a>(
     fallback_epoch: u64,
 ) -> (
     &'a [LayerSnapshot],
+    &'a [sophia_engine::IndicatorChromeHitTarget],
+    Option<sophia_protocol::Rect>,
     Option<sophia_protocol::OutputId>,
     u64,
 ) {
@@ -180,10 +187,12 @@ fn input_projection_for_pointer<'a>(
             })
         })
         .map_or(
-            (fallback_layers, fallback_output, fallback_epoch),
+            (fallback_layers, &[], None, fallback_output, fallback_epoch),
             |projection| {
                 (
                     projection.layers.as_slice(),
+                    projection.chrome_targets.as_slice(),
+                    projection.chrome_occlusion,
                     Some(projection.output),
                     projection.epoch,
                 )
@@ -331,6 +340,7 @@ struct PhysicalInputRoutingContext<'a> {
     applied_client_focus: Option<SurfaceId>,
     floating_gesture: &'a mut FloatingPointerGestureState,
     application_route_leases: &'a mut ApplicationRouteLeaseState,
+    chrome_captures: &'a mut sophia_engine::ChromeCaptureState,
     route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -371,6 +381,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         applied_client_focus,
         floating_gesture,
         application_route_leases,
+        chrome_captures,
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
@@ -404,6 +415,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         applied_client_focus,
         Some(floating_gesture),
         Some(application_route_leases),
+        Some(chrome_captures),
         Some(route_lease_release_sender),
         input_output,
         input_presentation_epoch,
@@ -471,6 +483,7 @@ fn route_input_events(
         None,
         None,
         None,
+        None,
         0,
         None,
         None,
@@ -507,6 +520,7 @@ fn route_input_events_with_pointer_focus(
     applied_client_focus: Option<SurfaceId>,
     mut floating_gesture: Option<&mut FloatingPointerGestureState>,
     mut application_route_leases: Option<&mut ApplicationRouteLeaseState>,
+    mut chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
     route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -517,6 +531,11 @@ fn route_input_events_with_pointer_focus(
         ingress_saturation: RoutedInputIngressSaturation::default(),
         events: events.len(),
         wm_actions: Vec::new(),
+        chrome_activations: Vec::new(),
+        chrome_captures_started: 0,
+        chrome_actions_activated: 0,
+        chrome_captures_cancelled: 0,
+        chrome_events_consumed: 0,
         wm_pointer_gestures: Vec::new(),
         wm_pointer_interactions: Vec::new(),
         floating_outline: FloatingPointerOutlineUpdate::Unchanged,
@@ -994,7 +1013,13 @@ fn route_input_events_with_pointer_focus(
                 let output_index = placement
                     .and_then(|placement| placement.output_index)
                     .or_else(|| pointer.output_index());
-                let (input_layers, input_output, input_presentation_epoch) =
+                let (
+                    input_layers,
+                    chrome_targets,
+                    chrome_occlusion,
+                    input_output,
+                    input_presentation_epoch,
+                ) =
                     input_projection_for_pointer(
                         input_projections,
                         pointer_outputs,
@@ -1003,6 +1028,61 @@ fn route_input_events_with_pointer_focus(
                         input_output,
                         input_presentation_epoch,
                     );
+                let application_owned = application_route_leases
+                    .as_deref()
+                    .and_then(|state| state.lease(event.seat))
+                    .is_some()
+                    || pointer_focus_handoff
+                        .as_deref()
+                        .and_then(PointerFocusHandoffState::target)
+                        .is_some();
+                if pointer_routing_enabled
+                    && let Some(state) = chrome_captures.as_deref_mut()
+                {
+                    let disposition = sophia_engine::resolve_chrome_pointer_event(
+                        state,
+                        event.seat,
+                        event.device,
+                        kind,
+                        event.global_position,
+                        input_output,
+                        input_presentation_epoch,
+                        chrome_targets,
+                        chrome_occlusion,
+                        application_owned,
+                    )
+                    .map_err(|error| format!("failed to route indicator input: {error:?}"))?;
+                    match disposition {
+                        sophia_engine::ChromePointerDisposition::Pass => {}
+                        sophia_engine::ChromePointerDisposition::Captured => {
+                            report.chrome_captures_started =
+                                report.chrome_captures_started.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::ChromePointerDisposition::Activated { output, action } => {
+                            report.chrome_actions_activated =
+                                report.chrome_actions_activated.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            report.chrome_activations.push((output, action));
+                            continue;
+                        }
+                        sophia_engine::ChromePointerDisposition::Cancelled => {
+                            report.chrome_captures_cancelled =
+                                report.chrome_captures_cancelled.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::ChromePointerDisposition::Consumed => {
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                    }
+                }
                 if let Some(gesture) = floating_gesture.as_deref_mut() {
                     let position = event.global_position.map(|global| {
                         sophia_protocol::WmPointerPosition {

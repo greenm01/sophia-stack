@@ -222,6 +222,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
             wm_update: None,
             presentation_layout: &[],
             chrome_surfaces: &[],
+            indicator_publication: None,
             staged_cpu_buffer_handles: &[],
         })
     };
@@ -386,6 +387,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
             wm_update: None,
             presentation_layout: &layout,
             chrome_surfaces: &[surface],
+            indicator_publication: None,
             staged_cpu_buffer_handles: &[],
         })
         .unwrap();
@@ -707,6 +709,7 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
                 wm_update: None,
                 presentation_layout: &layout,
                 chrome_surfaces: &[],
+                indicator_publication: None,
                 staged_cpu_buffer_handles: &[],
             })
             .unwrap();

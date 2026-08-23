@@ -167,6 +167,7 @@ fn fixture(surface: SurfaceId, handles: &[BufferHandle]) -> Fixture {
             wm_update: None,
             presentation_layout: &layout,
             chrome_surfaces: &[],
+            indicator_publication: None,
             staged_cpu_buffer_handles: &[],
         })
         .unwrap();
@@ -193,6 +194,7 @@ impl Fixture {
                 wm_update: None,
                 presentation_layout: &self.layout,
                 chrome_surfaces: &[],
+                indicator_publication: None,
                 staged_cpu_buffer_handles: &[],
             })
             .unwrap();

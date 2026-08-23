@@ -164,6 +164,8 @@ pub struct LivePresentedInputProjection {
     pub output: OutputId,
     pub epoch: u64,
     pub layers: Vec<LayerSnapshot>,
+    pub chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
+    pub chrome_occlusion: Option<Rect>,
 }
 
 /// Retains policy order only for surfaces present in Engine's committed scene.
@@ -220,6 +222,8 @@ pub struct LiveProductionVisualRuntime {
     focused_surface: Option<SurfaceId>,
     surface_chrome_style: SurfaceChromeStyle,
     floating_outline: Option<LiveFloatingOutline>,
+    indicator_strip_enabled: bool,
+    indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,
@@ -238,6 +242,7 @@ pub struct LiveProductionVisualRuntime {
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
     raster_requirements: sophia_engine::SurfaceRasterRequirementTracker,
+    indicator_strip_cache: std::cell::RefCell<sophia_renderer_live::IndicatorStripRasterCache>,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -255,6 +260,7 @@ pub struct LiveProductionCycleRequest<'a> {
     pub wm_update: Option<WmTransactionUpdate>,
     pub presentation_layout: &'a [LayerSnapshot],
     pub chrome_surfaces: &'a [SurfaceId],
+    pub indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     pub staged_cpu_buffer_handles: &'a [u64],
 }
 
@@ -285,6 +291,8 @@ impl LiveProductionVisualRuntime {
                 output,
                 epoch: 0,
                 layers: Vec::new(),
+                chrome_targets: Vec::new(),
+                chrome_occlusion: None,
             })
             .collect();
         Ok(Self {
@@ -311,6 +319,8 @@ impl LiveProductionVisualRuntime {
             focused_surface: None,
             surface_chrome_style: SurfaceChromeStyle::default(),
             floating_outline: None,
+            indicator_strip_enabled: false,
+            indicator_publication: None,
             pending_focus_ring_observation: None,
             last_focus_ring_observation: None,
             pending_chrome_set_observation: None,
@@ -325,6 +335,7 @@ impl LiveProductionVisualRuntime {
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
             raster_requirements: Default::default(),
+            indicator_strip_cache: Default::default(),
         })
     }
 
@@ -336,7 +347,6 @@ impl LiveProductionVisualRuntime {
         native_scanout: &LiveProductionNativeScanout,
     ) -> Result<Vec<SurfaceRasterRequirements>, Box<dyn std::error::Error>> {
         let committed = self.production.committed_surfaces();
-        let display_list = self.display_list(committed, &self.presentation_order)?;
         let scene_generation = committed
             .iter()
             .map(|state| state.committed_generation)
@@ -346,12 +356,18 @@ impl LiveProductionVisualRuntime {
         let mut snapshots = Vec::new();
         let mut targets = Vec::new();
         for (output, logical_viewport) in self.outputs.logical_viewports() {
+            let display_list = self.display_list_for_output(
+                output,
+                logical_viewport,
+                committed,
+                &self.presentation_order,
+            )?;
             snapshots.push(sophia_engine::output_scene_snapshot_from_committed_in_view(
                 output,
                 scene_generation,
                 logical_viewport,
                 committed,
-                display_list.clone(),
+                display_list,
                 None,
             )?);
             targets.extend(native_scanout.head_render_targets(output));
@@ -409,6 +425,22 @@ impl LiveProductionVisualRuntime {
         true
     }
 
+    pub fn with_indicator_strip_enabled(mut self, enabled: bool) -> Self {
+        self.indicator_strip_enabled = enabled;
+        self
+    }
+
+    pub fn set_indicator_publication(
+        &mut self,
+        publication: Option<sophia_engine::PolicyIndicatorPublication>,
+    ) -> bool {
+        if self.indicator_publication == publication {
+            return false;
+        }
+        self.indicator_publication = publication;
+        true
+    }
+
     pub fn run_cpu_production_cycle(
         &mut self,
         request: LiveProductionCycleRequest<'_>,
@@ -431,6 +463,7 @@ impl LiveProductionVisualRuntime {
             wm_update,
             presentation_layout,
             chrome_surfaces,
+            indicator_publication,
             staged_cpu_buffer_handles,
         } = request;
         let authority_envelope = batch;
@@ -457,8 +490,12 @@ impl LiveProductionVisualRuntime {
         self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
         let chrome_surfaces_changed = self.set_chrome_surfaces(chrome_surfaces);
-        let visual_projection_changed =
-            presentation_order_changed || chrome_surfaces_changed || focus_changed;
+        let indicator_publication_changed =
+            self.indicator_strip_enabled && self.set_indicator_publication(indicator_publication);
+        let visual_projection_changed = presentation_order_changed
+            || chrome_surfaces_changed
+            || focus_changed
+            || indicator_publication_changed;
         let committed_projection_requires_gpu =
             live_production_committed_projection_requires_gpu_scanout(
                 self.production.committed_surfaces(),
@@ -547,6 +584,9 @@ impl LiveProductionVisualRuntime {
         let head_plan_focus = self.focused_surface;
         let head_plan_style = self.surface_chrome_style;
         let head_plan_outline = self.floating_outline;
+        let head_plan_indicator_enabled = self.indicator_strip_enabled;
+        let head_plan_indicator_publication = self.indicator_publication.clone();
+        let indicator_strip_cache = &self.indicator_strip_cache;
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
         let mut adapter = LiveProductionCpuCycleAdapter::new(
@@ -623,6 +663,25 @@ impl LiveProductionVisualRuntime {
                                             sophia_engine::CompositorDisplayCommand::Border(border),
                                         );
                                     }
+                                    if head_plan_indicator_enabled
+                                        && let Some(publication) =
+                                            head_plan_indicator_publication.as_ref()
+                                        && let Some(command) = sophia_engine::indicator_strip_display_command(
+                                            publication,
+                                            output_id,
+                                            logical_viewport,
+                                        )
+                                    {
+                                        if display_list.commands.len()
+                                            >= sophia_engine::MAX_COMPOSITOR_DISPLAY_COMMANDS
+                                        {
+                                            return Err(
+                                                "native indicator display-list capacity exceeded"
+                                                    .into(),
+                                            );
+                                        }
+                                        display_list.commands.push(command);
+                                    }
                                     let scene = sophia_engine::output_scene_snapshot_from_committed_in_view(
                                         output_id,
                                         cycle.max(1),
@@ -656,9 +715,10 @@ impl LiveProductionVisualRuntime {
                                                     mapping: plan.mapping,
                                                     logical_content_checksum: plan
                                                         .logical_content_checksum,
-                                                    frame: sophia_renderer_live::lower_cpu_head_composition_plan(
+                                                    frame: sophia_renderer_live::lower_cpu_head_composition_plan_with_indicator_cache(
                                                         plan,
                                                         &cpu_layers,
+                                                        &mut indicator_strip_cache.borrow_mut(),
                                                     )?,
                                                 })
                                             })
@@ -748,6 +808,7 @@ impl LiveProductionVisualRuntime {
             wm_update,
             presentation_layout,
             chrome_surfaces,
+            indicator_publication,
             staged_cpu_buffer_handles,
         } = request;
         let native_enabled = native_scanout.is_some();
@@ -768,6 +829,9 @@ impl LiveProductionVisualRuntime {
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout);
         self.set_chrome_surfaces(chrome_surfaces);
+        if self.indicator_strip_enabled {
+            self.set_indicator_publication(indicator_publication);
+        }
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_production_updates(updates)?;
         scene.reconcile_buffer_residency(&self.cpu_buffer_residency);

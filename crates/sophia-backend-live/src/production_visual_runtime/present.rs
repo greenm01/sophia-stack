@@ -249,6 +249,7 @@ impl LiveProductionVisualRuntime {
                 }
                 CompositorDisplayCommand::Surface { .. } => {}
                 CompositorDisplayCommand::Border(_) => {}
+                CompositorDisplayCommand::IndicatorStrip(_) => {}
             }
         }
         if current_source.is_some() {
@@ -258,13 +259,23 @@ impl LiveProductionVisualRuntime {
         let mut output_head_frames = applicable_outputs
             .iter()
             .map(|output| {
+                let logical_viewport = self
+                    .outputs
+                    .logical_viewport(*output)
+                    .ok_or("Present targets an unknown logical output")?;
+                let output_display_list = self.display_list_for_output(
+                    *output,
+                    logical_viewport,
+                    prepared.candidate(),
+                    &self.presentation_order,
+                )?;
                 Ok((
                     *output,
                     self.compose_native_head_frames_from_sources(
                         native_scanout,
                         *output,
                         prepared.candidate(),
-                        display_list.clone(),
+                        output_display_list,
                         transaction.raw(),
                         &head_sources,
                     )?,

@@ -91,6 +91,7 @@ macro_rules! drain_physical_input {
                     applied_client_focus,
                     floating_gesture: &mut floating_pointer_gesture,
                     application_route_leases: &mut application_route_leases,
+                    chrome_captures: &mut chrome_captures,
                     route_lease_release_sender,
                     input_output,
                     input_presentation_epoch,
@@ -383,6 +384,50 @@ macro_rules! drain_physical_input {
                 }
                 cursor_updates.dirty = true;
             }
+            if report.chrome_captures_started != 0
+                || report.chrome_actions_activated != 0
+                || report.chrome_captures_cancelled != 0
+                || report.chrome_events_consumed != 0
+            {
+                println!(
+                    "sophia_live_indicator_input schema=1 status=batch captures={} activated={} cancelled={} consumed={}",
+                    report.chrome_captures_started,
+                    report.chrome_actions_activated,
+                    report.chrome_captures_cancelled,
+                    report.chrome_events_consumed,
+                );
+            }
+            for (indicator_output, action) in report.chrome_activations.iter().copied() {
+                println!(
+                    "sophia_live_indicator_input schema=1 status=activated output={} action={}",
+                    indicator_output.raw(),
+                    action.raw(),
+                );
+                let wm = wm_session
+                    .as_mut()
+                    .ok_or("indicator activated without a live WM session")?;
+                let action_output = outputs
+                    .iter()
+                    .find(|output| output.id == indicator_output)
+                    .copied()
+                    .ok_or("indicator activation targets an unavailable output")?;
+                match wm.enqueue_action(action, &layout, action_output)? {
+                    LiveOrderedWmActionAdmission::Admitted => {
+                        println!(
+                            "sophia_live_wm schema=1 status=physical_action_admitted action={}",
+                            action.raw(),
+                        );
+                    }
+                    LiveOrderedWmActionAdmission::RejectedCapacity { report } => {
+                        if report {
+                            eprintln!(
+                                "sophia_live_wm schema=2 status=request_rejected source=indicator reason=capacity action={}",
+                                action.raw(),
+                            );
+                        }
+                    }
+                }
+            }
             for action in report.wm_actions.iter().copied() {
                 let wm = wm_session
                     .as_mut()
@@ -661,6 +706,7 @@ macro_rules! drain_physical_input {
                 route_lease_release_sender,
             )?;
             revoke_floating_pointer_interaction!("routed_input_saturation");
+            revoke_chrome_captures!("routed_input_saturation");
             pointer_focus_handoff = PointerFocusHandoffState::default();
             keyboard_focus_handoff = KeyboardFocusHandoffState::default();
             // Flushing is what makes the close a terminating boundary rather
@@ -694,6 +740,7 @@ macro_rules! schedule_output_topology_rebuild {
                 route_lease_release_sender,
             )?;
             revoke_floating_pointer_interaction!("output_topology");
+            revoke_chrome_captures!("output_topology");
             pointer_focus_handoff = PointerFocusHandoffState::default();
             keyboard_focus_handoff = KeyboardFocusHandoffState::default();
             key_repeat.cancel_seat(seat);

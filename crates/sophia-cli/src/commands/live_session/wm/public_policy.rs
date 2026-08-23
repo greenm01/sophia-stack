@@ -1853,7 +1853,14 @@ impl LiveWmSession {
         let output_bounds = wm_output_bounds(outputs)
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        let work_areas = output_bounds.clone();
+        let work_areas = output_bounds
+            .iter()
+            .map(|(output, bounds)| {
+                sophia_engine::reserve_indicator_strip(*bounds)
+                    .map(|work| (*output, work))
+                    .ok_or("public WM output cannot contain the Tier-0 indicator strip")
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
         let output_generations = outputs
             .iter()
             .map(|output| (output.id, 1))
@@ -1915,8 +1922,20 @@ impl LiveWmSession {
             cause: sophia_protocol::PolicyRequestCause::SceneChanged,
             affected_outputs: public.all_outputs(active),
         });
-        let workspace_state =
-            WmWorkspaceState::new(wm_output_bounds(outputs), WM_DEFAULT_WORKSPACES)?;
+        let workspace_state = WmWorkspaceState::new(
+            outputs
+                .iter()
+                .map(|output| {
+                    public
+                        .work_areas
+                        .get(&output.id)
+                        .copied()
+                        .map(|work| (output.id, work))
+                        .ok_or("public WM initial work-area projection is incomplete")
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            WM_DEFAULT_WORKSPACES,
+        )?;
         let session = Self {
             supervisor,
             supervisor_state,
@@ -2470,6 +2489,31 @@ impl LiveWmSession {
             let Some(work) = area.work else {
                 continue;
             };
+            let full = next_bounds
+                .get(&area.output)
+                .copied()
+                .ok_or("public WM reduced an unknown output")?;
+            let chrome_work = sophia_engine::reserve_indicator_strip(full)
+                .ok_or("public WM output cannot contain the Tier-0 indicator strip")?;
+            let left = work.x.max(chrome_work.x);
+            let top = work.y.max(chrome_work.y);
+            let right = work
+                .x
+                .saturating_add(work.width)
+                .min(chrome_work.x.saturating_add(chrome_work.width));
+            let bottom = work
+                .y
+                .saturating_add(work.height)
+                .min(chrome_work.y.saturating_add(chrome_work.height));
+            let work = Rect {
+                x: left,
+                y: top,
+                width: right.saturating_sub(left),
+                height: bottom.saturating_sub(top),
+            };
+            if work.is_empty() {
+                return Err("Tier-0 indicator reservation exhausted a public work area".into());
+            }
             next_work_areas.insert(area.output, work);
         }
         let changed = public.outputs != outputs

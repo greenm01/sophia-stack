@@ -40,6 +40,10 @@ printf '%s\n' \
     '2026-08-09T00:00:01Z INF hagia event=policy_refresh status=requested detail=checkpoint_reconciled' \
     'sophia_live_wm schema=1 status=physical_action_committed action=37' \
     'sophia_live_wm schema=1 status=physical_action_committed action=66' \
+    'sophia_live_indicator_input schema=1 status=activated output=1 action=12' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=12' \
+    'sophia_live_indicator_input schema=1 status=activated output=1 action=11' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=11' \
     'sophia_live_wm schema=1 status=physical_action_committed action=38' \
     'sophia_live_wm schema=1 status=physical_action_committed action=38' \
     'sophia_live_wm schema=1 status=physical_action_committed action=39' \
@@ -101,6 +105,8 @@ for missing in \
     'sophia_live_metadata_broker schema=1 status=stopped' \
     'sophia_live_wm schema=1 status=physical_action_committed action=5' \
     'sophia_live_wm schema=1 status=physical_action_committed action=6' \
+    'sophia_live_indicator_input schema=1 status=activated output=1 action=12' \
+    'sophia_live_indicator_input schema=1 status=activated output=1 action=11' \
     'nonzero_rgb_pixels: 2246' \
     'sophia_hagia_policy_identity schema=1 status=bound'; do
     rejected="$temp_dir/rejected.log"

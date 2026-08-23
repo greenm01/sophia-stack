@@ -104,6 +104,9 @@
                     native_scanout.is_some(),
                     defer_cpu_frame,
                 );
+                let indicator_publication = wm_session
+                    .as_ref()
+                    .and_then(LiveWmSession::indicator_publication);
                 let (_tick, report, committed_surfaces, composed, compose_elapsed) =
                     if !production_batch.has_dma_buf_present_submissions()
                         && !runtime.released_surface_content_requires_gpu()
@@ -124,6 +127,7 @@
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,
+                                indicator_publication: indicator_publication.clone(),
                                 staged_cpu_buffer_handles: &staged_cpu_buffer_handles,
                             })?;
                         (
@@ -150,6 +154,7 @@
                                 wm_update,
                                 presentation_layout: &presentation_layout,
                                 chrome_surfaces: &chrome_surfaces,
+                                indicator_publication,
                                 staged_cpu_buffer_handles: &staged_cpu_buffer_handles,
                             })?;
                         (

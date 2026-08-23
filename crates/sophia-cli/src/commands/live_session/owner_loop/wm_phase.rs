@@ -725,6 +725,7 @@
                     &layout.client_routes,
                     route_lease_release_sender,
                 )?;
+                revoke_chrome_captures!("output_policy");
                 if let Some(interaction) = floating_pointer_gesture.cancel() {
                     if matches!(
                         wm.enqueue_pointer_interaction(interaction, &layout)?,

@@ -913,17 +913,18 @@ Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
-Future shell interaction and its application coexistence prerequisite follow
-`docs/target-resolved-input.md`. Before that coexistence ships, application and
-shell selection both use the applicable output's last-presented interaction
-snapshot. Engine retains per-output presentation epochs; an output or session
-lifecycle change invalidates dependent input state.
+Tier-0 indicator interaction implements the first target-resolved chrome slice
+from `docs/target-resolved-input.md`. Application and indicator selection both
+use the applicable output's last-presented interaction snapshot. Engine retains
+per-output presentation epochs; an output or session lifecycle change
+invalidates dependent input state. Rich Tier-1 shell interaction remains
+deferred.
 
 Per seat, a security/session transition first revokes old control epochs; a
 reserved Engine shortcut follows; then one existing application route lease or
-shell capture retains ownership; only an unowned event performs a fresh
-presented-state hit test. Shell capture and application leases are mutually
-exclusive. Pointer boundary crossing alone transfers neither.
+chrome capture retains ownership; only an unowned event performs a fresh
+presented-state hit test. Tier-0 chrome capture and application leases are
+mutually exclusive. Pointer boundary crossing alone transfers neither.
 
 The X frontend continues to own X11 event masks, XKB/XI state, and client
 delivery, but reduces an admitted grab to an Engine-visible lease. Confined

@@ -33,6 +33,7 @@ pub enum LiveHeadCompositionLoweringError {
     MissingSource(BufferSource),
     SourceKindMismatch(BufferSource),
     DmaBufCloneFailed(u64),
+    IndicatorRasterFailed,
 }
 
 impl core::fmt::Display for LiveHeadCompositionLoweringError {
@@ -79,6 +80,15 @@ pub fn lower_cpu_head_composition_plan(
     plan: &HeadCompositionPlan,
     sources: &[LiveCpuPresentationLayer],
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    let mut indicator_cache = crate::IndicatorStripRasterCache::default();
+    lower_cpu_head_composition_plan_with_indicator_cache(plan, sources, &mut indicator_cache)
+}
+
+pub fn lower_cpu_head_composition_plan_with_indicator_cache(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveCpuPresentationLayer],
+    indicator_cache: &mut crate::IndicatorStripRasterCache,
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let sources = sources
         .iter()
         .map(|source| LiveOwnedHeadCompositionSource {
@@ -89,7 +99,7 @@ pub fn lower_cpu_head_composition_plan(
             kind: LiveOwnedHeadCompositionSourceKind::Cpu(source.buffer.clone().into()),
         })
         .collect::<Vec<_>>();
-    lower_head_composition_plan(plan, &sources)
+    lower_head_composition_plan_with_indicator_cache(plan, &sources, indicator_cache)
 }
 
 /// Lowers a complete immutable Engine plan using authority-owned source
@@ -98,6 +108,15 @@ pub fn lower_cpu_head_composition_plan(
 pub fn lower_head_composition_plan(
     plan: &HeadCompositionPlan,
     sources: &[LiveOwnedHeadCompositionSource],
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    let mut indicator_cache = crate::IndicatorStripRasterCache::default();
+    lower_head_composition_plan_with_indicator_cache(plan, sources, &mut indicator_cache)
+}
+
+pub fn lower_head_composition_plan_with_indicator_cache(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveOwnedHeadCompositionSource],
+    indicator_cache: &mut crate::IndicatorStripRasterCache,
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut layers = Vec::with_capacity(plan.compositor.len().saturating_mul(4));
     let mut emitted_surfaces = std::collections::BTreeSet::new();
@@ -152,6 +171,21 @@ pub fn lower_head_composition_plan(
                         });
                     }
                 }
+            }
+            HeadCompositorCommand::IndicatorStrip(strip) => {
+                let buffer = indicator_cache
+                    .raster_for(strip)
+                    .map_err(|_| LiveHeadCompositionLoweringError::IndicatorRasterFailed)?;
+                layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                    buffer,
+                    placement: LiveCompositionPlacement {
+                        target: strip.strip.geometry,
+                        clip: Some(strip.strip.geometry),
+                        transform: Transform::IDENTITY,
+                        alpha: 1.0,
+                        sampling: HeadSamplingClass::Exact,
+                    },
+                });
             }
         }
     }

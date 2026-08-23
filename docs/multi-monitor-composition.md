@@ -846,6 +846,12 @@ parallel multi-monitor subsystem.
   backend queues those frames by opaque head and rejects incomplete coverage,
   duplicate heads, checksum disagreement, or head-local damage with the wrong
   native extent.
+- Tier-0 indicator chrome is a retained semantic display-list command rather
+  than a flattened surface. Each logical output carries its own committed
+  descriptor into every head plan, and the renderer rasterizes the strip at
+  that head's native extent from one bundled font. Damage, raster caching, and
+  last-presented hit targets remain output- and head-resolved. The signed
+  physical Hagia promotion run is still pending.
 - `OutputPresentationCohort` and `OutputTopologyTransaction` are implemented as
   Engine reducers. They enforce prepare-before-submit, primary-owned logical
   presentation, last-head cleanup,
@@ -1074,8 +1080,10 @@ as mirror archive `0008` and mixed archive `0002`. Output 1 completed with 72
 nonzero exports and output 2 with seven. The move-to-output submission occurred
 between actions 5 and 6, exact text reached a kernel page flip in 15 ms, and
 native health and teardown were clean. This completes the display-evidence
-dependency for the protected metadata-broker row; the critical path now moves
-to Hagia's Tier-0 indicator display list and target-resolved input.
+dependency for the protected metadata-broker row. Tier-0 indicator display,
+work-area reservation, and target-resolved capture are now implemented and
+covered deterministically; the critical path is their signed
+`tools/hagia-proof` promotion run.
 
 ### Target
 

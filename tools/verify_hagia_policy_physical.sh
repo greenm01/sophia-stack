@@ -122,6 +122,14 @@ for action in 37 66 39 40 5 6 33 34; do
     require_after "physical action $action" \
         "^sophia_live_wm schema=1 status=physical_action_committed action=$action$"
 done
+require_after "indicator activation for view 2" \
+    '^sophia_live_indicator_input schema=1 status=activated output=[1-9][0-9]* action=12$'
+require_after "indicator return activation for view 1" \
+    '^sophia_live_indicator_input schema=1 status=activated output=[1-9][0-9]* action=11$'
+require_after "indicator view-2 policy commit" \
+    '^sophia_live_wm schema=1 status=physical_action_committed action=12$'
+require_after "indicator view-1 policy commit" \
+    '^sophia_live_wm schema=1 status=physical_action_committed action=11$'
 
 move_to_output_line="$(awk -v limit="$restart_line" \
     'NR > limit && /^sophia_live_wm schema=1 status=physical_action_committed action=5$/ { print NR; exit }' \

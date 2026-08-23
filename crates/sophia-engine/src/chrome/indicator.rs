@@ -1,6 +1,7 @@
 use sophia_protocol::{OutputId, Point, Rect, WmActionId};
 
 use crate::PolicyIndicatorPublication;
+use crate::{CompositorDisplayCommand, CompositorIndicatorStrip, CompositorNodeId};
 
 pub const INDICATOR_STRIP_HEIGHT: i32 = 14;
 pub const INDICATOR_SLOT_MAX_WIDTH: i32 = 96;
@@ -131,6 +132,42 @@ pub fn layout_indicator_strip(
     })
 }
 
+/// Builds the private Tier-0 display command for one output.
+///
+/// A disconnected publication retains the opaque reserved strip but has no
+/// labels or targets. This keeps policy loss fail closed without making work
+/// geometry depend on the replacement policy's first response.
+pub fn indicator_strip_display_command(
+    publication: &PolicyIndicatorPublication,
+    output: OutputId,
+    bounds: Rect,
+) -> Option<CompositorDisplayCommand> {
+    if bounds.width <= 0 || bounds.height < INDICATOR_STRIP_HEIGHT {
+        return None;
+    }
+    let strip = layout_indicator_strip(publication, output, bounds).unwrap_or_else(|| {
+        IndicatorChromeStrip {
+            output,
+            geometry: Rect {
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: INDICATOR_STRIP_HEIGHT,
+            },
+            labels: Vec::new(),
+            status: None,
+            hit_targets: Vec::new(),
+        }
+    });
+    Some(CompositorDisplayCommand::IndicatorStrip(
+        CompositorIndicatorStrip {
+            node: CompositorNodeId::IndicatorStrip { output },
+            generation: publication.generation,
+            strip,
+        },
+    ))
+}
+
 pub fn activate_indicator_at(
     publication: &PolicyIndicatorPublication,
     targets: &[IndicatorChromeHitTarget],
@@ -156,6 +193,78 @@ pub fn activate_indicator_at(
                 action,
             }
         })
+}
+
+/// Projects retained hit targets between two exact strip extents.
+///
+/// The backend supplies a head-native source only after that frame presents;
+/// the destination is the corresponding logical strip used for physical input.
+pub fn project_indicator_chrome_targets(
+    targets: &[IndicatorChromeHitTarget],
+    source: Rect,
+    destination: Rect,
+) -> Vec<IndicatorChromeHitTarget> {
+    if source.is_empty() || destination.is_empty() {
+        return Vec::new();
+    }
+    targets
+        .iter()
+        .cloned()
+        .map(|mut target| {
+            target.geometry = project_between_rects(target.geometry, source, destination);
+            target
+        })
+        .collect()
+}
+
+fn project_between_rects(rect: Rect, source: Rect, destination: Rect) -> Rect {
+    let edge = |value: i32,
+                source_origin: i32,
+                source_extent: i32,
+                target_origin: i32,
+                target_extent: i32| {
+        i64::from(target_origin)
+            .saturating_add(
+                i64::from(value.saturating_sub(source_origin))
+                    .saturating_mul(i64::from(target_extent))
+                    / i64::from(source_extent.max(1)),
+            )
+            .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    };
+    let left = edge(
+        rect.x,
+        source.x,
+        source.width,
+        destination.x,
+        destination.width,
+    );
+    let right = edge(
+        rect.x.saturating_add(rect.width),
+        source.x,
+        source.width,
+        destination.x,
+        destination.width,
+    );
+    let top = edge(
+        rect.y,
+        source.y,
+        source.height,
+        destination.y,
+        destination.height,
+    );
+    let bottom = edge(
+        rect.y.saturating_add(rect.height),
+        source.y,
+        source.height,
+        destination.y,
+        destination.height,
+    );
+    Rect {
+        x: left.min(right),
+        y: top.min(bottom),
+        width: right.saturating_sub(left).abs(),
+        height: bottom.saturating_sub(top).abs(),
+    }
 }
 
 fn contains(rect: Rect, point: Point) -> bool {

@@ -308,6 +308,9 @@ fn run_session_loop(
         .and_then(|wm| wm.surface_chrome_style())
         .unwrap_or(config.surface_chrome_style);
     let mut runtime = if initialize_empty_runtime {
+        let indicator_strip_enabled = wm_session
+            .as_ref()
+            .is_some_and(LiveWmSession::tier0_indicator_strip_enabled);
         let mut initialized =
             LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
         .with_m4_proof_controls(
@@ -315,7 +318,13 @@ fn run_session_loop(
             config.m4_reject_first_present,
             config.m4_diagnose_first_mixed_export,
         )
-        .with_surface_chrome_style(initial_border_style);
+        .with_surface_chrome_style(initial_border_style)
+        .with_indicator_strip_enabled(indicator_strip_enabled);
+        initialized.set_indicator_publication(
+            wm_session
+                .as_ref()
+                .and_then(LiveWmSession::indicator_publication),
+        );
         if let Some(native) = native_scanout.as_mut() {
             let _ = initialized.run_cpu_repaint(
                 &mut scene,
@@ -388,6 +397,7 @@ fn run_session_loop(
     let mut keyboard_focus_handoff = KeyboardFocusHandoffState::default();
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     let mut application_route_leases = ApplicationRouteLeaseState::default();
+    let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
             wm_output_bounds(&outputs)
@@ -507,12 +517,25 @@ fn run_session_loop(
         }};
     }
 
+    macro_rules! revoke_chrome_captures {
+        ($reason:literal) => {{
+            let revoked = chrome_captures.cancel_all().len();
+            if revoked != 0 {
+                println!(
+                    "sophia_live_indicator_input schema=1 status=captures_cancelled reason={} count={revoked}",
+                    $reason,
+                );
+            }
+        }};
+    }
+
     macro_rules! synchronize_wm_pointer_epoch {
         () => {{
             let restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
             if restart_count != observed_wm_restart_count {
                 observed_wm_restart_count = restart_count;
                 revoke_floating_pointer_interaction!("policy_restart");
+                revoke_chrome_captures!("policy_restart");
             }
         }};
     }

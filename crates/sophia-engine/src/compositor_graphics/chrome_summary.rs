@@ -25,7 +25,9 @@ pub fn compositor_chrome_summary(
         clearance: 0,
     };
     for border in display_list.borders() {
-        let CompositorNodeId::SurfaceChrome { surface, role } = border.node;
+        let CompositorNodeId::SurfaceChrome { surface, role } = border.node else {
+            continue;
+        };
         match role {
             SurfaceChromeRole::Frame => {
                 summary.frames = summary.frames.saturating_add(1);

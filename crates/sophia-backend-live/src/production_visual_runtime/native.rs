@@ -375,6 +375,8 @@ impl LiveProductionVisualRuntime {
                 output,
                 epoch: invalidation_epoch,
                 layers: Vec::new(),
+                chrome_targets: Vec::new(),
+                chrome_occlusion: None,
             })
             .collect();
         Ok(LiveProductionNativeSuspendReport {
@@ -545,6 +547,8 @@ impl LiveProductionVisualRuntime {
                 output: output.id,
                 epoch: input_epoch,
                 layers: Vec::new(),
+                chrome_targets: Vec::new(),
+                chrome_occlusion: None,
             })
             .collect();
         self.outputs = next;

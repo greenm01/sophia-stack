@@ -1,8 +1,8 @@
 use crate::prelude::*;
 use crate::{
-    CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
-    CompositorRgb8, CompositorSolidRect, HeadRenderTarget, HeadlessOutput,
-    OutputFrameDamageSnapshot, OutputFrameSurfaceState, RenderHeadId,
+    CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorIndicatorStrip,
+    CompositorNodeId, CompositorRgb8, CompositorSolidRect, HeadRenderTarget, HeadlessOutput,
+    IndicatorChromeStrip, OutputFrameDamageSnapshot, OutputFrameSurfaceState, RenderHeadId,
 };
 
 pub const MAX_HEAD_COMPOSITION_LAYERS: usize = 1_024;
@@ -128,11 +128,19 @@ pub struct HeadCompositorBorder {
     pub clip: Rect,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeadCompositorIndicatorStrip {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub strip: IndicatorChromeStrip,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HeadCompositorCommand {
     Background(CompositorSolidRect),
     Surface { surface: SurfaceId },
     Border(HeadCompositorBorder),
+    IndicatorStrip(HeadCompositorIndicatorStrip),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -271,7 +279,9 @@ pub fn output_scene_snapshot_from_committed_in_view(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::Border(_) => None,
+            CompositorDisplayCommand::Border(_) | CompositorDisplayCommand::IndicatorStrip(_) => {
+                None
+            }
         })
         .collect::<BTreeSet<_>>();
     let mut logical_damage = Region::empty();
@@ -307,6 +317,9 @@ pub fn output_scene_snapshot_from_committed_in_view(
         CompositorDisplayCommand::Surface { surface } => visible_surfaces.contains(surface),
         CompositorDisplayCommand::Border(border) => {
             !intersect_rect(border.outer, logical_viewport).is_empty()
+        }
+        CompositorDisplayCommand::IndicatorStrip(strip) => {
+            !intersect_rect(strip.strip.geometry, logical_viewport).is_empty()
         }
     });
     let cursor =
@@ -439,6 +452,14 @@ pub fn build_head_composition_plan(
             CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
                 project_border(*border, snapshot.logical_viewport, transform, painted),
             ),
+            CompositorDisplayCommand::IndicatorStrip(strip) => {
+                HeadCompositorCommand::IndicatorStrip(project_indicator_strip(
+                    strip,
+                    snapshot.logical_viewport,
+                    transform,
+                    painted,
+                ))
+            }
         });
     }
 
@@ -523,6 +544,17 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                         inner: border.inner,
                         color: border.color,
                     }));
+            }
+            HeadCompositorCommand::IndicatorStrip(strip) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::IndicatorStrip(
+                        CompositorIndicatorStrip {
+                            node: strip.node,
+                            generation: strip.generation,
+                            strip: strip.strip.clone(),
+                        },
+                    ));
             }
         }
     }
@@ -629,6 +661,19 @@ fn logical_scene_checksum(
                     border.inner.y,
                     border.inner.width,
                     border.inner.height,
+                ] {
+                    mix(value as u32 as u64);
+                }
+            }
+            CompositorDisplayCommand::IndicatorStrip(strip) => {
+                mix(4);
+                mix(strip.generation);
+                mix(strip.strip.output.raw());
+                for value in [
+                    strip.strip.geometry.x,
+                    strip.strip.geometry.y,
+                    strip.strip.geometry.width,
+                    strip.strip.geometry.height,
                 ] {
                     mix(value as u32 as u64);
                 }
@@ -867,6 +912,44 @@ fn project_border(
         inner: transform.project_root_rect(viewport, border.inner),
         color: border.color,
         clip,
+    }
+}
+
+fn project_indicator_strip(
+    strip: &CompositorIndicatorStrip,
+    viewport: Rect,
+    transform: HeadLogicalTransform,
+    clip: Rect,
+) -> HeadCompositorIndicatorStrip {
+    let project = |geometry| intersect_rect(transform.project_root_rect(viewport, geometry), clip);
+    HeadCompositorIndicatorStrip {
+        node: strip.node,
+        generation: strip.generation,
+        strip: IndicatorChromeStrip {
+            output: strip.strip.output,
+            geometry: project(strip.strip.geometry),
+            labels: strip
+                .strip
+                .labels
+                .iter()
+                .map(|(geometry, label, state)| (project(*geometry), label.clone(), *state))
+                .collect(),
+            status: strip
+                .strip
+                .status
+                .as_ref()
+                .map(|(geometry, label, state)| (project(*geometry), label.clone(), *state)),
+            hit_targets: strip
+                .strip
+                .hit_targets
+                .iter()
+                .cloned()
+                .map(|mut target| {
+                    target.geometry = project(target.geometry);
+                    target
+                })
+                .collect(),
+        },
     }
 }
 

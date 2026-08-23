@@ -155,6 +155,7 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
                 wm_update: None,
                 presentation_layout: &layout,
                 chrome_surfaces: &[],
+                indicator_publication: None,
                 staged_cpu_buffer_handles: &[],
             })
             .unwrap();

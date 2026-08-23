@@ -48,6 +48,7 @@ pub struct LiveProductionCpuScene {
     damage_scoped_metric_frames: usize,
     retained_primary_frames: Vec<RetainedPrimaryCpuFrame>,
     secondary_output_frames: Vec<(usize, HeadlessOutput, LiveProductionComposedFrame)>,
+    indicator_strip_cache: crate::IndicatorStripRasterCache,
 }
 
 impl LiveProductionCpuScene {
@@ -64,6 +65,7 @@ impl LiveProductionCpuScene {
             damage_scoped_metric_frames: 0,
             retained_primary_frames: Vec::new(),
             secondary_output_frames: Vec::new(),
+            indicator_strip_cache: Default::default(),
         }
     }
 
@@ -254,6 +256,26 @@ impl LiveProductionCpuScene {
         )?;
         let (reusable_bytes, repaint_damage) =
             self.take_primary_repaint_baseline(&current_output_damage_snapshot);
+        let indicator_buffers = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
+                CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::Border(_) => {
+                    None
+                }
+            })
+            .map(|strip| {
+                self.indicator_strip_cache.raster_for(
+                    &sophia_engine::HeadCompositorIndicatorStrip {
+                        node: strip.node,
+                        generation: strip.generation,
+                        strip: strip.strip.clone(),
+                    },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut indicator_index = 0usize;
         let mut elements = Vec::with_capacity(display_list.commands.len().saturating_mul(4));
         for command in &display_list.commands {
             match command {
@@ -293,6 +315,25 @@ impl LiveProductionCpuScene {
                             });
                         }
                     }
+                }
+                CompositorDisplayCommand::IndicatorStrip(strip) => {
+                    let buffer = indicator_buffers
+                        .get(indicator_index)
+                        .ok_or("indicator strip raster set is incomplete")?;
+                    indicator_index = indicator_index.saturating_add(1);
+                    elements.push(LiveCpuCompositionElementRef::Layer(
+                        LiveCpuCompositionLayerRef {
+                            geometry: strip.strip.geometry,
+                            buffer: LiveCpuBufferSourceRef {
+                                handle: buffer.handle,
+                                size: buffer.size,
+                                stride: buffer.stride,
+                                format: buffer.format,
+                                generation: buffer.generation,
+                                bytes: buffer.bytes.as_slice(),
+                            },
+                        },
+                    ));
                 }
             }
         }

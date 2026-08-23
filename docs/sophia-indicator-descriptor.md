@@ -1,11 +1,12 @@
 # Sophia Indicator Descriptor
 
 **Role:** target contract for policy-authored desktop status.
-**Status:** wire contract and canonical Engine reducer path landed in
-`sophia_wm_v1` revision 1; the production chrome renderer is unwritten. The
-records, capability bit, and count
-fields exist in `protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs
-and golden vectors. Nothing assembles or renders indicators yet.
+**Status:** wire contract, canonical Engine reducer, Tier-0 production chrome,
+and presented-input activation are implemented in `sophia_wm_v1` revision 3.
+The records, capability bit, and count fields exist in
+`protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs and golden
+vectors. Deterministic tests and the one-shot Hagia verifier cover the path;
+the signed physical promotion run remains pending.
 `docs/architecture.md` and `docs/sophia-policy-ipc.md` remain authoritative
 where this document appears to disagree.
 
@@ -159,6 +160,12 @@ it is current. Being behind is recoverable. Being silently wrong is not. Tier 0
 avoids the question entirely, because Engine chrome renders the committed
 descriptor with no second copy to go stale.
 
+The private retained command is output-scoped and semantic. It carries the
+committed labels, state bits, status, and hit targets through logical damage and
+per-head planning. The renderer rasterizes it at each head's native extent; it
+does not scale a flattened primary-output bar. A changed descriptor damages the
+old and new strip, while an identical generation reuses the retained raster.
+
 ## Redaction
 
 The descriptor is policy declassifying its own private model, which is the
@@ -206,10 +213,33 @@ answers coexist:
 Tier 0 ships first. It also removes the unresolved 64 KiB texture question from
 the critical path, since that constraint binds Tier 1 alone.
 
-The existing `reserve_indicator_strip` and layout reducer are pure helpers;
-nothing in the production session currently assembles or renders this tier.
-The reservation rule above is a required production wiring invariant, not a
-claim that the strip is already active.
+The production public-policy session reserves a fixed 14 logical pixels at the
+top of every output before its first WM snapshot. Surface reservations reduce
+the remaining work area, and descriptor loss clears the labels and targets
+without returning that space to managed windows. Legacy API-v7 sessions do not
+receive this reservation.
+
+The renderer uses the included JetBrains Mono NL Regular 2.304 font at 10
+logical pixels with no system-font fallback. Its deterministic XRGB palette is
+dark background, pale occupied text, gray idle text, blue active/visible/focus
+markers, and a pale-red urgent marker. A renderer-private least-recently-used
+cache retains at most 128 rasters and 16 MiB; in-flight frames own their pixel
+allocation after eviction.
+
+Input comes from the applicable output's last-presented strip, not the latest
+committed proposal. The opaque strip consumes otherwise unowned pointer input.
+A primary press on an actionable slot starts one bounded capture for that seat,
+device, output, presentation epoch, and exact descriptor target. Only the
+matching release inside that same target activates the opaque action. Target,
+presentation, topology, seat, security, or policy-epoch changes cancel the
+capture. An existing application route lease or focus handoff remains owner;
+fresh chrome selection cannot steal it.
+
+`tools/hagia-proof` exercises the complete route. After Hagia restarts, its
+guide asks the operator to confirm the strip remains visible above fullscreen,
+click view 2, and click view 1 to return. The verifier requires exact
+indicator-origin activation records and the corresponding committed policy
+actions. This is the physical promotion gate, not a substitute for it.
 
 ## Non-Goals
 

@@ -19,6 +19,16 @@ impl LiveWmSession {
         Some(self.visual_chrome)
     }
 
+    fn tier0_indicator_strip_enabled(&self) -> bool {
+        self.public.is_some()
+    }
+
+    fn indicator_publication(&self) -> Option<sophia_engine::PolicyIndicatorPublication> {
+        self.public
+            .as_ref()
+            .map(|public| public.reducer.indicator_publication())
+    }
+
     fn candidate_chrome_style(&self) -> sophia_engine::SurfaceChromeStyle {
         if self.wm_chrome_supported {
             PersistentXtermSessionConfig::wm_surface_chrome_style(self.chrome)

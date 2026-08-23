@@ -86,6 +86,12 @@ wait_for_action_count 37 2
 show_step 'Press Super+N once to select the next layout.'
 wait_for_action_count 66 2
 
+show_step 'IMPORTANT — READ BOTH LINES BEFORE CLICKING
+1. Confirm the numbered indicator strip remains visible above this fullscreen window.
+2. Click 2 in the strip, then click 1 to return here.'
+wait_for_action_count 12 1
+wait_for_action_count 11 1
+
 show_step 'Press Super+M once.'
 wait_for_action_count 38 1
 

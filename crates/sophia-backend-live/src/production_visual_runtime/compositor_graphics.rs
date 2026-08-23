@@ -2,7 +2,6 @@ use super::*;
 
 pub(super) struct LiveProductionRetainedCompositionSourceSet {
     pub committed: Vec<CommittedSurfaceState>,
-    pub display_list: CompositorDisplayList,
     pub presentation_order: Vec<SurfaceId>,
     pub scene_generation: u64,
     pub sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
@@ -19,7 +18,6 @@ impl LiveProductionVisualRuntime {
         Box<dyn std::error::Error>,
     > {
         let committed = self.production.committed_surfaces();
-        let display_list = self.display_list(committed, &self.presentation_order)?;
         let sources = cpu_layers
             .iter()
             .map(
@@ -36,14 +34,20 @@ impl LiveProductionVisualRuntime {
             .collect::<Vec<_>>();
         self.outputs
             .logical_viewports()
-            .map(|(output, _)| {
+            .map(|(output, logical_viewport)| {
+                let display_list = self.display_list_for_output(
+                    output,
+                    logical_viewport,
+                    committed,
+                    &self.presentation_order,
+                )?;
                 Ok((
                     output,
                     self.compose_native_head_frames_from_sources(
                         native_scanout,
                         output,
                         committed,
-                        display_list.clone(),
+                        display_list,
                         scene_generation.max(1),
                         &sources,
                     )?,
@@ -90,7 +94,11 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan(plan, sources)?,
+                    frame: sophia_renderer_live::lower_head_composition_plan_with_indicator_cache(
+                        plan,
+                        sources,
+                        &mut self.indicator_strip_cache.borrow_mut(),
+                    )?,
                 })
             })
             .collect()
@@ -176,7 +184,6 @@ impl LiveProductionVisualRuntime {
             .unwrap_or(1);
         Ok(LiveProductionRetainedCompositionSourceSet {
             committed,
-            display_list,
             presentation_order: retained_order,
             scene_generation,
             sources,
@@ -193,14 +200,20 @@ impl LiveProductionVisualRuntime {
     > {
         self.outputs
             .logical_viewports()
-            .map(|(output, _)| {
+            .map(|(output, logical_viewport)| {
+                let display_list = self.display_list_for_output(
+                    output,
+                    logical_viewport,
+                    &source_set.committed,
+                    &source_set.presentation_order,
+                )?;
                 Ok((
                     output,
                     self.compose_native_head_frames_from_sources(
                         native_scanout,
                         output,
                         &source_set.committed,
-                        source_set.display_list.clone(),
+                        display_list,
                         source_set.scene_generation,
                         &source_set.sources,
                     )?,
@@ -244,29 +257,12 @@ impl LiveProductionVisualRuntime {
         }
         let mut frames = Vec::with_capacity(targets.len());
         for viewport in &resolved.logical_viewports {
-            let mut display_list = surface_chrome_display_list_for_surfaces(
+            let display_list = self.display_list_for_output(
                 viewport.output,
-                &source_set.presentation_order,
-                &self.chrome_surfaces,
+                viewport.logical,
                 &source_set.committed,
-                self.focused_surface,
-                self.surface_chrome_style,
+                &source_set.presentation_order,
             )?;
-            if let Some(outline) = self.floating_outline {
-                if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
-                    return Err("topology display-list capacity exceeded".into());
-                }
-                let border = compositor_floating_outline(
-                    outline.surface,
-                    outline.geometry,
-                    self.surface_chrome_style.focus_ring.width.max(2),
-                    self.surface_chrome_style.focus_ring.color,
-                )
-                .ok_or("topology floating outline is invalid")?;
-                display_list
-                    .commands
-                    .push(CompositorDisplayCommand::Border(border));
-            }
             let snapshot = sophia_engine::output_scene_snapshot_from_committed_in_view(
                 viewport.output,
                 scene_generation,
@@ -288,9 +284,10 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan(
+                    frame: sophia_renderer_live::lower_head_composition_plan_with_indicator_cache(
                         plan,
                         &source_set.sources,
+                        &mut self.indicator_strip_cache.borrow_mut(),
                     )?,
                 });
             }
@@ -321,6 +318,20 @@ impl LiveProductionVisualRuntime {
             .outputs
             .primary_output()
             .ok_or(CompositorDisplayListError::InvalidOutput)?;
+        let bounds = self
+            .outputs
+            .logical_viewport(output)
+            .ok_or(CompositorDisplayListError::InvalidOutput)?;
+        self.display_list_for_output(output, bounds, committed_surfaces, presentation_order)
+    }
+
+    pub(super) fn display_list_for_output(
+        &self,
+        output: OutputId,
+        bounds: Rect,
+        committed_surfaces: &[CommittedSurfaceState],
+        presentation_order: &[SurfaceId],
+    ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
         let mut display_list = surface_chrome_display_list_for_surfaces(
             output,
             presentation_order,
@@ -343,6 +354,16 @@ impl LiveProductionVisualRuntime {
             display_list
                 .commands
                 .push(CompositorDisplayCommand::Border(border));
+        }
+        if self.indicator_strip_enabled
+            && let Some(publication) = self.indicator_publication.as_ref()
+            && let Some(command) =
+                sophia_engine::indicator_strip_display_command(publication, output, bounds)
+        {
+            if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
+                return Err(CompositorDisplayListError::CapacityExceeded);
+            }
+            display_list.commands.push(command);
         }
         Ok(display_list)
     }
