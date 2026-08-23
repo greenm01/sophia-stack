@@ -85,7 +85,7 @@ promotion gate.
    output-local Present submission ownership. Signed successor
    `eeef531a33564391765c1ec9fecddf6d06dcd4cc` independently re-proved the
    complete display slice as mirror archive `0008` and mixed archive `0002`.
-3. **Current.** Host the metadata-reduction chain
+3. **Complete.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
    production Hagia host, executable isolation smoke, and the role socket's
@@ -111,9 +111,16 @@ promotion gate.
    and clean teardown. Its final native aggregate correctly refused DP-2's
    `nonzero_exports=0`: focus-output actions changed the active output but never
    moved Kitty there. The guide now adds the public move-to-output actions and
-   waits for a nonzero DP-2 submission before moving Kitty back.
-4. Build the minimum display-list, target-resolved-input, indicator, and
-   reservation path needed to close Hagia's retained-behavior ledger. The
+   waits for a nonzero DP-2 submission before moving Kitty back. Signed source
+   `9ca384a9ffb2e392b584092e64054c2d1f9fc833` and signed Hagia source
+   `074e374c537b316b6bdf196ac8f3727004ba6549` produced independently verified
+   Hagia archive `0004`. It retained the protected broker, redacted descriptor,
+   causal epoch-two restart, all twelve requested action commits, nonzero
+   presentation on both outputs, exact 34-event text, clean health, and clean
+   teardown. Its Sophia digest matches display archives `0008` and `0002`.
+4. **Current.** Build the minimum display-list, target-resolved-input,
+   indicator, and reservation path needed to close Hagia's retained-behavior
+   ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
    open.
 5. Run the complete reconnect/restart corpus, freeze experimental interface
@@ -130,27 +137,9 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Sign the proof-record matcher correction, then retry only the Hagia/broker gate from tty4.**
-   Signed source `eeef531a33564391765c1ec9fecddf6d06dcd4cc` produced and
-   independently re-verified mirror archive `0008` and mixed archive `0002`
-   with Sophia binary digest
-   `9b60c57d7ffa2feb1a1ea00b8e24e24a9ecc90fa2d545ffb46737432f434c854`.
-   The corrected-chord run then completed its interaction and broker claims but
-   exposed an impossible final condition in the procedure: focus-only actions
-   cannot produce nonzero content on an empty secondary output. The guide now
-   moves Kitty with `Super+Shift+Right`, waits for a real nonzero DP-2 KMS
-   submission, moves it back with `Super+Shift+Left`, and only then performs the
-   focus actions. The verifier requires both move commits and bounds the DP-2
-   submission between them. Signed source
-   `c9248e73bd8085c1296fbe110c8c47087f5f9c17` then committed action 5 and
-   submitted 11,499 nonzero pixels on DP-2, but the guide remained on that step:
-   its matcher expected an equals sign where the producer's Rust debug record
-   uses a colon. The guide, verifier, and regression fixture now agree with the
-   real record. This changes only the operator fixture and checks, so the
-   display archives remain candidate evidence. After a signed commit,
-   `tools/hagia-proof` must reproduce the binary digest above; a passing
-   two-output archive closes row 3.
-2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
+1. **Start row 4 with Tier-0 indicators.** Hagia archive `0004` closes the
+   protected broker row on the same Sophia binary digest as mirror archive
+   `0008` and mixed archive `0002`. No further physical rerun blocks this step.
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area
    reservation, and retain deterministic display-list and interaction evidence

@@ -540,6 +540,16 @@ transitions flushed. Shutdown retained zero pending WM, action, or input work,
 zero unexpected protocol errors, no live native ownership, and clean frontend,
 namespace, Xauthority, and application-group teardown.
 
+Current promotion archive `0004` passed and was independently verified on
+2026-08-23. It binds signed Sophia source
+`9ca384a9ffb2e392b584092e64054c2d1f9fc833`, signed Hagia source
+`074e374c537b316b6bdf196ac8f3727004ba6549`, and Sophia binary digest
+`9b60c57d7ffa2feb1a1ea00b8e24e24a9ecc90fa2d545ffb46737432f434c854`.
+The causal epoch-two restart, all twelve requested action commits, exact
+34-event text, protected broker lifecycle, and cleanup passed. Both native
+heads presented nonzero content; the final text reached a kernel page flip in
+15 ms. This promotes the protected metadata-broker critical-path row.
+
 The installed guide has a ten-minute physical-sequence safety deadline inside
 an eleven-minute global runtime ceiling, not a soak or minimum-duration
 criterion. Successful completion still terminates immediately; the ceilings

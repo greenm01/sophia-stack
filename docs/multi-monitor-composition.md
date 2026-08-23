@@ -1068,6 +1068,15 @@ uses `nonzero_rgb_pixels: `. The guide, final verifier, and regression fixture
 now match the producer form. The executable slices and exit criteria stay
 ordered in `todo.md`.
 
+Signed successor `9ca384a9ffb2e392b584092e64054c2d1f9fc833` then produced and
+independently verified Hagia archive `0004` with the same Sophia binary digest
+as mirror archive `0008` and mixed archive `0002`. Output 1 completed with 72
+nonzero exports and output 2 with seven. The move-to-output submission occurred
+between actions 5 and 6, exact text reached a kernel page flip in 15 ms, and
+native health and teardown were clean. This completes the display-evidence
+dependency for the protected metadata-broker row; the critical path now moves
+to Hagia's Tier-0 indicator display list and target-resolved input.
+
 ### Target
 
 - Split logical scene snapshots from physical render targets.
