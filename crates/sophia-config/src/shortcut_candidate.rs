@@ -44,6 +44,7 @@ pub enum DesktopSessionShortcut {
     Logout,
     LaunchTerminal,
     LaunchBrowser,
+    WindowSwitcher,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,6 +271,7 @@ fn parse_target(
                 "logout" => DesktopSessionShortcut::Logout,
                 "spawn-terminal" => DesktopSessionShortcut::LaunchTerminal,
                 "spawn-browser" => DesktopSessionShortcut::LaunchBrowser,
+                "window-switcher" => DesktopSessionShortcut::WindowSwitcher,
                 _ => return Err(schema_error("unknown session shortcut capability")),
             };
             Ok(DesktopShortcutTarget::Session(shortcut))

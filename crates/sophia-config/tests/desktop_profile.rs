@@ -8,11 +8,12 @@ use sophia_config::{
     DesktopMirrorFit, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
     DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
-    DesktopShortcutModifiers, DesktopShortcutTarget, discover_desktop_profile_source,
-    load_desktop_authority_fragment, load_desktop_profile, load_prepared_desktop_profile,
-    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
-    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
-    prepare_desktop_shortcut_candidate, stage_desktop_profile, validate_desktop_profile_fragments,
+    DesktopShortcutModifiers, DesktopShortcutTarget, desktop_profile_shell_enabled,
+    discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
+    load_prepared_desktop_profile, prepare_desktop_input_candidate,
+    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
+    validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -42,6 +43,7 @@ fn compiled_profile_partitions_every_authority_deterministically() {
     assert_eq!(first.digest, second.digest);
     assert_eq!(first.sources, vec![PathBuf::from("<compiled>")]);
     assert_eq!(first.candidates.len(), DesktopAuthority::ALL.len());
+    assert!(!desktop_profile_shell_enabled(&first));
     for authority in DesktopAuthority::ALL {
         let candidate = first.candidates.get(&authority).unwrap();
         assert_eq!(candidate.authority, authority);
@@ -513,7 +515,7 @@ fn rejects_cycles_duplicates_unsupported_and_reserved_controls() {
         "schema 1\npolicy { outer-gap 1; outer-gap 2; }\n",
         "schema 1\npolicy { magic 1; }\n",
         "schema 1\npolicy { max-surfaces 2; }\n",
-        "schema 1\nshell { enabled #true; }\n",
+        "schema 1\nshell { enabled \"yes\"; }\n",
         "schema 1\npolicy { view-count 10; }\n",
         "schema 1\npolicy { outer-gap -1; }\n",
         "schema 1\npolicy { inner-gap \"wide\"; }\n",

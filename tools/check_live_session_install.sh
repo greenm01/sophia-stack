@@ -111,7 +111,7 @@ make_artifact() {
     xmonad_project_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/cabal.project" | awk '{print $1}')"
     xmonad_core_config_digest="$(sha256sum "$artifact/share/sophia-policy/xmonad/core.kdl" | awk '{print $1}')"
     xmobar_config_digest="$(sha256sum "$artifact/tools/fixtures/xmobar_sophia.config" | awk '{print $1}')"
-    printf 'schema=3\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\nxmonad_version=xmonad_0.18.1\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=xmobar_0.51.1\nxmobar_source_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
+    printf 'schema=3\nversion=0.1.0\ncommit=%040d\nrelease_id=%s\nxmonad_version=xmonad_0.18.1\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=xmobar_0.51.1\nxmobar_source_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\nhagia_included=false\n' \
         "$release_id" "$release_id" "$xmonad_config_digest" "$xmonad_cabal_digest" \
         "$xmonad_project_digest" "$xmonad_core_config_digest" "$xmonad_digest" \
         "$xmobar_config_digest" "$xmobar_digest" >"$artifact/manifest"
@@ -131,11 +131,16 @@ for command in sophia-hagia-session sophia-record-hagia-run sophia-verify-hagia;
     chmod 755 "$hagia_artifact/bin/$command"
 done
 printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/hagia"
-chmod 755 "$hagia_artifact/target/release/hagia"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/hagia-shell"
+chmod 755 "$hagia_artifact/target/release/hagia" \
+    "$hagia_artifact/target/release/hagia-shell"
 printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-session\n' \
     >"$hagia_artifact/share/wayland-sessions/sophia-hagia.desktop"
 hagia_digest="$(sha256sum "$hagia_artifact/target/release/hagia" | awk '{print $1}')"
-printf 'hagia_included=true\nhagia_binary_sha256=%s\n' "$hagia_digest" \
+hagia_shell_digest="$(sha256sum "$hagia_artifact/target/release/hagia-shell" | awk '{print $1}')"
+sed -i 's/^hagia_included=false$/hagia_included=true/' "$hagia_artifact/manifest"
+printf 'hagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
+    "$hagia_digest" "$hagia_shell_digest" \
     >>"$hagia_artifact/manifest"
 (
     cd "$hagia_artifact"
@@ -148,6 +153,11 @@ expect_policy_rejection() {
         exit 1
     fi
 }
+
+invalid_hagia_shell="$TEMP_DIR/invalid-hagia-shell"
+cp -a "$hagia_artifact" "$invalid_hagia_shell"
+chmod 644 "$invalid_hagia_shell/target/release/hagia-shell"
+expect_policy_rejection "$invalid_hagia_shell" "a missing executable Hagia Shell"
 
 invalid_cabal="$TEMP_DIR/invalid-cabal"
 cp -a "$first" "$invalid_cabal"

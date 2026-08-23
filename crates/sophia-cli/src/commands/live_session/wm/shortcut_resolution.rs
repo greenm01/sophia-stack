@@ -1,11 +1,19 @@
+const SHELL_SWITCHER_SHORTCUT_ACTION: sophia_protocol::WmActionId =
+    sophia_protocol::WmActionId::from_raw(u64::MAX);
+
+const fn is_shell_switcher_shortcut(action: sophia_protocol::WmActionId) -> bool {
+    action.raw() == SHELL_SWITCHER_SHORTCUT_ACTION.raw()
+}
+
 fn session_shortcut_identity(
     shortcut: sophia_config::DesktopSessionShortcut,
-) -> (u16, &'static str) {
+) -> Option<(u16, &'static str)> {
     match shortcut {
-        sophia_config::DesktopSessionShortcut::LaunchTerminal => (1, "spawn-terminal"),
-        sophia_config::DesktopSessionShortcut::LaunchBrowser => (2, "spawn-browser"),
-        sophia_config::DesktopSessionShortcut::CloseFocused => (3, "close-window"),
-        sophia_config::DesktopSessionShortcut::Logout => (4, "logout"),
+        sophia_config::DesktopSessionShortcut::LaunchTerminal => Some((1, "spawn-terminal")),
+        sophia_config::DesktopSessionShortcut::LaunchBrowser => Some((2, "spawn-browser")),
+        sophia_config::DesktopSessionShortcut::CloseFocused => Some((3, "close-window")),
+        sophia_config::DesktopSessionShortcut::Logout => Some((4, "logout")),
+        sophia_config::DesktopSessionShortcut::WindowSwitcher => None,
     }
 }
 
@@ -15,6 +23,13 @@ fn resolve_public_shortcuts(
 ) -> Result<sophia_engine::WmShortcutRegistry, &'static str> {
     if candidate.generation.raw() != configuration.generation {
         return Err("shortcut and policy generations differ");
+    }
+    if configuration
+        .actions
+        .iter()
+        .any(|action| action.action == SHELL_SWITCHER_SHORTCUT_ACTION)
+    {
+        return Err("policy action collides with a reserved session shortcut");
     }
     let policy_actions = configuration
         .actions
@@ -52,10 +67,15 @@ fn resolve_public_shortcuts(
                 .get(name.as_str())
                 .copied()
                 .ok_or("shortcut names an unregistered policy action")?,
-            sophia_config::DesktopShortcutTarget::Session(shortcut) => session_actions
-                .get(&session_shortcut_identity(*shortcut))
-                .copied()
-                .ok_or("shortcut names an unavailable session capability")?,
+            sophia_config::DesktopShortcutTarget::Session(
+                sophia_config::DesktopSessionShortcut::WindowSwitcher,
+            ) => SHELL_SWITCHER_SHORTCUT_ACTION,
+            sophia_config::DesktopShortcutTarget::Session(shortcut) => session_shortcut_identity(
+                *shortcut,
+            )
+            .and_then(|identity| session_actions.get(&identity))
+            .copied()
+            .ok_or("shortcut names an unavailable session capability")?,
         };
         let keycode = sophia_config::desktop_shortcut_evdev_keycode(&binding.chord.trigger)
             .ok_or("shortcut trigger has no evdev identity")?;

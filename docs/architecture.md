@@ -147,10 +147,11 @@ or layout policy.
   reduced candidates, and returns sanitized descriptors to Engine's session-owned
   `ChromeDescriptorTable`. The production default is `ClassOnly`; raw titles,
   classes, PIDs, paths, and icons remain authority-private. Engine now has an
-  offline title-only reference projection from this table: bounded generic
-  rectangle/text nodes, per-head lowering, and opaque presented targets. No
-  native shell endpoint consumes it yet, so broker hosting and the reference
-  rendering substrate do not complete the larger shell milestone.
+  title-only projection from this table: bounded generic rectangle/text nodes,
+  per-head lowering, and opaque presented targets. Experimental
+  `sophia_shell_v1` now consumes it through a separately protected Hagia Shell
+  when a shell profile is enabled. Explicit X-grab arbitration and installed
+  evidence still keep that path out of the compiled profile.
 - Public Hagia policy and the metadata broker are launched through the production
   Bubblewrap protection backend. The backend rejects forbidden role composition,
   clears the ambient environment, inherits only selected standard streams, denies
@@ -909,21 +910,21 @@ that hit test, and independently retiring heads cannot publish one another's
 input. Ordinary and passive-grab pointer presses use an exact Engine-visible
 route lease with frontend confirmation and ordered release. Client-initiated
 explicit X grabs are not yet reduced into that lease handshake. That gap still
-prevents coexistence with privileged shell input.
+prevents compiled-profile enablement of privileged shell input.
 
 Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
 Tier-0 indicator interaction implements the first production target-resolved
-chrome slice from `docs/target-resolved-input.md`. The offline descriptor
-reference also proves generic exact-target capture: a matching press/release
-returns only an epoch-scoped opaque action and activation identity. Application
-and indicator selection use the applicable output's last-presented interaction
+chrome slice from `docs/target-resolved-input.md`. The descriptor switcher uses
+the same generic exact-target capture: a matching press/release returns only an
+epoch-scoped opaque action and activation identity. Application, indicator, and
+descriptor selection use the applicable output's last-presented interaction
 snapshot. Engine retains per-output presentation epochs; an output or session
-lifecycle change invalidates dependent input state. The generic capture is not
-connected to production arbitration or a shell endpoint. Rich Tier-1 shell
-interaction remains deferred.
+lifecycle change invalidates dependent input state. The live shell path remains
+profile-gated until explicit X pointer grabs join this arbitration. Richer
+Tier-1 interaction remains deferred.
 
 Per seat, a security/session transition first revokes old control epochs; a
 reserved Engine shortcut follows; then one existing application route lease or
@@ -983,14 +984,16 @@ processes without such ambient channels. Exact UID/PID endpoint admission is
 authentication, not proof of that isolation, so the metadata-bearing role
 sockets refuse it outright: they admit only the peer their supervisor launched
 into a domain carrying that role, while the blind policy and output roles still
-admit on a supervised PID. Production public Hagia policy and
-metadata-broker processes therefore also run in separate Bubblewrap domains.
+admit on a supervised PID. Production public Hagia policy and the metadata
+broker therefore run in separate Bubblewrap domains. A shell-enabled session
+launches Hagia Shell in a third domain carrying only the metadata-shell role
+and its read-only socket path.
 Their environments and inherited descriptors are cleared, networking and the
 ambient host filesystem are unavailable, and only explicit read-only role/profile
 paths plus Hagia's private checkpoint directory are bound. A protected broker
 executable smoke checks those negative claims. This backend establishes the
-current external-role floor; it does not imply that the deferred shell role or
-every future broker has already been admitted.
+current external-role floor; it does not imply that every future broker has
+already been admitted.
 
 Engine mints transaction IDs, validates every proposal, and keeps the last
 committed layout when the WM is absent, malformed, timed out, or restarting. A
@@ -1050,7 +1053,7 @@ correct at different tiers:
 | Tier | Renderer | Data source | Status |
 | --- | --- | --- | --- |
 | 0 | Engine chrome | committed indicator descriptor | reuses the existing chrome path |
-| 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | deferred |
+| 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | experimental title-only live slice; compiled profile disabled |
 | 2 | ordinary X11 clients | X11 protocol surface | frontend compatibility |
 
 Tier 0 covers a status bar without any client interface. Tier 1 exists for shells
@@ -1058,12 +1061,12 @@ that need more than chrome can express, and is justified by a demanding client
 rather than by symmetry. See `docs/sophia-indicator-descriptor.md` and
 `docs/sophia-shell-v1-direction.md`.
 
-The renderer-neutral reference beneath Tier 1 is implemented without claiming
-that tier: at most sixteen exact-generation descriptors become a centered,
-title-only list of solid and cached-text nodes plus last-presented opaque
-targets. The shell still owns order, selection, and lifecycle; Engine owns
-validation, rendering, damage, per-head projection, and hit-testing. Icons stay
-in the sanitized descriptor table and are not rendered by this slice.
+The renderer-neutral revision-1 slice carries at most sixteen exact-generation
+descriptors into a centered, title-only list of solid and cached-text nodes plus
+last-presented opaque targets. The shell owns order, selection, and lifecycle;
+Engine owns validation, rendering, damage, per-head projection, and hit-testing.
+Icons stay in the sanitized descriptor table and are not rendered by this
+slice.
 
 The optional [X11 WM Bridge](sophia-x11-wm-bridge.md) may present a synthetic
 X11 facade to a legacy WM such as xmonad while speaking the normal blind Sophia

@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${SOPHIA_ARTIFACT_ROOT:-$ROOT_DIR/.artifacts}"
 hagia_bin="${SOPHIA_HAGIA_BIN:-}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-}"
 
 cd "$ROOT_DIR"
 [[ -z "$(git status --short)" ]] || {
@@ -41,6 +42,16 @@ if [[ -n "$hagia_bin" && ! -x "$hagia_bin" ]]; then
     echo "SOPHIA_HAGIA_BIN is not executable: $hagia_bin" >&2
     exit 1
 fi
+if [[ -n "$hagia_bin" && -z "$hagia_shell_bin" ]]; then
+    hagia_shell_bin="$(dirname "$hagia_bin")/hagia-shell"
+    if [[ ! -x "$hagia_shell_bin" && -x "$(dirname "$hagia_bin")/hagia_shell" ]]; then
+        hagia_shell_bin="$(dirname "$hagia_bin")/hagia_shell"
+    fi
+fi
+if [[ -n "$hagia_bin" && ! -x "$hagia_shell_bin" ]]; then
+    echo "SOPHIA_HAGIA_SHELL_BIN is not executable: $hagia_shell_bin" >&2
+    exit 1
+fi
 
 install -d -m 755 \
     "$artifact/bin" \
@@ -61,6 +72,7 @@ install -m 755 "$xmobar_bin" "$artifact/target/release/xmobar"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
 if [[ -n "$hagia_bin" ]]; then
     install -m 755 "$hagia_bin" "$artifact/target/release/hagia"
+    install -m 755 "$hagia_shell_bin" "$artifact/target/release/hagia-shell"
     install -m 755 tools/installed/sophia-hagia-session \
         "$artifact/bin/sophia-hagia-session"
 fi
@@ -275,8 +287,10 @@ printf 'schema=3\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_
     "$(sha256sum "$xmobar_bin" | awk '{print $1}')" \
     >"$artifact/manifest"
 if [[ -n "$hagia_bin" ]]; then
-    printf 'hagia_included=true\nhagia_binary_sha256=%s\n' \
-        "$(sha256sum "$hagia_bin" | awk '{print $1}')" >>"$artifact/manifest"
+    printf 'hagia_included=true\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
+        "$(sha256sum "$hagia_bin" | awk '{print $1}')" \
+        "$(sha256sum "$hagia_shell_bin" | awk '{print $1}')" \
+        >>"$artifact/manifest"
 else
     printf 'hagia_included=false\n' >>"$artifact/manifest"
 fi

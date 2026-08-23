@@ -92,7 +92,7 @@ selected by Engine.
 
 The Sophia session creates one socket per role beneath a mode-0700 session
 directory in `$XDG_RUNTIME_DIR`. The WM path is advertised as
-`SOPHIA_WM_SOCKET`; a future shell path will use `SOPHIA_SHELL_SOCKET`. Sockets
+`SOPHIA_WM_SOCKET`; the experimental shell path uses `SOPHIA_SHELL_SOCKET`. Sockets
 are owner-only. The session accepts only the expected supervised peer with
 matching credentials and permits one active client for each exclusive role.
 

@@ -335,3 +335,43 @@ fn shell_transport_requires_an_exact_snapshot_and_prepare_order() {
     session.disconnect().unwrap();
     client.join().unwrap();
 }
+
+#[test]
+fn shell_reconnect_burns_the_old_epoch_and_negotiates_a_fresh_one() {
+    let mut session = ShellSessionTransport::bind_for_supervised_uid(
+        directory("reconnect"),
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    session.authorize_protected_peer(&evidence()).unwrap();
+    let socket = session.socket_path().to_path_buf();
+    let first = std::thread::spawn({
+        let socket = socket.clone();
+        move || {
+            ShellClientTransport::connect(socket)
+                .unwrap()
+                .connection_epoch()
+        }
+    });
+    session
+        .accept_and_negotiate(1, Duration::from_secs(2))
+        .unwrap();
+    session.disconnect().unwrap();
+    assert_eq!(first.join().unwrap(), 1);
+
+    session.authorize_protected_peer(&evidence()).unwrap();
+    let second = std::thread::spawn(move || {
+        ShellClientTransport::connect(socket)
+            .unwrap()
+            .connection_epoch()
+    });
+    session
+        .accept_and_negotiate(2, Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(second.join().unwrap(), 2);
+    assert_eq!(session.connection_epoch(), 2);
+    assert_eq!(
+        session.accept_and_negotiate(1, Duration::ZERO),
+        Err(ShellTransportError::InvalidConnectionEpoch)
+    );
+}

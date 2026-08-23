@@ -67,17 +67,22 @@ It installs six greetd entries:
   logout cycles after one authenticated selection. It is a lifecycle gate, not
   the ordinary desktop.
 
-An artifact packaged with an explicit `SOPHIA_HAGIA_BIN=/absolute/path/hagia`
-also installs `Sophia Hagia (Native Policy)`. The binary digest is retained in
-the manifest and the entry never falls back to API v7 or xmonad. After bounded
-deterministic preflight, select it once to make it the remembered ordinary
-session; packaging alone does not freeze the protocol or remove recovery paths.
+An artifact packaged with explicit `SOPHIA_HAGIA_BIN` and
+`SOPHIA_HAGIA_SHELL_BIN` paths also installs `Sophia Hagia (Native Policy)`.
+If the shell path is omitted, packaging looks for `hagia-shell` and then
+Nimble's `hagia_shell` beside `hagia`. Both executable digests are retained in
+the manifest, and installation rejects a missing shell. The entry never falls
+back to API v7 or xmonad. After
+bounded deterministic preflight, select it once to make it the remembered
+ordinary session; packaging alone does not freeze either protocol or remove
+recovery paths.
 
 Before installing a Hagia candidate, a development checkout can exercise the
 owner's exact public-policy settlement boundaries:
 
 ```sh
 SOPHIA_HAGIA_BIN=/absolute/path/hagia \
+SOPHIA_HAGIA_SHELL_BIN=/absolute/path/hagia-shell \
   tools/hagia_owner_settlement_fault_smoke.sh
 ```
 

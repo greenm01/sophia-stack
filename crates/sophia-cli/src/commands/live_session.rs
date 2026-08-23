@@ -85,6 +85,7 @@ use std::time::{Duration, Instant};
 mod authority_file;
 pub(super) mod input_guard;
 mod metadata_broker;
+mod metadata_shell;
 mod native_retirement;
 mod policy_transport_worker;
 mod process_supervision;
@@ -95,6 +96,7 @@ mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
 use metadata_broker::LiveMetadataBroker;
+use metadata_shell::{LiveMetadataShell, LiveMetadataShellPoll};
 use native_retirement::{
     NativePresentRetirementObservation, correlate_physical_input_page_flip,
     record_native_present_retirement, record_native_software_present_retirement,
@@ -565,6 +567,11 @@ pub(crate) fn run_persistent_xterm_session(
         == sophia_config::ExternalWmInterface::SophiaWmV1)
         .then(LiveMetadataBroker::start)
         .transpose()?;
+    let mut metadata_shell = config
+        .shell_process
+        .as_deref()
+        .map(LiveMetadataShell::start)
+        .transpose()?;
 
     let input_proof_result = (config.input_proof_requested() && config.client.is_none())
         .then(|| LiveInputProofResult::create(display_number))
@@ -874,6 +881,7 @@ pub(crate) fn run_persistent_xterm_session(
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
             metadata_broker: &mut metadata_broker,
+            metadata_shell: &mut metadata_shell,
             mirror_grouping: &mirror_grouping,
             initial_head_mapping,
         },

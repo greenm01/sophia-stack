@@ -42,9 +42,18 @@ The bounded TLA+ model checks that distinction through disconnect, broker
 revocation, queue saturation, stale candidates, and acknowledgements. The
 shared golden corpus is decoded independently by Rust and Nim, and the protected
 cross-process proof runs both C and Hagia clients through presentation,
-activation, and complete withdrawal. The next slice is live shortcut admission
-and issuer-side action dispatch; previews, icons, work-area reservations, and
-the larger display-list vocabulary remain out of revision 1.
+activation, and complete withdrawal.
+
+The same slice now runs in a normal Hagia session when its shell profile is
+enabled. Sophia launches `hagia-shell --serve` in its own Bubblewrap domain,
+and `session:window-switcher` asks it for a candidate. Engine renders and
+publishes the exact targets. A click returns to the shell for acknowledgement,
+then crosses the broker's current issuer check before the WM receives an
+ordinary focus request. Shell loss clears capture and reconnects at a new
+epoch; retained pixels remain inert until replaced. The compiled profile stays
+disabled until explicit X pointer grabs participate in Engine's application
+lease arbitration. Previews, icons, work-area reservations, and the larger
+display-list vocabulary remain out of revision 1.
 
 ## Why A Driving Client
 
@@ -475,21 +484,21 @@ Four constraints still apply:
 - **Freezing still requires quiet.** Shell-driven discoveries are intentionally
   resolved before the WM freeze. Once the retained port ledger closes, new
   shell work cannot casually reopen the WM contract.
-- **The minimum shell rendering substrate is complete.** Engine reduces a
+- **The minimum live shell slice is complete in source.** Engine reduces a
   bounded title-only descriptor candidate into generic rectangle and cached-text
   commands plus exact presented opaque targets, then lowers the same logical
-  projection independently per head. This offline reference fixes the first
-  useful vocabulary without creating a wire, shell lifecycle, or toolkit. The
-  next dependency is a separately protected shell-role transport and the first
-  `hagia-shell` client. General graphics-efficiency work remains in Milestone 14
-  and `docs/compositor-graphics.md`.
+  projection independently per head. The protected `hagia-shell` client now
+  drives that path from a shell-enabled shortcut through issuer validation and
+  WM focus adjudication. The next dependencies are explicit X-grab arbitration,
+  then installed presentation and reconnect evidence. General graphics-
+  efficiency work remains in Milestone 14 and `docs/compositor-graphics.md`.
 - **The metadata-broker prerequisite is complete.** `sophia_broker_v1` now
   hosts the redacted presentation feed in a separate protected domain and
   commits sanitized descriptors to Engine's `ChromeDescriptorTable`. Signed
   Hagia archives `0004` and `0005` prove its real-session lifecycle. The data
   source and descriptor rendering reference therefore no longer block shell
-  modeling; the missing protected shell-role transport and external shell
-  lifecycle do.
+  modeling. The protected external lifecycle is now implemented; its signed
+  installed evidence remains open.
 
 Open question 2 asks whether the shared transport can carry shell texture
 traffic given the 64 KiB frame limit, single in-flight transfer, and bytes-only

@@ -2,11 +2,11 @@
 
 **Role:** informative architecture rationale.
 
-**Status:** current as of 2026-08-08; non-normative.
+**Status:** current as of 2026-08-23; non-normative.
 
 This document compares boundaries and failure models. It is not a claim that
-every Wayland compositor has one design, or that Sophia's target shell contract
-is already implemented. When this document conflicts with
+every Wayland compositor has one design, or that Sophia's experimental shell
+slice is stable or complete. When this document conflicts with
 [Architecture](architecture.md), [Target-Resolved Input](target-resolved-input.md),
 or a protocol specification, those sources win.
 
@@ -34,8 +34,8 @@ design assigns separate ownership to:
   XI2, and client delivery for the current application path;
 - a metadata-blind WM policy process, which answers reduced spatial-policy
   requests; and
-- a future metadata-bearing shell process, whose target-resolved input
-  contract is ratified but remains pre-schema and unimplemented.
+- an experimental metadata-bearing shell process, whose revision-1
+  descriptor switcher is separately protected and target resolved.
 
 The meaningful comparison is therefore not “one Wayland process versus three
 Sophia processes.” It is the authority that each system makes public, the data
@@ -51,10 +51,11 @@ standardize transparent client migration to a replacement compositor.
 
 Sophia deliberately keeps WM policy outside Engine. The implemented WM
 connection is epoch-scoped and bounded, and Engine can retain the last accepted
-layout while policy reconnects. This reduces the failure domain of spatial
-policy. It does not make Engine or the graphics stack infallible, and the same
-claim cannot yet be made for a native Sophia shell because that process and
-protocol do not exist.
+layout while policy reconnects. The experimental shell likewise burns its
+interaction epoch, leaves retained pixels inert, and reconnects as a new
+recipient. This reduces the failure domain of desktop policy. It does not make
+Engine or the graphics stack infallible, and the shell still lacks installed
+evidence.
 
 The intended distinction is:
 
@@ -90,11 +91,11 @@ Sophia makes presentation coupling an architectural rule:
   pointer domain now derives hit-test layers from the immutable output-frame
   snapshot only after an accepted page flip. A committed or submitted move,
   removal, or stacking change cannot become a fresh pointer target early.
-- The future shell path resolves stable generational targets against the
+- The revision-1 shell path resolves stable generational targets against the
   applicable last-presented interaction snapshot.
-- Output-local pointer domains and per-output input epochs remain future work;
-  the current implementation must not be generalized beyond its primary-output
-  coordinate domain.
+- Output-local pointer domains and per-output input epochs apply to both paths.
+  Explicit X pointer grabs still remain frontend-local, so the shell is not
+  enabled in the compiled profile.
 
 Presented-state selection reduces visual/input disagreement. It does not prove
 perfect transforms, eliminate rounding defects, or guarantee that all input
@@ -116,7 +117,7 @@ Sophia separates two desktop consumers:
 | --- | --- | --- |
 | Application-facing X frontend | `RoutedInputRequest` with global and surface-local coordinates; namespace/profile isolation and X11-local delivery rules | implemented; stalled private input queues are client-local failures, while Engine-visible grab leases remain debt |
 | WM spatial policy | opaque surface identity and reduced geometry/focus operations; no application title/class metadata | implemented `sophia_wm_v1` direction and production transport slices |
-| Native shell | coordinate-free discrete actions by default, paced normalized continuous values, independently authorized region-local coordinates | ratified pre-schema contract; unimplemented |
+| Native shell | coordinate-free discrete actions by default, paced normalized continuous values, independently authorized region-local coordinates | experimental revision-1 descriptor switcher live behind an enabled profile; broader vocabulary and installed evidence open |
 
 Target-resolved input is data minimization, not “absolute privacy.” An action
 reveals the selected target, and a malicious authorized shell could encode
@@ -174,11 +175,11 @@ CPU buffers or other future transports cannot be ruled out by this comparison.
 | System definition | protocol plus compositor-specific architecture | normative multi-process project architecture plus protocols |
 | Application input disclosure | surface-selected, surface-local core pointer coordinates; optional protocols add capabilities | current X path intentionally carries global and local coordinates inside an isolated profile |
 | Spatial policy | compositor implementation choice; no core split mandated | separately supervised, metadata-blind WM contract |
-| Shell metadata | privileged interfaces chosen and admitted by compositor | future separately authorized shell/broker roles; schema incomplete |
-| Presentation-coupled selection | not prescribed by core protocol | per-output native application projections implemented; future shell contract requires the same applicable presented snapshot |
-| Grab ownership | compositor implements core and extension semantics | ordinary/passive X pointer leases implemented; explicit X-grab reduction and shell capture remain open |
-| Extension evolution | core plus stable/staging/unstable and private protocols | project-owned versioned schemas with compatibility gates; shell schema not yet ratified |
-| Failure behavior | compositor loss usually disconnects clients; session policy varies | WM policy loss is isolated; Engine/graphics failure and future shell recovery have separate limits |
+| Shell metadata | privileged interfaces chosen and admitted by compositor | separately protected broker and experimental shell roles; revision-1 schema incomplete by design |
+| Presentation-coupled selection | not prescribed by core protocol | per-output native application and revision-1 shell targets use the applicable presented snapshot |
+| Grab ownership | compositor implements core and extension semantics | ordinary/passive X pointer leases and shell capture implemented; explicit X-grab reduction remains open |
+| Extension evolution | core plus stable/staging/unstable and private protocols | project-owned versioned schemas with compatibility gates; shell revision 1 remains experimental |
+| Failure behavior | compositor loss usually disconnects clients; session policy varies | WM and shell process loss are isolated by separate epochs; Engine/graphics failure has a larger limit |
 
 ## 8. Sources and scope
 

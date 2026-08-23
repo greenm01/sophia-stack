@@ -166,6 +166,8 @@ pub struct LivePresentedInputProjection {
     pub layers: Vec<LayerSnapshot>,
     pub chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
     pub chrome_occlusion: Option<Rect>,
+    pub descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
+    pub descriptor_occlusion: Option<Rect>,
 }
 
 /// Retains policy order only for surfaces present in Engine's committed scene.
@@ -224,6 +226,8 @@ pub struct LiveProductionVisualRuntime {
     floating_outline: Option<LiveFloatingOutline>,
     indicator_strip_enabled: bool,
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
+    descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
+    descriptor_overlay_interactive: bool,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,
@@ -294,6 +298,8 @@ impl LiveProductionVisualRuntime {
                 layers: Vec::new(),
                 chrome_targets: Vec::new(),
                 chrome_occlusion: None,
+                descriptor_targets: Vec::new(),
+                descriptor_occlusion: None,
             })
             .collect();
         Ok(Self {
@@ -322,6 +328,8 @@ impl LiveProductionVisualRuntime {
             floating_outline: None,
             indicator_strip_enabled: false,
             indicator_publication: None,
+            descriptor_overlay: None,
+            descriptor_overlay_interactive: false,
             pending_focus_ring_observation: None,
             last_focus_ring_observation: None,
             pending_chrome_set_observation: None,

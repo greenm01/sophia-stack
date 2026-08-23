@@ -836,10 +836,18 @@ fn validate_setting(
             ));
         }
     }
-    if matches!(
-        authority,
-        DesktopAuthority::Shell | DesktopAuthority::Broker
-    ) && name == "enabled"
+    if authority == DesktopAuthority::Shell
+        && name == "enabled"
+        && (node.entries().len() != 1
+            || node.children().is_some()
+            || node.get(0).and_then(|value| value.as_bool()).is_none())
+    {
+        return Err(DesktopProfileError::Schema(
+            "shell enabled requires one boolean argument".to_owned(),
+        ));
+    }
+    if authority == DesktopAuthority::Broker
+        && name == "enabled"
         && node.get(0).and_then(|value| value.as_bool()) != Some(false)
     {
         return Err(DesktopProfileError::Schema(
@@ -847,6 +855,30 @@ fn validate_setting(
         ));
     }
     Ok(())
+}
+
+/// Returns the exact prepared shell-owner enablement decision.
+///
+/// Desktop-profile validation requires one boolean `shell.enabled` value. The
+/// compiled profile supplies it when no external profile does, so absence here
+/// is a conservative disabled result rather than a second default.
+pub fn desktop_profile_shell_enabled(profile: &DesktopProfileGeneration) -> bool {
+    profile
+        .candidates
+        .get(&DesktopAuthority::Shell)
+        .and_then(|candidate| {
+            candidate
+                .values
+                .iter()
+                .find(|value| value.key == "shell.enabled")
+        })
+        .and_then(|value| KdlDocument::parse_v2(&value.encoded).ok())
+        .and_then(|document| {
+            (document.nodes().len() == 1)
+                .then(|| document.nodes()[0].get(0).and_then(|value| value.as_bool()))
+                .flatten()
+        })
+        .unwrap_or(false)
 }
 
 fn validate_policy_layout(layout: &str) -> Result<(), DesktopProfileError> {

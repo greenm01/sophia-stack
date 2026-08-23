@@ -2,21 +2,22 @@
 
 **Role:** normative target and arbitration contract for shell and Engine
 interaction.
-**Status:** ratified pre-schema prerequisite with an offline discrete-target
-reference; `sophia_shell_v1` remains deferred.
+**Status:** ratified prerequisite with an experimental live revision-1
+discrete-target path; compiled enablement waits on explicit X-grab arbitration.
 
 Sophia has one Engine-owned physical-input authority and two delivery
 contracts. Application input selects a visual surface and retains the
-coordinates required by X11. Future shell input selects a bounded target and
+coordinates required by X11. Shell input selects a bounded target and
 discloses an action, normalized value, or independently authorized local
 coordinate. The routes may share private spatial indexes, but they retain
 different public identities, lifecycle rules, protocol semantics, and
 disclosure budgets.
 
-This document fixes semantic requirements rather than wire records. It adds no
-Engine runtime, Hagia behavior, UI toolkit, reactive framework, or protocol
-discriminants. Full immutable snapshots remain normative. A future delta is a
-transport optimization that must name and validate its base generation.
+This document fixes semantic requirements rather than wire records. Revision 1
+now implements its discrete target, capture, activation, and revocation subset;
+it adds no UI toolkit or reactive framework. Full immutable snapshots remain
+normative. A future delta is a transport optimization that must name and
+validate its base generation.
 
 ## Relationship To Application Input
 
@@ -54,12 +55,13 @@ authority-session, surface, and control epochs remain exact. Normal scope exit
 uses an ordered release request and acknowledgement. VT and seat-security
 transitions advance a shared epoch, clear active frontend grabs, and reject
 queued or frozen old-epoch input without waiting. Client-initiated explicit
-`GrabPointer`/XI grab requests are not yet reduced into this handshake; shell
-coexistence remains blocked on that path and on the shell runtime itself.
+`GrabPointer`/XI grab requests are not yet reduced into this handshake. The
+live shell path therefore remains disabled in the compiled profile: Engine
+cannot yet make a shell capture yield to an explicit frontend-only owner.
 
 | Dimension | Application surface routing | Target-resolved shell input |
 | --- | --- | --- |
-| Status | implemented native-X path; explicit client-initiated grab reduction remains open | offline exact discrete-target capture; production shell arbitration remains open |
+| Status | implemented native-X path; explicit client-initiated grab reduction remains open | live exact discrete-target capture behind an enabled shell profile; compiled enablement remains blocked by that grab reduction |
 | Public identity | generational `SurfaceId` | opaque authority/session/slot/generation target identity |
 | Disclosure | global and surface-local coordinates required by X11 | coordinate-free actions by default; normalized values; capability-bounded local coordinates |
 | Protocol semantics | X frontend owns X11 focus, event masks, XKB/XI state, and client delivery | Engine owns target selection and bounded capture; no toolkit semantics |
@@ -84,7 +86,7 @@ Engine applies this precedence for each physical event:
 5. With no eligible presented application surface or shell target, Engine
    delivers nothing.
 
-The following decision flow is normative semantic precedence for the future
+The following decision flow is normative semantic precedence for the
 coexistence boundary, not a required implementation control-flow shape. It
 covers pointer or touch events that require spatial selection. Application
 keyboard delivery follows Engine focus rather than spatial hit-testing, but it

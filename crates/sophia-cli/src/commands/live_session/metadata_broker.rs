@@ -9,7 +9,9 @@ pub(super) struct LiveMetadataBroker {
     supervisor: ProcessSupervisor,
     transport: sophia_runtime::MetadataBrokerSessionTransport,
     descriptors: sophia_engine::ChromeDescriptorTable,
+    grants: BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant>,
     admitted: BTreeMap<SurfaceId, sophia_x_authority::XServerFrontendClientId>,
+    connection_epoch: u64,
     next_transaction: u64,
 }
 
@@ -74,7 +76,9 @@ impl LiveMetadataBroker {
             supervisor,
             transport,
             descriptors: Default::default(),
+            grants: Default::default(),
             admitted: Default::default(),
+            connection_epoch: welcome.connection_epoch,
             next_transaction: 1,
         })
     }
@@ -117,7 +121,7 @@ impl LiveMetadataBroker {
         let response = self.transport.request(
             transaction,
             &sophia_protocol::BrokerV1Request::SurfaceAdmitted {
-                connection_epoch: 1,
+                connection_epoch: self.connection_epoch,
                 surface,
                 profile,
             },
@@ -150,14 +154,20 @@ impl LiveMetadataBroker {
         let response = self.transport.request(
             transaction,
             &sophia_protocol::BrokerV1Request::CandidateReduced {
-                connection_epoch: 1,
+                connection_epoch: self.connection_epoch,
                 candidate: delivery.candidate,
             },
         )?;
         match response {
-            sophia_protocol::BrokerV1Response::EmitDescriptor { descriptor, .. } => {
+            sophia_protocol::BrokerV1Response::EmitDescriptor {
+                descriptor, action, ..
+            } => {
+                if action.target_generation != descriptor.generation {
+                    return Err("metadata broker action and descriptor generations differ".into());
+                }
                 match self.descriptors.apply_metadata(descriptor) {
                     sophia_engine::MetadataChromeUpdate::Upserted { surface } => {
+                        self.grants.insert(surface, action);
                         println!(
                             "sophia_live_metadata_broker schema=1 status=descriptor_committed surface={} content=redacted",
                             surface.index(),
@@ -188,7 +198,7 @@ impl LiveMetadataBroker {
         let response = self.transport.request(
             transaction,
             &sophia_protocol::BrokerV1Request::SurfaceRemoved {
-                connection_epoch: 1,
+                connection_epoch: self.connection_epoch,
                 surface,
             },
         )?;
@@ -197,12 +207,52 @@ impl LiveMetadataBroker {
                 surface: retired, ..
             } if retired == surface => {
                 self.descriptors.remove_surface(surface);
+                self.grants.remove(&surface);
                 Ok(())
             }
             response => {
                 Err(format!("metadata broker rejected surface retirement: {response:?}").into())
             }
         }
+    }
+
+    pub(super) const fn connection_epoch(&self) -> u64 {
+        self.connection_epoch
+    }
+
+    pub(super) const fn descriptors(&self) -> &sophia_engine::ChromeDescriptorTable {
+        &self.descriptors
+    }
+
+    pub(super) fn shell_sources(&self) -> Vec<LiveShellDescriptorSource> {
+        self.grants
+            .iter()
+            .filter_map(|(surface, grant)| {
+                self.descriptors
+                    .get(*surface)
+                    .filter(|descriptor| descriptor.generation == grant.target_generation)
+                    .cloned()
+                    .map(|descriptor| LiveShellDescriptorSource {
+                        surface: *surface,
+                        descriptor,
+                        grant: *grant,
+                    })
+            })
+            .collect()
+    }
+
+    /// Resolves only the exact current broker grant. Shell slot and recipient
+    /// validation happen in the shell owner before this issuer-side check.
+    pub(super) fn resolve_toplevel_action(
+        &self,
+        action: sophia_protocol::ToplevelActionCapabilityRef,
+    ) -> Option<SurfaceId> {
+        resolve_live_broker_toplevel_action(
+            self.connection_epoch,
+            &self.grants,
+            &self.descriptors,
+            action,
+        )
     }
 
     fn next_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
@@ -213,6 +263,31 @@ impl LiveMetadataBroker {
             .ok_or("metadata broker transaction identity exhausted")?;
         Ok(transaction)
     }
+}
+
+pub(super) fn resolve_live_broker_toplevel_action(
+    connection_epoch: u64,
+    grants: &BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant>,
+    descriptors: &sophia_engine::ChromeDescriptorTable,
+    action: sophia_protocol::ToplevelActionCapabilityRef,
+) -> Option<SurfaceId> {
+    (action.issuer_epoch == connection_epoch).then_some(())?;
+    grants.iter().find_map(|(surface, grant)| {
+        (grant.token == action.token
+            && grant.revocation_epoch == action.issuer_revocation_epoch
+            && grant.target_generation == action.target_generation
+            && descriptors
+                .get(*surface)
+                .is_some_and(|descriptor| descriptor.generation == action.target_generation))
+        .then_some(*surface)
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct LiveShellDescriptorSource {
+    pub(super) surface: SurfaceId,
+    pub(super) descriptor: sophia_protocol::ChromeDescriptor,
+    pub(super) grant: sophia_protocol::BrokerToplevelActionGrant,
 }
 
 impl Drop for LiveMetadataBroker {

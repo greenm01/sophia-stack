@@ -64,6 +64,7 @@ struct PersistentXtermSessionConfig {
     software_client_rendering: bool,
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
+    shell_process: Option<String>,
     wm_interface: sophia_config::ExternalWmInterface,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_public_restart_after_action: Option<WmActionId>,
@@ -177,6 +178,7 @@ impl PersistentXtermSessionConfig {
             desktop_profile_source.as_deref(),
             sophia_config::ConfigGeneration::INITIAL,
         )?;
+        let shell_enabled = sophia_config::desktop_profile_shell_enabled(&desktop_profile);
         let sophia_config::PreparedDesktopProfileCandidates {
             shortcut: shortcut_profile_candidate,
             session: session_profile_candidate,
@@ -531,8 +533,44 @@ impl PersistentXtermSessionConfig {
         {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
+        let explicit_shell_process = arg_value(args, "--shell-process");
+        if explicit_shell_process.as_ref().is_some_and(|process| {
+            !std::path::Path::new(process).is_absolute()
+        }) {
+            return Err("--shell-process requires an absolute path".into());
+        }
+        let live_shell_enabled = shell_enabled && normal_session;
+        let shell_process = if live_shell_enabled {
+            if wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
+                return Err("an enabled shell requires --wm-interface=sophia_wm_v1".into());
+            }
+            let process = explicit_shell_process
+                .or_else(|| {
+                    wm_process.as_ref().and_then(|process| {
+                        let process = std::path::Path::new(process);
+                        process.is_absolute().then(|| {
+                            let parent = process
+                                .parent()
+                                .expect("an absolute executable has a parent");
+                            parent.join("hagia-shell").to_string_lossy().into_owned()
+                        })
+                    })
+                })
+                .ok_or("an enabled shell requires --shell-process or an absolute WM path")?;
+            Some(process)
+        } else {
+            if explicit_shell_process.is_some() {
+                return Err(if shell_enabled {
+                    "--shell-process requires --session-mode=normal"
+                } else {
+                    "--shell-process requires shell { enabled #true; }"
+                }
+                .into());
+            }
+            None
+        };
         if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            applications.validate_shortcuts(&shortcut_profile_candidate)?;
+            applications.validate_shortcuts(&shortcut_profile_candidate, live_shell_enabled)?;
         }
         let (wm_public_fault_after, wm_public_restart_after_action) =
             wm_proof::parse_wm_proof_controls(args, wm_interface, max_runtime)?;
@@ -684,6 +722,7 @@ impl PersistentXtermSessionConfig {
             software_client_rendering,
             wm_process,
             wm_process_args,
+            shell_process,
             wm_interface,
             wm_public_fault_after,
             wm_public_restart_after_action,

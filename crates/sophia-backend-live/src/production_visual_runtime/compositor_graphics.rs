@@ -367,7 +367,98 @@ impl LiveProductionVisualRuntime {
             }
             display_list.commands.push(command);
         }
+        if let Some(overlay) = self
+            .descriptor_overlay
+            .as_ref()
+            .filter(|overlay| overlay.output == output)
+        {
+            if display_list
+                .commands
+                .len()
+                .saturating_add(overlay.commands.len())
+                > MAX_COMPOSITOR_DISPLAY_COMMANDS
+            {
+                return Err(CompositorDisplayListError::CapacityExceeded);
+            }
+            display_list
+                .commands
+                .extend(overlay.commands.iter().cloned());
+        }
         Ok(display_list)
+    }
+
+    /// Installs one Engine-validated shell projection and queues a retained
+    /// compositor repaint when native scanout owns presentation.
+    pub fn set_descriptor_overlay(
+        &mut self,
+        overlay: Option<sophia_engine::DescriptorOverlayProjection>,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.descriptor_overlay == overlay {
+            return Ok(false);
+        }
+        let previous_overlay = self.descriptor_overlay.clone();
+        let previous_interactive = self.descriptor_overlay_interactive;
+        self.descriptor_overlay = overlay;
+        self.descriptor_overlay_interactive = self.descriptor_overlay.is_some();
+        if let Some(native_scanout) = native_scanout {
+            let queued = self
+                .retained_output_head_composition_frames(scene, native_scanout)
+                .and_then(|batches| {
+                    native_scanout
+                        .queue_retained_output_head_composition_frames(batches)
+                        .map(|_| ())
+                });
+            if let Err(error) = queued {
+                self.descriptor_overlay = previous_overlay;
+                self.descriptor_overlay_interactive = previous_interactive;
+                return Err(error);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Revokes input immediately without withdrawing already presented pixels.
+    pub fn revoke_descriptor_overlay_interaction(&mut self) -> usize {
+        self.descriptor_overlay_interactive = false;
+        let mut revoked = 0usize;
+        for projection in &mut self.input_projections {
+            revoked = revoked.saturating_add(projection.descriptor_targets.len());
+            if !projection.descriptor_targets.is_empty() {
+                projection.epoch = projection
+                    .epoch
+                    .checked_add(1)
+                    .expect("presented input epoch exhausted");
+                projection.descriptor_targets.clear();
+            }
+        }
+        revoked
+    }
+
+    /// Returns the output-local presentation epoch only after the requested
+    /// visible or withdrawn candidate has crossed the presentation boundary.
+    pub fn descriptor_overlay_presentation_epoch(
+        &self,
+        output: OutputId,
+        generation: u64,
+        visible: bool,
+    ) -> Option<u64> {
+        let projection = self
+            .input_projections
+            .iter()
+            .find(|projection| projection.output == output)?;
+        let presented = if visible {
+            self.descriptor_overlay.as_ref().is_some_and(|overlay| {
+                overlay.output == output
+                    && overlay.generation == generation
+                    && !projection.descriptor_targets.is_empty()
+                    && projection.descriptor_targets == overlay.targets
+            })
+        } else {
+            self.descriptor_overlay.is_none() && projection.descriptor_occlusion.is_none()
+        };
+        presented.then_some(projection.epoch.max(1))
     }
 
     pub fn set_floating_outline(

@@ -92,6 +92,7 @@ macro_rules! drain_physical_input {
                     floating_gesture: &mut floating_pointer_gesture,
                     application_route_leases: &mut application_route_leases,
                     chrome_captures: &mut chrome_captures,
+                    descriptor_captures: &mut descriptor_captures,
                     route_lease_release_sender,
                     input_output,
                     input_presentation_epoch,
@@ -428,7 +429,160 @@ macro_rules! drain_physical_input {
                     }
                 }
             }
+            for (action, activation) in report.descriptor_activations.iter().copied() {
+                let broker = metadata_broker
+                    .as_ref()
+                    .ok_or("descriptor activation has no live metadata broker")?;
+                let shell = metadata_shell
+                    .as_mut()
+                    .ok_or("descriptor activation has no live metadata shell")?;
+                let (surface, shell_output) = match shell.dispatch_activation(
+                    broker, action, activation,
+                ) {
+                    Ok(dispatch) => dispatch,
+                    Err(error) => {
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=activation reason={error}"
+                        );
+                        shell.recover_transport("activation_failure")?;
+                        shell.revoke_interaction();
+                        descriptor_captures.cancel_all();
+                        runtime
+                            .as_mut()
+                            .ok_or("descriptor activation has no visual runtime")?
+                            .revoke_descriptor_overlay_interaction();
+                        continue;
+                    }
+                };
+                shell.revoke_interaction();
+                descriptor_captures.cancel_all();
+                let runtime = runtime
+                    .as_mut()
+                    .ok_or("descriptor activation has no visual runtime")?;
+                runtime.revoke_descriptor_overlay_interaction();
+                let action_output = outputs
+                    .iter()
+                    .find(|candidate| candidate.id == shell_output)
+                    .copied()
+                    .ok_or("descriptor activation targets an unavailable output")?;
+                if let Some(surface) = surface {
+                    let wm = wm_session
+                        .as_mut()
+                        .ok_or("descriptor activation has no live WM session")?;
+                    match wm.enqueue_focus(surface, &layout, action_output)? {
+                        LiveWmRequestAdmission::Admitted => println!(
+                            "sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} target=redacted"
+                        ),
+                        LiveWmRequestAdmission::Duplicate => println!(
+                            "sophia_live_metadata_shell schema=1 status=activation_duplicate activation={activation} target=redacted"
+                        ),
+                        LiveWmRequestAdmission::RejectedCapacity => eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=wm_capacity target=redacted"
+                        ),
+                    }
+                } else {
+                    eprintln!(
+                        "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=stale_issuer target=redacted"
+                    );
+                }
+                let bounds = wm_output_bounds(&outputs)
+                    .into_iter()
+                    .find(|(output, _)| *output == shell_output)
+                    .map(|(_, bounds)| bounds)
+                    .ok_or("descriptor withdrawal has no output bounds")?;
+                let withdrawal = match shell.request_candidate(broker, action_output, bounds) {
+                    Ok(withdrawal) => withdrawal,
+                    Err(error) => {
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=withdrawal reason={error}"
+                        );
+                        shell.recover_transport("withdrawal_failure")?;
+                        runtime.revoke_descriptor_overlay_interaction();
+                        continue;
+                    }
+                };
+                if let Err(error) = runtime.set_descriptor_overlay(
+                    withdrawal,
+                    &scene,
+                    native_scanout.as_mut(),
+                ) {
+                    if let Err(rejection_error) = shell.reject_pending() {
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=reject_withdrawal reason={rejection_error}"
+                        );
+                        shell.recover_transport("withdrawal_rejection_failure")?;
+                    }
+                    eprintln!(
+                        "sophia_live_metadata_shell schema=1 status=candidate_rejected stage=withdrawal reason={error}"
+                    );
+                }
+            }
             for action in report.wm_actions.iter().copied() {
+                if is_shell_switcher_shortcut(action) {
+                    let broker = metadata_broker
+                        .as_ref()
+                        .ok_or("shell shortcut has no live metadata broker")?;
+                    let shell = metadata_shell
+                        .as_mut()
+                        .ok_or("shell shortcut has no live metadata shell")?;
+                    if shell.interaction_presented() {
+                        println!(
+                            "sophia_live_metadata_shell schema=1 status=shortcut_consumed outcome=already_open"
+                        );
+                        continue;
+                    }
+                    let bounds = wm_output_bounds(&outputs)
+                        .into_iter()
+                        .find(|(candidate, _)| *candidate == output.id)
+                        .map(|(_, bounds)| bounds)
+                        .ok_or("shell shortcut has no output bounds")?;
+                    let overlay = match shell.request_candidate(broker, output, bounds) {
+                        Ok(overlay) => overlay,
+                        Err(error) => {
+                            eprintln!(
+                                "sophia_live_metadata_shell schema=1 status=transport_failed stage=candidate reason={error}"
+                            );
+                            shell.recover_transport("candidate_failure")?;
+                            shell.revoke_interaction();
+                            descriptor_captures.cancel_all();
+                            runtime
+                                .as_mut()
+                                .ok_or("shell shortcut has no visual runtime")?
+                                .revoke_descriptor_overlay_interaction();
+                            continue;
+                        }
+                    };
+                    let result = runtime
+                        .as_mut()
+                        .ok_or("shell shortcut has no visual runtime")?
+                        .set_descriptor_overlay(
+                            overlay,
+                            &scene,
+                            native_scanout.as_mut(),
+                    );
+                    if let Err(error) = result {
+                        if let Err(rejection_error) = shell.reject_pending() {
+                            eprintln!(
+                                "sophia_live_metadata_shell schema=1 status=transport_failed stage=reject_prepare reason={rejection_error}"
+                            );
+                            shell.recover_transport("candidate_rejection_failure")?;
+                            shell.revoke_interaction();
+                            descriptor_captures.cancel_all();
+                            runtime
+                                .as_mut()
+                                .expect("visual runtime existed for descriptor candidate")
+                                .revoke_descriptor_overlay_interaction();
+                        }
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=candidate_rejected stage=prepare reason={error}"
+                        );
+                        continue;
+                    }
+                    println!(
+                        "sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher"
+                    );
+                    continue;
+                }
                 let wm = wm_session
                     .as_mut()
                     .ok_or("WM shortcut activated without a live WM session")?;
@@ -789,6 +943,42 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         if let Some(broker) = metadata_broker.as_mut() {
             broker.poll()?;
             broker.drain_candidates(metadata_candidate_receiver)?;
+        }
+        if let Some(shell) = metadata_shell.as_mut() {
+            shell.observe_outputs(&outputs)?;
+            let mut revoke_shell_input = false;
+            match shell.poll() {
+                Ok(LiveMetadataShellPoll::Healthy) => {}
+                Ok(LiveMetadataShellPoll::Reconnected { .. }) => {
+                    revoke_shell_input = true;
+                }
+                Ok(LiveMetadataShellPoll::Unavailable) => {
+                    revoke_shell_input = true;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "sophia_live_metadata_shell schema=1 status=transport_failed stage=poll reason={error}"
+                    );
+                    shell.recover_transport("poll_failure")?;
+                    revoke_shell_input = true;
+                }
+            }
+            if let Some(runtime) = runtime.as_ref()
+                && let Err(error) = shell.observe_presentation(runtime)
+            {
+                eprintln!(
+                    "sophia_live_metadata_shell schema=1 status=transport_failed stage=presentation reason={error}"
+                );
+                shell.recover_transport("presentation_failure")?;
+                revoke_shell_input = true;
+            }
+            if revoke_shell_input {
+                shell.revoke_interaction();
+                descriptor_captures.cancel_all();
+                if let Some(runtime) = runtime.as_mut() {
+                    runtime.revoke_descriptor_overlay_interaction();
+                }
+            }
         }
         if let Some(wm) = wm_session.as_mut() {
             wm.service_policy_update()?;

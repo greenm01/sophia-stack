@@ -37,6 +37,8 @@ nim c --hints:off --path:src --nimcache:"$build_dir/nimcache-client" \
 cd "$root"
 cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell"
+cargo run --offline -q -p sophia-runtime \
+    --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell" --serve
 
 printf '%s\n' \
-    'sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true descriptors=2 activations=1 withdrawn=true'
+    'sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true'

@@ -19,6 +19,7 @@ struct SessionLoopResources<'a> {
     seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
     metadata_broker: &'a mut Option<LiveMetadataBroker>,
+    metadata_shell: &'a mut Option<LiveMetadataShell>,
     /// Which connectors share one logical output, from the profile loaded at
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
@@ -223,6 +224,7 @@ fn run_session_loop(
         seat_controller,
         wm_session,
         metadata_broker,
+        metadata_shell,
         mirror_grouping,
         initial_head_mapping,
     } = resources;
@@ -398,6 +400,7 @@ fn run_session_loop(
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     let mut application_route_leases = ApplicationRouteLeaseState::default();
     let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
+    let mut descriptor_captures = sophia_engine::PresentedChromeCaptureState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
             wm_output_bounds(&outputs)
@@ -519,10 +522,13 @@ fn run_session_loop(
 
     macro_rules! revoke_chrome_captures {
         ($reason:literal) => {{
-            let revoked = chrome_captures.cancel_all().len();
+            let revoked = chrome_captures
+                .cancel_all()
+                .len()
+                .saturating_add(descriptor_captures.cancel_all().len());
             if revoked != 0 {
                 println!(
-                    "sophia_live_indicator_input schema=1 status=captures_cancelled reason={} count={revoked}",
+                    "sophia_live_chrome_input schema=1 status=captures_cancelled reason={} count={revoked}",
                     $reason,
                 );
             }

@@ -1,4 +1,5 @@
 #![cfg(test)]
+use super::metadata_broker::resolve_live_broker_toplevel_action;
 use super::startup_readiness::startup_required_submission_for_head;
 use super::startup_readiness::{
     StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,
@@ -18,28 +19,28 @@ use super::{
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
     SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-    SessionFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard, Size, Transform,
-    XPresentCadence, authority_batch_has_engine_work, authority_batch_is_pure_content,
-    authority_merge_run_len, authority_transaction_count, authority_wait_timeout,
-    center_geometry_without_scaling, clamp_floating_pointer_outline,
+    SHELL_SWITCHER_SHORTCUT_ACTION, SessionFatalCleanupEvidence, SessionPointerPlacement,
+    SessionProcessGuard, Size, Transform, XPresentCadence, authority_batch_has_engine_work,
+    authority_batch_is_pure_content, authority_merge_run_len, authority_transaction_count,
+    authority_wait_timeout, center_geometry_without_scaling, clamp_floating_pointer_outline,
     clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
     current_cpu_frame_is_presented, flush_all_client_pressed_keys,
     global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
     independent_native_output_presented, initial_session_focus_candidate,
-    input_baseline_is_presented, live_transaction_observed_size, live_transaction_raster_size,
-    live_transaction_visual_evidence, logical_startup_output_progress,
-    logical_synchronous_modeset_records, managed_child_exit_is_nonfatal,
-    native_frame_service_requires_owner_progress, native_frame_service_should_preempt_authority,
-    observe_floating_pointer_gesture, observe_public_output_generations,
-    observe_public_output_topology, pending_wm_focus_after_engine_decision,
-    physical_input_page_flip_correlates, physical_input_pixels_already_changed,
-    physical_input_routing_mode, place_pointer_event_for_routing,
-    pointer_press_starts_focus_handoff, policy_checkpoint_replaced, policy_profile_identity,
-    policy_projections_place_surface, production_cycle_native_owner_policy,
-    public_policy_launch_spec, public_policy_restart_decision,
-    public_policy_restart_settlement_pending, public_session_operations, record_runtime_commits,
-    rects_intersect, resolve_public_shortcuts, route_input_events,
-    session_protocol_errors_are_fatal, settle_session_fatal_error,
+    input_baseline_is_presented, is_shell_switcher_shortcut, live_transaction_observed_size,
+    live_transaction_raster_size, live_transaction_visual_evidence,
+    logical_startup_output_progress, logical_synchronous_modeset_records,
+    managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
+    native_frame_service_should_preempt_authority, observe_floating_pointer_gesture,
+    observe_public_output_generations, observe_public_output_topology,
+    pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
+    physical_input_pixels_already_changed, physical_input_routing_mode,
+    place_pointer_event_for_routing, pointer_press_starts_focus_handoff,
+    policy_checkpoint_replaced, policy_profile_identity, policy_projections_place_surface,
+    production_cycle_native_owner_policy, public_policy_launch_spec,
+    public_policy_restart_decision, public_policy_restart_settlement_pending,
+    public_session_operations, record_runtime_commits, rects_intersect, resolve_public_shortcuts,
+    route_input_events, session_protocol_errors_are_fatal, settle_session_fatal_error,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
     take_settled_input_delivery_wait,
@@ -85,6 +86,7 @@ use std::time::{Duration, Instant};
 mod authority_merge_tests;
 mod desktop_shortcut_tests;
 mod input_policy_tests;
+mod metadata_shell_tests;
 mod output_topology_owner_tests;
 mod policy_transport_worker_tests;
 mod present_retirement_tests;

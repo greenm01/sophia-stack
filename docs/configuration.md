@@ -111,6 +111,19 @@ explicitly authority-qualified, for example `policy:switch-layout` or
 `session:close-window`; pointer bindings cannot invoke session capabilities.
 This preparation does not activate the candidate or grant an unavailable
 capability.
+
+The desktop profile recognizes `session:window-switcher` as a session-owned
+action; it is not registered by the WM. A shell-enabled profile may bind it to
+`Super+P`. The compiled profile keeps the shell disabled until explicit X
+pointer grabs participate in Engine's application lease arbitration. The
+action is valid only in a normal `sophia_wm_v1` session with the shell enabled.
+`--shell-process` accepts one absolute executable path. When it is omitted,
+Sophia looks for `hagia-shell` beside the absolute Hagia executable. The
+session launches it as `hagia-shell --serve` in a metadata-shell Bubblewrap
+domain. It receives sanitized descriptors and opaque actions, never
+application identities or raw input. Packaging records separate hashes for
+`hagia` and `hagia-shell` and rejects a Hagia release that lacks either
+executable.
 The desktop-profile form of `config check` runs the same typed shortcut,
 session, input, and output preparation used by graphical startup; it performs
 no device discovery or activation.

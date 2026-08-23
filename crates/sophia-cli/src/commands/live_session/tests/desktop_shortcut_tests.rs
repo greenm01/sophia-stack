@@ -91,3 +91,50 @@ fn desktop_shortcuts_reject_unregistered_policy_semantics() {
         Err("shortcut names an unregistered policy action")
     );
 }
+
+#[test]
+fn descriptor_switcher_shortcut_is_session_owned() {
+    let candidate = shortcut_candidate(vec![key_shortcut(
+        "p",
+        sophia_config::DesktopShortcutTarget::Session(
+            sophia_config::DesktopSessionShortcut::WindowSwitcher,
+        ),
+    )]);
+    let configuration = sophia_protocol::PolicyConfiguration {
+        connection_epoch: 1,
+        generation: 1,
+        actions: Vec::new(),
+        chrome: sophia_protocol::WmChromePolicy::default(),
+    };
+
+    let mut registry = resolve_public_shortcuts(&candidate, &configuration).unwrap();
+    let decision = registry.handle_key(
+        25,
+        WmModifierMask {
+            bits: WmModifierMask::SUPER,
+        },
+        true,
+    );
+    assert!(decision.consumed);
+    assert!(decision.action.is_some_and(is_shell_switcher_shortcut));
+}
+
+#[test]
+fn policy_cannot_claim_the_descriptor_switcher_action_identity() {
+    let candidate = shortcut_candidate(Vec::new());
+    let configuration = sophia_protocol::PolicyConfiguration {
+        connection_epoch: 1,
+        generation: 1,
+        actions: vec![sophia_protocol::PolicyActionRegistration {
+            action: SHELL_SWITCHER_SHORTCUT_ACTION,
+            name: "collision".to_owned(),
+            session_operation_slot: None,
+        }],
+        chrome: sophia_protocol::WmChromePolicy::default(),
+    };
+
+    assert_eq!(
+        resolve_public_shortcuts(&candidate, &configuration),
+        Err("policy action collides with a reserved session shortcut")
+    );
+}

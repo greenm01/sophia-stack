@@ -377,6 +377,8 @@ impl LiveProductionVisualRuntime {
                 layers: Vec::new(),
                 chrome_targets: Vec::new(),
                 chrome_occlusion: None,
+                descriptor_targets: Vec::new(),
+                descriptor_occlusion: None,
             })
             .collect();
         Ok(LiveProductionNativeSuspendReport {
@@ -549,6 +551,8 @@ impl LiveProductionVisualRuntime {
                 layers: Vec::new(),
                 chrome_targets: Vec::new(),
                 chrome_occlusion: None,
+                descriptor_targets: Vec::new(),
+                descriptor_occlusion: None,
             })
             .collect();
         self.outputs = next;

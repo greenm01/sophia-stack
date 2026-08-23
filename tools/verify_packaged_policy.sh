@@ -78,10 +78,31 @@ require_sha256 xmonad_config_sha256 "$(sha256sum "$xmonad_config" | awk '{print 
 require_sha256 xmonad_cabal_sha256 "$(sha256sum "$xmonad_cabal" | awk '{print $1}')"
 require_sha256 xmonad_project_sha256 "$(sha256sum "$xmonad_project" | awk '{print $1}')"
 require_sha256 xmobar_config_sha256 "$(sha256sum "$xmobar_config" | awk '{print $1}')"
+case "$(field hagia_included)" in
+    true)
+        hagia="$release/target/release/hagia"
+        hagia_shell="$release/target/release/hagia-shell"
+        for executable in "$hagia" "$hagia_shell"; do
+            [[ -x "$executable" ]] || {
+                echo "Packaged Hagia executable is missing: $executable" >&2
+                exit 1
+            }
+        done
+        require_sha256 hagia_binary_sha256 \
+            "$(sha256sum "$hagia" | awk '{print $1}')"
+        require_sha256 hagia_shell_binary_sha256 \
+            "$(sha256sum "$hagia_shell" | awk '{print $1}')"
+        ;;
+    false) ;;
+    *)
+        echo "Packaged policy has an invalid hagia_included field." >&2
+        exit 1
+        ;;
+esac
 [[ "$($xmonad --version 2>&1 | head -n 1 | tr ' ' '_')" == "$(field xmonad_version)" \
     && "$($xmobar --version 2>&1 | head -n 1 | tr ' ' '_')" == "$(field xmobar_version)" ]] || {
     echo "Packaged policy executable version output does not match its manifest." >&2
     exit 1
 }
 
-echo "Packaged xmonad and xmobar policy verified."
+echo "Packaged policy executables verified."

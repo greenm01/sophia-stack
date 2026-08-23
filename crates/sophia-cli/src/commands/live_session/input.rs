@@ -10,6 +10,7 @@ struct PhysicalInputRouteReport {
     events: usize,
     wm_actions: Vec<WmActionId>,
     chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
+    descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
     chrome_captures_started: usize,
     chrome_actions_activated: usize,
     chrome_captures_cancelled: usize,
@@ -174,6 +175,8 @@ fn input_projection_for_pointer<'a>(
     &'a [LayerSnapshot],
     &'a [sophia_engine::IndicatorChromeHitTarget],
     Option<sophia_protocol::Rect>,
+    &'a [sophia_engine::PresentedChromeTarget],
+    Option<sophia_protocol::Rect>,
     Option<sophia_protocol::OutputId>,
     u64,
 ) {
@@ -187,12 +190,22 @@ fn input_projection_for_pointer<'a>(
             })
         })
         .map_or(
-            (fallback_layers, &[], None, fallback_output, fallback_epoch),
+            (
+                fallback_layers,
+                &[],
+                None,
+                &[],
+                None,
+                fallback_output,
+                fallback_epoch,
+            ),
             |projection| {
                 (
                     projection.layers.as_slice(),
                     projection.chrome_targets.as_slice(),
                     projection.chrome_occlusion,
+                    projection.descriptor_targets.as_slice(),
+                    projection.descriptor_occlusion,
                     Some(projection.output),
                     projection.epoch,
                 )
@@ -341,6 +354,7 @@ struct PhysicalInputRoutingContext<'a> {
     floating_gesture: &'a mut FloatingPointerGestureState,
     application_route_leases: &'a mut ApplicationRouteLeaseState,
     chrome_captures: &'a mut sophia_engine::ChromeCaptureState,
+    descriptor_captures: &'a mut sophia_engine::PresentedChromeCaptureState,
     route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -382,6 +396,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         floating_gesture,
         application_route_leases,
         chrome_captures,
+        descriptor_captures,
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
@@ -416,6 +431,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(floating_gesture),
         Some(application_route_leases),
         Some(chrome_captures),
+        Some(descriptor_captures),
         Some(route_lease_release_sender),
         input_output,
         input_presentation_epoch,
@@ -484,6 +500,7 @@ fn route_input_events(
         None,
         None,
         None,
+        None,
         0,
         None,
         None,
@@ -521,6 +538,7 @@ fn route_input_events_with_pointer_focus(
     mut floating_gesture: Option<&mut FloatingPointerGestureState>,
     mut application_route_leases: Option<&mut ApplicationRouteLeaseState>,
     mut chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
+    mut descriptor_captures: Option<&mut sophia_engine::PresentedChromeCaptureState>,
     route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -532,6 +550,7 @@ fn route_input_events_with_pointer_focus(
         events: events.len(),
         wm_actions: Vec::new(),
         chrome_activations: Vec::new(),
+        descriptor_activations: Vec::new(),
         chrome_captures_started: 0,
         chrome_actions_activated: 0,
         chrome_captures_cancelled: 0,
@@ -1017,6 +1036,8 @@ fn route_input_events_with_pointer_focus(
                     input_layers,
                     chrome_targets,
                     chrome_occlusion,
+                    descriptor_targets,
+                    descriptor_occlusion,
                     input_output,
                     input_presentation_epoch,
                 ) =
@@ -1036,6 +1057,58 @@ fn route_input_events_with_pointer_focus(
                         .as_deref()
                         .and_then(PointerFocusHandoffState::target)
                         .is_some();
+                if pointer_routing_enabled
+                    && let Some(state) = descriptor_captures.as_deref_mut()
+                {
+                    let disposition = sophia_engine::resolve_presented_chrome_pointer_event(
+                        state,
+                        event.seat,
+                        event.device,
+                        kind,
+                        event.global_position,
+                        input_output,
+                        input_presentation_epoch,
+                        descriptor_targets,
+                        descriptor_occlusion,
+                        application_owned,
+                    )
+                    .map_err(|error| {
+                        format!("failed to route descriptor switcher input: {error:?}")
+                    })?;
+                    match disposition {
+                        sophia_engine::PresentedChromePointerDisposition::Pass => {}
+                        sophia_engine::PresentedChromePointerDisposition::Captured => {
+                            report.chrome_captures_started =
+                                report.chrome_captures_started.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::PresentedChromePointerDisposition::Activated {
+                            action,
+                            activation,
+                        } => {
+                            report.chrome_actions_activated =
+                                report.chrome_actions_activated.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            report.descriptor_activations.push((action, activation));
+                            continue;
+                        }
+                        sophia_engine::PresentedChromePointerDisposition::Cancelled => {
+                            report.chrome_captures_cancelled =
+                                report.chrome_captures_cancelled.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::PresentedChromePointerDisposition::Consumed => {
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                    }
+                }
                 if pointer_routing_enabled
                     && let Some(state) = chrome_captures.as_deref_mut()
                 {

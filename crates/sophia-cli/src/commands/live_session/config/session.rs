@@ -119,6 +119,7 @@ impl SessionApplicationConfig {
     pub(super) fn validate_shortcuts(
         &self,
         shortcuts: &sophia_config::DesktopShortcutCandidate,
+        shell_enabled: bool,
     ) -> Result<(), SessionApplicationConfigError> {
         for binding in &shortcuts.bindings {
             let available = match binding.target {
@@ -135,6 +136,9 @@ impl SessionApplicationConfig {
                 sophia_config::DesktopShortcutTarget::Session(
                     sophia_config::DesktopSessionShortcut::LaunchBrowser,
                 ) => self.firefox.is_some(),
+                sophia_config::DesktopShortcutTarget::Session(
+                    sophia_config::DesktopSessionShortcut::WindowSwitcher,
+                ) => shell_enabled,
             };
             if !available {
                 return Err(SessionApplicationConfigError::UnavailableShortcutCapability);

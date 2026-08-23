@@ -137,6 +137,17 @@ promotion gate.
    candidate, presentation, target, action, reconnect, and revocation lifecycle
    before freezing records. Keep ordering, selection, and lifecycle in the
    shell; keep validation, rendering, hit-testing, and presentation in Engine.
+   The no-reservation path is now live behind an enabled shell profile: the
+   session launches `hagia-shell` in its own protected domain,
+   `session:window-switcher` requests its candidate, Engine presents and
+   captures it, the broker checks the exact issuer tuple, and the WM
+   adjudicates the resulting focus request. Disconnect burns interaction and
+   reconnects at a fresh epoch while retaining old pixels as inert. Packaging
+   requires and hashes the separate executable. The compiled profile remains
+   disabled because explicit X pointer grabs still do not enter Engine's lease
+   state. Close that arbitration seam before enabling `Super+P` in the ordinary
+   profile or collecting signed installed shell evidence. Reservations are
+   deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
@@ -154,12 +165,18 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Connect the first protected Hagia shell client.** The offline descriptor
-   projection has established the smallest useful rendering and discrete-target
-   vocabulary. Model and add a distinct shell-role transport, then build a
-   title-only `hagia-shell` switcher that supplies order and selection and
-   receives opaque activations. Do not add previews, icons, MRU policy, generic
-   textures, or live shortcuts until this first lifecycle is exact.
+1. **Finish application/shell pointer arbitration, then prove the live
+   no-reservation switcher.** Reduce core `GrabPointer` and admitted XI pointer
+   grabs into the existing Engine lease handshake, including release,
+   disconnect, control-epoch, and shell-precedence tests. Then enable
+   `Super+P` in the ordinary profile and bind signed Sophia, Hagia, and Hagia
+   Shell binaries. The physical run must activate one exact presented row,
+   crash and reconnect the shell, then repeat activation and withdrawal. It
+   must retain inert pixels during loss, negotiate a fresh recipient epoch,
+   validate the broker issuer, route focus through the WM, present nonzero
+   output-local pixels, and tear down cleanly. Only after that archive passes
+   should the work-area reservation coordinator enter production. Previews,
+   icons, MRU policy, and generic textures remain out of this gate.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -472,8 +489,9 @@ is excluded; retained product behavior is not.
   retains in-flight rasters safely. Exact press/release capture returns only
   the opaque capability reference and activation identity. Offline tests and a
   16-entry two-head timing probe cover this tranche. The umbrella remains open:
-  there is still no shell-role wire, external shell client, production dispatch,
-  or live shell evidence.
+  the protected wire, external Hagia Shell, and shell-enabled live dispatch now
+  exist, but explicit X-grab arbitration, compiled-profile enablement, and
+  signed installed shell evidence remain open.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its
@@ -1910,8 +1928,9 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   paths plus Hagia's private writable checkpoint directory. Exact host peer PID
   is recovered for role-socket admission, and the protected broker smoke is the
   executable negative control. Bubblewrap 0.11.2 is now a checked Hagia install
-  prerequisite. A future metadata shell must receive its own separately
-  supervised role/domain; this checkbox does not claim that shell exists.
+  prerequisite. The live Hagia Shell now receives that separate supervised
+  role/domain. Its compiled-profile enablement and physical proof remain later
+  gates; this checkbox alone does not claim either.
 - [x] Require that domain where roles are admitted, not only where domains are
   constructed. The shell and metadata-broker sockets refuse a supervised PID,
   refuse an expected peer identity at bind time, and admit only the launch
@@ -1930,8 +1949,9 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   Experimental `sophia_shell_v1` revision 1 now carries nonzero, nonreused
   broker action grants through exact broker, revocation, recipient, target, and
   descriptor generations; its model and transport revoke interaction on shell
-  loss while retaining prior pixels. Issuer-side live dispatch and the atomic
-  reservation/WM coordinator remain open.
+  loss while retaining prior pixels. Issuer-side live dispatch now revalidates
+  the broker grant before submitting an ordinary WM focus request. The atomic
+  reservation/work-area/WM coordinator remains open.
 - [ ] Repair native application input before shell coexistence.
   - [x] In the installed primary-output pointer domain, derive hit-test layers
     from the immutable output-frame snapshot only after accepted page-flip
@@ -1992,7 +2012,7 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   explicitly experimental descriptor-switcher schema with strict Rust codecs,
   a generated golden/malformed corpus, an independent C proof client, and a
   23,582,243-state lifecycle check. Permanent compatibility, broader display
-  lists, reservation coordination, and live evidence remain open.
+  lists, reservation coordination, and signed installed evidence remain open.
 - [ ] Settle the remaining display-list vocabulary before schema work. Admit
   generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget
@@ -2002,8 +2022,11 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   for tabs, overview, switchers, previews, and other visible furniture. Shell
   metadata must never leak into Hagia's blind spatial-policy projection. The
   standalone Nim executable and reducer now pass the shared corpus and a
-  protected title-only cross-process proof without linking Hagia policy. Live
-  launch, shortcut admission, reconnect, and richer furniture remain open.
+  protected title-only cross-process proof without linking Hagia policy.
+  Shell-enabled live launch, shortcut admission, exact activation, issuer-side
+  dispatch, withdrawal, and reconnect are implemented. Explicit X-grab
+  arbitration, compiled-profile enablement, installed evidence, and richer
+  furniture remain open.
 - [ ] Add trusted classification, launch, lock, capture, output, and transfer
   services through brokers, session capabilities, and portals. Hagia may
   request opaque actions but may not receive executable paths, client

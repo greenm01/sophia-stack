@@ -32,14 +32,13 @@ impl LiveProductionVisualRuntime {
             &self.surface_metadata,
         );
         for index in 0..self.input_projections.len() {
+            let Some(output) = self.outputs.output_id(index) else {
+                continue;
+            };
             let (chrome_targets, chrome_occlusion) = self
                 .outputs
-                .output_id(index)
-                .and_then(|output| {
-                    self.outputs
-                        .logical_viewport(output)
-                        .map(|bounds| (output, bounds))
-                })
+                .logical_viewport(output)
+                .map(|bounds| (output, bounds))
                 .and_then(|(output, bounds)| {
                     self.indicator_strip_enabled
                         .then_some(self.indicator_publication.as_ref())
@@ -56,11 +55,18 @@ impl LiveProductionVisualRuntime {
                     || (Vec::new(), None),
                     |command| direct_chrome_projection(&command),
                 );
+            let (descriptor_targets, descriptor_occlusion) = direct_descriptor_projection(
+                self.descriptor_overlay.as_ref(),
+                output,
+                self.descriptor_overlay_interactive,
+            );
             self.replace_presented_input_projection(
                 index,
                 input_layers.clone(),
                 chrome_targets,
                 chrome_occlusion,
+                descriptor_targets,
+                descriptor_occlusion,
             );
         }
         tracing::trace!(
@@ -81,29 +87,46 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
-            let (input_layers, chrome_targets, chrome_occlusion, presented_scene_surfaces) =
-                native_scanout.presented_output_frame(output).map_or_else(
-                    || (Vec::new(), Vec::new(), None, 0),
-                    |presented| {
-                        let logical_viewport = self
-                            .outputs
-                            .logical_viewport(output)
-                            .unwrap_or(Rect::default());
-                        let (chrome_targets, chrome_occlusion) =
-                            presented_chrome_projection(presented, logical_viewport);
-                        (
-                            presented_input_layer_snapshots(presented, &self.surface_metadata),
-                            chrome_targets,
-                            chrome_occlusion,
-                            presented.surfaces.len(),
-                        )
-                    },
-                );
+            let (
+                input_layers,
+                chrome_targets,
+                chrome_occlusion,
+                descriptor_targets,
+                descriptor_occlusion,
+                presented_scene_surfaces,
+            ) = native_scanout.presented_output_frame(output).map_or_else(
+                || (Vec::new(), Vec::new(), None, Vec::new(), None, 0),
+                |presented| {
+                    let logical_viewport = self
+                        .outputs
+                        .logical_viewport(output)
+                        .unwrap_or(Rect::default());
+                    let (chrome_targets, chrome_occlusion) =
+                        presented_chrome_projection(presented, logical_viewport);
+                    let (descriptor_targets, descriptor_occlusion) =
+                        presented_descriptor_projection(
+                            presented,
+                            self.descriptor_overlay.as_ref(),
+                            output,
+                            self.descriptor_overlay_interactive,
+                        );
+                    (
+                        presented_input_layer_snapshots(presented, &self.surface_metadata),
+                        chrome_targets,
+                        chrome_occlusion,
+                        descriptor_targets,
+                        descriptor_occlusion,
+                        presented.surfaces.len(),
+                    )
+                },
+            );
             self.replace_presented_input_projection(
                 index,
                 input_layers,
                 chrome_targets,
                 chrome_occlusion,
+                descriptor_targets,
+                descriptor_occlusion,
             );
             tracing::trace!(
                 output = output.raw(),
@@ -120,6 +143,8 @@ impl LiveProductionVisualRuntime {
         input_layers: Vec<LayerSnapshot>,
         chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
         chrome_occlusion: Option<Rect>,
+        descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
+        descriptor_occlusion: Option<Rect>,
     ) {
         let Some(projection) = self.input_projections.get_mut(index) else {
             return;
@@ -127,6 +152,8 @@ impl LiveProductionVisualRuntime {
         if !same_interaction_projection(&projection.layers, &input_layers)
             || projection.chrome_targets != chrome_targets
             || projection.chrome_occlusion != chrome_occlusion
+            || projection.descriptor_targets != descriptor_targets
+            || projection.descriptor_occlusion != descriptor_occlusion
         {
             projection.epoch = projection
                 .epoch
@@ -136,6 +163,8 @@ impl LiveProductionVisualRuntime {
         projection.layers = input_layers;
         projection.chrome_targets = chrome_targets;
         projection.chrome_occlusion = chrome_occlusion;
+        projection.descriptor_targets = descriptor_targets;
+        projection.descriptor_occlusion = descriptor_occlusion;
     }
 
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {
@@ -157,6 +186,75 @@ impl LiveProductionVisualRuntime {
         let templates = committed_layer_snapshots(&committed, &self.surface_metadata);
         (templates, committed)
     }
+}
+
+fn direct_descriptor_projection(
+    overlay: Option<&sophia_engine::DescriptorOverlayProjection>,
+    output: OutputId,
+    interactive: bool,
+) -> (Vec<sophia_engine::PresentedChromeTarget>, Option<Rect>) {
+    overlay
+        .filter(|overlay| overlay.output == output)
+        .map_or_else(
+            || (Vec::new(), None),
+            |overlay| {
+                (
+                    interactive
+                        .then(|| overlay.targets.clone())
+                        .unwrap_or_default(),
+                    Some(overlay.geometry),
+                )
+            },
+        )
+}
+
+fn presented_descriptor_projection(
+    presented: &OutputFrameDamageSnapshot,
+    overlay: Option<&sophia_engine::DescriptorOverlayProjection>,
+    output: OutputId,
+    interactive: bool,
+) -> (Vec<sophia_engine::PresentedChromeTarget>, Option<Rect>) {
+    let presented_identity =
+        presented
+            .compositor_display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                sophia_engine::CompositorDisplayCommand::Rect(rect) => match rect.node {
+                    sophia_engine::CompositorNodeId::DescriptorOverlay {
+                        projection,
+                        slot: u16::MAX,
+                        role: sophia_engine::DescriptorOverlayNodeRole::Panel,
+                    } => Some((projection, rect.geometry)),
+                    _ => None,
+                },
+                _ => None,
+            });
+    let Some((projection, geometry)) = presented_identity else {
+        return (Vec::new(), None);
+    };
+    let targets = overlay
+        .filter(|overlay| {
+            interactive
+                && overlay.output == output
+                && overlay.commands.iter().any(|command| {
+                    matches!(
+                        command,
+                        sophia_engine::CompositorDisplayCommand::Rect(rect)
+                            if matches!(
+                                rect.node,
+                                sophia_engine::CompositorNodeId::DescriptorOverlay {
+                                    projection: candidate,
+                                    slot: u16::MAX,
+                                    role: sophia_engine::DescriptorOverlayNodeRole::Panel,
+                                } if candidate == projection
+                            )
+                    )
+                })
+        })
+        .map(|overlay| overlay.targets.clone())
+        .unwrap_or_default();
+    (targets, Some(geometry))
 }
 
 fn direct_chrome_projection(
@@ -495,6 +593,8 @@ mod tests {
             vec![layer_for(surface(40, 1), 1)],
             Vec::new(),
             None,
+            Vec::new(),
+            None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 0);
@@ -502,6 +602,8 @@ mod tests {
         runtime.replace_presented_input_projection(
             1,
             vec![layer_for(surface(41, 1), 2)],
+            Vec::new(),
+            None,
             Vec::new(),
             None,
         );
@@ -514,16 +616,138 @@ mod tests {
             vec![layer_for(surface(40, 1), 99)],
             Vec::new(),
             None,
+            Vec::new(),
+            None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
 
-        runtime.replace_presented_input_projection(0, Vec::new(), Vec::new(), None);
+        runtime.replace_presented_input_projection(
+            0,
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+            None,
+        );
         assert_eq!(runtime.input_projections()[0].epoch, 2);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
         assert_eq!(
             runtime.input_projections()[1].layers[0].surface,
             surface(41, 1)
+        );
+    }
+
+    #[test]
+    fn descriptor_interaction_revokes_without_withdrawing_presented_occlusion() {
+        let output = HeadlessOutput::deterministic();
+        let geometry = Rect {
+            x: 20,
+            y: 20,
+            width: 240,
+            height: 80,
+        };
+        let target = sophia_engine::PresentedChromeTarget {
+            id: sophia_engine::PresentedChromeTargetId {
+                authority_session_epoch: 4,
+                slot: 1,
+                generation: 7,
+            },
+            output: output.id,
+            geometry,
+            action: sophia_protocol::ToplevelActionCapabilityRef {
+                token: 9,
+                issuer_epoch: 2,
+                issuer_revocation_epoch: 3,
+                recipient_epoch: 4,
+                target_slot: 1,
+                target_generation: 7,
+            },
+        };
+        let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
+        runtime.replace_presented_input_projection(
+            0,
+            Vec::new(),
+            Vec::new(),
+            None,
+            vec![target],
+            Some(geometry),
+        );
+        assert_eq!(runtime.input_projections()[0].epoch, 1);
+
+        assert_eq!(runtime.revoke_descriptor_overlay_interaction(), 1);
+        assert!(runtime.input_projections()[0].descriptor_targets.is_empty());
+        assert_eq!(
+            runtime.input_projections()[0].descriptor_occlusion,
+            Some(geometry)
+        );
+        assert_eq!(runtime.input_projections()[0].epoch, 2);
+    }
+
+    #[test]
+    fn retired_descriptor_frame_publishes_only_current_interaction() {
+        let output = HeadlessOutput::deterministic();
+        let geometry = Rect {
+            x: 10,
+            y: 10,
+            width: 300,
+            height: 64,
+        };
+        let command = CompositorDisplayCommand::Rect(sophia_engine::CompositorRect {
+            node: sophia_engine::CompositorNodeId::DescriptorOverlay {
+                projection: 5,
+                slot: u16::MAX,
+                role: sophia_engine::DescriptorOverlayNodeRole::Panel,
+            },
+            generation: 5,
+            geometry,
+            color: sophia_engine::CompositorRgb8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+            },
+        });
+        let target = sophia_engine::PresentedChromeTarget {
+            id: sophia_engine::PresentedChromeTargetId {
+                authority_session_epoch: 4,
+                slot: 1,
+                generation: 7,
+            },
+            output: output.id,
+            geometry,
+            action: sophia_protocol::ToplevelActionCapabilityRef {
+                token: 9,
+                issuer_epoch: 2,
+                issuer_revocation_epoch: 3,
+                recipient_epoch: 4,
+                target_slot: 1,
+                target_generation: 7,
+            },
+        };
+        let overlay = sophia_engine::DescriptorOverlayProjection {
+            output: output.id,
+            generation: 8,
+            geometry,
+            commands: vec![command.clone()],
+            targets: vec![target.clone()],
+        };
+        let presented = OutputFrameDamageSnapshot {
+            output,
+            surfaces: Vec::new(),
+            compositor_display_list: CompositorDisplayList {
+                output: output.id,
+                commands: vec![command],
+            },
+            software_cursor: None,
+        };
+
+        assert_eq!(
+            presented_descriptor_projection(&presented, Some(&overlay), output.id, true),
+            (vec![target], Some(geometry))
+        );
+        assert_eq!(
+            presented_descriptor_projection(&presented, Some(&overlay), output.id, false),
+            (Vec::new(), Some(geometry))
         );
     }
 

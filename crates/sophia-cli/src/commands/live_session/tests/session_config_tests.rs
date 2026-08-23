@@ -186,6 +186,63 @@ fn public_policy_profile_activation_is_mandatory() {
 }
 
 #[test]
+fn normal_hagia_session_resolves_one_separate_shell_executable() {
+    use std::os::unix::fs::PermissionsExt as _;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = std::env::temp_dir().join(format!(
+        "sophia-live-shell-profile-{}-{}.kdl",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(
+        &path,
+        r#"schema 1
+policy {}
+shell { enabled #true; }
+shortcut {
+  profile "shell-test"
+  bind "Super+p" "session:window-switcher"
+}
+session { terminal "terminal"; browser "browser"; }
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    let base = [
+        format!("--desktop-profile={}", path.display()),
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/true".to_owned(),
+        "--session-start=terminal".to_owned(),
+        "--session-app=browser=/usr/bin/true".to_owned(),
+        "--wm-process=/opt/hagia".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+    ];
+    let config = PersistentXtermSessionConfig::from_args(&base).unwrap();
+    assert_eq!(config.shell_process.as_deref(), Some("/opt/hagia-shell"));
+
+    let mut explicit = base.to_vec();
+    explicit.push("--shell-process=/srv/hagia-shell".to_owned());
+    let config = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
+    assert_eq!(config.shell_process.as_deref(), Some("/srv/hagia-shell"));
+
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            format!("--desktop-profile={}", path.display()),
+            "--shell-process=/srv/hagia-shell".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("session-mode=normal")
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};

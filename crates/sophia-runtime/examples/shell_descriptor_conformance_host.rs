@@ -33,7 +33,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .ok_or("usage: shell_descriptor_conformance_host CLIENT")?;
+        .ok_or("usage: shell_descriptor_conformance_host CLIENT [--proof|--serve]")?;
+    let client_mode = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "--proof".to_owned());
+    if !matches!(client_mode.as_str(), "--proof" | "--serve") {
+        return Err("shell client mode must be --proof or --serve".into());
+    }
     if !client.is_absolute() || !client.is_file() {
         return Err("shell client must be an absolute executable path".into());
     }
@@ -51,7 +57,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ProtectionPath::read_only(socket.parent().ok_or("shell socket lacks a parent")?),
     )?;
     let spec = ProcessLaunchSpec::new(client)
-        .arg("--proof")
+        .arg(client_mode)
         .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
         .process_group()
         .protection_domain(domain);
