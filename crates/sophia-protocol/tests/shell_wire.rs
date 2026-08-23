@@ -51,7 +51,7 @@ fn roundtrip(name: &str, transaction: TransactionId, frame: &[u8]) -> Vec<u8> {
             decode_shell_v1_server_welcome_frame(frame).unwrap(),
         )
         .unwrap(),
-        "descriptor_snapshot" => {
+        "descriptor_snapshot" | "descriptor_snapshot_unlabeled" => {
             let (actual, message) = decode_shell_v1_descriptor_snapshot_frame(frame).unwrap();
             assert_eq!(actual, transaction);
             encode_shell_v1_descriptor_snapshot_frame(actual, &message).unwrap()

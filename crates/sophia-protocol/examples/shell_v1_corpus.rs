@@ -113,6 +113,26 @@ fn valid_frames() -> Vec<(&'static str, TransactionId, Vec<u8>)> {
         },
     )
     .unwrap();
+    let unlabeled_snapshot = encode_shell_v1_descriptor_snapshot_frame(
+        transaction,
+        &ShellV1DescriptorSnapshot {
+            connection_epoch: 5,
+            snapshot_generation: 6,
+            output: OutputId::from_raw(7),
+            output_generation: 8,
+            broker_epoch: 3,
+            broker_revocation_epoch: 4,
+            descriptors: vec![ShellV1Descriptor {
+                slot: 2,
+                generation: 10,
+                label: None,
+                trust_level: TrustLevel::Isolated,
+                attention: AttentionState::Notice,
+                action: action(),
+            }],
+        },
+    )
+    .unwrap();
     vec![
         ("client_hello", TransactionId::INVALID, hello),
         ("server_welcome", TransactionId::INVALID, welcome),
@@ -121,6 +141,11 @@ fn valid_frames() -> Vec<(&'static str, TransactionId, Vec<u8>)> {
         ("candidate_outcome", transaction, outcome),
         ("activation", transaction, activation),
         ("activation_ack", transaction, ack),
+        (
+            "descriptor_snapshot_unlabeled",
+            transaction,
+            unlabeled_snapshot,
+        ),
     ]
 }
 

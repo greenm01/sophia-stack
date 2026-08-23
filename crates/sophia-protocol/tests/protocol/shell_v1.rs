@@ -21,10 +21,7 @@ fn snapshot() -> ShellV1DescriptorSnapshot {
             ShellV1Descriptor {
                 slot: 1,
                 generation: 9,
-                label: Some(DisplayLabel {
-                    text: "Notes".to_owned(),
-                    redacted: false,
-                }),
+                label: None,
                 trust_level: TrustLevel::Trusted,
                 attention: AttentionState::None,
                 action: action(1, 9),
