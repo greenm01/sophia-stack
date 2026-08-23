@@ -59,14 +59,14 @@ show_step() {
         'HAGIA RESTART PROOF' "$1" 'This screen advances only after Sophia commits the action.'
 }
 
-show_step 'Press Super+Y once. Confirm the window remains fullscreen.'
+show_step 'Press Super+Shift+F once. Confirm the window remains fullscreen.'
 wait_for_action_count 37 1
 
 show_step 'Press Super+N once to select the next layout. Then wait for the scene to return.'
 wait_for_action_count 66 1
 wait_for_restart
 
-show_step 'Restart committed. Confirm fullscreen survived, then press Super+Y once.'
+show_step 'Restart committed. Confirm fullscreen survived, then press Super+Shift+F once.'
 wait_for_action_count 37 2
 
 show_step 'Press Super+N once to select the next layout.'
@@ -79,9 +79,9 @@ show_step 'Press Super+M once more.'
 wait_for_action_count 38 2
 
 show_step 'IMPORTANT — READ ALL THREE LINES BEFORE ACTING
-1. Press and release Super+I.
+1. Press and release Super+Shift+B.
 2. This window will disappear.
-3. Press and release Super+R anyway. Do not wait for another prompt.'
+3. Press and release Super+Alt+B anyway. Do not wait for another prompt.'
 wait_for_action_count 39 1
 wait_for_action_count 40 1
 wait_for_nonempty_restore

@@ -5,6 +5,19 @@ root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 temp_dir=$(mktemp -d)
 trap 'rm -rf -- "$temp_dir"' EXIT HUP INT TERM
 
+grep -Fq 'bind "Super+Shift+f" "policy:toggle-fullscreen"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'bind "Super+Shift+b" "policy:minimize"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'bind "Super+Alt+b" "policy:restore-minimized"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq "show_step 'Press Super+Shift+F once." \
+    "$root_dir/tools/fixtures/hagia_physical_guide.sh"
+grep -Fq '1. Press and release Super+Shift+B.' \
+    "$root_dir/tools/fixtures/hagia_physical_guide.sh"
+grep -Fq '3. Press and release Super+Alt+B anyway.' \
+    "$root_dir/tools/fixtures/hagia_physical_guide.sh"
+
 evidence="$temp_dir/evidence.log"
 marker="$temp_dir/restart.marker"
 proof_result="$temp_dir/proof.result"

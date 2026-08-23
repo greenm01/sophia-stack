@@ -488,6 +488,11 @@ to carry instructions across the TTY transition; the final phrase is not shown
 until every required action and the restart have been observed. The minimize
 instruction pairs its temporarily invisible restore chord on the same screen,
 so hiding the proof surface cannot hide the operation needed to return it.
+The guide names the compiled public shortcut candidate's exact chords:
+`Super+Shift+F` for fullscreen, `Super+Shift+B` for minimize, and
+`Super+Alt+B` for restore. A local matcher ties those instructions to the
+compiled profile so a retired protocol binding cannot silently return to the
+physical procedure.
 After the restore commits, both the guide and final verifier require Hagia's
 next private checkpoint to remain nonempty. This binds the action record to
 retained surface ownership instead of accepting a committed no-op. Sophia's

@@ -100,10 +100,10 @@ verify_bound_identity
 echo "Hagia installed physical policy gate"
 echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
 echo "Use two connected outputs. After Kitty appears:"
-echo "  1. Press Super+Y once; confirm fullscreen."
+echo "  1. Press Super+Shift+F once; confirm fullscreen."
 echo "  2. Press Super+N once; Hagia will checkpoint the new layout and restart."
 echo "  3. After the scene returns, confirm fullscreen and the layout survived."
-echo "  4. Press Super+Y, Super+N, Super+M twice, Super+I, Super+R, Super+Left, Super+Right."
+echo "  4. Press Super+Shift+F, Super+N, Super+M twice, Super+Shift+B, Super+Alt+B, Super+Left, Super+Right."
 echo "  5. Only after step 4, type '$proof_text' and press Enter."
 echo "     The phrase is the final signal and ends the session immediately."
 

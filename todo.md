@@ -82,7 +82,9 @@ promotion gate.
    re-verified mirror archive `0007` and mixed archive `0001`. Both mirror heads
    paced independently, the primary owned Present completion, the last scanning
    head owned release, and the mixed topology finished with clean health and
-   output-local Present submission ownership.
+   output-local Present submission ownership. Signed successor
+   `eeef531a33564391765c1ec9fecddf6d06dcd4cc` independently re-proved the
+   complete display slice as mirror archive `0008` and mixed archive `0002`.
 3. **Current.** Host the metadata-reduction chain
    through broker interface revision 1 and enforce Bubblewrap protection
    domains before admitting a metadata-bearing role. The protected transport,
@@ -97,7 +99,12 @@ promotion gate.
    protected policy domain. The gate now launches Hagia directly. A bounded
    proof flag arms on committed action 66 and asks the session-owned supervisor
    for one replacement only after Hagia atomically replaces its private
-   checkpoint; Sophia observes the checkpoint inode, not its contents.
+   checkpoint; Sophia observes the checkpoint inode, not its contents. The
+   replacement candidate reached the real two-output session, then the guide's
+   retired `Super+Y` instruction entered the application path because public
+   shortcut ownership now binds fullscreen to `Super+Shift+F`. The corrected
+   guide also names the public `Super+Shift+B` minimize and `Super+Alt+B`
+   restore chords, and a local matcher ties all three to the compiled profile.
 4. Build the minimum display-list, target-resolved-input, indicator, and
    reservation path needed to close Hagia's retained-behavior ledger. The
    authoritative ledger currently has 28 rows: 3 complete, 11 partial, and 14
@@ -116,21 +123,19 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Sign the restart-harness correction, then run the physical sequence from tty4.**
-   `tools/run_current_critical_path_tty4.sh` checks that both repositories are
-   clean, signed, and synchronized with their locally known `origin/master`,
-   then prompts for each cable state. It runs the two-head mirror gate, the
-   three-head mixed gate under `--optimize-for=center-unscaled`, and only after
-   both display gates pass, the two-head Hagia/broker gate. Each passing gate
-   writes and re-verifies a durable archive. The mixed run must show both mirror
-   heads pixel-exact inside their borders and a focus ring that stays on the
-   output owning the window. The first two runs close row 2; the final run closes
-   row 3. The last sequence produced verified mirror archive `0007` and mixed
-   archive `0001` on `e946cc725bf731515a477c86e9a575554965418c`, closing row 2.
-   Its Hagia gate then exposed the restart wrapper's dependence on state hidden
-   by Bubblewrap. The replacement is session-owned and local. Because it
-   changes the Sophia executable, all three gates must run on the next signed
-   candidate before row 3 is promoted.
+1. **Sign the guide correction, then retry only the Hagia/broker gate from tty4.**
+   Signed source `eeef531a33564391765c1ec9fecddf6d06dcd4cc` produced and
+   independently re-verified mirror archive `0008` and mixed archive `0002`
+   with Sophia binary digest
+   `9b60c57d7ffa2feb1a1ea00b8e24e24a9ecc90fa2d545ffb46737432f434c854`.
+   Its Hagia run reached the real session but failed on the guide's first
+   retired shortcut instruction, before any action commit. The correction
+   changes only the operator fixture and its checks: it does not change the
+   executable, compiled policy, or supervised application set, so the two
+   display archives remain candidate evidence under the rebuild rule. After a
+   signed commit, `tools/hagia-proof` rebuilds and binds the current Sophia and
+   Hagia source identities; the resulting Sophia digest must remain the one
+   above. A passing two-output archive closes row 3.
 2. **Only after those archives pass, start row 4 with Tier-0 indicators.**
    Assemble Hagia's existing bounded indicator/status projection into Engine's
    production chrome display list, add target-resolved input and work-area

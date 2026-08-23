@@ -1036,6 +1036,10 @@ The mirror run retained independently paced heads, primary-owned logical
 presentation, and last-head release. The mixed run retained those properties
 beside the extended output, exercised output-local Present ownership, and
 finished with clean native and session health. This promotes the pacing slice.
+Signed successor `eeef531a33564391765c1ec9fecddf6d06dcd4cc` independently
+re-proved that complete display slice as mirror archive `0008` and mixed
+archive `0002`. Both records bind Sophia binary digest
+`9b60c57d7ffa2feb1a1ea00b8e24e24a9ecc90fa2d545ffb46737432f434c854`.
 
 The mixed runner archives the raw log,
 exact Sophia and reference-WM digests, signed source commit, and signed-tree
@@ -1047,10 +1051,13 @@ host `/tmp`, which the policy protection domain deliberately removes. The
 replacement launches Hagia directly and lets the session owner request one
 supervised replacement after committed action 66 produces an atomic private-
 checkpoint inode change. It never reads Hagia's private checkpoint contents or
-widens the Bubblewrap domain. Because that correction changes the Sophia
-executable, the three-gate sequence must bind the next signed candidate before
-the metadata-broker row can be promoted. The executable slices and exit
-criteria stay ordered in `todo.md`.
+widens the Bubblewrap domain. The `eeef531a` display reruns passed, and the
+following Hagia attempt exposed only a stale operator instruction: the guide
+still named an old protocol shortcut after physical matching moved into the
+public shortcut owner. Its correction changes neither the executable nor the
+compiled policy, so the display archives remain valid while the Hagia gate
+binds the corrected signed harness and the same executable digest. The
+executable slices and exit criteria stay ordered in `todo.md`.
 
 ### Target
 
