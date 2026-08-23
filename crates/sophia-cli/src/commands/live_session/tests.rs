@@ -1,5 +1,6 @@
 #![cfg(test)]
 use super::metadata_broker::resolve_live_broker_toplevel_action;
+use super::metadata_shell::live_shell_activation_surfaces;
 use super::startup_readiness::startup_required_submission_for_head;
 use super::startup_readiness::{
     StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,

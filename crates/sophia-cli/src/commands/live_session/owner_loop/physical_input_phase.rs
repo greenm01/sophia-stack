@@ -475,19 +475,29 @@ macro_rules! drain_physical_input {
                     .copied()
                     .ok_or("descriptor activation targets an unavailable output")?;
                 if let Some(surface) = surface {
-                    let wm = wm_session
-                        .as_mut()
-                        .ok_or("descriptor activation has no live WM session")?;
-                    match wm.enqueue_focus(surface, &layout, action_output)? {
-                        LiveWmRequestAdmission::Admitted => println!(
-                            "sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} target=redacted"
-                        ),
-                        LiveWmRequestAdmission::Duplicate => println!(
-                            "sophia_live_metadata_shell schema=1 status=activation_duplicate activation={activation} target=redacted"
-                        ),
-                        LiveWmRequestAdmission::RejectedCapacity => eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=wm_capacity target=redacted"
-                        ),
+                    let activation_surfaces = live_shell_activation_surfaces(
+                        &layout.layers,
+                        &layout.presentation_roles,
+                    );
+                    if !activation_surfaces.contains(&surface) {
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=stale_target target=redacted"
+                        );
+                    } else {
+                        let wm = wm_session
+                            .as_mut()
+                            .ok_or("descriptor activation has no live WM session")?;
+                        match wm.enqueue_focus(surface, &layout, action_output)? {
+                            LiveWmRequestAdmission::Admitted => println!(
+                                "sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} target=redacted"
+                            ),
+                            LiveWmRequestAdmission::Duplicate => println!(
+                                "sophia_live_metadata_shell schema=1 status=activation_duplicate activation={activation} target=redacted"
+                            ),
+                            LiveWmRequestAdmission::RejectedCapacity => eprintln!(
+                                "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=wm_capacity target=redacted"
+                            ),
+                        }
                     }
                 } else {
                     eprintln!(
@@ -499,7 +509,16 @@ macro_rules! drain_physical_input {
                     .find(|(output, _)| *output == shell_output)
                     .map(|(_, bounds)| bounds)
                     .ok_or("descriptor withdrawal has no output bounds")?;
-                let withdrawal = match shell.request_candidate(broker, action_output, bounds) {
+                let activation_surfaces = live_shell_activation_surfaces(
+                    &layout.layers,
+                    &layout.presentation_roles,
+                );
+                let withdrawal = match shell.request_candidate(
+                    broker,
+                    action_output,
+                    bounds,
+                    &activation_surfaces,
+                ) {
                     Ok(withdrawal) => withdrawal,
                     Err(error) => {
                         eprintln!(
@@ -545,7 +564,16 @@ macro_rules! drain_physical_input {
                         .find(|(candidate, _)| *candidate == output.id)
                         .map(|(_, bounds)| bounds)
                         .ok_or("shell shortcut has no output bounds")?;
-                    let overlay = match shell.request_candidate(broker, output, bounds) {
+                    let activation_surfaces = live_shell_activation_surfaces(
+                        &layout.layers,
+                        &layout.presentation_roles,
+                    );
+                    let overlay = match shell.request_candidate(
+                        broker,
+                        output,
+                        bounds,
+                        &activation_surfaces,
+                    ) {
                         Ok(overlay) => overlay,
                         Err(error) => {
                             eprintln!(

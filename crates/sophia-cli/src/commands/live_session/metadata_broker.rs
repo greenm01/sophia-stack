@@ -224,9 +224,13 @@ impl LiveMetadataBroker {
         &self.descriptors
     }
 
-    pub(super) fn shell_sources(&self) -> Vec<LiveShellDescriptorSource> {
+    pub(super) fn shell_sources(
+        &self,
+        activation_surfaces: &BTreeSet<SurfaceId>,
+    ) -> Vec<LiveShellDescriptorSource> {
         self.grants
             .iter()
+            .filter(|(surface, _)| activation_surfaces.contains(surface))
             .filter_map(|(surface, grant)| {
                 self.descriptors
                     .get(*surface)

@@ -175,6 +175,7 @@ impl LiveMetadataShell {
         broker: &LiveMetadataBroker,
         output: sophia_engine::HeadlessOutput,
         bounds: sophia_protocol::Rect,
+        activation_surfaces: &BTreeSet<SurfaceId>,
     ) -> Result<Option<sophia_engine::DescriptorOverlayProjection>, Box<dyn std::error::Error>>
     {
         if self.pending.is_some() {
@@ -187,7 +188,7 @@ impl LiveMetadataShell {
             .map(|identity| identity.generation)
             .ok_or("metadata shell candidate targets an unobserved output")?;
         let sources = broker
-            .shell_sources()
+            .shell_sources(activation_surfaces)
             .into_iter()
             .take(sophia_protocol::SOPHIA_SHELL_MAX_DESCRIPTORS)
             .collect::<Vec<_>>();
@@ -522,6 +523,20 @@ impl LiveMetadataShell {
             .ok_or("metadata shell transaction identity exhausted")?;
         Ok(transaction)
     }
+}
+
+pub(super) fn live_shell_activation_surfaces(
+    layers: &BTreeMap<SurfaceId, LayerSnapshot>,
+    presentation_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+) -> BTreeSet<SurfaceId> {
+    layers
+        .keys()
+        .filter(|surface| {
+            presentation_roles.get(surface)
+                == Some(&sophia_protocol::SurfacePresentationRole::PolicyManaged)
+        })
+        .copied()
+        .collect()
 }
 
 impl Drop for LiveMetadataShell {

@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn action(
     token: u64,
@@ -82,5 +82,55 @@ fn descriptor_generation_change_revokes_an_old_presented_action() {
     assert_eq!(
         resolve_live_broker_toplevel_action(4, &grants, &descriptors, action(11, 4, 5, 9)),
         None
+    );
+}
+
+#[test]
+fn switcher_admits_only_presented_policy_managed_surfaces() {
+    let managed = SurfaceId::new(41, 2);
+    let popup = SurfaceId::new(42, 2);
+    let hidden = SurfaceId::new(43, 2);
+    let layer = |surface| LayerSnapshot {
+        surface,
+        authority_local_id: None,
+        namespace: None,
+        stack_rank: 0,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 60,
+        },
+        source: BufferSource::None,
+        source_size: Size {
+            width: 80,
+            height: 60,
+        },
+        damage: Region::empty(),
+        opacity: 1.0,
+        crop: None,
+        transform: Transform::IDENTITY,
+        generation: 1,
+        resize_sync: ResizeSyncCapability::ImplicitOnly,
+    };
+    let layers = BTreeMap::from([(managed, layer(managed)), (popup, layer(popup))]);
+    let roles = BTreeMap::from([
+        (
+            managed,
+            sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        ),
+        (
+            popup,
+            sophia_protocol::SurfacePresentationRole::ClientPositioned,
+        ),
+        (
+            hidden,
+            sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        ),
+    ]);
+
+    assert_eq!(
+        live_shell_activation_surfaces(&layers, &roles),
+        BTreeSet::from([managed])
     );
 }

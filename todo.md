@@ -139,8 +139,9 @@ promotion gate.
    shell; keep validation, rendering, hit-testing, and presentation in Engine.
    The no-reservation path is now live behind an enabled shell profile: the
    session launches `hagia-shell` in its own protected domain,
-   `session:window-switcher` requests its candidate, Engine presents and
-   captures it, the broker checks the exact issuer tuple, and the WM
+   `session:window-switcher` requests its candidate from current presented
+   policy-managed descriptors, Engine presents and captures it, the broker
+   checks the exact issuer tuple, and the WM
    adjudicates the resulting focus request. Disconnect burns interaction and
    reconnects at a fresh epoch while retaining old pixels as inert. Packaging
    requires and hashes the separate executable. Core `GrabPointer` and admitted

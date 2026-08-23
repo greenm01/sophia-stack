@@ -86,6 +86,7 @@ mod authority_file;
 pub(super) mod input_guard;
 mod metadata_broker;
 mod metadata_shell;
+use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
 mod policy_transport_worker;
 mod process_supervision;

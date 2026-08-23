@@ -46,7 +46,8 @@ activation, and complete withdrawal.
 
 The same slice now runs in a normal Hagia session when its shell profile is
 enabled. Sophia launches `hagia-shell --serve` in its own Bubblewrap domain,
-and `session:window-switcher` asks it for a candidate. Engine renders and
+and `session:window-switcher` asks it for a candidate drawn only from current
+presented policy-managed descriptors. Engine renders and
 publishes the exact targets. A click returns to the shell for acknowledgement,
 then crosses the broker's current issuer check before the WM receives an
 ordinary focus request. Shell loss clears capture and reconnects at a new

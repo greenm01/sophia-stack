@@ -25,6 +25,10 @@ grep -Fq '1. Press and release Super+Shift+B.' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 grep -Fq '3. Press and release Super+Alt+B anyway.' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
+grep -Fq 'status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox' \
+    "$root_dir/tools/fixtures/hagia_physical_guide.sh"
+grep -Fq 'status=admitted source=action transaction=[1-9][0-9]*' \
+    "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 
 evidence="$temp_dir/evidence.log"
 marker="$temp_dir/restart.marker"
@@ -60,6 +64,9 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=33' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchFirefox' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=8 content=redacted' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:02Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=10 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(94), transaction: TransactionId(62), nonzero_rgb_pixels: 1800 }) frame=94' \
@@ -133,6 +140,9 @@ for missing in \
     'sophia_live_metadata_shell schema=1 status=proof_inert_click' \
     'sophia_live_metadata_shell schema=1 status=stopped' \
     'sophia_live_metadata_broker schema=1 status=stopped' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchFirefox' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2' \
     'sophia_live_wm schema=1 status=physical_action_committed action=5' \
     'sophia_live_wm schema=1 status=physical_action_committed action=6' \
     'sophia_live_indicator_input schema=1 status=activated output=1 action=12' \
