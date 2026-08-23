@@ -26,7 +26,7 @@ fn dispatch_core_drawing_request(
             gc,
             rectangles,
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if runtime
                 .validate_pixmap_access(context.namespace, drawable)
                 .is_ok()
@@ -72,7 +72,7 @@ fn dispatch_core_drawing_request(
             gc,
             rectangles,
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
                 return Handled(core_draw_validation_error(
                     context,
@@ -148,7 +148,7 @@ fn dispatch_core_drawing_request(
             width,
             height,
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if let Err(error) = runtime.validate_drawable_access(context.namespace, source) {
                 return Handled(core_draw_validation_error(
                     context,
@@ -225,7 +225,7 @@ fn dispatch_core_drawing_request(
             gc,
             points,
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if points.len() < 2
                 || runtime
                     .validate_pixmap_access(context.namespace, drawable)
@@ -266,7 +266,7 @@ fn dispatch_core_drawing_request(
         XWireRequest::PolySegment {
             drawable, damage, ..
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if runtime
                 .validate_pixmap_access(context.namespace, drawable)
                 .is_ok()
@@ -302,7 +302,7 @@ fn dispatch_core_drawing_request(
         XWireRequest::PolyFillArc {
             drawable, damage, ..
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if runtime
                 .validate_pixmap_access(context.namespace, drawable)
                 .is_ok()
@@ -364,7 +364,7 @@ fn dispatch_core_drawing_request(
         XWireRequest::FillPoly {
             drawable, damage, ..
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if damage.is_none()
                 || runtime
                     .validate_pixmap_access(context.namespace, drawable)
@@ -410,7 +410,7 @@ fn dispatch_core_drawing_request(
             depth,
             data,
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
                 return Handled(core_draw_validation_error(
                     context,

@@ -171,7 +171,7 @@ fn dispatch_core_window_request(
                     override_redirect,
                     ..
                 } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = if let Err(error) =
                         runtime.validate_drawable_access(context.namespace, window)
@@ -251,7 +251,7 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::DestroyWindow { window } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.destroy_window(context.namespace, window) {
                         Ok(surface) => {
@@ -281,7 +281,7 @@ fn dispatch_core_window_request(
                     x,
                     y,
                 } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let result = runtime
                         .set_window_parent(context.namespace, window, parent)
                         .and_then(|()| {
@@ -319,7 +319,7 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::MapSubwindows { window } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.map_direct_subwindows(
                         context.namespace,
@@ -394,7 +394,7 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::UnmapWindow { window } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.unmap_window(context.namespace, window) {
                         Ok(Some(surface)) => {
@@ -502,7 +502,7 @@ fn dispatch_core_window_request(
                     XDispatchResult {
                         response: restacked.map(|surface| {
                             let mut response = XAuthorityResponsePacket::accepted(
-                                TransactionId::from_raw(u64::from(context.sequence)),
+                                context.transaction,
                             );
                             response.surfaces.push(surface);
                             response

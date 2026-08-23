@@ -883,7 +883,10 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
         });
     let observation = layout.observe_authority_batch(&malformed);
 
-    assert!(observation.admission_group_invalid);
+    assert_eq!(
+        observation.admission_group_error,
+        Some("pre-admission authority group contains a mismatched Present")
+    );
     assert!(layout.pre_admission_groups.is_empty());
 }
 

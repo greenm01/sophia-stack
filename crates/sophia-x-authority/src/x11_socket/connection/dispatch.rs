@@ -453,6 +453,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let dispatch_context = XDispatchContext {
                 byte_order: setup.byte_order,
                 namespace,
+                transaction,
                 sequence,
                 major_opcode,
                 client_id: client.raw(),

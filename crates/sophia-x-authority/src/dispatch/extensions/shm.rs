@@ -145,7 +145,7 @@ fn dispatch_shm_request(
                     send_event,
                     ..
                 } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     if runtime
                         .validate_shm_segment_access(context.namespace, segment)
                         .is_err()

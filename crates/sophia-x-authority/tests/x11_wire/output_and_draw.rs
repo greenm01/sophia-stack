@@ -330,8 +330,15 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
         &clear_area_request(XByteOrder::LittleEndian, false, 0x220101, 4, 5, 33, 22),
     )
     .unwrap();
+    let clear_transaction = TransactionId::from_raw(6_001);
     let clear = dispatch_x11_wire_request(
-        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 61),
+        dispatch_context_with_transaction(
+            namespace,
+            clear_transaction,
+            1,
+            XByteOrder::LittleEndian,
+            61,
+        ),
         clear,
         &mut runtime,
         &mut atoms,
@@ -340,7 +347,9 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
 
     assert!(clear.outputs.is_empty());
     let response = clear.response.unwrap();
+    assert_eq!(response.transaction, clear_transaction);
     assert_eq!(response.transactions.len(), 1);
+    assert_eq!(response.transactions[0].transaction, clear_transaction);
     assert_eq!(
         response.transactions[0].damage,
         Region::single(Rect {

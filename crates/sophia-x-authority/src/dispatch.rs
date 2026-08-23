@@ -134,6 +134,10 @@ fn glx_bad_value(context: &XDispatchContext, value: u32, minor: u8) -> XClientOu
 pub struct XDispatchContext {
     pub byte_order: XByteOrder,
     pub namespace: NamespaceId,
+    /// Frontend-global identity for every Engine-visible effect of this request.
+    /// The X11 sequence below is connection-local and exists only for wire
+    /// replies, events, and errors.
+    pub transaction: TransactionId,
     pub sequence: u16,
     pub major_opcode: u8,
     pub client_id: u64,
@@ -273,7 +277,7 @@ fn dispatch_text_draw(
     gc: XResourceId,
     mut draw: XTextDraw<'_>,
 ) -> XDispatchResult {
-    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+    let transaction = context.transaction;
     if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
         return core_draw_validation_error(
             context,
@@ -339,7 +343,7 @@ fn dispatch_poly_text8(
     baseline: i16,
     items: &[XPolyText8Item],
 ) -> XDispatchResult {
-    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+    let transaction = context.transaction;
     if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
         return core_draw_validation_error(
             context,

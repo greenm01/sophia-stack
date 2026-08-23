@@ -63,7 +63,7 @@ fn dispatch_core_property_request(
                     }
                 }
                 XWireRequest::ChangeProperty(change) => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { runtime.validate_window_access(context.namespace, change.window) };
                     let (output, metadata_candidates, response) = match window_access {
                         Err(error) => (
@@ -175,7 +175,7 @@ fn dispatch_core_property_request(
                     }
                 }
                 XWireRequest::DeleteProperty { window, property } => {
-                    let transaction = TransactionId::from_raw(u64::from(context.sequence));
+                    let transaction = context.transaction;
                     let access = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Ok(())
                     } else {

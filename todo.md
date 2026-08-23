@@ -159,6 +159,11 @@ promotion gate.
    helper windows entered the public WM snapshot, all resizes timed out, and the
    guide never appeared. Engine batches now retain owner routes only for actual
    transaction or presentation-intent surfaces. Focused helper-window and
+   two-client regressions pass. The corrected route run reached Helium's first
+   CPU-backed frame, then exposed core dispatch using the client's local X
+   sequence as an Engine transaction. Dispatch now carries the listener's
+   global transaction through every Engine-visible path, while admission keeps
+   rejecting real mismatches and reports the exact failed invariant. Direct and
    two-client regressions pass; the corrected signed physical rerun remains
    open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,

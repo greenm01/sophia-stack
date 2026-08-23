@@ -20,7 +20,7 @@ struct LiveAuthorityLayoutObservation {
     new_surfaces: Vec<SurfaceId>,
     withdrawn_surfaces: Vec<SurfaceId>,
     output_reservations_changed: bool,
-    admission_group_invalid: bool,
+    admission_group_error: Option<&'static str>,
     admission_group_overflowed: bool,
     client_route_invalid: bool,
 }
@@ -94,7 +94,7 @@ impl PersistentLiveLayout {
         batch: &XAuthorityObservedTransactionBatch,
     ) -> LiveAuthorityLayoutObservation {
         let mut output_reservations_changed = false;
-        let mut admission_group_invalid = false;
+        let mut admission_group_error = None;
         let mut admission_group_overflowed = false;
         let mut new_surfaces = BTreeSet::new();
         let mut withdrawn_surfaces = BTreeSet::new();
@@ -232,7 +232,7 @@ impl PersistentLiveLayout {
         }
         match self.observe_pre_admission_groups(batch) {
             Ok(overflowed) => admission_group_overflowed |= overflowed,
-            Err(_) => admission_group_invalid = true,
+            Err(error) => admission_group_error = Some(error),
         }
         for handle in &batch.released_dma_bufs {
             if self.admission_groups_reference_dma_buf(*handle) {
@@ -434,7 +434,7 @@ impl PersistentLiveLayout {
             new_surfaces: new_surfaces.into_iter().collect(),
             withdrawn_surfaces: withdrawn_surfaces.into_iter().collect(),
             output_reservations_changed,
-            admission_group_invalid,
+            admission_group_error,
             admission_group_overflowed,
             client_route_invalid,
         }

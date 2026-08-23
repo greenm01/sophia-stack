@@ -14701,3 +14701,26 @@ passive surface facts while excluding its route, and the two-client regression
 now has the peer draw into the creator's surface to prove the owner route on a
 real transaction. Both affected all-feature package suites pass. A new signed
 physical rerun remains open.
+
+## 2026-08-23: X request sequence is not Engine transaction identity
+
+The corrected route run reached the browser's first CPU-backed frame, selected
+it as admission evidence, and then ended with a pre-admission group failure.
+The validator's generic owner-loop message hid the exact mismatch. The batch
+carried the frontend's global transaction, while core drawing still derived its
+surface transaction from the causing connection's 16-bit X request sequence.
+Those values happened to agree for the first client. Helium opened later, so
+its sequence restarted after the listener's transaction counter had advanced.
+
+Dispatch now carries both identities explicitly. The global `TransactionId`
+labels every Engine-visible response and surface transaction; the local X
+sequence labels only X11 replies, events, and errors. Core drawing, window,
+property, resource, text, and MIT-SHM paths no longer synthesize transactions
+from the X sequence. Admission remains strict and now returns its exact
+validation error to the owner loop.
+
+A direct drawing regression separates the two values, and the classic-shared
+two-client regression advances the listener with client 1 before client 2
+draws at local sequence 3. Its batch and surface transaction both retain global
+transaction 4. The X authority suite and exact malformed-admission regression
+pass locally. The signed installed switcher rerun remains the promotion gate.

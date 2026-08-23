@@ -68,9 +68,26 @@ fn dispatch_context(
     byte_order: XByteOrder,
     major_opcode: u8,
 ) -> XDispatchContext {
+    dispatch_context_with_transaction(
+        namespace,
+        TransactionId::from_raw(u64::from(sequence)),
+        sequence,
+        byte_order,
+        major_opcode,
+    )
+}
+
+fn dispatch_context_with_transaction(
+    namespace: NamespaceId,
+    transaction: TransactionId,
+    sequence: u16,
+    byte_order: XByteOrder,
+    major_opcode: u8,
+) -> XDispatchContext {
     XDispatchContext {
         byte_order,
         namespace,
+        transaction,
         sequence,
         major_opcode,
         client_id: 1,

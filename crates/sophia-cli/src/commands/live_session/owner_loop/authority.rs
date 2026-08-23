@@ -379,8 +379,8 @@
                     if layout_observation.client_route_invalid {
                         return Err("frontend surface-owner route changed without retirement".into());
                     }
-                    if layout_observation.admission_group_invalid {
-                        return Err("pre-admission authority group is not transaction-homogeneous".into());
+                    if let Some(error) = layout_observation.admission_group_error {
+                        return Err(error.into());
                     }
                     if layout_observation.admission_group_overflowed {
                         return Err("pre-admission authority-group capacity exceeded".into());

@@ -157,7 +157,7 @@ fn dispatch_core_resource_request(
             height,
             ..
         } => {
-            let transaction = TransactionId::from_raw(u64::from(context.sequence));
+            let transaction = context.transaction;
             let geometry = runtime.window_geometry(context.namespace, window).ok();
             let clear_width = if width == 0 {
                 geometry

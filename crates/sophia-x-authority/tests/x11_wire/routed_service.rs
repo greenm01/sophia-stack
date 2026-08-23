@@ -128,7 +128,7 @@ fn routed_surface_density_requirement_publishes_exact_derived_text_variant() {
 
 #[cfg(unix)]
 #[test]
-fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it() {
+fn classic_peer_mutation_preserves_creator_route_and_global_transaction() {
     use std::io::Write;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
@@ -264,6 +264,10 @@ fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it(
             break batch;
         }
     };
+    // The peer's ImageText8 is local request 3; transaction 4 belongs to the listener.
+    assert_eq!(drawn.transaction, TransactionId::from_raw(4));
+    assert_eq!(drawn.transactions[0].transaction, drawn.transaction);
+    assert_ne!(drawn.transaction, TransactionId::from_raw(3));
     assert_eq!(
         drawn.surface_routes,
         [XAuthoritySurfaceRouteObservation {
