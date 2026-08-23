@@ -388,6 +388,45 @@ fn xi2_decoder_accepts_query_pointer_and_ungrab_device() {
 }
 
 #[test]
+fn xi2_decoder_bounds_grab_device_event_mask() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut request = vec![0_u8; 32];
+    request[0] = X_INPUT_MAJOR_OPCODE;
+    request[1] = X_INPUT_GRAB_DEVICE_MINOR_OPCODE;
+    request[2..4].copy_from_slice(&8_u16.to_le_bytes());
+    request[4..8].copy_from_slice(&0x200001_u32.to_le_bytes());
+    request[8..12].copy_from_slice(&7_u32.to_le_bytes());
+    request[12..16].copy_from_slice(&0x300001_u32.to_le_bytes());
+    request[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    request[18] = 1;
+    request[19] = 1;
+    request[20] = 1;
+    request[22..24].copy_from_slice(&2_u16.to_le_bytes());
+    request[24..28].copy_from_slice(&0x00c0_u32.to_le_bytes());
+    request[28..32].copy_from_slice(&1_u32.to_le_bytes());
+
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
+        XWireRequest::XiGrabDevice {
+            window: XResourceId::new(0x200001, 1),
+            time: 7,
+            cursor: Some(XResourceId::new(0x300001, 1)),
+            device_id: 2,
+            pointer_mode: 1,
+            keyboard_mode: 1,
+            owner_events: true,
+            event_mask: vec![0x00c0, 1],
+        }
+    );
+
+    request[22..24].copy_from_slice(&9_u16.to_le_bytes());
+    assert_eq!(
+        decode_x11_core_request(context(namespace, 2, XByteOrder::LittleEndian), &request),
+        Err(XWireParseError::InvalidValue(9))
+    );
+}
+
+#[test]
 fn legacy_xinput_device_bell_is_a_bounded_noop() {
     let namespace = NamespaceId::from_raw(45);
     let request = vec![

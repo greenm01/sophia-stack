@@ -8,6 +8,7 @@ fn dispatch_x_input_request(
         &request,
             XWireRequest::XiGetExtensionVersion
             | XWireRequest::XiQueryPointer { .. }
+            | XWireRequest::XiGrabDevice { .. }
             | XWireRequest::XiUngrabDevice { .. }
             | XWireRequest::XiGetClientPointer
             | XWireRequest::XiDeviceBell
@@ -76,6 +77,57 @@ fn dispatch_x_input_request(
                     XDispatchResult {
                         response: None,
                         outputs: Vec::new(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::XiGrabDevice {
+                    window,
+                    cursor,
+                    device_id,
+                    pointer_mode,
+                    keyboard_mode,
+                    owner_events,
+                    event_mask,
+                    ..
+                } => {
+                    let mut xi_event_mask = [0; 8];
+                    for (target, source) in xi_event_mask.iter_mut().zip(&event_mask) {
+                        *target = *source;
+                    }
+                    let status = if device_id != 2
+                        || validate_grab_window(runtime, context.namespace, window).is_err()
+                        || cursor.is_some_and(|cursor| {
+                            runtime
+                                .validate_cursor_access(context.namespace, cursor)
+                                .is_err()
+                        })
+                    {
+                        3
+                    } else {
+                        runtime
+                            .input_authority_mut()
+                            .grab_pointer(
+                                context.namespace,
+                                crate::XActiveInputGrab {
+                                    owner: context.client_id,
+                                    window,
+                                    owner_events,
+                                    pointer_mode,
+                                    keyboard_mode,
+                                    event_mask: 0,
+                                    xi_event_mask,
+                                    xi_event_mask_words: event_mask.len() as u8,
+                                    route_lease: None,
+                                },
+                            )
+                            .map_or(1, |_| 0)
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![XClientOutput::Reply(XClientReply::GrabStatus {
+                            sequence: context.sequence,
+                            status,
+                        })],
                         metadata_candidates: Vec::new(),
                     }
                 }

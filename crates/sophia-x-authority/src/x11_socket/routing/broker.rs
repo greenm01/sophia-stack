@@ -215,6 +215,14 @@ impl XServerFrontendProtocolRouter {
 
 #[cfg(unix)]
 impl XServerFrontendRouteBroker {
+    pub fn with_explicit_pointer_grab_client(
+        mut self,
+        client: crate::XAuthorityExplicitPointerGrabClient,
+    ) -> Self {
+        self.registry.explicit_pointer_grabs = Some(client);
+        self
+    }
+
     pub fn new(queue_capacity: NonZeroUsize) -> Self {
         let capacity = queue_capacity.get();
         let (acknowledgement_sender, acknowledgement_receiver) = sync_channel(capacity);
@@ -353,6 +361,7 @@ impl XServerFrontendRouteBroker {
                 input_delivery_sender,
                 metadata_candidate_sender,
                 route_lease_update_sender,
+                explicit_pointer_grabs: None,
                 per_client_input_capacity: capacities.input,
                 per_client_control_capacity: capacities.control,
                 per_client_protocol_capacity: capacities.protocol,

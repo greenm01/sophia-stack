@@ -12,6 +12,183 @@ struct X11ClientAdmissionContext<'a> {
     worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
 }
 
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum X11ExplicitPointerGrabPreparation {
+    Unmanaged,
+    Rejected(u8),
+    Prepared(sophia_protocol::ApplicationRouteLeaseIdentity),
+}
+
+#[cfg(unix)]
+fn x11_explicit_pointer_grab_client_error(
+    error: crate::XAuthorityExplicitPointerGrabBridgeError,
+) -> X11SetupSocketError {
+    X11SetupSocketError::client_failure(format!(
+        "explicit pointer-grab arbitration failed: {error:?}"
+    ))
+}
+
+#[cfg(unix)]
+fn x11_prepare_explicit_pointer_grab(
+    runtime: &XAuthorityRuntime,
+    routing: Option<&XServerFrontendRouteRegistry>,
+    admission: Option<ClientAdmissionContext>,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    request: &crate::XWireRequest,
+) -> Result<X11ExplicitPointerGrabPreparation, X11SetupSocketError> {
+    let Some(control) = routing.and_then(|routing| routing.explicit_pointer_grabs.as_ref()) else {
+        return Ok(X11ExplicitPointerGrabPreparation::Unmanaged);
+    };
+    let Some(admission) = admission else {
+        return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
+    };
+    let (window, pointer_mode, keyboard_mode, cursor) = match request {
+        crate::XWireRequest::GrabPointer {
+            window,
+            pointer_mode,
+            keyboard_mode,
+            ..
+        } => (*window, *pointer_mode, *keyboard_mode, None),
+        crate::XWireRequest::XiGrabDevice {
+            window,
+            cursor,
+            device_id: 2,
+            pointer_mode,
+            keyboard_mode,
+            ..
+        } => (*window, *pointer_mode, *keyboard_mode, *cursor),
+        crate::XWireRequest::XiGrabDevice { .. } => {
+            return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
+        }
+        _ => return Ok(X11ExplicitPointerGrabPreparation::Unmanaged),
+    };
+    if pointer_mode > 1
+        || keyboard_mode > 1
+        || cursor.is_some_and(|cursor| {
+            runtime
+                .validate_cursor_access(namespace, cursor)
+                .is_err()
+        })
+    {
+        return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
+    }
+    let anchor = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
+        crate::XAuthorityExplicitPointerGrabAnchor::AdmissionDefault
+    } else {
+        let Ok((_, surface, _, _)) =
+            runtime.window_presentation_root_and_offset(namespace, window)
+        else {
+            return Ok(X11ExplicitPointerGrabPreparation::Rejected(3));
+        };
+        crate::XAuthorityExplicitPointerGrabAnchor::Surface(surface)
+    };
+    let active = runtime
+        .input_authority_mut()
+        .pointer_grab(namespace);
+    if active.is_some_and(|active| active.owner != client.raw()) {
+        return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
+    }
+    let replaces = active.and_then(|active| active.route_lease);
+    let response = control
+        .request(
+            admission,
+            crate::XAuthorityExplicitPointerGrabRequestKind::Prepare { anchor, replaces },
+        )
+        .map_err(x11_explicit_pointer_grab_client_error)?;
+    Ok(match response {
+        crate::XAuthorityExplicitPointerGrabResponse::Prepared(identity) => {
+            X11ExplicitPointerGrabPreparation::Prepared(identity)
+        }
+        crate::XAuthorityExplicitPointerGrabResponse::Rejected(
+            crate::XAuthorityExplicitPointerGrabRejection::NotViewable,
+        ) => X11ExplicitPointerGrabPreparation::Rejected(3),
+        crate::XAuthorityExplicitPointerGrabResponse::Rejected(_) => {
+            X11ExplicitPointerGrabPreparation::Rejected(1)
+        }
+        _ => {
+            return Err(X11SetupSocketError::client_failure(
+                "explicit pointer-grab prepare received an invalid response",
+            ));
+        }
+    })
+}
+
+#[cfg(unix)]
+fn x11_begin_explicit_pointer_release(
+    runtime: &XAuthorityRuntime,
+    routing: Option<&XServerFrontendRouteRegistry>,
+    admission: Option<ClientAdmissionContext>,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    request: &crate::XWireRequest,
+) -> Result<Option<sophia_protocol::ApplicationRouteLeaseIdentity>, X11SetupSocketError> {
+    if !matches!(request, crate::XWireRequest::UngrabPointer { .. })
+        && !matches!(request, crate::XWireRequest::XiUngrabDevice { device_id: 2, .. })
+    {
+        return Ok(None);
+    }
+    let Some(control) = routing.and_then(|routing| routing.explicit_pointer_grabs.as_ref()) else {
+        return Ok(None);
+    };
+    let Some(admission) = admission else {
+        return Ok(None);
+    };
+    let Some(identity) = runtime
+        .input_authority_mut()
+        .pointer_grab(namespace)
+        .filter(|grab| grab.owner == client.raw())
+        .and_then(|grab| grab.route_lease)
+    else {
+        return Ok(None);
+    };
+    let response = control
+        .request(
+            admission,
+            crate::XAuthorityExplicitPointerGrabRequestKind::BeginRelease { identity },
+        )
+        .map_err(x11_explicit_pointer_grab_client_error)?;
+    match response {
+        crate::XAuthorityExplicitPointerGrabResponse::ReleaseReady => Ok(Some(identity)),
+        crate::XAuthorityExplicitPointerGrabResponse::Rejected(
+            crate::XAuthorityExplicitPointerGrabRejection::Stale,
+        ) => Ok(None),
+        _ => Err(X11SetupSocketError::client_failure(
+            "explicit pointer-grab release received an invalid response",
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn x11_finish_explicit_pointer_release(
+    routing: Option<&XServerFrontendRouteRegistry>,
+    admission: Option<ClientAdmissionContext>,
+    identity: sophia_protocol::ApplicationRouteLeaseIdentity,
+) -> Result<(), X11SetupSocketError> {
+    let Some(control) = routing.and_then(|routing| routing.explicit_pointer_grabs.as_ref()) else {
+        return Ok(());
+    };
+    let Some(admission) = admission else {
+        return Ok(());
+    };
+    let response = control
+        .request(
+            admission,
+            crate::XAuthorityExplicitPointerGrabRequestKind::FinishRelease { identity },
+        )
+        .map_err(x11_explicit_pointer_grab_client_error)?;
+    match response {
+        crate::XAuthorityExplicitPointerGrabResponse::Released
+        | crate::XAuthorityExplicitPointerGrabResponse::Rejected(
+            crate::XAuthorityExplicitPointerGrabRejection::Stale,
+        ) => Ok(()),
+        _ => Err(X11SetupSocketError::client_failure(
+            "explicit pointer-grab release acknowledgement was invalid",
+        )),
+    }
+}
+
 /// Retains the last successfully admitted Sophia surface generation for each
 /// client-local XID. X11 continues to address the current resource by its raw
 /// XID; deferred Engine routes use this non-recyclable identity instead.
@@ -240,6 +417,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             admission: lease.context().client_id,
         });
     }
+    let client_admission = admission_lease.as_ref().map(|lease| lease.context());
 
     let result = (|| {
         // SCM_RIGHTS on a Unix stream is an in-band barrier, but recvmsg can
@@ -564,13 +742,119 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             runtime.window_geometry(namespace, window).ok()
                         },
                     );
-                    let mut output = dispatch_x11_wire_request(
-                        dispatch_context,
-                        request,
-                        &mut runtime,
-                        &mut atoms,
-                        &mut properties,
-                    );
+                    let explicit_pointer_preparation = x11_prepare_explicit_pointer_grab(
+                        &runtime,
+                        protocol_routing.as_ref(),
+                        client_admission,
+                        namespace,
+                        client,
+                        &request,
+                    )?;
+                    let explicit_pointer_release = x11_begin_explicit_pointer_release(
+                        &runtime,
+                        protocol_routing.as_ref(),
+                        client_admission,
+                        namespace,
+                        client,
+                        &request,
+                    )?;
+                    let mut output = match explicit_pointer_preparation {
+                        X11ExplicitPointerGrabPreparation::Rejected(status) => {
+                            runtime.begin_dispatch();
+                            XDispatchResult {
+                                response: None,
+                                outputs: vec![crate::XClientOutput::Reply(
+                                    crate::XClientReply::GrabStatus {
+                                        sequence: dispatch_context.sequence,
+                                        status,
+                                    },
+                                )],
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
+                        _ => dispatch_x11_wire_request(
+                            dispatch_context,
+                            request,
+                            &mut runtime,
+                            &mut atoms,
+                            &mut properties,
+                        ),
+                    };
+                    if let X11ExplicitPointerGrabPreparation::Prepared(identity) =
+                        explicit_pointer_preparation
+                    {
+                        let local_admitted = output.outputs.iter().any(|output| {
+                            matches!(
+                                output,
+                                crate::XClientOutput::Reply(crate::XClientReply::GrabStatus {
+                                    status: 0,
+                                    ..
+                                })
+                            )
+                        });
+                        let control = protocol_routing
+                            .as_ref()
+                            .and_then(|routing| routing.explicit_pointer_grabs.as_ref())
+                            .ok_or_else(|| {
+                                X11SetupSocketError::client_failure(
+                                    "explicit pointer-grab control disappeared during acquisition",
+                                )
+                            })?;
+                        if local_admitted {
+                            runtime
+                                .input_authority_mut()
+                                .set_pointer_route_lease(namespace, client.raw(), identity)
+                                .map_err(|_| {
+                                    X11SetupSocketError::client_failure(
+                                        "explicit pointer-grab state disappeared before activation",
+                                    )
+                                })?;
+                            let admission = client_admission.ok_or_else(|| {
+                                X11SetupSocketError::client_failure(
+                                    "explicit pointer-grab admission disappeared",
+                                )
+                            })?;
+                            let response = control
+                                .request(
+                                    admission,
+                                    crate::XAuthorityExplicitPointerGrabRequestKind::Activate {
+                                        identity,
+                                    },
+                                )
+                                .map_err(x11_explicit_pointer_grab_client_error)?;
+                            if response != crate::XAuthorityExplicitPointerGrabResponse::Activated {
+                                runtime
+                                    .input_authority_mut()
+                                    .ungrab_pointer(namespace, client.raw());
+                                for output in &mut output.outputs {
+                                    if let crate::XClientOutput::Reply(
+                                        crate::XClientReply::GrabStatus { status, .. },
+                                    ) = output
+                                    {
+                                        *status = 1;
+                                    }
+                                }
+                                let _ = control.request(
+                                    admission,
+                                    crate::XAuthorityExplicitPointerGrabRequestKind::Abort {
+                                        identity,
+                                    },
+                                );
+                            }
+                        } else if let Some(admission) = client_admission {
+                            let _ = control.request(
+                                admission,
+                                crate::XAuthorityExplicitPointerGrabRequestKind::Abort { identity },
+                            );
+                        }
+                    }
+                    if let Some(identity) = explicit_pointer_release {
+                        x11_finish_explicit_pointer_release(
+                            protocol_routing.as_ref(),
+                            client_admission,
+                            identity,
+                        )?;
+                    }
                     let mapped_windows = if mapped_subwindows {
                         output
                             .response

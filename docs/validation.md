@@ -1500,7 +1500,7 @@ The opt-in checkpoint/restart and state-transition proof runs from a logged-in
 TTY 4 and restores the originating display manager and VT on every exit:
 
 ```sh
-tools/start_sophia_hagia_policy_tty4.sh
+tools/hagia-proof
 ```
 
 Follow its on-screen steps once and do not enter the final phrase early:
@@ -1514,9 +1514,11 @@ command must print `Hagia physical policy gate passed`.
 Every passing run is rechecked by
 `tools/verify_hagia_policy_physical.sh` and archived under
 `${XDG_STATE_HOME:-$HOME/.local/state}/sophia/promotion/hagia-policy-runs` with
-the source commit, exact Sophia and Hagia executable digests, immutable raw log,
-and checksums. `tools/archive_hagia_policy_physical_run.sh` rejects a duplicate
-evidence digest instead of creating a second proof record.
+both source commits, exact Sophia, Hagia, and Hagia Shell executable digests,
+the immutable raw log, and checksums. The verifier also requires the protected
+switcher lifecycle on both sides of its fresh-epoch restart.
+`tools/archive_hagia_policy_physical_run.sh` rejects a duplicate evidence digest
+instead of creating a second proof record.
 
 Use `Sophia Hagia (Native Policy)` for ordinary development after its bounded
 preflight passes. Every launch reserves a Hagia ledger entry before takeover;

@@ -368,6 +368,26 @@ fn spawn_x11_input_event_writer(
                     },
                 },
             );
+            let write_core_record = match (event, input_authority.as_ref()) {
+                (XAuthorityInputEvent::Pointer(pointer), Some(authority)) => {
+                    let selected_mask = match pointer.kind {
+                        XAuthorityPointerEventKind::Motion => 1_u16 << 6,
+                        XAuthorityPointerEventKind::Button { pressed: true, .. }
+                        | XAuthorityPointerEventKind::Axis { pressed: true, .. } => 1_u16 << 2,
+                        XAuthorityPointerEventKind::Button { pressed: false, .. }
+                        | XAuthorityPointerEventKind::Axis { pressed: false, .. } => 1_u16 << 3,
+                    };
+                    authority
+                        .lock()
+                        .map_err(|_| {
+                            X11SetupSocketError::new("X11 input authority lock poisoned")
+                        })?
+                        .pointer_grab(namespace)
+                        .filter(|grab| grab.owner == client.raw())
+                        .is_none_or(|grab| grab.event_mask & selected_mask != 0)
+                }
+                _ => true,
+            };
             let write_result = (|| -> Result<(), X11SetupSocketError> {
                 let mut stream =
                     lock_x11_non_control_output(&stream, &output_control_pending)?;
@@ -474,17 +494,19 @@ fn spawn_x11_input_event_writer(
                         pointer_sent_to = Some(delivered_window);
                     }
                 }
-                stream.write_all(&record).map_err(|error| {
-                    if is_x11_client_disconnect(&error) {
-                        X11SetupSocketError::client_disconnect(format!(
-                            "X11 client disconnected while writing input: {error}"
-                        ))
-                    } else {
-                        X11SetupSocketError::new(format!(
-                            "failed to write X11 input event: {error}"
-                        ))
-                    }
-                })?;
+                if write_core_record {
+                    stream.write_all(&record).map_err(|error| {
+                        if is_x11_client_disconnect(&error) {
+                            X11SetupSocketError::client_disconnect(format!(
+                                "X11 client disconnected while writing input: {error}"
+                            ))
+                        } else {
+                            X11SetupSocketError::new(format!(
+                                "failed to write X11 input event: {error}"
+                            ))
+                        }
+                    })?;
+                }
                 if let (
                     Some(surface_window),
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {

@@ -522,6 +522,11 @@ pub(crate) fn run_persistent_xterm_session(
     let (input_delivery_sender, input_delivery_receiver) = channel();
     let (route_lease_update_sender, route_lease_update_receiver) =
         sync_channel(SESSION_CONTROL_CAPACITY);
+    let (explicit_pointer_grab_client, explicit_pointer_grab_owner) =
+        sophia_x_authority::x_authority_explicit_pointer_grab_bridge(
+            NonZeroUsize::new(SESSION_CONTROL_CAPACITY)
+                .expect("session explicit pointer-grab capacity is nonzero"),
+        );
     let mut broker = XServerFrontendRouteBroker::with_route_capacities_xkb_and_lease_updates(
         XServerFrontendRouteCapacities::new(
             NonZeroUsize::new(SESSION_KEY_CAPACITY)
@@ -537,7 +542,8 @@ pub(crate) fn run_persistent_xterm_session(
         input_delivery_sender,
         route_lease_update_sender,
         config.xkb_config.clone(),
-    )?;
+    )?
+    .with_explicit_pointer_grab_client(explicit_pointer_grab_client);
     let metadata_candidate_receiver = broker
         .take_metadata_candidate_receiver()
         .ok_or("X frontend omitted its reduced metadata route")?;
@@ -870,6 +876,7 @@ pub(crate) fn run_persistent_xterm_session(
             input_deliveries: &input_delivery_receiver,
             route_lease_updates: &route_lease_update_receiver,
             route_lease_releases: &route_lease_release_sender,
+            explicit_pointer_grabs: &explicit_pointer_grab_owner,
             frontend_service: &service_command_sender,
             metadata_candidates: &metadata_candidate_receiver,
         },

@@ -18,7 +18,7 @@
                 native_frame_service_should_preempt_authority(
                     request,
                     native_frame_service_preempted_previous_cycle,
-                    session_controls.pending_len() != 0,
+                    session_controls.pending_len() != 0 || explicit_pointer_grabs.pending() != 0,
                     native_frame_control_priority_cycles,
                     native_frame_service_deadline_armed
                         && last_native_frame_service.elapsed() >= Duration::from_millis(16),
@@ -63,7 +63,8 @@
                         authority_receiver.recv_timeout(authority_wait_timeout(
                             physical_input.is_some(),
                             cursor_updates.dirty,
-                            session_controls.pending_len() != 0,
+                            session_controls.pending_len() != 0
+                                || explicit_pointer_grabs.pending() != 0,
                         ))
                     },
                     Ok,

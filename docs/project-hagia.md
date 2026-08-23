@@ -464,18 +464,21 @@ launcher. It requires clean Sophia and Hagia trees, builds both exact commits
 before takeover, verifies both signatures and their locally known
 `origin/master` identities, validates the compiled profile, resolves the
 configured terminal and browser executables, and then enters the guarded gate.
-The resulting evidence binds both commits and binary digests. Its verifier also
-requires the protected metadata broker to reach ready, commit at least one
-redacted descriptor, and stop cleanly in that order; the archive independently
-rechecks both commit signatures and every cross-record identity. The
-underlying build launcher is `tools/run_current_hagia_policy_gate_tty4.sh`; the
+The resulting evidence binds both commits and all three binary digests. Its
+verifier requires the protected metadata broker to reach ready, commit at least
+two redacted descriptors, validate two opaque action issuers, and stop cleanly.
+It also requires three output-local nonzero switcher presentations, activation
+and withdrawal on both sides of one fresh-epoch Hagia Shell restart, one click
+against retained inert pixels, and clean shell shutdown. The archive
+independently rechecks both commit signatures and every cross-record identity.
+The underlying build launcher is `tools/run_current_hagia_policy_gate_tty4.sh`; the
 opt-in installed gate is
 `tools/hagia_policy_physical_gate.sh`. It requires
 an explicit arm variable, real Hagia and Kitty binaries, a named input seat,
 and two connected outputs. The operator exercises fullscreen, native layout
-cycling, maximize, minimize/restore, output movement, and active-output actions
-around one checkpoint-triggered supervised restart; the verifier requires
-ordered commits,
+cycling, maximize, minimize/restore, output movement, active-output actions,
+and the `Super+P` switcher around one policy restart and one shell restart; the
+verifier requires ordered commits,
 nonempty checkpoint load/reconciliation, output-change evidence, physical text,
 and clean session health. Restart injection is correlated to the first committed
 layout-cycle action after the committed fullscreen action, and waits for the

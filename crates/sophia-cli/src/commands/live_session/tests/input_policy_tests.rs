@@ -1,14 +1,241 @@
 use super::super::{InputDeliveryPhase, InputDeliveryState};
 use super::*;
 use crate::commands::live_session::{
-    FloatingPointerPolicyInteraction, RoutedInputIngressSaturation, pointer_focus_surface,
+    FloatingPointerPolicyInteraction, RoutedInputIngressSaturation,
+    drain_explicit_pointer_grab_controls, pointer_focus_surface,
 };
-use sophia_engine::InputFocusDecision;
+use sophia_engine::{ApplicationRouteLeasePhase, ApplicationRouteLeaseState, InputFocusDecision};
 use sophia_protocol::TransactionId;
 use sophia_x_authority::{
     XAuthorityClientInputDelivery, XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn explicit_pointer_grab_control_activates_and_releases_a_presented_root_anchor() {
+    let seat = SeatId::from_raw(1);
+    let surface = SurfaceId::new(71, 2);
+    let admission = sophia_protocol::ClientAdmissionContext::new(
+        sophia_protocol::ClientAdmissionId::from_raw(8),
+        sophia_protocol::NamespaceContext::new(
+            sophia_protocol::NamespaceId::from_raw(4),
+            NamespaceProfile::Confined,
+            NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        sophia_protocol::ClientAuthProvenance::new(
+            sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+            9,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut routes = XAuthorityClientSurfaceRoutes::default();
+    let mut batch = super::super::wm_update_coordinator_batch(TransactionId::from_raw(1));
+    batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(3));
+    batch.admission = Some(admission);
+    batch
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            constraints: sophia_protocol::SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    routes.observe(&batch);
+    let projection = sophia_backend_live::LivePresentedInputProjection {
+        output: OutputId::from_raw(2),
+        epoch: 5,
+        layers: vec![LayerSnapshot {
+            surface,
+            authority_local_id: None,
+            namespace: None,
+            stack_rank: 0,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 80,
+            },
+            source_size: Size {
+                width: 100,
+                height: 80,
+            },
+            source: BufferSource::None,
+            damage: Region::empty(),
+            opacity: 1.0,
+            crop: None,
+            transform: Transform::IDENTITY,
+            generation: 1,
+            resize_sync: ResizeSyncCapability::ImplicitOnly,
+        }],
+        chrome_targets: Vec::new(),
+        chrome_occlusion: None,
+        descriptor_targets: Vec::new(),
+        descriptor_occlusion: None,
+    };
+    let (client, owner) = sophia_x_authority::x_authority_explicit_pointer_grab_bridge(
+        std::num::NonZeroUsize::new(4).unwrap(),
+    );
+    let prepare_client = client.clone();
+    let prepare = std::thread::spawn(move || {
+        prepare_client.request(
+            admission,
+            sophia_x_authority::XAuthorityExplicitPointerGrabRequestKind::Prepare {
+                anchor: sophia_x_authority::XAuthorityExplicitPointerGrabAnchor::AdmissionDefault,
+                replaces: None,
+            },
+        )
+    });
+    while owner.pending() == 0 {
+        std::thread::yield_now();
+    }
+    let mut leases = ApplicationRouteLeaseState::default();
+    let report = loop {
+        let report = drain_explicit_pointer_grab_controls(
+            &owner,
+            &mut leases,
+            &routes,
+            &InputFocusState::new(),
+            std::slice::from_ref(&projection),
+            seat,
+            10,
+        )
+        .unwrap();
+        if report.prepared != 0 {
+            break report;
+        }
+        std::thread::yield_now();
+    };
+    assert_eq!(report.prepared, 1);
+    let sophia_x_authority::XAuthorityExplicitPointerGrabResponse::Prepared(identity) =
+        prepare.join().unwrap().unwrap()
+    else {
+        panic!("root grab was not prepared");
+    };
+    assert_eq!(leases.lease(seat).unwrap().target_surface, surface);
+
+    let activate_client = client.clone();
+    let activate = std::thread::spawn(move || {
+        activate_client.request(
+            admission,
+            sophia_x_authority::XAuthorityExplicitPointerGrabRequestKind::Activate { identity },
+        )
+    });
+    while owner.pending() == 0 {
+        std::thread::yield_now();
+    }
+    let activation_report = loop {
+        let report = drain_explicit_pointer_grab_controls(
+            &owner,
+            &mut leases,
+            &routes,
+            &InputFocusState::new(),
+            std::slice::from_ref(&projection),
+            seat,
+            11,
+        )
+        .unwrap();
+        if report.activated != 0 {
+            break report;
+        }
+        std::thread::yield_now();
+    };
+    assert_eq!(activation_report.activated, 1);
+    assert_eq!(
+        activate.join().unwrap().unwrap(),
+        sophia_x_authority::XAuthorityExplicitPointerGrabResponse::Activated
+    );
+    assert_eq!(
+        leases.lease(seat).unwrap().phase,
+        ApplicationRouteLeasePhase::Active
+    );
+
+    let release_client = client.clone();
+    let release = std::thread::spawn(move || {
+        release_client.request(
+            admission,
+            sophia_x_authority::XAuthorityExplicitPointerGrabRequestKind::BeginRelease { identity },
+        )
+    });
+    while owner.pending() == 0 {
+        std::thread::yield_now();
+    }
+    loop {
+        drain_explicit_pointer_grab_controls(
+            &owner,
+            &mut leases,
+            &routes,
+            &InputFocusState::new(),
+            std::slice::from_ref(&projection),
+            seat,
+            12,
+        )
+        .unwrap();
+        if leases.lease(seat).is_some_and(|lease| {
+            matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. })
+        }) {
+            break;
+        }
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        release.join().unwrap().unwrap(),
+        sophia_x_authority::XAuthorityExplicitPointerGrabResponse::ReleaseReady
+    );
+    assert!(matches!(
+        leases.lease(seat).unwrap().phase,
+        ApplicationRouteLeasePhase::Releasing { .. }
+    ));
+
+    let finish = std::thread::spawn(move || {
+        client.request(
+            admission,
+            sophia_x_authority::XAuthorityExplicitPointerGrabRequestKind::FinishRelease {
+                identity,
+            },
+        )
+    });
+    while owner.pending() == 0 {
+        std::thread::yield_now();
+    }
+    let release_report = loop {
+        let report = drain_explicit_pointer_grab_controls(
+            &owner,
+            &mut leases,
+            &routes,
+            &InputFocusState::new(),
+            std::slice::from_ref(&projection),
+            seat,
+            13,
+        )
+        .unwrap();
+        if report.released != 0 {
+            break report;
+        }
+        std::thread::yield_now();
+    };
+    assert_eq!(release_report.released, 1);
+    assert_eq!(
+        finish.join().unwrap().unwrap(),
+        sophia_x_authority::XAuthorityExplicitPointerGrabResponse::Released
+    );
+    assert_eq!(leases.lease(seat), None);
+}
 
 #[test]
 fn floating_pointer_gesture_is_captured_until_one_atomic_completion() {

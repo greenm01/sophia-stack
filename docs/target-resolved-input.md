@@ -3,7 +3,8 @@
 **Role:** normative target and arbitration contract for shell and Engine
 interaction.
 **Status:** ratified prerequisite with an experimental live revision-1
-discrete-target path; compiled enablement waits on explicit X-grab arbitration.
+discrete-target path; application/shell arbitration and compiled enablement are
+implemented, with signed physical evidence still open.
 
 Sophia has one Engine-owned physical-input authority and two delivery
 contracts. Application input selects a visual surface and retains the
@@ -54,14 +55,17 @@ remains inside the admitted profile scope and the output, presentation,
 authority-session, surface, and control epochs remain exact. Normal scope exit
 uses an ordered release request and acknowledgement. VT and seat-security
 transitions advance a shared epoch, clear active frontend grabs, and reject
-queued or frozen old-epoch input without waiting. Client-initiated explicit
-`GrabPointer`/XI grab requests are not yet reduced into this handshake. The
-live shell path therefore remains disabled in the compiled profile: Engine
-cannot yet make a shell capture yield to an explicit frontend-only owner.
+queued or frozen old-epoch input without waiting. Client-initiated core
+`GrabPointer` and admitted master-pointer XI grabs use a passive bounded
+prepare/activate/release handshake with the same Engine lease state. Engine
+routes no physical input while an explicit lease is provisional, and a shell
+capture cannot displace an active or releasing application owner. The compiled
+profile therefore enables the live switcher; its signed physical proof remains
+open.
 
 | Dimension | Application surface routing | Target-resolved shell input |
 | --- | --- | --- |
-| Status | implemented native-X path; explicit client-initiated grab reduction remains open | live exact discrete-target capture behind an enabled shell profile; compiled enablement remains blocked by that grab reduction |
+| Status | implemented native-X path, including core and admitted XI explicit pointer-grab reduction | live exact discrete-target capture enabled by the compiled profile; signed physical evidence remains open |
 | Public identity | generational `SurfaceId` | opaque authority/session/slot/generation target identity |
 | Disclosure | global and surface-local coordinates required by X11 | coordinate-free actions by default; normalized values; capability-bounded local coordinates |
 | Protocol semantics | X frontend owns X11 focus, event masks, XKB/XI state, and client delivery | Engine owns target selection and bounded capture; no toolkit semantics |
@@ -147,17 +151,16 @@ frontend protocol rules with this boundary.
                                                 Deliver nothing.
 ```
 
-This diagram is partly implemented. The native-X application path provides
-per-output retired snapshots, ordinary/passive pointer route leases, ordered
-release, and VT/seat control-epoch quarantine. A separate offline reference
+This diagram is implemented for native-X application routing and the
+revision-1 descriptor switcher. The application path provides per-output
+retired snapshots; ordinary, passive, and explicit core/XI pointer route
+leases; ordered release; and VT/seat control-epoch quarantine. The shell path
 captures one exact presented descriptor target by seat, device, button, output,
 presentation epoch, and authority/session/slot/generation identity; only an
 in-target matching release returns its opaque action once. It cancels on target
 or presentation replacement and gives an existing application owner priority.
-It is not wired into the production arbitration loop. Explicit client-initiated
-X grabs, the shell endpoint, lock-authority integration, and production
-target-resolved shell delivery must still be implemented before the complete
-coexistence flow can ship.
+Lock-authority integration, continuous shell targets, and signed installed
+coexistence evidence remain open.
 
 An X frontend grab is reduced to an Engine-visible lease naming its admitted
 profile, namespace authority, surface generation, and presentation/control

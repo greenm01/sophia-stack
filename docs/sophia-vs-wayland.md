@@ -94,8 +94,8 @@ Sophia makes presentation coupling an architectural rule:
 - The revision-1 shell path resolves stable generational targets against the
   applicable last-presented interaction snapshot.
 - Output-local pointer domains and per-output input epochs apply to both paths.
-  Explicit X pointer grabs still remain frontend-local, so the shell is not
-  enabled in the compiled profile.
+  Core and admitted XI explicit pointer grabs now reduce to Engine-visible
+  leases, so the shell is enabled in the compiled profile.
 
 Presented-state selection reduces visual/input disagreement. It does not prove
 perfect transforms, eliminate rounding defects, or guarantee that all input
@@ -135,17 +135,17 @@ an output-global coordinate stream.
 Sophia's current application route is different because it serves X11 clients:
 `RoutedInputRequest` carries global and local coordinates to the X Server
 Frontend, which applies X11/XI2 rules. Ordinary and passive-grab pointer
-presses now establish an exact provisional Engine lease, receive a sanitized
+presses establish an exact provisional Engine lease, receive a sanitized
 frontend confirmation, and retain the original surface within their admitted
 scope until physical release or ordered frontend release acknowledgement.
-Client-initiated explicit X grabs are not yet reduced into this path.
+Client-initiated core `GrabPointer` and admitted master-pointer XI grabs use a
+bounded prepare/activate/release control path into the same lease state.
 
-The target architecture completes that reduction for every admitted grab.
-Security/session epoch transitions already preempt ordinary/passive leases
+Security/session epoch transitions preempt these application leases
 locally, clear frontend active ownership, and quarantine old queued or frozen
 input; normal scope exit does not silently transfer ownership to a shell
-target. Explicit-grab reduction and shell capture remain release blockers, so
-this is still not a general advantage over Wayland.
+target. Lock-authority integration and signed installed shell evidence remain
+open, so this is still not a general advantage over Wayland.
 
 ## 6. Protocol evolution and portability
 
@@ -177,7 +177,7 @@ CPU buffers or other future transports cannot be ruled out by this comparison.
 | Spatial policy | compositor implementation choice; no core split mandated | separately supervised, metadata-blind WM contract |
 | Shell metadata | privileged interfaces chosen and admitted by compositor | separately protected broker and experimental shell roles; revision-1 schema incomplete by design |
 | Presentation-coupled selection | not prescribed by core protocol | per-output native application and revision-1 shell targets use the applicable presented snapshot |
-| Grab ownership | compositor implements core and extension semantics | ordinary/passive X pointer leases and shell capture implemented; explicit X-grab reduction remains open |
+| Grab ownership | compositor implements core and extension semantics | ordinary, passive, and explicit core/XI pointer leases arbitrate with revision-1 shell capture; lock integration remains open |
 | Extension evolution | core plus stable/staging/unstable and private protocols | project-owned versioned schemas with compatibility gates; shell revision 1 remains experimental |
 | Failure behavior | compositor loss usually disconnects clients; session policy varies | WM and shell process loss are isolated by separate epochs; Engine/graphics failure has a larger limit |
 

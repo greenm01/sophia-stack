@@ -21,6 +21,7 @@ struct XServerFrontendRouteRegistry {
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     metadata_candidate_sender: SyncSender<XAuthorityClientMetadataCandidate>,
     route_lease_update_sender: Option<SyncSender<XAuthorityRouteLeaseUpdate>>,
+    explicit_pointer_grabs: Option<crate::XAuthorityExplicitPointerGrabClient>,
     per_client_input_capacity: NonZeroUsize,
     per_client_control_capacity: NonZeroUsize,
     per_client_protocol_capacity: NonZeroUsize,

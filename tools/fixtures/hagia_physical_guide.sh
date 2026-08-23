@@ -67,6 +67,26 @@ wait_for_secondary_nonzero_submission() {
     done
 }
 
+shell_count() {
+    pattern="$1"
+    grep -Ec "$pattern" "$evidence" 2>/dev/null || true
+}
+
+wait_for_shell_count() {
+    pattern="$1"
+    expected="$2"
+    while [ "$(shell_count "$pattern")" -lt "$expected" ]; do
+        sleep 0.1
+    done
+}
+
+wait_for_shell_line() {
+    pattern="$1"
+    while ! grep -Eq "$pattern" "$evidence" 2>/dev/null; do
+        sleep 0.1
+    done
+}
+
 show_step() {
     printf '\033[2J\033[H'
     printf '%s\n\n%s\n\n%s\n' \
@@ -118,6 +138,26 @@ wait_for_action_count 33 1
 
 show_step 'Press Super+Right once.'
 wait_for_action_count 34 1
+
+show_step 'Press Super+B once to launch the browser. Wait while Sophia publishes its second switcher row.'
+wait_for_shell_count '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' 2
+
+show_step 'Press Super+P once. When the switcher appears, click its first row to focus this terminal.'
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=true$' 1
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=activation_admitted .* target=redacted$' 1
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=false$' 1
+
+show_step 'Press Super+P again. Sophia will restart Hagia Shell after the switcher is visibly presented.'
+wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation=2 retained_pixels=true$'
+wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid=[1-9][0-9]* revision=1 connection_epoch=2 reason=proof_visible_restart$'
+
+show_step 'The old switcher pixels are retained but inert. Click its first row once.'
+wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false$'
+
+show_step 'Press Super+P once more. Click the first row when the fresh switcher appears.'
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=true$' 3
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=activation_(admitted|duplicate) .* target=redacted$' 2
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=false$' 2
 
 printf '\033[2J\033[H'
 printf '%s\n\n%s\n\n' \

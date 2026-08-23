@@ -35,8 +35,15 @@ pub enum ApplicationRouteLeasePhase {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationRouteLeaseOrigin {
+    PointerBoundary,
+    ExplicitPointer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApplicationRouteLease {
     pub identity: ApplicationRouteLeaseIdentity,
+    pub origin: ApplicationRouteLeaseOrigin,
     pub phase: ApplicationRouteLeasePhase,
     pub target_surface: SurfaceId,
     pub admission: ClientAdmissionId,
@@ -51,6 +58,7 @@ pub struct ApplicationRouteLease {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApplicationRouteLeaseCandidate {
     pub seat: SeatId,
+    pub origin: ApplicationRouteLeaseOrigin,
     pub target_surface: SurfaceId,
     pub admission: ClientAdmissionId,
     pub scope: ApplicationRouteScope,
@@ -82,6 +90,7 @@ pub enum ApplicationRouteLeaseError {
     NoLease,
     IdentityMismatch,
     InvalidPhase,
+    InvalidOrigin,
     StaleAuthoritySession,
     StaleControlEpoch,
     StalePresentation,
@@ -161,6 +170,7 @@ impl ApplicationRouteLeaseState {
                 frontend_sequence: sequence,
                 control_epoch: self.control_epoch,
             },
+            origin: candidate.origin,
             phase: ApplicationRouteLeasePhase::Provisional,
             target_surface: candidate.target_surface,
             admission: candidate.admission,
@@ -173,6 +183,32 @@ impl ApplicationRouteLeaseState {
         };
         self.leases.insert(candidate.seat, lease);
         Ok(lease)
+    }
+
+    pub fn replace_explicit_provisional(
+        &mut self,
+        identity: ApplicationRouteLeaseIdentity,
+        candidate: ApplicationRouteLeaseCandidate,
+    ) -> Result<ApplicationRouteLease, ApplicationRouteLeaseError> {
+        if !candidate.is_valid() || candidate.origin != ApplicationRouteLeaseOrigin::ExplicitPointer
+        {
+            return Err(ApplicationRouteLeaseError::InvalidCandidate);
+        }
+        let existing = *self.exact_mut(identity)?;
+        if existing.origin != ApplicationRouteLeaseOrigin::ExplicitPointer {
+            return Err(ApplicationRouteLeaseError::InvalidOrigin);
+        }
+        if existing.phase != ApplicationRouteLeasePhase::Active {
+            return Err(ApplicationRouteLeaseError::InvalidPhase);
+        }
+        if existing.admission != candidate.admission
+            || existing.authority_session_epoch != candidate.authority_session_epoch
+            || identity.seat != candidate.seat
+        {
+            return Err(ApplicationRouteLeaseError::IdentityMismatch);
+        }
+        self.leases.remove(&identity.seat);
+        self.begin_provisional(candidate)
     }
 
     pub fn confirm(
@@ -217,7 +253,10 @@ impl ApplicationRouteLeaseState {
             .get(&seat)
             .copied()
             .ok_or(ApplicationRouteLeaseError::NoLease)?;
-        if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. }) {
+        if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. })
+            || lease.origin == ApplicationRouteLeaseOrigin::ExplicitPointer
+                && lease.phase != ApplicationRouteLeasePhase::Active
+        {
             return Err(ApplicationRouteLeaseError::InvalidPhase);
         }
         if lease.identity.control_epoch != self.control_epoch {
@@ -250,6 +289,25 @@ impl ApplicationRouteLeaseState {
             .leases
             .get_mut(&seat)
             .ok_or(ApplicationRouteLeaseError::NoLease)?;
+        if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. }) {
+            return Err(ApplicationRouteLeaseError::InvalidPhase);
+        }
+        lease.phase = ApplicationRouteLeasePhase::Releasing {
+            deadline_msec: now_msec.saturating_add(APPLICATION_ROUTE_RELEASE_TIMEOUT_MSEC),
+        };
+        Ok(*lease)
+    }
+
+    pub fn request_exact_release(
+        &mut self,
+        identity: ApplicationRouteLeaseIdentity,
+        admission: ClientAdmissionId,
+        now_msec: u64,
+    ) -> Result<ApplicationRouteLease, ApplicationRouteLeaseError> {
+        let lease = self.exact_mut(identity)?;
+        if lease.admission != admission {
+            return Err(ApplicationRouteLeaseError::IdentityMismatch);
+        }
         if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. }) {
             return Err(ApplicationRouteLeaseError::InvalidPhase);
         }

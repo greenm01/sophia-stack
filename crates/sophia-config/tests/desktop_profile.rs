@@ -43,7 +43,7 @@ fn compiled_profile_partitions_every_authority_deterministically() {
     assert_eq!(first.digest, second.digest);
     assert_eq!(first.sources, vec![PathBuf::from("<compiled>")]);
     assert_eq!(first.candidates.len(), DesktopAuthority::ALL.len());
-    assert!(!desktop_profile_shell_enabled(&first));
+    assert!(desktop_profile_shell_enabled(&first));
     for authority in DesktopAuthority::ALL {
         let candidate = first.candidates.get(&authority).unwrap();
         assert_eq!(candidate.authority, authority);

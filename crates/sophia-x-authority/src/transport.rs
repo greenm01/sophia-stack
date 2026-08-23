@@ -452,6 +452,18 @@ impl XAuthorityClientSurfaceRoutes {
             .and_then(|(_, admission)| *admission)
     }
 
+    pub fn surfaces_for_admission(
+        &self,
+        admission: sophia_protocol::ClientAdmissionContext,
+    ) -> Vec<SurfaceId> {
+        self.clients
+            .iter()
+            .filter_map(|(surface, (_, candidate))| {
+                (*candidate == Some(admission)).then_some(*surface)
+            })
+            .collect()
+    }
+
     pub fn len(&self) -> usize {
         self.clients.len()
     }

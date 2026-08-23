@@ -156,6 +156,9 @@ fn security_epoch_revokes_queued_input_and_clears_active_grabs() {
                 pointer_mode: 1,
                 keyboard_mode: 1,
                 event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
             },
         )
         .unwrap();
@@ -422,6 +425,9 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
                 pointer_mode: 0,
                 keyboard_mode: 1,
                 event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
             },
         )
         .unwrap();
@@ -541,6 +547,9 @@ fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
                 pointer_mode: 1,
                 keyboard_mode: 1,
                 event_mask: 0,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
             },
         )
         .unwrap();
@@ -754,6 +763,9 @@ fn synchronous_keyboard_grab_queues_until_allow_events() {
                 pointer_mode: 1,
                 keyboard_mode: 0,
                 event_mask: 0,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
             },
         )
         .unwrap();

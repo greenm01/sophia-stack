@@ -41,7 +41,9 @@ for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; d
     fi
 done
 hagia_bin="${TMPDIR:-/tmp}/hagia-policy-${hagia_commit:0:12}"
+hagia_shell_bin="${TMPDIR:-/tmp}/hagia-shell-${hagia_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-policy-nimcache-${hagia_commit:0:12}"
+hagia_shell_nimcache="${TMPDIR:-/tmp}/hagia-shell-nimcache-${hagia_commit:0:12}"
 
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
@@ -50,6 +52,8 @@ echo "Hagia:  $hagia_commit"
     cd "$HAGIA_ROOT"
     nim c -d:release --path:src --nimcache:"$hagia_nimcache" \
         -o:"$hagia_bin" src/hagia.nim
+    nim c -d:release --path:src --nimcache:"$hagia_shell_nimcache" \
+        -o:"$hagia_shell_bin" src/hagia_shell.nim
 )
 (
     cd "$ROOT_DIR"
@@ -77,14 +81,18 @@ git -C "$HAGIA_ROOT" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
 sophia_bin="$ROOT_DIR/target/release/sophia"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
 echo "Sophia binary: $sophia_sha256"
 echo "Hagia binary:  $hagia_sha256"
+echo "Hagia Shell:   $hagia_shell_sha256"
 
 export SOPHIA_HAGIA_BIN="$hagia_bin"
+export SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin"
 export SOPHIA_HAGIA_ROOT="$HAGIA_ROOT"
 export SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT="$sophia_commit"
 export SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT="$hagia_commit"
 export SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256="$sophia_sha256"
 export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256="$hagia_sha256"
+export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHELL_SHA256="$hagia_shell_sha256"
 export SOPHIA_LIVE_SESSION_SKIP_BUILD=1
 exec "$ROOT_DIR/tools/start_sophia_hagia_policy_tty4.sh"

@@ -675,6 +675,16 @@ pub enum XWireRequest {
     },
     XiGetClientPointer,
     XiDeviceBell,
+    XiGrabDevice {
+        window: XResourceId,
+        time: u32,
+        cursor: Option<XResourceId>,
+        device_id: u16,
+        pointer_mode: u8,
+        keyboard_mode: u8,
+        owner_events: bool,
+        event_mask: Vec<u32>,
+    },
     XiUngrabDevice {
         device_id: u16,
         time: u32,

@@ -24,17 +24,17 @@ fi
     echo "Hagia physical policy archive checksum verification failed: $run" >&2
     exit 1
 }
-[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 2 \
+[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 3 \
     && "$(sed -n 's/^record_kind=//p' "$run/manifest")" == hagia_policy_physical ]] || {
     echo "Hagia physical policy archive has the wrong record identity: $run" >&2
     exit 1
 }
-[[ "$(cat "$run/result.kdl")" == 'sophia_hagia_policy_physical schema=2 status=passed' ]] || {
+[[ "$(cat "$run/result.kdl")" == 'sophia_hagia_policy_physical schema=3 status=passed' ]] || {
     echo "Hagia physical policy archive is not passing: $run" >&2
     exit 1
 }
 for key in source_commit hagia_commit proof_text evidence_sha256 \
-    sophia_binary_sha256 hagia_binary_sha256; do
+    sophia_binary_sha256 hagia_binary_sha256 hagia_shell_binary_sha256; do
     [[ "$(grep -c "^${key}=" "$run/manifest")" == 1 ]] || {
         echo "Hagia physical policy archive has invalid $key cardinality: $run" >&2
         exit 1
@@ -61,13 +61,15 @@ evidence_sha256="$(sha256sum "$run/session.log" | awk '{ print $1 }')"
     echo "Hagia physical policy evidence digest does not match its manifest: $run" >&2
     exit 1
 }
-identity="$(grep -E '^sophia_hagia_policy_identity schema=1 status=bound ' "$run/session.log")"
+identity="$(grep -E '^sophia_hagia_policy_identity schema=2 status=bound ' "$run/session.log")"
 [[ "$(sed -n 's/.* sophia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")" == "$source_commit" \
     && "$(sed -n 's/.* hagia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")" == "$hagia_commit" \
     && "$(sed -n 's/.* sophia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")" == \
         "$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")" \
-    && "$(sed -n 's/.* hagia_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")" == \
-        "$(sed -n 's/^hagia_binary_sha256=//p' "$run/manifest")" ]] || {
+    && "$(sed -n 's/.* hagia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")" == \
+        "$(sed -n 's/^hagia_binary_sha256=//p' "$run/manifest")" \
+    && "$(sed -n 's/.* hagia_shell_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")" == \
+        "$(sed -n 's/^hagia_shell_binary_sha256=//p' "$run/manifest")" ]] || {
     echo "Hagia physical policy evidence and manifest have different identities: $run" >&2
     exit 1
 }

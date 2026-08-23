@@ -146,12 +146,13 @@ or layout policy.
   publishes `MetadataDisclosureRule` records to the X Authority, receives only
   reduced candidates, and returns sanitized descriptors to Engine's session-owned
   `ChromeDescriptorTable`. The production default is `ClassOnly`; raw titles,
-  classes, PIDs, paths, and icons remain authority-private. Engine now has an
+  classes, PIDs, paths, and icons remain authority-private. Engine now has a
   title-only projection from this table: bounded generic rectangle/text nodes,
   per-head lowering, and opaque presented targets. Experimental
-  `sophia_shell_v1` now consumes it through a separately protected Hagia Shell
-  when a shell profile is enabled. Explicit X-grab arbitration and installed
-  evidence still keep that path out of the compiled profile.
+  `sophia_shell_v1` now consumes it through a separately protected Hagia Shell.
+  Core and admitted XI explicit pointer grabs share Engine's application lease
+  arbitration, so the compiled profile enables that path. Signed installed
+  evidence remains open.
 - Public Hagia policy and the metadata broker are launched through the production
   Bubblewrap protection backend. The backend rejects forbidden role composition,
   clears the ambient environment, inherits only selected standard streams, denies
@@ -907,10 +908,10 @@ does not fall back to synthetic input. Native application selection derives
 from the pointer's output-local interaction projection only after that
 output's accepted page flip; committed and submitted geometry cannot enter
 that hit test, and independently retiring heads cannot publish one another's
-input. Ordinary and passive-grab pointer presses use an exact Engine-visible
-route lease with frontend confirmation and ordered release. Client-initiated
-explicit X grabs are not yet reduced into that lease handshake. That gap still
-prevents compiled-profile enablement of privileged shell input.
+input. Ordinary, passive-grab, and explicit core/XI pointer ownership uses an
+exact Engine-visible route lease with frontend confirmation and ordered
+release. Explicit grabs prepare before frontend mutation, become routable only
+after activation, and fail closed on stale epochs or a saturated control path.
 
 Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
@@ -922,9 +923,9 @@ the same generic exact-target capture: a matching press/release returns only an
 epoch-scoped opaque action and activation identity. Application, indicator, and
 descriptor selection use the applicable output's last-presented interaction
 snapshot. Engine retains per-output presentation epochs; an output or session
-lifecycle change invalidates dependent input state. The live shell path remains
-profile-gated until explicit X pointer grabs join this arbitration. Richer
-Tier-1 interaction remains deferred.
+lifecycle change invalidates dependent input state. The compiled profile now
+enables the live descriptor switcher. Richer Tier-1 interaction remains
+deferred.
 
 Per seat, a security/session transition first revokes old control epochs; a
 reserved Engine shortcut follows; then one existing application route lease or
@@ -1053,7 +1054,7 @@ correct at different tiers:
 | Tier | Renderer | Data source | Status |
 | --- | --- | --- | --- |
 | 0 | Engine chrome | committed indicator descriptor | reuses the existing chrome path |
-| 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | experimental title-only live slice; compiled profile disabled |
+| 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | experimental title-only live slice; compiled profile enabled, signed physical proof open |
 | 2 | ordinary X11 clients | X11 protocol surface | frontend compatibility |
 
 Tier 0 covers a status bar without any client interface. Tier 1 exists for shells

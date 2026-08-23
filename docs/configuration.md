@@ -113,10 +113,11 @@ This preparation does not activate the candidate or grant an unavailable
 capability.
 
 The desktop profile recognizes `session:window-switcher` as a session-owned
-action; it is not registered by the WM. A shell-enabled profile may bind it to
-`Super+P`. The compiled profile keeps the shell disabled until explicit X
-pointer grabs participate in Engine's application lease arbitration. The
-action is valid only in a normal `sophia_wm_v1` session with the shell enabled.
+action; it is not registered by the WM. The compiled profile enables the shell
+and binds the action to `Super+P`. Core and admitted XI explicit pointer grabs
+now participate in Engine's application lease arbitration, so an application
+owner takes precedence over shell capture. The action is valid only in a
+normal `sophia_wm_v1` session with the shell enabled.
 `--shell-process` accepts one absolute executable path. When it is omitted,
 Sophia looks for `hagia-shell` beside the absolute Hagia executable. The
 session launches it as `hagia-shell --serve` in a metadata-shell Bubblewrap

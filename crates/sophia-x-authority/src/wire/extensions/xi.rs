@@ -49,6 +49,36 @@ fn decode_x_input(
                 time: context.byte_order.u32(&bytes[4..8]),
             })
         }
+        X_INPUT_GRAB_DEVICE_MINOR_OPCODE => {
+            require_len(
+                X_INPUT_MAJOR_OPCODE,
+                X_INPUT_GRAB_DEVICE_REQ_LEN,
+                bytes.len(),
+            )?;
+            let words = usize::from(context.byte_order.u16(&bytes[22..24]));
+            if words > 8 {
+                return Err(XWireParseError::InvalidValue(words as u32));
+            }
+            let expected = X_INPUT_GRAB_DEVICE_REQ_LEN.saturating_add(words.saturating_mul(4));
+            require_exact_len(X_INPUT_MAJOR_OPCODE, expected, bytes.len())?;
+            let cursor = context.byte_order.u32(&bytes[12..16]);
+            Ok(XWireRequest::XiGrabDevice {
+                window: XResourceId::new(
+                    u64::from(context.byte_order.u32(&bytes[4..8])),
+                    1,
+                ),
+                time: context.byte_order.u32(&bytes[8..12]),
+                cursor: (cursor != 0).then(|| XResourceId::new(u64::from(cursor), 1)),
+                device_id: context.byte_order.u16(&bytes[16..18]),
+                pointer_mode: bytes[18],
+                keyboard_mode: bytes[19],
+                owner_events: bytes[20] != 0,
+                event_mask: bytes[24..]
+                    .chunks_exact(4)
+                    .map(|word| context.byte_order.u32(word))
+                    .collect(),
+            })
+        }
         X_INPUT_GET_EXTENSION_VERSION_MINOR_OPCODE => {
             require_len(X_INPUT_MAJOR_OPCODE, 8, bytes.len())?;
             let name_len = usize::from(context.byte_order.u16(&bytes[4..6]));
@@ -141,4 +171,3 @@ fn decode_x_input(
         _ => Err(XWireParseError::UnknownOpcode(bytes[0])),
     }
 }
-

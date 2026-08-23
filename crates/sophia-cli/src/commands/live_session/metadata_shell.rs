@@ -343,8 +343,11 @@ impl LiveMetadataShell {
             self.presented = None;
         }
         println!(
-            "sophia_live_metadata_shell schema=1 status=presented candidate_generation={} presentation_epoch={} visible={}",
-            pending.candidate_generation, presentation_epoch, pending.visible,
+            "sophia_live_metadata_shell schema=1 status=presented candidate_generation={} presentation_epoch={} output={} visible={}",
+            pending.candidate_generation,
+            presentation_epoch,
+            pending.output.raw(),
+            pending.visible,
         );
         Ok(true)
     }
@@ -394,10 +397,13 @@ impl LiveMetadataShell {
         if acknowledgement.disposition != sophia_protocol::ShellV1ActivationDisposition::Consumed {
             return Err("metadata shell rejected a current presented activation".into());
         }
-        Ok((
-            (broker.resolve_toplevel_action(action) == Some(surface)).then_some(surface),
-            presented.output,
-        ))
+        let resolved = (broker.resolve_toplevel_action(action) == Some(surface)).then_some(surface);
+        if resolved.is_some() {
+            println!(
+                "sophia_live_metadata_broker schema=1 status=issuer_validated activation={activation} target=redacted"
+            );
+        }
+        Ok((resolved, presented.output))
     }
 
     pub(super) fn interaction_presented(&self) -> bool {

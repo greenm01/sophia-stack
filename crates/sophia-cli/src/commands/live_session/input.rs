@@ -1,6 +1,9 @@
 #[path = "input/floating_pointer.rs"]
 mod floating_pointer;
 use floating_pointer::*;
+#[path = "input/explicit_pointer_grab.rs"]
+mod explicit_pointer_grab;
+use explicit_pointer_grab::*;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct PhysicalInputRouteReport {
@@ -248,6 +251,7 @@ fn application_route_lease_for_request(
     let lease = state
         .begin_provisional(ApplicationRouteLeaseCandidate {
             seat: request.seat,
+            origin: sophia_engine::ApplicationRouteLeaseOrigin::PointerBoundary,
             target_surface: request.target_surface,
             admission: admission.client_id,
             scope: ApplicationRouteScope {
@@ -1224,7 +1228,11 @@ fn route_input_events_with_pointer_focus(
                 let route = if let Some(target) = pending_target {
                     sophia_engine::route_scene_surface_for_input(&event, input_layers, target)
                 } else if let Some(lease) = held_lease {
-                    if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. }) {
+                    if matches!(lease.phase, ApplicationRouteLeasePhase::Releasing { .. })
+                        || lease.origin
+                            == sophia_engine::ApplicationRouteLeaseOrigin::ExplicitPointer
+                            && lease.phase == ApplicationRouteLeasePhase::Provisional
+                    {
                         continue;
                     }
                     let current_admission = fresh_route

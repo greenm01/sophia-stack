@@ -65,6 +65,7 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     shell_process: Option<String>,
+    shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_public_restart_after_action: Option<WmActionId>,
@@ -569,6 +570,20 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
+        let shell_proof_restart_after_visible = arg_value(
+            args,
+            "--shell-proof-restart-after-visible",
+        )
+        .map(|value| parse_u64(&value))
+        .transpose()?
+        .map(|value| u32::try_from(value).map_err(|_| "shell proof count is too large"))
+        .transpose()?;
+        if shell_proof_restart_after_visible.is_some_and(|count| count == 0 || count > 16) {
+            return Err("--shell-proof-restart-after-visible must be 1-16".into());
+        }
+        if shell_proof_restart_after_visible.is_some() && shell_process.is_none() {
+            return Err("--shell-proof-restart-after-visible requires an enabled shell".into());
+        }
         if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
             applications.validate_shortcuts(&shortcut_profile_candidate, live_shell_enabled)?;
         }
@@ -723,6 +738,7 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             shell_process,
+            shell_proof_restart_after_visible,
             wm_interface,
             wm_public_fault_after,
             wm_public_restart_after_action,

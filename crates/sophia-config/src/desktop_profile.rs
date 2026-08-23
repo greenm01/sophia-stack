@@ -23,12 +23,13 @@ policy {
   outer-gap 0
   inner-gap 0
 }
-shell { enabled #false; }
+shell { enabled #true; }
 shortcut {
   profile "compiled"
   bind "Ctrl+Alt+Delete" "session:logout"
   bind "Super+Return" "session:spawn-terminal"
   bind "Super+b" "session:spawn-browser"
+  bind "Super+p" "session:window-switcher"
   bind "Super+q" "session:close-window"
   bind "Super+h" "policy:focus-prev"
   bind "Super+j" "policy:focus-next"

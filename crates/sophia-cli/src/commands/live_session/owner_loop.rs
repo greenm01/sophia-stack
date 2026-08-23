@@ -7,6 +7,7 @@ struct SessionLoopChannels<'a> {
     input_deliveries: &'a Receiver<XAuthorityClientInputDelivery>,
     route_lease_updates: &'a Receiver<XAuthorityRouteLeaseUpdate>,
     route_lease_releases: &'a SyncSender<XAuthorityRouteLeaseRelease>,
+    explicit_pointer_grabs: &'a sophia_x_authority::XAuthorityExplicitPointerGrabOwner,
     frontend_service: &'a SyncSender<XServerFrontendServiceCommand>,
     metadata_candidates: &'a Receiver<sophia_x_authority::XAuthorityClientMetadataCandidate>,
 }
@@ -213,6 +214,7 @@ fn run_session_loop(
         input_deliveries: input_delivery_receiver,
         route_lease_updates: route_lease_update_receiver,
         route_lease_releases: route_lease_release_sender,
+        explicit_pointer_grabs,
         frontend_service: frontend_service_sender,
         metadata_candidates: metadata_candidate_receiver,
     } = channels;
@@ -399,6 +401,9 @@ fn run_session_loop(
     let mut keyboard_focus_handoff = KeyboardFocusHandoffState::default();
     let mut pointer_focus_handoff = PointerFocusHandoffState::default();
     let mut application_route_leases = ApplicationRouteLeaseState::default();
+    let mut shell_proof_visible_presentations = 0_u32;
+    let mut shell_proof_restart_triggered = false;
+    let mut shell_proof_waiting_for_inert_click = false;
     let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
     let mut descriptor_captures = sophia_engine::PresentedChromeCaptureState::default();
     if native_scanout.is_some() {

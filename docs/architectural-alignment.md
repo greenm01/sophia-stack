@@ -89,18 +89,19 @@ remain pre-schema work.
 They also do not repair the whole application path. The installed pointer path
 now publishes an independently retired interaction projection and semantic
 epoch per output, rather than selecting from newer committed state or merging
-heads. Ordinary and passive-grab presses establish exact Engine-visible leases
-with frontend confirmation, profile-scoped retention, ordered release, and
-VT/seat epoch quarantine. Client-initiated explicit X grabs are not yet reduced
-into that handshake. A saturated private X input queue now quarantines its
+heads. Ordinary, passive-grab, and explicit core/XI pointer ownership
+establishes exact Engine-visible leases with frontend confirmation,
+profile-scoped retention, ordered release, and VT/seat epoch quarantine.
+Explicit preparation is passive and bounded, routes nothing before activation,
+and rejects saturation. A saturated private X input queue now quarantines its
 owning client and rejects tracked delivery without terminating the shared
 frontend service.
 Recreated XIDs now receive fresh Sophia surface generations and removal retires
 the exact frontend route, so frozen input cannot bind across that ABA boundary.
 The remaining runtime debts are recorded in `docs/target-resolved-input.md`,
-`docs/research-log.md`, and `todo.md`. No shell security transition may ship
-while explicit-grab reduction, lock-authority epoch integration, and shell
-capture remain incomplete.
+`docs/research-log.md`, and `todo.md`. Compiled descriptor capture now shares
+application-grab arbitration; lock-authority epoch integration and broader
+shell capture remain incomplete.
 
 ## Reproducible checks
 

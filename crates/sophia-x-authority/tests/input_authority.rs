@@ -12,6 +12,9 @@ fn active(owner: u64) -> XActiveInputGrab {
         pointer_mode: 1,
         keyboard_mode: 1,
         event_mask: 0x44,
+        xi_event_mask: [0; 8],
+        xi_event_mask_words: 0,
+        route_lease: None,
     }
 }
 

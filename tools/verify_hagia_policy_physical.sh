@@ -62,8 +62,8 @@ require_line() {
     fi
 }
 
-if [[ "$(grep -Ec '^sophia_hagia_policy_identity schema=1 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64}$' "$evidence" || true)" != 1 ]]; then
-    echo "Hagia physical policy evidence lacks one exact Sophia/Hagia identity" >&2
+if [[ "$(grep -Ec '^sophia_hagia_policy_identity schema=2 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} hagia_shell_sha256=[0-9a-f]{64}$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one exact Sophia/Hagia/Hagia Shell identity" >&2
     exit 1
 fi
 if [[ "$(grep -Ec '^sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=[1-9][0-9]* revision=1$' "$evidence" || true)" != 1 ]]; then
@@ -87,6 +87,109 @@ broker_descriptor_line="$(grep -nEm1 '^sophia_live_metadata_broker schema=1 stat
 broker_stopped_line="$(grep -nEm1 '^sophia_live_metadata_broker schema=1 status=stopped ' "$evidence" | cut -d: -f1)"
 if (( broker_ready_line >= broker_descriptor_line || broker_descriptor_line >= broker_stopped_line )); then
     echo "Hagia metadata-broker lifecycle is not ready -> descriptor -> stopped" >&2
+    exit 1
+fi
+
+if (( $(grep -Ec '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' "$evidence" || true) < 2 )); then
+    echo "Hagia physical policy evidence lacks two switcher descriptors" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=[1-9][0-9]* revision=1 connection_epoch=1$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one protected Hagia Shell admission" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid=[1-9][0-9]* revision=1 connection_epoch=2 reason=proof_visible_restart$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks the bounded Hagia Shell reconnect" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_shell schema=1 status=stopped transport=disconnected process=terminated$' "$evidence" || true)" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one clean Hagia Shell shutdown" >&2
+    exit 1
+fi
+for shell_evidence in \
+    'proof restart:^sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation=2 retained_pixels=true$' \
+    'inert retained pixels:^sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false$'; do
+    description="${shell_evidence%%:*}"
+    pattern="${shell_evidence#*:}"
+    require_line "$description" "$pattern"
+done
+if (( $(grep -Ec '^sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher$' "$evidence" || true) < 3 \
+    || $(grep -Ec '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=true$' "$evidence" || true) < 3 \
+    || $(grep -Ec '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=false$' "$evidence" || true) < 2 \
+    || $(grep -Ec '^sophia_live_metadata_broker schema=1 status=issuer_validated activation=[1-9][0-9]* target=redacted$' "$evidence" || true) < 2 )); then
+    echo "Hagia physical policy evidence lacks the complete switcher presentation sequence" >&2
+    exit 1
+fi
+if [[ "$(grep -Ec '^sophia_live_metadata_shell schema=1 status=activation_admitted activation=[1-9][0-9]* target=redacted$' "$evidence" || true)" -lt 1 \
+    || "$(grep -Ec '^sophia_live_metadata_shell schema=1 status=activation_(admitted|duplicate) activation=[1-9][0-9]* target=redacted$' "$evidence" || true)" -lt 2 ]]; then
+    echo "Hagia physical policy evidence lacks two issuer-validated switcher activations" >&2
+    exit 1
+fi
+if grep -Eq '(^sophia_live_metadata_shell schema=1 status=(failed|transport_failed|candidate_rejected|activation_rejected|unavailable|disconnect_failed) |protected metadata shell exited)' "$evidence"; then
+    echo "Hagia physical policy evidence contains a Hagia Shell failure" >&2
+    exit 1
+fi
+
+mapfile -t shell_shortcut_lines < <(grep -nE '^sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher$' "$evidence" | cut -d: -f1)
+mapfile -t shell_visible_lines < <(grep -nE '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=true$' "$evidence" | cut -d: -f1)
+mapfile -t shell_hidden_lines < <(grep -nE '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=false$' "$evidence" | cut -d: -f1)
+mapfile -t shell_issuer_lines < <(grep -nE '^sophia_live_metadata_broker schema=1 status=issuer_validated activation=[1-9][0-9]* target=redacted$' "$evidence" | cut -d: -f1)
+mapfile -t shell_activation_lines < <(grep -nE '^sophia_live_metadata_shell schema=1 status=activation_(admitted|duplicate) activation=[1-9][0-9]* target=redacted$' "$evidence" | cut -d: -f1)
+shell_ready_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=ready ' "$evidence" | cut -d: -f1)"
+shell_restart_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=proof_restart_triggered ' "$evidence" | cut -d: -f1)"
+shell_reconnected_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=reconnected ' "$evidence" | cut -d: -f1)"
+shell_inert_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=proof_inert_click ' "$evidence" | cut -d: -f1)"
+shell_stopped_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=stopped ' "$evidence" | cut -d: -f1)"
+first_shell_admitted_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=activation_admitted ' "$evidence" | cut -d: -f1)"
+if ! (( first_shell_admitted_line == shell_activation_lines[0] \
+    && shell_ready_line < shell_shortcut_lines[0] \
+    && shell_shortcut_lines[0] < shell_visible_lines[0] \
+    && shell_visible_lines[0] < shell_issuer_lines[0] \
+    && shell_issuer_lines[0] < shell_activation_lines[0] \
+    && shell_activation_lines[0] < shell_hidden_lines[0] \
+    && shell_hidden_lines[0] < shell_shortcut_lines[1] \
+    && shell_shortcut_lines[1] < shell_visible_lines[1] \
+    && shell_visible_lines[1] < shell_restart_line \
+    && shell_restart_line < shell_reconnected_line \
+    && shell_reconnected_line < shell_inert_line \
+    && shell_inert_line < shell_shortcut_lines[2] \
+    && shell_shortcut_lines[2] < shell_visible_lines[2] \
+    && shell_visible_lines[2] < shell_issuer_lines[1] \
+    && shell_issuer_lines[1] < shell_activation_lines[1] \
+    && shell_activation_lines[1] < shell_hidden_lines[1] \
+    && shell_hidden_lines[1] < shell_stopped_line )); then
+    echo "Hagia Shell lifecycle is not present -> activate -> withdraw -> restart -> inert -> activate -> withdraw -> stopped" >&2
+    exit 1
+fi
+
+if ! awk '
+    /^sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher$/ {
+        delete nonzero
+        candidate = 1
+    }
+    candidate && /sophia_live_native_head_page_flip schema=2 status=submitted output=[1-9][0-9]* .*nonzero_rgb_pixels: [1-9][0-9]*/ {
+        for (field = 1; field <= NF; field++) {
+            if ($field ~ /^output=[1-9][0-9]*$/) {
+                output = $field
+                sub(/^output=/, "", output)
+                nonzero[output] = 1
+            }
+        }
+    }
+    candidate && /^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=true$/ {
+        output = ""
+        for (field = 1; field <= NF; field++) {
+            if ($field ~ /^output=[1-9][0-9]*$/) {
+                output = $field
+                sub(/^output=/, "", output)
+            }
+        }
+        if (output != "" && nonzero[output]) verified++
+        candidate = 0
+    }
+    END { exit verified >= 3 ? 0 : 1 }
+' "$evidence"; then
+    echo "Hagia Shell switcher did not produce three output-local nonzero presentations" >&2
     exit 1
 fi
 

@@ -50,10 +50,11 @@ and `session:window-switcher` asks it for a candidate. Engine renders and
 publishes the exact targets. A click returns to the shell for acknowledgement,
 then crosses the broker's current issuer check before the WM receives an
 ordinary focus request. Shell loss clears capture and reconnects at a new
-epoch; retained pixels remain inert until replaced. The compiled profile stays
-disabled until explicit X pointer grabs participate in Engine's application
-lease arbitration. Previews, icons, work-area reservations, and the larger
-display-list vocabulary remain out of revision 1.
+epoch; retained pixels remain inert until replaced. Core and admitted XI
+explicit pointer grabs now participate in Engine's application lease
+arbitration, and the compiled profile enables the switcher. Signed installed
+evidence, previews, icons, work-area reservations, and the larger display-list
+vocabulary remain out of revision 1.
 
 ## Why A Driving Client
 
@@ -489,8 +490,9 @@ Four constraints still apply:
   commands plus exact presented opaque targets, then lowers the same logical
   projection independently per head. The protected `hagia-shell` client now
   drives that path from a shell-enabled shortcut through issuer validation and
-  WM focus adjudication. The next dependencies are explicit X-grab arbitration,
-  then installed presentation and reconnect evidence. General graphics-
+  WM focus adjudication. Explicit X-grab arbitration and compiled-profile
+  enablement are complete; installed presentation and reconnect evidence is the
+  next dependency. General graphics-
   efficiency work remains in Milestone 14 and `docs/compositor-graphics.md`.
 - **The metadata-broker prerequisite is complete.** `sophia_broker_v1` now
   hosts the redacted presentation feed in a separate protected domain and

@@ -186,6 +186,15 @@ macro_rules! drain_physical_input {
             metrics.physical_pointer_buttons_routed = metrics
                 .physical_pointer_buttons_routed
                 .saturating_add(report.pointer_buttons_routed);
+            if shell_proof_waiting_for_inert_click && report.pointer_buttons_observed != 0 {
+                if !report.descriptor_activations.is_empty() {
+                    return Err("retained shell pixels remained interactive after restart".into());
+                }
+                shell_proof_waiting_for_inert_click = false;
+                println!(
+                    "sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false"
+                );
+            }
             if report.pointer_focus_handoff_expired {
                 eprintln!(
                     "sophia_live_session_pointer schema=5 status=focus_handoff_dropped reason=timeout"
@@ -963,14 +972,34 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     revoke_shell_input = true;
                 }
             }
-            if let Some(runtime) = runtime.as_ref()
-                && let Err(error) = shell.observe_presentation(runtime)
-            {
-                eprintln!(
-                    "sophia_live_metadata_shell schema=1 status=transport_failed stage=presentation reason={error}"
-                );
-                shell.recover_transport("presentation_failure")?;
-                revoke_shell_input = true;
+            if let Some(runtime) = runtime.as_ref() {
+                match shell.observe_presentation(runtime) {
+                    Ok(true) if shell.interaction_presented() => {
+                        shell_proof_visible_presentations =
+                            shell_proof_visible_presentations.saturating_add(1);
+                        if !shell_proof_restart_triggered
+                            && config.shell_proof_restart_after_visible
+                                == Some(shell_proof_visible_presentations)
+                        {
+                            shell_proof_restart_triggered = true;
+                            shell_proof_waiting_for_inert_click = true;
+                            println!(
+                                "sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation={} retained_pixels=true",
+                                shell_proof_visible_presentations,
+                            );
+                            shell.recover_transport("proof_visible_restart")?;
+                            revoke_shell_input = true;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        eprintln!(
+                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=presentation reason={error}"
+                        );
+                        shell.recover_transport("presentation_failure")?;
+                        revoke_shell_input = true;
+                    }
+                }
             }
             if revoke_shell_input {
                 shell.revoke_interaction();

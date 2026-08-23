@@ -1,4 +1,46 @@
 #[test]
+fn xi_grab_device_installs_only_the_bounded_master_pointer_mask() {
+    let namespace = NamespaceId::from_raw(44);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            1,
+            XByteOrder::LittleEndian,
+            X_INPUT_MAJOR_OPCODE,
+        ),
+        XWireRequest::XiGrabDevice {
+            window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            time: 0,
+            cursor: None,
+            device_id: 2,
+            pointer_mode: 1,
+            keyboard_mode: 1,
+            owner_events: false,
+            event_mask: vec![0x70],
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        result.outputs.as_slice(),
+        [XClientOutput::Reply(XClientReply::GrabStatus { status: 0, .. })]
+    ));
+    let grab = runtime
+        .input_authority_mut()
+        .pointer_grab(namespace)
+        .unwrap();
+    assert_eq!(grab.event_mask, 0);
+    assert!(grab.selects_xi_event(4));
+    assert!(grab.selects_xi_event(5));
+    assert!(grab.selects_xi_event(6));
+    assert!(!grab.selects_xi_event(7));
+}
+
+#[test]
 fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

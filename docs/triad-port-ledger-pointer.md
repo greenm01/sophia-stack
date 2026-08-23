@@ -77,7 +77,7 @@ underestimate it by nine rows. `hagia-shell` does not exist as source.
 
 The ledger records the binding inventory carefully, and it is easy to misread.
 Interface revision 3 admits **256** binding registrations. Hagia's compiled profile
-contains 50 Sophia-owned chords resolved against its 66-entry action catalog,
+contains 51 Sophia-owned chords resolved against its 66-entry action catalog,
 while Triad's baseline default holds 132 key and 137 total physical bindings, of
 which the semantic migrator emits 39 key plus 2 pointer bindings today. The
 remaining bindings are classified but land in shell, broker, portal, and session

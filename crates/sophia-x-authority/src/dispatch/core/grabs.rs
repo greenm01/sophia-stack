@@ -44,6 +44,9 @@ fn dispatch_core_grab_request(
                                     pointer_mode,
                                     keyboard_mode,
                                     event_mask,
+                                    xi_event_mask: [0; 8],
+                                    xi_event_mask_words: 0,
+                                    route_lease: None,
                                 },
                             )
                             .map_or(1, |_| 0)
@@ -88,6 +91,9 @@ fn dispatch_core_grab_request(
                                     pointer_mode,
                                     keyboard_mode,
                                     event_mask: 0,
+                                    xi_event_mask: [0; 8],
+                                    xi_event_mask_words: 0,
+                                    route_lease: None,
                                 },
                             )
                             .map_or(1, |_| 0)

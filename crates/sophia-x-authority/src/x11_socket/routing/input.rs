@@ -406,18 +406,27 @@ impl XServerFrontendRouteRegistry {
                 .input_authority
                 .lock()
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            event_ancestry
-                .iter()
-                .find(|window| {
-                    authority.xi_event_selected(
-                        namespace,
-                        client.raw(),
-                        **window,
-                        xi_device,
-                        selected_type,
-                    )
+            (xi_device == 2)
+                .then(|| authority.pointer_grab(namespace))
+                .flatten()
+                .filter(|grab| {
+                    grab.owner == client.raw() && grab.selects_xi_event(selected_type)
                 })
-                .copied()
+                .map(|grab| grab.window)
+                .or_else(|| {
+                    event_ancestry
+                        .iter()
+                        .find(|window| {
+                            authority.xi_event_selected(
+                                namespace,
+                                client.raw(),
+                                **window,
+                                xi_device,
+                                selected_type,
+                            )
+                        })
+                        .copied()
+                })
         } else {
             None
         };
@@ -435,18 +444,26 @@ impl XServerFrontendRouteRegistry {
                     .input_authority
                     .lock()
                     .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-                event_ancestry
-                    .iter()
-                    .find(|window| {
-                        authority.xi_event_selected(
-                            namespace,
-                            client.raw(),
-                            **window,
-                            xi_device,
-                            selected_type,
-                        )
+                authority
+                    .pointer_grab(namespace)
+                    .filter(|grab| {
+                        grab.owner == client.raw() && grab.selects_xi_event(selected_type)
                     })
-                    .copied()
+                    .map(|grab| grab.window)
+                    .or_else(|| {
+                        event_ancestry
+                            .iter()
+                            .find(|window| {
+                                authority.xi_event_selected(
+                                    namespace,
+                                    client.raw(),
+                                    **window,
+                                    xi_device,
+                                    selected_type,
+                                )
+                            })
+                            .copied()
+                    })
             } else {
                 None
             };

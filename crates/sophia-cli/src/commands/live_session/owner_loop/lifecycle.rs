@@ -699,6 +699,30 @@
         if runtime_deadline_key_drain.is_draining() {
             input_routing_mode = PhysicalInputRoutingMode::Suppressed;
         }
+        let empty_explicit_projections = [];
+        let explicit_projections = runtime.as_ref().map_or(
+            &empty_explicit_projections[..],
+            |runtime| runtime.input_projections(),
+        );
+        let explicit_controls = drain_explicit_pointer_grab_controls(
+            explicit_pointer_grabs,
+            &mut application_route_leases,
+            &layout.client_routes,
+            &focus,
+            explicit_projections,
+            seat,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        )?;
+        if explicit_controls != ExplicitPointerGrabControlReport::default() {
+            println!(
+                "sophia_live_explicit_pointer_grab schema=1 prepared={} activated={} released={} aborted={} rejected={}",
+                explicit_controls.prepared,
+                explicit_controls.activated,
+                explicit_controls.released,
+                explicit_controls.aborted,
+                explicit_controls.rejected,
+            );
+        }
         let input_phase_started = Instant::now();
         let input_requested_exit = input_routing_mode != PhysicalInputRoutingMode::Suppressed
             && drain_physical_input!(input_routing_mode);

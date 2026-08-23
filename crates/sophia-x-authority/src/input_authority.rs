@@ -21,6 +21,17 @@ pub struct XActiveInputGrab {
     pub pointer_mode: u8,
     pub keyboard_mode: u8,
     pub event_mask: u16,
+    pub xi_event_mask: [u32; 8],
+    pub xi_event_mask_words: u8,
+    pub route_lease: Option<sophia_protocol::ApplicationRouteLeaseIdentity>,
+}
+
+impl XActiveInputGrab {
+    pub fn selects_xi_event(self, event_type: u16) -> bool {
+        let word = usize::from(event_type / 32);
+        word < usize::from(self.xi_event_mask_words)
+            && self.xi_event_mask[word] & (1_u32 << (event_type % 32)) != 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -231,6 +242,24 @@ impl XInputAuthorityState {
             .and_then(|state| state.pointer)
     }
 
+    pub fn set_pointer_route_lease(
+        &mut self,
+        namespace: NamespaceId,
+        owner: u64,
+        identity: sophia_protocol::ApplicationRouteLeaseIdentity,
+    ) -> Result<(), XInputGrabError> {
+        let Some(grab) = self
+            .namespaces
+            .get_mut(&namespace)
+            .and_then(|state| state.pointer.as_mut())
+            .filter(|grab| grab.owner == owner)
+        else {
+            return Err(XInputGrabError::AccessConflict);
+        };
+        grab.route_lease = Some(identity);
+        Ok(())
+    }
+
     pub fn keyboard_grab(&self, namespace: NamespaceId) -> Option<XActiveInputGrab> {
         self.namespaces
             .get(&namespace)
@@ -417,6 +446,9 @@ fn active_from_passive(grab: XPassiveInputGrab) -> XActiveInputGrab {
         pointer_mode: grab.pointer_mode,
         keyboard_mode: grab.keyboard_mode,
         event_mask: grab.event_mask,
+        xi_event_mask: [0; 8],
+        xi_event_mask_words: 0,
+        route_lease: None,
     }
 }
 

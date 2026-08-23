@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v hagia-shell || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 browser_bin="${SOPHIA_BROWSER_BIN:-${SOPHIA_FIREFOX_BIN:-}}"
 if [[ -z "$browser_bin" ]]; then
@@ -20,6 +21,7 @@ source_commit="${SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT:-}"
 hagia_commit="${SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT:-}"
 recorded_sophia_sha256="${SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256:-}"
 recorded_hagia_sha256="${SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256:-}"
+recorded_hagia_shell_sha256="${SOPHIA_HAGIA_PHYSICAL_HAGIA_SHELL_SHA256:-}"
 
 if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
     echo "SOPHIA_HAGIA_PHYSICAL_TEXT must contain 1-24 lowercase ASCII letters" >&2
@@ -37,6 +39,10 @@ if [[ -z "$hagia_bin" || ! -x "$hagia_bin" ]]; then
     echo "set SOPHIA_HAGIA_BIN to a built Hagia executable" >&2
     exit 2
 fi
+if [[ -z "$hagia_shell_bin" || ! -x "$hagia_shell_bin" ]]; then
+    echo "set SOPHIA_HAGIA_SHELL_BIN to a built Hagia Shell executable" >&2
+    exit 2
+fi
 if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
     echo "set SOPHIA_TERMINAL_BIN to real Kitty" >&2
     exit 2
@@ -52,8 +58,9 @@ fi
 if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$hagia_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
-    || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind both signed source and binary identities" >&2
+    || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_hagia_shell_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind both signed commits and all three binary identities" >&2
     exit 2
 fi
 if [[ ! -d "$hagia_root/.git" ]]; then
@@ -88,9 +95,11 @@ verify_bound_identity() {
     }
     sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
     hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+    hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
     if [[ "$sophia_sha256" != "$recorded_sophia_sha256" \
-        || "$hagia_sha256" != "$recorded_hagia_sha256" ]]; then
-        echo "Sophia or Hagia binary does not match its bound physical-proof identity." >&2
+        || "$hagia_sha256" != "$recorded_hagia_sha256" \
+        || "$hagia_shell_sha256" != "$recorded_hagia_shell_sha256" ]]; then
+        echo "Sophia, Hagia, or Hagia Shell does not match its bound physical-proof identity." >&2
         exit 1
     fi
 }
@@ -108,7 +117,8 @@ echo "  5. Confirm the indicator remains above fullscreen; click 2, then click 1
 echo "  6. Press Super+M twice, Super+Shift+B, then Super+Alt+B."
 echo "  7. Move the window with Super+Shift+Right, then Super+Shift+Left."
 echo "  8. Press Super+Left, then Super+Right."
-echo "  9. Only after step 8, type '$proof_text' and press Enter."
+echo "  9. Follow the guide through the Hagia Shell activation, restart, inert-pixel, and repeat-activation steps."
+echo " 10. Type '$proof_text' and press Enter only when the guide asks."
 echo "     The phrase is the final signal and ends the session immediately."
 
 SOPHIA_LIVE_SESSION_DISPLAY="$display" \
@@ -132,6 +142,8 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     --session-app-arg=terminal=remember_window_size=no \
     "--session-app-arg=terminal=$guide" \
     "--wm-process=$hagia_bin" \
+    "--shell-process=$hagia_shell_bin" \
+    --shell-proof-restart-after-visible=2 \
     --wm-interface=sophia_wm_v1 \
     --wm-proof-restart-after-action=66 \
     "--input-seat=$seat" \
@@ -140,12 +152,13 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     --exit-after-input-proof
 
 verify_bound_identity
-printf 'sophia_hagia_policy_identity schema=1 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s\n' \
-    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" \
+printf 'sophia_hagia_policy_identity schema=2 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s hagia_shell_sha256=%s\n' \
+    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" "$hagia_shell_sha256" \
     | tee -a "$evidence"
 
 "$ROOT_DIR/tools/verify_hagia_policy_physical.sh" "$evidence" "$proof_text"
 SOPHIA_HAGIA_BIN="$hagia_bin" \
+SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
 SOPHIA_HAGIA_ROOT="$hagia_root" \
     "$ROOT_DIR/tools/archive_hagia_policy_physical_run.sh" \
     "$evidence" "$proof_text"

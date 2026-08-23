@@ -227,8 +227,10 @@ session { terminal "terminal"; browser "browser"; }
 
     let mut explicit = base.to_vec();
     explicit.push("--shell-process=/srv/hagia-shell".to_owned());
+    explicit.push("--shell-proof-restart-after-visible=2".to_owned());
     let config = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
     assert_eq!(config.shell_process.as_deref(), Some("/srv/hagia-shell"));
+    assert_eq!(config.shell_proof_restart_after_visible, Some(2));
 
     assert!(
         PersistentXtermSessionConfig::from_args(&[

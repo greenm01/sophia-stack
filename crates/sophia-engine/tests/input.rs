@@ -873,6 +873,7 @@ fn route_lease_candidate(
 ) -> ApplicationRouteLeaseCandidate {
     ApplicationRouteLeaseCandidate {
         seat: SeatId::from_raw(1),
+        origin: ApplicationRouteLeaseOrigin::PointerBoundary,
         target_surface: SurfaceId::new(40, 3),
         admission: ClientAdmissionId::from_raw(7),
         scope: ApplicationRouteScope {
@@ -907,6 +908,109 @@ fn application_route_lease_is_provisional_before_frontend_confirmation() {
             .phase,
         ApplicationRouteLeasePhase::Active
     );
+}
+
+#[test]
+fn explicit_pointer_lease_withholds_input_until_exact_activation() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let mut candidate = route_lease_candidate(NamespaceProfile::Confined, 4);
+    candidate.origin = ApplicationRouteLeaseOrigin::ExplicitPointer;
+    candidate.initiating_device = None;
+    candidate.initiating_button = None;
+    let lease = state.begin_provisional(candidate).unwrap();
+
+    assert_eq!(
+        state.authorize(
+            lease.identity.seat,
+            lease.scope,
+            DeviceId::from_raw(99),
+            lease.output,
+            lease.presentation_epoch,
+            lease.authority_session_epoch,
+        ),
+        Err(ApplicationRouteLeaseError::InvalidPhase)
+    );
+    state
+        .confirm(
+            lease.identity,
+            lease.target_surface,
+            lease.admission,
+            lease.authority_session_epoch,
+        )
+        .unwrap();
+    assert!(
+        state
+            .authorize(
+                lease.identity.seat,
+                lease.scope,
+                DeviceId::from_raw(99),
+                lease.output,
+                lease.presentation_epoch,
+                lease.authority_session_epoch,
+            )
+            .is_ok()
+    );
+}
+
+#[test]
+fn explicit_pointer_regrab_replaces_the_exact_active_owner_without_a_gap() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let mut first_candidate = route_lease_candidate(NamespaceProfile::ClassicShared, 4);
+    first_candidate.origin = ApplicationRouteLeaseOrigin::ExplicitPointer;
+    first_candidate.initiating_device = None;
+    first_candidate.initiating_button = None;
+    let first = state.begin_provisional(first_candidate).unwrap();
+    state
+        .confirm(
+            first.identity,
+            first.target_surface,
+            first.admission,
+            first.authority_session_epoch,
+        )
+        .unwrap();
+
+    let mut replacement = first_candidate;
+    replacement.target_surface = SurfaceId::new(41, 1);
+    replacement.presentation_epoch = 12;
+    let replacement = state
+        .replace_explicit_provisional(first.identity, replacement)
+        .unwrap();
+
+    assert_ne!(replacement.identity, first.identity);
+    assert_eq!(replacement.phase, ApplicationRouteLeasePhase::Provisional);
+    assert_eq!(state.lease(first.identity.seat), Some(replacement));
+    assert_eq!(
+        state.replace_explicit_provisional(first.identity, first_candidate),
+        Err(ApplicationRouteLeaseError::IdentityMismatch)
+    );
+}
+
+#[test]
+fn exact_release_does_not_mutate_a_replaced_explicit_pointer_lease() {
+    let mut state = ApplicationRouteLeaseState::default();
+    let mut candidate = route_lease_candidate(NamespaceProfile::Confined, 4);
+    candidate.origin = ApplicationRouteLeaseOrigin::ExplicitPointer;
+    candidate.initiating_device = None;
+    candidate.initiating_button = None;
+    let lease = state.begin_provisional(candidate).unwrap();
+    let active = state
+        .confirm(
+            lease.identity,
+            lease.target_surface,
+            lease.admission,
+            lease.authority_session_epoch,
+        )
+        .unwrap();
+
+    let stale = ApplicationRouteLeaseIdentity {
+        frontend_sequence: lease.identity.frontend_sequence + 1,
+        ..lease.identity
+    };
+    assert_eq!(
+        state.request_exact_release(stale, lease.admission, 50),
+        Err(ApplicationRouteLeaseError::IdentityMismatch)
+    );
+    assert_eq!(state.lease(lease.identity.seat), Some(active));
 }
 
 #[test]

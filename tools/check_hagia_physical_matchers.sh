@@ -15,6 +15,10 @@ grep -Fq 'bind "Super+Shift+Right" "policy:move-to-output-next"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq 'bind "Super+Shift+Left" "policy:move-to-output-prev"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'shell { enabled #true; }' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+grep -Fq 'bind "Super+p" "session:window-switcher"' \
+    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq "show_step 'Press Super+Shift+F once." \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 grep -Fq '1. Press and release Super+Shift+B.' \
@@ -28,6 +32,7 @@ proof_result="$temp_dir/proof.result"
 
 printf '%s\n' \
     'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=4321 revision=1' \
+    'sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=4322 revision=1 connection_epoch=1' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=7 content=redacted' \
     'sophia_live_wm schema=1 status=physical_action_committed action=37' \
     'sophia_live_wm schema=1 status=physical_action_committed action=66' \
@@ -55,13 +60,33 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=33' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
+    'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=8 content=redacted' \
+    'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
+    '2026-08-09T00:00:02Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=10 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(94), transaction: TransactionId(62), nonzero_rgb_pixels: 1800 }) frame=94' \
+    'sophia_live_metadata_shell schema=1 status=presented candidate_generation=1 presentation_epoch=10 output=1 visible=true' \
+    'sophia_live_metadata_broker schema=1 status=issuer_validated activation=1 target=redacted' \
+    'sophia_live_metadata_shell schema=1 status=activation_admitted activation=1 target=redacted' \
+    'sophia_live_metadata_shell schema=1 status=presented candidate_generation=2 presentation_epoch=11 output=1 visible=false' \
+    'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
+    '2026-08-09T00:00:03Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=11 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(95), transaction: TransactionId(63), nonzero_rgb_pixels: 1800 }) frame=95' \
+    'sophia_live_metadata_shell schema=1 status=presented candidate_generation=3 presentation_epoch=12 output=1 visible=true' \
+    'sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation=2 retained_pixels=true' \
+    'sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid=4323 revision=1 connection_epoch=2 reason=proof_visible_restart' \
+    'sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false' \
+    'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
+    '2026-08-09T00:00:04Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=12 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(96), transaction: TransactionId(64), nonzero_rgb_pixels: 1800 }) frame=96' \
+    'sophia_live_metadata_shell schema=1 status=presented candidate_generation=4 presentation_epoch=13 output=1 visible=true' \
+    'sophia_live_metadata_broker schema=1 status=issuer_validated activation=2 target=redacted' \
+    'sophia_live_metadata_shell schema=1 status=activation_duplicate activation=2 target=redacted' \
+    'sophia_live_metadata_shell schema=1 status=presented candidate_generation=5 presentation_epoch=14 output=1 visible=false' \
     'sophia_live_session_input schema=2 status=complete source=physical text=hagiapolicyproof expected_events=34 matched_events=34 pixel_change=true' \
     'sophia_live_session schema=16 status=bounded_complete physical_input=enabled native_in_flight=false native_cleanup_pending=false native_submit_failures=0 wm_restarts=1 wm_degraded=false complete=true' \
     'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false' \
     'sophia_live_output_topology_health schema=1 status=clean quarantined=false' \
     'sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed' \
+    'sophia_live_metadata_shell schema=1 status=stopped transport=disconnected process=terminated' \
     'sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated' \
-    'sophia_hagia_policy_identity schema=1 status=bound sophia_commit=1111111111111111111111111111111111111111 hagia_commit=2222222222222222222222222222222222222222 sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+    'sophia_hagia_policy_identity schema=2 status=bound sophia_commit=1111111111111111111111111111111111111111 hagia_commit=2222222222222222222222222222222222222222 sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb hagia_shell_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' \
     >"$evidence"
 
 set +e
@@ -102,13 +127,19 @@ fi
 for missing in \
     'sophia_live_metadata_broker schema=1 status=ready' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed' \
+    'sophia_live_metadata_shell schema=1 status=ready' \
+    'sophia_live_metadata_shell schema=1 status=reconnected' \
+    'sophia_live_metadata_broker schema=1 status=issuer_validated' \
+    'sophia_live_metadata_shell schema=1 status=proof_inert_click' \
+    'sophia_live_metadata_shell schema=1 status=stopped' \
     'sophia_live_metadata_broker schema=1 status=stopped' \
     'sophia_live_wm schema=1 status=physical_action_committed action=5' \
     'sophia_live_wm schema=1 status=physical_action_committed action=6' \
     'sophia_live_indicator_input schema=1 status=activated output=1 action=12' \
     'sophia_live_indicator_input schema=1 status=activated output=1 action=11' \
     'nonzero_rgb_pixels: 2246' \
-    'sophia_hagia_policy_identity schema=1 status=bound'; do
+    'nonzero_rgb_pixels: 1800' \
+    'sophia_hagia_policy_identity schema=2 status=bound'; do
     rejected="$temp_dir/rejected.log"
     grep -vF "$missing" "$evidence" >"$rejected"
     if "$root_dir/tools/verify_hagia_policy_physical.sh" \
@@ -129,27 +160,43 @@ if "$root_dir/tools/verify_hagia_policy_physical.sh" \
     exit 1
 fi
 
+shell_failed="$temp_dir/shell-failed.log"
+cp "$evidence" "$shell_failed"
+printf '%s\n' \
+    'sophia_live_metadata_shell schema=1 status=unavailable reason=retry retry_ms=250 error=fixture' \
+    >>"$shell_failed"
+if "$root_dir/tools/verify_hagia_policy_physical.sh" \
+    "$shell_failed" hagiapolicyproof >/dev/null 2>&1; then
+    echo "Hagia physical verifier accepted a Hagia Shell transport failure" >&2
+    exit 1
+fi
+
 sophia_bin="$temp_dir/sophia"
 hagia_bin="$temp_dir/hagia"
+hagia_shell_bin="$temp_dir/hagia-shell"
 cp /usr/bin/true "$sophia_bin"
 cp /usr/bin/false "$hagia_bin"
+cp /usr/bin/true "$hagia_shell_bin"
 sophia_commit="$(git -C "$root_dir" rev-parse HEAD)"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$root_dir/../hagia}"
 hagia_commit="$(git -C "$hagia_root" rev-parse HEAD)"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
 archive_evidence="$temp_dir/archive-evidence.log"
 sed \
     -e "s/sophia_commit=1111111111111111111111111111111111111111/sophia_commit=$sophia_commit/" \
     -e "s/hagia_commit=2222222222222222222222222222222222222222/hagia_commit=$hagia_commit/" \
     -e "s/sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sophia_sha256=$sophia_sha256/" \
     -e "s/hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/hagia_sha256=$hagia_sha256/" \
+    -e "s/hagia_shell_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/hagia_shell_sha256=$hagia_shell_sha256/" \
     "$evidence" >"$archive_evidence"
 archive_output="$(env \
     XDG_STATE_HOME="$temp_dir/state" \
     SOPHIA_HAGIA_ROOT="$hagia_root" \
     SOPHIA_HAGIA_POLICY_SOPHIA_BIN="$sophia_bin" \
     SOPHIA_HAGIA_BIN="$hagia_bin" \
+    SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
     "$root_dir/tools/archive_hagia_policy_physical_run.sh" \
     "$archive_evidence" hagiapolicyproof)"
 run_dir="${archive_output##*: }"
