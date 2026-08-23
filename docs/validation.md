@@ -1503,7 +1503,7 @@ TTY 4 and restores the originating display manager and VT on every exit:
 tools/start_sophia_hagia_policy_tty4.sh
 ```
 
-Follow its five on-screen steps once and do not enter the final phrase early:
+Follow its on-screen steps once and do not enter the final phrase early:
 the phrase plus Enter terminates the session immediately. The proof keeps
 client-bound keys ordered across asynchronous Engine/frontend focus
 acknowledgement, but still rejects a

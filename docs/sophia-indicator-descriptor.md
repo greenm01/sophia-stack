@@ -6,7 +6,7 @@ and presented-input activation are implemented in `sophia_wm_v1` revision 3.
 The records, capability bit, and count fields exist in
 `protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs and golden
 vectors. Deterministic tests and the one-shot Hagia verifier cover the path;
-the signed physical promotion run remains pending.
+signed physical archive `0005` completes its promotion.
 `docs/architecture.md` and `docs/sophia-policy-ipc.md` remain authoritative
 where this document appears to disagree.
 
@@ -241,7 +241,8 @@ fresh chrome selection cannot steal it.
 guide asks the operator to confirm the strip remains visible above fullscreen,
 click view 2, and click view 1 to return. The verifier requires exact
 indicator-origin activation records and the corresponding committed policy
-actions. This is the physical promotion gate, not a substitute for it.
+actions. Archive `0005` passed that gate on signed Sophia source `a954745e` and
+signed Hagia source `8adf265`.
 
 ## Non-Goals
 

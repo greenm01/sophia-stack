@@ -118,16 +118,22 @@ promotion gate.
    causal epoch-two restart, all twelve requested action commits, nonzero
    presentation on both outputs, exact 34-event text, clean health, and clean
    teardown. Its Sophia digest matches display archives `0008` and `0002`.
-4. **Current; implementation complete, physical promotion pending.** The
-   Tier-0 display list, per-head raster, fixed work-area reservation, and
-   last-presented captured-input path are implemented with deterministic tests.
-   `tools/hagia-proof` now requires pointer activation of views 2 and 1 after
-   the supervised restart. A signed passing run remains the promotion gate.
-   The authoritative retained-behavior ledger currently has 28 rows: 3
+4. **Completed.** Signed Hagia archive `0005` proves the Tier-0 display list,
+   per-head raster, fixed work-area reservation, fullscreen coexistence, and
+   last-presented captured-input path. Pointer activations selected views 2 and
+   1 after the causal restart; all fourteen requested actions committed, both
+   outputs presented nonzero content, exact text completed, and health and
+   teardown were clean.
+5. **Current.** Build the minimum metadata-backed shell rendering substrate.
+   The protected broker feed is hosted and physically proved, and Tier 0 proves
+   the narrow per-head text and capture mechanics, but no shell-role display
+   list or descriptor rendering surface exists. Model that boundary before its
+   wire. The authoritative retained-behavior ledger still has 28 rows: 3
    complete, 12 partial, and 13 open.
-5. Run the complete reconnect/restart corpus, freeze experimental interface
-   revision 3, migrate the xmonad recovery profile through the public projection
-   adapter, and only then remove API v7 and Engine-owned workspace policy.
+6. Only after the retained ledger closes, run the complete cross-client
+   reconnect/restart corpus, evaluate experimental interface revision 3 for
+   stability, migrate the xmonad recovery profile through the public projection
+   adapter, and remove API v7 and Engine-owned workspace policy.
 
 Cross-drawable `CopyArea` replay, alternative upscale kernels, linear-light
 fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
@@ -139,14 +145,13 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Promote row 4 with the one-shot Hagia gate.** Hagia archive `0004` closed
-   the protected broker dependency. The successor now assembles Hagia's bounded
-   indicator/status projection into Engine's production chrome display list,
-   renders it independently per head, reserves its fixed work area, and routes
-   clicks from the applicable last-presented projection. The first physical
-   attempt exposed and now covers a fullscreen/work-area reconciliation split.
-   The local all-features and cross-repository gates are green; the next action
-   is `tools/hagia-proof` on tty4 from the signed, pushed candidate.
+1. **Start the metadata-backed shell rendering substrate.** Archive `0005`
+   closes Tier-0 indicator promotion on the hosted protected-broker candidate.
+   Define one bounded compositor-owned descriptor projection and its presented
+   opaque activation targets, then carry it through Engine's renderer-neutral
+   display list before specifying `sophia_shell_v1`. Reuse the proven per-head
+   lowering and capture invariants without turning the private indicator strip
+   into a general shell protocol.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -1991,8 +1996,9 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   uses one bundled font, reserves 14 logical pixels before the first public WM
   snapshot, and publishes exact last-presented hit targets. The existing
   `tools/hagia-proof` one-shot now requires two pointer activations and their
-  committed policy actions. Deterministic verification passes; the signed
-  physical tty4 run remains pending.
+  committed policy actions. Signed archive `0005` verifies both activations,
+  all fourteen ordered action commits, nonzero presentation on both outputs,
+  exact physical text, and clean teardown.
 - [x] Emit indicators from Hagia's private tags, keeping tags private and
   crossing only labels, state bits, and action tokens. Hagia's independent Nim
   codec and the cross-repository conformance gate cover the records.

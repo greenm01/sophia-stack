@@ -850,8 +850,8 @@ parallel multi-monitor subsystem.
   than a flattened surface. Each logical output carries its own committed
   descriptor into every head plan, and the renderer rasterizes the strip at
   that head's native extent from one bundled font. Damage, raster caching, and
-  last-presented hit targets remain output- and head-resolved. The signed
-  physical Hagia promotion run is still pending.
+  last-presented hit targets remain output- and head-resolved. Signed Hagia
+  archive `0005` physically proves the path on two outputs.
 - `OutputPresentationCohort` and `OutputTopologyTransaction` are implemented as
   Engine reducers. They enforce prepare-before-submit, primary-owned logical
   presentation, last-head cleanup,
@@ -1082,8 +1082,9 @@ between actions 5 and 6, exact text reached a kernel page flip in 15 ms, and
 native health and teardown were clean. This completes the display-evidence
 dependency for the protected metadata-broker row. Tier-0 indicator display,
 work-area reservation, and target-resolved capture are now implemented and
-covered deterministically; the critical path is their signed
-`tools/hagia-proof` promotion run.
+covered deterministically. Signed archive `0005` proves their fullscreen,
+restart, pointer-activation, per-output presentation, and cleanup path. The
+critical path now moves to the minimum metadata-backed shell rendering model.
 
 ### Target
 

@@ -550,6 +550,19 @@ The causal epoch-two restart, all twelve requested action commits, exact
 heads presented nonzero content; the final text reached a kernel page flip in
 15 ms. This promotes the protected metadata-broker critical-path row.
 
+Tier-0 promotion archive `0005` passed and was independently verified on
+2026-08-23. It binds signed Sophia source
+`a954745e581264b15bc3433931d4b92ec625f6dc`, signed Hagia source
+`8adf2655161ad6e2c7f3cd845cc5bab23e7e0625`, Sophia binary digest
+`37deeef0d91ade54b259ddd5f00fc286aa41d9e13e36a7dd8f7388a49068dd0b`,
+and Hagia binary digest
+`2d2440424094626e2c9df056a6badd8b1846d024552a1bb3a7c7040a8c684349`.
+After the causal restart, presented indicator targets on output 1 committed
+view actions 12 and 11. All fourteen requested actions committed, output 1
+recorded 153 nonzero exports, output 2 recorded 30, exact text reached a kernel
+page flip in 37 ms, and session health and cleanup were clean. This promotes
+the Tier-0 indicator critical-path row.
+
 The installed guide has a ten-minute physical-sequence safety deadline inside
 an eleven-minute global runtime ceiling, not a soak or minimum-duration
 criterion. Successful completion still terminates immediately; the ceilings

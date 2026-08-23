@@ -449,14 +449,18 @@ Four constraints still apply:
   shell work cannot casually reopen the WM contract.
 - **Engine needs a minimum shell rendering substrate.** Path B requires
   Engine-side display-list lowering, cached-texture strategy, damage handling,
-  and target-resolved input. The bounded slice needed by retained Hagia Shell
-  workflows moves onto the pre-freeze port path; general graphics-efficiency
-  work remains in Milestone 14 and `docs/compositor-graphics.md`. The protocol
-  still cannot be specified ahead of the rendering model it describes.
-- **The metadata broker is a larger prerequisite than the protocol.** The
-  redacted presentation feed has no implementation. Without it, most of the
-  presentation-data table above has nothing to connect to, and the shell
-  interface would be specified against a data source that does not exist.
+  and target-resolved input. Tier-0 indicators prove a narrow semantic text
+  raster and presented-capture path, not a general shell display list. The next
+  bounded slice defines one compositor-owned descriptor projection and carries
+  it through the renderer-neutral model before specifying a wire. General
+  graphics-efficiency work remains in Milestone 14 and
+  `docs/compositor-graphics.md`.
+- **The metadata-broker prerequisite is complete.** `sophia_broker_v1` now
+  hosts the redacted presentation feed in a separate protected domain and
+  commits sanitized descriptors to Engine's `ChromeDescriptorTable`. Signed
+  Hagia archives `0004` and `0005` prove its real-session lifecycle. The data
+  source therefore no longer blocks shell modeling; the missing descriptor
+  rendering surface and shell-role transport do.
 
 Open question 2 asks whether the shared transport can carry shell texture
 traffic given the 64 KiB frame limit, single in-flight transfer, and bytes-only
