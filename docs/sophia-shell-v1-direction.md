@@ -405,6 +405,9 @@ integers collide. Concrete records and limits remain schema work.
    taskbar half, which needs per-window identity from the broker. Icons are the
    hard case: an application icon is close to an identity disclosure, and no
    structural property makes it safe the way policy blindness makes labels safe.
+   The offline descriptor reference now proves a title-only recent-window list
+   with opaque activation; it deliberately preserves icon tokens without
+   rendering them and does not choose ordering or recency.
 6. Does the shell need its own animation clock, or does Engine own animation
    and the shell only declare transitions?
 7. Where does the launcher live? It needs a text input, a result list, and
@@ -447,20 +450,21 @@ Four constraints still apply:
 - **Freezing still requires quiet.** Shell-driven discoveries are intentionally
   resolved before the WM freeze. Once the retained port ledger closes, new
   shell work cannot casually reopen the WM contract.
-- **Engine needs a minimum shell rendering substrate.** Path B requires
-  Engine-side display-list lowering, cached-texture strategy, damage handling,
-  and target-resolved input. Tier-0 indicators prove a narrow semantic text
-  raster and presented-capture path, not a general shell display list. The next
-  bounded slice defines one compositor-owned descriptor projection and carries
-  it through the renderer-neutral model before specifying a wire. General
-  graphics-efficiency work remains in Milestone 14 and
-  `docs/compositor-graphics.md`.
+- **The minimum shell rendering substrate is complete.** Engine reduces a
+  bounded title-only descriptor candidate into generic rectangle and cached-text
+  commands plus exact presented opaque targets, then lowers the same logical
+  projection independently per head. This offline reference fixes the first
+  useful vocabulary without creating a wire, shell lifecycle, or toolkit. The
+  next dependency is a separately protected shell-role transport and the first
+  `hagia-shell` client. General graphics-efficiency work remains in Milestone 14
+  and `docs/compositor-graphics.md`.
 - **The metadata-broker prerequisite is complete.** `sophia_broker_v1` now
   hosts the redacted presentation feed in a separate protected domain and
   commits sanitized descriptors to Engine's `ChromeDescriptorTable`. Signed
   Hagia archives `0004` and `0005` prove its real-session lifecycle. The data
-  source therefore no longer blocks shell modeling; the missing descriptor
-  rendering surface and shell-role transport do.
+  source and descriptor rendering reference therefore no longer block shell
+  modeling; the missing protected shell-role transport and external shell
+  lifecycle do.
 
 Open question 2 asks whether the shared transport can carry shell texture
 traffic given the 64 KiB frame limit, single in-flight transfer, and bytes-only

@@ -20,5 +20,9 @@ default = []
 gbm-probe = ["dep:gbm", "dep:sophia-renderer-native-egl", "sophia-renderer-native-egl/gbm-platform"]
 egl-probe = ["dep:sophia-renderer-native-egl"]
 
+[[example]]
+name = "descriptor_projection_probe"
+required-features = ["gbm-probe"]
+
 [lints]
 workspace = true

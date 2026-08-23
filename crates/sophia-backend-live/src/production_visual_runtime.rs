@@ -243,6 +243,7 @@ pub struct LiveProductionVisualRuntime {
     recent_cpu_buffer_updates: VecDeque<u64>,
     raster_requirements: sophia_engine::SurfaceRasterRequirementTracker,
     indicator_strip_cache: std::cell::RefCell<sophia_renderer_live::IndicatorStripRasterCache>,
+    text_cache: std::cell::RefCell<sophia_renderer_live::CompositorTextRasterCache>,
 }
 
 const PRESENT_FEEDBACK_CAPACITY: usize = 8_192;
@@ -336,6 +337,7 @@ impl LiveProductionVisualRuntime {
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
             raster_requirements: Default::default(),
             indicator_strip_cache: Default::default(),
+            text_cache: Default::default(),
         })
     }
 
@@ -587,6 +589,7 @@ impl LiveProductionVisualRuntime {
         let head_plan_indicator_enabled = self.indicator_strip_enabled;
         let head_plan_indicator_publication = self.indicator_publication.clone();
         let indicator_strip_cache = &self.indicator_strip_cache;
+        let text_cache = &self.text_cache;
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
         let mut adapter = LiveProductionCpuCycleAdapter::new(
@@ -715,10 +718,11 @@ impl LiveProductionVisualRuntime {
                                                     mapping: plan.mapping,
                                                     logical_content_checksum: plan
                                                         .logical_content_checksum,
-                                                    frame: sophia_renderer_live::lower_cpu_head_composition_plan_with_indicator_cache(
+                                                    frame: sophia_renderer_live::lower_cpu_head_composition_plan_with_caches(
                                                         plan,
                                                         &cpu_layers,
                                                         &mut indicator_strip_cache.borrow_mut(),
+                                                        &mut text_cache.borrow_mut(),
                                                     )?,
                                                 })
                                             })

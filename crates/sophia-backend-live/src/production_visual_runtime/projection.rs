@@ -167,7 +167,9 @@ fn direct_chrome_projection(
             (strip.strip.hit_targets.clone(), Some(strip.strip.geometry))
         }
         sophia_engine::CompositorDisplayCommand::Surface { .. }
-        | sophia_engine::CompositorDisplayCommand::Border(_) => (Vec::new(), None),
+        | sophia_engine::CompositorDisplayCommand::Border(_)
+        | sophia_engine::CompositorDisplayCommand::Rect(_)
+        | sophia_engine::CompositorDisplayCommand::Text(_) => (Vec::new(), None),
     }
 }
 

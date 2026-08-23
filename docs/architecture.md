@@ -146,9 +146,11 @@ or layout policy.
   publishes `MetadataDisclosureRule` records to the X Authority, receives only
   reduced candidates, and returns sanitized descriptors to Engine's session-owned
   `ChromeDescriptorTable`. The production default is `ClassOnly`; raw titles,
-  classes, PIDs, paths, and icons remain authority-private. The descriptor table
-  is not yet rendered by a native shell, so this closes broker hosting rather than
-  the larger shell/display-list milestone.
+  classes, PIDs, paths, and icons remain authority-private. Engine now has an
+  offline title-only reference projection from this table: bounded generic
+  rectangle/text nodes, per-head lowering, and opaque presented targets. No
+  native shell endpoint consumes it yet, so broker hosting and the reference
+  rendering substrate do not complete the larger shell milestone.
 - Public Hagia policy and the metadata broker are launched through the production
   Bubblewrap protection backend. The backend rejects forbidden role composition,
   clears the ambient environment, inherits only selected standard streams, denies
@@ -913,12 +915,15 @@ Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
-Tier-0 indicator interaction implements the first target-resolved chrome slice
-from `docs/target-resolved-input.md`. Application and indicator selection both
-use the applicable output's last-presented interaction snapshot. Engine retains
-per-output presentation epochs; an output or session lifecycle change
-invalidates dependent input state. Rich Tier-1 shell interaction remains
-deferred.
+Tier-0 indicator interaction implements the first production target-resolved
+chrome slice from `docs/target-resolved-input.md`. The offline descriptor
+reference also proves generic exact-target capture: a matching press/release
+returns only an epoch-scoped opaque action and activation identity. Application
+and indicator selection use the applicable output's last-presented interaction
+snapshot. Engine retains per-output presentation epochs; an output or session
+lifecycle change invalidates dependent input state. The generic capture is not
+connected to production arbitration or a shell endpoint. Rich Tier-1 shell
+interaction remains deferred.
 
 Per seat, a security/session transition first revokes old control epochs; a
 reserved Engine shortcut follows; then one existing application route lease or
@@ -1052,6 +1057,13 @@ Tier 0 covers a status bar without any client interface. Tier 1 exists for shell
 that need more than chrome can express, and is justified by a demanding client
 rather than by symmetry. See `docs/sophia-indicator-descriptor.md` and
 `docs/sophia-shell-v1-direction.md`.
+
+The renderer-neutral reference beneath Tier 1 is implemented without claiming
+that tier: at most sixteen exact-generation descriptors become a centered,
+title-only list of solid and cached-text nodes plus last-presented opaque
+targets. The shell still owns order, selection, and lifecycle; Engine owns
+validation, rendering, damage, per-head projection, and hit-testing. Icons stay
+in the sanitized descriptor table and are not rendered by this slice.
 
 The optional [X11 WM Bridge](sophia-x11-wm-bridge.md) may present a synthetic
 X11 facade to a legacy WM such as xmonad while speaking the normal blind Sophia

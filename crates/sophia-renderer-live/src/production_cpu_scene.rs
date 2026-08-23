@@ -49,6 +49,7 @@ pub struct LiveProductionCpuScene {
     retained_primary_frames: Vec<RetainedPrimaryCpuFrame>,
     secondary_output_frames: Vec<(usize, HeadlessOutput, LiveProductionComposedFrame)>,
     indicator_strip_cache: crate::IndicatorStripRasterCache,
+    text_cache: crate::CompositorTextRasterCache,
 }
 
 impl LiveProductionCpuScene {
@@ -66,6 +67,7 @@ impl LiveProductionCpuScene {
             retained_primary_frames: Vec::new(),
             secondary_output_frames: Vec::new(),
             indicator_strip_cache: Default::default(),
+            text_cache: Default::default(),
         }
     }
 
@@ -261,9 +263,10 @@ impl LiveProductionCpuScene {
             .iter()
             .filter_map(|command| match command {
                 CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
-                CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::Border(_) => {
-                    None
-                }
+                CompositorDisplayCommand::Surface { .. }
+                | CompositorDisplayCommand::Border(_)
+                | CompositorDisplayCommand::Rect(_)
+                | CompositorDisplayCommand::Text(_) => None,
             })
             .map(|strip| {
                 self.indicator_strip_cache.raster_for(
@@ -275,7 +278,30 @@ impl LiveProductionCpuScene {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let text_buffers = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                CompositorDisplayCommand::Text(text) => Some(text),
+                CompositorDisplayCommand::Surface { .. }
+                | CompositorDisplayCommand::Border(_)
+                | CompositorDisplayCommand::Rect(_)
+                | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            })
+            .map(|text| {
+                self.text_cache
+                    .raster_for(&sophia_engine::HeadCompositorText {
+                        node: text.node,
+                        generation: text.generation,
+                        geometry: text.geometry,
+                        text: text.text.clone(),
+                        font_size_millis: text.font_size_millis,
+                        color: text.color,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut indicator_index = 0usize;
+        let mut text_index = 0usize;
         let mut elements = Vec::with_capacity(display_list.commands.len().saturating_mul(4));
         for command in &display_list.commands {
             match command {
@@ -315,6 +341,33 @@ impl LiveProductionCpuScene {
                             });
                         }
                     }
+                }
+                CompositorDisplayCommand::Rect(rect) => {
+                    if !rect.geometry.is_empty() {
+                        elements.push(LiveCpuCompositionElementRef::Solid {
+                            geometry: rect.geometry,
+                            color: rect.color,
+                        });
+                    }
+                }
+                CompositorDisplayCommand::Text(text) => {
+                    let buffer = text_buffers
+                        .get(text_index)
+                        .ok_or("compositor text raster set is incomplete")?;
+                    text_index = text_index.saturating_add(1);
+                    elements.push(LiveCpuCompositionElementRef::Layer(
+                        LiveCpuCompositionLayerRef {
+                            geometry: text.geometry,
+                            buffer: LiveCpuBufferSourceRef {
+                                handle: buffer.handle,
+                                size: buffer.size,
+                                stride: buffer.stride,
+                                format: buffer.format,
+                                generation: buffer.generation,
+                                bytes: buffer.bytes.as_slice(),
+                            },
+                        },
+                    ));
                 }
                 CompositorDisplayCommand::IndicatorStrip(strip) => {
                     let buffer = indicator_buffers

@@ -17,6 +17,7 @@ mod indicator_strip;
 mod presentation;
 mod production_cpu_scene;
 mod scanout_buffer;
+mod text_raster;
 
 #[cfg(feature = "egl-probe")]
 mod egl_probe;
@@ -36,6 +37,7 @@ pub use indicator_strip::*;
 pub use presentation::*;
 pub use production_cpu_scene::*;
 pub use scanout_buffer::*;
+pub use text_raster::*;
 
 #[cfg(feature = "egl-probe")]
 pub use egl_probe::{

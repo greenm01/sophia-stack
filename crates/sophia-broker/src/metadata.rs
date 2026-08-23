@@ -79,6 +79,8 @@ struct BrokerSurface {
     disclosure: MetadataDisclosure,
     icon: IconTokenId,
     attention: AttentionState,
+    label: Option<String>,
+    label_redacted: bool,
     generation: u64,
 }
 
@@ -150,6 +152,8 @@ impl MetadataBroker {
             disclosure: MetadataDisclosure::None,
             icon,
             attention: AttentionState::None,
+            label: None,
+            label_redacted: false,
             generation: 0,
         });
         entry.profile = Some(profile);
@@ -188,6 +192,8 @@ impl MetadataBroker {
         let (label, label_redacted) = candidate
             .label
             .map_or((None, false), |label| (Some(label.text), label.redacted));
+        entry.label.clone_from(&label);
+        entry.label_redacted = label_redacted;
 
         Ok(vec![MetadataBrokerCommand::EmitDescriptor(
             SanitizedChromeMetadata {
@@ -220,8 +226,8 @@ impl MetadataBroker {
         Ok(vec![MetadataBrokerCommand::EmitDescriptor(
             SanitizedChromeMetadata {
                 surface,
-                label: None,
-                label_redacted: false,
+                label: entry.label.clone(),
+                label_redacted: entry.label_redacted,
                 icon: Some(entry.icon),
                 trust_level: entry
                     .profile
@@ -254,10 +260,31 @@ impl MetadataBroker {
         let Some(entry) = self.surfaces.get_mut(&surface) else {
             return Err(MetadataBrokerRejection::UnknownSurface);
         };
+        let replacement = if disclosure < entry.disclosure {
+            entry.label = None;
+            entry.label_redacted = false;
+            Some(SanitizedChromeMetadata {
+                surface,
+                label: None,
+                label_redacted: false,
+                icon: Some(entry.icon),
+                trust_level: entry
+                    .profile
+                    .map_or_else(unknown_trust, trust_for_namespace_profile),
+                attention: entry.attention,
+                generation: entry.generation,
+            })
+        } else {
+            None
+        };
         entry.disclosure = disclosure;
-        Ok(vec![MetadataBrokerCommand::PublishRule(
+        let mut commands = vec![MetadataBrokerCommand::PublishRule(
             self.rule_for(surface).expect("the surface exists"),
-        )])
+        )];
+        if let Some(replacement) = replacement {
+            commands.push(MetadataBrokerCommand::EmitDescriptor(replacement));
+        }
+        Ok(commands)
     }
 
     pub fn rule_for(&self, surface: SurfaceId) -> Option<MetadataDisclosureRule> {

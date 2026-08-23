@@ -124,13 +124,22 @@ promotion gate.
    1 after the causal restart; all fourteen requested actions committed, both
    outputs presented nonzero content, exact text completed, and health and
    teardown were clean.
-5. **Current.** Build the minimum metadata-backed shell rendering substrate.
-   The protected broker feed is hosted and physically proved, and Tier 0 proves
-   the narrow per-head text and capture mechanics, but no shell-role display
-   list or descriptor rendering surface exists. Model that boundary before its
-   wire. The authoritative retained-behavior ledger still has 28 rows: 3
-   complete, 12 partial, and 13 open.
-6. Only after the retained ledger closes, run the complete cross-client
+5. **Complete.** Build the minimum metadata-backed shell rendering substrate.
+   Engine now reduces at most sixteen sanitized descriptors into a title-only
+   compositor projection with stable generic rectangle and text nodes,
+   per-head lowering, renderer-private cached JetBrains Mono rasters, and exact
+   last-presented opaque activation targets. The offline reference gate covers
+   unequal heads, damage, cache bounds, cancellation, and authority epochs;
+   the 16-entry two-head probe measured 110 us p95 against a 16,667 us budget.
+   This is a reference boundary, not a shell protocol or live shortcut.
+6. **Current.** Add the protected shell-role transport and use it for the first
+   separately authorized `hagia-shell` descriptor switcher. Model the minimum
+   candidate, presentation, target, action, reconnect, and revocation lifecycle
+   before freezing records. Keep ordering, selection, and lifecycle in the
+   shell; keep validation, rendering, hit-testing, and presentation in Engine.
+   The authoritative retained-behavior ledger still has 28 rows: 3 complete,
+   14 partial, and 11 open.
+7. Only after the retained ledger closes, run the complete cross-client
    reconnect/restart corpus, evaluate experimental interface revision 3 for
    stability, migrate the xmonad recovery profile through the public projection
    adapter, and remove API v7 and Engine-owned workspace policy.
@@ -145,13 +154,12 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Start the metadata-backed shell rendering substrate.** Archive `0005`
-   closes Tier-0 indicator promotion on the hosted protected-broker candidate.
-   Define one bounded compositor-owned descriptor projection and its presented
-   opaque activation targets, then carry it through Engine's renderer-neutral
-   display list before specifying `sophia_shell_v1`. Reuse the proven per-head
-   lowering and capture invariants without turning the private indicator strip
-   into a general shell protocol.
+1. **Connect the first protected Hagia shell client.** The offline descriptor
+   projection has established the smallest useful rendering and discrete-target
+   vocabulary. Model and add a distinct shell-role transport, then build a
+   title-only `hagia-shell` switcher that supplies order and selection and
+   receives opaque activations. Do not add previews, icons, MRU policy, generic
+   textures, or live shortcuts until this first lifecycle is exact.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -455,9 +463,17 @@ is excluded; retained product behavior is not.
   `ChromeDescriptorTable`. The default production rule is `ClassOnly`, and a
   protected executable smoke proves no title escalation, ambient display/session
   bus, inherited descriptor, host-home/temporary-file visibility, or outbound
-  network. This does not complete the umbrella item: no shell-role transport,
-  display list, or descriptor rendering surface has landed yet, and the hosted
-  path still needs its ordered real-session proof after the display gate.
+  network. Signed archive `0004` supplies its ordered real-session proof.
+  **The reference rendering tranche is now complete.** A pure Engine reducer
+  turns at most sixteen exact-generation descriptors plus issuer- and
+  recipient-epoch-scoped actions into a bounded title-only rectangle/text list
+  and presented opaque targets. The same immutable list lowers independently
+  for unequal heads; a 128-entry, 16-MiB renderer-private JetBrains Mono cache
+  retains in-flight rasters safely. Exact press/release capture returns only
+  the opaque capability reference and activation identity. Offline tests and a
+  16-entry two-head timing probe cover this tranche. The umbrella remains open:
+  there is still no shell-role wire, external shell client, production dispatch,
+  or live shell evidence.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its

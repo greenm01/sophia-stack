@@ -19,6 +19,16 @@ pub enum SurfaceChromeRole {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DescriptorOverlayNodeRole {
+    Panel,
+    Row,
+    Selection,
+    Trust,
+    Attention,
+    Label,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CompositorNodeId {
     SurfaceChrome {
         surface: SurfaceId,
@@ -26,6 +36,11 @@ pub enum CompositorNodeId {
     },
     IndicatorStrip {
         output: OutputId,
+    },
+    DescriptorOverlay {
+        projection: u64,
+        slot: u16,
+        role: DescriptorOverlayNodeRole,
     },
 }
 
@@ -39,6 +54,24 @@ pub struct CompositorRgb8 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompositorSolidRect {
     pub geometry: Rect,
+    pub color: CompositorRgb8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorRect {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub geometry: Rect,
+    pub color: CompositorRgb8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositorText {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub geometry: Rect,
+    pub text: String,
+    pub font_size_millis: u32,
     pub color: CompositorRgb8,
 }
 
@@ -62,6 +95,8 @@ pub struct CompositorIndicatorStrip {
 pub enum CompositorDisplayCommand {
     Surface { surface: SurfaceId },
     Border(CompositorBorder),
+    Rect(CompositorRect),
+    Text(CompositorText),
     IndicatorStrip(CompositorIndicatorStrip),
 }
 
@@ -83,6 +118,28 @@ impl CompositorDisplayList {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Border(border) => Some(*border),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+        })
+    }
+
+    pub fn rects(&self) -> impl Iterator<Item = CompositorRect> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::Rect(rect) => Some(*rect),
+            CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+        })
+    }
+
+    pub fn texts(&self) -> impl Iterator<Item = &CompositorText> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::Text(text) => Some(text),
+            CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::IndicatorStrip(_) => None,
         })
     }
@@ -90,9 +147,38 @@ impl CompositorDisplayList {
     pub fn indicator_strips(&self) -> impl Iterator<Item = &CompositorIndicatorStrip> + '_ {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
-            CompositorDisplayCommand::Surface { .. } | CompositorDisplayCommand::Border(_) => None,
+            CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_) => None,
         })
     }
+}
+
+pub(crate) fn compositor_display_list_structure_is_valid(
+    display_list: &CompositorDisplayList,
+) -> bool {
+    if display_list.commands.len() > MAX_COMPOSITOR_DISPLAY_COMMANDS {
+        return false;
+    }
+    let mut nodes = BTreeSet::new();
+    display_list.commands.iter().all(|command| match command {
+        CompositorDisplayCommand::Surface { .. } => true,
+        CompositorDisplayCommand::Border(border) => nodes.insert(border.node),
+        CompositorDisplayCommand::Rect(rect) => {
+            rect.generation != 0 && !rect.geometry.is_empty() && nodes.insert(rect.node)
+        }
+        CompositorDisplayCommand::Text(text) => {
+            text.generation != 0
+                && !text.geometry.is_empty()
+                && !text.text.is_empty()
+                && text.text.len() <= sophia_protocol::MAX_CHROME_LABEL_LEN
+                && !text.text.chars().any(char::is_control)
+                && text.font_size_millis != 0
+                && nodes.insert(text.node)
+        }
+        CompositorDisplayCommand::IndicatorStrip(strip) => nodes.insert(strip.node),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -757,6 +843,56 @@ pub fn compositor_display_list_damage(
             }
             (Some(before), None) => damage.push(before.strip.geometry),
             (None, Some(after)) => damage.push(after.strip.geometry),
+            (None, None) => unreachable!("node came from one display list"),
+        }
+    }
+    let previous_rects = previous
+        .rects()
+        .map(|rect| (rect.node, rect))
+        .collect::<BTreeMap<_, _>>();
+    let current_rects = current
+        .rects()
+        .map(|rect| (rect.node, rect))
+        .collect::<BTreeMap<_, _>>();
+    for node in previous_rects
+        .keys()
+        .chain(current_rects.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+    {
+        match (previous_rects.get(&node), current_rects.get(&node)) {
+            (Some(before), Some(after)) if before == after => {}
+            (Some(before), Some(after)) => {
+                damage.push(before.geometry);
+                damage.push(after.geometry);
+            }
+            (Some(before), None) => damage.push(before.geometry),
+            (None, Some(after)) => damage.push(after.geometry),
+            (None, None) => unreachable!("node came from one display list"),
+        }
+    }
+    let previous_texts = previous
+        .texts()
+        .map(|text| (text.node, text))
+        .collect::<BTreeMap<_, _>>();
+    let current_texts = current
+        .texts()
+        .map(|text| (text.node, text))
+        .collect::<BTreeMap<_, _>>();
+    for node in previous_texts
+        .keys()
+        .chain(current_texts.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+    {
+        match (previous_texts.get(&node), current_texts.get(&node)) {
+            (Some(before), Some(after)) if before == after => {}
+            (Some(before), Some(after)) => {
+                damage.push(before.geometry);
+                damage.push(after.geometry);
+            }
+            (Some(before), None) => damage.push(before.geometry),
+            (None, Some(after)) => damage.push(after.geometry),
             (None, None) => unreachable!("node came from one display list"),
         }
     }

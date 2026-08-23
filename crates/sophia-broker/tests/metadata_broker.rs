@@ -207,6 +207,77 @@ fn attention_changes_without_a_candidate_and_without_a_new_rule() {
 }
 
 #[test]
+fn attention_changes_retain_the_last_reduced_label() {
+    let mut broker = admitted(NamespaceProfile::Confined);
+    broker
+        .set_disclosure(SURFACE, MetadataDisclosure::ClassOnly)
+        .expect("surface is admitted");
+    let first = descriptor(
+        broker
+            .update(MetadataBrokerEvent::CandidateReduced(
+                sophia_protocol::ReducedMetadataCandidate {
+                    surface: SURFACE,
+                    label: Some(sophia_protocol::DisplayLabel {
+                        text: "Browser".into(),
+                        redacted: true,
+                    }),
+                    disclosure: MetadataDisclosure::ClassOnly,
+                    generation: 7,
+                },
+            ))
+            .expect("candidate is accepted"),
+    );
+    assert_eq!(first.label.as_deref(), Some("Browser"));
+
+    let attention = descriptor(
+        broker
+            .update(MetadataBrokerEvent::AttentionChanged {
+                surface: SURFACE,
+                attention: AttentionState::Critical,
+            })
+            .expect("attention is accepted"),
+    );
+    assert_eq!(attention.label.as_deref(), Some("Browser"));
+    assert!(attention.label_redacted);
+    assert_eq!(attention.generation, 7);
+}
+
+#[test]
+fn lowering_disclosure_clears_the_retained_label_before_attention_changes() {
+    let mut broker = admitted(NamespaceProfile::ClassicShared);
+    broker
+        .set_disclosure(SURFACE, MetadataDisclosure::Full)
+        .expect("surface is admitted");
+    broker
+        .update(candidate(
+            MetadataDisclosure::Full,
+            Some("Private title"),
+            7,
+        ))
+        .expect("candidate is accepted");
+
+    let cleared = descriptor(
+        broker
+            .set_disclosure(SURFACE, MetadataDisclosure::None)
+            .expect("disclosure is lowered"),
+    );
+    assert_eq!(cleared.label, None);
+    assert!(!cleared.label_redacted);
+
+    let attention = descriptor(
+        broker
+            .update(MetadataBrokerEvent::AttentionChanged {
+                surface: SURFACE,
+                attention: AttentionState::Notice,
+            })
+            .expect("attention is accepted"),
+    );
+    assert_eq!(attention.label, None);
+    assert!(!attention.label_redacted);
+    assert_eq!(attention.generation, 7);
+}
+
+#[test]
 fn an_unchanged_attention_state_emits_nothing() {
     let mut broker = admitted(NamespaceProfile::Confined);
 

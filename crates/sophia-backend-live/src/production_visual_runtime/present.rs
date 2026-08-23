@@ -248,8 +248,10 @@ impl LiveProductionVisualRuntime {
                     );
                 }
                 CompositorDisplayCommand::Surface { .. } => {}
-                CompositorDisplayCommand::Border(_) => {}
-                CompositorDisplayCommand::IndicatorStrip(_) => {}
+                CompositorDisplayCommand::Border(_)
+                | CompositorDisplayCommand::Rect(_)
+                | CompositorDisplayCommand::Text(_)
+                | CompositorDisplayCommand::IndicatorStrip(_) => {}
             }
         }
         if current_source.is_some() {

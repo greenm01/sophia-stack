@@ -34,6 +34,7 @@ pub enum LiveHeadCompositionLoweringError {
     SourceKindMismatch(BufferSource),
     DmaBufCloneFailed(u64),
     IndicatorRasterFailed,
+    TextRasterFailed,
 }
 
 impl core::fmt::Display for LiveHeadCompositionLoweringError {
@@ -81,13 +82,29 @@ pub fn lower_cpu_head_composition_plan(
     sources: &[LiveCpuPresentationLayer],
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut indicator_cache = crate::IndicatorStripRasterCache::default();
-    lower_cpu_head_composition_plan_with_indicator_cache(plan, sources, &mut indicator_cache)
+    let mut text_cache = crate::CompositorTextRasterCache::default();
+    lower_cpu_head_composition_plan_with_caches(
+        plan,
+        sources,
+        &mut indicator_cache,
+        &mut text_cache,
+    )
 }
 
 pub fn lower_cpu_head_composition_plan_with_indicator_cache(
     plan: &HeadCompositionPlan,
     sources: &[LiveCpuPresentationLayer],
     indicator_cache: &mut crate::IndicatorStripRasterCache,
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    let mut text_cache = crate::CompositorTextRasterCache::default();
+    lower_cpu_head_composition_plan_with_caches(plan, sources, indicator_cache, &mut text_cache)
+}
+
+pub fn lower_cpu_head_composition_plan_with_caches(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveCpuPresentationLayer],
+    indicator_cache: &mut crate::IndicatorStripRasterCache,
+    text_cache: &mut crate::CompositorTextRasterCache,
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let sources = sources
         .iter()
@@ -99,7 +116,7 @@ pub fn lower_cpu_head_composition_plan_with_indicator_cache(
             kind: LiveOwnedHeadCompositionSourceKind::Cpu(source.buffer.clone().into()),
         })
         .collect::<Vec<_>>();
-    lower_head_composition_plan_with_indicator_cache(plan, &sources, indicator_cache)
+    lower_head_composition_plan_with_caches(plan, &sources, indicator_cache, text_cache)
 }
 
 /// Lowers a complete immutable Engine plan using authority-owned source
@@ -110,13 +127,24 @@ pub fn lower_head_composition_plan(
     sources: &[LiveOwnedHeadCompositionSource],
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut indicator_cache = crate::IndicatorStripRasterCache::default();
-    lower_head_composition_plan_with_indicator_cache(plan, sources, &mut indicator_cache)
+    let mut text_cache = crate::CompositorTextRasterCache::default();
+    lower_head_composition_plan_with_caches(plan, sources, &mut indicator_cache, &mut text_cache)
 }
 
 pub fn lower_head_composition_plan_with_indicator_cache(
     plan: &HeadCompositionPlan,
     sources: &[LiveOwnedHeadCompositionSource],
     indicator_cache: &mut crate::IndicatorStripRasterCache,
+) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
+    let mut text_cache = crate::CompositorTextRasterCache::default();
+    lower_head_composition_plan_with_caches(plan, sources, indicator_cache, &mut text_cache)
+}
+
+pub fn lower_head_composition_plan_with_caches(
+    plan: &HeadCompositionPlan,
+    sources: &[LiveOwnedHeadCompositionSource],
+    indicator_cache: &mut crate::IndicatorStripRasterCache,
+    text_cache: &mut crate::CompositorTextRasterCache,
 ) -> Result<LiveOwnedMixedCompositionFrame, LiveHeadCompositionLoweringError> {
     let mut layers = Vec::with_capacity(plan.compositor.len().saturating_mul(4));
     let mut emitted_surfaces = std::collections::BTreeSet::new();
@@ -170,6 +198,31 @@ pub fn lower_head_composition_plan_with_indicator_cache(
                             color: band.color,
                         });
                     }
+                }
+            }
+            HeadCompositorCommand::Rect(rect) => {
+                if !rect.geometry.is_empty() {
+                    layers.push(LiveOwnedMixedCompositionLayer::Solid {
+                        geometry: rect.geometry,
+                        color: rect.color,
+                    });
+                }
+            }
+            HeadCompositorCommand::Text(text) => {
+                if !text.geometry.is_empty() {
+                    let buffer = text_cache
+                        .raster_for(text)
+                        .map_err(|_| LiveHeadCompositionLoweringError::TextRasterFailed)?;
+                    layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                        buffer,
+                        placement: LiveCompositionPlacement {
+                            target: text.geometry,
+                            clip: Some(text.geometry),
+                            transform: Transform::IDENTITY,
+                            alpha: 1.0,
+                            sampling: HeadSamplingClass::Exact,
+                        },
+                    });
                 }
             }
             HeadCompositorCommand::IndicatorStrip(strip) => {

@@ -1,8 +1,9 @@
 use crate::prelude::*;
 use crate::{
     CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorIndicatorStrip,
-    CompositorNodeId, CompositorRgb8, CompositorSolidRect, HeadRenderTarget, HeadlessOutput,
-    IndicatorChromeStrip, OutputFrameDamageSnapshot, OutputFrameSurfaceState, RenderHeadId,
+    CompositorNodeId, CompositorRect, CompositorRgb8, CompositorSolidRect, CompositorText,
+    HeadRenderTarget, HeadlessOutput, IndicatorChromeStrip, OutputFrameDamageSnapshot,
+    OutputFrameSurfaceState, RenderHeadId, compositor_display_list_structure_is_valid,
 };
 
 pub const MAX_HEAD_COMPOSITION_LAYERS: usize = 1_024;
@@ -135,11 +136,31 @@ pub struct HeadCompositorIndicatorStrip {
     pub strip: IndicatorChromeStrip,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeadCompositorRect {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub geometry: Rect,
+    pub color: CompositorRgb8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeadCompositorText {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub geometry: Rect,
+    pub text: String,
+    pub font_size_millis: u32,
+    pub color: CompositorRgb8,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HeadCompositorCommand {
     Background(CompositorSolidRect),
     Surface { surface: SurfaceId },
     Border(HeadCompositorBorder),
+    Rect(HeadCompositorRect),
+    Text(HeadCompositorText),
     IndicatorStrip(HeadCompositorIndicatorStrip),
 }
 
@@ -279,9 +300,10 @@ pub fn output_scene_snapshot_from_committed_in_view(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::Border(_) | CompositorDisplayCommand::IndicatorStrip(_) => {
-                None
-            }
+            CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::IndicatorStrip(_) => None,
         })
         .collect::<BTreeSet<_>>();
     let mut logical_damage = Region::empty();
@@ -317,6 +339,12 @@ pub fn output_scene_snapshot_from_committed_in_view(
         CompositorDisplayCommand::Surface { surface } => visible_surfaces.contains(surface),
         CompositorDisplayCommand::Border(border) => {
             !intersect_rect(border.outer, logical_viewport).is_empty()
+        }
+        CompositorDisplayCommand::Rect(rect) => {
+            !intersect_rect(rect.geometry, logical_viewport).is_empty()
+        }
+        CompositorDisplayCommand::Text(text) => {
+            !intersect_rect(text.geometry, logical_viewport).is_empty()
         }
         CompositorDisplayCommand::IndicatorStrip(strip) => {
             !intersect_rect(strip.strip.geometry, logical_viewport).is_empty()
@@ -452,6 +480,18 @@ pub fn build_head_composition_plan(
             CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
                 project_border(*border, snapshot.logical_viewport, transform, painted),
             ),
+            CompositorDisplayCommand::Rect(rect) => HeadCompositorCommand::Rect(project_rect(
+                *rect,
+                snapshot.logical_viewport,
+                transform,
+                painted,
+            )),
+            CompositorDisplayCommand::Text(text) => HeadCompositorCommand::Text(project_text(
+                text,
+                snapshot.logical_viewport,
+                transform,
+                painted,
+            )),
             CompositorDisplayCommand::IndicatorStrip(strip) => {
                 HeadCompositorCommand::IndicatorStrip(project_indicator_strip(
                     strip,
@@ -545,6 +585,28 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                         color: border.color,
                     }));
             }
+            HeadCompositorCommand::Rect(rect) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::Rect(CompositorRect {
+                        node: rect.node,
+                        generation: rect.generation,
+                        geometry: rect.geometry,
+                        color: rect.color,
+                    }));
+            }
+            HeadCompositorCommand::Text(text) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::Text(CompositorText {
+                        node: text.node,
+                        generation: text.generation,
+                        geometry: text.geometry,
+                        text: text.text.clone(),
+                        font_size_millis: text.font_size_millis,
+                        color: text.color,
+                    }));
+            }
             HeadCompositorCommand::IndicatorStrip(strip) => {
                 display_list
                     .commands
@@ -572,6 +634,7 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
         || snapshot.logical_viewport.is_empty()
         || snapshot.display_list.output != snapshot.output
         || snapshot.surfaces.len() > MAX_HEAD_COMPOSITION_LAYERS
+        || !compositor_display_list_structure_is_valid(&snapshot.display_list)
     {
         return Err(HeadCompositionPlanError::InvalidSnapshot);
     }
@@ -593,13 +656,19 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
     }
     let mut displayed = BTreeSet::new();
     for command in &snapshot.display_list.commands {
-        if let CompositorDisplayCommand::Surface { surface } = command {
-            if !surfaces.contains(surface) {
-                return Err(HeadCompositionPlanError::MissingDisplaySurface);
+        match command {
+            CompositorDisplayCommand::Surface { surface } => {
+                if !surfaces.contains(surface) {
+                    return Err(HeadCompositionPlanError::MissingDisplaySurface);
+                }
+                if !displayed.insert(*surface) {
+                    return Err(HeadCompositionPlanError::DuplicateSurface);
+                }
             }
-            if !displayed.insert(*surface) {
-                return Err(HeadCompositionPlanError::DuplicateSurface);
-            }
+            CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::IndicatorStrip(_) => {}
         }
     }
     Ok(())
@@ -664,6 +733,40 @@ fn logical_scene_checksum(
                 ] {
                     mix(value as u32 as u64);
                 }
+            }
+            CompositorDisplayCommand::Rect(rect) => {
+                mix(5);
+                mix(rect.generation);
+                for value in [
+                    rect.geometry.x,
+                    rect.geometry.y,
+                    rect.geometry.width,
+                    rect.geometry.height,
+                ] {
+                    mix(value as u32 as u64);
+                }
+                mix(u64::from(rect.color.red));
+                mix(u64::from(rect.color.green));
+                mix(u64::from(rect.color.blue));
+            }
+            CompositorDisplayCommand::Text(text) => {
+                mix(6);
+                mix(text.generation);
+                mix(u64::from(text.font_size_millis));
+                for value in [
+                    text.geometry.x,
+                    text.geometry.y,
+                    text.geometry.width,
+                    text.geometry.height,
+                ] {
+                    mix(value as u32 as u64);
+                }
+                for byte in text.text.as_bytes() {
+                    mix(u64::from(*byte));
+                }
+                mix(u64::from(text.color.red));
+                mix(u64::from(text.color.green));
+                mix(u64::from(text.color.blue));
             }
             CompositorDisplayCommand::IndicatorStrip(strip) => {
                 mix(4);
@@ -912,6 +1015,43 @@ fn project_border(
         inner: transform.project_root_rect(viewport, border.inner),
         color: border.color,
         clip,
+    }
+}
+
+fn project_rect(
+    rect: CompositorRect,
+    viewport: Rect,
+    transform: HeadLogicalTransform,
+    clip: Rect,
+) -> HeadCompositorRect {
+    HeadCompositorRect {
+        node: rect.node,
+        generation: rect.generation,
+        geometry: intersect_rect(transform.project_root_rect(viewport, rect.geometry), clip),
+        color: rect.color,
+    }
+}
+
+fn project_text(
+    text: &CompositorText,
+    viewport: Rect,
+    transform: HeadLogicalTransform,
+    clip: Rect,
+) -> HeadCompositorText {
+    let density = projected_density_millis(transform);
+    HeadCompositorText {
+        node: text.node,
+        generation: text.generation,
+        geometry: intersect_rect(transform.project_root_rect(viewport, text.geometry), clip),
+        text: text.text.clone(),
+        font_size_millis: u32::try_from(
+            u64::from(text.font_size_millis)
+                .saturating_mul(u64::from(density))
+                .saturating_div(1_000),
+        )
+        .unwrap_or(u32::MAX)
+        .max(1),
+        color: text.color,
     }
 }
 

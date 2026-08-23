@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::{
-    CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, compositor_display_list_damage,
+    CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput,
+    compositor_display_list_damage, compositor_display_list_structure_is_valid,
 };
 
 pub const MAX_OUTPUT_FRAME_SURFACES: usize = 1_024;
@@ -33,6 +34,7 @@ pub enum OutputFrameDamageError {
     InvalidSurface,
     DuplicateSurface,
     SurfaceCapacityExceeded,
+    InvalidCompositorDisplayList,
 }
 
 impl fmt::Display for OutputFrameDamageError {
@@ -58,6 +60,9 @@ pub fn output_frame_damage_snapshot(
     if compositor_display_list.output != output.id {
         return Err(OutputFrameDamageError::OutputMismatch);
     }
+    if !compositor_display_list_structure_is_valid(&compositor_display_list) {
+        return Err(OutputFrameDamageError::InvalidCompositorDisplayList);
+    }
     let mut surfaces = Vec::new();
     let mut seen = BTreeSet::new();
     for surface in compositor_display_list
@@ -65,9 +70,10 @@ pub fn output_frame_damage_snapshot(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::Border(_) | CompositorDisplayCommand::IndicatorStrip(_) => {
-                None
-            }
+            CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::IndicatorStrip(_) => None,
         })
     {
         if !surface.is_valid() {
@@ -161,6 +167,9 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
     if snapshot.compositor_display_list.output != snapshot.output.id {
         return Err(OutputFrameDamageError::OutputMismatch);
     }
+    if !compositor_display_list_structure_is_valid(&snapshot.compositor_display_list) {
+        return Err(OutputFrameDamageError::InvalidCompositorDisplayList);
+    }
     if snapshot.surfaces.len() > MAX_OUTPUT_FRAME_SURFACES {
         return Err(OutputFrameDamageError::SurfaceCapacityExceeded);
     }
@@ -183,6 +192,8 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
             }
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::Border(_)
+            | CompositorDisplayCommand::Rect(_)
+            | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_) => None,
         })
         .collect::<Vec<_>>();

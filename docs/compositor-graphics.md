@@ -241,9 +241,10 @@ content, client titles, paths, or texture bytes.
 
 - Engine frame plans carry ordered client layers with targets, clips,
   transforms, opacity, and damage.
-- Engine owns a bounded renderer-neutral display list with ordered surface and
-  semantic rectangular-border commands, stable surface/role node identities,
-  generations, and old/new extent damage.
+- Engine owns a bounded renderer-neutral display list with ordered surface,
+  semantic rectangular-border, generic solid-rectangle, and sanitized-text
+  commands, stable semantic node identities, generations, and old/new extent
+  damage.
 - Focus rings and frames use one stable Engine-owned clearance inside the WM's
   outer allocation. Client content is inset by that clearance, so chrome never
   covers client pixels or a neighboring allocation. Frame and ring commands
@@ -272,6 +273,15 @@ content, client titles, paths, or texture bytes.
   count.
 - Engine has generation-checked `ChromeDescriptor` and `ChromeActionRequest`
   records for sanitized compositor metadata and actions.
+- A pure reference reducer projects at most sixteen exact-generation chrome
+  descriptors into a centered title-only list with selected, trust, and
+  attention markers. The shell supplies order and selection; Engine validates
+  epochs and targets, computes damage, and lowers the same logical commands
+  independently for unequal heads.
+- The live renderer rasterizes sanitized compositor text with bundled JetBrains
+  Mono NL Regular 2.304. Its renderer-private least-recently-used cache is
+  bounded to 128 entries and 16 MiB, and shared raster bytes remain valid after
+  eviction while a frame retains them.
 
 ### Target
 
@@ -281,14 +291,14 @@ content, client titles, paths, or texture bytes.
   reconstruction is proven, `skip` remains an observation rather than
   authority to suppress a complete frame.
 - Extend native primitives only when demonstrated shell requirements need
-  rounded borders, shadows, images, or cached text.
+  rounded borders, shadows, or images.
 - Add deterministic capability degradation for each admitted primitive.
 - Capability degradation and cache behavior are observable only through reduced
   reports.
 
-Existing chrome descriptors remain metadata and action records. Production
-rendering currently claims rectangular focus rings and frames; it is not yet a
-general shell toolkit.
+Production rendering claims rectangular focus rings, frames, and Tier-0
+indicators. The title-only descriptor overlay is an offline reference gate,
+not a live shell or a general shell toolkit.
 
 ## Architectural Reference: Niri
 

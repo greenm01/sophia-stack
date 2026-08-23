@@ -2,8 +2,8 @@
 
 **Role:** normative target and arbitration contract for shell and Engine
 interaction.
-**Status:** ratified pre-schema prerequisite; `sophia_shell_v1` remains
-deferred.
+**Status:** ratified pre-schema prerequisite with an offline discrete-target
+reference; `sophia_shell_v1` remains deferred.
 
 Sophia has one Engine-owned physical-input authority and two delivery
 contracts. Application input selects a visual surface and retains the
@@ -59,7 +59,7 @@ coexistence remains blocked on that path and on the shell runtime itself.
 
 | Dimension | Application surface routing | Target-resolved shell input |
 | --- | --- | --- |
-| Status | implemented native-X path; explicit client-initiated grab reduction remains open | ratified pre-schema contract |
+| Status | implemented native-X path; explicit client-initiated grab reduction remains open | offline exact discrete-target capture; production shell arbitration remains open |
 | Public identity | generational `SurfaceId` | opaque authority/session/slot/generation target identity |
 | Disclosure | global and surface-local coordinates required by X11 | coordinate-free actions by default; normalized values; capability-bounded local coordinates |
 | Protocol semantics | X frontend owns X11 focus, event masks, XKB/XI state, and client delivery | Engine owns target selection and bounded capture; no toolkit semantics |
@@ -145,12 +145,17 @@ frontend protocol rules with this boundary.
                                                 Deliver nothing.
 ```
 
-This diagram is partly implemented. The native-X application path now provides
+This diagram is partly implemented. The native-X application path provides
 per-output retired snapshots, ordinary/passive pointer route leases, ordered
-release, and VT/seat control-epoch quarantine. Explicit client-initiated X
-grabs, shell capture, lock-authority integration, and target-resolved shell
-delivery must still be implemented before the complete coexistence flow can
-ship.
+release, and VT/seat control-epoch quarantine. A separate offline reference
+captures one exact presented descriptor target by seat, device, button, output,
+presentation epoch, and authority/session/slot/generation identity; only an
+in-target matching release returns its opaque action once. It cancels on target
+or presentation replacement and gives an existing application owner priority.
+It is not wired into the production arbitration loop. Explicit client-initiated
+X grabs, the shell endpoint, lock-authority integration, and production
+target-resolved shell delivery must still be implemented before the complete
+coexistence flow can ship.
 
 An X frontend grab is reduced to an Engine-visible lease naming its admitted
 profile, namespace authority, surface generation, and presentation/control

@@ -94,10 +94,11 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan_with_indicator_cache(
+                    frame: sophia_renderer_live::lower_head_composition_plan_with_caches(
                         plan,
                         sources,
                         &mut self.indicator_strip_cache.borrow_mut(),
+                        &mut self.text_cache.borrow_mut(),
                     )?,
                 })
             })
@@ -284,10 +285,11 @@ impl LiveProductionVisualRuntime {
                     target_generation: plan.target_generation,
                     mapping: plan.mapping,
                     logical_content_checksum: plan.logical_content_checksum,
-                    frame: sophia_renderer_live::lower_head_composition_plan_with_indicator_cache(
+                    frame: sophia_renderer_live::lower_head_composition_plan_with_caches(
                         plan,
                         &source_set.sources,
                         &mut self.indicator_strip_cache.borrow_mut(),
+                        &mut self.text_cache.borrow_mut(),
                     )?,
                 });
             }
