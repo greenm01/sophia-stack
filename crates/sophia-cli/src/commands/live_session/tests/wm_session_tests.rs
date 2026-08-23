@@ -271,7 +271,9 @@ fn public_policy_snapshot_retains_an_admitted_surface_while_it_is_hidden() {
     let mut layout = PersistentLiveLayout::default();
     let mut observed =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(1));
-    observed.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    observed.client = Some(client);
+    add_test_surface_route(&mut observed, surface, client);
     observed.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
@@ -1440,7 +1442,9 @@ fn committed_reseed_preserves_pending_visual_candidate_for_manage_replay() {
     };
     let mut observed =
         crate::commands::live_session::wm_update_coordinator_batch(pixel_transaction);
-    observed.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    observed.client = Some(client);
+    add_test_surface_route(&mut observed, firefox, client);
     observed.presentation_intents.push(intent);
     observed.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
@@ -1764,7 +1768,9 @@ fn presentation_request_produces_a_wm_node_before_pixels_exist() {
     };
     let mut batch =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(10));
-    batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    batch.client = Some(client);
+    add_test_surface_route(&mut batch, surface, client);
     batch.presentation_intents.push(intent);
     let mut layout = PersistentLiveLayout::default();
 

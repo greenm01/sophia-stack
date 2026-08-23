@@ -21,6 +21,7 @@ fn wm_update_coordinator_batch(
     XAuthorityObservedTransactionBatch {
         client: None,
         admission: None,
+        surface_routes: Vec::new(),
         transaction,
         transactions: Vec::new(),
         surface_presentations: Vec::new(),

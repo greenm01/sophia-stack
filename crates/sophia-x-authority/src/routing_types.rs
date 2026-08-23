@@ -264,8 +264,22 @@ pub struct XAuthorityClientControlCommand {
     pub command: XAuthorityControlCommand,
 }
 
+/// The frontend-owned route for one live Engine surface.
+///
+/// `XAuthorityObservedTransactionBatch::client` names the connection that
+/// caused a request. That actor may legally operate on another client's
+/// surface in a classic shared namespace, so consumers must use this record
+/// for input, control, and metadata ownership instead.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthoritySurfaceRouteObservation {
+    pub surface: SurfaceId,
+    pub client: XServerFrontendClientId,
+    pub admission: Option<ClientAdmissionContext>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XAuthorityClientMetadataCandidate {
+    /// The frontend client that owns the candidate's surface route.
     pub client: XServerFrontendClientId,
     pub candidate: sophia_protocol::ReducedMetadataCandidate,
 }
@@ -328,6 +342,9 @@ pub enum XServerFrontendRouteError {
     MetadataQueueDisconnected,
     DuplicateClient {
         client: XServerFrontendClientId,
+    },
+    DuplicateSurface {
+        surface: SurfaceId,
     },
     RegistryPoisoned,
     /// The XKB worker's command queue is full. Distinct from a poisoned lock:
@@ -416,6 +433,12 @@ impl core::fmt::Display for XServerFrontendRouteError {
                     client.raw()
                 )
             }
+            Self::DuplicateSurface { surface } => write!(
+                formatter,
+                "X11 surface route {}:{} is already registered",
+                surface.index(),
+                surface.generation()
+            ),
             Self::XkbWorkerSaturated => write!(formatter, "X11 keyboard translation queue is full"),
             Self::XkbWorkerUnavailable => write!(
                 formatter,

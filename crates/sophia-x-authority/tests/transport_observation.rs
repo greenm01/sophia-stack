@@ -29,6 +29,7 @@ fn observation(outputs: Vec<XClientOutput>) -> X11DispatchObservation {
             outputs,
             metadata_candidates: Vec::new(),
         },
+        surface_routes: Vec::new(),
         surface_output_reservations: Vec::new(),
         cpu_buffer_updates: Vec::new(),
         received_fd_count: 0,

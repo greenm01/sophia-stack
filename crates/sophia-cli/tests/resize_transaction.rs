@@ -319,6 +319,7 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
     let batch = XAuthorityObservedTransactionBatch {
         client: None,
         admission: None,
+        surface_routes: Vec::new(),
         transaction: transaction.transaction,
         transactions: vec![transaction.clone()],
         surface_presentations: Vec::new(),

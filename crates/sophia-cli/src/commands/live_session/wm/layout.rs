@@ -22,6 +22,7 @@ struct LiveAuthorityLayoutObservation {
     output_reservations_changed: bool,
     admission_group_invalid: bool,
     admission_group_overflowed: bool,
+    client_route_invalid: bool,
 }
 
 enum LiveLayoutProgress {
@@ -97,7 +98,7 @@ impl PersistentLiveLayout {
         let mut admission_group_overflowed = false;
         let mut new_surfaces = BTreeSet::new();
         let mut withdrawn_surfaces = BTreeSet::new();
-        self.client_routes.observe(batch);
+        let client_route_invalid = self.client_routes.observe(batch).is_err();
         self.observe_presentation_intents(
             batch,
             &mut new_surfaces,
@@ -435,6 +436,7 @@ impl PersistentLiveLayout {
             output_reservations_changed,
             admission_group_invalid,
             admission_group_overflowed,
+            client_route_invalid,
         }
     }
 

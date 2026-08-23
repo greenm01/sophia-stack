@@ -470,6 +470,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 released_fences,
                 mut server_reply_fds,
                 surface_output_reservations,
+                surface_routes,
                 present_configure,
             ) = match decode_x11_core_request(
                 XWireClientContext {
@@ -1111,7 +1112,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             }
                             if let Some(routing) = protocol_routing.as_ref() {
                                 for surface in &removed_surface_routes {
-                                    routing.remove_surface(client, *surface).map_err(|error| {
+                                    routing.remove_surface(*surface).map_err(|error| {
                                         X11SetupSocketError::new(format!(
                                             "failed to retire X11 surface route: {error}"
                                         ))
@@ -1420,16 +1421,52 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     generation,
                                 });
                                 candidate.generation = generation;
-                                routing.emit_metadata_candidate(client, candidate).map_err(
-                                    |error| {
-                                        X11SetupSocketError::client_failure(format!(
-                                            "failed to publish reduced X11 metadata: {error:?}"
-                                        ))
-                                    },
-                                )?;
+                                routing.emit_metadata_candidate(candidate).map_err(|error| {
+                                    X11SetupSocketError::client_failure(format!(
+                                        "failed to publish reduced X11 metadata: {error:?}"
+                                    ))
+                                })?;
                             }
                         }
                     }
+                    let mut changed_surfaces = BTreeSet::new();
+                    if dispatch_succeeded
+                        && let Some(response) = output.response.as_ref()
+                    {
+                        changed_surfaces.extend(
+                            response
+                                .transactions
+                                .iter()
+                                .map(|transaction| transaction.surface),
+                        );
+                        changed_surfaces.extend(
+                            response.surfaces.iter().map(|surface| surface.surface),
+                        );
+                        for surface in &response.removed_surfaces {
+                            changed_surfaces.remove(surface);
+                        }
+                    }
+                    let surface_routes = if let Some(routing) = protocol_routing.as_ref() {
+                        changed_surfaces
+                            .into_iter()
+                            .map(|surface| {
+                                routing
+                                    .surface_route_observation(surface)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to resolve X11 surface owner route: {error}"
+                                        ))
+                                    })?
+                                    .ok_or_else(|| {
+                                        X11SetupSocketError::new(format!(
+                                            "accepted X11 surface has no frontend owner route: {surface:?}"
+                                        ))
+                                    })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                    } else {
+                        Vec::new()
+                    };
                     (
                         output,
                         cpu_buffer_updates,
@@ -1441,6 +1478,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         released_fence.into_iter().collect::<Vec<_>>(),
                         server_reply_fds,
                         surface_output_reservations,
+                        surface_routes,
                         present_configure,
                     )
                 }
@@ -1453,6 +1491,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         None,
                         None,
                         None,
+                        Vec::new(),
                         Vec::new(),
                         Vec::new(),
                         Vec::new(),
@@ -1538,6 +1577,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 request_stage,
                 failure: parse_failed.then_some(X11ObservedDispatchFailure::ParseRejected),
                 result: output.clone(),
+                surface_routes,
                 surface_output_reservations,
                 cpu_buffer_updates: cpu_buffer_updates.clone(),
                 received_fd_count: received_fds.len(),
@@ -1669,6 +1709,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             request_stage: X11ObservedRequestStage::DisconnectCleanup,
             failure: None,
             result: cleanup,
+            surface_routes: Vec::new(),
             surface_output_reservations: Vec::new(),
             cpu_buffer_updates: Vec::new(),
             received_fd_count: 0,

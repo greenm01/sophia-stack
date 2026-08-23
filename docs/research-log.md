@@ -14657,3 +14657,29 @@ The owner now narrows each snapshot to current presented policy-managed
 surfaces, rejects a target that becomes stale after presentation without ending
 the session, and makes the guide wait for a committed and admitted browser plus
 its two-surface layout before `Super+P`. Signed installed evidence remains open.
+
+## 2026-08-23: a shared-X actor is not a surface owner
+
+The next physical run reached `Super+B` and committed the browser launch. Helium
+opened several X connections, and one connection legally changed a surface
+created by another in the classic-shared namespace. The live session had treated
+the client that caused every transaction as that surface's owner. Metadata
+admission detected the apparent ownership change and correctly refused it, but
+the refusal ended the whole session.
+
+The frontend route registry now publishes a separate passive owner fact for each
+live surface named by an accepted batch. The batch still names its causing client
+for request attribution; input, control, and metadata consumers use only the
+creating client's route and admission. Duplicate live route registration and a
+real owner change remain fatal. Authority-approved foreign destruction retires
+the exact owner route, and session-side tombstones ignore late observations for
+that nonreusable surface generation instead of resurrecting it.
+
+A two-client classic regression creates a surface through client 1, maps it
+through client 2, and observes client 2 as actor while client 1 and its admission
+remain the owner. Client 2 can then destroy the surface without a route failure;
+late actor observations cannot restore it. A route-registry regression also
+proves reduced metadata candidates take the registered surface owner. The full
+all-feature workspace suite passes locally. This fixes the observed crash but
+does not promote the switcher row; the signed installed physical gate must still
+pass.

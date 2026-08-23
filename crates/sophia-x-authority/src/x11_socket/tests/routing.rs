@@ -453,7 +453,7 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
     assert!(channels.input.try_recv().is_err());
 
     assert_eq!(
-        broker.registry.remove_surface(client, old_surface).unwrap(),
+        broker.registry.remove_surface(old_surface).unwrap(),
         true
     );
     broker
@@ -490,6 +490,77 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
     assert_eq!(channels.input.recv().unwrap().target_window, Some(window));
+}
+
+#[test]
+fn duplicate_surface_registration_cannot_replace_its_owner() {
+    let namespace = NamespaceId::from_raw(15);
+    let owner = XServerFrontendClientId(21);
+    let peer = XServerFrontendClientId(22);
+    let surface = SurfaceId::new(0x200201, 1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (_owner_registration, _owner_channels) = broker.registry.register_client(owner).unwrap();
+    let (_peer_registration, _peer_channels) = broker.registry.register_client(peer).unwrap();
+    broker
+        .registry
+        .register_surface(
+            owner,
+            namespace,
+            surface,
+            XResourceId::new(0x200201, 1),
+        )
+        .unwrap();
+
+    assert_eq!(
+        broker.registry.register_surface(
+            peer,
+            namespace,
+            surface,
+            XResourceId::new(0x400201, 1),
+        ),
+        Err(XServerFrontendRouteError::DuplicateSurface { surface })
+    );
+    assert_eq!(
+        broker.registry.surface_route_observation(surface).unwrap(),
+        Some(XAuthoritySurfaceRouteObservation {
+            surface,
+            client: owner,
+            admission: None,
+        })
+    );
+}
+
+#[test]
+fn metadata_candidate_uses_the_surface_owner_route() {
+    let namespace = NamespaceId::from_raw(16);
+    let owner = XServerFrontendClientId(23);
+    let peer = XServerFrontendClientId(24);
+    let surface = SurfaceId::new(0x200202, 1);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let metadata = broker.take_metadata_candidate_receiver().unwrap();
+    let (_owner_registration, _owner_channels) = broker.registry.register_client(owner).unwrap();
+    let (_peer_registration, _peer_channels) = broker.registry.register_client(peer).unwrap();
+    broker
+        .registry
+        .register_surface(
+            owner,
+            namespace,
+            surface,
+            XResourceId::new(0x200202, 1),
+        )
+        .unwrap();
+
+    broker
+        .registry
+        .emit_metadata_candidate(sophia_protocol::ReducedMetadataCandidate {
+            surface,
+            label: None,
+            disclosure: sophia_protocol::MetadataDisclosure::None,
+            generation: 1,
+        })
+        .unwrap();
+
+    assert_eq!(metadata.recv().unwrap().client, owner);
 }
 
 #[test]

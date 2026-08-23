@@ -141,34 +141,21 @@
                 }
                 if let Some(broker) = metadata_broker.as_mut() {
                     for batch in &authority_run {
-                        if let (Some(client), Some(admission)) = (batch.client, batch.admission) {
-                            let mut surfaces = BTreeSet::new();
-                            surfaces.extend(
-                                batch
-                                    .surface_presentations
-                                    .iter()
-                                    .map(|presentation| presentation.surface),
-                            );
-                            surfaces.extend(
-                                batch
-                                    .transactions
-                                    .iter()
-                                    .map(|transaction| transaction.surface),
-                            );
-                            for surface in surfaces {
-                                if let Some(command) = broker.admit_surface(
-                                    client,
-                                    surface,
+                        for route in &batch.surface_routes {
+                            if let Some(admission) = route.admission
+                                && let Some(command) = broker.admit_surface(
+                                    route.client,
+                                    route.surface,
                                     admission.namespace.profile,
-                                )? {
+                                )?
+                            {
                                     session_controls
                                         .enqueue(command, Instant::now())
                                         .map_err(|error| {
                                             format!(
                                                 "failed to queue metadata disclosure rule: {error:?}"
-                                            )
+                                                )
                                         })?;
-                                }
                             }
                         }
                         for surface in &batch.removed_surfaces {
@@ -389,6 +376,9 @@
                         }
                     }
                     let layout_observation = layout.observe_authority_batch(&batch);
+                    if layout_observation.client_route_invalid {
+                        return Err("frontend surface-owner route changed without retirement".into());
+                    }
                     if layout_observation.admission_group_invalid {
                         return Err("pre-admission authority group is not transaction-homogeneous".into());
                     }

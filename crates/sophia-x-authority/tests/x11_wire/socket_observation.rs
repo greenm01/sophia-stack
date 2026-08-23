@@ -535,16 +535,13 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
     );
     let surface = batch.transactions[0].surface;
     let mut routes = XAuthorityClientSurfaceRoutes::default();
-    routes.observe(&batch);
-    assert_eq!(
-        routes
-            .client_for_surface(surface)
-            .map(XServerFrontendClientId::raw),
-        Some(1)
-    );
+    assert!(batch.surface_routes.is_empty());
+    routes.observe(&batch).unwrap();
+    assert!(routes.is_empty());
     routes.observe(&XAuthorityObservedTransactionBatch {
         client: None,
         admission: None,
+        surface_routes: Vec::new(),
         transaction: TransactionId::from_raw(3),
         transactions: Vec::new(),
         surface_presentations: Vec::new(),
@@ -564,7 +561,8 @@ fn x11_core_socket_channel_sees_sophia_present_transaction_batch() {
         metadata: Vec::new(),
         selection_owner_change: false,
         selection_conversion: false,
-    });
+    })
+    .unwrap();
     assert!(routes.is_empty());
 }
 

@@ -129,6 +129,10 @@ pub struct XAuthorityObservedTransactionBatch {
     /// Session-issued admission facts for the causing frontend connection.
     /// Engine may compare these opaque identities but receives no X resource ID.
     pub admission: Option<sophia_protocol::ClientAdmissionContext>,
+    /// Frontend-owned routes for live surfaces named by this observation.
+    /// These remain stable when another classic-shared client causes the
+    /// transaction.
+    pub surface_routes: Vec<crate::XAuthoritySurfaceRouteObservation>,
     pub transaction: TransactionId,
     pub transactions: Vec<SurfaceTransaction>,
     /// Protocol-neutral presentation facts reduced from authority-private
@@ -176,6 +180,7 @@ impl XAuthorityObservedTransactionBatch {
         Some(Self {
             client: None,
             admission: None,
+            surface_routes: Vec::new(),
             transaction: response.transaction,
             transactions: response.transactions.clone(),
             surface_presentations: response
@@ -354,6 +359,7 @@ impl XAuthorityObservedTransactionBatch {
         Some(Self {
             client: Some(trace.client),
             admission: trace.admission,
+            surface_routes: trace.surface_routes.clone(),
             transaction: trace.transaction,
             transactions,
             surface_presentations,
@@ -380,6 +386,7 @@ impl XAuthorityObservedTransactionBatch {
         Self {
             client: None,
             admission: None,
+            surface_routes: Vec::new(),
             transaction: response.identity.transaction,
             transactions: vec![response.transaction],
             surface_presentations: Vec::new(),
@@ -419,24 +426,66 @@ pub struct XAuthorityClientSurfaceRoutes {
             Option<sophia_protocol::ClientAdmissionContext>,
         ),
     >,
+    retired: std::collections::BTreeSet<SurfaceId>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityClientSurfaceRouteError {
+    ConflictingObservation { surface: SurfaceId },
+}
+
+impl core::fmt::Display for XAuthorityClientSurfaceRouteError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ConflictingObservation { surface } => write!(
+                formatter,
+                "surface {:?} changed its frontend owner route without retirement",
+                surface
+            ),
+        }
+    }
+}
+
+impl std::error::Error for XAuthorityClientSurfaceRouteError {}
+
 impl XAuthorityClientSurfaceRoutes {
-    pub fn observe(&mut self, batch: &XAuthorityObservedTransactionBatch) {
+    pub fn observe(
+        &mut self,
+        batch: &XAuthorityObservedTransactionBatch,
+    ) -> Result<(), XAuthorityClientSurfaceRouteError> {
+        let removed = batch
+            .removed_surfaces
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut updates = BTreeMap::new();
+        for route in &batch.surface_routes {
+            if removed.contains(&route.surface) || self.retired.contains(&route.surface) {
+                continue;
+            }
+            let observed = (route.client, route.admission);
+            if updates
+                .insert(route.surface, observed)
+                .is_some_and(|previous| previous != observed)
+                || self
+                    .clients
+                    .get(&route.surface)
+                    .filter(|_| !removed.contains(&route.surface))
+                    .is_some_and(|current| *current != observed)
+            {
+                return Err(XAuthorityClientSurfaceRouteError::ConflictingObservation {
+                    surface: route.surface,
+                });
+            }
+        }
         for surface in &batch.removed_surfaces {
             self.clients.remove(surface);
+            self.retired.insert(*surface);
         }
-        let Some(client) = batch.client else {
-            return;
-        };
-        for transaction in &batch.transactions {
-            self.clients
-                .insert(transaction.surface, (client, batch.admission));
+        for (surface, route) in updates {
+            self.clients.insert(surface, route);
         }
-        for intent in &batch.presentation_intents {
-            self.clients
-                .insert(intent.surface, (client, batch.admission));
-        }
+        Ok(())
     }
 
     pub fn client_for_surface(&self, surface: SurfaceId) -> Option<XServerFrontendClientId> {

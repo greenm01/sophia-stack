@@ -64,6 +64,9 @@ pub struct X11DispatchObservation {
     pub request_stage: X11ObservedRequestStage,
     pub failure: Option<X11ObservedDispatchFailure>,
     pub result: XDispatchResult,
+    /// Authoritative owner routes for the live surfaces changed by this
+    /// dispatch. The causing client above is not necessarily their owner.
+    pub surface_routes: Vec<crate::XAuthoritySurfaceRouteObservation>,
     /// Complete, protocol-neutral reservation snapshots changed by this
     /// dispatch. Protocol property IDs and bytes remain authority-private.
     pub surface_output_reservations: Vec<SurfaceOutputReservations>,

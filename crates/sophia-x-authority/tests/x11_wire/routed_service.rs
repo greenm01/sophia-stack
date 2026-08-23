@@ -128,6 +128,166 @@ fn routed_surface_density_requirement_publishes_exact_derived_text_variant() {
 
 #[cfg(unix)]
 #[test]
+fn classic_peer_mutation_preserves_creator_route_and_foreign_destroy_retires_it() {
+    use std::io::Write;
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-classic-owner-route-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceContext::new(
+        NamespaceId::from_raw(952),
+        NamespaceProfile::ClassicShared,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(TestXAdmissionPolicy::new(namespace, false));
+    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, namespace)
+        .unwrap()
+        .with_admission_policy(policy)
+        .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    let (transaction_sender, transaction_receiver) = std::sync::mpsc::sync_channel(16);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(2);
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut creator = connect_x_socket(&socket_path);
+    creator
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut creator, XByteOrder::LittleEndian);
+    let window = 0x0020_0e01;
+    creator
+        .write_all(&create_window_request(
+            XByteOrder::LittleEndian,
+            window,
+            0,
+            0,
+            80,
+            40,
+        ))
+        .unwrap();
+    let created = loop {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch
+            .surface_presentations
+            .iter()
+            .any(|presentation| presentation.surface.index() == window)
+        {
+            break batch;
+        }
+    };
+    let surface = created.surface_presentations[0].surface;
+    let creator_admission = created.admission.expect("creator admission");
+    assert_eq!(created.client.map(XServerFrontendClientId::raw), Some(1));
+    assert_eq!(created.surface_routes[0].client.raw(), 1);
+    assert_eq!(created.surface_routes[0].admission, Some(creator_admission));
+
+    let mut peer = connect_x_socket(&socket_path);
+    peer.write_all(&setup_request(
+        XByteOrder::LittleEndian,
+        11,
+        0,
+        b"",
+        b"",
+    ))
+    .unwrap();
+    read_setup_success(&mut peer, XByteOrder::LittleEndian);
+    peer.write_all(&resource_request(XByteOrder::LittleEndian, 8, window))
+        .unwrap();
+    let mapped = loop {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch.client.map(XServerFrontendClientId::raw) == Some(2)
+            && batch
+                .surface_presentations
+                .iter()
+                .any(|presentation| presentation.surface == surface)
+        {
+            break batch;
+        }
+    };
+    assert_ne!(mapped.admission, Some(creator_admission));
+    assert_eq!(
+        mapped.surface_routes,
+        [XAuthoritySurfaceRouteObservation {
+            surface,
+            client: XServerFrontendClientId::from_raw(1),
+            admission: Some(creator_admission),
+        }]
+    );
+    let mut routes = XAuthorityClientSurfaceRoutes::default();
+    routes.observe(&created).unwrap();
+    routes.observe(&mapped).unwrap();
+    assert_eq!(
+        routes
+            .client_for_surface(surface)
+            .map(XServerFrontendClientId::raw),
+        Some(1)
+    );
+    let mut conflicting = mapped.clone();
+    conflicting.surface_routes[0].client = XServerFrontendClientId::from_raw(2);
+    assert!(matches!(
+        routes.observe(&conflicting),
+        Err(XAuthorityClientSurfaceRouteError::ConflictingObservation { surface: rejected })
+            if rejected == surface
+    ));
+    assert_eq!(
+        routes
+            .client_for_surface(surface)
+            .map(XServerFrontendClientId::raw),
+        Some(1)
+    );
+
+    peer.write_all(&resource_request(XByteOrder::LittleEndian, 4, window))
+        .unwrap();
+    let removed = loop {
+        let batch = transaction_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        if batch.removed_surfaces.contains(&surface) {
+            break batch;
+        }
+    };
+    assert_eq!(removed.client.map(XServerFrontendClientId::raw), Some(2));
+    assert!(removed.surface_routes.is_empty());
+    routes.observe(&removed).unwrap();
+    assert!(routes.is_empty());
+    routes.observe(&mapped).unwrap();
+    assert!(routes.is_empty());
+
+    drop(peer);
+    drop(creator);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
+    std::fs::remove_file(&socket_path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn routed_service_revokes_one_live_admission_without_disrupting_its_classic_peer() {
     use std::io::{Read, Write};
     use std::num::NonZeroUsize;

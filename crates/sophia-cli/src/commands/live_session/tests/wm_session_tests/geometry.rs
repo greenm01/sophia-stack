@@ -3,6 +3,13 @@ fn register_test_routes(layout: &mut PersistentLiveLayout, surfaces: &[SurfaceId
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(1));
     batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
     for surface in surfaces {
+        batch.surface_routes.push(
+            sophia_x_authority::XAuthoritySurfaceRouteObservation {
+                surface: *surface,
+                client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+                admission: None,
+            },
+        );
         batch
             .presentation_intents
             .push(sophia_protocol::SurfacePresentationIntent {
@@ -21,7 +28,7 @@ fn register_test_routes(layout: &mut PersistentLiveLayout, surfaces: &[SurfaceId
                 generation: 1,
             });
     }
-    layout.client_routes.observe(&batch);
+    layout.client_routes.observe(&batch).unwrap();
 }
 
 fn drain_test_controls(

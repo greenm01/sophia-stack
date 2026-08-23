@@ -356,7 +356,7 @@ fn spawn_x11_control_writer(
                     drop(properties);
                     drop(atoms);
                     if let Some(routing) = protocol_routing.as_ref() {
-                        routing.emit_metadata_candidate(client, candidate).map_err(|error| {
+                        routing.emit_metadata_candidate(candidate).map_err(|error| {
                             X11SetupSocketError::client_failure(format!(
                                 "failed to publish reduced X11 metadata: {error:?}"
                             ))

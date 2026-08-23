@@ -79,7 +79,14 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
             },
             generation: 1,
         });
-    layout.client_routes.observe(&routed);
+    routed.surface_routes.push(
+        sophia_x_authority::XAuthoritySurfaceRouteObservation {
+            surface,
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            admission: None,
+        },
+    );
+    layout.client_routes.observe(&routed).unwrap();
     layout.pending = Some(PendingLiveWmLayout {
         transaction: TransactionId::from_raw(5),
         layers: vec![test_layer(surface, target)],
@@ -170,6 +177,7 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
     let mut observed =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(12));
     observed.client = Some(client);
+    add_test_surface_route(&mut observed, surface, client);
     observed.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,
@@ -461,6 +469,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
     let mut observed =
         crate::commands::live_session::wm_update_coordinator_batch(pixel_transaction);
     observed.client = Some(client);
+    add_test_surface_route(&mut observed, surface, client);
     observed.presentation_intents.push(intent);
     observed.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
@@ -638,6 +647,7 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
     let mut observed =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(70));
     observed.client = Some(client);
+    add_test_surface_route(&mut observed, surface, client);
     observed.presentation_intents.push(intent);
     observed.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
@@ -818,7 +828,9 @@ fn pre_admission_group_with_mixed_transaction_identity_fails_closed() {
     };
     let mut intent =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(30));
-    intent.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    intent.client = Some(client);
+    add_test_surface_route(&mut intent, surface, client);
     intent.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,

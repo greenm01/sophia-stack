@@ -150,7 +150,13 @@ promotion gate.
    route nothing, release is ordered, stale epochs fail closed, and application
    ownership still precedes shell capture. The compiled profile now enables the
    shell and binds `Super+P`; signed installed shell evidence remains the row's
-   promotion gate. Reservations are deliberately still absent.
+   promotion gate. The latest run reached `Super+B`, then exposed an actor/owner
+   mix-up when one classic-shared Helium connection changed another connection's
+   surface. Frontend batches now carry a separate authoritative owner route;
+   input, control, and metadata admission no longer follow the causing client,
+   and exact retired identities reject late route or metadata observations.
+   Local two-client and all-feature regressions pass; the corrected signed
+   physical rerun remains open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client

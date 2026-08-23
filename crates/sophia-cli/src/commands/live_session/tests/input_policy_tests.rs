@@ -35,6 +35,13 @@ fn explicit_pointer_grab_control_activates_and_releases_a_presented_root_anchor(
     batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(3));
     batch.admission = Some(admission);
     batch
+        .surface_routes
+        .push(sophia_x_authority::XAuthoritySurfaceRouteObservation {
+            surface,
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(3),
+            admission: Some(admission),
+        });
+    batch
         .presentation_intents
         .push(sophia_protocol::SurfacePresentationIntent {
             surface,
@@ -56,7 +63,7 @@ fn explicit_pointer_grab_control_activates_and_releases_a_presented_root_anchor(
             },
             generation: 1,
         });
-    routes.observe(&batch);
+    routes.observe(&batch).unwrap();
     let projection = sophia_backend_live::LivePresentedInputProjection {
         output: OutputId::from_raw(2),
         epoch: 5,
@@ -815,6 +822,13 @@ fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_
         );
         batch.client = Some(route_client);
         batch
+            .surface_routes
+            .push(sophia_x_authority::XAuthoritySurfaceRouteObservation {
+                surface,
+                client: route_client,
+                admission: None,
+            });
+        batch
             .presentation_intents
             .push(sophia_protocol::SurfacePresentationIntent {
                 surface,
@@ -831,7 +845,7 @@ fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_
                 },
                 generation: 1,
             });
-        routes.observe(&batch);
+        routes.observe(&batch).unwrap();
     }
 
     assert_eq!(
@@ -1077,6 +1091,13 @@ fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
     let mut routes = XAuthorityClientSurfaceRoutes::default();
     let mut route_batch = super::super::wm_update_coordinator_batch(TransactionId::from_raw(1));
     route_batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    route_batch
+        .surface_routes
+        .push(sophia_x_authority::XAuthoritySurfaceRouteObservation {
+            surface,
+            client: sophia_x_authority::XServerFrontendClientId::from_raw(1),
+            admission: None,
+        });
     route_batch.transactions.push(SurfaceTransaction {
         transaction: TransactionId::from_raw(1),
         authority: AuthorityKind::SophiaX,
@@ -1100,7 +1121,7 @@ fn keyboard_focus_handoff_preserves_client_text_until_frontend_focus_applies() {
         timeout_msec: 1_000,
         previous_committed_generation: 0,
     });
-    routes.observe(&route_batch);
+    routes.observe(&route_batch).unwrap();
 
     let held = route_input_events(
         events,

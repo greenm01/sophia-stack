@@ -297,7 +297,7 @@ impl XtermTwoClientState {
                 self.surfaces.insert(client, intent.surface);
             }
         }
-        self.routes.observe(&batch);
+        self.routes.observe(&batch)?;
         for update in batch.cpu_buffer_updates {
             update.apply_to(&mut self.buffers)?;
         }

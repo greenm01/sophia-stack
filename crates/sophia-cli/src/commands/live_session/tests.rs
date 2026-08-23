@@ -84,6 +84,20 @@ use std::io::Write;
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
 
+fn add_test_surface_route(
+    batch: &mut XAuthorityObservedTransactionBatch,
+    surface: SurfaceId,
+    client: sophia_x_authority::XServerFrontendClientId,
+) {
+    batch
+        .surface_routes
+        .push(sophia_x_authority::XAuthoritySurfaceRouteObservation {
+            surface,
+            client,
+            admission: batch.admission,
+        });
+}
+
 mod authority_merge_tests;
 mod desktop_shortcut_tests;
 mod input_policy_tests;

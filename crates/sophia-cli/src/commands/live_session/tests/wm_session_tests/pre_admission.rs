@@ -38,7 +38,9 @@ fn pre_admission_pixels_are_quarantined_from_layout_and_runtime() {
     };
     let mut batch =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(11));
-    batch.client = Some(sophia_x_authority::XServerFrontendClientId::from_raw(1));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    batch.client = Some(client);
+    add_test_surface_route(&mut batch, surface, client);
     batch.surface_presentations.push(
         sophia_x_authority::XAuthoritySurfacePresentationObservation {
             surface,

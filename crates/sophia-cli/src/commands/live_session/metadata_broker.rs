@@ -11,6 +11,7 @@ pub(super) struct LiveMetadataBroker {
     descriptors: sophia_engine::ChromeDescriptorTable,
     grants: BTreeMap<SurfaceId, sophia_protocol::BrokerToplevelActionGrant>,
     admitted: BTreeMap<SurfaceId, sophia_x_authority::XServerFrontendClientId>,
+    retired: BTreeSet<SurfaceId>,
     connection_epoch: u64,
     next_transaction: u64,
 }
@@ -78,6 +79,7 @@ impl LiveMetadataBroker {
             descriptors: Default::default(),
             grants: Default::default(),
             admitted: Default::default(),
+            retired: Default::default(),
             connection_epoch: welcome.connection_epoch,
             next_transaction: 1,
         })
@@ -111,6 +113,9 @@ impl LiveMetadataBroker {
         surface: SurfaceId,
         profile: NamespaceProfile,
     ) -> Result<Option<XAuthorityClientControlCommand>, Box<dyn std::error::Error>> {
+        if self.retired.contains(&surface) {
+            return Ok(None);
+        }
         if let Some(existing) = self.admitted.get(&surface) {
             if *existing == client {
                 return Ok(None);
@@ -147,6 +152,9 @@ impl LiveMetadataBroker {
         &mut self,
         delivery: sophia_x_authority::XAuthorityClientMetadataCandidate,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.retired.contains(&delivery.candidate.surface) {
+            return Ok(());
+        }
         if self.admitted.get(&delivery.candidate.surface) != Some(&delivery.client) {
             return Err("reduced metadata arrived outside its admitted X client route".into());
         }
@@ -191,6 +199,9 @@ impl LiveMetadataBroker {
         &mut self,
         surface: SurfaceId,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.retired.insert(surface) {
+            return Ok(());
+        }
         if self.admitted.remove(&surface).is_none() {
             return Ok(());
         }

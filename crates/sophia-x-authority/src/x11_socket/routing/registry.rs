@@ -320,45 +320,66 @@ impl XServerFrontendRouteRegistry {
         window: XResourceId,
     ) -> Result<(), XServerFrontendRouteError> {
         let admission = self.client_senders(client)?.admission;
-        self.surfaces
+        let mut surfaces = self
+            .surfaces
             .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .insert(
-                surface,
-                XServerFrontendSurfaceRoute {
-                    client,
-                    namespace,
-                    admission,
-                    window,
-                },
-            );
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        if surfaces.contains_key(&surface) {
+            return Err(XServerFrontendRouteError::DuplicateSurface { surface });
+        }
+        surfaces.insert(
+            surface,
+            XServerFrontendSurfaceRoute {
+                client,
+                namespace,
+                admission,
+                window,
+            },
+        );
         Ok(())
     }
 
     fn remove_surface(
         &self,
-        client: XServerFrontendClientId,
         surface: SurfaceId,
     ) -> Result<bool, XServerFrontendRouteError> {
-        let mut surfaces = self
+        Ok(self
             .surfaces
             .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        match surfaces.get(&surface) {
-            Some(route) if route.client == client => {
-                surfaces.remove(&surface);
-                Ok(true)
-            }
-            Some(_) => Err(XServerFrontendRouteError::UnknownSurface { surface }),
-            None => Ok(false),
-        }
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .remove(&surface)
+            .is_some())
+    }
+
+    fn surface_route_observation(
+        &self,
+        surface: SurfaceId,
+    ) -> Result<Option<XAuthoritySurfaceRouteObservation>, XServerFrontendRouteError> {
+        Ok(self
+            .surfaces
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .get(&surface)
+            .map(|route| XAuthoritySurfaceRouteObservation {
+                surface,
+                client: route.client,
+                admission: route.admission,
+            }))
     }
 
     fn emit_metadata_candidate(
         &self,
-        client: XServerFrontendClientId,
         candidate: sophia_protocol::ReducedMetadataCandidate,
     ) -> Result<(), XServerFrontendRouteError> {
+        let client = self
+            .surfaces
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .get(&candidate.surface)
+            .map(|route| route.client)
+            .ok_or(XServerFrontendRouteError::UnknownSurface {
+                surface: candidate.surface,
+            })?;
         match self
             .metadata_candidate_sender
             .try_send(XAuthorityClientMetadataCandidate { client, candidate })
