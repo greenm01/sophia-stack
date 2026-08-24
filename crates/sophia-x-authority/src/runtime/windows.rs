@@ -327,7 +327,7 @@ impl XAuthorityRuntime {
      ) -> Result<(), XAuthorityRuntimeError> {
          if self.resources.get(context).is_some()
              || self.glx_contexts.contains_key(&context)
-             || self.glx_windows.contains_key(&context)
+             || self.glx_drawables.contains_key(&context)
          {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
@@ -368,12 +368,18 @@ impl XAuthorityRuntime {
          self.validate_window_access(namespace, window)?;
          if self.resources.get(glx_window).is_some()
              || self.glx_contexts.contains_key(&glx_window)
-             || self.glx_windows.contains_key(&glx_window)
+             || self.glx_drawables.contains_key(&glx_window)
          {
              return Err(XAuthorityRuntimeError::InvalidResource);
          }
-         self.glx_windows
-             .insert(glx_window, (namespace, window, fbconfig));
+         self.glx_drawables.insert(
+             glx_window,
+             XGlxDrawableRecord {
+                 owner: namespace,
+                 fbconfig,
+                 backing: XGlxDrawableBacking::Window(window),
+             },
+         );
          Ok(())
      }
  
@@ -382,17 +388,22 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          drawable: crate::XResourceId,
      ) -> Result<(crate::XResourceId, u32), XAuthorityRuntimeError> {
-         if let Some((owner, window, config)) = self.glx_windows.get(&drawable) {
-             return (*owner == namespace)
-                 .then_some((*window, *config))
+         if let Some(record) = self.glx_drawables.get(&drawable) {
+             let XGlxDrawableBacking::Window(window) = record.backing;
+             return (record.owner == namespace)
+                 .then_some((window, record.fbconfig))
                  .ok_or(XAuthorityRuntimeError::UnknownResource);
          }
          self.validate_window_access(namespace, drawable)?;
-         let config = if self.window_visual(drawable).1 == crate::X_SETUP_ARGB_VISUAL {
-             3
-         } else {
-             1
-         };
+         // An X window a client never wrapped still answers as its own drawable.
+         // Its configuration follows its visual, which is the same rule the
+         // catalog states, read back rather than restated.
+         let visual = self.window_visual(drawable).1;
+         let config = crate::X_GLX_FB_CONFIGS
+             .iter()
+             .rev()
+             .find(|config| config.visual == visual)
+             .map_or(1, |config| config.id);
          Ok((drawable, config))
      }
  
@@ -402,7 +413,7 @@ impl XAuthorityRuntime {
          glx_window: crate::XResourceId,
      ) -> Result<(), XAuthorityRuntimeError> {
          self.glx_drawable(namespace, glx_window)?;
-         self.glx_windows.remove(&glx_window);
+         self.glx_drawables.remove(&glx_window);
          Ok(())
      }
  
@@ -461,8 +472,9 @@ impl XAuthorityRuntime {
          self.raster_store.remove(window);
          self.window_background_pixels.remove(&window);
          self.window_visuals.remove(&window);
-         self.glx_windows
-             .retain(|_, (_, underlying, _)| *underlying != window);
+         self.glx_drawables.retain(|_, record| match record.backing {
+             XGlxDrawableBacking::Window(underlying) => underlying != window,
+         });
          if self
              .input_focus
              .get(&namespace)
@@ -495,8 +507,8 @@ impl XAuthorityRuntime {
              }
              !owned
          });
-         self.glx_windows.retain(|id, (owner, _, _)| {
-             let owned = *owner == namespace
+         self.glx_drawables.retain(|id, record| {
+             let owned = record.owner == namespace
                  && u32::try_from(id.local.raw()).is_ok_and(|raw| range.owns_new_resource(raw));
              if owned {
                  release.released_glx_windows = release.released_glx_windows.saturating_add(1);

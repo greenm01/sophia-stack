@@ -81,7 +81,17 @@ fn glx_visual_configs() -> Vec<[u32; 18]> {
     ]
 }
 
-fn glx_fb_config(id: u32, visual: u32, alpha: u32, srgb: u32) -> Vec<(u32, u32)> {
+/// The attribute pairs one catalog row publishes.
+///
+/// The row is the single source: a drawable's depth and the depth advertised here
+/// are the same conversion, read from the same place.
+fn glx_fb_config(config: crate::XGlxFbConfig) -> Vec<(u32, u32)> {
+    let crate::XGlxFbConfig {
+        id,
+        visual,
+        alpha,
+        srgb,
+    } = config;
     vec![
         (0x8013, id),
         (0x800b, visual),
@@ -89,7 +99,7 @@ fn glx_fb_config(id: u32, visual: u32, alpha: u32, srgb: u32) -> Vec<(u32, u32)>
         (0x8010, 0x3),
         (0x8011, 0x1),
         (0x22, 0x8002),
-        (0x2, 24 + alpha),
+        (0x2, u32::from(config.depth())),
         (0x3, 0),
         (0x5, 1),
         (0x6, 0),
@@ -113,11 +123,11 @@ fn glx_fb_config(id: u32, visual: u32, alpha: u32, srgb: u32) -> Vec<(u32, u32)>
 }
 
 fn glx_fb_configs() -> Vec<Vec<(u32, u32)>> {
-    vec![
-        glx_fb_config(1, X_SETUP_DEFAULT_VISUAL, 0, 0),
-        glx_fb_config(2, X_SETUP_ARGB_VISUAL, 8, 0),
-        glx_fb_config(3, X_SETUP_ARGB_VISUAL, 8, 1),
-    ]
+    crate::X_GLX_FB_CONFIGS
+        .iter()
+        .copied()
+        .map(glx_fb_config)
+        .collect()
 }
 
 fn glx_bad_value(context: &XDispatchContext, value: u32, minor: u8) -> XClientOutput {

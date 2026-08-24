@@ -71,6 +71,22 @@ struct XFontRecord {
     face: XFontFace,
 }
 
+/// One GLX drawable's bookkeeping.
+///
+/// GLX owns no pixels here. A window alias borrows its geometry from the X window
+/// it names; anything else has to carry its own, because nothing else does.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct XGlxDrawableRecord {
+    owner: NamespaceId,
+    fbconfig: u32,
+    backing: XGlxDrawableBacking,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum XGlxDrawableBacking {
+    Window(crate::XResourceId),
+}
+
 #[derive(Debug)]
 pub struct XAuthorityRuntime {
     resources: XResourceTable,
@@ -99,7 +115,7 @@ pub struct XAuthorityRuntime {
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
     colormaps: BTreeMap<crate::XResourceId, u32>,
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
-    glx_windows: BTreeMap<crate::XResourceId, (NamespaceId, crate::XResourceId, u32)>,
+    glx_drawables: BTreeMap<crate::XResourceId, XGlxDrawableRecord>,
     last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
@@ -137,7 +153,7 @@ impl Default for XAuthorityRuntime {
             window_visuals: Default::default(),
             colormaps: Default::default(),
             glx_contexts: Default::default(),
-            glx_windows: Default::default(),
+            glx_drawables: Default::default(),
             last_cpu_buffer_updates: Vec::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
