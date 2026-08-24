@@ -375,6 +375,23 @@ pub enum LiveProductionScanoutContent {
     },
 }
 
+impl LiveProductionScanoutContent {
+    /// The logical scene this content draws, where the content names one.
+    ///
+    /// Present-backed variants carry client pixels rather than a composed scene,
+    /// so they report none and are never treated as interchangeable.
+    pub const fn logical_checksum(self) -> Option<u64> {
+        match self {
+            Self::Cpu { checksum, .. } => Some(checksum),
+            Self::HeadComposition {
+                logical_content_checksum,
+                ..
+            } => Some(logical_content_checksum),
+            Self::MixedPresent { .. } | Self::RetainedMixed { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionMirrorGenerationQueue {
     Install,

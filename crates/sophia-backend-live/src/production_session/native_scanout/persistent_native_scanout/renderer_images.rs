@@ -911,14 +911,19 @@ impl LiveProductionNativeScanout {
             return Ok(BTreeMap::new());
         }
         let mut outputs = BTreeSet::new();
+        let mut checksums = BTreeMap::new();
         for (output, frames) in &batches {
             if !outputs.insert(*output) {
                 return Err("retained scene repeats a logical output cohort".into());
             }
-            self.validate_head_composition_frames(*output, frames)?;
+            let (_, checksum) = self.validate_head_composition_frames(*output, frames)?;
+            checksums.insert(*output, checksum);
         }
         let mut queued = BTreeMap::new();
         for (output, frames) in batches {
+            if self.retained_scene_already_pending(output, checksums.get(&output).copied()) {
+                continue;
+            }
             let frame = self.queue_head_composition_frames_with_content(
                 output,
                 frames,
@@ -927,6 +932,42 @@ impl LiveProductionNativeScanout {
             queued.insert(output, frame);
         }
         Ok(queued)
+    }
+
+    /// Whether this output already holds an unscanned frame of the same scene.
+    ///
+    /// Queueing would clobber that pending frame with a copy of itself, so the
+    /// work is redundant rather than merely late and skipping it loses nothing.
+    /// Retained composition is edge-triggered with no re-arm, which is why this
+    /// compares against content still waiting in the head rather than against
+    /// the last checksum queued: that value outlives the frame it described.
+    ///
+    /// Mirror cohorts are never suppressed. Their pending content is arbitrated
+    /// by mirror generation rather than held per head, and their queue lines are
+    /// promotion evidence.
+    fn retained_scene_already_pending(&self, output: OutputId, checksum: Option<u64>) -> bool {
+        let Some(checksum) = checksum else {
+            return false;
+        };
+        let indices = self.head_indices(output);
+        if indices.len() != 1 {
+            return false;
+        }
+        let Some(head) = indices.first().and_then(|index| self.heads.get(*index)) else {
+            return false;
+        };
+        let suppressed = head
+            .pending_content
+            .and_then(LiveProductionScanoutContent::logical_checksum)
+            == Some(checksum);
+        if suppressed {
+            tracing::debug!(
+                output = output.raw(),
+                logical_content_checksum = checksum,
+                "retained scene already pending for this output"
+            );
+        }
+        suppressed
     }
 
     fn queue_head_composition_frames_with_content(
