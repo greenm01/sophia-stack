@@ -7,6 +7,62 @@ pub(super) struct LiveProductionRetainedCompositionSourceSet {
     pub sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
 }
 
+fn retained_surface_sources(
+    surface: SurfaceId,
+    committed_source: BufferSource,
+    cpu_layers: &[LiveCpuPresentationLayer],
+    in_flight: Option<&crate::LiveRetainedRendererImageLayer>,
+    retained: Option<&crate::LiveRetainedRendererImageLayer>,
+) -> Result<Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>, &'static str> {
+    let mut sources = Vec::new();
+    if let Some(displayed) = in_flight {
+        sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+            surface,
+            source: committed_source,
+            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+                image_id: displayed.image_id,
+                size: displayed.size,
+                format: displayed.format,
+            },
+        });
+    }
+    sources.extend(
+        cpu_layers
+            .iter()
+            .filter(|layer| layer.surface == surface)
+            .map(
+                |layer| sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                    surface,
+                    source: BufferSource::CpuBuffer {
+                        handle: layer.buffer.handle,
+                    },
+                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
+                        layer.buffer.clone().into(),
+                    ),
+                },
+            ),
+    );
+    if !sources.is_empty() {
+        return Ok(sources);
+    }
+    if let Some(displayed) = retained {
+        if !matches!(committed_source, BufferSource::DmaBuf { .. }) {
+            return Err("retained renderer image lost its DMA-BUF identity");
+        }
+        sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+            surface,
+            source: committed_source,
+            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+                image_id: displayed.image_id,
+                size: displayed.size,
+                format: displayed.format,
+            },
+        });
+        return Ok(sources);
+    }
+    Err("retained head plan has no authority-owned source")
+}
+
 impl LiveProductionVisualRuntime {
     pub(super) fn cpu_output_head_composition_frames_from_layers(
         &self,
@@ -129,54 +185,20 @@ impl LiveProductionVisualRuntime {
                 .find(|state| state.surface == *surface)
                 .map(CommittedSurfaceState::buffer)
                 .ok_or("retained display list escaped committed Engine membership")?;
-            if let Some((_, displayed)) =
-                in_flight.filter(|(in_flight_surface, _)| *in_flight_surface == *surface)
-            {
-                sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                    surface: *surface,
-                    source: committed_source,
-                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
-                        image_id: displayed.image_id,
-                        size: displayed.size,
-                        format: displayed.format,
-                    },
-                });
-                continue;
-            }
-            let cpu_sources = cpu_layers
-                .iter()
-                .filter(|layer| layer.surface == *surface)
-                .collect::<Vec<_>>();
-            if !cpu_sources.is_empty() {
-                sources.extend(cpu_sources.into_iter().map(|layer| {
-                    sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                        surface: *surface,
-                        source: BufferSource::CpuBuffer {
-                            handle: layer.buffer.handle,
-                        },
-                        kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
-                            layer.buffer.clone().into(),
-                        ),
-                    }
-                }));
-                continue;
-            }
-            if let Some(displayed) = self.displayed_surfaces.get(surface) {
-                if !matches!(committed_source, BufferSource::DmaBuf { .. }) {
-                    return Err("retained renderer image lost its DMA-BUF identity".into());
-                }
-                sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                    surface: *surface,
-                    source: committed_source,
-                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
-                        image_id: displayed.layer.image_id,
-                        size: displayed.layer.size,
-                        format: displayed.layer.format,
-                    },
-                });
-                continue;
-            }
-            return Err("retained head plan has no authority-owned source".into());
+            let in_flight = in_flight
+                .filter(|(in_flight_surface, _)| *in_flight_surface == *surface)
+                .map(|(_, displayed)| displayed);
+            let retained = self
+                .displayed_surfaces
+                .get(surface)
+                .map(|displayed| &displayed.layer);
+            sources.extend(retained_surface_sources(
+                *surface,
+                committed_source,
+                &cpu_layers,
+                in_flight,
+                retained,
+            )?);
         }
         let scene_generation = committed
             .iter()
@@ -544,3 +566,5 @@ impl LiveProductionVisualRuntime {
         self.pending_chrome_set_observation.take()
     }
 }
+
+mod tests;

@@ -164,8 +164,14 @@ promotion gate.
    sequence as an Engine transaction. Dispatch now carries the listener's
    global transaction through every Engine-visible path, while admission keeps
    rejecting real mismatches and reports the exact failed invariant. Direct and
-   two-client regressions pass; the corrected signed physical rerun remains
-   open. Reservations are deliberately still absent.
+   two-client regressions pass. The next rerun rendered Helium through several
+   generations, then a retained repaint failed with `MissingCpuSource(4)`.
+   Retained composition had treated an in-flight renderer image and the same
+   surface's CPU authority rasters as alternatives, even though the head plan
+   may select either content variant. The source set now carries both exact
+   realizations, and a mixed-source regression pins that invariant. The
+   corrected signed physical rerun remains open. Reservations are deliberately
+   still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
