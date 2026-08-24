@@ -512,64 +512,24 @@ fn dispatch_core_window_request(
                     }
                 }
                 XWireRequest::GetGeometry { drawable } => {
-                    let output = if drawable.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-                        XClientOutput::Reply(XClientReply::GetGeometry {
+                    // Every kind of drawable answers the same four facts, so the
+                    // resolver states them once rather than each kind being tried
+                    // in turn here. A miss keeps reporting the window error, which
+                    // is the identity an unknown id has always had.
+                    let output = match runtime.drawable_facts(context.namespace, drawable) {
+                        Ok(facts) => XClientOutput::Reply(XClientReply::GetGeometry {
                             sequence: context.sequence,
-                            depth: 24,
+                            depth: facts.depth,
                             root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-                            geometry: Rect {
-                                x: 0,
-                                y: 0,
-                                width: runtime
-                                    .output_topology()
-                                    .root_size()
-                                    .expect("validated output topology")
-                                    .width,
-                                height: runtime
-                                    .output_topology()
-                                    .root_size()
-                                    .expect("validated output topology")
-                                    .height,
-                            },
+                            geometry: facts.geometry,
                             border_width: 0,
-                        })
-                    } else {
-                        match runtime.window_geometry(context.namespace, drawable) {
-                            Ok(geometry) => XClientOutput::Reply(XClientReply::GetGeometry {
-                                sequence: context.sequence,
-                                depth: runtime.window_visual(drawable).0,
-                                root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-                                geometry,
-                                border_width: 0,
-                            }),
-                            Err(window_error) => {
-                                match runtime.pixmap_geometry(context.namespace, drawable) {
-                                    Ok((size, depth)) => {
-                                        XClientOutput::Reply(XClientReply::GetGeometry {
-                                        sequence: context.sequence,
-                                        depth,
-                                        root: XResourceId::new(
-                                            u64::from(X_SETUP_DEFAULT_ROOT),
-                                            1,
-                                        ),
-                                        geometry: Rect {
-                                            x: 0,
-                                            y: 0,
-                                            width: size.width,
-                                            height: size.height,
-                                        },
-                                        border_width: 0,
-                                    })
-                                    }
-                                    Err(_) => XClientOutput::Error(x_error_from_runtime(
-                                        window_error,
-                                        context.sequence,
-                                        context.major_opcode,
-                                        u32::try_from(drawable.local.raw()).unwrap_or(0),
-                                    )),
-                                }
-                            }
-                        }
+                        }),
+                        Err(error) => XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            u32::try_from(drawable.local.raw()).unwrap_or(0),
+                        )),
                     };
                     XDispatchResult {
                         response: None,

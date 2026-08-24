@@ -108,6 +108,59 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
+    /// What a drawable is, for the requests that accept more than one kind.
+    ///
+    /// States facts and leaves admission to the caller, because the callers
+    /// disagree: core drawing must refuse a drawable with no server storage,
+    /// while a request that only names one may accept it.
+    pub fn drawable_facts(
+        &self,
+        namespace: NamespaceId,
+        drawable: crate::XResourceId,
+    ) -> Result<XDrawableFacts, XAuthorityRuntimeError> {
+        if drawable.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            let root = self
+                .output_topology()
+                .root_size()
+                .map_err(|_| XAuthorityRuntimeError::UnknownResource)?;
+            return Ok(XDrawableFacts {
+                kind: XDrawableKind::Root,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: root.width,
+                    height: root.height,
+                },
+                depth: 24,
+            });
+        }
+        // The window error is the one a miss reports, so an unknown id keeps the
+        // exact identity it had before this resolver existed.
+        let window_error = match self.window_geometry(namespace, drawable) {
+            Ok(geometry) => {
+                return Ok(XDrawableFacts {
+                    kind: XDrawableKind::Window,
+                    geometry,
+                    depth: self.window_visual(drawable).0,
+                });
+            }
+            Err(error) => error,
+        };
+        if let Ok((size, depth)) = self.pixmap_geometry(namespace, drawable) {
+            return Ok(XDrawableFacts {
+                kind: XDrawableKind::Pixmap,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.width,
+                    height: size.height,
+                },
+                depth,
+            });
+        }
+        Err(window_error)
+    }
+
     pub fn validate_drawable_access(
         &self,
         namespace: NamespaceId,

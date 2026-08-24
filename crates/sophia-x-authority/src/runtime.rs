@@ -71,6 +71,22 @@ struct XFontRecord {
     face: XFontFace,
 }
 
+/// What kind of thing a drawable id names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XDrawableKind {
+    Root,
+    Window,
+    Pixmap,
+}
+
+/// The facts every drawable can answer, whatever kind it is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XDrawableFacts {
+    pub kind: XDrawableKind,
+    pub geometry: Rect,
+    pub depth: u8,
+}
+
 /// One GLX drawable's bookkeeping.
 ///
 /// GLX owns no pixels here. A window alias borrows its geometry from the X window
