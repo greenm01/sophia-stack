@@ -376,6 +376,23 @@ macro_rules! reconcile_pending_wm_focus {
                         transaction.raw()
                     );
                 }
+                // The seat already holds this surface. Startup readiness still
+                // counts it, because a replayed focus after a policy restart pins
+                // the same surface it would have pinned. Nothing is sent to the
+                // client and no handoff runs: no focus moved, so there is no
+                // keyboard sequence to flush and nothing for the client to learn.
+                // `focus_committed` stays unprinted -- physical verifiers read it
+                // as evidence that focus actually changed.
+                InputFocusDecision::AlreadyFocused => {
+                    let _ = reduce_session_startup(
+                        &mut startup_readiness,
+                        SessionStartupEvent::PinSurface(surface),
+                    );
+                    println!(
+                        "sophia_live_wm schema=1 status=focus_reconciled transaction={} target=surface surface={surface:?} outcome={decision:?}",
+                        transaction.raw()
+                    );
+                }
                 InputFocusDecision::UnknownSurface => {}
                 InputFocusDecision::InvalidSeat => {
                     return Err("WM focus reconciliation used an invalid seat".into());

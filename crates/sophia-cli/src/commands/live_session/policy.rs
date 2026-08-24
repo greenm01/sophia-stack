@@ -89,7 +89,14 @@ fn pending_wm_focus_after_engine_decision(
     request: (TransactionId, SurfaceId),
     decision: InputFocusDecision,
 ) -> Option<(TransactionId, SurfaceId)> {
-    (decision != InputFocusDecision::Focused).then_some(request)
+    // An unchanged focus satisfies the request as fully as a moved one. Treating
+    // it as unsatisfied would keep the request pending and re-arm it every turn,
+    // which is the loop this idempotency exists to end.
+    (!matches!(
+        decision,
+        InputFocusDecision::Focused | InputFocusDecision::AlreadyFocused
+    ))
+    .then_some(request)
 }
 
 struct InitialSessionFocusContext<'a> {
@@ -132,6 +139,9 @@ fn reconcile_initial_session_focus(
     ) else {
         return Ok(());
     };
+    // `AlreadyFocused` is unreachable here: the candidate is only produced when
+    // the seat holds no focus at all, so a decision other than `Focused` means
+    // the surface could not take it.
     if focus.focus_surface(seat, surface, runtime.committed_surfaces())
         != InputFocusDecision::Focused
     {

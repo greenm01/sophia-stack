@@ -29,6 +29,9 @@ impl InputFocusState {
         {
             return InputFocusDecision::UnknownSurface;
         }
+        if self.focused_surfaces.get(&seat) == Some(&surface) {
+            return InputFocusDecision::AlreadyFocused;
+        }
         self.focused_surfaces.insert(seat, surface);
         InputFocusDecision::Focused
     }
@@ -69,6 +72,13 @@ impl InputFocusState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputFocusDecision {
     Focused,
+    /// The seat already holds this surface, so nothing moved.
+    ///
+    /// Distinct from `Focused` because a caller that drives protocol on a focus
+    /// change must not drive it again for a change that did not happen. It is
+    /// reported after the committed-surface check, so it always implies the
+    /// surface is still committed.
+    AlreadyFocused,
     InvalidSeat,
     UnknownSurface,
 }

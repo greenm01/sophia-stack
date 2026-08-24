@@ -58,6 +58,54 @@ fn engine_focus_routes_keyboard_to_a_committed_surface() {
     assert_eq!(event.target_surface, Some(surface));
 }
 
+/// Refocusing the surface a seat already holds reports that nothing moved.
+///
+/// A window manager may reassert the same focus on every commit. Reporting
+/// `Focused` for a change that did not happen made the session drive an X11
+/// focus control each time, which is one half of a commit loop.
+#[test]
+fn engine_focus_reports_an_unchanged_seat_focus_as_already_focused() {
+    let seat = SeatId::from_raw(1);
+    let other_seat = SeatId::from_raw(2);
+    let surface = SurfaceId::new(11, 1);
+    let sibling = SurfaceId::new(12, 1);
+    let committed = vec![committed(surface), committed(sibling)];
+    let mut focus = InputFocusState::new();
+
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+    assert_eq!(
+        focus.focus_surface(seat, surface, &committed),
+        InputFocusDecision::AlreadyFocused
+    );
+
+    // The report is per seat, not global.
+    assert_eq!(
+        focus.focus_surface(other_seat, surface, &committed),
+        InputFocusDecision::Focused
+    );
+
+    // A real move still reports one, and the surface must still be committed:
+    // an uncommitted surface is unknown even when the seat already holds it.
+    assert_eq!(
+        focus.focus_surface(seat, sibling, &committed),
+        InputFocusDecision::Focused
+    );
+    assert_eq!(
+        focus.focus_surface(seat, sibling, &[]),
+        InputFocusDecision::UnknownSurface
+    );
+
+    // Clearing reopens it, so a later reassert is a genuine change again.
+    assert_eq!(focus.clear_surface(sibling), 1);
+    assert_eq!(
+        focus.focus_surface(seat, sibling, &committed),
+        InputFocusDecision::Focused
+    );
+}
+
 #[test]
 fn engine_focus_rejects_unknown_and_stale_surfaces() {
     let seat = SeatId::from_raw(1);

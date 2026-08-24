@@ -865,6 +865,12 @@ fn unknown_surface_keeps_wm_focus_request_pending() {
         pending_wm_focus_after_engine_decision(request, InputFocusDecision::Focused),
         None,
     );
+    // An unchanged focus satisfies the request. Holding it pending would re-arm
+    // the reconciliation every turn for a change that already happened.
+    assert_eq!(
+        pending_wm_focus_after_engine_decision(request, InputFocusDecision::AlreadyFocused),
+        None,
+    );
 }
 
 #[test]
