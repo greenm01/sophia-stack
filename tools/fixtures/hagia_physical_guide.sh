@@ -24,10 +24,41 @@ action_count() {
     grep -Ec "$(action_pattern "$1")" "$evidence" 2>/dev/null || true
 }
 
+# An extra press is not a slower run, it is a different one: one more layout
+# switch leaves the view in a mode that places a single window, and the browser
+# step then waits for a two-surface layout that policy will never propose. Fail
+# where it happened rather than at the symptom.
 wait_for_action_count() {
     action="$1"
     expected="$2"
     while [ "$(action_count "$action")" -lt "$expected" ]; do
+        sleep 0.1
+    done
+    observed="$(action_count "$action")"
+    if [ "$observed" -gt "$expected" ]; then
+        printf '\033[2J\033[H'
+        echo "Physical proof aborted: action $action was committed $observed times, expected $expected." >&2
+        echo 'An extra or repeated keypress changed session state. Restart the proof run.' >&2
+        exit 2
+    fi
+}
+
+# Waits that depend on the session rather than on the operator get a bound, so a
+# session that will never satisfy them fails legibly instead of hanging.
+wait_for_shell_line_bounded() {
+    pattern="$1"
+    attempts=1200
+    while ! grep -Eq "$pattern" "$evidence" 2>/dev/null; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            printf '\033[2J\033[H'
+            echo 'Physical proof aborted: the session never produced' >&2
+            echo "  $pattern" >&2
+            echo 'If the browser opened but never joined the layout, the active view is' >&2
+            echo 'placing a single window. Press Super+N to change layout, or focus the' >&2
+            echo 'browser, and restart the proof run.' >&2
+            exit 2
+        fi
         sleep 0.1
     done
 }
@@ -142,7 +173,7 @@ wait_for_action_count 34 1
 show_step 'Press Super+B once to launch the browser. Wait while Sophia publishes its second switcher row.'
 wait_for_shell_line '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox$'
 wait_for_shell_line '^sophia_session_app schema=2 status=admitted source=action transaction=[1-9][0-9]* surface=[1-9][0-9]*$'
-wait_for_shell_line '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$'
+wait_for_shell_line_bounded '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$'
 wait_for_shell_count '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' 2
 
 show_step 'Press Super+P once. When the switcher appears, click its first row to focus this terminal.'

@@ -199,6 +199,18 @@ renderable content match the candidate. If settlement changes a relevant fact,
 Engine requests policy again from a fresh complete snapshot rather than
 silently rewriting the proposal.
 
+A committed policy response settles the cause that raised it, and the settlement
+stands until snapshot-visible facts change. The owner requests policy again on a
+fact change, never on a timer and never because the condition that raised the
+cause still holds. A window manager may answer a surface's `Manage` request by
+placing nothing at all -- a layout that shows one window does exactly that, and so
+does a policy that maps a surface minimized. Those are answers rather than
+failures, and re-asking them is not patience but a loop: the session commits, the
+scene re-projects, and the same question returns on the next turn for as long as
+policy keeps its layout. A surface waiting on such an answer is admitted by
+whichever later proposal does place it, whatever cause raised that proposal, so
+the settlement withholds a request rather than the surface.
+
 For X11 surfaces, a public-policy presentation transition also crosses a
 bounded frontend control. The frontend installs `_NET_WM_STATE` plus ICCCM
 `WM_STATE`, emits selected `PropertyNotify` events, flushes them, and only then

@@ -195,8 +195,17 @@ promotion gate.
    implemented rather than excused: one passive table of the virtual master pair
    is projected into both the XI1 and XI2 replies, and a test walks both wire
    formats back into records and requires them to agree, since the two encodings
-   are too different for drift to show up any other way. The corrected signed
-   physical rerun remains open. Reservations are deliberately still absent.
+   are too different for drift to show up any other way. That rerun cleared the
+   protocol errors and then hard-stalled a page flip: an extra `Super+N` had left
+   the active view in a layout that places one window, so policy answered the
+   browser's `Manage` request by placing nothing and the owner re-asked it 1,438
+   times in five seconds. A committed answer now settles its cause until
+   snapshot-visible facts change; engine focus reports an unchanged seat focus as
+   unchanged; indicator chrome is published by its content rather than by a commit
+   count, which also stops a policy commit cancelling an in-flight indicator
+   click; and the retained queue skips a scene the output already holds. The
+   corrected signed physical rerun remains open. Reservations are deliberately
+   still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
