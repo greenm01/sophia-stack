@@ -268,7 +268,7 @@ fn dispatch_x_input_request(
                         *target = *source;
                     }
                     let status = if device_id != 2
-                        || validate_grab_window(runtime, context.namespace, window).is_err()
+                        || validate_window_or_root_access(runtime, context.namespace, window).is_err()
                         || cursor.is_some_and(|cursor| {
                             runtime
                                 .validate_cursor_access(context.namespace, cursor)
@@ -320,8 +320,11 @@ fn dispatch_x_input_request(
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::XiChangeCursor { window, cursor } => {
-                    let result = runtime
-                        .validate_window_access(context.namespace, window)
+                    let result = validate_window_or_root_access(
+                        runtime,
+                        context.namespace,
+                        window,
+                    )
                         .and_then(|()| {
                             cursor.map_or(Ok(()), |cursor| {
                                 runtime.validate_cursor_access(context.namespace, cursor)

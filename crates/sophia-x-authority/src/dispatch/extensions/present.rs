@@ -60,7 +60,9 @@ fn dispatch_present_request(
                             minor_code: u16::from(crate::X_PRESENT_SELECT_INPUT_MINOR_OPCODE),
                             major_code: context.major_opcode,
                         })]
-                    } else if let Err(error) = runtime.validate_window_access(context.namespace, window) {
+                    } else if let Err(error) =
+                        validate_window_or_root_access(runtime, context.namespace, window)
+                    {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,

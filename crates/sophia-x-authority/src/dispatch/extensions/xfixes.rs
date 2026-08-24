@@ -94,7 +94,9 @@ fn dispatch_xfixes_request(
                             minor_code: crate::X_XFIXES_SELECT_SELECTION_INPUT_MINOR_OPCODE.into(),
                             major_code: context.major_opcode,
                         }))
-                    } else if let Err(error) = runtime.validate_window_access(context.namespace, window) {
+                    } else if let Err(error) =
+                        validate_window_or_root_access(runtime, context.namespace, window)
+                    {
                         let mut error = x_error_from_runtime(
                             error,
                             context.sequence,

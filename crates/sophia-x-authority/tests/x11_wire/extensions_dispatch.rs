@@ -476,6 +476,132 @@ fn xfixes_regions_support_create_set_and_destroy_lifecycle() {
     );
 }
 
+/// Watching a selection is scoped to a window, not an action upon one, so the
+/// root is the ordinary argument: every toolkit calls
+/// `XFixesSelectSelectionInput(dpy, DefaultRootWindow(dpy), CLIPBOARD, mask)`.
+/// Refusing it produced a `BadWindow` storm that failed a physical session.
+#[test]
+fn root_scoped_requests_are_admitted_without_a_client_window() {
+    let namespace = NamespaceId::from_raw(61);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let selection = decode_x11_core_request(
+        context(namespace, 600, XByteOrder::LittleEndian),
+        &xfixes_select_selection_input_request(
+            XByteOrder::LittleEndian,
+            X_SETUP_DEFAULT_ROOT,
+            X_ATOM_PRIMARY,
+            0b111,
+        ),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            8,
+            XByteOrder::LittleEndian,
+            X_XFIXES_MAJOR_OPCODE,
+        ),
+        selection,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        result.outputs.is_empty(),
+        "selection watching on the root must not error"
+    );
+
+    let present = decode_x11_core_request(
+        context(namespace, 601, XByteOrder::LittleEndian),
+        &present_select_input_request(
+            XByteOrder::LittleEndian,
+            0x220400,
+            X_SETUP_DEFAULT_ROOT,
+            0,
+        ),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            9,
+            XByteOrder::LittleEndian,
+            X_PRESENT_MAJOR_OPCODE,
+        ),
+        present,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        result.outputs.is_empty(),
+        "Present event selection on the root must not error"
+    );
+
+    // Setting the root cursor names the root for scope in the same way.
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 10, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
+        XWireRequest::XiChangeCursor {
+            window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            cursor: None,
+        },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        result.outputs.is_empty(),
+        "clearing the root cursor must not error"
+    );
+}
+
+/// The root is admitted; an id that is neither the root nor a client window is
+/// still refused, and still names the request that refused it.
+#[test]
+fn selection_watching_still_refuses_an_unknown_window() {
+    let namespace = NamespaceId::from_raw(62);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let unknown = 0x22_0999;
+
+    let request = decode_x11_core_request(
+        context(namespace, 602, XByteOrder::LittleEndian),
+        &xfixes_select_selection_input_request(
+            XByteOrder::LittleEndian,
+            unknown,
+            X_ATOM_PRIMARY,
+            0b111,
+        ),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            10,
+            XByteOrder::LittleEndian,
+            X_XFIXES_MAJOR_OPCODE,
+        ),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        result.outputs.as_slice(),
+        [XClientOutput::Error(XClientError {
+            code: XErrorCode::BadWindow,
+            resource_id,
+            minor_code: 2,
+            major_code: X_XFIXES_MAJOR_OPCODE,
+            ..
+        })] if *resource_id == unknown
+    ));
+}
+
 #[test]
 fn xfixes_selection_subscription_accepts_known_window_atom_and_mask() {
     let namespace = NamespaceId::from_raw(45);

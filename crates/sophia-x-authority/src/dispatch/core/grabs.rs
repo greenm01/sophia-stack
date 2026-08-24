@@ -30,7 +30,7 @@ fn dispatch_core_grab_request(
                     keyboard_mode,
                     ..
                 } => {
-                    let status = if validate_grab_window(runtime, context.namespace, window).is_err() {
+                    let status = if validate_window_or_root_access(runtime, context.namespace, window).is_err() {
                         3
                     } else {
                         runtime
@@ -77,7 +77,7 @@ fn dispatch_core_grab_request(
                     keyboard_mode,
                     ..
                 } => {
-                    let status = if validate_grab_window(runtime, context.namespace, window).is_err() {
+                    let status = if validate_window_or_root_access(runtime, context.namespace, window).is_err() {
                         3
                     } else {
                         runtime
@@ -206,7 +206,7 @@ fn dispatch_core_grab_request(
                     pointer_mode,
                     keyboard_mode,
                 } => {
-                    let outputs = match validate_grab_window(runtime, context.namespace, window) {
+                    let outputs = match validate_window_or_root_access(runtime, context.namespace, window) {
                         Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,

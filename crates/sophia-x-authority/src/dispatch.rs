@@ -444,7 +444,20 @@ fn dispatch_poly_text8(
     }
 }
 
-fn validate_grab_window(
+/// Admits the root window alongside a client's own windows.
+///
+/// The root is synthetic here: it is never inserted into the resource table, so
+/// `validate_window_access` cannot find it and refuses it. Requests that name a
+/// window purely to scope something -- a grab, a cursor, an event selection --
+/// accept the root in X11, and refusing it turns an ordinary client idiom into a
+/// `BadWindow`. `validate_drawable_access` already admits the root for the same
+/// reason; this is the window-shaped half of that rule.
+///
+/// Requests that act *on* a window rather than scope to one keep using
+/// `validate_window_access` directly, because refusing the root is correct for
+/// them: reparenting, destroying, and creating a GLX drawable from the root are
+/// all errors.
+fn validate_window_or_root_access(
     runtime: &XAuthorityRuntime,
     namespace: NamespaceId,
     window: XResourceId,
