@@ -186,6 +186,36 @@ impl PersistentLiveLayout {
         });
         self.admission_retries
             .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
+        // A committed policy answer settles the cause that raised it. Record the
+        // facts it answered against, and retire every settlement recorded against
+        // different facts: the scene generation advances exactly when the snapshot
+        // changed, and the connection epoch when the window manager restarted, so
+        // neither a timer nor an explicit sweep is needed. Without this the owner
+        // re-asks a settled question every turn, which is how a monocle layout --
+        // one that legitimately places a single window -- drove the session into a
+        // page-flip hard stall.
+        if let Some(settlement) = pending.policy_settlement {
+            let facts = LiveManageSettlement {
+                connection_epoch: settlement.connection_epoch,
+                scene_generation: settlement.scene_generation,
+            };
+            self.manage_settlements.retain(|_, prior| *prior == facts);
+            if pending.update.commit.outcome == TransactionOutcome::Committed
+                && let Some(LiveWmProposalSource::Manage(surface)) = pending.source
+                && committed_public_admission != Some(surface)
+                && self.unmanaged_surfaces.contains(&surface)
+            {
+                self.manage_settlements.insert(surface, facts);
+                println!(
+                    "sophia_live_wm schema=1 status=manage_settled surface={} connection_epoch={} scene_generation={}",
+                    surface.index(),
+                    facts.connection_epoch,
+                    facts.scene_generation,
+                );
+            }
+        }
+        self.manage_settlements
+            .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
         for surface in self.layers.keys().copied() {
             if !self.unmanaged_surfaces.contains(&surface)
                 && matches!(

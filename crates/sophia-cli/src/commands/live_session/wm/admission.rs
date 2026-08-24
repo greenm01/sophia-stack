@@ -498,6 +498,7 @@ impl PersistentLiveLayout {
         self.planning_surfaces.remove(&surface);
         self.unmanaged_surfaces.remove(&surface);
         self.admission_retries.remove(&surface);
+        self.manage_settlements.remove(&surface);
         self.layout_epochs
             .set_admission(surface, sophia_engine::SurfaceAdmissionState::Managed);
         // The fallback frame's retirement completes admission, not the
@@ -552,6 +553,9 @@ impl PersistentLiveLayout {
             };
             match intent.kind {
                 sophia_protocol::SurfacePresentationIntentKind::Request => {
+                    // A re-request is a new question, whatever policy answered
+                    // about the previous presentation of this surface.
+                    self.manage_settlements.remove(&intent.surface);
                     self.planning_surfaces.insert(intent.surface, facts);
                     self.authority_surface_facts.insert(intent.surface, facts);
                     self.presentation_roles.insert(intent.surface, intent.role);
@@ -574,6 +578,7 @@ impl PersistentLiveLayout {
                     self.planning_surfaces.remove(&intent.surface);
                     self.authority_surface_facts.remove(&intent.surface);
                     self.unmanaged_surfaces.remove(&intent.surface);
+                    self.manage_settlements.remove(&intent.surface);
                     self.remove_admission_groups(intent.surface);
                 }
             }

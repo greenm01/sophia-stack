@@ -865,6 +865,181 @@ fn public_policy_materializes_reconciled_content_without_committing_content_to_t
     );
 }
 
+/// The storm regression: policy answers a `Manage` request by placing nothing.
+///
+/// A monocle layout places one window however many it is shown, so this is an
+/// ordinary answer rather than a failure. The owner must stop asking until the
+/// facts change; re-asking every turn is what drove a physical session into a
+/// page-flip hard stall.
+#[test]
+fn a_committed_manage_that_places_nothing_settles_until_the_facts_change() {
+    let guide = SurfaceId::new(9, 1);
+    let browser = SurfaceId::new(18, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 400,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&manage_request_batch(browser, geometry, 1));
+    assert_eq!(layout.next_unmanaged_surface(), Some(browser));
+
+    // Policy commits a layout holding only the guide.
+    let transaction = TransactionId::from_raw(10);
+    let result = layout.commit_proposal(manage_proposal_without_placement(
+        transaction,
+        browser,
+        guide,
+        geometry,
+        2,
+    ));
+    assert_eq!(result.source, Some(LiveWmProposalSource::Manage(browser)));
+    assert_eq!(
+        layout.next_unmanaged_surface(),
+        None,
+        "a settled answer stops the owner re-asking"
+    );
+    assert!(layout.unmanaged_surfaces.contains(&browser));
+    assert!(layout.surface_requires_admission(browser));
+
+    // A restarted window manager has answered nothing and must be asked again.
+    assert_eq!(layout.next_reseed_unmanaged_surface(), Some(browser));
+
+    // Re-asking at the same facts stays settled, however many turns pass.
+    let repeat = TransactionId::from_raw(11);
+    layout.commit_proposal(manage_proposal_without_placement(
+        repeat, browser, guide, geometry, 2,
+    ));
+    assert_eq!(layout.next_unmanaged_surface(), None);
+
+    // Answering again at the same facts re-settles, so the owner still holds off.
+    // What reopens the question is a commit carrying different facts without an
+    // answer about this surface -- the shape a layout switch produces, since an
+    // action-sourced proposal is not a `Manage` reply.
+    let relayout = TransactionId::from_raw(12);
+    let mut moved = manage_proposal_without_placement(relayout, browser, guide, geometry, 3);
+    moved.source = Some(LiveWmProposalSource::Relayout);
+    layout.commit_proposal(moved);
+    assert_eq!(layout.next_unmanaged_surface(), Some(browser));
+}
+
+/// Changed authority facts re-arm the question without waiting for a commit.
+#[test]
+fn changed_surface_facts_reopen_a_settled_manage_answer() {
+    let guide = SurfaceId::new(9, 1);
+    let browser = SurfaceId::new(18, 1);
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 400,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&manage_request_batch(browser, geometry, 1));
+    layout.commit_proposal(manage_proposal_without_placement(
+        TransactionId::from_raw(10),
+        browser,
+        guide,
+        geometry,
+        2,
+    ));
+    assert_eq!(layout.next_unmanaged_surface(), None);
+
+    let mut resized =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(11));
+    resized.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface: browser,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            owner: None,
+            stack_rank: 0,
+            mapped: true,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 2,
+        },
+    );
+    layout.observe_authority_batch(&resized);
+
+    assert_eq!(layout.next_unmanaged_surface(), Some(browser));
+}
+
+fn manage_request_batch(
+    surface: SurfaceId,
+    geometry: Rect,
+    generation: u64,
+) -> XAuthorityObservedTransactionBatch {
+    let mut observed =
+        crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(9));
+    observed
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation,
+        });
+    observed
+}
+
+/// A `Manage(surface)` proposal that commits a layout excluding that surface.
+fn manage_proposal_without_placement(
+    transaction: TransactionId,
+    surface: SurfaceId,
+    placed: SurfaceId,
+    geometry: Rect,
+    scene_generation: u64,
+) -> LiveWmProposal {
+    LiveWmProposal {
+        transaction,
+        layers: vec![test_layer(placed, geometry)],
+        requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(placed),
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![placed],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 0,
+        source: Some(LiveWmProposalSource::Manage(surface)),
+        effects: None,
+        policy_settlement: Some(LivePolicySettlementIdentity {
+            connection_epoch: 1,
+            request_id: 1,
+            scene_generation,
+            transaction,
+            expect_session_operation: false,
+            session_operation: false,
+        }),
+    }
+}
+
 #[test]
 fn committed_public_manage_consumes_planning_ownership_before_visual_retirement() {
     let surface = SurfaceId::new(9, 1);

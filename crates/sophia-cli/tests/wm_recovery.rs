@@ -45,11 +45,13 @@ fn restart_replay_selection_is_independent_of_ordinary_rollback_scheduling() {
             surface: withdrawn,
             known: false,
             retries: 0,
+            settled: false,
         },
         WmReseedAdmissionCandidate {
             surface: firefox,
             known: true,
             retries: 1,
+            settled: false,
         },
     ];
 
@@ -67,8 +69,61 @@ fn restart_replay_selection_is_independent_of_ordinary_rollback_scheduling() {
                 surface: firefox,
                 known: true,
                 retries: 2,
+                settled: false,
             }],
             true,
+            WmAdmissionSelection::ReseedReplay,
+        ),
+        None
+    );
+}
+
+/// A settled surface is one policy already answered by placing nothing. An
+/// ordinary turn stops offering it; a restarted window manager has answered
+/// nothing yet and must still be asked.
+#[test]
+fn a_settled_surface_is_withheld_from_ordinary_turns_and_replayed_after_a_restart() {
+    let firefox = SurfaceId::new(3, 1);
+    let settled = [WmReseedAdmissionCandidate {
+        surface: firefox,
+        known: true,
+        retries: 0,
+        settled: true,
+    }];
+
+    assert_eq!(
+        select_wm_admission(settled, false, WmAdmissionSelection::Ordinary),
+        None
+    );
+    assert_eq!(
+        select_wm_admission(settled, false, WmAdmissionSelection::ReseedReplay),
+        Some(firefox)
+    );
+
+    // Settlement is orthogonal to the withdrawal counter: an unsettled surface
+    // is still offered, and a replay still refuses a surface past its retries.
+    assert_eq!(
+        select_wm_admission(
+            [WmReseedAdmissionCandidate {
+                surface: firefox,
+                known: true,
+                retries: 0,
+                settled: false,
+            }],
+            false,
+            WmAdmissionSelection::Ordinary,
+        ),
+        Some(firefox)
+    );
+    assert_eq!(
+        select_wm_admission(
+            [WmReseedAdmissionCandidate {
+                surface: firefox,
+                known: true,
+                retries: 2,
+                settled: true,
+            }],
+            false,
             WmAdmissionSelection::ReseedReplay,
         ),
         None

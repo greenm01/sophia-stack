@@ -33,6 +33,18 @@ enum LiveLayoutProgress {
 
 const PRE_ADMISSION_GROUP_CAPACITY: usize = 256;
 
+/// One committed policy answer that placed nothing.
+///
+/// A blind window manager may decline a surface indefinitely -- a monocle layout
+/// places one window however many it is shown. Recording which facts the answer
+/// was given against is what separates "policy already said no" from "ask again",
+/// and keeps the session from re-asking a settled question every owner-loop turn.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LiveManageSettlement {
+    connection_epoch: u64,
+    scene_generation: u64,
+}
+
 #[derive(Default)]
 struct PersistentLiveLayout {
     layers: BTreeMap<SurfaceId, LayerSnapshot>,
@@ -57,6 +69,10 @@ struct PersistentLiveLayout {
     output_reservations: sophia_engine::SurfaceOutputReservationState,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
+    /// Surfaces whose `Manage` request the window manager answered by placing
+    /// nothing. Keyed by the facts it answered against, so a fact change retires
+    /// the entry rather than any timer.
+    manage_settlements: BTreeMap<SurfaceId, LiveManageSettlement>,
     pending: Option<PendingLiveWmLayout>,
     focus_to_apply: Option<(TransactionId, SurfaceId)>,
     retirement_focus:
@@ -106,28 +122,36 @@ impl PersistentLiveLayout {
         );
         for presentation in &batch.surface_presentations {
             if !withdrawn_surfaces.contains(&presentation.surface) {
-                self.authority_surface_facts.insert(
-                    presentation.surface,
-                    sophia_engine::SurfaceLayoutFacts {
-                        surface: presentation.surface,
-                        role: presentation.role,
-                        kind: presentation.kind,
-                        placement_preference: presentation.placement_preference,
-                        presentation_owner: presentation.owner,
-                        stack_rank: presentation.stack_rank,
-                        geometry: presentation.geometry,
-                        constraints: presentation.constraints,
-                        generation: presentation.generation,
-                    },
-                );
+                let facts = sophia_engine::SurfaceLayoutFacts {
+                    surface: presentation.surface,
+                    role: presentation.role,
+                    kind: presentation.kind,
+                    placement_preference: presentation.placement_preference,
+                    presentation_owner: presentation.owner,
+                    stack_rank: presentation.stack_rank,
+                    geometry: presentation.geometry,
+                    constraints: presentation.constraints,
+                    generation: presentation.generation,
+                };
+                let previous = self
+                    .authority_surface_facts
+                    .insert(presentation.surface, facts);
+                if previous.as_ref() != Some(&facts) {
+                    self.manage_settlements.remove(&presentation.surface);
+                }
             }
             let previous_role = self
                 .presentation_roles
                 .insert(presentation.surface, presentation.role);
-            if presentation.mapped {
-                self.mapped_surfaces.insert(presentation.surface);
+            // Mapped state is not part of `SurfaceLayoutFacts`, so a map or unmap
+            // is its own re-arm: policy is being shown a different surface set.
+            let mapped_changed = if presentation.mapped {
+                self.mapped_surfaces.insert(presentation.surface)
             } else {
-                self.mapped_surfaces.remove(&presentation.surface);
+                self.mapped_surfaces.remove(&presentation.surface)
+            };
+            if mapped_changed {
+                self.manage_settlements.remove(&presentation.surface);
             }
             if let Some(owner) = presentation.owner {
                 self.presentation_owners.insert(presentation.surface, owner);
@@ -476,6 +500,7 @@ impl PersistentLiveLayout {
             self.awaiting_visual_commits.remove_surface(*surface);
             self.admissions.remove(*surface);
             self.admission_retries.remove(surface);
+            self.manage_settlements.remove(surface);
         }
         self.unmanaged_surfaces
             .retain(|surface| !removed_surfaces.contains(surface));
@@ -524,6 +549,22 @@ impl PersistentLiveLayout {
         }
     }
 
+    /// Forgets every settled policy answer, so the next owner turn asks again.
+    fn rearm_manage_settlements(&mut self) {
+        if !self.manage_settlements.is_empty() {
+            println!(
+                "sophia_live_wm schema=1 status=manage_rearmed surfaces={} reason=wm_restart",
+                self.manage_settlements.len()
+            );
+            self.manage_settlements.clear();
+        }
+    }
+
+    /// The surface the owner should offer policy next, if any.
+    ///
+    /// A settled surface reports none: nothing is in flight and nothing will be
+    /// sent until the facts change, so an idle admission pipeline is the honest
+    /// answer rather than a pending one.
     fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
         select_wm_admission(
             self.wm_admission_candidates(),
@@ -548,6 +589,7 @@ impl PersistentLiveLayout {
                 surface: *surface,
                 known: self.knows_surface(*surface),
                 retries: self.admission_retries.get(surface).copied().unwrap_or(0),
+                settled: self.manage_settlements.contains_key(surface),
             }
         })
     }
@@ -1066,6 +1108,7 @@ impl PersistentLiveLayout {
             self.authority_surface_facts.remove(surface);
             self.unmanaged_surfaces.remove(surface);
             self.admission_retries.remove(surface);
+            self.manage_settlements.remove(surface);
             self.layout_epochs.remove(*surface);
             self.remove_admission_groups(*surface);
         }
@@ -1100,6 +1143,7 @@ impl PersistentLiveLayout {
         {
             let attempts = self.admission_retries.entry(surface).or_default();
             *attempts = attempts.saturating_add(1);
+            self.manage_settlements.remove(&surface);
         }
         println!(
             "sophia_live_resize_epoch schema=1 status=aborted transaction={} rejected_surfaces={}",

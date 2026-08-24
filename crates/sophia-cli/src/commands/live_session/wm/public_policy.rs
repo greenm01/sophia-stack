@@ -2417,6 +2417,10 @@ impl LiveWmSession {
         public.actions.clear();
         public.queue.clear();
         public.pending_dirty_outputs.clear();
+        // The restarted policy has answered nothing. Its predecessor's settled
+        // answers do not bind it, and the epoch key alone would not release them
+        // until the first commit of the new connection.
+        layout.rearm_manage_settlements();
         let affected_outputs = public.all_outputs(output.id);
         public.queue.push_back(LivePublicPolicyCause {
             source: LiveWmProposalSource::Relayout,

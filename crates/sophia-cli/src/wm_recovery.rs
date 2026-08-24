@@ -5,6 +5,9 @@ pub struct WmReseedAdmissionCandidate {
     pub surface: SurfaceId,
     pub known: bool,
     pub retries: u8,
+    /// The window manager already answered this surface's `Manage` request and
+    /// placed nothing. The answer stands until the facts it was given change.
+    pub settled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,7 +32,14 @@ pub fn select_wm_admission(
     }
     candidates
         .into_iter()
-        .find(|candidate| candidate.known && candidate.retries <= 1)
+        .find(|candidate| {
+            candidate.known
+                && candidate.retries <= 1
+                // A settled answer is policy, not a failure, so an ordinary turn
+                // stops asking. A reseed replay ignores it: a restarted window
+                // manager is a new policy and has answered nothing yet.
+                && (!candidate.settled || selection == WmAdmissionSelection::ReseedReplay)
+        })
         .map(|candidate| candidate.surface)
 }
 
