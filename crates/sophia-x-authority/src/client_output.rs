@@ -586,6 +586,10 @@ pub enum XClientReply {
         sequence: u16,
         devices: Vec<XXiDeviceInfo>,
     },
+    XiListInputDevices {
+        sequence: u16,
+        devices: Vec<XXiLegacyDeviceInfo>,
+    },
     XiQueryPointer {
         sequence: u16,
         root: XResourceId,
@@ -685,6 +689,27 @@ pub enum XClientReply {
         sequence: u16,
         colors: Vec<XColorRgb16>,
     },
+}
+
+/// One device in an XI1 `ListInputDevices` reply.
+///
+/// Separate from `XXiDeviceInfo` because XI1 and XI2 describe a device
+/// differently: XI1 names the type with an atom, reports a `DeviceUse`, and has
+/// no vocabulary for scroll classes. Both are projected from one table in the
+/// XI dispatcher, so the difference is a shape difference, not a second truth.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XXiLegacyDeviceInfo {
+    pub device_id: u8,
+    pub device_type: u32,
+    pub device_use: u8,
+    pub name: String,
+    pub classes: Vec<XXiLegacyDeviceClass>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum XXiLegacyDeviceClass {
+    Key { min_keycode: u8, max_keycode: u8 },
+    Button { button_count: u16 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

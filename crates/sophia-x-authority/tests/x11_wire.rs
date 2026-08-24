@@ -30,6 +30,7 @@ include!("x11_wire/map_hierarchy.rs");
 include!("x11_wire/output_reservation_socket.rs");
 include!("x11_wire/routed_service.rs");
 include!("x11_wire/focus_routing.rs");
+include!("x11_wire/xi_list_input_devices.rs");
 include!("x11_wire/support_requests.rs");
 include!("x11_wire/support_extensions.rs");
 

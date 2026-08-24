@@ -9,10 +9,10 @@ use crate::{
     XClientReply, XColorRgb16, XColormapError, XErrorCode, XFontFace, XGlxContextConfig,
     XMetadataPropertyCandidate, XPolyText8Item, XPropertyError, XPropertyTable, XPutImageSemantics,
     XRandrModeInfo, XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate,
-    XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo, decode_x_size_hints,
-    decode_x_transient_for, decode_x_window_type_facts, encode_x_client_output,
-    metadata_property_candidate, x_error_from_runtime, x_error_from_wire_parse,
-    x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
+    XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo, XXiLegacyDeviceClass,
+    XXiLegacyDeviceInfo, decode_x_size_hints, decode_x_transient_for, decode_x_window_type_facts,
+    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
+    x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 

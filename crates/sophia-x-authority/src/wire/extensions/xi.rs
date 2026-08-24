@@ -3,6 +3,14 @@ fn decode_x_input(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     match bytes[1] {
+        X_INPUT_LIST_INPUT_DEVICES_MINOR_OPCODE => {
+            require_exact_len(
+                X_INPUT_MAJOR_OPCODE,
+                X_INPUT_LIST_INPUT_DEVICES_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::XiListInputDevices)
+        }
         X_INPUT_DEVICE_BELL_MINOR_OPCODE => {
             require_exact_len(X_INPUT_MAJOR_OPCODE, 8, bytes.len())?;
             Ok(XWireRequest::XiDeviceBell)

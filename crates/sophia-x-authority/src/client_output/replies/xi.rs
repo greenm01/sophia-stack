@@ -9,6 +9,7 @@ fn encode_x_input_reply(
             | XClientReply::XiGetClientPointer { .. }
             | XClientReply::XiGetExtensionVersion { .. }
             | XClientReply::XiQueryDevice { .. }
+            | XClientReply::XiListInputDevices { .. }
             | XClientReply::XiQueryPointer { .. }
             | XClientReply::XiGetFocus { .. }
             | XClientReply::XiGetProperty { .. }
@@ -60,6 +61,65 @@ fn encode_x_input_reply(
                     put_u16(byte_order, &mut out[8..10], server_major);
                     put_u16(byte_order, &mut out[10..12], server_minor);
                     out[12] = 1;
+                    out
+                }
+                // XI1 `ListInputDevices`. The reply is three concatenated sections
+                // after the header -- every DeviceInfo, then every class info, then
+                // every name -- rather than one self-contained record per device, so
+                // the loops below cannot be merged. Layout derived from the X.Org
+                // protocol description, not from an X server implementation.
+                XClientReply::XiListInputDevices { sequence, devices } => {
+                    let mut body = Vec::new();
+                    for device in &devices {
+                        push_u32(byte_order, &mut body, device.device_type);
+                        body.push(device.device_id);
+                        body.push(u8::try_from(device.classes.len()).unwrap_or(0));
+                        body.push(device.device_use);
+                        body.push(0);
+                    }
+                    for class in devices.iter().flat_map(|device| &device.classes) {
+                        match class {
+                            XXiLegacyDeviceClass::Key {
+                                min_keycode,
+                                max_keycode,
+                            } => {
+                                body.push(crate::X_INPUT_LEGACY_CLASS_KEY);
+                                body.push(8);
+                                body.push(*min_keycode);
+                                body.push(*max_keycode);
+                                push_u16(
+                                    byte_order,
+                                    &mut body,
+                                    u16::from(max_keycode.saturating_sub(*min_keycode)) + 1,
+                                );
+                                body.extend_from_slice(&[0, 0]);
+                            }
+                            XXiLegacyDeviceClass::Button { button_count } => {
+                                body.push(crate::X_INPUT_LEGACY_CLASS_BUTTON);
+                                body.push(4);
+                                push_u16(byte_order, &mut body, *button_count);
+                            }
+                        }
+                    }
+                    for device in &devices {
+                        // XI1 names are `Str`: a length byte and the bytes, with no
+                        // per-name padding. Only the assembled body pads to 4.
+                        body.push(u8::try_from(device.name.len()).unwrap_or(0));
+                        body.extend_from_slice(device.name.as_bytes());
+                    }
+                    body.resize(padded_len(body.len()), 0);
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(
+                        byte_order,
+                        &mut out,
+                        sequence,
+                        u32::try_from(body.len() / 4).unwrap_or(0),
+                    );
+                    out[1] = crate::X_INPUT_LIST_INPUT_DEVICES_MINOR_OPCODE;
+                    // The device count is one byte here, unlike XI2's u16 at the same
+                    // offset; the remaining header bytes stay zero.
+                    out[8] = u8::try_from(devices.len()).unwrap_or(0);
+                    out.extend_from_slice(&body);
                     out
                 }
                 XClientReply::XiQueryDevice { sequence, devices } => {

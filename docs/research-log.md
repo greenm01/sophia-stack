@@ -14748,6 +14748,68 @@ regression supplies one DMA-BUF renderer image and one CPU authority raster for
 the same surface and requires both to survive source-set construction. The
 signed installed switcher rerun remains the promotion gate.
 
+## 2026-08-24: an advertised extension owes the requests that follow its handshake
+
+Sophia advertises `XInputExtension`, answers the XI1 `GetExtensionVersion` handshake
+claiming 2.0, and implements `DeviceBell`, whose own comment calls it the bounded
+legacy XInput request. It then refused `ListInputDevices`, the enumeration a client
+issues immediately after that handshake. Half an extension is worse than none: the
+client recovered, but 29 `BadRequest` replies failed a session that had otherwise
+completed its whole guide.
+
+The enumeration is now answered. The interesting part was not the request but the
+device table behind it. The frontend has no device inventory, and `XiQueryDevice`
+built its fixed virtual master pair inline inside its own match arm, so the obvious
+implementation was a second table beside it. That is the shape of the defect this tree
+spent three rounds fixing in the Present path -- two views of one fact, free to drift.
+The pair is now one passive table that both protocol versions project from. XI1 and
+XI2 describe a device differently enough that the projections share no bytes: XI1
+names the type with an atom, reports a `DeviceUse`, and has no vocabulary for the
+scroll classes XI2 carries. A test walks both wire formats back into device records
+and requires them to agree on identity, name, button count, and key range, because
+with shapes that different nothing else would notice them parting.
+
+The XI1 reply layout is not documented anywhere in this tree. It was read from the
+X.Org protocol description as published in the `x11rb-protocol` crate, which is
+already a resolved dependency of `sophia-cli`. That is a protocol description rather
+than an X server implementation, so it sits inside the clean-room posture, which is
+about not reproducing Xorg's object graph rather than about re-deriving published wire
+formats. `sophia-x-authority` gains no dependency; the layout is written as explicit
+offsets like every other reply in the crate. Two details differ from the neighbouring
+XI2 encoder and are easy to get wrong: the device count is a single byte where XI2
+puts a `u16`, and the body is three concatenated sections -- every device record, then
+every class info, then every name -- rather than one self-contained record per device.
+Names are `Str`, length byte and bytes, with no per-name padding.
+
+The signed installed rerun remains the promotion gate.
+
+## 2026-08-24: the Present source fix holds; XInput1 device enumeration does not
+
+The signed rerun on `0505cb19` completed the whole guide. `Super+B` admitted Helium
+from a CPU backing snapshot as surface 18874371, and that surface composed through
+committed generation 265 on `source=cpu handle=4` -- the exact surface and handle
+whose fifth generation ended the previous run. The proof phrase was accepted with 34
+of 34 expected events and a confirmed pixel change, and the session shut down through
+the ordinary lifecycle path. `MissingCpuSource` appears nowhere in the log. Sourcing a
+queued Present from the candidate it plans is confirmed on hardware.
+
+The run is still not promotion evidence, and what failed it is not what the session
+did. The completion check counts 29 X protocol errors, the first a `BadRequest` for
+major opcode 135 minor opcode 2, which is XInput1 `ListInputDevices`. `decode_x_input`
+implements `GetExtensionVersion` at minor 1 and then the XI2 range, so the enumeration
+a client performs immediately after the version handshake falls through to the
+unknown-request arm. The client recovered on its own -- the browser rendered for the
+full session -- but a normal session tolerates no protocol errors, so the run was
+failed at the end for something it had already survived.
+
+The X frontend has no device inventory to answer with. The seat enumerates 14 real
+udev devices, but none of that crosses into the authority: `XiQueryDevice` synthesizes
+a fixed virtual master pair, device 2 as pointer and device 3 as keyboard, and every
+XI2 path hardcodes that pair -- grabs, ungrabs, client pointer, and event routing all
+gate on 2 and 3. A legacy enumeration therefore has to report those same two virtual
+devices. Reporting the real ones would need a frontend/session channel that does not
+exist and would contradict the rest of the extension.
+
 ## 2026-08-24: a queued Present must source the scene it plans
 
 The next signed run repeated `MissingCpuSource(4)` a third time, and this time the

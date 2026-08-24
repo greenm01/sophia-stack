@@ -123,7 +123,15 @@ pub const X_INPUT_MAJOR_OPCODE: u8 = 135;
 pub const X_INPUT_FIRST_EVENT: u8 = 90;
 pub const X_INPUT_FIRST_ERROR: u8 = 160;
 pub const X_INPUT_GET_EXTENSION_VERSION_MINOR_OPCODE: u8 = 1;
+pub const X_INPUT_LIST_INPUT_DEVICES_MINOR_OPCODE: u8 = 2;
 pub const X_INPUT_DEVICE_BELL_MINOR_OPCODE: u8 = 32;
+/// XI1 `DeviceUse`: this device is the core pointer.
+pub const X_INPUT_LEGACY_USE_POINTER: u8 = 0;
+/// XI1 `DeviceUse`: this device is the core keyboard.
+pub const X_INPUT_LEGACY_USE_KEYBOARD: u8 = 1;
+/// XI1 `InputClass` discriminants. XI1 numbers its classes independently of XI2.
+pub const X_INPUT_LEGACY_CLASS_KEY: u8 = 0;
+pub const X_INPUT_LEGACY_CLASS_BUTTON: u8 = 1;
 pub const X_INPUT_QUERY_POINTER_MINOR_OPCODE: u8 = 40;
 pub const X_INPUT_CHANGE_CURSOR_MINOR_OPCODE: u8 = 42;
 const X_INPUT_QUERY_POINTER_REQ_LEN: usize = 12;
@@ -292,6 +300,7 @@ const X_KEYBOARD_GET_MAP_REQ_LEN: usize = 28;
 const X_KEYBOARD_GET_CONTROLS_REQ_LEN: usize = 8;
 const X_KEYBOARD_PER_CLIENT_FLAGS_REQ_LEN: usize = 28;
 const X_BIG_REQUESTS_ENABLE_REQ_LEN: usize = 4;
+const X_INPUT_LIST_INPUT_DEVICES_REQ_LEN: usize = 4;
 const X_INPUT_QUERY_VERSION_REQ_LEN: usize = 8;
 const X_INPUT_GET_CLIENT_POINTER_REQ_LEN: usize = 8;
 const X_INPUT_QUERY_DEVICE_REQ_LEN: usize = 8;

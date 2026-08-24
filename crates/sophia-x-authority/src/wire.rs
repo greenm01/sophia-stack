@@ -694,6 +694,7 @@ pub enum XWireRequest {
         cursor: Option<XResourceId>,
     },
     XiGetExtensionVersion,
+    XiListInputDevices,
     XiQueryDevice {
         device_id: u16,
     },

@@ -184,8 +184,19 @@ promotion gate.
    the mismatch to lowering. Present submission now reads its sources from the
    same candidate it plans, the enqueue-time snapshot is gone, and an
    unsourced candidate surface is refused where it is found. A differential
-   regression pins both directions. The corrected signed physical rerun remains
-   open. Reservations are deliberately still absent.
+   regression pins both directions. The signed rerun on `0505cb19` confirms it
+   on hardware: the guide ran to completion, with Helium composing through
+   committed generation 265 on the same CPU handle whose fifth generation ended
+   the previous run, and the proof phrase accepted at 34 of 34 events. The run
+   still failed at the completion check, on 29 X protocol errors whose first is
+   a `BadRequest` for XInput1 `ListInputDevices` -- never implemented between
+   `GetExtensionVersion` and the XI2 range. The client recovered on its own; a
+   normal session tolerates no protocol errors. The enumeration is now
+   implemented rather than excused: one passive table of the virtual master pair
+   is projected into both the XI1 and XI2 replies, and a test walks both wire
+   formats back into records and requires them to agree, since the two encodings
+   are too different for drift to show up any other way. The corrected signed
+   physical rerun remains open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client

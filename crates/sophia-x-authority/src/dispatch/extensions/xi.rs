@@ -1,12 +1,185 @@
+/// Sophia's virtual master pointer, the only pointer any XI path accepts.
+const X_VIRTUAL_MASTER_POINTER_ID: u16 = 2;
+/// Sophia's virtual master keyboard.
+const X_VIRTUAL_MASTER_KEYBOARD_ID: u16 = 3;
+/// The core keycode range, matching the setup contract in `keyboard.rs`.
+const X_VIRTUAL_MASTER_MIN_KEYCODE: u8 = 8;
+const X_VIRTUAL_MASTER_MAX_KEYCODE: u8 = u8::MAX;
+
+/// The virtual master devices Sophia presents to X clients.
+///
+/// The frontend has no device inventory. The seat enumerates real udev devices, but
+/// none of that crosses this boundary, and every XI path -- grabs, ungrabs, client
+/// pointer, and event routing -- is written against this fixed pair. Both the XI2
+/// `QueryDevice` reply and the XI1 `ListInputDevices` reply are projected from this
+/// one table rather than each carrying its own copy, because two device tables that
+/// must agree is a skew waiting to happen.
+const X_VIRTUAL_MASTER_DEVICES: [XVirtualMasterDevice; 2] = [
+    XVirtualMasterDevice {
+        device_id: X_VIRTUAL_MASTER_POINTER_ID,
+        name: "Sophia master pointer",
+        kind: XVirtualMasterKind::Pointer {
+            // The same seven buttons `GetPointerMapping` reports.
+            button_count: 7,
+        },
+    },
+    XVirtualMasterDevice {
+        device_id: X_VIRTUAL_MASTER_KEYBOARD_ID,
+        name: "Sophia master keyboard",
+        kind: XVirtualMasterKind::Keyboard {
+            // The keycode range the core setup advertises.
+            min_keycode: X_VIRTUAL_MASTER_MIN_KEYCODE,
+            max_keycode: X_VIRTUAL_MASTER_MAX_KEYCODE,
+        },
+    },
+];
+
+#[derive(Clone, Copy)]
+struct XVirtualMasterDevice {
+    device_id: u16,
+    name: &'static str,
+    kind: XVirtualMasterKind,
+}
+
+#[derive(Clone, Copy)]
+enum XVirtualMasterKind {
+    Pointer { button_count: u16 },
+    Keyboard { min_keycode: u8, max_keycode: u8 },
+}
+
+impl XVirtualMasterDevice {
+    /// The XI2 record, carrying the classes only XI2 can express.
+    fn xi2_device_info(self) -> XXiDeviceInfo {
+        let source_id = self.device_id;
+        let (device_type, attachment, classes) = match self.kind {
+            XVirtualMasterKind::Pointer { button_count } => (
+                1,
+                X_VIRTUAL_MASTER_KEYBOARD_ID,
+                vec![
+                    XXiDeviceClass::Button {
+                        source_id,
+                        button_count,
+                    },
+                    XXiDeviceClass::Valuator {
+                        source_id,
+                        number: 0,
+                        min: 0,
+                        max: i64::from(u16::MAX) << 32,
+                        value: 0,
+                    },
+                    XXiDeviceClass::Valuator {
+                        source_id,
+                        number: 1,
+                        min: 0,
+                        max: i64::from(u16::MAX) << 32,
+                        value: 0,
+                    },
+                    XXiDeviceClass::Valuator {
+                        source_id,
+                        number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
+                        min: 0,
+                        max: 0,
+                        value: 0,
+                    },
+                    XXiDeviceClass::Valuator {
+                        source_id,
+                        number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
+                        min: 0,
+                        max: 0,
+                        value: 0,
+                    },
+                    XXiDeviceClass::Scroll {
+                        source_id,
+                        number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
+                        scroll_type: 2,
+                        flags: 1 << 1,
+                        increment: i64::from(120) << 32,
+                    },
+                    XXiDeviceClass::Scroll {
+                        source_id,
+                        number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
+                        scroll_type: 1,
+                        flags: 1 << 1,
+                        increment: i64::from(120) << 32,
+                    },
+                ],
+            ),
+            XVirtualMasterKind::Keyboard {
+                min_keycode,
+                max_keycode,
+            } => (
+                2,
+                X_VIRTUAL_MASTER_POINTER_ID,
+                vec![XXiDeviceClass::Key {
+                    source_id,
+                    keys: (u32::from(min_keycode)..=u32::from(max_keycode)).collect(),
+                }],
+            ),
+        };
+        XXiDeviceInfo {
+            device_id: self.device_id,
+            device_type,
+            attachment,
+            name: self.name.to_owned(),
+            classes,
+        }
+    }
+
+    /// The XI1 record. A lossy projection by design: XI1 has no scroll class, and a
+    /// virtual pointer has no resolution worth stating, so this carries the identity
+    /// and the button or key range and nothing invented beyond them. XI2 still
+    /// reports the valuators; the asymmetry is deliberate, not an omission.
+    ///
+    /// `device_use` is load-bearing. `IsXPointer` and `IsXKeyboard` tell an XI1
+    /// client these are the core devices and not its to open, which is what keeps it
+    /// away from `OpenDevice` and the other XI1 requests Sophia does not implement.
+    /// Reporting them as extension devices would answer this request and move the
+    /// failure one opcode along.
+    fn xi1_device_info(self, device_type: u32) -> XXiLegacyDeviceInfo {
+        let (device_use, classes) = match self.kind {
+            XVirtualMasterKind::Pointer { button_count } => (
+                crate::X_INPUT_LEGACY_USE_POINTER,
+                vec![XXiLegacyDeviceClass::Button { button_count }],
+            ),
+            XVirtualMasterKind::Keyboard {
+                min_keycode,
+                max_keycode,
+            } => (
+                crate::X_INPUT_LEGACY_USE_KEYBOARD,
+                vec![XXiLegacyDeviceClass::Key {
+                    min_keycode,
+                    max_keycode,
+                }],
+            ),
+        };
+        XXiLegacyDeviceInfo {
+            device_id: u8::try_from(self.device_id).unwrap_or(0),
+            device_type,
+            device_use,
+            name: self.name.to_owned(),
+            classes,
+        }
+    }
+
+    /// The atom name XI1 reports as this device's type.
+    const fn legacy_type_name(self) -> &'static str {
+        match self.kind {
+            XVirtualMasterKind::Pointer { .. } => "MOUSE",
+            XVirtualMasterKind::Keyboard { .. } => "KEYBOARD",
+        }
+    }
+}
+
 fn dispatch_x_input_request(
     context: XDispatchContext,
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,
-    _atoms: &mut XAtomTable,
+    atoms: &mut XAtomTable,
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
             XWireRequest::XiGetExtensionVersion
+            | XWireRequest::XiListInputDevices
             | XWireRequest::XiQueryPointer { .. }
             | XWireRequest::XiGrabDevice { .. }
             | XWireRequest::XiUngrabDevice { .. }
@@ -195,80 +368,45 @@ fn dispatch_x_input_request(
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::XiQueryDevice { device_id } => {
-                    let pointer = XXiDeviceInfo {
-                        device_id: 2,
-                        device_type: 1,
-                        attachment: 3,
-                        name: "Sophia master pointer".to_owned(),
-                        classes: vec![
-                            XXiDeviceClass::Button {
-                                source_id: 2,
-                                button_count: 7,
-                            },
-                            XXiDeviceClass::Valuator {
-                                source_id: 2,
-                                number: 0,
-                                min: 0,
-                                max: i64::from(u16::MAX) << 32,
-                                value: 0,
-                            },
-                            XXiDeviceClass::Valuator {
-                                source_id: 2,
-                                number: 1,
-                                min: 0,
-                                max: i64::from(u16::MAX) << 32,
-                                value: 0,
-                            },
-                            XXiDeviceClass::Valuator {
-                                source_id: 2,
-                                number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
-                                min: 0,
-                                max: 0,
-                                value: 0,
-                            },
-                            XXiDeviceClass::Valuator {
-                                source_id: 2,
-                                number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
-                                min: 0,
-                                max: 0,
-                                value: 0,
-                            },
-                            XXiDeviceClass::Scroll {
-                                source_id: 2,
-                                number: crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR,
-                                scroll_type: 2,
-                                flags: 1 << 1,
-                                increment: i64::from(120) << 32,
-                            },
-                            XXiDeviceClass::Scroll {
-                                source_id: 2,
-                                number: crate::X_POINTER_VERTICAL_SCROLL_VALUATOR,
-                                scroll_type: 1,
-                                flags: 1 << 1,
-                                increment: i64::from(120) << 32,
-                            },
-                        ],
-                    };
-                    let keyboard = XXiDeviceInfo {
-                        device_id: 3,
-                        device_type: 2,
-                        attachment: 2,
-                        name: "Sophia master keyboard".to_owned(),
-                        classes: vec![XXiDeviceClass::Key {
-                            source_id: 3,
-                            keys: (8..=255).collect(),
-                        }],
-                    };
-                    let devices = match device_id {
-                        0 => vec![pointer, keyboard],
-                        1 => vec![pointer, keyboard],
-                        2 => vec![pointer],
-                        3 => vec![keyboard],
-                        _ => Vec::new(),
-                    };
+                    // Device 0 is AllDevices and 1 is AllMasterDevices; both name the
+                    // whole pair. Anything outside the pair reports no devices rather
+                    // than an error, which is what a client probing an absent device
+                    // expects.
+                    let devices = X_VIRTUAL_MASTER_DEVICES
+                        .iter()
+                        .filter(|device| {
+                            matches!(device_id, 0 | 1) || device_id == device.device_id
+                        })
+                        .map(|device| device.xi2_device_info())
+                        .collect();
                     XDispatchResult {
                         response: None,
                         outputs: vec![XClientOutput::Reply(XClientReply::XiQueryDevice {
+                            sequence: context.sequence,
+                            devices,
+                        })],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // XI1's device enumeration. Sophia advertises XInputExtension and
+                // answers the XI1 version handshake, so refusing the enumeration that
+                // follows it left an advertised extension half-implemented; a real
+                // session failed on the resulting BadRequest storm.
+                XWireRequest::XiListInputDevices => {
+                    let devices = X_VIRTUAL_MASTER_DEVICES
+                        .iter()
+                        .map(|device| {
+                            let device_type = atoms
+                                .intern(device.legacy_type_name(), false)
+                                .ok()
+                                .flatten()
+                                .unwrap_or(X_ATOM_NONE);
+                            device.xi1_device_info(device_type)
+                        })
+                        .collect();
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![XClientOutput::Reply(XClientReply::XiListInputDevices {
                             sequence: context.sequence,
                             devices,
                         })],
