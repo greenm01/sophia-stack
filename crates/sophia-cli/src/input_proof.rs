@@ -25,8 +25,17 @@ pub const fn pointer_selection_pending(required: bool, routed_buttons: usize) ->
 /// Modifier transitions do not produce application text. They may surround an
 /// Engine-owned shortcut before the shortcut's non-modifier key is consumed,
 /// so they are outside the exact text-producing sequence.
+///
+/// The locking modifiers belong here for the same reason, and their absence cost
+/// a physical run: caps lock sits against the home row, and clipping it while
+/// reaching for a neighbouring letter ended the session on a key that types
+/// nothing. Locking one on still fails the proof, and should -- every character
+/// after it is genuinely a different one -- but the transition itself is not text.
 pub const fn physical_text_proof_ignores_evdev_key(keycode: u32) -> bool {
-    matches!(keycode, 29 | 42 | 54 | 56 | 97 | 100 | 125 | 126)
+    matches!(
+        keycode,
+        29 | 42 | 54 | 56 | 58 | 69 | 70 | 97 | 100 | 125 | 126
+    )
 }
 
 pub const fn pointer_selection_waiting(

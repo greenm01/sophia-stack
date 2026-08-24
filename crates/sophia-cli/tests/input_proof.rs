@@ -16,6 +16,11 @@ fn physical_text_proof_excludes_non_text_modifier_transitions() {
     for keycode in [29, 42, 54, 56, 97, 100, 125, 126] {
         assert!(physical_text_proof_ignores_evdev_key(keycode));
     }
+    // The locking modifiers type nothing either. Caps lock in particular is a
+    // neighbour of the home row, and treating a clipped one as text ended a run.
+    for keycode in [58, 69, 70] {
+        assert!(physical_text_proof_ignores_evdev_key(keycode));
+    }
     for keycode in [21, 28, 35, 43, 50, 105, 106] {
         assert!(!physical_text_proof_ignores_evdev_key(keycode));
     }
