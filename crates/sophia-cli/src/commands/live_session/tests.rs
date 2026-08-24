@@ -19,9 +19,10 @@ use super::{
     PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy, PublicPolicyFaultPoint,
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
-    SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC, SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC,
-    SHELL_SWITCHER_SHORTCUT_ACTION, SessionFatalCleanupEvidence, SessionPointerPlacement,
-    SessionProcessGuard, Size, Transform, XPresentCadence, authority_batch_has_engine_work,
+    SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
+    SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC, SHELL_SWITCHER_SHORTCUT_ACTION,
+    SessionFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard,
+    SessionProtocolErrorTally, Size, Transform, XPresentCadence, authority_batch_has_engine_work,
     authority_batch_is_pure_content, authority_merge_run_len, authority_transaction_count,
     authority_wait_timeout, center_geometry_without_scaling, clamp_floating_pointer_outline,
     clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
@@ -637,6 +638,79 @@ fn normal_sessions_fail_on_any_protocol_error() {
     assert!(session_protocol_errors_are_fatal(false, true, 1));
     assert!(!session_protocol_errors_are_fatal(false, false, 1));
     assert!(!session_protocol_errors_are_fatal(true, true, 0));
+}
+
+/// A failed run prints one string, so that string has to carry every opcode.
+///
+/// Keeping only the first error meant a session reporting two dozen failures named
+/// one request and discarded the rest, and each remaining cause then cost its own
+/// physical run to find.
+#[test]
+fn the_protocol_error_tally_names_every_opcode_it_saw() {
+    fn error(
+        major_code: u8,
+        minor_code: u16,
+        code: u8,
+    ) -> sophia_x_authority::XAuthorityProtocolErrorObservation {
+        sophia_x_authority::XAuthorityProtocolErrorObservation {
+            code,
+            sequence: 1,
+            minor_code,
+            major_code,
+        }
+    }
+
+    let mut tally = SessionProtocolErrorTally::default();
+    assert!(tally.is_empty());
+    assert_eq!(tally.summary(), "");
+
+    // The shape the physical run produced: many of one opcode, a few of another.
+    for _ in 0..17 {
+        tally.observe(&error(139, 2, 3));
+    }
+    for _ in 0..7 {
+        tally.observe(&error(135, 2, 1));
+    }
+    assert!(!tally.is_empty());
+    // Ordered by opcode, one bucket each, never merged.
+    assert_eq!(tally.summary(), "135/2/1x7 139/2/3x17");
+
+    // The same request failing a different way is a different bucket.
+    tally.observe(&error(139, 2, 8));
+    assert_eq!(tally.summary(), "135/2/1x7 139/2/3x17 139/2/8x1");
+}
+
+/// The tally is bounded, and says how much a reset dropped rather than capping
+/// silently.
+#[test]
+fn the_protocol_error_tally_reports_what_a_reset_discarded() {
+    let mut tally = SessionProtocolErrorTally::default();
+    for index in 0..SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES {
+        tally.observe(&sophia_x_authority::XAuthorityProtocolErrorObservation {
+            code: 1,
+            sequence: 1,
+            minor_code: u16::try_from(index).unwrap(),
+            major_code: 139,
+        });
+    }
+    assert_eq!(tally.discarded, 0, "a full table has lost nothing yet");
+
+    // One opcode past the bound resets, and the count of what went with it
+    // survives so the total still reconciles.
+    tally.observe(&sophia_x_authority::XAuthorityProtocolErrorObservation {
+        code: 1,
+        sequence: 1,
+        minor_code: u16::try_from(SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES).unwrap(),
+        major_code: 139,
+    });
+    assert_eq!(
+        tally.discarded,
+        u64::try_from(SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES).unwrap()
+    );
+    assert_eq!(
+        tally.summary(),
+        format!("139/{SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES}/1x1")
+    );
 }
 
 #[test]

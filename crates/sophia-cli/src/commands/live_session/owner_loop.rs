@@ -468,6 +468,7 @@ fn run_session_loop(
     let mut selection_owner_changes = 0usize;
     let mut selection_conversions = 0usize;
     let mut first_protocol_error = None;
+    let mut protocol_error_tally = SessionProtocolErrorTally::default();
     let mut emergency_exit_requested = false;
     let mut cursor_updates = CursorUpdateState::new(pointer.position().is_some());
     let startup_ready_deadline = config

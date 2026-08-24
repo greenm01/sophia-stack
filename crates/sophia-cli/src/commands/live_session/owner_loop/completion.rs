@@ -488,7 +488,12 @@
             .into());
         }
         if session_protocol_errors_are_fatal(false, true, protocol_error_count) {
-            return Err(format!("application emitted {protocol_error_count} X protocol errors; first={first_protocol_error:?}").into());
+            protocol_error_tally.report();
+            return Err(format!(
+                "application emitted {protocol_error_count} X protocol errors; first={first_protocol_error:?} by_opcode=[{}]",
+                protocol_error_tally.summary()
+            )
+            .into());
         }
     }
     if session_protocol_errors_are_fatal(
@@ -496,10 +501,17 @@
         config.application_proof_requested(),
         protocol_error_count,
     ) {
+        protocol_error_tally.report();
         return Err(format!(
-            "normal session emitted {protocol_error_count} X protocol errors; first={first_protocol_error:?}"
+            "normal session emitted {protocol_error_count} X protocol errors; first={first_protocol_error:?} by_opcode=[{}]",
+            protocol_error_tally.summary()
         )
         .into());
+    }
+    // A clean run still says what it saw, so `distinct=0` means nobody hit an
+    // opcode rather than nobody counted.
+    if !protocol_error_tally.is_empty() {
+        protocol_error_tally.report();
     }
     let recovery_extent_count = layout.recovery_extent_count();
     let standing_target_count = layout.standing_target_count();

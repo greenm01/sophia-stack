@@ -167,6 +167,7 @@
                     for error in &batch.protocol_errors {
                         metrics.protocol_error_count = metrics.protocol_error_count.saturating_add(1);
                         first_protocol_error.get_or_insert(*error);
+                        protocol_error_tally.observe(error);
                     }
                     metrics.expected_protocol_error_count = metrics.expected_protocol_error_count
                         .saturating_add(batch.expected_protocol_errors.len());

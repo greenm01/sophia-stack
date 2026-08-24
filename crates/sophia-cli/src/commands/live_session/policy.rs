@@ -1,3 +1,66 @@
+/// Distinct (major, minor, code) triples retained before the tally resets.
+///
+/// The reset re-emits rather than dropping, so a client churning through opcodes
+/// stays visible instead of silently capping.
+const SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES: usize = 64;
+
+/// Every X protocol error a session saw, grouped by the request that produced it.
+///
+/// The session keeps only the first error otherwise, so a run reporting two dozen
+/// failures named one opcode and discarded the rest. Each cause then cost its own
+/// physical run to find. This carries opcodes and counts only: the resource id
+/// stays inside the frontend, because a raw XID may not reach a default-level log.
+#[derive(Debug, Default)]
+struct SessionProtocolErrorTally {
+    counts: BTreeMap<(u8, u16, u8), u64>,
+    discarded: u64,
+}
+
+impl SessionProtocolErrorTally {
+    fn observe(&mut self, error: &sophia_x_authority::XAuthorityProtocolErrorObservation) {
+        let key = (error.major_code, error.minor_code, error.code);
+        if self.counts.len() >= SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES
+            && !self.counts.contains_key(&key)
+        {
+            // Keep the newest opcodes rather than the oldest, and say how many
+            // observations the reset dropped so the total still reconciles.
+            self.discarded = self
+                .discarded
+                .saturating_add(self.counts.values().copied().sum());
+            self.counts.clear();
+        }
+        let count = self.counts.entry(key).or_insert(0);
+        *count = count.saturating_add(1);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.counts.is_empty()
+    }
+
+    /// One line per opcode, never a merged bucket, so a run that hit two causes
+    /// cannot disguise itself as one.
+    fn report(&self) {
+        let distinct = self.counts.len();
+        for ((major, minor, code), count) in &self.counts {
+            println!(
+                "sophia_live_session_protocol_error_tally schema=1 status=degraded major={major} minor={minor} code={code} count={count} distinct={distinct} discarded={}",
+                self.discarded
+            );
+        }
+    }
+
+    /// A compact summary for the failure string, which is all a failed run prints.
+    fn summary(&self) -> String {
+        self.counts
+            .iter()
+            .map(|((major, minor, code), count)| {
+                format!("{major}/{minor}/{code}x{count}")
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 fn session_protocol_errors_are_fatal(
     normal_session: bool,
     application_proof: bool,

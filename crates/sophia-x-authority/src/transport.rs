@@ -81,8 +81,37 @@ fn reduce_protocol_errors(
             }
             _ => None,
         })
+        // One dispatch carries one request, and a request cannot fail sixteen
+        // ways, so this bound is structural rather than lossy: there is no
+        // discarded count because nothing can reach it.
         .take(16)
         .collect()
+}
+
+/// Names the resource an unexpected protocol error refused, for an operator who
+/// asked for it.
+///
+/// The observation deliberately carries no resource id: it is interpolated into
+/// a default-level, archived evidence file, and a raw XID may not appear there.
+/// Diagnosing which window a `BadWindow` names still needs the id, so it stays
+/// here, behind a non-default level, where the frontend already owns it.
+fn trace_protocol_error_resources(outputs: &[XClientOutput]) {
+    for output in outputs {
+        let XClientOutput::Error(error) = output else {
+            continue;
+        };
+        if is_expected_client_probe_error(error) {
+            continue;
+        }
+        tracing::debug!(
+            code = error.code.wire_code(),
+            major_code = error.major_code,
+            minor_code = error.minor_code,
+            resource_id = error.resource_id,
+            sequence = error.sequence,
+            "x11 protocol error refused a resource"
+        );
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -249,6 +278,7 @@ impl XAuthorityObservedTransactionBatch {
             .into_iter()
             .collect::<Vec<_>>();
         let response = trace.result.response.as_ref();
+        trace_protocol_error_resources(&trace.result.outputs);
         let protocol_errors = reduce_protocol_errors(&trace.result.outputs, false);
         let expected_protocol_errors = reduce_protocol_errors(&trace.result.outputs, true);
         let metadata = trace

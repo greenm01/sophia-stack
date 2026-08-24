@@ -24,23 +24,17 @@ action_count() {
     grep -Ec "$(action_pattern "$1")" "$evidence" 2>/dev/null || true
 }
 
-# An extra press is not a slower run, it is a different one: one more layout
-# switch leaves the view in a mode that places a single window, and the browser
-# step then waits for a two-surface layout that policy will never propose. Fail
-# where it happened rather than at the symptom.
+# These counts are cumulative across the whole guide, and several actions are
+# asked for more than once, so an count above the step's expectation is not
+# evidence of an extra press: it is what a later legitimate press looks like from
+# an earlier step. Catching an operator's extra keypress needs the run's final
+# totals, not a threshold here.
 wait_for_action_count() {
     action="$1"
     expected="$2"
     while [ "$(action_count "$action")" -lt "$expected" ]; do
         sleep 0.1
     done
-    observed="$(action_count "$action")"
-    if [ "$observed" -gt "$expected" ]; then
-        printf '\033[2J\033[H'
-        echo "Physical proof aborted: action $action was committed $observed times, expected $expected." >&2
-        echo 'An extra or repeated keypress changed session state. Restart the proof run.' >&2
-        exit 2
-    fi
 }
 
 # Waits that depend on the session rather than on the operator get a bound, so a
