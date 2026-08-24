@@ -169,9 +169,14 @@ promotion gate.
    Retained composition had treated an in-flight renderer image and the same
    surface's CPU authority rasters as alternatives, even though the head plan
    may select either content variant. The source set now carries both exact
-   realizations, and a mixed-source regression pins that invariant. The
-   corrected signed physical rerun remains open. Reservations are deliberately
-   still absent.
+   realizations, and a mixed-source regression pins that invariant. The next
+   signed run repeated the failure and showed the remaining lifetime gap: the
+   CPU scene's residency roots omitted queued and in-flight Present candidates,
+   so its bounded recent-update fallback eventually evicted handle 4 before the
+   retained source set was built. Every scheduled candidate's CPU variants now
+   remain rooted through rejection or complete cohort retirement, with a
+   scheduler regression beside the source-set regression. The corrected signed
+   physical rerun remains open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client

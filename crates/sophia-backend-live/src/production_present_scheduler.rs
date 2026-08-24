@@ -594,6 +594,29 @@ impl LiveProductionPresentScheduler {
         }
     }
 
+    /// CPU buffers named by a Present candidate remain renderer-resident until
+    /// that candidate is rejected or its complete output cohort retires.
+    pub fn retained_cpu_buffer_handles(&self) -> impl Iterator<Item = u64> + '_ {
+        let queued = self
+            .queued
+            .iter()
+            .flat_map(|queued| queued.candidate.content.variants())
+            .filter_map(|variant| match variant.source {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            });
+        let in_flight = self
+            .in_flight_candidate()
+            .into_iter()
+            .flat_map(|candidate| candidate.iter())
+            .flat_map(|surface| surface.content.variants())
+            .filter_map(|variant| match variant.source {
+                BufferSource::CpuBuffer { handle } => Some(handle),
+                _ => None,
+            });
+        queued.chain(in_flight)
+    }
+
     pub fn in_flight_transaction(&self) -> Option<TransactionId> {
         match self.in_flight.as_ref()? {
             LiveProductionInFlightPresent::Rendering(present)

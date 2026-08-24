@@ -161,13 +161,39 @@ fn in_flight_present_for_outputs(
             width: (geometry).width,
             height: (geometry).height,
         },
-        content: sophia_protocol::SurfaceContentSet::singleton(
-            buffer,
+        content: sophia_protocol::SurfaceContentSet::new(
             sophia_protocol::Size {
                 width: geometry.width,
                 height: geometry.height,
             },
-        ),
+            vec![
+                sophia_protocol::SurfaceContentVariant {
+                    variant: 1,
+                    source: buffer,
+                    pixel_size: sophia_protocol::Size {
+                        width: geometry.width,
+                        height: geometry.height,
+                    },
+                    density_millis: 1_000,
+                    transform: sophia_protocol::SurfaceRasterTransform::Normal,
+                    fidelity: sophia_protocol::SurfaceContentFidelity::AuthorityRaster,
+                    damage: Region::empty(),
+                },
+                sophia_protocol::SurfaceContentVariant {
+                    variant: 2,
+                    source: BufferSource::CpuBuffer { handle: 4 },
+                    pixel_size: sophia_protocol::Size {
+                        width: geometry.width / 2,
+                        height: geometry.height / 2,
+                    },
+                    density_millis: 500,
+                    transform: sophia_protocol::SurfaceRasterTransform::Normal,
+                    fidelity: sophia_protocol::SurfaceContentFidelity::AuthorityRaster,
+                    damage: Region::empty(),
+                },
+            ],
+        )
+        .unwrap(),
 
         damage: Region::empty(),
         readiness: SurfaceTransactionReadiness::Ready,
@@ -212,6 +238,19 @@ fn in_flight_present_for_outputs(
         },
     )
     .unwrap()
+}
+
+#[test]
+fn in_flight_candidate_retains_its_cpu_content_variants() {
+    let transaction = TransactionId::from_raw(879);
+    let surface = SurfaceId::new(880, 1);
+    let mut scheduler = LiveProductionPresentScheduler::default();
+    scheduler.mark_rendering(in_flight_present(transaction, surface));
+
+    assert_eq!(
+        scheduler.retained_cpu_buffer_handles().collect::<Vec<_>>(),
+        vec![4]
+    );
 }
 
 #[test]

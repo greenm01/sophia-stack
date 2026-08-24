@@ -14731,7 +14731,8 @@ The transaction-identity rerun admitted Helium and rendered its CPU authority
 raster through several page flips. A later retained repaint planned generation
 5, selected CPU handle 4 as the exact variant, and ended with
 `MissingCpuSource(4)`. The handle had already rendered successfully; it had not
-failed intake or fallen out of renderer residency.
+failed intake, but that evidence did not distinguish final residency from
+source-set construction.
 
 The retained source builder had made two valid realizations mutually exclusive.
 When a Present was in flight, it supplied the compositor-owned renderer image
@@ -14746,3 +14747,26 @@ per-head plan still decides which exact realization is drawn. A focused
 regression supplies one DMA-BUF renderer image and one CPU authority raster for
 the same surface and requires both to survive source-set construction. The
 signed installed switcher rerun remains the promotion gate.
+
+## 2026-08-23: Present candidates are CPU-residency roots
+
+The next signed run repeated `MissingCpuSource(4)`, which proved that joining
+the two source kinds was necessary but insufficient. The corrected source
+builder could carry every CPU variant it received; at the final repaint,
+`presentation_variant_layers` no longer received handle 4 from the scene.
+
+CPU residency covered Engine-committed content, the current authority batch,
+deferred groups, staged handles, and a bounded recent-update cache. It omitted
+the Present scheduler. A queued or in-flight candidate can outlive both its
+authority batch and the recent cache while still being the exact immutable
+scene used for retained composition. Its content identity survived in the
+scheduler, but the registry holding its CPU pixels was free to evict it.
+
+The scheduler now exposes every CPU handle named by queued transactions and by
+the complete in-flight candidate. Both CPU and GPU production cycles add those
+handles to residency before reconciliation. The root ends only when the queued
+candidate is rejected or the full output cohort retires and commits, at which
+point ordinary committed residency takes over. One regression pins handle 4 in
+an in-flight DMA-BUF candidate's alternate CPU variant; the earlier regression
+still pins the renderer-image and CPU-source join. A new signed installed run
+remains the promotion gate.

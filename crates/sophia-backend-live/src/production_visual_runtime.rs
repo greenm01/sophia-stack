@@ -491,6 +491,7 @@ impl LiveProductionVisualRuntime {
             self.surface_content_stream
                 .deferred_items()
                 .chain(self.released_surface_content.iter()),
+            self.present_scheduler.retained_cpu_buffer_handles(),
             staged_cpu_buffer_handles,
             &self.recent_cpu_buffer_updates,
         );
@@ -834,6 +835,7 @@ impl LiveProductionVisualRuntime {
             self.surface_content_stream
                 .deferred_items()
                 .chain(self.released_surface_content.iter()),
+            self.present_scheduler.retained_cpu_buffer_handles(),
             staged_cpu_buffer_handles,
             &self.recent_cpu_buffer_updates,
         );
@@ -1230,6 +1232,7 @@ fn write_cpu_buffer_residency<'a>(
     committed: &[CommittedSurfaceState],
     batch: &LiveProductionAuthorityBatch,
     pending_groups: impl Iterator<Item = &'a LiveProductionAuthorityGroup>,
+    scheduled_present_handles: impl Iterator<Item = u64>,
     staged: &[u64],
     recent_updates: &VecDeque<u64>,
 ) {
@@ -1263,6 +1266,7 @@ fn write_cpu_buffer_residency<'a>(
                 _ => None,
             }),
     );
+    handles.extend(scheduled_present_handles);
     handles.extend_from_slice(staged);
     handles.extend(recent_updates);
     handles.sort_unstable();
