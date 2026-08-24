@@ -203,9 +203,16 @@ promotion gate.
    snapshot-visible facts change; engine focus reports an unchanged seat focus as
    unchanged; indicator chrome is published by its content rather than by a commit
    count, which also stops a policy commit cancelling an in-flight indicator
-   click; and the retained queue skips a scene the output already holds. The
-   corrected signed physical rerun remains open. Reservations are deliberately
-   still absent.
+   click; and the retained queue skips a scene the output already holds. The next
+   run passed the entire guide, proof phrase included, and failed only on 24 X
+   protocol errors: XFixes `SelectSelectionInput` refused the root window, which
+   is the argument every toolkit passes to watch a selection. The root is now
+   admitted wherever a request scopes to a window rather than acts on one, and
+   protocol errors are tallied per opcode so a failed run names every cause at
+   once instead of costing a run each. Selection watching itself is still
+   unimplemented -- the error is gone, the events were never there. The corrected
+   signed physical rerun remains open. Reservations are deliberately still
+   absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
