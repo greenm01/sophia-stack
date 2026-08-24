@@ -88,11 +88,18 @@ pub struct PolicyProjectionReducer {
     indicator_publication_generation: u64,
 }
 
+/// What the indicator chrome renders, and the identity consumers compare it by.
+///
+/// It deliberately carries no commit serial. Consumers compare the whole record
+/// to decide whether anything changed, and a serial that advances on every policy
+/// commit made every commit look like new indicator content: a guaranteed raster
+/// cache miss, full strip damage, and a cancelled in-flight indicator click. The
+/// generation advances when this content changes, which is the only thing a
+/// consumer needs to know.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyIndicatorPublication {
     pub generation: u64,
     pub connection_epoch: Option<u64>,
-    pub projection_commit_serial: u64,
     pub indicators: Vec<PolicyProjectionIndicator>,
     pub output_statuses: Vec<PolicyProjectionOutputStatus>,
 }
@@ -254,14 +261,23 @@ impl PolicyProjectionReducer {
         else {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
+        // The commit serial advances unconditionally: it guards settlement
+        // staleness and must count every commit. The publication generation
+        // advances only when the published content moved, so a commit that
+        // changes layout without touching the indicators leaves the chrome, its
+        // raster cache, and any in-flight capture undisturbed.
+        let publication_changed =
+            self.indicators != indicators || self.output_statuses != output_statuses;
         self.committed = candidate;
         self.scene.active_output = proposal.active_output;
         self.indicators = indicators;
         self.output_statuses = output_statuses;
         sync_scene_projection(&mut self.scene, &self.committed);
         self.commit_serial = self.commit_serial.saturating_add(1);
-        self.indicator_publication_generation =
-            self.indicator_publication_generation.saturating_add(1);
+        if publication_changed {
+            self.indicator_publication_generation =
+                self.indicator_publication_generation.saturating_add(1);
+        }
         PolicyProjectionOutcome::Committed
     }
 
@@ -461,7 +477,6 @@ impl PolicyProjectionReducer {
         PolicyIndicatorPublication {
             generation: self.indicator_publication_generation,
             connection_epoch: self.active_epoch,
-            projection_commit_serial: self.commit_serial,
             indicators: self.indicators.values().flatten().cloned().collect(),
             output_statuses: self.output_statuses.values().cloned().collect(),
         }

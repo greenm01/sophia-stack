@@ -12,7 +12,6 @@ fn publication(generation: u64) -> PolicyIndicatorPublication {
     PolicyIndicatorPublication {
         generation,
         connection_epoch: Some(4),
-        projection_commit_serial: 7,
         indicators: vec![PolicyProjectionIndicator {
             output: OutputId::from_raw(1),
             slot: 0,
@@ -162,7 +161,6 @@ fn head_native_hit_targets_project_back_to_the_logical_strip() {
     let target = sophia_engine::IndicatorChromeHitTarget {
         publication_generation: 7,
         connection_epoch: 8,
-        projection_commit_serial: 9,
         output: OutputId::from_raw(1),
         indicator: 10,
         action: Some(WmActionId::from_raw(11)),

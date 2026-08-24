@@ -52,7 +52,6 @@ fn strip(generation: u64) -> HeadCompositorIndicatorStrip {
             hit_targets: vec![IndicatorChromeHitTarget {
                 publication_generation: generation,
                 connection_epoch: 2,
-                projection_commit_serial: 3,
                 output,
                 indicator: 4,
                 action: Some(WmActionId::from_raw(5)),

@@ -10,7 +10,6 @@ fn target(action: Option<WmActionId>) -> IndicatorChromeHitTarget {
     IndicatorChromeHitTarget {
         publication_generation: 3,
         connection_epoch: 4,
-        projection_commit_serial: 5,
         output: OutputId::from_raw(1),
         indicator: 6,
         action,
@@ -186,6 +185,48 @@ fn a_capture_ignores_the_wrong_device_or_button_and_waits_for_its_release() {
             button(false),
             PRESENTATION_EPOCH,
             &targets,
+            false,
+        ),
+        ChromePointerDisposition::Activated {
+            output: OutputId::from_raw(1),
+            action,
+        }
+    );
+}
+
+/// A policy commit that leaves the indicators alone leaves a click alive.
+///
+/// The hit target used to carry the projection commit serial, which advanced on
+/// every policy commit, so any unrelated layout change under the pointer
+/// cancelled a press already in flight. The target now identifies the
+/// indicators it was measured against and nothing else.
+#[test]
+fn an_unrelated_policy_commit_does_not_cancel_a_capture() {
+    let mut state = ChromeCaptureState::default();
+    let device = DeviceId::from_raw(2);
+    let action = WmActionId::from_raw(7);
+    let targets = [target(Some(action))];
+
+    assert_eq!(
+        route(
+            &mut state,
+            device,
+            button(true),
+            PRESENTATION_EPOCH,
+            &targets,
+            false,
+        ),
+        ChromePointerDisposition::Captured
+    );
+
+    // The same indicators, republished by a later commit.
+    assert_eq!(
+        route(
+            &mut state,
+            device,
+            button(false),
+            PRESENTATION_EPOCH,
+            &[target(Some(action))],
             false,
         ),
         ChromePointerDisposition::Activated {

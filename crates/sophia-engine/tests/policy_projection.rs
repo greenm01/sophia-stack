@@ -270,7 +270,7 @@ fn descriptors_commit_atomically_and_clear_at_the_connection_boundary() {
     );
     let committed = reducer.indicator_publication();
     assert_eq!(committed.connection_epoch, Some(5));
-    assert_eq!(committed.projection_commit_serial, 1);
+    assert_eq!(reducer.commit_serial(), 1);
     assert_eq!(committed.indicators[0].label, "1");
 
     assert_eq!(reducer.disconnect(5), PolicyProjectionOutcome::Disconnected);
@@ -711,4 +711,69 @@ fn a_proposal_may_not_place_a_surface_outside_its_output() {
         )),
         PolicyProjectionOutcome::RejectedInvalid
     );
+}
+
+/// A commit that leaves the indicators alone leaves the publication alone.
+///
+/// Consumers compare the whole publication to decide whether to re-raster the
+/// strip, re-damage it, and keep an in-flight click alive. While it carried a
+/// commit serial, every policy commit looked like new indicator content, which
+/// turned an ordinary layout commit into a full recomposition.
+#[test]
+fn an_unchanged_indicator_publication_survives_a_policy_commit() {
+    fn descriptors(label: &str) -> (PolicyProjectionIndicator, PolicyProjectionOutputStatus) {
+        (
+            PolicyProjectionIndicator {
+                output: output(1),
+                slot: 0,
+                indicator: 9,
+                action: Some(WmActionId::from_raw(11)),
+                state_bits: 1,
+                label: label.into(),
+            },
+            PolicyProjectionOutputStatus {
+                output: output(1),
+                focus_bits: 0,
+                layout: "Scroller".into(),
+            },
+        )
+    }
+
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(5).unwrap();
+
+    let commit = |reducer: &mut PolicyProjectionReducer, transaction: u64, label: &str| {
+        let request = reducer.issue_request(vec![output(1)]).unwrap();
+        let mut candidate = proposal(
+            &request,
+            transaction,
+            vec![projected(output(1), Vec::new(), None)],
+        );
+        let (indicator, status) = descriptors(label);
+        candidate.indicators.push(indicator);
+        candidate.output_statuses.push(status);
+        assert_eq!(
+            reducer.apply_proposal(&candidate),
+            PolicyProjectionOutcome::Committed
+        );
+    };
+
+    commit(&mut reducer, 61, "1");
+    let published = reducer.indicator_publication();
+
+    // A second commit carrying the same descriptors.
+    commit(&mut reducer, 62, "1");
+    assert_eq!(
+        reducer.indicator_publication(),
+        published,
+        "an unchanged publication must compare equal across commits"
+    );
+    // The serial still counts every commit; it guards settlement staleness.
+    assert_eq!(reducer.commit_serial(), 2);
+
+    // Changed content still advances the generation.
+    commit(&mut reducer, 63, "2");
+    let moved = reducer.indicator_publication();
+    assert!(moved.generation > published.generation);
+    assert_eq!(moved.indicators[0].label, "2");
 }

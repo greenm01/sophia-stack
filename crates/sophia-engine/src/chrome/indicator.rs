@@ -10,7 +10,6 @@ pub const INDICATOR_SLOT_MAX_WIDTH: i32 = 96;
 pub struct IndicatorChromeHitTarget {
     pub publication_generation: u64,
     pub connection_epoch: u64,
-    pub projection_commit_serial: u64,
     pub output: OutputId,
     pub indicator: u64,
     pub action: Option<WmActionId>,
@@ -102,7 +101,6 @@ pub fn layout_indicator_strip(
         hit_targets.push(IndicatorChromeHitTarget {
             publication_generation: publication.generation,
             connection_epoch: epoch,
-            projection_commit_serial: publication.projection_commit_serial,
             output,
             indicator: indicator.indicator,
             action: indicator.action,
@@ -179,8 +177,10 @@ pub fn activate_indicator_at(
     else {
         return IndicatorChromeAction::Missed;
     };
+    // The epoch and the publication generation together identify the indicators
+    // this target was measured against. An unrelated policy commit no longer
+    // moves either, so a click survives a layout change under the pointer.
     if publication.connection_epoch != Some(target.connection_epoch)
-        || publication.projection_commit_serial != target.projection_commit_serial
         || publication.generation != target.publication_generation
     {
         return IndicatorChromeAction::Stale;

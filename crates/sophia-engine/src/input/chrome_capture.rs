@@ -67,7 +67,7 @@ impl ChromeCaptureState {
             || candidate.presentation_epoch == 0
             || candidate.target.output != candidate.output
             || candidate.target.connection_epoch == 0
-            || candidate.target.projection_commit_serial == 0
+            || candidate.target.publication_generation == 0
             || candidate.target.action.is_none()
             || candidate.target.geometry.is_empty()
         {
