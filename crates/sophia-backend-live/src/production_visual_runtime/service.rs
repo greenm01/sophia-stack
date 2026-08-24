@@ -297,6 +297,7 @@ impl LiveProductionVisualRuntime {
     pub fn service_native(
         &mut self,
         native_scanout: &mut LiveProductionNativeScanout,
+        scene: &LiveProductionCpuScene,
     ) -> Result<LiveProductionNativeServiceReport, Box<dyn std::error::Error>> {
         native_scanout.ensure_page_flip_progress()?;
         let initial = self.native_output_service_request(native_scanout)?;
@@ -326,7 +327,7 @@ impl LiveProductionVisualRuntime {
                     if output != reducer.primary() {
                         return Err("queued presentation targeted a non-primary output".into());
                     }
-                    ticks.push(self.drive_gpu_presentation(Some(native_scanout))?);
+                    ticks.push(self.drive_gpu_presentation(scene, Some(native_scanout))?);
                 }
                 OutputFrameServiceEffect::SubmitPendingFrame { output } => {
                     ticks.push(self.run_native_pending_output(native_scanout, output)?);

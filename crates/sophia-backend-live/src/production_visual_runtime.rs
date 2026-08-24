@@ -12,6 +12,7 @@ mod present;
 mod projection;
 mod service;
 mod software_present;
+pub use compositor_graphics::live_present_head_composition_sources;
 pub use native::*;
 pub use service::*;
 
@@ -897,6 +898,7 @@ impl LiveProductionVisualRuntime {
             presentation_layout,
             if defer_frame { None } else { native_scanout },
             native_frames,
+            scene,
             cpu_layers,
             wm_update,
         )?;
@@ -974,6 +976,7 @@ impl LiveProductionVisualRuntime {
         presentation_layout: &[LayerSnapshot],
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         native_frames: Option<Vec<LiveProductionComposedFrame>>,
+        scene: &LiveProductionCpuScene,
         cpu_layers: Vec<LiveCpuPresentationLayer>,
         wm_update: Option<WmTransactionUpdate>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
@@ -995,7 +998,6 @@ impl LiveProductionVisualRuntime {
                 let superseded = self.present_scheduler.enqueue_group(
                     group,
                     presentation_layout,
-                    cpu_layers.clone(),
                     self.presentation_feedback.resources_mut(),
                     Instant::now(),
                 )?;
@@ -1027,7 +1029,7 @@ impl LiveProductionVisualRuntime {
             if !self.present_scheduler.has_eligible() {
                 return self.run_observation_tick();
             }
-            return self.drive_gpu_presentation(native_scanout.as_deref_mut());
+            return self.drive_gpu_presentation(scene, native_scanout.as_deref_mut());
         }
         if authority_groups.is_empty() {
             return self.run_observation_tick();

@@ -7,6 +7,27 @@ pub(super) struct LiveProductionRetainedCompositionSourceSet {
     pub sources: Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
 }
 
+fn cpu_variant_sources(
+    surface: SurfaceId,
+    cpu_layers: &[LiveCpuPresentationLayer],
+) -> Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource> {
+    cpu_layers
+        .iter()
+        .filter(|layer| layer.surface == surface)
+        .map(
+            |layer| sophia_renderer_live::LiveOwnedHeadCompositionSource {
+                surface,
+                source: BufferSource::CpuBuffer {
+                    handle: layer.buffer.handle,
+                },
+                kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
+                    layer.buffer.clone().into(),
+                ),
+            },
+        )
+        .collect()
+}
+
 fn retained_surface_sources(
     surface: SurfaceId,
     committed_source: BufferSource,
@@ -26,22 +47,7 @@ fn retained_surface_sources(
             },
         });
     }
-    sources.extend(
-        cpu_layers
-            .iter()
-            .filter(|layer| layer.surface == surface)
-            .map(
-                |layer| sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                    surface,
-                    source: BufferSource::CpuBuffer {
-                        handle: layer.buffer.handle,
-                    },
-                    kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
-                        layer.buffer.clone().into(),
-                    ),
-                },
-            ),
-    );
+    sources.extend(cpu_variant_sources(surface, cpu_layers));
     if !sources.is_empty() {
         return Ok(sources);
     }
@@ -61,6 +67,67 @@ fn retained_surface_sources(
         return Ok(sources);
     }
     Err("retained head plan has no authority-owned source")
+}
+
+/// The sources a queued Present's plan requires, read from the candidate it plans.
+///
+/// The caller passes the same `candidate` slice it builds its display lists from, so
+/// plan and sources cannot disagree about which surfaces exist or which buffer each
+/// one commits. A Present used to carry CPU layers captured when it was enqueued; a
+/// Present parked behind a layout epoch then composed a rebased scene against a
+/// snapshot predating every surface admitted while it waited, and the missing source
+/// surfaced as a lowering failure rather than as the skew it was.
+///
+/// The presenting surface contributes the frame just composed for it plus any CPU
+/// variants the candidate still carries, because a head may select a retained raster
+/// for it rather than the DMA-BUF being presented.
+pub fn live_present_head_composition_sources<'a>(
+    presenting_surface: SurfaceId,
+    current_source: sophia_renderer_live::LiveOwnedHeadCompositionSource,
+    candidate: &[CommittedSurfaceState],
+    display_list: &CompositorDisplayList,
+    cpu_layers: &[LiveCpuPresentationLayer],
+    retained: impl Fn(SurfaceId) -> Option<&'a crate::LiveRetainedRendererImageLayer>,
+) -> Result<Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>, Box<dyn std::error::Error>> {
+    let mut current_source = Some(current_source);
+    let mut sources = Vec::new();
+    for command in &display_list.commands {
+        let CompositorDisplayCommand::Surface { surface } = command else {
+            continue;
+        };
+        // Presentation order names policy's surfaces; the planner keeps only those the
+        // candidate has committed. A surface policy ordered before its pixels arrived
+        // is dropped there, so it owes no source here.
+        let Some(committed_source) = candidate
+            .iter()
+            .find(|state| state.surface == *surface)
+            .map(CommittedSurfaceState::buffer)
+        else {
+            continue;
+        };
+        if *surface == presenting_surface {
+            sources.push(
+                current_source
+                    .take()
+                    .ok_or("current Present appeared twice in the layout")?,
+            );
+            sources.extend(cpu_variant_sources(*surface, cpu_layers));
+            continue;
+        }
+        sources.extend(retained_surface_sources(
+            *surface,
+            committed_source,
+            cpu_layers,
+            // A Present reaches submission only while no other one is in flight, so
+            // this candidate is the only one that can own a renderer image here.
+            None,
+            retained(*surface),
+        )?);
+    }
+    if current_source.is_some() {
+        return Err("visible Present surface is missing from the presentation order".into());
+    }
+    Ok(sources)
 }
 
 impl LiveProductionVisualRuntime {

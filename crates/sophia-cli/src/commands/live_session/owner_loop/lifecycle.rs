@@ -588,7 +588,7 @@
             if layout.pending.is_none() {
                 runtime.release_layout_deferred_presentations();
             }
-            let service = match runtime.service_native(native_scanout) {
+            let service = match runtime.service_native(native_scanout, &scene) {
                 Ok(service) => Some(service),
                 Err(error) => {
                     let Some(execution) = active_output_topology_preparation.as_mut() else {

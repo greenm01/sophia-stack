@@ -356,7 +356,6 @@ fn queued_present_is_not_runnable_while_an_earlier_present_is_rendering() {
         .enqueue_group(
             &scheduler_batch(second_transaction, surface, second_handle).groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -395,7 +394,6 @@ fn production_present_scheduler_owns_delay_and_controlled_rejection_gates() {
         .enqueue_group(
             &scheduler_batch(transaction, surface, handle).groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             now,
         )
@@ -434,13 +432,7 @@ fn queued_present_rebases_offset_and_clip_to_atomic_layout() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
     let geometry = Rect {
         x: 1280,
@@ -515,13 +507,7 @@ fn queued_present_owns_only_its_exact_surface_transaction() {
     let mut scheduler = LiveProductionPresentScheduler::default();
 
     let rejected = scheduler
-        .enqueue_group(
-            &batch.groups[1],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[1], &[], &mut resources, Instant::now())
         .unwrap();
 
     assert!(rejected.is_empty());
@@ -557,13 +543,7 @@ fn mismatched_present_candidate_is_a_controlled_rejection() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
 
-    let rejected = scheduler.enqueue_group(
-        &batch.groups[0],
-        &[],
-        Vec::new(),
-        &mut resources,
-        Instant::now(),
-    );
+    let rejected = scheduler.enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now());
 
     assert!(rejected.is_err());
     assert!(!scheduler.has_queued());
@@ -614,13 +594,7 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
     let mut scheduler = LiveProductionPresentScheduler::default();
 
     scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &layout,
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &layout, &mut resources, Instant::now())
         .unwrap();
 
     let queued = scheduler.front().unwrap();
@@ -646,13 +620,7 @@ fn committed_epoch_present_waits_until_surface_is_visible() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
 
     assert_eq!(scheduler.commit_layout_epoch(epoch), 1);
@@ -722,13 +690,7 @@ fn aborted_epoch_rejects_its_staged_present() {
         .unwrap();
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
 
     let report = scheduler.abort_layout_epoch(epoch);
@@ -757,13 +719,7 @@ fn present_released_after_its_layout_epoch_aborted_is_rejected() {
 
     assert!(scheduler.abort_layout_epoch(epoch).rejected.is_empty());
     let rejected = scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
 
     assert_eq!(rejected, [transaction]);
@@ -809,13 +765,7 @@ fn present_released_after_commit_runs_when_its_surface_is_visible() {
 
     assert_eq!(scheduler.commit_layout_epoch(epoch), 0);
     let rejected = scheduler
-        .enqueue_group(
-            &batch.groups[0],
-            &layout,
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&batch.groups[0], &layout, &mut resources, Instant::now())
         .unwrap();
 
     assert!(rejected.is_empty());
@@ -861,13 +811,7 @@ fn aborting_one_epoch_does_not_settle_another_epoch() {
         ),
     ] {
         scheduler
-            .enqueue_group(
-                &batch.groups[0],
-                &[],
-                Vec::new(),
-                &mut resources,
-                Instant::now(),
-            )
+            .enqueue_group(&batch.groups[0], &[], &mut resources, Instant::now())
             .unwrap();
     }
 
@@ -905,22 +849,10 @@ fn unrelated_present_remains_eligible_while_layout_surface_is_staged() {
     let immediate = scheduler_batch(immediate_transaction, immediate_surface, immediate_handle);
     let mut scheduler = LiveProductionPresentScheduler::default();
     scheduler
-        .enqueue_group(
-            &staged.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&staged.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
     scheduler
-        .enqueue_group(
-            &immediate.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&immediate.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
 
     assert!(scheduler.has_layout_deferred());
@@ -966,22 +898,10 @@ fn layout_epoch_keeps_only_the_newest_present_per_surface() {
         LiveProductionPresentDisposition::StageLayout { epoch },
     );
     let first_superseded = scheduler
-        .enqueue_group(
-            &first_batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&first_batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
     let second_superseded = scheduler
-        .enqueue_group(
-            &second_batch.groups[0],
-            &[],
-            Vec::new(),
-            &mut resources,
-            Instant::now(),
-        )
+        .enqueue_group(&second_batch.groups[0], &[], &mut resources, Instant::now())
         .unwrap();
 
     assert!(first_superseded.is_empty());
@@ -1014,7 +934,6 @@ fn immediate_overload_keeps_only_the_newest_pending_present() {
         .enqueue_group(
             &scheduler_batch(first_transaction, surface, first_handle).groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1023,7 +942,6 @@ fn immediate_overload_keeps_only_the_newest_pending_present() {
         .enqueue_group(
             &scheduler_batch(second_transaction, surface, second_handle).groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1058,7 +976,6 @@ fn sustained_overload_keeps_queue_and_presentation_ownership_bounded() {
             .enqueue_group(
                 &scheduler_batch(transaction, surface, handle).groups[0],
                 &[],
-                Vec::new(),
                 &mut resources,
                 Instant::now(),
             )
@@ -1105,7 +1022,6 @@ fn newly_visible_layout_work_preserves_one_present_per_surface() {
                 )
                 .groups[0],
                 &[],
-                Vec::new(),
                 &mut resources,
                 Instant::now(),
             )
@@ -1205,7 +1121,6 @@ fn later_epoch_present_does_not_supersede_another_surface() {
             )
             .groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1254,7 +1169,6 @@ fn later_epoch_present_does_not_supersede_another_surface() {
             )
             .groups[0],
             &layout,
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1302,7 +1216,6 @@ fn superseded_present_is_rejected_without_evicting_matching_candidate() {
         .enqueue_group(
             &matching_batch.groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1318,7 +1231,6 @@ fn superseded_present_is_rejected_without_evicting_matching_candidate() {
         .enqueue_group(
             &rejected_batch.groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1361,7 +1273,6 @@ fn drain_runnable_transactions_leaves_layout_deferred() {
         .enqueue_group(
             &scheduler_batch(runnable_transaction, surface, runnable_handle).groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )
@@ -1376,7 +1287,6 @@ fn drain_runnable_transactions_leaves_layout_deferred() {
             )
             .groups[0],
             &[],
-            Vec::new(),
             &mut resources,
             Instant::now(),
         )

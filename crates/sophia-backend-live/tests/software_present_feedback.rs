@@ -553,9 +553,10 @@ fn gpu_owner_batch_registers_its_separate_software_present_group() {
         released_fences: Vec::new(),
     };
     let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
+    let scene = LiveProductionCpuScene::new(size);
 
     runtime
-        .run_batch(&batch, &[], None, None, Vec::new(), None)
+        .run_batch(&batch, &[], None, None, &scene, Vec::new(), None)
         .unwrap();
 
     let diagnostics = runtime.diagnostics();

@@ -7,10 +7,8 @@ use sophia_protocol::{
     BufferSource, CommittedSurfaceState, LayerSnapshot, Rect, SurfaceId, SurfaceTransaction,
     SurfaceTransactionKey, TransactionId,
 };
-use sophia_renderer_live::LiveCpuPresentationLayer;
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const LAYOUT_EPOCH_HISTORY_CAPACITY: usize = SURFACE_CONTENT_STREAM_CAPACITY;
@@ -20,7 +18,6 @@ pub struct LiveProductionQueuedPresent {
     pub submission: LivePresentationSubmission,
     pub surface: sophia_protocol::SurfaceId,
     pub candidate: SurfaceTransaction,
-    pub cpu_layers: Arc<[LiveCpuPresentationLayer]>,
     pub target: Rect,
     pub surface_clip: Rect,
     layout_state: LiveProductionPresentLayoutState,
@@ -159,12 +156,10 @@ impl LiveProductionPresentScheduler {
         &mut self,
         group: &LiveProductionAuthorityGroup,
         presentation_layout: &[LayerSnapshot],
-        cpu_layers: Vec<LiveCpuPresentationLayer>,
         resources: &mut LivePresentationResourceSession,
         now: Instant,
     ) -> Result<Vec<TransactionId>, Box<dyn Error>> {
         let mut superseded = Vec::new();
-        let cpu_layers: Arc<[LiveCpuPresentationLayer]> = cpu_layers.into();
         group.validate()?;
         for submission in &group.present_submissions {
             let resolved_layout = match submission.layout_disposition {
@@ -273,7 +268,6 @@ impl LiveProductionPresentScheduler {
                 submission,
                 surface,
                 candidate,
-                cpu_layers: Arc::clone(&cpu_layers),
                 target: Rect {
                     x: geometry.x.saturating_add(x_offset),
                     y: geometry.y.saturating_add(y_offset),

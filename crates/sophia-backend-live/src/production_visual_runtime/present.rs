@@ -3,6 +3,7 @@ use super::*;
 impl LiveProductionVisualRuntime {
     pub fn drive_gpu_presentation(
         &mut self,
+        scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
         let transaction = match self
@@ -165,7 +166,7 @@ impl LiveProductionVisualRuntime {
             .layers
             .pop()
             .ok_or("ready Present frame lost its current DMA-BUF layer")?;
-        let mut current_source = Some(match current_owned {
+        let current_source = match current_owned {
             LiveOwnedMixedCompositionLayer::DmaBuf {
                 image_id, frame, ..
             } => sophia_renderer_live::LiveOwnedHeadCompositionSource {
@@ -177,86 +178,26 @@ impl LiveProductionVisualRuntime {
                 },
             },
             _ => return Err("ready Present source changed renderer kind".into()),
-        });
-        let mut head_sources = Vec::new();
-        let cpu_surfaces = queued
-            .cpu_layers
-            .iter()
-            .map(|layer| layer.surface)
-            .collect::<Vec<_>>();
-        let retained_surfaces = self.displayed_surfaces.keys().copied().collect::<Vec<_>>();
+        };
         let display_list = self.display_list(prepared.candidate(), &self.presentation_order)?;
         let border_candidate = prepared.candidate().to_vec();
-        for command in &display_list.commands {
-            match command {
-                CompositorDisplayCommand::Surface { surface } if *surface == queued_surface => {
-                    head_sources.push(
-                        current_source
-                            .take()
-                            .ok_or("current Present appeared twice in the layout")?,
-                    );
-                }
-                CompositorDisplayCommand::Surface { surface }
-                    if cpu_surfaces.contains(&surface) =>
-                {
-                    let layers = queued
-                        .cpu_layers
-                        .iter()
-                        .filter(|layer| layer.surface == *surface)
-                        .collect::<Vec<_>>();
-                    if layers.is_empty() {
-                        return Err("ordered CPU layer disappeared from queued Present".into());
-                    }
-                    head_sources.extend(layers.into_iter().map(|layer| {
-                        sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                            surface: *surface,
-                            source: BufferSource::CpuBuffer {
-                                handle: layer.buffer.handle,
-                            },
-                            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(
-                                layer.buffer.clone().into(),
-                            ),
-                        }
-                    }));
-                }
-                CompositorDisplayCommand::Surface { surface }
-                    if retained_surfaces.contains(&surface) =>
-                {
-                    let displayed = self
-                        .displayed_surfaces
-                        .get(&surface)
-                        .ok_or("ordered retained DMA-BUF layer disappeared")?;
-                    let source = prepared
-                        .candidate()
-                        .iter()
-                        .find(|state| state.surface == *surface)
-                        .map(CommittedSurfaceState::buffer)
-                        .ok_or("retained DMA-BUF source disappeared from candidate")?;
-                    if !matches!(source, BufferSource::DmaBuf { .. }) {
-                        return Err("retained renderer image lost its DMA-BUF identity".into());
-                    }
-                    head_sources.push(
-                        sophia_renderer_live::LiveOwnedHeadCompositionSource {
-                            surface: *surface,
-                            source,
-                            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
-                            image_id: displayed.layer.image_id,
-                            size: displayed.layer.size,
-                            format: displayed.layer.format,
-                            },
-                        },
-                    );
-                }
-                CompositorDisplayCommand::Surface { .. } => {}
-                CompositorDisplayCommand::Border(_)
-                | CompositorDisplayCommand::Rect(_)
-                | CompositorDisplayCommand::Text(_)
-                | CompositorDisplayCommand::IndicatorStrip(_) => {}
-            }
-        }
-        if current_source.is_some() {
-            return Err("visible Present surface is missing from the presentation order".into());
-        }
+        // Sources are read from the scene against the candidate this Present plans,
+        // never from a set captured when it was enqueued. A Present held behind a
+        // layout epoch plans a scene that moved on while it waited.
+        let cpu_layers =
+            scene.presentation_variant_layers(prepared.candidate(), &self.presentation_order);
+        let head_sources = live_present_head_composition_sources(
+            queued_surface,
+            current_source,
+            prepared.candidate(),
+            &display_list,
+            &cpu_layers,
+            |surface| {
+                self.displayed_surfaces
+                    .get(&surface)
+                    .map(|displayed| &displayed.layer)
+            },
+        )?;
         self.record_focus_ring_observation(&border_candidate, false)?;
         let mut output_head_frames = applicable_outputs
             .iter()

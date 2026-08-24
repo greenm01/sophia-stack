@@ -175,8 +175,17 @@ promotion gate.
    so its bounded recent-update fallback eventually evicted handle 4 before the
    retained source set was built. Every scheduled candidate's CPU variants now
    remain rooted through rejection or complete cohort retirement, with a
-   scheduler regression beside the source-set regression. The corrected signed
-   physical rerun remains open. Reservations are deliberately still absent.
+   scheduler regression beside the source-set regression. The third signed run
+   repeated `MissingCpuSource(4)` with handle 4 resident throughout, which
+   placed the defect outside residency entirely: a queued Present planned the
+   candidate it was released against while sourcing from the CPU layers frozen
+   when it entered the queue, so a surface admitted during the wait was named
+   by the plan and absent from its sources, and a silent fall-through deferred
+   the mismatch to lowering. Present submission now reads its sources from the
+   same candidate it plans, the enqueue-time snapshot is gone, and an
+   unsourced candidate surface is refused where it is found. A differential
+   regression pins both directions. The corrected signed physical rerun remains
+   open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
