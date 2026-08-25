@@ -1673,7 +1673,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     .iter()
                     .find_map(|item| match item {
                         crate::XClientOutput::Error(error) => {
-                            Some((error.code as u8, error.resource_id))
+                            Some((error.code.wire_code(), error.resource_id))
                         }
                         _ => None,
                     })
@@ -1684,7 +1684,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // changing every other target's level too -- which silences the
                 // telemetry a physical gate polls for, or floods the run.
                 tracing::info!(
-                    "sophia_x11_dispatch schema=2 sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={} error_code={} error_resource={:#x}",
+                    // The client is what makes a sequence mean anything. A
+                    // browser opens several connections at once and each numbers
+                    // its own requests from one, so without this a trace reads as
+                    // one client contradicting itself.
+                    "sophia_x11_dispatch schema=3 client={} sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={} error_code={} error_resource={:#x}",
+                    client.raw(),
                     sequence,
                     major_opcode,
                     request_minor_code,
