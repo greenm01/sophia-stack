@@ -263,6 +263,17 @@ fn route_x11_present_configure(
                 "failed to resolve Present ConfigureNotify subscriptions: {error}"
             ))
         })?;
+    if crate::x11_authority_trace_enabled() {
+        // A drawable's size reaches a GL client through this event, and a client
+        // that never receives one can wait forever without erroring. Saying how
+        // many subscribers it reached separates "nobody asked" from "asked and
+        // was not told".
+        tracing::info!(
+            "sophia_x11_present_configure schema=1 status=routed window={:#x} width={width} height={height} subscribers={}",
+            window.local.raw(),
+            subscribers.len(),
+        );
+    }
     let mut local_events = Vec::new();
     for (target, event_id) in subscribers {
         let mut event = XClientEvent::PresentConfigureNotify {
