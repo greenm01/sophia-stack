@@ -41,6 +41,7 @@ pub struct SessionLaunchQueue {
     peak_depth: usize,
     rejected: usize,
     timed_out: usize,
+    withdrawn: usize,
 }
 
 impl SessionLaunchQueue {
@@ -121,6 +122,26 @@ impl SessionLaunchQueue {
             .flatten()
     }
 
+    /// Abandons the outstanding launch when the coordinator gave up on a
+    /// surface it was waiting for.
+    ///
+    /// A withdrawn surface is not a slow one: the admission it would have
+    /// settled no longer exists, so waiting out the remaining budget only
+    /// holds the queue shut behind a launch that can never complete.
+    /// Counted apart from a timeout because it is a different outcome --
+    /// the deadline was never reached.
+    pub fn withdraw_current(&mut self, surfaces: &[SurfaceId]) -> Option<SessionLaunchAdmission> {
+        let admission = self.admission?;
+        if !admission
+            .observed_surfaces()
+            .any(|seen| surfaces.contains(&seen))
+        {
+            return None;
+        }
+        self.withdrawn = self.withdrawn.saturating_add(1);
+        self.admission.take()
+    }
+
     pub fn timeout_current(&mut self) -> Option<SessionLaunchAdmission> {
         let admission = self.admission.take()?;
         self.timed_out = self.timed_out.saturating_add(1);
@@ -151,5 +172,9 @@ impl SessionLaunchQueue {
 
     pub fn timed_out(&self) -> usize {
         self.timed_out
+    }
+
+    pub fn withdrawn(&self) -> usize {
+        self.withdrawn
     }
 }

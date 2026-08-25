@@ -766,3 +766,60 @@ fn a_deferred_surface_spends_no_admission_retry() {
     assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
     assert_eq!(layout.admission_retries.get(&launching), None);
 }
+
+#[test]
+fn an_exhausted_admission_records_the_surface_it_withdrew() {
+    // Withdrawal used to be silent: the coordinator erased an admission with
+    // nothing on the record, so a launch waiting on that surface went on
+    // waiting for something that no longer existed.
+    let surface = SurfaceId::new(9, 1);
+    let size = Size {
+        width: 1278,
+        height: 1424,
+    };
+    let geometry = Rect {
+        x: 1280,
+        y: 14,
+        width: size.width,
+        height: size.height,
+    };
+    let transaction = TransactionId::from_raw(21);
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    layout.layers.insert(surface, test_layer(surface, geometry));
+    layout.unmanaged_surfaces.insert(surface);
+    // One retry already spent, so this expiry is the terminal one.
+    layout.admission_retries.insert(surface, 1);
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![test_layer(surface, geometry)],
+        requested_sizes: BTreeMap::from([(surface, size)]),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::new(),
+        configure_deliveries: 1,
+        focus: Some(surface),
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 1,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::from([surface]),
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+        policy_settlement: None,
+    });
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    layout.expire_pending(&mut controls).unwrap().unwrap();
+
+    // The surface is named once, for whoever was waiting on it.
+    assert_eq!(layout.take_withdrawn_admissions(), vec![surface]);
+    // Draining it is what makes the report single-shot.
+    assert!(layout.take_withdrawn_admissions().is_empty());
+}

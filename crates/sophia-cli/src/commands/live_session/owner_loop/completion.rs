@@ -707,10 +707,11 @@
             .as_ref()
             .is_some_and(LiveProductionNativeScanout::any_head_cleanup_pending);
     println!(
-        "sophia_session_launches schema=1 status=complete peak_depth={} rejected={} admission_timeouts={}",
+        "sophia_session_launches schema=2 status=complete peak_depth={} rejected={} admission_timeouts={} withdrawn={}",
         session_launches.peak_depth(),
         session_launches.rejected(),
         session_launches.timed_out(),
+        session_launches.withdrawn(),
     );
     let input_stats = physical_input
         .as_ref()

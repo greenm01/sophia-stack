@@ -16,7 +16,7 @@ trap 'rm -f "$fixture" "$mutation"' EXIT
     done
     echo 'sophia_session_app schema=2 status=rejected source=action transaction=17 reason=capacity'
     echo 'sophia_live_session_input_pipeline schema=1 status=key_routed'
-    echo 'sophia_session_launches schema=1 status=complete peak_depth=1 rejected=1 admission_timeouts=0'
+    echo 'sophia_session_launches schema=2 status=complete peak_depth=1 rejected=1 admission_timeouts=0 withdrawn=0'
     echo 'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none'
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=2 retirements=1 callbacks=1 nonzero_exports=2'
     echo 'sophia_live_output schema=1 status=complete output=2 checksum=2 submissions=2 retirements=1 callbacks=1 nonzero_exports=2'

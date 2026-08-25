@@ -176,7 +176,7 @@ awk '
 ' "$EVIDENCE_FILE" ||
     fail "capacity release, recovery launch, action probe, and logout are out of order"
 
-launches="$(grep -E '^sophia_session_launches schema=1 status=complete ' \
+launches="$(grep -E '^sophia_session_launches schema=2 status=complete ' \
     "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$launches" ]] || fail "launch completion summary is missing"
 for pair in admission_timeouts=0; do

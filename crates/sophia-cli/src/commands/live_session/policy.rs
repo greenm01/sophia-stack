@@ -466,6 +466,7 @@ struct SessionActionExecutionContext<'a> {
     startup_ready: bool,
     admission_pipeline_idle: bool,
     stable_admission_surface: Option<SurfaceId>,
+    withdrawn_admissions: &'a [SurfaceId],
     layout: &'a PersistentLiveLayout,
     focus: &'a InputFocusState,
     seat: SeatId,
@@ -485,6 +486,7 @@ fn execute_committed_session_actions(
         startup_ready,
         admission_pipeline_idle,
         stable_admission_surface,
+        withdrawn_admissions,
         layout,
         focus,
         seat,
@@ -500,6 +502,15 @@ fn execute_committed_session_actions(
             stable_admission_surface
                 .expect("settled launch admission requires a stable surface")
                 .index(),
+        );
+    } else if let Some(admission) = launches.withdraw_current(withdrawn_admissions) {
+        // The surface this launch was waiting on is gone, so the remaining
+        // budget would be spent waiting for something that cannot arrive --
+        // and every later press queues behind it in silence.
+        *launch_admission_started_at = None;
+        eprintln!(
+            "sophia_session_app schema=2 status=failed source=action transaction={} reason=surface_withdrawn",
+            admission.intent.transaction.raw(),
         );
     } else if launch_admission_started_at
         .is_some_and(|started| {

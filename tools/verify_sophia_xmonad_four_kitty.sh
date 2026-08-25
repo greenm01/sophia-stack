@@ -491,7 +491,7 @@ for key in peak_depth action_ordered action_coalesced stale_responses max_queue_
 done
 
 grep -Eq \
-    '^sophia_session_launches schema=1 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0$' \
+    '^sophia_session_launches schema=2 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0 withdrawn=0$' \
     "$SESSION_LOG" ||
     fail "application admission did not complete without timeout"
 

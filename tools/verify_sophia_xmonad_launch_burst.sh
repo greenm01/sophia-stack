@@ -70,7 +70,7 @@ awk '
 
 grep -Eq '^sophia_live_session_input_pipeline schema=1 status=key_routed' "$SESSION_LOG" ||
     fail "post-burst terminal input was not routed"
-grep -Eq '^sophia_session_launches schema=1 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0$' \
+grep -Eq '^sophia_session_launches schema=2 status=complete peak_depth=([0-9]|1[0-6]) rejected=[0-9]+ admission_timeouts=0 withdrawn=0$' \
     "$SESSION_LOG" ||
     fail "launch completion counters are missing or invalid"
 grep -Eq '^sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none$' \

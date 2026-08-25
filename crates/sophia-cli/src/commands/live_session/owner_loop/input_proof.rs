@@ -230,6 +230,7 @@
                 flush_client_keys!(surface, "logout");
             }
         }
+        let withdrawn_admissions = layout.take_withdrawn_admissions();
         if execute_committed_session_actions(
             SessionActionExecutionContext {
                 config,
@@ -240,6 +241,7 @@
                 startup_ready: startup_ready_reported || config.startup_ready_timeout.is_none(),
                 admission_pipeline_idle,
                 stable_admission_surface,
+                withdrawn_admissions: &withdrawn_admissions,
                 layout: &layout,
                 focus: &focus,
                 seat,

@@ -48,7 +48,7 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
     echo 'sophia_qemu_launch_burst schema=1 status=action_probe_committed chord=meta_l+j focus=applied'
     echo 'sophia_qemu_launch_burst schema=1 status=logout_begin chord=meta_l+shift+q'
     echo 'sophia_live_wm schema=1 status=session_action_committed transaction=27 action=Logout'
-    echo 'sophia_session_launches schema=1 status=complete peak_depth=4 rejected=28 admission_timeouts=0'
+    echo 'sophia_session_launches schema=2 status=complete peak_depth=4 rejected=28 admission_timeouts=0 withdrawn=0'
     echo 'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false'
     echo 'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none'
     echo 'sophia_live_output schema=1 status=complete output=1 checksum=1 submissions=3 retirements=2 callbacks=2 nonzero_exports=2'

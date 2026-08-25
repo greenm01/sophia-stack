@@ -102,3 +102,42 @@ fn timeout_and_logout_release_bounded_work() {
     assert_eq!(queue.cancel_pending(), 2);
     assert_eq!(queue.pending_len(), 0);
 }
+
+#[test]
+fn a_withdrawn_surface_releases_the_launch_that_was_waiting_for_it() {
+    // When the layout coordinator gives up on a surface, the launch that owned
+    // it cannot ever settle. Waiting out the remaining admission budget would
+    // hold the queue shut behind it, so every later press queues in silence.
+    let mut queue = SessionLaunchQueue::default();
+    queue.enqueue(intent(1), 0);
+    queue.enqueue(intent(2), 0);
+    assert_eq!(queue.begin_next(true, true), Some(intent(1)));
+
+    let surface = SurfaceId::new(7, 1);
+    let untouched = SurfaceId::new(8, 1);
+    assert!(queue.observe_surface(surface));
+
+    // A withdrawal naming some other surface is not this launch's business.
+    assert!(queue.withdraw_current(&[untouched]).is_none());
+    assert_eq!(queue.withdrawn(), 0);
+
+    assert_eq!(
+        queue
+            .withdraw_current(&[untouched, surface])
+            .map(|admission| admission.intent),
+        Some(intent(1))
+    );
+    // Counted apart from a timeout: the deadline was never reached.
+    assert_eq!(queue.withdrawn(), 1);
+    assert_eq!(queue.timed_out(), 0);
+
+    // The queue moves on rather than staying shut.
+    assert_eq!(queue.begin_next(true, true), Some(intent(2)));
+}
+
+#[test]
+fn a_withdrawal_without_an_outstanding_launch_is_not_an_outcome() {
+    let mut queue = SessionLaunchQueue::default();
+    assert!(queue.withdraw_current(&[SurfaceId::new(7, 1)]).is_none());
+    assert_eq!(queue.withdrawn(), 0);
+}

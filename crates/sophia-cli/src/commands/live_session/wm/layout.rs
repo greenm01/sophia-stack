@@ -69,6 +69,10 @@ struct PersistentLiveLayout {
     output_reservations: sophia_engine::SurfaceOutputReservationState,
     unmanaged_surfaces: BTreeSet<SurfaceId>,
     admission_retries: BTreeMap<SurfaceId, u8>,
+    /// Surfaces whose admission this coordinator gave up on, awaiting
+    /// whoever was waiting on them. Drained rather than read, so an
+    /// abandoned launch is told once and not once per owner-loop turn.
+    withdrawn_admissions: Vec<SurfaceId>,
     /// Surfaces whose `Manage` request the window manager answered by placing
     /// nothing. Keyed by the facts it answered against, so a fact change retires
     /// the entry rather than any timer.
@@ -650,6 +654,10 @@ impl PersistentLiveLayout {
         false
     }
 
+    fn take_withdrawn_admissions(&mut self) -> Vec<SurfaceId> {
+        std::mem::take(&mut self.withdrawn_admissions)
+    }
+
     fn constraint_relayout_required(&self) -> bool {
         self.constraint_relayout_required
     }
@@ -1137,6 +1145,16 @@ impl PersistentLiveLayout {
                 .map_err(|error| {
                     format!("failed to queue terminal WM admission withdrawal: {error:?}")
                 })?;
+            // Giving up on a surface is a decision, and it was silent: the
+            // coordinator erased an admission with nothing on the record, so a
+            // launch that owned it went on waiting for a surface that no longer
+            // existed. Say so, and keep the surface for whoever is waiting.
+            println!(
+                "sophia_live_surface_admission schema=1 status=withdrawn transaction={} surface={} reason=retries_exhausted",
+                pending.transaction.raw(),
+                surface.index(),
+            );
+            self.withdrawn_admissions.push(*surface);
             self.admissions.remove(*surface);
             self.planning_surfaces.remove(surface);
             self.authority_surface_facts.remove(surface);
