@@ -504,6 +504,35 @@ fn run_x_authority_glxgears_smoke()
     })
 }
 
+/// Renders through a GLXPixmap, which is the offscreen DRI3 path a pbuffer takes.
+///
+/// `dri3_get_pixmap_buffer` is the function a GL client fails in when an offscreen
+/// drawable is refused, and this reaches it against an ordinary pixmap that already
+/// validates. It is the passing baseline that isolates the pbuffer as the only
+/// difference.
+fn run_x_authority_glx_pixmap_smoke()
+-> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let command = resolve_external_probe_binary("pbdemo", "pbdemo")?;
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
+        device: first_openable_render_node()?,
+    });
+    let (display, socket_path) = temp_xauthority_display(6675)?;
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "pbdemo",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &["64", "64", "/tmp/claude-1000/-home-niltempus-dev-sophia-stack/1c11f288-ecf0-4e3e-bded-f8ea0dc64d3c/scratchpad/probe.ppm"],
+        display,
+        socket_path,
+        namespace: NamespaceId::from_raw(64),
+        require_transactions: false,
+        pixel_proof: ExternalProbePixelProof::None,
+        allow_proof_kill_without_transactions: true,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+    })
+}
+
 fn run_x_authority_kitty_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("kitty", "kitty")?;

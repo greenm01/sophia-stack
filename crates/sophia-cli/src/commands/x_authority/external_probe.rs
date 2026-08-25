@@ -261,7 +261,11 @@ fn run_x_authority_external_probe_smoke(
     if let Some(profile) = firefox_profile.as_ref() {
         let _ = std::fs::remove_dir_all(profile);
     }
-    if !allow_proof_kill_without_transactions || !proof_window_killed {
+    // Join only when the client actually reached the server. A probe that exits
+    // before it opens the display -- a usage error, a missing argument -- leaves
+    // nothing to drain, and waiting on it used to deadlock with no report at all,
+    // because the report prints after this function returns.
+    if requests > 0 && (!allow_proof_kill_without_transactions || !proof_window_killed) {
         server
             .join()
             .map_err(|_| format!("X authority {label} socket server thread panicked"))?

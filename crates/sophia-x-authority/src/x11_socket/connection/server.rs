@@ -921,6 +921,62 @@ fn serve_x11_core_socket_listener_with_setup_authorization(
     }
 }
 
+/// Waits for one client, giving up rather than waiting forever.
+///
+/// `UnixListener` has no accept deadline, so this polls a non-blocking listener
+/// when one is asked for. The bound is the same the connected client gets: a
+/// client that has not arrived within it is not going to.
+#[cfg(unix)]
+fn accept_within(
+    listener: &UnixListener,
+    idle_timeout: Option<Duration>,
+) -> Result<
+    (
+        std::os::unix::net::UnixStream,
+        std::os::unix::net::SocketAddr,
+    ),
+    X11SetupSocketError,
+> {
+    let Some(timeout) = idle_timeout else {
+        return listener.accept().map_err(|error| {
+            X11SetupSocketError::new(format!("failed to accept X11 core client: {error}"))
+        });
+    };
+    listener.set_nonblocking(true).map_err(|error| {
+        X11SetupSocketError::new(format!("failed to poll for an X11 core client: {error}"))
+    })?;
+    let deadline = std::time::Instant::now() + timeout;
+    let accepted = loop {
+        match listener.accept() {
+            Ok(accepted) => break Ok(accepted),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= deadline {
+                    break Err(X11SetupSocketError::new(format!(
+                        "no X11 core client connected within {}ms",
+                        timeout.as_millis()
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => {
+                break Err(X11SetupSocketError::new(format!(
+                    "failed to accept X11 core client: {error}"
+                )));
+            }
+        }
+    };
+    // The serve loop relies on the accepted stream's read timeout rather than on
+    // spinning, so both listener and stream go back to blocking.
+    listener.set_nonblocking(false).map_err(|error| {
+        X11SetupSocketError::new(format!("failed to restore X11 core listener: {error}"))
+    })?;
+    let (stream, address) = accepted?;
+    stream.set_nonblocking(false).map_err(|error| {
+        X11SetupSocketError::new(format!("failed to restore X11 core client: {error}"))
+    })?;
+    Ok((stream, address))
+}
+
 #[cfg(unix)]
 fn serve_x11_core_socket_listener_once_with_setup_authorization(
     listener: &UnixListener,
@@ -931,9 +987,11 @@ fn serve_x11_core_socket_listener_once_with_setup_authorization(
     idle_timeout: Option<Duration>,
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
-    let (mut stream, _) = listener.accept().map_err(|error| {
-        X11SetupSocketError::new(format!("failed to accept X11 core client: {error}"))
-    })?;
+    // The idle timeout below guards a client that connects and then goes quiet.
+    // A client that never connects at all -- one that exits on a usage error
+    // before it opens the display -- would otherwise park this thread forever,
+    // and a caller waiting on it has nothing to print. Bound that wait too.
+    let (mut stream, _) = accept_within(listener, idle_timeout)?;
     if let Some(timeout) = idle_timeout {
         stream.set_read_timeout(Some(timeout)).map_err(|error| {
             X11SetupSocketError::new(format!("failed to set X11 core read timeout: {error}"))

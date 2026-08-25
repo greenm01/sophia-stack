@@ -47,6 +47,11 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    if args.iter().any(|arg| arg == "x-authority-glx-pixmap-smoke") {
+        let report = run_x_authority_glx_pixmap_smoke()?;
+        print_external_probe_smoke_report("x-authority-glx-pixmap-smoke", &report);
+        return Ok(true);
+    }
     if args.iter().any(|arg| arg == "x-authority-glxgears-smoke") {
         let report = run_x_authority_glxgears_smoke()?;
         print_external_probe_smoke_report("x-authority-glxgears-smoke", &report);
