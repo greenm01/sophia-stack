@@ -9,6 +9,11 @@ impl XAuthorityRuntime {
              Ok(crate::X_SETUP_DEFAULT_ROOT | crate::X_SETUP_DEFAULT_COLORMAP)
          ) || self.resources.get(resource).is_some()
              || self.graphics_contexts.contains(resource)
+             // GLX contexts and drawables are ids a client chose too. Creating one
+             // already refuses a collision with the tables above; omitting them here
+             // let the reverse happen, so a pixmap could shadow a live pbuffer.
+             || self.glx_contexts.contains_key(&resource)
+             || self.glx_drawables.contains_key(&resource)
      }
  
      pub fn window_count(&self) -> usize {

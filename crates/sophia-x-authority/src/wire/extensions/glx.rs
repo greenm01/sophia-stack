@@ -162,6 +162,23 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
             require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
             Ok(XWireRequest::GlxDestroyPbuffer { pbuffer: id(4) })
         }
+        X_GLX_QUERY_CONTEXT_MINOR_OPCODE => {
+            require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::GlxQueryContext { context: id(4) })
+        }
+        X_GLX_CHANGE_DRAWABLE_ATTRIBUTES_MINOR_OPCODE => {
+            require_len(X_GLX_MAJOR_OPCODE, 12, bytes.len())?;
+            // The count is pairs, as everywhere else in this extension.
+            let count = context.byte_order.u32(&bytes[8..12]) as usize;
+            require_exact_len(
+                X_GLX_MAJOR_OPCODE,
+                12usize.saturating_add(count.saturating_mul(8)),
+                bytes.len(),
+            )?;
+            // The only attribute this sets is the event mask, and Sophia sends no
+            // GLX events, so the values are validated and discarded.
+            Ok(XWireRequest::GlxChangeDrawableAttributes { drawable: id(4) })
+        }
         X_GLX_MAKE_CONTEXT_CURRENT_MINOR_OPCODE => {
             require_exact_len(X_GLX_MAJOR_OPCODE, 20, bytes.len())?;
             let context_id = context.byte_order.u32(&bytes[16..20]);

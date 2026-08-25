@@ -219,9 +219,19 @@ promotion gate.
    `GetGeometry` answers for a GLX drawable, and `GLX_PIXMAP_BIT` is withdrawn so
    the advertised drawable types are the implemented ones. That is proven at the
    wire boundary only: the offline probe meant to exercise the real Mesa path does
-   not run, so the physical rerun is the first real-client evidence. The corrected
-   signed physical rerun remains open. Reservations are deliberately still
-   absent.
+   not run, so the physical rerun was the first real-client evidence -- and it
+   found that creating a pbuffer nothing may use moves the failure rather than
+   removing it. The browser's GL now initialised, reached DRI3, named the pbuffer
+   and took `BadWindow`, so its GPU process crash-looped where it had previously
+   fallen back to software. Seven request sites across three validators now admit
+   a drawable whose buffers the client allocated, while core drawing keeps
+   refusing one. The probe harness that should have caught this first is fixed:
+   its accept had no deadline and it joined a server thread no client had reached,
+   so it hung silently; it now reproduces the physical failure offline in seconds.
+   The GLX 1.3 surface is complete apart from the withdrawn pixmap requests. One
+   identified cause remains, DRI3 minor 8 `BuffersFromPixmap`, which needs plane
+   descriptors the frontend does not retain. The corrected signed physical rerun
+   remains open. Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client

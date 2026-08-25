@@ -43,6 +43,8 @@ fn dispatch_glx_request(
             | XWireRequest::GlxCreateWindow { .. }
             | XWireRequest::GlxCreatePbuffer { .. }
             | XWireRequest::GlxDestroyPbuffer { .. }
+            | XWireRequest::GlxQueryContext { .. }
+            | XWireRequest::GlxChangeDrawableAttributes { .. }
             | XWireRequest::GlxMakeContextCurrent { .. }
             | XWireRequest::GlxDeleteWindow { .. }
             | XWireRequest::GlxGetDrawableAttributes { .. }
@@ -316,6 +318,59 @@ fn dispatch_glx_request(
                             major_code: context.major_opcode,
                         })]
                     };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // GLX 1.3's context query. Direct Mesa knows its own context
+                // attributes, but a client that asks is entitled to an answer from
+                // a server claiming this version. The reply shares the drawable
+                // attributes shape: a pair count, twenty bytes of pad, then pairs.
+                XWireRequest::GlxQueryContext { context: glx_context } => {
+                    let outputs = match runtime.glx_context(context.namespace, glx_context) {
+                        Ok((fbconfig, _)) => {
+                            vec![XClientOutput::Reply(XClientReply::GlxDrawableAttributes {
+                                sequence: context.sequence,
+                                attributes: vec![
+                                    (0x8013, fbconfig),
+                                    (0x8011, 0x8014),
+                                    (0x800C, 0),
+                                ],
+                            })]
+                        }
+                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            glx_context.local.raw() as u32,
+                        ))],
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // Sets the drawable event mask, which selects the clobber events a
+                // pbuffer can report. Sophia never sends them, so the drawable is
+                // validated and the request records nothing -- refusing it would be
+                // the worse answer, since the client is entitled to ask.
+                XWireRequest::GlxChangeDrawableAttributes { drawable } => {
+                    let outputs = runtime
+                        .drawable_facts(context.namespace, drawable)
+                        .err()
+                        .map(|error| {
+                            XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                drawable.local.raw() as u32,
+                            ))
+                        })
+                        .into_iter()
+                        .collect();
                     XDispatchResult {
                         response: None,
                         outputs,

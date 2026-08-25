@@ -612,6 +612,12 @@ pub enum XWireRequest {
     GlxDestroyPbuffer {
         pbuffer: XResourceId,
     },
+    GlxQueryContext {
+        context: XResourceId,
+    },
+    GlxChangeDrawableAttributes {
+        drawable: XResourceId,
+    },
     GlxMakeContextCurrent {
         drawable: XResourceId,
         read_drawable: XResourceId,

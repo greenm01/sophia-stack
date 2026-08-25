@@ -327,6 +327,138 @@ fn a_pbuffer_beyond_the_advertised_maximum_is_refused_or_clamped() {
     ));
 }
 
+/// The GLX 1.3 requests a client may reach after the drawable API it is offered.
+///
+/// A server claiming a version owes the requests that version introduced. These two
+/// are the remainder of the 1.3 surface Sophia advertises, once the pbuffer half is
+/// implemented and GLX pixmaps are withdrawn rather than promised.
+#[test]
+fn glx_answers_the_remaining_thirteen_requests() {
+    let namespace = NamespaceId::from_raw(79);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let glx_context = 0x220401;
+    let pbuffer = 0x220402;
+
+    // A context to ask about.
+    let mut create = vec![X_GLX_MAJOR_OPCODE, 3u8];
+    push_u16(&mut create, XByteOrder::LittleEndian, 6);
+    push_u32(&mut create, XByteOrder::LittleEndian, glx_context);
+    push_u32(&mut create, XByteOrder::LittleEndian, X_SETUP_DEFAULT_VISUAL);
+    push_u32(&mut create, XByteOrder::LittleEndian, 0);
+    push_u32(&mut create, XByteOrder::LittleEndian, 0);
+    create.extend_from_slice(&[1, 0, 0, 0]);
+    let create = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &create,
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    // QueryContext answers with the configuration the context was made from.
+    let mut query = vec![X_GLX_MAJOR_OPCODE, X_GLX_QUERY_CONTEXT_MINOR_OPCODE];
+    push_u16(&mut query, XByteOrder::LittleEndian, 2);
+    push_u32(&mut query, XByteOrder::LittleEndian, glx_context);
+    let query = decode_x11_core_request(
+        context(namespace, 3, XByteOrder::LittleEndian),
+        &query,
+    )
+    .unwrap();
+    assert_eq!(
+        query,
+        XWireRequest::GlxQueryContext {
+            context: XResourceId::new(u64::from(glx_context), 1),
+        }
+    );
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        query,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        result.outputs.as_slice(),
+        [XClientOutput::Reply(XClientReply::GlxDrawableAttributes { .. })]
+    ));
+
+    // An unknown context is still refused.
+    let mut unknown = vec![X_GLX_MAJOR_OPCODE, X_GLX_QUERY_CONTEXT_MINOR_OPCODE];
+    push_u16(&mut unknown, XByteOrder::LittleEndian, 2);
+    push_u32(&mut unknown, XByteOrder::LittleEndian, 0x220999);
+    let unknown = decode_x11_core_request(
+        context(namespace, 5, XByteOrder::LittleEndian),
+        &unknown,
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 6, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        unknown,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        result.outputs.as_slice(),
+        [XClientOutput::Error(_)]
+    ));
+
+    // ChangeDrawableAttributes validates its drawable and records nothing.
+    let created = decode_x11_core_request(
+        context(namespace, 7, XByteOrder::LittleEndian),
+        &glx_create_pbuffer_request(
+            XByteOrder::LittleEndian,
+            1,
+            pbuffer,
+            &[
+                (X_GLX_PBUFFER_WIDTH_ATTRIBUTE, 8),
+                (X_GLX_PBUFFER_HEIGHT_ATTRIBUTE, 8),
+            ],
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 8, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        created,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let mut change = vec![
+        X_GLX_MAJOR_OPCODE,
+        X_GLX_CHANGE_DRAWABLE_ATTRIBUTES_MINOR_OPCODE,
+    ];
+    push_u16(&mut change, XByteOrder::LittleEndian, 5);
+    push_u32(&mut change, XByteOrder::LittleEndian, pbuffer);
+    push_u32(&mut change, XByteOrder::LittleEndian, 1);
+    push_u32(&mut change, XByteOrder::LittleEndian, 0x801D);
+    push_u32(&mut change, XByteOrder::LittleEndian, 0);
+    let change = decode_x11_core_request(
+        context(namespace, 9, XByteOrder::LittleEndian),
+        &change,
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 10, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        change,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        result.outputs.is_empty(),
+        "setting an event mask Sophia never sends is not an error"
+    );
+}
+
 /// The drawable types Sophia advertises are the ones it implements.
 ///
 /// The catalog used to promise pixmap drawables with none of the four requests
