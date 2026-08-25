@@ -66,7 +66,10 @@ if [[ "$(grep -Ec '^sophia_hagia_policy_identity schema=2 status=bound sophia_co
     echo "Hagia physical policy evidence lacks one exact Sophia/Hagia/Hagia Shell identity" >&2
     exit 1
 fi
-if [[ "$(grep -Ec '^sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=[1-9][0-9]* revision=1$' "$evidence" || true)" != 1 ]]; then
+# The revision is not pinned: the proof's scripted shell restart drives a broker
+# re-admission, so a completed run legitimately ends on a later revision. The
+# protection of the admission is the property, not the count of admissions.
+if [[ "$(grep -Ec '^sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=[1-9][0-9]* revision=[1-9][0-9]*$' "$evidence" || true)" != 1 ]]; then
     echo "Hagia physical policy evidence lacks one protected metadata-broker admission" >&2
     exit 1
 fi
@@ -154,7 +157,8 @@ browser_layout_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=layout_commit
 if ! (( first_shell_admitted_line == shell_activation_lines[0] \
     && shell_ready_line < shell_shortcut_lines[0] \
     && browser_launch_line < browser_admitted_line \
-    && browser_admitted_line < browser_layout_line \
+    && browser_launch_line < browser_layout_line \
+    && browser_admitted_line < shell_shortcut_lines[0] \
     && browser_layout_line < shell_shortcut_lines[0] \
     && shell_shortcut_lines[0] < shell_visible_lines[0] \
     && shell_visible_lines[0] < shell_issuer_lines[0] \

@@ -35,7 +35,7 @@ marker="$temp_dir/restart.marker"
 proof_result="$temp_dir/proof.result"
 
 printf '%s\n' \
-    'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=4321 revision=1' \
+    'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=4321 revision=2' \
     'sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=4322 revision=1 connection_epoch=1' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=7 content=redacted' \
     'sophia_live_wm schema=1 status=physical_action_committed action=37' \
@@ -65,8 +65,8 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
     'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchBrowser' \
-    'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
     'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=8 content=redacted' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:02Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=10 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(94), transaction: TransactionId(62), nonzero_rgb_pixels: 1800 }) frame=94' \
