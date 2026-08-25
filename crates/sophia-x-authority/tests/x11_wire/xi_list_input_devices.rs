@@ -90,8 +90,8 @@ fn xi_list_input_devices_reports_both_virtual_masters() {
     assert_eq!(button[1], 4, "ButtonInfo is four bytes");
     assert_eq!(
         read_u16(XByteOrder::LittleEndian, &button[2..4]),
-        7,
-        "the same seven buttons GetPointerMapping reports"
+        u16::from(sophia_x_authority::X_POINTER_BUTTON_COUNT),
+        "the same buttons GetPointerMapping reports"
     );
     let key = &reply[52..60];
     assert_eq!(key[0], X_INPUT_LEGACY_CLASS_KEY);

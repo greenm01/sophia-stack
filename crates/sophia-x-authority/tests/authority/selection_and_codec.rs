@@ -154,6 +154,46 @@ fn evdev_pointer_mapping_preserves_core_button_state_order() {
     assert_eq!(pointer.map_evdev_button(999, true), None);
 }
 
+/// Sophia cannot emit a button it has not advertised.
+///
+/// The advertisement said seven while the mapper emitted nine, in three places
+/// that agreed only by hand. This asserts the direction of the dependency: every
+/// button either mapper can produce is inside the advertised count, so adding a
+/// button without raising the count fails here rather than on a client.
+#[test]
+fn every_button_the_pointer_can_emit_is_advertised() {
+    let mut pointer = XCorePointerMapper::new();
+    let mut emitted = Vec::new();
+    for evdev_button in 0..=0x2ff {
+        if let Some((button, _)) = pointer.map_evdev_button(evdev_button, true) {
+            emitted.push(button);
+            pointer.map_evdev_button(evdev_button, false);
+        }
+    }
+    for axis in [(0, -120), (0, 120), (-120, 0), (120, 0)] {
+        emitted.extend(XCorePointerMapper::map_axis_to_button(axis.0, axis.1));
+    }
+    emitted.sort_unstable();
+    assert_eq!(
+        emitted,
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "the buttons the frontend can put on the wire"
+    );
+
+    let mapping = sophia_x_authority::x_pointer_button_mapping();
+    assert_eq!(
+        mapping,
+        emitted,
+        "GetPointerMapping reports exactly the buttons the mapper emits"
+    );
+    for button in &emitted {
+        assert!(
+            *button <= sophia_x_authority::X_POINTER_BUTTON_COUNT,
+            "button {button} is emitted but outside the advertised count"
+        );
+    }
+}
+
 #[test]
 fn protocol_neutral_axes_map_to_x11_core_scroll_buttons_at_the_frontend() {
     assert_eq!(XCorePointerMapper::map_axis_to_button(0, -120), Some(4));

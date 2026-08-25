@@ -1,3 +1,25 @@
+/// The highest core X button Sophia emits, and therefore the count it advertises.
+///
+/// One owner because there were three, and they had already drifted:
+/// `map_evdev_button` emits 8 and 9 for a mouse's side buttons, `GetPointerMapping`
+/// answered with seven entries, and XI2's master pointer declared seven under a
+/// comment asserting the two agreed. They agreed by hand. Sophia advertises what
+/// it implements, so the advertised count follows the mapper rather than the
+/// other way around.
+///
+/// Buttons 4-7 are the scroll directions `map_axis_to_button` produces, so 1..=9
+/// is the whole set a client can observe. Only 1-5 carry a bit in the core state
+/// field; X has never had bits for the rest.
+pub const X_POINTER_BUTTON_COUNT: u8 = 9;
+
+/// The button mapping `GetPointerMapping` reports.
+///
+/// Sophia remaps nothing, so entry `n` is button `n`, for as many buttons as it
+/// can emit.
+pub fn x_pointer_button_mapping() -> Vec<u8> {
+    (1..=X_POINTER_BUTTON_COUNT).collect()
+}
+
 /// XI2 reserves valuators 0 and 1 for relative pointer X and Y.
 pub const X_POINTER_HORIZONTAL_SCROLL_VALUATOR: u16 = 2;
 /// The vertical scroll valuator follows pointer X/Y and horizontal scrolling.

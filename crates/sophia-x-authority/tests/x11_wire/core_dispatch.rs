@@ -360,7 +360,7 @@ fn x11_dispatch_reports_core_modifier_mapping() {
 }
 
 #[test]
-fn x11_dispatch_reports_seven_button_identity_pointer_mapping() {
+fn x11_dispatch_reports_an_identity_pointer_mapping_over_the_advertised_buttons() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -379,11 +379,18 @@ fn x11_dispatch_reports_seven_button_identity_pointer_mapping() {
         &mut properties,
     )
     .encoded_outputs(XByteOrder::LittleEndian);
+    // The mapping is an identity over however many buttons Sophia advertises, so
+    // the reply's length fields follow the count rather than restating it.
+    let mapping = sophia_x_authority::x_pointer_button_mapping();
+    let padded = mapping.len().next_multiple_of(4);
     assert_eq!(encoded.len(), 1);
-    assert_eq!(encoded[0].len(), 40);
-    assert_eq!(encoded[0][1], 7);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 2);
-    assert_eq!(&encoded[0][32..39], &[1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(encoded[0].len(), 32 + padded);
+    assert_eq!(encoded[0][1], u8::try_from(mapping.len()).unwrap());
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]),
+        u32::try_from(padded / 4).unwrap()
+    );
+    assert_eq!(&encoded[0][32..32 + mapping.len()], &mapping[..]);
 }
 
 #[test]

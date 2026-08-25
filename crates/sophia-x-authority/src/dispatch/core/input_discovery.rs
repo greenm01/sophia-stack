@@ -94,7 +94,7 @@ fn dispatch_core_input_discovery_request(
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetPointerMapping {
                         sequence: context.sequence,
-                        mapping: vec![1, 2, 3, 4, 5, 6, 7],
+                        mapping: crate::pointer::x_pointer_button_mapping(),
                     })],
                     metadata_candidates: Vec::new(),
                 },

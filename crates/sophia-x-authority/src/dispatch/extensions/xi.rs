@@ -19,8 +19,11 @@ const X_VIRTUAL_MASTER_DEVICES: [XVirtualMasterDevice; 2] = [
         device_id: X_VIRTUAL_MASTER_POINTER_ID,
         name: "Sophia master pointer",
         kind: XVirtualMasterKind::Pointer {
-            // The same seven buttons `GetPointerMapping` reports.
-            button_count: 7,
+            // Derived from the one owner rather than restated, so the master
+            // pointer and `GetPointerMapping` cannot disagree about how many
+            // buttons exist.
+            // Widening a button number; `u16::from` is not const-callable yet.
+            button_count: crate::pointer::X_POINTER_BUTTON_COUNT as u16,
         },
     },
     XVirtualMasterDevice {
