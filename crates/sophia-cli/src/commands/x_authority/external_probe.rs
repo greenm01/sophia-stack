@@ -43,6 +43,13 @@ struct ExternalProbeInvocation<'a> {
     /// milliseconds and a browser starts a GPU process first. Carried here so
     /// a slow client is described rather than special-cased by label.
     proof_timeout: Duration,
+    /// Whether the client is given a deliberately unreachable session bus.
+    ///
+    /// An absent address is not neutral: a toolkit that finds none autolaunches
+    /// its own daemon, which opens connections and takes time the proof then
+    /// attributes to the graphics path. An address that parses and cannot be
+    /// reached makes desktop integration fail immediately instead.
+    isolate_session_bus: bool,
 }
 
 fn run_x_authority_external_probe_smoke(
@@ -62,6 +69,7 @@ fn run_x_authority_external_probe_smoke(
         allow_client_failure_without_x_error,
         render_device_provider,
         proof_timeout,
+        isolate_session_bus,
     } = invocation;
     let server_path = socket_path.clone();
     // One X request can produce an opcode, detail, transaction, and buffer
@@ -168,11 +176,9 @@ fn run_x_authority_external_probe_smoke(
                 .env("GTK_USE_PORTAL", "0")
                 .env("MOZ_ENABLE_WAYLAND", "0")
                 .env_remove("WAYLAND_DISPLAY");
-            if label == "kitty" && std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
-                // A missing address invokes dbus-launch, which opens the
-                // smoke's single X connection before Kitty. A deliberately
-                // unavailable address makes desktop integration fail quickly
-                // while leaving the graphics proof deterministic.
+            if isolate_session_bus
+                && std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none()
+            {
                 command.env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/dev/null");
             }
         }

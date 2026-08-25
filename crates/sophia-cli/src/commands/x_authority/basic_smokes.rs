@@ -366,6 +366,7 @@ fn run_x_authority_external_probe_smoke_spec(
         allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
         render_device_provider: None,
         proof_timeout: Duration::from_secs(spec.proof_timeout_secs),
+        isolate_session_bus: false,
     })
 }
 
@@ -402,6 +403,7 @@ fn run_x_authority_xmobar_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: None,
         proof_timeout: Duration::from_secs(8),
+        isolate_session_bus: false,
     })
 }
 
@@ -451,6 +453,7 @@ fn run_x_authority_zenity_render_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(8),
+        isolate_session_bus: false,
     })
 }
 
@@ -476,6 +479,7 @@ fn run_x_authority_vkcube_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(8),
+        isolate_session_bus: false,
     })
 }
 
@@ -506,6 +510,7 @@ fn run_x_authority_glxgears_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(8),
+        isolate_session_bus: false,
     })
 }
 
@@ -546,6 +551,7 @@ fn run_x_authority_glx_pbuffer_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(8),
+        isolate_session_bus: false,
     });
     let _ = std::fs::remove_file(&image);
     report
@@ -579,6 +585,9 @@ fn run_x_authority_browser_smoke()
         display_mode: ExternalProbeDisplayMode::Environment,
         command_args: &[
             &profile_arg,
+            // Chromium keeps its log to a file unless told otherwise; without
+            // this the probe captures an empty stderr and a stall looks silent.
+            "--enable-logging=stderr",
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-networking",
@@ -593,6 +602,7 @@ fn run_x_authority_browser_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(30),
+        isolate_session_bus: true,
     });
     let _ = std::fs::remove_dir_all(&profile);
     report
@@ -629,5 +639,6 @@ fn run_x_authority_kitty_smoke()
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
         proof_timeout: Duration::from_secs(20),
+        isolate_session_bus: true,
     })
 }

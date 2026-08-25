@@ -22,6 +22,7 @@ pub(crate) fn collect_x_authority_xterm_render_authority_batches(
         allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
         render_device_provider: None,
         proof_timeout: std::time::Duration::from_secs(spec.proof_timeout_secs),
+        isolate_session_bus: false,
     })?;
     let authority_batches =
         authority_intakes_from_observed_transactions(&report.observed_transactions);
