@@ -301,4 +301,59 @@ if grep -Eq '(^hagia_policy_checkpoint schema=1 status=(discarded|disabled) | ev
     exit 1
 fi
 
+# The run the guide asked for, against the run that happened.
+#
+# Every count the guide waits on is cumulative, so no step can tell an operator's
+# extra press from a later legitimate one; the guide says so itself and defers the
+# question here. These are the totals, which can answer it: an action committed
+# more often than asked, or one never asked for at all, means the session that was
+# verified is not the session that was specified.
+#
+# The expectations are read out of the guide rather than restated, because a
+# restated expectation is a second owner of the same fact and this file already
+# had to be corrected once for drifting from a run it had never seen.
+guide="${SOPHIA_HAGIA_PHYSICAL_GUIDE:-$(dirname "$0")/fixtures/hagia_physical_guide.sh}"
+if [[ ! -r "$guide" ]]; then
+    echo "Hagia physical guide is unreadable, so its action totals cannot be checked: $guide" >&2
+    exit 1
+fi
+
+declare -A expected_actions=()
+while read -r action expectation; do
+    # Each step waits for a cumulative count, so the largest is the run's total.
+    if [[ -z "${expected_actions[$action]:-}" ]] || (( expectation > expected_actions[$action] )); then
+        expected_actions[$action]="$expectation"
+    fi
+done < <(grep -oE '^[[:space:]]*wait_for_action_count [0-9]+ [0-9]+' "$guide" | awk '{ print $2, $3 }')
+
+if (( ${#expected_actions[@]} == 0 )); then
+    echo "Hagia physical guide requested no actions, which cannot be right" >&2
+    exit 1
+fi
+
+declare -A committed_actions=()
+while read -r count action; do
+    committed_actions[$action]="$count"
+done < <(grep -oE '^sophia_live_wm schema=1 status=physical_action_committed action=[0-9]+$' "$evidence" \
+    | sed 's/.*action=//' | sort -n | uniq -c | awk '{ print $1, $2 }')
+
+action_total_failures=0
+for action in "${!expected_actions[@]}"; do
+    observed="${committed_actions[$action]:-0}"
+    if (( observed != expected_actions[$action] )); then
+        echo "action $action was committed $observed times; the guide asked for ${expected_actions[$action]}" >&2
+        action_total_failures=$((action_total_failures + 1))
+    fi
+done
+for action in "${!committed_actions[@]}"; do
+    if [[ -z "${expected_actions[$action]:-}" ]]; then
+        echo "action $action was committed ${committed_actions[$action]} times but the guide never asked for it" >&2
+        action_total_failures=$((action_total_failures + 1))
+    fi
+done
+if (( action_total_failures != 0 )); then
+    echo "The session that ran is not the session the guide specified; re-run the proof." >&2
+    exit 1
+fi
+
 echo "Hagia physical policy evidence passed"

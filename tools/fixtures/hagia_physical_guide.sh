@@ -25,10 +25,12 @@ action_count() {
 }
 
 # These counts are cumulative across the whole guide, and several actions are
-# asked for more than once, so an count above the step's expectation is not
+# asked for more than once, so a count above the step's expectation is not
 # evidence of an extra press: it is what a later legitimate press looks like from
 # an earlier step. Catching an operator's extra keypress needs the run's final
-# totals, not a threshold here.
+# totals, not a threshold here, and `verify_hagia_policy_physical.sh` checks them
+# at the end of the run. It reads the expectations out of the calls below, so a
+# step added here is a step it starts checking.
 wait_for_action_count() {
     action="$1"
     expected="$2"
