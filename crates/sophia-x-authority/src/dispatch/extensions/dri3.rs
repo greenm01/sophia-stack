@@ -23,7 +23,7 @@ fn dispatch_dri3_request(
                             minor_code: u16::from(crate::X_DRI3_OPEN_MINOR_OPCODE),
                             major_code: context.major_opcode,
                         })]
-                    } else if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable)
+                    } else if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable)
                     {
                         let mut error = x_error_from_runtime(
                             error,
@@ -55,7 +55,7 @@ fn dispatch_dri3_request(
                     bits_per_pixel,
                 } => {
                     let outputs =
-                        if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
+                        if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable) {
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
@@ -101,7 +101,7 @@ fn dispatch_dri3_request(
                     modifier,
                 } => {
                     let outputs =
-                        if let Err(error) = runtime.validate_drawable_access(context.namespace, window) {
+                        if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, window) {
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
@@ -140,7 +140,7 @@ fn dispatch_dri3_request(
                     drawable, fence, ..
                 } => {
                     let outputs =
-                        if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
+                        if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable) {
                             vec![XClientOutput::Error(x_error_from_runtime(
                                 error,
                                 context.sequence,
@@ -179,7 +179,7 @@ fn dispatch_dri3_request(
                             major_code: context.major_opcode,
                         })]
                     } else if window.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-                        match runtime.validate_window_access(context.namespace, window) {
+                        match runtime.validate_dri3_drawable_access(context.namespace, window) {
                             Ok(()) => vec![XClientOutput::Reply(
                                 XClientReply::Dri3GetSupportedModifiers {
                                     sequence: context.sequence,

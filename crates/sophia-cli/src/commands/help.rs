@@ -33,6 +33,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-xterm-two-client-smoke");
     println!("commands: x-authority-zenity-smoke");
     println!("commands: x-authority-kitty-smoke");
+    println!("commands: x-authority-glx-pbuffer-smoke");
     println!("commands: x-authority-glxgears-smoke");
     println!("commands: x-authority-kitty-input-smoke");
     println!("commands: x-authority-vkcube-admission-smoke");

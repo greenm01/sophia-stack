@@ -504,24 +504,34 @@ fn run_x_authority_glxgears_smoke()
     })
 }
 
-/// Renders through a GLXPixmap, which is the offscreen DRI3 path a pbuffer takes.
+/// Drives mesa-demos' `pbdemo` through a real GLX pbuffer.
 ///
-/// `dri3_get_pixmap_buffer` is the function a GL client fails in when an offscreen
-/// drawable is refused, and this reaches it against an ordinary pixmap that already
-/// validates. It is the passing baseline that isolates the pbuffer as the only
-/// difference.
-fn run_x_authority_glx_pixmap_smoke()
+/// The offscreen path a browser's GL layer takes to bootstrap a display, exercised
+/// against real Mesa and DRI3 in seconds rather than a rig session. `pbdemo` takes
+/// its extent and a source image as positional arguments and exits before opening
+/// the display without them, so the image is written here rather than assumed.
+fn run_x_authority_glx_pbuffer_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("pbdemo", "pbdemo")?;
     let provider = Arc::new(ExternalProbeRenderDeviceProvider {
         device: first_openable_render_node()?,
     });
+    let image = std::env::temp_dir().join(format!("sophia-pbuffer-probe-{}.ppm", std::process::id()));
+    // A 2x2 binary PPM: the smallest input pbdemo will accept.
+    std::fs::write(
+        &image,
+        [
+            b"P6\n2 2\n255\n".as_slice(),
+            &[0xff, 0, 0, 0, 0xff, 0, 0, 0, 0xff, 0xff, 0xff, 0xff],
+        ]
+        .concat(),
+    )?;
     let (display, socket_path) = temp_xauthority_display(6675)?;
-    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+    let report = run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "pbdemo",
         command: &command,
         display_mode: ExternalProbeDisplayMode::Environment,
-        command_args: &["64", "64", "/tmp/claude-1000/-home-niltempus-dev-sophia-stack/1c11f288-ecf0-4e3e-bded-f8ea0dc64d3c/scratchpad/probe.ppm"],
+        command_args: &["64", "64", &image.to_string_lossy()],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(64),
@@ -530,7 +540,9 @@ fn run_x_authority_glx_pixmap_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
-    })
+    });
+    let _ = std::fs::remove_file(&image);
+    report
 }
 
 fn run_x_authority_kitty_smoke()

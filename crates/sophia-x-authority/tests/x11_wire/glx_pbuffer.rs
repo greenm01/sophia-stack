@@ -388,6 +388,98 @@ fn glx_advertises_only_the_drawable_types_it_implements() {
     }
 }
 
+/// A GL client imports its own buffers against the pbuffer it just created.
+///
+/// This is the pair statement with the guard below: DRI3 pixels are
+/// client-allocated, so a drawable with no server storage is a legal target here
+/// and is not one for core drawing. A physical run failed on exactly this --
+/// `dri3_get_pixmap_buffer` naming the pbuffer and taking `BadWindow`.
+#[test]
+fn dri3_admits_a_pbuffer_as_a_client_allocated_target() {
+    let namespace = NamespaceId::from_raw(78);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let pbuffer = 0x220308;
+
+    let create = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &glx_create_pbuffer_request(
+            XByteOrder::LittleEndian,
+            1,
+            pbuffer,
+            &[
+                (X_GLX_PBUFFER_WIDTH_ATTRIBUTE, 64),
+                (X_GLX_PBUFFER_HEIGHT_ATTRIBUTE, 64),
+            ],
+        ),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    // The request Mesa names in its error, and the one it sends first.
+    assert!(
+        runtime
+            .validate_dri3_drawable_access(namespace, XResourceId::new(u64::from(pbuffer), 1))
+            .is_ok(),
+        "a client-allocated import may name an offscreen drawable"
+    );
+
+    // GetSupportedModifiers takes a drawable despite the spec calling it a window.
+    let modifiers = decode_x11_core_request(
+        context(namespace, 3, XByteOrder::LittleEndian),
+        &dri3_get_supported_modifiers_request(XByteOrder::LittleEndian, pbuffer, 24, 32),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_DRI3_MAJOR_OPCODE),
+        modifiers,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Reply(
+                XClientReply::Dri3GetSupportedModifiers { .. }
+            )]
+        ),
+        "supported modifiers must answer for an offscreen drawable"
+    );
+
+    // A destroyed pbuffer stops being a legal target, and an id that never
+    // existed was never one.
+    let destroy = decode_x11_core_request(
+        context(namespace, 5, XByteOrder::LittleEndian),
+        &glx_destroy_pbuffer_request(XByteOrder::LittleEndian, pbuffer),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 6, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        destroy,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        runtime
+            .validate_dri3_drawable_access(namespace, XResourceId::new(u64::from(pbuffer), 1))
+            .is_err()
+    );
+    assert!(
+        runtime
+            .validate_dri3_drawable_access(namespace, XResourceId::new(0x220999, 1))
+            .is_err()
+    );
+}
+
 /// A pbuffer has no storage, so core drawing must keep refusing it. This pins
 /// the deliberate narrowness of `validate_drawable_access`.
 #[test]

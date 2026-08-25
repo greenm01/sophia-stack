@@ -23,9 +23,11 @@ fn dispatch_present_request(
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::PresentQueryCapabilities { target } => {
+                    // Mesa's DRI3 loader queries capabilities for every drawable it
+                    // initialises, offscreen ones included.
                     let outputs = if target.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT)
                         || runtime
-                            .validate_window_access(context.namespace, target)
+                            .validate_dri3_drawable_access(context.namespace, target)
                             .is_ok()
                     {
                         vec![XClientOutput::Reply(
@@ -61,7 +63,7 @@ fn dispatch_present_request(
                             major_code: context.major_opcode,
                         })]
                     } else if let Err(error) =
-                        validate_window_or_root_access(runtime, context.namespace, window)
+                        runtime.validate_dri3_drawable_access(context.namespace, window)
                     {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,

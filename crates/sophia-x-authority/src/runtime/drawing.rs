@@ -179,6 +179,21 @@ impl XAuthorityRuntime {
         Err(window_error)
     }
 
+    /// Drawables a client may name when it imports buffers it allocated itself.
+    ///
+    /// Wider than `validate_drawable_access` on purpose. DRI3 pixels are
+    /// client-allocated: the client creates the image and asks the server to wrap
+    /// its descriptors, so a drawable with no server storage is a legal target
+    /// here. It is not one for core drawing, which is why that validator stays
+    /// narrow and this one is named separately rather than widening it.
+    pub fn validate_dri3_drawable_access(
+        &self,
+        namespace: NamespaceId,
+        drawable: crate::XResourceId,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.drawable_facts(namespace, drawable).map(|_| ())
+    }
+
     pub fn validate_drawable_access(
         &self,
         namespace: NamespaceId,
