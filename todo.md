@@ -210,7 +210,16 @@ promotion gate.
    admitted wherever a request scopes to a window rather than acts on one, and
    protocol errors are tallied per opcode so a failed run names every cause at
    once instead of costing a run each. Selection watching itself is still
-   unimplemented -- the error is gone, the events were never there. The corrected
+   unimplemented -- the error is gone, the events were never there. The next run
+   named three causes at once rather than one, which is what the tally was for:
+   GLX `CreatePbuffer` and `DestroyPbuffer` refused six times each, and six core
+   `GetGeometry` refusals beside them, one sequence from a GL client bootstrapping
+   an offscreen surface. Sophia advertised GLX 1.4 while implementing five of the
+   twelve requests GLX 1.3 introduced; the pbuffer half is now implemented, core
+   `GetGeometry` answers for a GLX drawable, and `GLX_PIXMAP_BIT` is withdrawn so
+   the advertised drawable types are the implemented ones. That is proven at the
+   wire boundary only: the offline probe meant to exercise the real Mesa path does
+   not run, so the physical rerun is the first real-client evidence. The corrected
    signed physical rerun remains open. Reservations are deliberately still
    absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,

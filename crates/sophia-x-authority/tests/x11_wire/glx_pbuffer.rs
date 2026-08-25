@@ -327,6 +327,67 @@ fn a_pbuffer_beyond_the_advertised_maximum_is_refused_or_clamped() {
     ));
 }
 
+/// The drawable types Sophia advertises are the ones it implements.
+///
+/// The catalog used to promise pixmap drawables with none of the four requests
+/// that make one behind it -- the same advertise-then-refuse that cost this tree
+/// a physical run twice. Withdrawing the bit is what makes the promise true, and
+/// this keeps the two from parting again.
+#[test]
+fn glx_advertises_only_the_drawable_types_it_implements() {
+    let namespace = NamespaceId::from_raw(77);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let configs = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian)
+    .remove(0);
+    let attributes = read_u32(XByteOrder::LittleEndian, &configs[12..16]) as usize;
+    let drawable_type = (0..attributes)
+        .map(|index| {
+            let at = 32 + index * 8;
+            (
+                read_u32(XByteOrder::LittleEndian, &configs[at..at + 4]),
+                read_u32(XByteOrder::LittleEndian, &configs[at + 4..at + 8]),
+            )
+        })
+        .find(|(name, _)| *name == 0x8010)
+        .expect("the catalog states which drawable types it supports")
+        .1;
+
+    // Window and pbuffer, both implemented. Pixmap is not promised.
+    assert_eq!(drawable_type & 0x1, 0x1, "window drawables are implemented");
+    assert_eq!(drawable_type & 0x4, 0x4, "pbuffer drawables are implemented");
+    assert_eq!(
+        drawable_type & 0x2,
+        0,
+        "GLX pixmaps are not implemented, so they must not be advertised"
+    );
+
+    // And the requests behind the withdrawn bit really are absent, so the bit
+    // cannot be restored without them.
+    for minor in [13u8, 15, 22, 23] {
+        let request = vec![X_GLX_MAJOR_OPCODE, minor, 1, 0];
+        assert!(
+            matches!(
+                decode_x11_core_request(
+                    context(namespace, 1, XByteOrder::LittleEndian),
+                    &request
+                ),
+                Err(XWireParseError::UnknownOpcode(_))
+            ),
+            "GLX minor {minor} is advertised nowhere and implemented nowhere"
+        );
+    }
+}
+
 /// A pbuffer has no storage, so core drawing must keep refusing it. This pins
 /// the deliberate narrowness of `validate_drawable_access`.
 #[test]
