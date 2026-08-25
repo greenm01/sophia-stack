@@ -1,3 +1,13 @@
+/// Re-drive attempts against one standing target before the session says so.
+///
+/// A standing target is re-injected until the surface commits at exactly that
+/// size, so a surface that commits at any other size loops forever. The loop is
+/// idempotent and cheap, which is why it went unnoticed; this is the point at
+/// which repeating stops being indistinguishable from converging. Reporting, not
+/// a cap: bounding the loop before knowing why it does not converge would trade a
+/// visible symptom for an invisible one.
+const STANDING_TARGET_REDRIVE_REPORT_THRESHOLD: u32 = 8;
+
 struct PendingLiveWmLayout {
     transaction: TransactionId,
     layers: Vec<LayerSnapshot>,
@@ -742,6 +752,25 @@ impl PersistentLiveLayout {
                 layer.geometry.width = target.width;
                 layer.geometry.height = target.height;
                 proposal.requested_sizes.insert(surface, target);
+                let attempts = self.layout_epochs.note_standing_redrive(surface);
+                // An obligation re-driven this often is not converging, and the
+                // reconfigures are identical, so nothing else in the run would
+                // say so. Reported once at the boundary rather than every cycle:
+                // the loop is cheap, and a line per frame would bury it.
+                if attempts == STANDING_TARGET_REDRIVE_REPORT_THRESHOLD {
+                    let committed = self.layout_epochs.committed_size(surface);
+                    tracing::warn!(
+                        "sophia_live_wm_standing_target schema=1 status=not_converging surface={} attempts={} target={}x{} committed={} action=continue",
+                        surface.index(),
+                        attempts,
+                        target.width,
+                        target.height,
+                        committed.map_or_else(
+                            || "none".to_owned(),
+                            |size| format!("{}x{}", size.width, size.height)
+                        ),
+                    );
+                }
             }
         }
         for (surface, size) in &proposal.requested_sizes {

@@ -534,6 +534,67 @@ fn pending_target_matching_committed_size_is_not_an_obligation() {
     assert_eq!(coordinator.pending_target(surface), None);
 }
 
+/// A standing target that never converges says how often it was re-driven.
+///
+/// The re-drive is idempotent, so a browser reconfigured five times at identical
+/// geometry produced five identical records and no evidence that anything was
+/// wrong. The count is what distinguishes converging from repeating.
+#[test]
+fn standing_target_redrives_count_until_the_surface_converges() {
+    let surface = SurfaceId::new(11, 1);
+    let launch = size(1280, 1040);
+    let target = size(1276, 1422);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(surface, launch);
+    coordinator.set_pending_target(surface, target);
+    assert_eq!(
+        coordinator.standing_redrives(surface),
+        0,
+        "not yet attempted"
+    );
+
+    for expected in 1..=5 {
+        assert_eq!(coordinator.note_standing_redrive(surface), expected);
+    }
+    assert_eq!(coordinator.standing_redrives(surface), 5);
+
+    // Committing at some size other than the target leaves the obligation and
+    // its attempts standing: this is exactly the loop that went unnoticed.
+    coordinator.record_committed(surface, size(1276, 1400));
+    assert_eq!(coordinator.pending_target(surface), Some(target));
+    assert_eq!(coordinator.standing_redrives(surface), 5);
+
+    // Converging discharges both.
+    coordinator.record_committed(surface, target);
+    assert_eq!(coordinator.pending_target(surface), None);
+    assert_eq!(coordinator.standing_redrives(surface), 0);
+}
+
+/// Attempts belong to an obligation, not to a surface.
+#[test]
+fn a_new_standing_target_starts_its_own_redrive_count() {
+    let surface = SurfaceId::new(12, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    coordinator.record_committed(surface, size(800, 600));
+    coordinator.set_pending_target(surface, size(1000, 700));
+    coordinator.note_standing_redrive(surface);
+    coordinator.note_standing_redrive(surface);
+    assert_eq!(coordinator.standing_redrives(surface), 2);
+
+    // Re-stating the same target is the same obligation, so the count stands.
+    coordinator.set_pending_target(surface, size(1000, 700));
+    assert_eq!(coordinator.standing_redrives(surface), 2);
+
+    // A different target is a different obligation.
+    coordinator.set_pending_target(surface, size(1100, 800));
+    assert_eq!(coordinator.standing_redrives(surface), 0);
+
+    // So is clearing the obligation outright.
+    coordinator.note_standing_redrive(surface);
+    assert!(coordinator.clear_pending_target(surface));
+    assert_eq!(coordinator.standing_redrives(surface), 0);
+}
+
 #[test]
 fn retained_extent_updates_remain_presentable_while_a_standing_target_is_pending() {
     let surface = SurfaceId::new(24, 1);

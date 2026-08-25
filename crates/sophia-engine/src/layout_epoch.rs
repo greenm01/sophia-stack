@@ -173,6 +173,10 @@ pub struct LayoutEpochCoordinator {
     // toward the blind-WM target; it clears once the surface commits a
     // buffer at that exact target.
     pending_targets: BTreeMap<SurfaceId, Size>,
+    /// How many times each standing target has been re-driven without the
+    /// surface converging on it. Cleared with the target itself, so a live entry
+    /// always counts attempts against an obligation that is still outstanding.
+    standing_redrives: BTreeMap<SurfaceId, u32>,
     next_observation_sequence: u64,
     next_transaction: u64,
 }
@@ -189,6 +193,7 @@ impl Default for LayoutEpochCoordinator {
             constraints: BTreeMap::new(),
             admission: BTreeMap::new(),
             pending_targets: BTreeMap::new(),
+            standing_redrives: BTreeMap::new(),
             next_observation_sequence: 1,
             next_transaction: 1 << 63,
         }
@@ -297,6 +302,7 @@ impl LayoutEpochCoordinator {
         // standing re-drive obligation is discharged.
         if self.pending_targets.get(&surface) == Some(&size) {
             self.pending_targets.remove(&surface);
+            self.standing_redrives.remove(&surface);
         }
     }
 
@@ -306,9 +312,33 @@ impl LayoutEpochCoordinator {
     pub fn set_pending_target(&mut self, surface: SurfaceId, target: Size) {
         if self.committed_sizes.get(&surface) == Some(&target) {
             self.pending_targets.remove(&surface);
+            self.standing_redrives.remove(&surface);
         } else {
-            self.pending_targets.insert(surface, target);
+            // A different target is a new obligation, so its attempts start over
+            // rather than inheriting the previous one's.
+            if self.pending_targets.insert(surface, target) != Some(target) {
+                self.standing_redrives.remove(&surface);
+            }
         }
+    }
+
+    /// Counts one attempt at driving a surface to its standing target.
+    ///
+    /// A standing target is re-injected into every proposal until the surface
+    /// commits at exactly that size, and a surface that commits at some other
+    /// size never clears it. That loop is idempotent and was therefore invisible:
+    /// a browser was reconfigured five times at identical geometry with nothing
+    /// saying so. Counting the attempts is what separates "converging" from
+    /// "repeating", which the geometry alone cannot.
+    pub fn note_standing_redrive(&mut self, surface: SurfaceId) -> u32 {
+        let attempts = self.standing_redrives.entry(surface).or_insert(0);
+        *attempts = attempts.saturating_add(1);
+        *attempts
+    }
+
+    /// Attempts made against a surface's outstanding target, zero if none.
+    pub fn standing_redrives(&self, surface: SurfaceId) -> u32 {
+        self.standing_redrives.get(&surface).copied().unwrap_or(0)
     }
 
     pub fn pending_target(&self, surface: SurfaceId) -> Option<Size> {
@@ -316,6 +346,7 @@ impl LayoutEpochCoordinator {
     }
 
     pub fn clear_pending_target(&mut self, surface: SurfaceId) -> bool {
+        self.standing_redrives.remove(&surface);
         self.pending_targets.remove(&surface).is_some()
     }
 
@@ -594,6 +625,7 @@ impl LayoutEpochCoordinator {
         self.constraints.remove(&surface);
         self.admission.remove(&surface);
         self.pending_targets.remove(&surface);
+        self.standing_redrives.remove(&surface);
     }
 
     pub fn rollback_pending(&self, surface: SurfaceId) -> bool {
