@@ -177,33 +177,141 @@ pub const X_XFIXES_SET_REGION_MINOR_OPCODE: u8 = 11;
 pub const X_GLX_EXTENSION_NAME: &str = "GLX";
 pub const X_GLX_MAJOR_OPCODE: u8 = 140;
 pub const X_GLX_FIRST_EVENT: u8 = 72;
+
+// The GLX request minors, all of them, in protocol order.
+//
+// The ones Sophia does not implement are named too. A table that lists only what
+// is implemented cannot say what was refused, and it reads as though the rest of
+// the protocol does not exist -- which for an extension advertising GLX 1.4 is a
+// claim about the wrong thing. Each unimplemented minor carries why, so the
+// distinction between "not offered" and "not yet written" survives in the table
+// rather than in someone's memory.
+
+/// Indirect GL rendering: the client streams GL commands to the server for
+/// execution. Sophia runs no GL of its own -- every context here belongs to the
+/// client's own driver -- so this is not a gap to be filled but a mode Sophia
+/// does not offer.
+pub const X_GLX_RENDER_MINOR_OPCODE: u8 = 1;
+/// Indirect GL rendering for command buffers over the single-request limit. Not
+/// offered, for the same reason as `Render`.
+pub const X_GLX_RENDER_LARGE_MINOR_OPCODE: u8 = 2;
 pub const X_GLX_CREATE_CONTEXT_MINOR_OPCODE: u8 = 3;
-pub const X_GLX_QUERY_CONTEXT_MINOR_OPCODE: u8 = 25;
-pub const X_GLX_MAKE_CONTEXT_CURRENT_MINOR_OPCODE: u8 = 26;
-pub const X_GLX_CHANGE_DRAWABLE_ATTRIBUTES_MINOR_OPCODE: u8 = 30;
-pub const X_GLX_CREATE_PBUFFER_MINOR_OPCODE: u8 = 27;
-pub const X_GLX_DESTROY_PBUFFER_MINOR_OPCODE: u8 = 28;
-/// `GLX_PBUFFER_WIDTH` and `GLX_PBUFFER_HEIGHT`. Height is the lower number.
-pub const X_GLX_PBUFFER_HEIGHT_ATTRIBUTE: u32 = 0x8040;
-pub const X_GLX_PBUFFER_WIDTH_ATTRIBUTE: u32 = 0x8041;
-/// `GLX_LARGEST_PBUFFER`: clamp to the maximum rather than refusing.
-pub const X_GLX_LARGEST_PBUFFER_ATTRIBUTE: u32 = 0x801C;
 pub const X_GLX_DESTROY_CONTEXT_MINOR_OPCODE: u8 = 4;
 pub const X_GLX_MAKE_CURRENT_MINOR_OPCODE: u8 = 5;
 pub const X_GLX_IS_DIRECT_MINOR_OPCODE: u8 = 6;
 pub const X_GLX_QUERY_VERSION_MINOR_OPCODE: u8 = 7;
+/// Blocks until the indirect GL stream drains. Meaningless without a server-side
+/// GL stream to drain.
+pub const X_GLX_WAIT_GL_MINOR_OPCODE: u8 = 8;
+/// Blocks until prior X requests complete, for ordering against indirect GL.
+/// Same reason.
+pub const X_GLX_WAIT_X_MINOR_OPCODE: u8 = 9;
+/// Copies GL state between two server-side contexts. Sophia holds no GL state to
+/// copy.
+pub const X_GLX_COPY_CONTEXT_MINOR_OPCODE: u8 = 10;
+/// The indirect present path. Direct clients reach the screen through DRI3 and
+/// Present instead, which is the path Sophia implements.
+pub const X_GLX_SWAP_BUFFERS_MINOR_OPCODE: u8 = 11;
+/// Builds GL display lists from an X font. Indirect, and deprecated besides.
+pub const X_GLX_USE_X_FONT_MINOR_OPCODE: u8 = 12;
+/// GLX 1.2 GLX pixmaps. `GLX_DRAWABLE_TYPE` deliberately excludes
+/// `GLX_PIXMAP_BIT`, so Sophia does not claim these drawables.
+pub const X_GLX_CREATE_GLX_PIXMAP_MINOR_OPCODE: u8 = 13;
 pub const X_GLX_GET_VISUAL_CONFIGS_MINOR_OPCODE: u8 = 14;
+/// The destructor for GLX 1.2 GLX pixmaps, which are not offered.
+pub const X_GLX_DESTROY_GLX_PIXMAP_MINOR_OPCODE: u8 = 15;
+/// The vendor escape hatch, and the transport for extensions Sophia does not
+/// advertise. Refusing it is what the advertisement already implies.
+pub const X_GLX_VENDOR_PRIVATE_MINOR_OPCODE: u8 = 16;
+/// `VendorPrivate` for escapes that answer. Not advertised, so not offered.
+pub const X_GLX_VENDOR_PRIVATE_WITH_REPLY_MINOR_OPCODE: u8 = 17;
 pub const X_GLX_QUERY_EXTENSIONS_STRING_MINOR_OPCODE: u8 = 18;
 pub const X_GLX_QUERY_SERVER_STRING_MINOR_OPCODE: u8 = 19;
 pub const X_GLX_CLIENT_INFO_MINOR_OPCODE: u8 = 20;
 pub const X_GLX_GET_FB_CONFIGS_MINOR_OPCODE: u8 = 21;
+/// GLX 1.3 GLX pixmaps, the FBConfig-based successor to minor 13. Excluded from
+/// `GLX_DRAWABLE_TYPE` for the same reason.
+pub const X_GLX_CREATE_PIXMAP_MINOR_OPCODE: u8 = 22;
+/// The destructor for GLX 1.3 GLX pixmaps, which are not offered.
+pub const X_GLX_DESTROY_PIXMAP_MINOR_OPCODE: u8 = 23;
 pub const X_GLX_CREATE_NEW_CONTEXT_MINOR_OPCODE: u8 = 24;
+pub const X_GLX_QUERY_CONTEXT_MINOR_OPCODE: u8 = 25;
+pub const X_GLX_MAKE_CONTEXT_CURRENT_MINOR_OPCODE: u8 = 26;
+pub const X_GLX_CREATE_PBUFFER_MINOR_OPCODE: u8 = 27;
+pub const X_GLX_DESTROY_PBUFFER_MINOR_OPCODE: u8 = 28;
 pub const X_GLX_GET_DRAWABLE_ATTRIBUTES_MINOR_OPCODE: u8 = 29;
+pub const X_GLX_CHANGE_DRAWABLE_ATTRIBUTES_MINOR_OPCODE: u8 = 30;
 pub const X_GLX_CREATE_WINDOW_MINOR_OPCODE: u8 = 31;
 pub const X_GLX_DELETE_WINDOW_MINOR_OPCODE: u8 = 32;
 pub const X_GLX_SET_CLIENT_INFO_ARB_MINOR_OPCODE: u8 = 33;
 pub const X_GLX_CREATE_CONTEXT_ATTRIBS_ARB_MINOR_OPCODE: u8 = 34;
 pub const X_GLX_SET_CLIENT_INFO_2_ARB_MINOR_OPCODE: u8 = 35;
+/// The highest GLX minor the protocol defines. A minor above this is not a
+/// request Sophia declined to implement; it is not a GLX request at all.
+pub const X_GLX_LAST_MINOR_OPCODE: u8 = X_GLX_SET_CLIENT_INFO_2_ARB_MINOR_OPCODE;
+
+// The GLX attribute tokens Sophia names, by the value that travels on the wire.
+//
+// These were thirty bare hex literals in the `GetFBConfigs` reply builder, where
+// the only way to know that `0x186a1` was `GLX_SAMPLES` was to look it up. A
+// reply built from unnamed numbers cannot be reviewed against the specification
+// it claims to satisfy.
+
+/// `GLX_BUFFER_SIZE`: total colour bits per pixel.
+pub const X_GLX_BUFFER_SIZE_ATTRIBUTE: u32 = 0x2;
+/// `GLX_LEVEL`: overlay/underlay plane, zero for the main plane.
+pub const X_GLX_LEVEL_ATTRIBUTE: u32 = 0x3;
+pub const X_GLX_DOUBLEBUFFER_ATTRIBUTE: u32 = 0x5;
+pub const X_GLX_STEREO_ATTRIBUTE: u32 = 0x6;
+pub const X_GLX_AUX_BUFFERS_ATTRIBUTE: u32 = 0x7;
+pub const X_GLX_RED_SIZE_ATTRIBUTE: u32 = 0x8;
+pub const X_GLX_GREEN_SIZE_ATTRIBUTE: u32 = 0x9;
+pub const X_GLX_BLUE_SIZE_ATTRIBUTE: u32 = 0xA;
+pub const X_GLX_ALPHA_SIZE_ATTRIBUTE: u32 = 0xB;
+pub const X_GLX_DEPTH_SIZE_ATTRIBUTE: u32 = 0xC;
+pub const X_GLX_STENCIL_SIZE_ATTRIBUTE: u32 = 0xD;
+pub const X_GLX_ACCUM_RED_SIZE_ATTRIBUTE: u32 = 0xE;
+pub const X_GLX_ACCUM_GREEN_SIZE_ATTRIBUTE: u32 = 0xF;
+pub const X_GLX_ACCUM_BLUE_SIZE_ATTRIBUTE: u32 = 0x10;
+pub const X_GLX_ACCUM_ALPHA_SIZE_ATTRIBUTE: u32 = 0x11;
+pub const X_GLX_TRANSPARENT_TYPE_ATTRIBUTE: u32 = 0x20;
+pub const X_GLX_X_VISUAL_TYPE_ATTRIBUTE: u32 = 0x22;
+/// `GLX_CONFIG_CAVEAT`: whether choosing this configuration costs something.
+pub const X_GLX_CONFIG_CAVEAT_ATTRIBUTE: u32 = 0x23;
+pub const X_GLX_VISUAL_ID_ATTRIBUTE: u32 = 0x800B;
+/// `GLX_DRAWABLE_TYPE`: which drawable kinds the configuration supports.
+pub const X_GLX_DRAWABLE_TYPE_ATTRIBUTE: u32 = 0x8010;
+/// `GLX_RENDER_TYPE`: which colour models the configuration renders.
+pub const X_GLX_RENDER_TYPE_ATTRIBUTE: u32 = 0x8011;
+/// `GLX_X_RENDERABLE`: whether X can draw to drawables of this configuration.
+pub const X_GLX_X_RENDERABLE_ATTRIBUTE: u32 = 0x8012;
+pub const X_GLX_FBCONFIG_ID_ATTRIBUTE: u32 = 0x8013;
+pub const X_GLX_MAX_PBUFFER_WIDTH_ATTRIBUTE: u32 = 0x8016;
+pub const X_GLX_MAX_PBUFFER_HEIGHT_ATTRIBUTE: u32 = 0x8017;
+pub const X_GLX_MAX_PBUFFER_PIXELS_ATTRIBUTE: u32 = 0x8018;
+/// `GLX_LARGEST_PBUFFER`: clamp to the maximum rather than refusing.
+pub const X_GLX_LARGEST_PBUFFER_ATTRIBUTE: u32 = 0x801C;
+/// `GLX_PBUFFER_WIDTH` and `GLX_PBUFFER_HEIGHT`. Height is the lower number.
+pub const X_GLX_PBUFFER_HEIGHT_ATTRIBUTE: u32 = 0x8040;
+pub const X_GLX_PBUFFER_WIDTH_ATTRIBUTE: u32 = 0x8041;
+/// `GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT`, from `GLX_EXT_framebuffer_sRGB`.
+pub const X_GLX_FRAMEBUFFER_SRGB_CAPABLE_ATTRIBUTE: u32 = 0x20B2;
+/// `GLX_SAMPLE_BUFFERS`, added by GLX 1.4. Answered as zero: Sophia offers no
+/// multisample configuration, and says so rather than omitting the attribute.
+pub const X_GLX_SAMPLE_BUFFERS_ATTRIBUTE: u32 = 0x186A0;
+/// `GLX_SAMPLES`, added by GLX 1.4. Zero, for the same reason.
+pub const X_GLX_SAMPLES_ATTRIBUTE: u32 = 0x186A1;
+
+// The GLX attribute values Sophia answers with.
+
+/// `GLX_NONE`: the answer for both `GLX_TRANSPARENT_TYPE` and
+/// `GLX_CONFIG_CAVEAT`.
+pub const X_GLX_NONE_VALUE: u32 = 0x8000;
+/// `GLX_TRUE_COLOR`, the only X visual type Sophia offers.
+pub const X_GLX_TRUE_COLOR_VALUE: u32 = 0x8002;
+/// `GLX_RGBA_BIT`: the only render type Sophia offers. Colour-index rendering
+/// went with indirect GL.
+pub const X_GLX_RGBA_BIT_VALUE: u32 = 0x1;
 pub const X_SYNC_EXTENSION_NAME: &str = "SYNC";
 pub const X_SYNC_MAJOR_OPCODE: u8 = 141;
 pub const X_SYNC_FIRST_EVENT: u8 = 68;

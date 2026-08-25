@@ -105,38 +105,67 @@ fn glx_fb_config(config: crate::XGlxFbConfig) -> Vec<(u32, u32)> {
         srgb,
     } = config;
     vec![
-        (0x8013, id),
-        (0x800b, visual),
-        (0x8012, 1),
-        (0x8010, crate::X_GLX_DRAWABLE_TYPE_MASK),
-        (0x8011, 0x1),
-        (0x22, 0x8002),
-        (0x2, u32::from(config.depth())),
-        (0x3, 0),
-        (0x5, 1),
-        (0x6, 0),
-        (0x7, 0),
-        (0x8, 8),
-        (0x9, 8),
-        (0xa, 8),
-        (0xb, alpha),
-        (0xc, 24),
-        (0xd, 0),
-        (0xe, 0),
-        (0xf, 0),
-        (0x10, 0),
-        (0x11, 0),
-        (0x20, 0x8000),
-        (0x23, 0x8000),
-        (0x186a0, 0),
-        (0x186a1, 0),
-        (0x20b2, srgb),
+        (crate::X_GLX_FBCONFIG_ID_ATTRIBUTE, id),
+        (crate::X_GLX_VISUAL_ID_ATTRIBUTE, visual),
+        (crate::X_GLX_X_RENDERABLE_ATTRIBUTE, 1),
+        (
+            crate::X_GLX_DRAWABLE_TYPE_ATTRIBUTE,
+            crate::X_GLX_DRAWABLE_TYPE_MASK,
+        ),
+        (
+            crate::X_GLX_RENDER_TYPE_ATTRIBUTE,
+            crate::X_GLX_RGBA_BIT_VALUE,
+        ),
+        (
+            crate::X_GLX_X_VISUAL_TYPE_ATTRIBUTE,
+            crate::X_GLX_TRUE_COLOR_VALUE,
+        ),
+        (
+            crate::X_GLX_BUFFER_SIZE_ATTRIBUTE,
+            u32::from(config.depth()),
+        ),
+        (crate::X_GLX_LEVEL_ATTRIBUTE, 0),
+        (crate::X_GLX_DOUBLEBUFFER_ATTRIBUTE, 1),
+        (crate::X_GLX_STEREO_ATTRIBUTE, 0),
+        (crate::X_GLX_AUX_BUFFERS_ATTRIBUTE, 0),
+        (crate::X_GLX_RED_SIZE_ATTRIBUTE, 8),
+        (crate::X_GLX_GREEN_SIZE_ATTRIBUTE, 8),
+        (crate::X_GLX_BLUE_SIZE_ATTRIBUTE, 8),
+        (crate::X_GLX_ALPHA_SIZE_ATTRIBUTE, alpha),
+        (crate::X_GLX_DEPTH_SIZE_ATTRIBUTE, 24),
+        (crate::X_GLX_STENCIL_SIZE_ATTRIBUTE, 0),
+        (crate::X_GLX_ACCUM_RED_SIZE_ATTRIBUTE, 0),
+        (crate::X_GLX_ACCUM_GREEN_SIZE_ATTRIBUTE, 0),
+        (crate::X_GLX_ACCUM_BLUE_SIZE_ATTRIBUTE, 0),
+        (crate::X_GLX_ACCUM_ALPHA_SIZE_ATTRIBUTE, 0),
+        (
+            crate::X_GLX_TRANSPARENT_TYPE_ATTRIBUTE,
+            crate::X_GLX_NONE_VALUE,
+        ),
+        (
+            crate::X_GLX_CONFIG_CAVEAT_ATTRIBUTE,
+            crate::X_GLX_NONE_VALUE,
+        ),
+        // GLX 1.4's multisample attributes, answered as zero rather than
+        // omitted: a client asking what Sophia offers gets "none", not silence.
+        (crate::X_GLX_SAMPLE_BUFFERS_ATTRIBUTE, 0),
+        (crate::X_GLX_SAMPLES_ATTRIBUTE, 0),
+        (crate::X_GLX_FRAMEBUFFER_SRGB_CAPABLE_ATTRIBUTE, srgb),
         // Appended, because the catalog is read positionally by its tests and by
         // clients that index the reply. The maxima are the same constants the
         // pbuffer refusal enforces.
-        (0x8016, crate::X_GLX_MAX_PBUFFER_WIDTH),
-        (0x8017, crate::X_GLX_MAX_PBUFFER_HEIGHT),
-        (0x8018, crate::X_GLX_MAX_PBUFFER_PIXELS),
+        (
+            crate::X_GLX_MAX_PBUFFER_WIDTH_ATTRIBUTE,
+            crate::X_GLX_MAX_PBUFFER_WIDTH,
+        ),
+        (
+            crate::X_GLX_MAX_PBUFFER_HEIGHT_ATTRIBUTE,
+            crate::X_GLX_MAX_PBUFFER_HEIGHT,
+        ),
+        (
+            crate::X_GLX_MAX_PBUFFER_PIXELS_ATTRIBUTE,
+            crate::X_GLX_MAX_PBUFFER_PIXELS,
+        ),
     ]
 }
 
