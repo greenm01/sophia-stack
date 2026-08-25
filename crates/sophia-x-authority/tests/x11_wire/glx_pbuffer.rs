@@ -650,3 +650,48 @@ fn core_drawing_still_refuses_an_offscreen_drawable() {
         "a drawable with no pixels is not a drawing target"
     );
 }
+
+#[test]
+fn glx_advertises_the_es_profiles_a_translating_client_needs() {
+    // A client that reaches a GL driver by translating to OpenGL ES -- which is
+    // how Chromium's ANGLE works -- asks for an ES-profile context, and libGL
+    // refuses that request client-side against a server which does not
+    // advertise the profile, before the server ever sees it. A client rendering
+    // desktop GL never notices, which is why one browser rendered here and
+    // another waited forever.
+    let namespace = NamespaceId::from_raw(66);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = decode_x11_core_request(
+        context(namespace, 41, XByteOrder::LittleEndian),
+        &{
+            let mut out = vec![X_GLX_MAJOR_OPCODE, X_GLX_QUERY_SERVER_STRING_MINOR_OPCODE];
+            push_u16(&mut out, XByteOrder::LittleEndian, 3);
+            push_u32(&mut out, XByteOrder::LittleEndian, 0);
+            // 3 selects the extension string.
+            push_u32(&mut out, XByteOrder::LittleEndian, 3);
+            out
+        },
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let XClientOutput::Reply(XClientReply::GlxString { value, .. }) = &result.outputs[0] else {
+        panic!("expected a GLX string reply, got {:?}", result.outputs[0]);
+    };
+    for profile in [
+        "GLX_EXT_create_context_es_profile",
+        "GLX_EXT_create_context_es2_profile",
+    ] {
+        assert!(
+            value.split(' ').any(|name| name == profile),
+            "{profile} must be advertised; got {value:?}",
+        );
+    }
+}

@@ -34,7 +34,19 @@ include!("dispatch/extensions/xfixes.rs");
 include!("dispatch/extensions/xkb.rs");
 
 const DRM_FORMAT_MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
-const GLX_EXTENSIONS: &str = "GLX_EXT_libglvnd GLX_ARB_create_context GLX_ARB_create_context_profile GLX_ARB_framebuffer_sRGB GLX_EXT_framebuffer_sRGB";
+/// The GLX extensions Sophia offers.
+///
+/// The ES profiles are here because a client that translates to OpenGL ES --
+/// which is how Chromium's ANGLE reaches a GL driver -- asks for an ES-profile
+/// context, and libGL refuses that request against a server that does not
+/// advertise them, before the server ever sees it. A client rendering desktop
+/// GL never notices their absence, which is why one browser worked here and
+/// another did not.
+///
+/// Advertising them is honest: Sophia runs no GL of its own. A context is
+/// created by the client's driver and recorded here, so the profile it asks for
+/// is the client's business and any profile it can create, Sophia can record.
+const GLX_EXTENSIONS: &str = "GLX_EXT_libglvnd GLX_ARB_create_context GLX_ARB_create_context_profile GLX_ARB_framebuffer_sRGB GLX_EXT_framebuffer_sRGB GLX_EXT_create_context_es_profile GLX_EXT_create_context_es2_profile";
 
 fn glx_visual_configs() -> Vec<[u32; 18]> {
     vec![
