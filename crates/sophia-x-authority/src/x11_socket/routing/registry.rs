@@ -612,18 +612,23 @@ impl XServerFrontendRouteRegistry {
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
             .iter()
             .filter_map(|((client, _), subscription)| {
-                (*client == presentation.client
-                    && subscription.window == presentation.window
+                (subscription.window == presentation.window
                     && subscription.mask & (1 << 1) != 0)
-                    .then_some(*subscription)
+                    .then_some((*client, *subscription))
             })
             .collect::<Vec<_>>();
         if subscriptions.is_empty() {
             return Ok(false);
         }
-        for subscription in subscriptions {
+            // A Present subscription belongs to whoever took it, not to
+            // whoever presents. A browser subscribes from its GPU process for a
+            // window its browser process created, which X permits and Mesa
+            // relies on: it blocks in xcb_wait_for_special_event until an idle
+            // notify arrives, so an event withheld here is not an error the
+            // client can see -- it is a client that never draws again.
+        for (target, subscription) in subscriptions {
             self.route_protocol(
-                presentation.client,
+                target,
                 XClientEvent::PresentCompleteNotify {
                     sequence: 0,
                     event_id: subscription.event_id,
@@ -680,18 +685,17 @@ impl XServerFrontendRouteRegistry {
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
             .iter()
             .filter_map(|((client, _), subscription)| {
-                (*client == presentation.client
-                    && subscription.window == presentation.window
+                (subscription.window == presentation.window
                     && subscription.mask & (1 << 2) != 0)
-                    .then_some(*subscription)
+                    .then_some((*client, *subscription))
             })
             .collect::<Vec<_>>();
         if subscriptions.is_empty() {
             return Ok(false);
         }
-        for subscription in subscriptions {
+        for (target, subscription) in subscriptions {
             self.route_protocol(
-                presentation.client,
+                target,
                 XClientEvent::PresentIdleNotify {
                     sequence: 0,
                     event_id: subscription.event_id,

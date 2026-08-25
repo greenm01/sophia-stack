@@ -907,4 +907,53 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
     );
 }
 
+#[test]
+fn present_feedback_reaches_the_client_that_subscribed_not_the_one_that_presented() {
+    // A browser subscribes from its GPU process for a window its browser
+    // process created. X permits that, and Mesa depends on it: it blocks in
+    // xcb_wait_for_special_event until an idle notify arrives, so feedback
+    // withheld here is not an error the client can see -- it is a client that
+    // never draws again.
+    let namespace = NamespaceId::from_raw(61);
+    let owner = XServerFrontendClientId::from_raw(1);
+    let watcher = XServerFrontendClientId::from_raw(2);
+    let surface = SurfaceId::new(41, 1);
+    let window = XResourceId::new(0x300020, 1);
+    let event_id = XResourceId::new(0x400021, 1);
+    let pixmap = XResourceId::new(0x300022, 1);
+    let transaction = TransactionId::from_raw(211);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+    let (_owner_registration, owner_channels) = broker.registry.register_client(owner).unwrap();
+    let (_watch_registration, watch_channels) = broker.registry.register_client(watcher).unwrap();
+    broker
+        .registry
+        .register_surface(owner, namespace, surface, window)
+        .unwrap();
+    // The watcher subscribes on a window it does not own.
+    broker
+        .registry
+        .select_present_input(watcher, event_id, window, 7)
+        .unwrap();
+    broker
+        .registry
+        .queue_present(transaction, owner, window, pixmap, 2, None)
+        .unwrap();
+
+    assert_eq!(
+        broker.route_present_complete(transaction, 10, 20, XPresentCompletionMode::Flip),
+        Ok(true),
+    );
+    assert!(
+        matches!(
+            watch_channels.protocol.recv().unwrap(),
+            XClientEvent::PresentCompleteNotify { event_id: routed, .. } if routed == event_id,
+        ),
+        "the subscriber must receive the feedback it asked for",
+    );
+    assert!(
+        owner_channels.protocol.try_recv().is_err(),
+        "the presenting client did not subscribe and must not be sent an event",
+    );
+}
+
 include!("tests/routing.rs");
