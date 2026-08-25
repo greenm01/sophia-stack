@@ -165,7 +165,7 @@ show_step 'Press Super+Right once.'
 wait_for_action_count 34 1
 
 show_step 'Press Super+B once to launch the browser. Wait while Sophia publishes its second switcher row.'
-wait_for_shell_line '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox$'
+wait_for_shell_line '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchBrowser$'
 wait_for_shell_line '^sophia_session_app schema=2 status=admitted source=action transaction=[1-9][0-9]* surface=[1-9][0-9]*$'
 wait_for_shell_line_bounded '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$'
 wait_for_shell_count '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' 2

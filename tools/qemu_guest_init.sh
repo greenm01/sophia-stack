@@ -339,7 +339,7 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
         else
             set -- "$@" --session-start=terminal --session-start=vulkan
         fi
-        set -- "$@" --session-action-app=terminal=terminal --session-action-app=launcher=launcher --session-action-app=firefox=firefox
+        set -- "$@" --session-action-app=terminal=terminal --session-action-app=launcher=launcher --session-action-app=browser=firefox
         if [ "$scenario" = "xmonad-interactive" ]; then
             echo "sophia_qemu_xmonad schema=1 status=running windows=1 profile=xmonad mode=interactive proof_watchdog=off fault_injection=off"
         else

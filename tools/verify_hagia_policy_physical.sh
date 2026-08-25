@@ -131,7 +131,7 @@ if grep -Eq '(^sophia_live_metadata_shell schema=1 status=(failed|transport_fail
 fi
 
 require_line "committed browser launch" \
-    '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox$'
+    '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchBrowser$'
 require_line "admitted browser surface" \
     '^sophia_session_app schema=2 status=admitted source=action transaction=[1-9][0-9]* surface=[1-9][0-9]*$'
 require_line "two-surface switcher layout" \
@@ -148,7 +148,7 @@ shell_reconnected_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 statu
 shell_inert_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=proof_inert_click ' "$evidence" | cut -d: -f1)"
 shell_stopped_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=stopped ' "$evidence" | cut -d: -f1)"
 first_shell_admitted_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=activation_admitted ' "$evidence" | cut -d: -f1)"
-browser_launch_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox$' "$evidence" | cut -d: -f1)"
+browser_launch_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchBrowser$' "$evidence" | cut -d: -f1)"
 browser_admitted_line="$(grep -nEm1 '^sophia_session_app schema=2 status=admitted source=action transaction=[1-9][0-9]* surface=[1-9][0-9]*$' "$evidence" | cut -d: -f1)"
 browser_layout_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$' "$evidence" | cut -d: -f1)"
 if ! (( first_shell_admitted_line == shell_activation_lines[0] \

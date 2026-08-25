@@ -420,7 +420,7 @@ impl LiveWmSession {
                 application: LAUNCHER_APPLICATION_ID,
             });
         }
-        if config.normal_session && config.applications.firefox.is_some() {
+        if config.normal_session && config.applications.browser.is_some() {
             session_actions.push(WmSessionAction::LaunchApplication {
                 application: BROWSER_APPLICATION_ID,
             });
@@ -430,7 +430,7 @@ impl LiveWmSession {
                 application: LAUNCHER_APPLICATION_ID,
             });
         }
-        if config.session_firefox.is_some() {
+        if config.session_browser.is_some() {
             session_actions.push(WmSessionAction::LaunchApplication {
                 application: BROWSER_APPLICATION_ID,
             });

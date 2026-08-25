@@ -20,7 +20,7 @@ pub(super) fn session_action_evidence_name(action: WmSessionAction) -> &'static 
         WmSessionAction::LaunchApplication { application }
             if application == BROWSER_APPLICATION_ID =>
         {
-            "LaunchFirefox"
+            "LaunchBrowser"
         }
         WmSessionAction::LaunchApplication { .. } => "LaunchApplication",
         WmSessionAction::CloseFocused => "CloseFocused",
@@ -41,7 +41,7 @@ pub(super) struct SessionApplicationConfig {
     pub(super) startup: Vec<String>,
     pub(super) terminal: Option<String>,
     pub(super) launcher: Option<String>,
-    pub(super) firefox: Option<String>,
+    pub(super) browser: Option<String>,
     pub(super) logout_enabled: bool,
 }
 
@@ -52,7 +52,7 @@ impl Default for SessionApplicationConfig {
             startup: Vec::new(),
             terminal: None,
             launcher: None,
-            firefox: None,
+            browser: None,
             logout_enabled: true,
         }
     }
@@ -100,7 +100,7 @@ impl SessionApplicationConfig {
         if !browser_overridden
             && let Some(browser) = candidate.browser.as_deref()
         {
-            self.firefox = self.application_for_profile_name(browser)?;
+            self.browser = self.application_for_profile_name(browser)?;
         }
         if !startup_overridden
             && let Some(startup) = candidate.startup.as_deref()
@@ -135,7 +135,7 @@ impl SessionApplicationConfig {
                 ) => self.terminal.is_some(),
                 sophia_config::DesktopShortcutTarget::Session(
                     sophia_config::DesktopSessionShortcut::LaunchBrowser,
-                ) => self.firefox.is_some(),
+                ) => self.browser.is_some(),
                 sophia_config::DesktopShortcutTarget::Session(
                     sophia_config::DesktopSessionShortcut::WindowSwitcher,
                 ) => shell_enabled,
@@ -236,15 +236,15 @@ impl SessionApplicationOverrides {
             let (action, id) = value
                 .split_once('=')
                 .ok_or(SessionApplicationConfigError::InvalidCli(
-                    "--session-action-app expects terminal|launcher|firefox=ID",
+                    "--session-action-app expects terminal|launcher|browser=ID",
                 ))?;
             let slot = match action {
                 "terminal" => &mut terminal,
                 "launcher" => &mut launcher,
-                "firefox" => &mut browser,
+                "browser" => &mut browser,
                 _ => {
                     return Err(SessionApplicationConfigError::InvalidCli(
-                        "--session-action-app expects terminal, launcher, or firefox",
+                        "--session-action-app expects terminal, launcher, or browser",
                     ));
                 }
             };
@@ -320,7 +320,7 @@ impl SessionApplicationOverrides {
             applications.launcher = Some(launcher.clone());
         }
         if let Some(browser) = &self.browser {
-            applications.firefox = Some(browser.clone());
+            applications.browser = Some(browser.clone());
         }
         Ok(applications)
     }

@@ -25,7 +25,7 @@ grep -Fq '1. Press and release Super+Shift+B.' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 grep -Fq '3. Press and release Super+Alt+B anyway.' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
-grep -Fq 'status=session_action_committed transaction=[1-9][0-9]* action=LaunchFirefox' \
+grep -Fq 'status=session_action_committed transaction=[1-9][0-9]* action=LaunchBrowser' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
 grep -Fq 'status=admitted source=action transaction=[1-9][0-9]*' \
     "$root_dir/tools/fixtures/hagia_physical_guide.sh"
@@ -64,7 +64,7 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=33' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchFirefox' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchBrowser' \
     'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
     'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=8 content=redacted' \
@@ -140,7 +140,7 @@ for missing in \
     'sophia_live_metadata_shell schema=1 status=proof_inert_click' \
     'sophia_live_metadata_shell schema=1 status=stopped' \
     'sophia_live_metadata_broker schema=1 status=stopped' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchFirefox' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchBrowser' \
     'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
     'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2' \
     'sophia_live_wm schema=1 status=physical_action_committed action=5' \

@@ -49,7 +49,7 @@ for index in "${!phases[@]}"; do
         --session-start=terminal \
         --session-action-app=terminal=terminal \
         "--session-app=firefox=$firefox_bin" \
-        --session-action-app=firefox=firefox \
+        --session-action-app=browser=firefox \
         --session-app-arg=terminal=--config \
         --session-app-arg=terminal=NONE \
         --session-app-arg=terminal=--override \

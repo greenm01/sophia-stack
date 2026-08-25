@@ -39,7 +39,7 @@ struct PersistentXtermSessionConfig {
     terminal_exec: Option<String>,
     terminal_exec_args: Vec<String>,
     session_launcher: Option<String>,
-    session_firefox: Option<String>,
+    session_browser: Option<String>,
     client: Option<String>,
     client_args: Vec<String>,
     expect_client_stdout: Option<String>,
@@ -220,7 +220,7 @@ impl PersistentXtermSessionConfig {
             if applications.startup.is_empty()
                 && applications.terminal.is_none()
                 && applications.launcher.is_none()
-                && applications.firefox.is_none()
+                && applications.browser.is_none()
             {
                 return Err(
                     "--session-mode=normal requires a startup app or session action mapping".into(),
@@ -263,7 +263,7 @@ impl PersistentXtermSessionConfig {
             || !applications.startup.is_empty()
             || applications.terminal.is_some()
             || applications.launcher.is_some()
-            || applications.firefox.is_some()
+            || applications.browser.is_some()
         {
             return Err("session application options require --session-mode=normal".into());
         } else if exit_when_startup_exits {
@@ -309,10 +309,10 @@ impl PersistentXtermSessionConfig {
             .map(ToOwned::to_owned)
             .collect::<Vec<_>>();
         let session_launcher = arg_value(args, "--session-launcher");
-        let session_firefox = arg_value(args, "--session-firefox");
+        let session_browser = arg_value(args, "--session-browser");
         if session_launcher
             .iter()
-            .chain(session_firefox.iter())
+            .chain(session_browser.iter())
             .any(|path| path.is_empty() || path.len() > 4_096)
         {
             return Err("approved session executable paths accept 1-4096 bytes".into());
@@ -486,7 +486,7 @@ impl PersistentXtermSessionConfig {
             return Err("select only one Firefox proof mode".into());
         }
         if firefox_proof_count == 1
-            && (!normal_session || applications.firefox.is_none())
+            && (!normal_session || applications.browser.is_none())
         {
             return Err(
                 "Firefox proof mode requires normal session mode and a Firefox action mapping"
@@ -711,7 +711,7 @@ impl PersistentXtermSessionConfig {
             terminal_exec,
             terminal_exec_args,
             session_launcher,
-            session_firefox,
+            session_browser,
             client,
             client_args,
             expect_client_stdout,
@@ -797,7 +797,7 @@ impl PersistentXtermSessionConfig {
             match app.id {
                 1 => applications.terminal = Some(app.name.clone()),
                 2 => applications.launcher = Some(app.name.clone()),
-                3 => applications.firefox = Some(app.name.clone()),
+                3 => applications.browser = Some(app.name.clone()),
                 _ => {}
             }
         }
@@ -847,7 +847,7 @@ impl PersistentXtermSessionConfig {
             WmSessionAction::LaunchApplication { application }
                 if application == BROWSER_APPLICATION_ID =>
             {
-                self.applications.firefox.as_ref()
+                self.applications.browser.as_ref()
             }
             WmSessionAction::LaunchApplication { .. } => None,
             WmSessionAction::CloseFocused | WmSessionAction::Logout => None,

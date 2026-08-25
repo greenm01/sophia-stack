@@ -82,7 +82,7 @@ if [[ -n "$firefox_bin" ]]; then
     else
         session_args+=(
             "--session-app=firefox=$firefox_bin"
-            --session-action-app=firefox=firefox
+            --session-action-app=browser=firefox
         )
     fi
 fi

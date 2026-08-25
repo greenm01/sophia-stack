@@ -655,7 +655,7 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         fi
         session_args+=(
             "--session-app=firefox=$firefox_bin"
-            --session-action-app=firefox=firefox
+            --session-action-app=browser=firefox
             --session-app-arg=firefox=--no-remote
             --session-app-arg=firefox=--new-instance
         )

@@ -133,7 +133,7 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     --session-start=terminal \
     --session-action-app=terminal=terminal \
     "--session-app=browser=$browser_bin" \
-    --session-action-app=firefox=browser \
+    --session-action-app=browser=browser \
     --session-app-arg=terminal=--config \
     --session-app-arg=terminal=NONE \
     --session-app-arg=terminal=--override \

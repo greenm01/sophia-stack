@@ -119,7 +119,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
     let base = [
         "--session-mode=normal".to_owned(),
         "--session-app=firefox=/usr/bin/firefox".to_owned(),
-        "--session-action-app=firefox=firefox".to_owned(),
+        "--session-action-app=browser=firefox".to_owned(),
     ];
     for proof in [
         "--firefox-m10-rendering-proof",
@@ -342,7 +342,7 @@ session { terminal "kitty"; browser "helium"; startup "kitty"; }
     ];
     let config = PersistentXtermSessionConfig::from_args(&base).unwrap();
     assert_eq!(config.applications.terminal.as_deref(), Some("terminal"));
-    assert_eq!(config.applications.firefox.as_deref(), Some("browser"));
+    assert_eq!(config.applications.browser.as_deref(), Some("browser"));
     assert_eq!(config.applications.startup, ["terminal"]);
 
     let mut overridden = base.to_vec();
@@ -857,7 +857,7 @@ fn mixed_output_gate_apps_satisfy_probe_profile() {
         "--session-action-app=terminal=mirror".to_owned(),
         "--session-app=proof=/usr/bin/kitty".to_owned(),
         "--session-start=proof".to_owned(),
-        "--session-action-app=firefox=proof".to_owned(),
+        "--session-action-app=browser=proof".to_owned(),
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
         "--max-runtime-ms=30000".to_owned(),

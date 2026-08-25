@@ -615,7 +615,7 @@ fn execute_committed_session_actions(
         let program = match intent.application {
             TERMINAL_APPLICATION_ID => Some(config.terminal.as_str()),
             LAUNCHER_APPLICATION_ID => config.session_launcher.as_deref(),
-            BROWSER_APPLICATION_ID => config.session_firefox.as_deref(),
+            BROWSER_APPLICATION_ID => config.session_browser.as_deref(),
             _ => None,
         }
         .ok_or("WM requested an unadvertised session executable")?;

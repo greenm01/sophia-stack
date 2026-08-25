@@ -1709,7 +1709,7 @@ fn public_session_operations(
             false,
         );
     }
-    if config.normal_session && config.applications.firefox.is_some() {
+    if config.normal_session && config.applications.browser.is_some() {
         admit(
             2,
             token(2),
