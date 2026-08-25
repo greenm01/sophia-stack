@@ -1304,6 +1304,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         if let Some((event_id, window, mask)) = present_selection
                             && let Some(routing) = protocol_routing.as_ref()
                         {
+                            if crate::x11_authority_trace_enabled() {
+                                // Which drawable a client watches decides whether
+                                // it is ever told that drawable's size. A
+                                // subscription on one window and a configure on
+                                // another look identical from either side alone.
+                                tracing::info!(
+                                    "sophia_x11_present_select schema=1 status=recorded window={:#x} event_id={:#x} mask={mask:#x}",
+                                    window.local.raw(),
+                                    event_id.local.raw(),
+                                );
+                            }
                             routing
                                 .select_present_input(client, event_id, window, mask)
                                 .map_err(|error| {
