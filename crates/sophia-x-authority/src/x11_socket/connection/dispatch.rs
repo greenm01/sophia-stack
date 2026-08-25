@@ -777,23 +777,40 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             Ok(allocated) => {
                                 let plane_fds =
                                     allocated.plane_fds.into_iter().map(Arc::new).collect();
+                                let extent = allocated.descriptor.size;
+                                let planes = allocated.descriptor.plane_count;
                                 if let Err(error) = runtime.adopt_dri3_pixmap_backing(
                                     namespace,
                                     pixmap,
                                     allocated.descriptor,
                                     plane_fds,
                                 ) {
-                                    tracing::debug!(
-                                        "sophia_dri3_backing schema=1 status=refused reason=not_adopted pixmap={:#x} error={error:?}",
+                                    if crate::x11_authority_trace_enabled() {
+                                        tracing::info!(
+                                            "sophia_dri3_backing schema=1 status=refused reason=not_adopted pixmap={:#x} error={error:?}",
+                                            pixmap.local.raw(),
+                                        );
+                                    }
+                                } else if crate::x11_authority_trace_enabled() {
+                                    // A silent success is indistinguishable from
+                                    // a path that never ran, and telling those
+                                    // apart is the whole reason to look.
+                                    tracing::info!(
+                                        "sophia_dri3_backing schema=1 status=originated pixmap={:#x} width={} height={} planes={}",
                                         pixmap.local.raw(),
+                                        extent.width,
+                                        extent.height,
+                                        planes,
                                     );
                                 }
                             }
                             Err(error) => {
-                                tracing::debug!(
-                                    "sophia_dri3_backing schema=1 status=refused reason=allocator pixmap={:#x} error={error}",
-                                    pixmap.local.raw(),
-                                );
+                                if crate::x11_authority_trace_enabled() {
+                                    tracing::info!(
+                                        "sophia_dri3_backing schema=1 status=refused reason=allocator pixmap={:#x} error={error}",
+                                        pixmap.local.raw(),
+                                    );
+                                }
                             }
                         }
                     }

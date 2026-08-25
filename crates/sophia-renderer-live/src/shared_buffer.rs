@@ -31,6 +31,7 @@ pub enum LiveSharedBufferError {
 /// The formats a depth maps to, matching what the authority's import path
 /// accepts so a pixmap cannot be originated at one format and recovered at
 /// another.
+#[cfg(feature = "gbm-probe")]
 const fn format_for_depth(depth: u8) -> Option<u32> {
     match depth {
         24 => Some(sophia_protocol::DRM_FORMAT_XRGB8888),

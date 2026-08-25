@@ -54,6 +54,15 @@ pub use explicit_pointer_grab::*;
 pub use font::*;
 pub use frontend_config::*;
 pub use frontend_types::*;
+
+/// Whether the operator asked to watch protocol traffic.
+///
+/// Opt-in, and reported at the level the session already runs at: requiring a
+/// raised global level as well is what silenced a physical gate's telemetry
+/// twice, because the filter replaces the default rather than adding to it.
+pub(crate) fn x11_authority_trace_enabled() -> bool {
+    std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
+}
 pub use glx::*;
 pub use graphics_context::*;
 pub use input_authority::*;

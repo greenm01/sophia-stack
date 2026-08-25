@@ -420,26 +420,32 @@ impl XAuthorityRuntime {
         // mistake while "no imported buffer" is a capability Sophia does not
         // have -- and they need opposite fixes.
         if let Err(error) = self.validate_pixmap_access(namespace, pixmap) {
-            tracing::debug!(
-                "sophia_dri3_recovery schema=1 status=refused reason=not_a_pixmap pixmap={:#x} error={error:?}",
-                pixmap.local.raw(),
-            );
+            if crate::x11_authority_trace_enabled() {
+                tracing::info!(
+                    "sophia_dri3_recovery schema=1 status=refused reason=not_a_pixmap pixmap={:#x} error={error:?}",
+                    pixmap.local.raw(),
+                );
+            }
             return Err(error);
         }
         let Some(record) = self.dri3_pixmaps.get(&pixmap) else {
-            tracing::debug!(
-                "sophia_dri3_recovery schema=1 status=refused reason=never_imported pixmap={:#x}",
-                pixmap.local.raw(),
-            );
+            if crate::x11_authority_trace_enabled() {
+                tracing::info!(
+                    "sophia_dri3_recovery schema=1 status=refused reason=never_imported pixmap={:#x}",
+                    pixmap.local.raw(),
+                );
+            }
             return Err(XAuthorityRuntimeError::UnknownResource);
         };
         if record.plane_fds.len() != usize::from(record.descriptor.plane_count) {
-            tracing::debug!(
-                "sophia_dri3_recovery schema=1 status=refused reason=descriptors_missing pixmap={:#x} retained={} planes={}",
-                pixmap.local.raw(),
-                record.plane_fds.len(),
-                record.descriptor.plane_count,
-            );
+            if crate::x11_authority_trace_enabled() {
+                tracing::info!(
+                    "sophia_dri3_recovery schema=1 status=refused reason=descriptors_missing pixmap={:#x} retained={} planes={}",
+                    pixmap.local.raw(),
+                    record.plane_fds.len(),
+                    record.descriptor.plane_count,
+                );
+            }
             return Err(XAuthorityRuntimeError::UnknownResource);
         }
         Ok((record.descriptor, record.plane_fds.clone()))
