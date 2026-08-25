@@ -10,6 +10,9 @@ fn dispatch_dri3_request(
             | XWireRequest::Dri3PixmapFromBuffers { .. }
             | XWireRequest::Dri3FenceFromFd { .. }
             | XWireRequest::Dri3GetSupportedModifiers { .. }
+            | XWireRequest::Dri3BufferFromPixmap { .. }
+            | XWireRequest::Dri3BuffersFromPixmap { .. }
+            | XWireRequest::Dri3Unimplemented { .. }
     ) {
         return Unhandled(request);
     }
@@ -165,6 +168,112 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
+                XWireRequest::Dri3BuffersFromPixmap { pixmap } => {
+                    let outputs = match runtime
+                        .dri3_pixmap_buffers(context.namespace, pixmap)
+                    {
+                        Ok((descriptor, _)) => {
+                            let planes = usize::from(descriptor.plane_count);
+                            vec![XClientOutput::Reply(XClientReply::Dri3BuffersFromPixmap {
+                                sequence: context.sequence,
+                                width: u16::try_from(descriptor.size.width).unwrap_or(0),
+                                height: u16::try_from(descriptor.size.height).unwrap_or(0),
+                                modifier: descriptor.modifier,
+                                depth: crate::dri3_depth_of(descriptor.format),
+                                bits_per_pixel: 32,
+                                strides: descriptor
+                                    .planes
+                                    .iter()
+                                    .take(planes)
+                                    .map(|plane| plane.map_or(0, |plane| plane.stride))
+                                    .collect(),
+                                offsets: descriptor
+                                    .planes
+                                    .iter()
+                                    .take(planes)
+                                    .map(|plane| plane.map_or(0, |plane| plane.offset))
+                                    .collect(),
+                            })]
+                        }
+                        // These requests name a PIXMAP. A drawable that is
+                        // not one -- or one carrying no imported buffer -- is a
+                        // pixmap fault, not a window fault: reporting BadWindow
+                        // would send the client looking at the wrong resource.
+                        Err(_) => vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadPixmap,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(pixmap.local.raw()).unwrap_or(0),
+                            minor_code: u16::from(crate::X_DRI3_BUFFERS_FROM_PIXMAP_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::Dri3BufferFromPixmap { pixmap } => {
+                    let outputs = match runtime
+                        .dri3_pixmap_buffers(context.namespace, pixmap)
+                    {
+                        // The single-plane reply cannot describe a multi-planar
+                        // buffer: it carries one stride and one descriptor. Say
+                        // so rather than answering with the first plane and
+                        // letting the client render a fraction of the image.
+                        Ok((descriptor, _)) if descriptor.plane_count == 1 => {
+                            let stride = descriptor.planes[0].map_or(0, |plane| plane.stride);
+                            let height = u16::try_from(descriptor.size.height).unwrap_or(0);
+                            vec![XClientOutput::Reply(XClientReply::Dri3BufferFromPixmap {
+                                sequence: context.sequence,
+                                size_bytes: stride.saturating_mul(u32::from(height)),
+                                width: u16::try_from(descriptor.size.width).unwrap_or(0),
+                                height,
+                                stride: u16::try_from(stride).unwrap_or(u16::MAX),
+                                depth: crate::dri3_depth_of(descriptor.format),
+                                bits_per_pixel: 32,
+                            })]
+                        }
+                        Ok(_) => vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadMatch,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(pixmap.local.raw()).unwrap_or(0),
+                            minor_code: u16::from(crate::X_DRI3_BUFFER_FROM_PIXMAP_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })],
+                        // These requests name a PIXMAP. A drawable that is
+                        // not one -- or one carrying no imported buffer -- is a
+                        // pixmap fault, not a window fault: reporting BadWindow
+                        // would send the client looking at the wrong resource.
+                        Err(_) => vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadPixmap,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(pixmap.local.raw()).unwrap_or(0),
+                            minor_code: u16::from(crate::X_DRI3_BUFFER_FROM_PIXMAP_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // Decoded, and refused where the client can see it. Sophia
+                // advertises the DRI3 version whose requests it answers; the
+                // ones it does not answer owe a normal error rather than a
+                // dropped connection.
+                XWireRequest::Dri3Unimplemented { minor_opcode } => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                        code: XErrorCode::BadImplementation,
+                        sequence: context.sequence,
+                        resource_id: 0,
+                        minor_code: u16::from(minor_opcode),
+                        major_code: context.major_opcode,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
                 XWireRequest::Dri3GetSupportedModifiers {
                     window,
                     depth,

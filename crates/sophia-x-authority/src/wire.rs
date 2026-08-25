@@ -432,6 +432,20 @@ pub enum XWireRequest {
         depth: u8,
         bits_per_pixel: u8,
     },
+    Dri3BufferFromPixmap {
+        pixmap: XResourceId,
+    },
+    Dri3BuffersFromPixmap {
+        pixmap: XResourceId,
+    },
+    /// A DRI3 request Sophia decodes but does not implement.
+    ///
+    /// Kept as a request rather than a parse failure so the answer is a normal
+    /// client-visible X11 error naming its own minor opcode, which is what the
+    /// compatibility matrix requires of anything unsupported.
+    Dri3Unimplemented {
+        minor_opcode: u8,
+    },
     XfixesQueryVersion {
         major_version: u32,
         minor_version: u32,

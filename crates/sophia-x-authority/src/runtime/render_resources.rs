@@ -8,6 +8,20 @@ fn software_pixmap_byte_len(size: Size) -> Option<usize> {
 
 const X_AUTHORITY_PRESENT_REGION_MAX_RECTS: usize = 2_048;
 
+/// The X depth a DRI3-imported format reports back.
+///
+/// The inverse of the `(depth, bits_per_pixel) -> format` mapping the import
+/// path applies, kept beside it so a pixmap cannot be admitted at one depth and
+/// recovered at another.
+pub fn dri3_depth_of(format: u32) -> u8 {
+    if format == sophia_protocol::DRM_FORMAT_ARGB8888 {
+        32
+    } else {
+        24
+    }
+}
+
+
 fn clipped_present_rect(size: Size, rect: Rect) -> Option<Rect> {
     let left = rect.x.max(0).min(size.width);
     let top = rect.y.max(0).min(size.height);
@@ -89,7 +103,7 @@ impl XAuthorityRuntime {
         Ok(self
             .dri3_pixmaps
             .remove(&pixmap)
-            .map(|descriptor| descriptor.handle))
+            .map(|record| record.descriptor.handle))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -228,7 +242,13 @@ impl XAuthorityRuntime {
         }
         self.create_pixmap(namespace, pixmap, descriptor.size, depth, generation)?;
         self.next_dma_buf_handle = handle.saturating_add(1).max(1);
-        self.dri3_pixmaps.insert(pixmap, descriptor);
+        self.dri3_pixmaps.insert(
+            pixmap,
+            XDri3PixmapRecord {
+                descriptor,
+                plane_fds: Vec::new(),
+            },
+        );
         Ok(descriptor)
     }
 
@@ -279,8 +299,65 @@ impl XAuthorityRuntime {
             .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
         self.create_pixmap(namespace, pixmap, descriptor.size, depth, generation)?;
         self.next_dma_buf_handle = handle.saturating_add(1).max(1);
-        self.dri3_pixmaps.insert(pixmap, descriptor);
+        self.dri3_pixmaps.insert(
+            pixmap,
+            XDri3PixmapRecord {
+                descriptor,
+                plane_fds: Vec::new(),
+            },
+        );
         Ok(descriptor)
+    }
+
+    /// Records the plane descriptors a DRI3 import arrived with.
+    ///
+    /// Separate from the import itself because the descriptors reach the
+    /// authority at the socket, where the client's ancillary data is read, while
+    /// the import is decided in the pure dispatch layer that never sees them.
+    /// `Dri3Open` splits along the same seam.
+    pub fn attach_dri3_plane_fds(
+        &mut self,
+        namespace: NamespaceId,
+        pixmap: crate::XResourceId,
+        plane_fds: Vec<std::sync::Arc<std::os::fd::OwnedFd>>,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.validate_pixmap_access(namespace, pixmap)?;
+        let record = self
+            .dri3_pixmaps
+            .get_mut(&pixmap)
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        if plane_fds.len() != usize::from(record.descriptor.plane_count) {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        record.plane_fds = plane_fds;
+        Ok(())
+    }
+
+    /// The facts and plane descriptors a DRI3 pixmap can be recovered from.
+    ///
+    /// Refuses a pixmap whose descriptors were never recorded rather than
+    /// answering with a short list: a reply that promises `nfd` buffers and
+    /// carries fewer is worse for the client than a plain error.
+    pub fn dri3_pixmap_buffers(
+        &self,
+        namespace: NamespaceId,
+        pixmap: crate::XResourceId,
+    ) -> Result<
+        (
+            sophia_protocol::DmaBufDescriptor,
+            Vec<std::sync::Arc<std::os::fd::OwnedFd>>,
+        ),
+        XAuthorityRuntimeError,
+    > {
+        self.validate_pixmap_access(namespace, pixmap)?;
+        let record = self
+            .dri3_pixmaps
+            .get(&pixmap)
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+        if record.plane_fds.len() != usize::from(record.descriptor.plane_count) {
+            return Err(XAuthorityRuntimeError::UnknownResource);
+        }
+        Ok((record.descriptor, record.plane_fds.clone()))
     }
 
     pub fn dri3_pixmap_descriptor(
@@ -291,7 +368,7 @@ impl XAuthorityRuntime {
         self.validate_pixmap_access(namespace, pixmap)?;
         self.dri3_pixmaps
             .get(&pixmap)
-            .copied()
+            .map(|record| record.descriptor)
             .ok_or(XAuthorityRuntimeError::UnknownResource)
     }
 
@@ -341,7 +418,7 @@ impl XAuthorityRuntime {
         };
         let damage = translated_present_damage(&source_damage, x_offset, y_offset);
         let (target_window, target_generation, buffer, damage) =
-            if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap) {
+            if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap).map(|record| record.descriptor) {
                 let (presentation_window, _, child_x, child_y) =
                     match self.window_presentation_root_and_offset(namespace, window) {
                         Ok(presentation) => presentation,

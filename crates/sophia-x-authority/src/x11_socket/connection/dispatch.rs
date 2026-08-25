@@ -522,6 +522,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     }
                     let event_selection = x11_core_event_selection_update(&request);
                     let dri3_open = matches!(&request, crate::XWireRequest::Dri3Open { .. });
+                    let dri3_recovered_pixmap = match &request {
+                        crate::XWireRequest::Dri3BufferFromPixmap { pixmap }
+                        | crate::XWireRequest::Dri3BuffersFromPixmap { pixmap } => Some(*pixmap),
+                        _ => None,
+                    };
                     let dri3_query = matches!(
                         &request,
                         crate::XWireRequest::QueryExtension { name }
@@ -1265,6 +1270,31 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             .ok()
                             .map(|descriptor| XAuthorityDri3PixmapImport { pixmap, descriptor })
                     });
+                    // Keep the descriptors this import arrived with. DRI3 lets
+                    // a client ask for its own buffer back, and the authority
+                    // cannot borrow the renderer's copy to answer -- the import
+                    // boundary keeps renderer handles out of protocol
+                    // authorities. They are dropped with the pixmap.
+                    if let Some(pixmap) = dri3_pixmap
+                        && dri3_pixmap_import.is_some()
+                    {
+                        let retained = received_fds
+                            .iter()
+                            .map(|fd| fd.try_clone().map(Arc::new))
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to retain DRI3 plane descriptor: {error}"
+                                ))
+                            })?;
+                        runtime
+                            .attach_dri3_plane_fds(namespace, pixmap, retained)
+                            .map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to record DRI3 plane descriptors: {error:?}"
+                                ))
+                            })?;
+                    }
                     let dri3_fence_import = dispatch_succeeded
                         .then_some(dri3_fence_request)
                         .flatten()
@@ -1333,6 +1363,22 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             })
                         });
                     let mut server_reply_fds = Vec::new();
+                    // The reply promised `nfd` descriptors; this is where they
+                    // travel. Only on success -- a refused recovery carries an
+                    // error, and descriptors attached to it would leave the
+                    // client reading a buffer it was never given.
+                    if dispatch_succeeded
+                        && let Some(pixmap) = dri3_recovered_pixmap
+                        && let Ok((_, plane_fds)) = runtime.dri3_pixmap_buffers(namespace, pixmap)
+                    {
+                        for fd in plane_fds {
+                            server_reply_fds.push(fd.try_clone().map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to hand back DRI3 plane descriptor: {error}"
+                                ))
+                            })?);
+                        }
+                    }
                     if dispatch_succeeded && dri3_open {
                         match state.open_render_device_fd() {
                             Ok(fd) => server_reply_fds.push(fd),

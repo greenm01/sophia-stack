@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use sophia_portal::ClipboardPortal;
@@ -66,6 +67,20 @@ struct XPixmapRecord {
     depth: u8,
 }
 
+/// One DRI3-imported pixmap: the facts it was imported with, and the plane
+/// descriptors it was imported from.
+///
+/// The descriptors are kept because DRI3 asks for them back. A client that
+/// imported a pixmap may call `BuffersFromPixmap` to recover the same buffer,
+/// and the authority cannot borrow the renderer's copy to answer: the renderer
+/// import boundary owns keeping its handles out of protocol authorities. So the
+/// authority keeps its own, for exactly as long as the pixmap lives.
+#[derive(Clone, Debug)]
+struct XDri3PixmapRecord {
+    descriptor: sophia_protocol::DmaBufDescriptor,
+    plane_fds: Vec<Arc<OwnedFd>>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct XFontRecord {
     face: XFontFace,
@@ -125,7 +140,7 @@ pub struct XAuthorityRuntime {
     fonts: BTreeMap<crate::XResourceId, XFontRecord>,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ReadOnlyMapping>>,
-    dri3_pixmaps: BTreeMap<crate::XResourceId, sophia_protocol::DmaBufDescriptor>,
+    dri3_pixmaps: BTreeMap<crate::XResourceId, XDri3PixmapRecord>,
     next_dma_buf_handle: u64,
     dri3_fences: BTreeMap<crate::XResourceId, sophia_protocol::FenceHandle>,
     sync_counters: BTreeMap<crate::XResourceId, i64>,

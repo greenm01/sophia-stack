@@ -100,8 +100,8 @@ fn run_x_authority_external_probe_smoke(
                             continue;
                         }
                         let _ = sender.try_send(ExternalProbeObservation::Error(format!(
-                            "{:?}:major={}:resource={:#x}",
-                            error.code, error.major_code, error.resource_id
+                            "{:?}:major={}:minor={}:resource={:#x}",
+                            error.code, error.major_code, error.minor_code, error.resource_id
                         )));
                     }
                 }

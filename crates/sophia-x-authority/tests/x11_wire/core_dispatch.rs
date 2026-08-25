@@ -1131,3 +1131,184 @@ fn child_dri3_present_projects_onto_the_managed_toplevel() {
         (parent, parent_surface, 5, 7)
     );
 }
+
+fn test_plane_descriptor() -> std::sync::Arc<std::os::fd::OwnedFd> {
+    let file = std::fs::File::open("/dev/null").expect("a plane descriptor stand-in");
+    std::sync::Arc::new(std::os::fd::OwnedFd::from(file))
+}
+
+fn import_dri3_pixmap(
+    runtime: &mut XAuthorityRuntime,
+    namespace: NamespaceId,
+    pixmap: XResourceId,
+    raw_pixmap: u32,
+) {
+    let request = decode_x11_core_request(
+        context(namespace, 531, XByteOrder::LittleEndian),
+        &dri3_pixmap_from_buffers_request(
+            XByteOrder::LittleEndian,
+            raw_pixmap,
+            X_SETUP_DEFAULT_ROOT,
+            1,
+            64,
+            48,
+            [256, 0, 0, 0],
+            [0, 0, 0, 0],
+            24,
+            32,
+            9,
+        ),
+    )
+    .unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, X_DRI3_MAJOR_OPCODE),
+        request,
+        runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(result.outputs.is_empty(), "import should not error");
+    // The socket layer records these; there is no socket in a dispatch test.
+    runtime
+        .attach_dri3_plane_fds(namespace, pixmap, vec![test_plane_descriptor()])
+        .expect("plane descriptors are recorded against the imported pixmap");
+}
+
+fn dispatch_dri3(
+    runtime: &mut XAuthorityRuntime,
+    namespace: NamespaceId,
+    bytes: &[u8],
+) -> Vec<XClientOutput> {
+    let request = decode_x11_core_request(
+        context(namespace, 532, XByteOrder::LittleEndian),
+        bytes,
+    )
+    .unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_DRI3_MAJOR_OPCODE),
+        request,
+        runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .outputs
+}
+
+#[test]
+fn an_imported_pixmap_answers_with_the_facts_it_was_imported_with() {
+    // DRI3 lets a client recover the buffer it gave the authority. The answer
+    // must be the same buffer, not a plausible one: a client that imports at
+    // one stride and recovers at another renders a sheared image.
+    let namespace = NamespaceId::from_raw(45);
+    let pixmap = XResourceId::new(0x220803, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    import_dri3_pixmap(&mut runtime, namespace, pixmap, 0x220803);
+
+    let outputs = dispatch_dri3(
+        &mut runtime,
+        namespace,
+        &dri3_buffers_from_pixmap_request(XByteOrder::LittleEndian, 0x220803),
+    );
+
+    assert_eq!(outputs.len(), 1);
+    let XClientOutput::Reply(XClientReply::Dri3BuffersFromPixmap {
+        width,
+        height,
+        modifier,
+        depth,
+        bits_per_pixel,
+        strides,
+        offsets,
+        ..
+    }) = &outputs[0]
+    else {
+        panic!("expected a BuffersFromPixmap reply, got {:?}", outputs[0]);
+    };
+    assert_eq!((*width, *height), (64, 48));
+    assert_eq!(*modifier, 9);
+    assert_eq!((*depth, *bits_per_pixel), (24, 32));
+    // The list length is the `nfd` the reply header promises.
+    assert_eq!(strides, &vec![256]);
+    assert_eq!(offsets, &vec![0]);
+}
+
+#[test]
+fn the_single_plane_recovery_reports_the_same_buffer() {
+    let namespace = NamespaceId::from_raw(45);
+    let pixmap = XResourceId::new(0x220803, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    import_dri3_pixmap(&mut runtime, namespace, pixmap, 0x220803);
+
+    let outputs = dispatch_dri3(
+        &mut runtime,
+        namespace,
+        &dri3_buffer_from_pixmap_request(XByteOrder::LittleEndian, 0x220803),
+    );
+
+    assert_eq!(outputs.len(), 1);
+    let XClientOutput::Reply(XClientReply::Dri3BufferFromPixmap {
+        size_bytes,
+        width,
+        height,
+        stride,
+        depth,
+        bits_per_pixel,
+        ..
+    }) = &outputs[0]
+    else {
+        panic!("expected a BufferFromPixmap reply, got {:?}", outputs[0]);
+    };
+    assert_eq!((*width, *height, *stride), (64, 48, 256));
+    assert_eq!(*size_bytes, 256 * 48);
+    assert_eq!((*depth, *bits_per_pixel), (24, 32));
+}
+
+#[test]
+fn a_pixmap_that_was_never_imported_is_refused_by_name() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+
+    let outputs = dispatch_dri3(
+        &mut runtime,
+        namespace,
+        &dri3_buffers_from_pixmap_request(XByteOrder::LittleEndian, 0x220999),
+    );
+
+    assert_eq!(outputs.len(), 1);
+    let XClientOutput::Error(error) = &outputs[0] else {
+        panic!("expected an error, got {:?}", outputs[0]);
+    };
+    // Named against the request that failed, so a tally can attribute it, and
+    // reported as a pixmap fault because a PIXMAP is what the request named.
+    assert_eq!(
+        error.minor_code,
+        u16::from(X_DRI3_BUFFERS_FROM_PIXMAP_MINOR_OPCODE)
+    );
+    assert_eq!(error.code, XErrorCode::BadPixmap);
+    assert_eq!(error.resource_id, 0x220999);
+}
+
+#[test]
+fn a_dri3_request_sophia_does_not_implement_is_a_client_visible_error() {
+    // Not a parse failure. An unsupported request must stay a normal X11 error
+    // so the client keeps a sequence number to attribute it to, and so a tally
+    // can name the minor rather than reporting an undecodable request.
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut bytes = vec![X_DRI3_MAJOR_OPCODE, 5u8];
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+
+    let outputs = dispatch_dri3(&mut runtime, namespace, &bytes);
+
+    assert_eq!(outputs.len(), 1);
+    let XClientOutput::Error(error) = &outputs[0] else {
+        panic!("expected an error, got {:?}", outputs[0]);
+    };
+    assert_eq!(error.code, XErrorCode::BadImplementation);
+    assert_eq!(error.minor_code, 5);
+}

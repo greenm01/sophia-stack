@@ -228,6 +228,20 @@ fn dri3_pixmap_from_buffers_request(
     out
 }
 
+fn dri3_buffers_from_pixmap_request(byte_order: XByteOrder, pixmap: u32) -> Vec<u8> {
+    let mut out = vec![X_DRI3_MAJOR_OPCODE, X_DRI3_BUFFERS_FROM_PIXMAP_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, pixmap);
+    out
+}
+
+fn dri3_buffer_from_pixmap_request(byte_order: XByteOrder, pixmap: u32) -> Vec<u8> {
+    let mut out = vec![X_DRI3_MAJOR_OPCODE, X_DRI3_BUFFER_FROM_PIXMAP_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, pixmap);
+    out
+}
+
 fn dri3_fence_from_fd_request(
     byte_order: XByteOrder,
     drawable: u32,

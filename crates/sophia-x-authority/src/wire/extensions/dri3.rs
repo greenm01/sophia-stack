@@ -81,7 +81,24 @@ fn decode_dri3(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest
                 modifier: context.byte_order.u64(&bytes[56..64]),
             })
         }
-        _ => Err(XWireParseError::UnknownOpcode(bytes[1])),
+        X_DRI3_BUFFER_FROM_PIXMAP_MINOR_OPCODE => {
+            require_exact_len(X_DRI3_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::Dri3BufferFromPixmap {
+                pixmap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+            })
+        }
+        X_DRI3_BUFFERS_FROM_PIXMAP_MINOR_OPCODE => {
+            require_exact_len(X_DRI3_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::Dri3BuffersFromPixmap {
+                pixmap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+            })
+        }
+        // Sophia answers the DRI3 minors it implements and refuses the rest as
+        // an implementation gap the client can see. Refusing to parse would
+        // deny the client a sequence number to attribute the failure to.
+        minor => Ok(XWireRequest::Dri3Unimplemented {
+            minor_opcode: minor,
+        }),
     }
 }
 

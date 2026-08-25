@@ -398,6 +398,36 @@ pub enum XClientReply {
         window_modifiers: Vec<u64>,
         screen_modifiers: Vec<u64>,
     },
+    /// `BufferFromPixmap`: the single-plane recovery of an imported pixmap.
+    ///
+    /// A separate record from `Dri3BuffersFromPixmap` because the wire replies
+    /// are separate shapes, not one shape with a flag -- this one carries a
+    /// total byte length and a single u16 stride where the other carries
+    /// per-plane lists and a modifier.
+    Dri3BufferFromPixmap {
+        sequence: u16,
+        size_bytes: u32,
+        width: u16,
+        height: u16,
+        stride: u16,
+        depth: u8,
+        bits_per_pixel: u8,
+    },
+    /// `BuffersFromPixmap`: the modifier-aware, per-plane recovery.
+    ///
+    /// `strides` and `offsets` are the same length, and that length is the
+    /// `nfd` the reply header promises. The descriptors themselves travel out
+    /// of band rather than in this record.
+    Dri3BuffersFromPixmap {
+        sequence: u16,
+        width: u16,
+        height: u16,
+        modifier: u64,
+        depth: u8,
+        bits_per_pixel: u8,
+        strides: Vec<u32>,
+        offsets: Vec<u32>,
+    },
     XfixesQueryVersion {
         sequence: u16,
         major_version: u32,
