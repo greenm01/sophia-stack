@@ -37,6 +37,12 @@ struct ExternalProbeInvocation<'a> {
     allow_proof_kill_without_transactions: bool,
     allow_client_failure_without_x_error: bool,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+    /// How long the client gets to prove itself.
+    ///
+    /// A property of the client, not of its name: a terminal draws in
+    /// milliseconds and a browser starts a GPU process first. Carried here so
+    /// a slow client is described rather than special-cased by label.
+    proof_timeout: Duration,
 }
 
 fn run_x_authority_external_probe_smoke(
@@ -55,13 +61,9 @@ fn run_x_authority_external_probe_smoke(
         allow_proof_kill_without_transactions,
         allow_client_failure_without_x_error,
         render_device_provider,
+        proof_timeout,
     } = invocation;
     let server_path = socket_path.clone();
-    let proof_timeout = if label == "kitty" {
-        Duration::from_secs(20)
-    } else {
-        Duration::from_secs(8)
-    };
     // One X request can produce an opcode, detail, transaction, and buffer
     // update. Keep the diagnostic channel large enough that a replacement
     // update cannot be dropped while a later patch is retained.

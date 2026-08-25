@@ -191,6 +191,7 @@ struct ExternalProbeSmokeSpec {
     pixel_proof: ExternalProbePixelProof,
     allow_proof_kill_without_transactions: bool,
     allow_client_failure_without_x_error: bool,
+    proof_timeout_secs: u64,
 }
 
 const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
@@ -206,6 +207,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xeyes-smoke",
@@ -219,6 +221,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xwininfo-root-smoke",
@@ -232,6 +235,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xprop-root-smoke",
@@ -245,6 +249,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xsetroot-name-smoke",
@@ -258,6 +263,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xlogo-smoke",
@@ -271,6 +277,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xmessage-smoke",
@@ -284,6 +291,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xrandr-query-smoke",
@@ -297,6 +305,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xcalc-smoke",
@@ -310,6 +319,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xterm-smoke",
@@ -323,6 +333,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::None,
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: true,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-xterm-render-smoke",
@@ -362,6 +373,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::Fixed6x13WhiteOnBlack(b"SophiaMirror12"),
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-zenity-smoke",
@@ -381,6 +393,7 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::Nonzero,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
     ExternalProbeSmokeSpec {
         command_name: "x-authority-firefox-smoke",
@@ -394,5 +407,6 @@ const EXTERNAL_PROBE_SMOKES: &[ExternalProbeSmokeSpec] = &[
         pixel_proof: ExternalProbePixelProof::Nonzero,
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
+        proof_timeout_secs: 8,
     },
 ];

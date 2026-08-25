@@ -365,6 +365,7 @@ fn run_x_authority_external_probe_smoke_spec(
         allow_proof_kill_without_transactions: spec.allow_proof_kill_without_transactions,
         allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
         render_device_provider: None,
+        proof_timeout: Duration::from_secs(spec.proof_timeout_secs),
     })
 }
 
@@ -400,6 +401,7 @@ fn run_x_authority_xmobar_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: None,
+        proof_timeout: Duration::from_secs(8),
     })
 }
 
@@ -448,6 +450,7 @@ fn run_x_authority_zenity_render_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(8),
     })
 }
 
@@ -472,6 +475,7 @@ fn run_x_authority_vkcube_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(8),
     })
 }
 
@@ -501,6 +505,7 @@ fn run_x_authority_glxgears_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(8),
     })
 }
 
@@ -540,8 +545,56 @@ fn run_x_authority_glx_pbuffer_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(8),
     });
     let _ = std::fs::remove_file(&image);
+    report
+}
+
+/// Drives the session's configured browser against the authority offline.
+///
+/// The browser is the client the physical gate turns on, and until now the only
+/// way to watch it speak to Sophia was to hold a rig session open. It gets a
+/// render node because it starts a GPU process, a scratch profile because a
+/// second instance otherwise hands its window to the first and exits, and a
+/// deadline sized for a cold start rather than for a terminal.
+fn run_x_authority_browser_smoke()
+-> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let command = resolve_external_probe_binary("browser", "helium")?;
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
+        device: first_openable_render_node()?,
+    });
+    // Scratch profile, per process: a browser started against the operator's own
+    // profile forwards to whatever instance is already running and exits before
+    // it opens the display, which reads as a silent probe rather than a refusal.
+    let profile = std::env::temp_dir().join(format!(
+        "sophia-browser-probe-{}",
+        std::process::id()
+    ));
+    let profile_arg = format!("--user-data-dir={}", profile.to_string_lossy());
+    let (display, socket_path) = temp_xauthority_display(6710)?;
+    let report = run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "browser",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &[
+            &profile_arg,
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "about:blank",
+        ],
+        display,
+        socket_path,
+        namespace: NamespaceId::from_raw(65),
+        require_transactions: true,
+        pixel_proof: ExternalProbePixelProof::Nonzero,
+        allow_proof_kill_without_transactions: false,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(30),
+    });
+    let _ = std::fs::remove_dir_all(&profile);
     report
 }
 
@@ -575,5 +628,6 @@ fn run_x_authority_kitty_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        proof_timeout: Duration::from_secs(20),
     })
 }
