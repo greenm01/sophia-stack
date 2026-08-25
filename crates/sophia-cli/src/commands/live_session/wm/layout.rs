@@ -850,6 +850,31 @@ impl PersistentLiveLayout {
                     format!("failed to queue WM presentation-state control: {error:?}")
                 })?;
         }
+        // A surface that has never presented cannot answer this epoch's gate.
+        // The gate admits a surface on an exact-size frame, and a surface with
+        // no safe observation has no pixels to resize: it can only pass by
+        // drawing its first frame at precisely the requested extent, inside a
+        // deadline a blind WM sizes for settled clients. A cold browser needs
+        // seconds; the deadline is a few hundred milliseconds. Holding one in
+        // the gate does not make it answer faster — it fails the epoch and
+        // takes every sibling's resize down with it.
+        //
+        // Defer it to a standing obligation instead. Its ConfigureSurface has
+        // already gone out above, so the client still learns its target; what
+        // changes here is only whether the epoch waits on it. The obligation is
+        // driven by the standing-target injection at the head of this function
+        // once the surface has pixels to resize.
+        let deferred_surfaces = proposal
+            .requested_sizes
+            .keys()
+            .copied()
+            .filter(|surface| self.layout_epochs.safe_size(*surface).is_none())
+            .collect::<Vec<_>>();
+        for surface in &deferred_surfaces {
+            if let Some(target) = proposal.requested_sizes.remove(surface) {
+                self.layout_epochs.set_pending_target(*surface, target);
+            }
+        }
         let ready = proposal
             .requested_sizes
             .iter()
@@ -861,6 +886,7 @@ impl PersistentLiveLayout {
         if ready {
             return Ok(Some(self.commit_proposal(proposal)));
         }
+        let timeout_msec = proposal.timeout.as_millis();
         self.pending = Some(PendingLiveWmLayout {
             transaction: proposal.transaction,
             layers: proposal.layers,
@@ -878,8 +904,14 @@ impl PersistentLiveLayout {
             effects: proposal.effects,
             policy_settlement: proposal.policy_settlement,
         });
+        // `surfaces` counts what the epoch actually waits on, so `deferred`
+        // must name what was held back: a reader cannot otherwise tell a
+        // one-surface epoch from a two-surface one that excused a sibling.
+        // The deadline is reported with them because it is the blind WM's
+        // choice, and a gate that expires early is indistinguishable from a
+        // client that never answered unless both are on the record.
         println!(
-            "sophia_live_resize_epoch schema=1 status=held transaction={} surfaces={}",
+            "sophia_live_resize_epoch schema=2 status=held transaction={} surfaces={} deferred={} timeout_msec={}",
             self.pending
                 .as_ref()
                 .expect("pending layout was just installed")
@@ -890,6 +922,8 @@ impl PersistentLiveLayout {
                 .expect("pending layout was just installed")
                 .requested_sizes
                 .len(),
+            deferred_surfaces.len(),
+            timeout_msec,
         );
         Ok(None)
     }
@@ -1137,9 +1171,16 @@ impl PersistentLiveLayout {
             rollback_configures,
             resize_state,
         );
+        // A retry is spent by a surface that was asked and did not answer. A
+        // surface deferred out of the gate was never asked, so an expiry it
+        // took no part in must not count against it — two of those retire an
+        // admission, and a launching client would be withdrawn for a deadline
+        // that was never its to meet. `stage` and this bound read the same
+        // fact so they cannot come apart.
         for surface in admission_surfaces
             .into_iter()
             .filter(|surface| !terminal_admissions.contains(surface))
+            .filter(|surface| pending.requested_sizes.contains_key(surface))
         {
             let attempts = self.admission_retries.entry(surface).or_default();
             *attempts = attempts.saturating_add(1);

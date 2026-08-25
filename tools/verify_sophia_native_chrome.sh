@@ -117,7 +117,7 @@ awk '
         active = generation
         next
     }
-    active != 0 && /^sophia_live_resize_epoch schema=1 status=held / {
+    active != 0 && /^sophia_live_resize_epoch schema=2 status=held / {
         if (value("surfaces") == "2" && epoch[active] == "") {
             epoch[active] = value("transaction")
         }

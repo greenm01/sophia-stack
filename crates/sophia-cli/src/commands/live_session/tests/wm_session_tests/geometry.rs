@@ -610,3 +610,159 @@ fn rejected_presentation_state_restores_the_last_frontend_value() {
         Some(&previous)
     );
 }
+
+#[test]
+fn a_pixel_silent_surface_does_not_gate_a_sibling_resize() {
+    // A launching client has no pixels to resize. It can pass the epoch's
+    // exact-size gate only by drawing its first frame at precisely the
+    // requested extent, inside a deadline the blind WM sizes for settled
+    // clients. Holding the epoch on it does not make it answer sooner — it
+    // fails the sibling that could have answered.
+    let settled = SurfaceId::new(8, 1);
+    let launching = SurfaceId::new(9, 1);
+    let whole = Size {
+        width: 2558,
+        height: 1424,
+    };
+    let split = Size {
+        width: 1278,
+        height: 1424,
+    };
+    let settled_geometry = Rect {
+        x: 0,
+        y: 14,
+        width: whole.width,
+        height: whole.height,
+    };
+    let split_geometry = Rect {
+        width: split.width,
+        ..settled_geometry
+    };
+    let launching_geometry = Rect {
+        x: 1280,
+        ..split_geometry
+    };
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[settled, launching]);
+    layout
+        .layers
+        .insert(settled, test_layer(settled, settled_geometry));
+    layout.layout_epochs.record_committed(settled, whole);
+    // `launching` is deliberately given no committed size and no safe
+    // observation: it is a client that has never presented.
+
+    let transaction = TransactionId::from_raw(21);
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: vec![
+            test_layer(settled, split_geometry),
+            test_layer(launching, launching_geometry),
+        ],
+        requested_sizes: BTreeMap::from([(settled, split), (launching, split)]),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(settled),
+        timeout: Duration::from_millis(300),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![settled, launching],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 2,
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+        policy_settlement: None,
+    };
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    assert!(layout.stage(proposal, &mut controls).unwrap().is_none());
+
+    // The epoch waits only on the surface that can answer it.
+    assert_eq!(
+        layout.pending.as_ref().unwrap().requested_sizes,
+        BTreeMap::from([(settled, split)])
+    );
+    // The deferred surface keeps its target as a standing obligation, so the
+    // extent is driven once it has pixels rather than being dropped.
+    assert_eq!(layout.layout_epochs.pending_target(launching), Some(split));
+}
+
+#[test]
+fn a_deferred_surface_spends_no_admission_retry() {
+    // Two expiries retire an admission. A retry is spent by a surface that was
+    // asked and did not answer, so an epoch a deferred surface took no part in
+    // must not count against it — otherwise a launching client is withdrawn
+    // for a deadline that was never its to meet.
+    let settled = SurfaceId::new(8, 1);
+    let launching = SurfaceId::new(9, 1);
+    let whole = Size {
+        width: 2558,
+        height: 1424,
+    };
+    let split = Size {
+        width: 1278,
+        height: 1424,
+    };
+    let settled_geometry = Rect {
+        x: 0,
+        y: 14,
+        width: whole.width,
+        height: whole.height,
+    };
+    let split_geometry = Rect {
+        width: split.width,
+        ..settled_geometry
+    };
+    let launching_geometry = Rect {
+        x: 1280,
+        ..split_geometry
+    };
+    let transaction = TransactionId::from_raw(21);
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[settled, launching]);
+    layout
+        .layers
+        .insert(settled, test_layer(settled, settled_geometry));
+    layout
+        .layers
+        .insert(launching, test_layer(launching, launching_geometry));
+    layout.layout_epochs.record_committed(settled, whole);
+    layout.unmanaged_surfaces.insert(launching);
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![
+            test_layer(settled, split_geometry),
+            test_layer(launching, launching_geometry),
+        ],
+        // The deferred surface is absent from the gate, exactly as `stage`
+        // leaves it.
+        requested_sizes: BTreeMap::from([(settled, split)]),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::new(),
+        configure_deliveries: 1,
+        focus: Some(settled),
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![settled],
+            },
+            ipc_error: None,
+        },
+        moved_surfaces: 2,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::from([launching]),
+        source: Some(LiveWmProposalSource::Relayout),
+        effects: None,
+        policy_settlement: None,
+    });
+    let mut controls = sophia_cli::session_control::SessionControlQueue::default();
+
+    let result = layout.expire_pending(&mut controls).unwrap().unwrap();
+    assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+    assert_eq!(layout.admission_retries.get(&launching), None);
+}

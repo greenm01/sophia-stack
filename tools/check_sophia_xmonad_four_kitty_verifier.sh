@@ -18,7 +18,7 @@ sophia_live_native_startup_output schema=1 status=presented output=2 proof=synch
 sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
 sophia_live_wm_chrome schema=1 status=negotiated source=core_fallback capability=false clearance=2
 sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1426_0_14
-sophia_live_resize_epoch schema=1 status=held transaction=4 surfaces=4
+sophia_live_resize_epoch schema=2 status=held transaction=4 surfaces=4 deferred=0 timeout_msec=1000
 sophia_live_wm schema=1 status=layout_committed transaction=4 surfaces=5 moved_surfaces=4 configure_deliveries=4 outcome=Committed
 sophia_live_resize_epoch schema=1 status=committed transaction=4 matched_surfaces=4
 sophia_live_wm schema=2 status=workspace_projection_committed transaction=4 output=1 workspace=1 visible_surfaces=4 focus=surface

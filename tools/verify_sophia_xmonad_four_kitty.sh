@@ -83,7 +83,7 @@ tail -n "+$fourth_line" "$SESSION_LOG" >"$four_window_log"
 
 four_window_epoch="$(
     grep -Em1 \
-        '^sophia_live_resize_epoch schema=1 status=held transaction=[0-9]+ surfaces=[34]$' \
+        '^sophia_live_resize_epoch schema=2 status=held transaction=[0-9]+ surfaces=[34] deferred=[0-9]+ timeout_msec=[0-9]+$' \
         "$four_window_log" || true
 )"
 [[ -n "$four_window_epoch" ]] ||
