@@ -316,6 +316,18 @@ impl PersistentLiveLayout {
                     transaction.transaction.raw(),
                     transaction.surface.index(),
                 );
+                // Arming happens inside a layout commit, and a first frame
+                // usually arrives seconds after its launch layout committed.
+                // With no pending layout there is nothing scheduled that would
+                // ever stage this candidate, so the admitted window sits
+                // selected and empty until some unrelated event forces a
+                // relayout -- on the rig, the operator pressing the launch key
+                // again. Queue the one relayout the commit needs. Selection
+                // reports true only when the candidate is new, so this fires
+                // once per frame identity, not per observation.
+                if self.pending.is_none() {
+                    self.constraint_relayout_required = true;
+                }
             }
             let standing_recovery_candidate = self.arm_standing_recovery_candidate(
                 transaction,

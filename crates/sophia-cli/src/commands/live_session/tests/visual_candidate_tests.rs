@@ -506,3 +506,92 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
         .unwrap();
     assert_eq!(recovery[0].size, selected.extent);
 }
+
+#[test]
+fn a_selected_pre_admission_candidate_queues_the_relayout_that_arms_it() {
+    // Arming happens inside a layout commit, and a first frame arrives seconds
+    // after its launch layout committed. Without this nudge nothing schedules
+    // the commit, so the admitted window sits selected and empty until an
+    // unrelated event forces a relayout -- on the rig, the operator pressing
+    // the launch key a second time and receiving both windows at once.
+    let surface = SurfaceId::new(81, 1);
+    let transaction = TransactionId::from_raw(2318);
+    let geometry = rect(1278, 1424);
+    let dma_buffer = BufferHandle::from_raw(16);
+    let frame = SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        presentation_extent: Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: dma_buffer.raw(),
+            },
+            sophia_protocol::Size {
+                width: geometry.width,
+                height: geometry.height,
+            },
+        ),
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let mut batch = crate::commands::live_session::wm_update_coordinator_batch(transaction);
+    batch.transactions.push(frame.clone());
+    batch
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction,
+            surface,
+            buffer: dma_buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+
+    let mut layout = PersistentLiveLayout::default();
+    layout.dma_buf_sizes.insert(
+        dma_buffer,
+        Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    );
+    layout.presentation_roles.insert(
+        surface,
+        sophia_protocol::SurfacePresentationRole::PolicyManaged,
+    );
+    layout
+        .admissions
+        .observe_intent(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    assert!(layout.surface_requires_admission(surface));
+    assert!(!layout.constraint_relayout_required());
+
+    layout.observe_authority_batch(&batch);
+
+    assert!(
+        layout.constraint_relayout_required(),
+        "the selection must queue the relayout whose commit arms the admission",
+    );
+}
