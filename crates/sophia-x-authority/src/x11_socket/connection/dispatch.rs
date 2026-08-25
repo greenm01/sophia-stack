@@ -1617,7 +1617,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     .iter()
                     .filter(|item| matches!(item, crate::XClientOutput::Event(_)))
                     .count();
-                tracing::debug!(
+                // Reported at the level an operator already runs at. The block
+                // is opt-in behind an environment variable, so demanding a
+                // raised global level as well means the trace can only be had by
+                // changing every other target's level too -- which silences the
+                // telemetry a physical gate polls for, or floods the run.
+                tracing::info!(
                     "sophia_x11_dispatch schema=1 sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={}",
                     sequence,
                     major_opcode,
