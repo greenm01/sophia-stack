@@ -202,6 +202,15 @@ impl XAuthorityRuntime {
         if drawable.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
             return Ok(());
         }
+        // The window `_NET_SUPPORTING_WM_CHECK` names exists, so requests that
+        // ask about a window rather than draw into one must succeed against it:
+        // a client selects events on it to learn if the manager dies, and an
+        // error there reads as the manager having already gone. It is unmapped
+        // and never composited, so drawing into it reaches nothing -- the same
+        // as the check window a conventional manager creates.
+        if drawable.local.raw() == u64::from(crate::X_SETUP_WM_CHECK_WINDOW) {
+            return Ok(());
+        }
         if !namespace.is_valid() {
             return Err(XAuthorityRuntimeError::InvalidNamespace);
         }

@@ -12,6 +12,7 @@ pub const X_ATOM_RESOURCE_MANAGER: XAtom = 23;
 pub const X_ATOM_STRING: XAtom = 31;
 pub const X_ATOM_WM_NAME: XAtom = 39;
 pub const X_ATOM_WM_CLASS: XAtom = 67;
+pub const X_ATOM_WINDOW: XAtom = 33;
 
 pub const X_ATOM_NAME_PRIMARY: &str = "PRIMARY";
 pub const X_ATOM_NAME_ATOM: &str = "ATOM";
@@ -20,6 +21,9 @@ pub const X_ATOM_NAME_STRING: &str = "STRING";
 pub const X_ATOM_NAME_WM_NAME: &str = "WM_NAME";
 pub const X_ATOM_NAME_WM_CLASS: &str = "WM_CLASS";
 pub const X_ATOM_NAME_NET_WM_NAME: &str = "_NET_WM_NAME";
+pub const X_ATOM_NAME_NET_SUPPORTED: &str = "_NET_SUPPORTED";
+pub const X_ATOM_NAME_NET_SUPPORTING_WM_CHECK: &str = "_NET_SUPPORTING_WM_CHECK";
+pub const X_ATOM_NAME_NET_WM_WINDOW_TYPE: &str = "_NET_WM_WINDOW_TYPE";
 pub const X_ATOM_NAME_NET_WM_STATE: &str = "_NET_WM_STATE";
 pub const X_ATOM_NAME_NET_WM_STATE_FULLSCREEN: &str = "_NET_WM_STATE_FULLSCREEN";
 pub const X_ATOM_NAME_NET_WM_STATE_HIDDEN: &str = "_NET_WM_STATE_HIDDEN";

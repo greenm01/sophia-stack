@@ -297,6 +297,33 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
     let client = client_lease.client;
+    // Publish the window-manager advertisement before the client can ask for it.
+    // A toolkit reads it during startup, and one that finds nothing concludes
+    // no manager is running and takes an unmanaged path for the rest of its
+    // life. Seeded here because the namespace is only known once a connection
+    // is admitted, and written under Replace so a second connection in the same
+    // namespace changes nothing.
+    {
+        let mut atoms = state
+            .atoms
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 atom table lock was poisoned"))?;
+        let mut properties = state
+            .properties
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 property table lock was poisoned"))?;
+        crate::seed_wm_advertisement(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            setup.byte_order,
+        )
+        .map_err(|error| {
+            X11SetupSocketError::new(format!(
+                "failed to publish the window manager advertisement: {error:?}"
+            ))
+        })?;
+    }
     if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
         tracing::debug!(
             "sophia_x11_client_route schema=1 stage=accepted client={}",

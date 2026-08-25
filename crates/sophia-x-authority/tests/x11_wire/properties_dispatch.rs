@@ -1583,3 +1583,147 @@ fn ewmh_dialog_type_is_policy_managed_and_requests_floating_placement() {
                 && surface.mapped
     ));
 }
+
+fn read_seeded_property(
+    properties: &mut XPropertyTable,
+    atoms: &mut XAtomTable,
+    namespace: NamespaceId,
+    window: u32,
+    name: &str,
+) -> Vec<u8> {
+    let property = atoms.intern(name, false).unwrap().unwrap();
+    let property_type = X_PROPERTY_ANY_TYPE;
+    properties
+        .read_property(
+            namespace,
+            XPropertyRead {
+                delete: false,
+                window: XResourceId::new(u64::from(window), 1),
+                property,
+                property_type,
+                long_offset: 0,
+                long_length: 64,
+            },
+        )
+        .unwrap()
+        .reply
+        .bytes
+}
+
+#[test]
+fn a_client_asking_whether_a_manager_runs_is_answered() {
+    // The three-step handshake a toolkit performs at startup, and the one the
+    // browser trace showed it performing: read the check window from the root,
+    // read it again from the window that names to prove the manager is live
+    // rather than a stale property, then read the manager's name.
+    let namespace = NamespaceId::from_raw(45);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    seed_wm_advertisement(
+        &mut properties,
+        &mut atoms,
+        namespace,
+        XByteOrder::LittleEndian,
+    )
+    .unwrap();
+
+    let expected = X_SETUP_WM_CHECK_WINDOW.to_le_bytes().to_vec();
+    assert_eq!(
+        read_seeded_property(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            X_SETUP_DEFAULT_ROOT,
+            "_NET_SUPPORTING_WM_CHECK",
+        ),
+        expected,
+    );
+    assert_eq!(
+        read_seeded_property(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            X_SETUP_WM_CHECK_WINDOW,
+            "_NET_SUPPORTING_WM_CHECK",
+        ),
+        expected,
+        "the self-reference is what separates a live manager from a stale root property",
+    );
+    assert_eq!(
+        read_seeded_property(
+            &mut properties,
+            &mut atoms,
+            namespace,
+            X_SETUP_WM_CHECK_WINDOW,
+            "_NET_WM_NAME",
+        ),
+        b"Sophia".to_vec(),
+    );
+}
+
+#[test]
+fn the_supported_claim_lists_only_hints_with_behaviour_behind_them() {
+    // A drift guard. Adding an atom to the advertised list without behaviour
+    // behind it is the overclaim this advertisement exists to avoid, so the
+    // list is pinned here rather than merely being whatever the constant says.
+    assert_eq!(
+        X_EWMH_SUPPORTED_ATOM_NAMES,
+        &[
+            "_NET_SUPPORTING_WM_CHECK",
+            "_NET_WM_NAME",
+            "_NET_WM_STATE",
+            "_NET_WM_STATE_FULLSCREEN",
+            "_NET_WM_STATE_HIDDEN",
+            "_NET_WM_STATE_MAXIMIZED_HORZ",
+            "_NET_WM_STATE_MAXIMIZED_VERT",
+            "_NET_WM_STRUT",
+            "_NET_WM_STRUT_PARTIAL",
+            "_NET_WM_WINDOW_TYPE",
+        ],
+    );
+    // Hints clients do ask about and Sophia does not honour stay out.
+    for withheld in [
+        "_NET_ACTIVE_WINDOW",
+        "_NET_CLIENT_LIST",
+        "_NET_CURRENT_DESKTOP",
+        "_NET_FRAME_EXTENTS",
+        "_NET_WM_SYNC_REQUEST",
+        "_NET_WM_MOVERESIZE",
+    ] {
+        assert!(
+            !X_EWMH_SUPPORTED_ATOM_NAMES.contains(&withheld),
+            "{withheld} is advertised without behaviour behind it",
+        );
+    }
+}
+
+#[test]
+fn seeding_the_advertisement_twice_leaves_one_answer() {
+    // Seeded per connection, so a second client in the same namespace must not
+    // append a second copy or bump the value.
+    let namespace = NamespaceId::from_raw(45);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let order = XByteOrder::LittleEndian;
+
+    seed_wm_advertisement(&mut properties, &mut atoms, namespace, order).unwrap();
+    let first = read_seeded_property(
+        &mut properties,
+        &mut atoms,
+        namespace,
+        X_SETUP_DEFAULT_ROOT,
+        "_NET_SUPPORTED",
+    );
+    seed_wm_advertisement(&mut properties, &mut atoms, namespace, order).unwrap();
+    let second = read_seeded_property(
+        &mut properties,
+        &mut atoms,
+        namespace,
+        X_SETUP_DEFAULT_ROOT,
+        "_NET_SUPPORTED",
+    );
+
+    assert_eq!(first, second);
+    assert_eq!(first.len(), X_EWMH_SUPPORTED_ATOM_NAMES.len() * 4);
+}

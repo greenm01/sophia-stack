@@ -84,6 +84,14 @@ pub const X_SETUP_DEFAULT_ROOT: u32 = 0x20;
 pub const X_SETUP_DEFAULT_COLORMAP: u32 = 0x21;
 pub const X_SETUP_DEFAULT_VISUAL: u32 = 0x22;
 pub const X_SETUP_ARGB_VISUAL: u32 = 0x23;
+/// The window `_NET_SUPPORTING_WM_CHECK` points at.
+///
+/// A client asks whether a window manager is running by reading that property
+/// off the root and then off the window it names. The window has to exist and
+/// has to outlive every client, so the authority owns it here rather than
+/// letting a client hold the answer. It is never mapped and never enters the
+/// layout; it exists to be pointed at.
+pub const X_SETUP_WM_CHECK_WINDOW: u32 = 0x24;
 pub const X_SETUP_ROOT_WIDTH: u16 = 1280;
 pub const X_SETUP_ROOT_HEIGHT: u16 = 720;
 

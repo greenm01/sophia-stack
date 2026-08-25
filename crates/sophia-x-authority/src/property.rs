@@ -6,11 +6,13 @@ use sophia_protocol::{
 };
 
 use crate::{
-    X_ATOM_ATOM, X_ATOM_CARDINAL, X_ATOM_NAME_NET_WM_STATE, X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
+    X_ATOM_ATOM, X_ATOM_CARDINAL, X_ATOM_NAME_NET_SUPPORTED, X_ATOM_NAME_NET_SUPPORTING_WM_CHECK,
+    X_ATOM_NAME_NET_WM_NAME, X_ATOM_NAME_NET_WM_STATE, X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
     X_ATOM_NAME_NET_WM_STATE_HIDDEN, X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ,
     X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT, X_ATOM_NAME_NET_WM_STRUT,
-    X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_STATE, XAtom, XAtomError, XAtomTable,
-    XByteOrder, XResourceId, is_metadata_candidate_name,
+    X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_NET_WM_WINDOW_TYPE, X_ATOM_NAME_UTF8_STRING,
+    X_ATOM_NAME_WM_STATE, X_ATOM_WINDOW, XAtom, XAtomError, XAtomTable, XByteOrder, XResourceId,
+    is_metadata_candidate_name,
 };
 
 pub const X_PROPERTY_MAX_VALUE_BYTES: usize = 256 * 1024;
@@ -894,6 +896,141 @@ pub fn apply_engine_presentation_state(
         );
     }
     Ok(changed)
+}
+
+/// Every EWMH hint Sophia acts on, and nothing else.
+///
+/// This is a claim, and a client that believes a hint works and finds it ignored
+/// is worse off than one told plainly that it does not. Each entry here has
+/// behaviour behind it: the states and window types are read back into layout
+/// facts, the struts become output reservations, and the name reaches metadata
+/// disclosure. Hints Sophia merely knows the name of are deliberately absent --
+/// `_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST`, `_NET_CURRENT_DESKTOP`,
+/// `_NET_FRAME_EXTENTS`, `_NET_WM_SYNC_REQUEST` and `_NET_WM_MOVERESIZE` among
+/// them, several of which clients do ask about.
+pub const X_EWMH_SUPPORTED_ATOM_NAMES: &[&str] = &[
+    X_ATOM_NAME_NET_SUPPORTING_WM_CHECK,
+    X_ATOM_NAME_NET_WM_NAME,
+    X_ATOM_NAME_NET_WM_STATE,
+    X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
+    X_ATOM_NAME_NET_WM_STATE_HIDDEN,
+    X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ,
+    X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT,
+    X_ATOM_NAME_NET_WM_STRUT,
+    X_ATOM_NAME_NET_WM_STRUT_PARTIAL,
+    X_ATOM_NAME_NET_WM_WINDOW_TYPE,
+];
+
+/// The name the check window reports as the window manager.
+///
+/// The authority synthesizes this advertisement, and the blind policy that
+/// places windows speaks no X11 -- it could not own the window a client reads
+/// this from. Naming the authority also survives replacing that policy.
+pub const X_EWMH_WM_NAME: &str = "Sophia";
+
+/// Publishes the answer to "is a window manager running?".
+///
+/// A client reads `_NET_SUPPORTING_WM_CHECK` from the root, reads it again from
+/// the window that names, and treats the pair as proof a manager is live -- the
+/// self-reference is what distinguishes a running manager from a stale root
+/// property left behind by a dead one. Without it a toolkit concludes there is
+/// no manager and takes an unmanaged path, while Sophia goes on configuring and
+/// placing its windows underneath it.
+///
+/// Written under `Replace`, so calling this again for a namespace already seeded
+/// costs a comparison and changes nothing.
+pub fn seed_wm_advertisement(
+    properties: &mut XPropertyTable,
+    atoms: &mut XAtomTable,
+    namespace: NamespaceId,
+    byte_order: XByteOrder,
+) -> Result<(), XPresentationPropertyError> {
+    if !namespace.is_valid() {
+        return Err(XPropertyError::InvalidNamespace.into());
+    }
+    let mut atom = |name: &str| -> Result<XAtom, XPresentationPropertyError> {
+        atoms
+            .intern(name, false)?
+            .ok_or(XPresentationPropertyError::Atom(
+                XAtomError::AtomSpaceExhausted,
+            ))
+    };
+    let supporting = atom(X_ATOM_NAME_NET_SUPPORTING_WM_CHECK)?;
+    let supported = atom(X_ATOM_NAME_NET_SUPPORTED)?;
+    let net_wm_name = atom(X_ATOM_NAME_NET_WM_NAME)?;
+    let utf8 = atom(X_ATOM_NAME_UTF8_STRING)?;
+    let mut supported_bytes = Vec::with_capacity(X_EWMH_SUPPORTED_ATOM_NAMES.len() * 4);
+    for name in X_EWMH_SUPPORTED_ATOM_NAMES {
+        supported_bytes.extend_from_slice(&encode_property_u32(byte_order, atom(name)?));
+    }
+
+    let root = XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
+    let check = XResourceId::new(u64::from(crate::X_SETUP_WM_CHECK_WINDOW), 1);
+    let check_bytes = encode_property_u32(byte_order, crate::X_SETUP_WM_CHECK_WINDOW).to_vec();
+    let changes = [
+        (root, supporting, X_ATOM_WINDOW, 32u8, check_bytes.clone()),
+        (root, supported, X_ATOM_ATOM, 32, supported_bytes),
+        (check, supporting, X_ATOM_WINDOW, 32, check_bytes),
+        (
+            check,
+            net_wm_name,
+            utf8,
+            8,
+            X_EWMH_WM_NAME.as_bytes().to_vec(),
+        ),
+    ];
+
+    let added = changes
+        .iter()
+        .try_fold(0usize, |total, (_, _, _, _, bytes)| {
+            total.checked_add(bytes.len())
+        })
+        .ok_or(XPropertyError::TableTooLarge {
+            len: usize::MAX,
+            max: X_PROPERTY_MAX_TABLE_BYTES,
+        })?;
+    if added > X_PROPERTY_MAX_TABLE_BYTES {
+        return Err(XPropertyError::TableTooLarge {
+            len: added,
+            max: X_PROPERTY_MAX_TABLE_BYTES,
+        }
+        .into());
+    }
+
+    for (window, property, property_type, format, bytes) in changes {
+        let key = (namespace, window, property);
+        let previous = properties.records.get(&key);
+        // Authority-owned: a client may read these and must not replace them.
+        properties.engine_owned.insert(key);
+        if previous.is_some_and(|record| {
+            record.property_type == property_type
+                && record.format == format
+                && record.bytes == bytes
+        }) {
+            continue;
+        }
+        let generation = previous.map_or(1, |record| record.generation.saturating_add(1));
+        properties.records.insert(
+            key,
+            XPropertyRecord {
+                namespace,
+                window,
+                property,
+                property_type,
+                format,
+                bytes,
+                generation,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn encode_property_u32(byte_order: XByteOrder, value: u32) -> [u8; 4] {
+    match byte_order {
+        XByteOrder::LittleEndian => value.to_le_bytes(),
+        XByteOrder::BigEndian => value.to_be_bytes(),
+    }
 }
 
 pub(crate) fn read_property_value(

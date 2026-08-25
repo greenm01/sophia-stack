@@ -77,6 +77,13 @@ impl XAuthorityRuntime {
          if self.is_clipboard_proxy(namespace, window) {
              return Ok(());
          }
+         // The window `_NET_SUPPORTING_WM_CHECK` names is authority-owned, like a
+         // clipboard proxy above. A client must be able to read its properties to
+         // confirm a manager is live, and must never be able to hold or destroy
+         // it, so it answers here rather than from the client resource table.
+         if window.local.raw() == u64::from(crate::X_SETUP_WM_CHECK_WINDOW) {
+             return Ok(());
+         }
          self.resources
              .lookup(namespace, window, XResourceKind::Window)
              .map(|_| ())
