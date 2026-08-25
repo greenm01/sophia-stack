@@ -258,3 +258,94 @@ fn pre_admission_group_queue_fails_closed_at_its_fixed_capacity() {
         crate::commands::live_session::PRE_ADMISSION_GROUP_CAPACITY
     );
 }
+
+#[test]
+fn a_first_frame_admits_its_surface_rather_than_settling_a_standing_target() {
+    // A launch deferred out of a resize epoch keeps its extent as a standing
+    // obligation. That target must not capture the surface's first presented
+    // frame: standing recovery keeps a successor beside a fallback that has
+    // already retired, and a surface still awaiting admission has no fallback.
+    // Diverting the frame settles layout and never completes admission, so the
+    // surface ends up holding pixels nothing composites -- a window that is
+    // placed, sized, and permanently empty.
+    let surface = SurfaceId::new(65, 1);
+    let transaction = TransactionId::from_raw(2252);
+    let buffer = sophia_protocol::BufferHandle::from_raw(15);
+    let target = Size {
+        width: 1278,
+        height: 1424,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.dma_buf_sizes.insert(buffer, target);
+    layout.layout_epochs.set_pending_target(surface, target);
+    // Policy-managed and not yet admitted: exactly a launched browser's surface
+    // at the moment its first frame arrives.
+    layout.presentation_roles.insert(
+        surface,
+        sophia_protocol::SurfacePresentationRole::PolicyManaged,
+    );
+    layout
+        .admissions
+        .observe_intent(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry: Rect::default(),
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    assert!(
+        layout.surface_requires_admission(surface),
+        "the surface must still require admission for this test to mean anything",
+    );
+
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: target.width,
+        height: target.height,
+    };
+    let frame = SurfaceTransaction {
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        presentation_extent: target,
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: buffer.raw(),
+            },
+            target,
+        ),
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 1,
+    };
+
+    let armed = layout.arm_standing_recovery_candidate(
+        &frame,
+        target,
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+        true,
+    );
+
+    assert!(
+        !armed,
+        "a pre-admission first frame must stay on the admission path",
+    );
+    assert!(
+        !layout
+            .awaiting_visual_commits
+            .surface_layout_awaiting(surface, target),
+        "no resize commit may capture the frame that should admit the surface",
+    );
+}

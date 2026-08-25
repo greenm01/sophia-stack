@@ -125,7 +125,14 @@ impl PersistentLiveLayout {
         evidence: sophia_engine::SurfaceVisualEvidence,
         candidate_selected: bool,
     ) -> bool {
+        // A surface still awaiting admission has no fallback to keep a successor
+        // beside: its first presented frame is the frame that admits it. A
+        // standing target left by a deferred launch would otherwise divert that
+        // frame into a resize commit, which settles layout and never completes
+        // admission -- the surface then holds pixels nothing ever composites.
+        // The target is not lost; it drives the surface once it is admitted.
         if !candidate_selected
+            || self.surface_requires_admission(transaction.surface)
             || evidence != sophia_engine::SurfaceVisualEvidence::PresentedBuffer
             || self.pending.is_some()
             || self.layout_epochs.pending_target(transaction.surface) != Some(layout_size)
