@@ -12,6 +12,12 @@ struct XServerFrontendRouteRegistry {
     present_subscriptions:
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
     pending_presentations: Arc<XPendingPresentRegistry>,
+    /// The last (ust, msc) any completion carried: the presentation clock a
+    /// NotifyMSC answer reads. `None` until the first frame completes.
+    present_clock: Arc<Mutex<Option<(u64, u64)>>>,
+    /// MSC notifications whose target is still ahead of the clock, flushed as
+    /// completions advance it. (window, serial, target_msc)
+    pending_msc_notifies: Arc<Mutex<Vec<(XResourceId, u32, u64)>>>,
     pointer_state: Arc<Mutex<BTreeMap<SeatId, crate::XCorePointerMapper>>>,
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
@@ -523,14 +529,17 @@ impl XServerFrontendRouteRegistry {
         serial: u32,
         idle_fence: Option<XResourceId>,
     ) -> Result<(), XServerFrontendRouteError> {
+        // The window decides which surface a present reaches; the presenting
+        // client does not have to be the one that created it. A browser's GPU
+        // process presents to a window its browser process owns, which X
+        // permits -- requiring creator == presenter here silently locked out
+        // every client that splits the two across connections.
         self.surfaces
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
             .iter()
-            .find_map(|(surface, route)| {
-                (route.client == client && route.window == window).then_some(*surface)
-            })
-            .ok_or(XServerFrontendRouteError::UnknownClient { client })?;
+            .find_map(|(surface, route)| (route.window == window).then_some(*surface))
+            .ok_or(XServerFrontendRouteError::UnknownPresentWindow { window })?;
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut pending = self
             .pending_presentations
@@ -606,6 +615,27 @@ impl XServerFrontendRouteRegistry {
             }
             presentation
         };
+        // Every completion advances the presentation clock, and the clock is
+        // what answers a NotifyMSC. Ripened deferrals flush here because this
+        // is the only place the clock moves.
+        *self
+            .present_clock
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)? = Some((ust, msc));
+        let ripe = {
+            let mut pending = self
+                .pending_msc_notifies
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+            let (ripe, waiting) = pending
+                .drain(..)
+                .partition::<Vec<_>, _>(|(_, _, target)| *target <= msc);
+            *pending = waiting;
+            ripe
+        };
+        for (window, serial, _) in ripe {
+            self.route_present_msc_notify(window, serial, ust, msc)?;
+        }
         let subscriptions = self
             .present_subscriptions
             .lock()
@@ -636,11 +666,76 @@ impl XServerFrontendRouteRegistry {
                     serial: presentation.serial,
                     ust,
                     msc,
+                    kind: 0,
                     mode: mode as u8,
                 },
             )?;
         }
         Ok(true)
+    }
+
+    /// Answers, or defers, one MSC notification request.
+    ///
+    /// Mesa blocks on the CompleteNotify this asks for, so silence here is a
+    /// client that never draws again. A target at or behind the clock answers
+    /// immediately; one ahead of it waits for completions to advance the clock.
+    /// Before any frame has completed the clock reads zero, which answers the
+    /// only case the known callers exercise -- a vsync probe with target zero.
+    fn notify_present_msc(
+        &self,
+        window: XResourceId,
+        serial: u32,
+        target_msc: u64,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let clock = *self
+            .present_clock
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let (ust, msc) = clock.unwrap_or((0, 0));
+        if target_msc <= msc {
+            return self.route_present_msc_notify(window, serial, ust, msc);
+        }
+        self.pending_msc_notifies
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .push((window, serial, target_msc));
+        Ok(())
+    }
+
+    /// Delivers a CompleteNotify of kind NotifyMSC to the window's subscribers.
+    fn route_present_msc_notify(
+        &self,
+        window: XResourceId,
+        serial: u32,
+        ust: u64,
+        msc: u64,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let subscriptions = self
+            .present_subscriptions
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .filter_map(|((client, _), subscription)| {
+                (subscription.window == window && subscription.mask & (1 << 1) != 0)
+                    .then_some((*client, *subscription))
+            })
+            .collect::<Vec<_>>();
+        for (target, subscription) in subscriptions {
+            self.route_protocol(
+                target,
+                XClientEvent::PresentCompleteNotify {
+                    sequence: 0,
+                    event_id: subscription.event_id,
+                    window,
+                    serial,
+                    ust,
+                    msc,
+                    kind: 1,
+                    mode: 0,
+                },
+            )?;
+        }
+        Ok(())
     }
 
     fn cancel_present(&self, transaction: TransactionId) -> Result<(), XServerFrontendRouteError> {

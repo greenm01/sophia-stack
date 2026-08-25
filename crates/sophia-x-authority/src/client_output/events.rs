@@ -403,6 +403,7 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             serial,
             ust,
             msc,
+            kind,
             mode,
         } => {
             // XCB appends full_sequence to its in-memory event structure.
@@ -414,7 +415,7 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_u16(byte_order, &mut out[2..4], sequence);
             put_u32(byte_order, &mut out[4..8], 2);
             put_u16(byte_order, &mut out[8..10], 1);
-            out[10] = 0;
+            out[10] = kind;
             out[11] = mode;
             put_resource(byte_order, &mut out[12..16], event_id);
             put_resource(byte_order, &mut out[16..20], window);

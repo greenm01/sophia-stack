@@ -329,6 +329,13 @@ pub enum XServerFrontendRouteError {
     UnknownSurface {
         surface: SurfaceId,
     },
+    /// A present named a window no surface route covers.
+    ///
+    /// Named by the window rather than the client, because any client may
+    /// present to a window it can name -- ownership is not presentership.
+    UnknownPresentWindow {
+        window: XResourceId,
+    },
     ClientQueueFull {
         client: XServerFrontendClientId,
     },
@@ -404,6 +411,11 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 "X11 route targets unknown Sophia surface {}:{}",
                 surface.index(),
                 surface.generation()
+            ),
+            Self::UnknownPresentWindow { window } => write!(
+                formatter,
+                "X11 present names window {:#x} with no surface route",
+                window.local.raw()
             ),
             Self::ClientQueueFull { client } => {
                 write!(

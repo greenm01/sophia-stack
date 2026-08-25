@@ -640,6 +640,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         } => Some((*event_id, *window, *event_mask)),
                         _ => None,
                     };
+                    let present_msc_notify = match &request {
+                        crate::XWireRequest::PresentNotifyMsc {
+                            window,
+                            serial,
+                            target_msc,
+                            ..
+                        } => Some((*window, *serial, *target_msc)),
+                        _ => None,
+                    };
                     let pending_present = match &request {
                         crate::XWireRequest::PresentPixmap {
                             window,
@@ -737,18 +746,36 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             None
                         };
                     request_stage = x11_observed_request_stage(&request);
+                    // A refusal here must stay a refusal of one request. Ending
+                    // the reader instead leaves the socket half-open -- the
+                    // writer side keeps it alive, the client sees no EOF, no
+                    // error, and no further reply ever -- which reads as a
+                    // client that silently stopped drawing. One request was
+                    // wrong; the conversation is not over.
+                    let mut present_queue_refused = None;
                     let queued_present = if let Some((window, pixmap, serial, idle_fence)) =
                         pending_present
                         && let Some(routing) = protocol_routing.as_ref()
                     {
-                        routing
-                            .queue_present(transaction, client, window, pixmap, serial, idle_fence)
-                            .map_err(|error| {
-                                X11SetupSocketError::client_failure(format!(
-                                    "failed to queue Present feedback: {error}"
-                                ))
-                            })?;
-                        true
+                        match routing.queue_present(
+                            transaction,
+                            client,
+                            window,
+                            pixmap,
+                            serial,
+                            idle_fence,
+                        ) {
+                            Ok(()) => true,
+                            Err(error) => {
+                                tracing::warn!(
+                                    "sophia_x11_present_refused schema=1 client={} window={:#x} error={error}",
+                                    client.raw(),
+                                    window.local.raw(),
+                                );
+                                present_queue_refused = Some(window);
+                                false
+                            }
+                        }
                     } else {
                         false
                     };
@@ -852,6 +879,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     crate::XClientReply::GrabStatus {
                                         sequence: dispatch_context.sequence,
                                         status,
+                                    },
+                                )],
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
+                        _ if present_queue_refused.is_some() => {
+                            let window =
+                                present_queue_refused.expect("guarded by the match arm");
+                            runtime.begin_dispatch();
+                            XDispatchResult {
+                                response: None,
+                                outputs: vec![crate::XClientOutput::Error(
+                                    crate::XClientError {
+                                        code: crate::XErrorCode::BadWindow,
+                                        sequence: dispatch_context.sequence,
+                                        resource_id: u32::try_from(window.local.raw())
+                                            .unwrap_or(0),
+                                        minor_code: u16::from(
+                                            crate::X_PRESENT_PIXMAP_MINOR_OPCODE,
+                                        ),
+                                        major_code: crate::X_PRESENT_MAJOR_OPCODE,
                                     },
                                 )],
                                 metadata_candidates: Vec::new(),
@@ -1320,6 +1368,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 .map_err(|error| {
                                     X11SetupSocketError::new(format!(
                                         "failed to update Present subscription: {error}"
+                                    ))
+                                })?;
+                        }
+                        if let Some((window, serial, target_msc)) = present_msc_notify
+                            && let Some(routing) = protocol_routing.as_ref()
+                        {
+                            // Mesa blocks on the answer, so this runs only after
+                            // dispatch validated the window -- an invalid window
+                            // gets its error instead, never a stray event.
+                            routing
+                                .notify_present_msc(window, serial, target_msc)
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to answer Present NotifyMSC: {error}"
                                     ))
                                 })?;
                         }

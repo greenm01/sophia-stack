@@ -493,6 +493,22 @@ pub enum XWireRequest {
         window: XResourceId,
         event_mask: u32,
     },
+    /// A request for one MSC notification: the client asks to be told when the
+    /// window's frame counter reaches a target, and blocks on the answer.
+    PresentNotifyMsc {
+        window: XResourceId,
+        serial: u32,
+        target_msc: u64,
+        divisor: u64,
+        remainder: u64,
+    },
+    /// A Present request Sophia decodes but does not implement.
+    ///
+    /// Kept as a request rather than a parse failure so the answer is a normal
+    /// client-visible X11 error naming its own minor opcode.
+    PresentUnimplemented {
+        minor_opcode: u8,
+    },
     PresentQueryCapabilities {
         target: XResourceId,
     },

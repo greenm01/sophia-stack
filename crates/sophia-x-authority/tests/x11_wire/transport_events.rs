@@ -176,6 +176,7 @@ fn present_complete_and_idle_notifications_use_xge_packed_layouts() {
                 serial: 77,
                 ust: 123_456,
                 msc: 42,
+                kind: 0,
                 mode: 1,
             },
         );

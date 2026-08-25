@@ -8,6 +8,8 @@ fn dispatch_present_request(
             XWireRequest::PresentQueryVersion { .. }
             | XWireRequest::PresentQueryCapabilities { .. }
             | XWireRequest::PresentSelectInput { .. }
+            | XWireRequest::PresentNotifyMsc { .. }
+            | XWireRequest::PresentUnimplemented { .. }
             | XWireRequest::PresentPixmap { .. }
     ) {
         return Unhandled(request);
@@ -80,6 +82,43 @@ fn dispatch_present_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
+                XWireRequest::PresentNotifyMsc { window, .. } => {
+                    // Void, like SelectInput: the answer is a CompleteNotify of
+                    // kind NotifyMSC, delivered by the socket layer from the
+                    // presentation clock once this dispatch has validated the
+                    // window. Only the validation happens here.
+                    let outputs = if let Err(error) =
+                        runtime.validate_dri3_drawable_access(context.namespace, window)
+                    {
+                        let mut error = x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            u32::try_from(window.local.raw()).unwrap_or(0),
+                        );
+                        error.minor_code = u16::from(crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE);
+                        vec![XClientOutput::Error(error)]
+                    } else {
+                        Vec::new()
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // Decoded, and refused where the client can see it.
+                XWireRequest::PresentUnimplemented { minor_opcode } => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                        code: XErrorCode::BadImplementation,
+                        sequence: context.sequence,
+                        resource_id: 0,
+                        minor_code: u16::from(minor_opcode),
+                        major_code: context.major_opcode,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
                 XWireRequest::PresentPixmap {
                     transaction,
                     window,

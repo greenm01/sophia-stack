@@ -262,6 +262,8 @@ pub enum XClientEvent {
         serial: u32,
         ust: u64,
         msc: u64,
+        /// 0 = a presented pixmap completed; 1 = an MSC notification.
+        kind: u8,
         mode: u8,
     },
     PresentIdleNotify {

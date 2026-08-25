@@ -1101,3 +1101,90 @@ fn routed_service_authority_disconnect_releases_backpressured_worker() {
     drop(service_sender);
     std::fs::remove_file(&socket_path).unwrap();
 }
+
+#[test]
+fn a_refused_present_leaves_the_connection_answering() {
+    // The regression that cost this investigation: a present the server could
+    // not queue ended the connection reader with no error and no EOF -- the
+    // writer half kept the socket open, so the client waited forever on a
+    // conversation nobody was reading. A refusal must refuse one request and
+    // answer the next.
+    use std::io::{Read, Write};
+    use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let socket_path = std::env::temp_dir().join(format!(
+        "sophia-x11-present-refusal-{}-{}.sock",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let namespace = NamespaceContext::new(
+        NamespaceId::from_raw(953),
+        NamespaceProfile::ClassicShared,
+        NamespaceCapabilities::NONE,
+    )
+    .unwrap();
+    let policy = Arc::new(TestXAdmissionPolicy::new(namespace, false));
+    let config = XServerFrontendConfig::new_with_namespace_context(&socket_path, namespace)
+        .unwrap()
+        .with_admission_policy(policy)
+        .with_max_concurrent_clients(NonZeroUsize::new(1).unwrap());
+    let (transaction_sender, _transaction_receiver) = std::sync::mpsc::sync_channel(16);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let (service_sender, service_receiver) = std::sync::mpsc::sync_channel(2);
+    let server = thread::spawn(move || {
+        run_x_server_frontend_routed_until_stopped(
+            config,
+            transaction_sender,
+            broker,
+            service_receiver,
+        )
+        .unwrap();
+    });
+
+    wait_for_socket(&socket_path);
+    let mut client = connect_x_socket(&socket_path);
+    client
+        .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
+        .unwrap();
+    read_setup_success(&mut client, XByteOrder::LittleEndian);
+
+    // A window that was never created has no surface route: the queue refuses
+    // it before dispatch, and the refusal must name the window.
+    let window = 0x0020_0f01;
+    client
+        .write_all(&present_pixmap_request(
+            XByteOrder::LittleEndian,
+            XResourceId::new(u64::from(window), 1),
+            XResourceId::new(0x0020_0f02, 1),
+            1,
+        ))
+        .unwrap();
+    let mut record = [0u8; 32];
+    client.read_exact(&mut record).unwrap();
+    assert_eq!(record[0], 0, "the refusal must be a client-visible error");
+    assert_eq!(record[1], 3, "BadWindow names what was missing");
+    assert_eq!(
+        u32::from_le_bytes([record[4], record[5], record[6], record[7]]),
+        window,
+        "the error names the window the present targeted",
+    );
+
+    // The conversation continues: the next request gets its reply.
+    client.write_all(&[43, 0, 1, 0]).unwrap();
+    client.read_exact(&mut record).unwrap();
+    assert_eq!(record[0], 1, "the reader must answer the next request");
+
+    drop(client);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    drop(service_sender);
+    server.join().unwrap();
+    std::fs::remove_file(&socket_path).unwrap();
+}

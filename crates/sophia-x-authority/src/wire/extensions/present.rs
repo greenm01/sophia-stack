@@ -72,7 +72,22 @@ fn decode_present(
                 target: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
             })
         }
-        _ => Err(XWireParseError::UnknownOpcode(bytes[1])),
+        X_PRESENT_NOTIFY_MSC_MINOR_OPCODE => {
+            require_exact_len(X_PRESENT_MAJOR_OPCODE, 40, bytes.len())?;
+            Ok(XWireRequest::PresentNotifyMsc {
+                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                serial: context.byte_order.u32(&bytes[8..12]),
+                target_msc: context.byte_order.u64(&bytes[16..24]),
+                divisor: context.byte_order.u64(&bytes[24..32]),
+                remainder: context.byte_order.u64(&bytes[32..40]),
+            })
+        }
+        // Sophia answers the Present minors it implements and refuses the rest
+        // as an implementation gap the client can see. Refusing to parse would
+        // deny the client a sequence number to attribute the failure to.
+        minor => Ok(XWireRequest::PresentUnimplemented {
+            minor_opcode: minor,
+        }),
     }
 }
 

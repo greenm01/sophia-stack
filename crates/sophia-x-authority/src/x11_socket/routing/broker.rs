@@ -352,6 +352,8 @@ impl XServerFrontendRouteBroker {
                 randr_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 present_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
                 pending_presentations: Arc::new(XPendingPresentRegistry::default()),
+                present_clock: Arc::new(Mutex::new(None)),
+                pending_msc_notifies: Arc::new(Mutex::new(Vec::new())),
                 pointer_state: Arc::new(Mutex::new(BTreeMap::new())),
                 input_authority: Arc::new(Mutex::new(crate::XInputAuthorityState::default())),
                 frozen_input: Arc::new(Mutex::new(VecDeque::new())),

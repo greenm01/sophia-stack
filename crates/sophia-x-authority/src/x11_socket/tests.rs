@@ -675,6 +675,7 @@ fn clearing_old_present_selection_preserves_active_window_feedback() {
             serial: 1,
             ust: 1_188_203,
             msc: 7_668_086,
+            kind: 0,
             mode: XPresentCompletionMode::Flip as u8,
         }
     );
@@ -953,6 +954,158 @@ fn present_feedback_reaches_the_client_that_subscribed_not_the_one_that_presente
     assert!(
         owner_channels.protocol.try_recv().is_err(),
         "the presenting client did not subscribe and must not be sent an event",
+    );
+}
+
+#[test]
+fn a_present_from_a_client_that_did_not_create_the_window_is_admitted() {
+    // The Chromium topology. The browser process creates the window; the GPU
+    // process presents to it and subscribes for feedback. X permits this, and
+    // Mesa blocks on the feedback -- requiring creator == presenter here
+    // silently locked out every client that splits the two.
+    let namespace = NamespaceId::from_raw(62);
+    let owner = XServerFrontendClientId::from_raw(1);
+    let presenter = XServerFrontendClientId::from_raw(2);
+    let surface = SurfaceId::new(51, 1);
+    let window = XResourceId::new(0x300030, 1);
+    let event_id = XResourceId::new(0x400031, 1);
+    let pixmap = XResourceId::new(0x400032, 1);
+    let transaction = TransactionId::from_raw(221);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+    let (_owner_registration, owner_channels) = broker.registry.register_client(owner).unwrap();
+    let (_presenter_registration, presenter_channels) =
+        broker.registry.register_client(presenter).unwrap();
+    broker
+        .registry
+        .register_surface(owner, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(presenter, event_id, window, 7)
+        .unwrap();
+
+    broker
+        .registry
+        .queue_present(transaction, presenter, window, pixmap, 3, None)
+        .expect("the window decides the surface; the presenter need not own it");
+
+    assert_eq!(
+        broker.route_present_complete(transaction, 11, 21, XPresentCompletionMode::Flip),
+        Ok(true),
+    );
+    assert!(matches!(
+        presenter_channels.protocol.recv().unwrap(),
+        XClientEvent::PresentCompleteNotify { kind: 0, .. },
+    ));
+    assert_eq!(broker.route_present_idle(transaction), Ok(true));
+    assert!(matches!(
+        presenter_channels.protocol.recv().unwrap(),
+        XClientEvent::PresentIdleNotify { .. },
+    ));
+    assert!(owner_channels.protocol.try_recv().is_err());
+}
+
+#[test]
+fn a_present_to_a_window_without_a_route_names_the_window() {
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+    let presenter = XServerFrontendClientId::from_raw(2);
+    let (_registration, _channels) = broker.registry.register_client(presenter).unwrap();
+    let window = XResourceId::new(0x300040, 1);
+
+    let refused = broker.registry.queue_present(
+        TransactionId::from_raw(231),
+        presenter,
+        window,
+        XResourceId::new(0x400041, 1),
+        1,
+        None,
+    );
+    assert_eq!(
+        refused,
+        Err(XServerFrontendRouteError::UnknownPresentWindow { window }),
+    );
+}
+
+#[test]
+fn a_notify_msc_at_or_behind_the_clock_answers_immediately() {
+    // Mesa blocks on this answer. Before any frame completes the clock reads
+    // zero, which is exactly the case the vsync probe exercises: target zero.
+    let namespace = NamespaceId::from_raw(63);
+    let owner = XServerFrontendClientId::from_raw(1);
+    let watcher = XServerFrontendClientId::from_raw(2);
+    let surface = SurfaceId::new(52, 1);
+    let window = XResourceId::new(0x300050, 1);
+    let event_id = XResourceId::new(0x400051, 1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+    let (_owner_registration, _owner_channels) = broker.registry.register_client(owner).unwrap();
+    let (_watch_registration, watch_channels) = broker.registry.register_client(watcher).unwrap();
+    broker
+        .registry
+        .register_surface(owner, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(watcher, event_id, window, 7)
+        .unwrap();
+
+    broker.registry.notify_present_msc(window, 9, 0).unwrap();
+    assert!(matches!(
+        watch_channels.protocol.recv().unwrap(),
+        XClientEvent::PresentCompleteNotify {
+            kind: 1,
+            serial: 9,
+            msc: 0,
+            ..
+        },
+    ));
+}
+
+#[test]
+fn a_notify_msc_ahead_of_the_clock_waits_for_a_completion_to_ripen() {
+    let namespace = NamespaceId::from_raw(64);
+    let owner = XServerFrontendClientId::from_raw(1);
+    let surface = SurfaceId::new(53, 1);
+    let window = XResourceId::new(0x300060, 1);
+    let event_id = XResourceId::new(0x300061, 1);
+    let pixmap = XResourceId::new(0x300062, 1);
+    let transaction = TransactionId::from_raw(241);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(8).unwrap());
+    let (_owner_registration, owner_channels) = broker.registry.register_client(owner).unwrap();
+    broker
+        .registry
+        .register_surface(owner, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .select_present_input(owner, event_id, window, 7)
+        .unwrap();
+
+    // Target 30 is ahead of a zero clock: nothing may arrive yet.
+    broker.registry.notify_present_msc(window, 4, 30).unwrap();
+    assert!(owner_channels.protocol.try_recv().is_err());
+
+    // A completion at msc 42 advances the clock past the target and ripens it.
+    broker
+        .registry
+        .queue_present(transaction, owner, window, pixmap, 5, None)
+        .unwrap();
+    assert_eq!(
+        broker.route_present_complete(transaction, 100, 42, XPresentCompletionMode::Flip),
+        Ok(true),
+    );
+    let mut kinds = Vec::new();
+    while let Ok(event) = owner_channels.protocol.try_recv() {
+        if let XClientEvent::PresentCompleteNotify { kind, serial, .. } = event {
+            kinds.push((kind, serial));
+        }
+    }
+    assert!(
+        kinds.contains(&(1, 4)),
+        "the ripened MSC notification must arrive; got {kinds:?}",
+    );
+    assert!(
+        kinds.contains(&(0, 5)),
+        "the flip completion must still arrive; got {kinds:?}",
     );
 }
 
