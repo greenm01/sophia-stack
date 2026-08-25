@@ -523,7 +523,6 @@ pub(crate) fn run_persistent_xterm_session(
             frontend_config =
                 frontend_config.with_pixmap_allocator(Arc::new(LiveXPixmapAllocator {
                     device: native_scanout.clone_render_device_file()?,
-                    next_handle: std::sync::atomic::AtomicU64::new(1),
                 }));
         }
     }

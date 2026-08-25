@@ -111,11 +111,18 @@ pub trait XServerFrontendRenderDeviceProvider: Send + Sync + 'static {
     fn open_render_device_fd(&self) -> Result<OwnedFd, XServerFrontendRenderDeviceError>;
 }
 
-/// The extent and depth a pixmap needs backing at.
+/// The extent and depth a pixmap needs backing at, and the identity to stamp it
+/// with.
+///
+/// The handle is issued here rather than by the allocator. Buffer identity is
+/// one space shared with every buffer a client imports, and an allocator
+/// counting from one of its own would hand out a name another buffer already
+/// answers to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XServerFrontendPixmapAllocation {
     pub size: Size,
     pub depth: u8,
+    pub handle: u64,
 }
 
 /// A buffer allocated for a client, and the descriptors that reach it.

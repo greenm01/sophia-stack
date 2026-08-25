@@ -1465,3 +1465,60 @@ fn the_root_is_not_a_drawable_to_hand_storage_for() {
 
     assert!(runtime.dri3_pixmap_backing_request(namespace, root).is_none());
 }
+
+#[test]
+fn an_originated_buffer_cannot_take_a_name_another_buffer_holds() {
+    // Buffer identity is one space shared with every buffer a client imports.
+    // An allocator counting from one of its own would stamp a name the renderer
+    // already answers for, and the registry is keyed by exactly that name.
+    let namespace = NamespaceId::from_raw(45);
+    let imported = XResourceId::new(0x220807, 1);
+    let pbuffer = XResourceId::new(0x1a00001, 1);
+    let size = Size {
+        width: 64,
+        height: 48,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    import_dri3_pixmap(&mut runtime, namespace, imported, 0x220807);
+    let taken = runtime
+        .dri3_pixmap_buffers(namespace, imported)
+        .unwrap()
+        .0
+        .handle;
+
+    runtime
+        .create_glx_pbuffer(namespace, pbuffer, 1, size)
+        .unwrap();
+    let request = runtime
+        .dri3_pixmap_backing_request(namespace, pbuffer)
+        .expect("the pbuffer asks to be backed");
+    assert_ne!(
+        sophia_protocol::BufferHandle::from_raw(request.handle),
+        taken,
+        "the issued handle must not be one an imported buffer already holds",
+    );
+
+    // And a descriptor stamped with anything else is refused outright.
+    let forged = sophia_protocol::DmaBufDescriptor {
+        handle: taken,
+        size,
+        format: sophia_protocol::DRM_FORMAT_XRGB8888,
+        modifier: 0,
+        plane_count: 1,
+        planes: [
+            Some(sophia_protocol::DmaBufPlaneDescriptor {
+                offset: 0,
+                stride: 256,
+            }),
+            None,
+            None,
+            None,
+        ],
+    };
+    assert!(
+        runtime
+            .adopt_dri3_pixmap_backing(namespace, pbuffer, forged, vec![test_plane_descriptor()])
+            .is_err(),
+        "a buffer stamped with a name it was not issued must be refused",
+    );
+}

@@ -421,7 +421,6 @@ fn external_probe_pixmap_allocator() -> Result<
 > {
     Ok(Some(Arc::new(ExternalProbePixmapAllocator {
         device: first_openable_render_node()?,
-        next_handle: std::sync::atomic::AtomicU64::new(1),
     })))
 }
 
@@ -438,7 +437,6 @@ fn external_probe_pixmap_allocator() -> Result<
 #[cfg(feature = "atomic-scanout-live")]
 struct ExternalProbePixmapAllocator {
     device: std::fs::File,
-    next_handle: std::sync::atomic::AtomicU64,
 }
 
 #[cfg(feature = "atomic-scanout-live")]
@@ -452,13 +450,9 @@ impl sophia_x_authority::XServerFrontendPixmapAllocator for ExternalProbePixmapA
     > {
         use sophia_x_authority::XServerFrontendPixmapAllocationError as Error;
 
-        let handle = self
-            .next_handle
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            .max(1);
         let allocation = sophia_backend_live::allocate_shared_buffer(
             &self.device,
-            handle,
+            request.handle,
             request.size,
             request.depth,
         )

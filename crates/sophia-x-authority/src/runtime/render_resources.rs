@@ -370,6 +370,7 @@ impl XAuthorityRuntime {
                 height: facts.geometry.height,
             },
             depth: facts.depth,
+            handle: self.next_dma_buf_handle.max(1),
         })
     }
 
@@ -393,11 +394,13 @@ impl XAuthorityRuntime {
         descriptor
             .validate()
             .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
-        self.next_dma_buf_handle = descriptor
-            .handle
-            .raw()
-            .saturating_add(1)
-            .max(self.next_dma_buf_handle);
+        // The handle must be the one issued, not one the allocator chose: a
+        // buffer answering to a name another buffer already holds is the same
+        // buffer as far as the renderer's registry is concerned.
+        if descriptor.handle.raw() != self.next_dma_buf_handle.max(1) {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        self.next_dma_buf_handle = descriptor.handle.raw().saturating_add(1);
         self.dri3_pixmaps.insert(
             pixmap,
             XDri3PixmapRecord {
