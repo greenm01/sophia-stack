@@ -199,11 +199,49 @@ const fn hardware_output_snapshot_is_stale(snapshot_epoch: u64, current_epoch: u
     snapshot_epoch <= current_epoch
 }
 
+/// The session loop, with the protocol-error tally reported whatever the outcome.
+///
+/// The tally used to be a local of the loop body, and that body has several dozen
+/// early exits between here and its close in `completion.rs`. Every one of them
+/// dropped the count on the floor: a run that refused seven `BuffersFromPixmap`
+/// requests and then failed its input sequence reported the timeout and said
+/// nothing about the seven. Refused opcodes matter most on precisely the runs
+/// that never reach a clean completion, so the tally is owned out here, where no
+/// early return can skip it.
+///
+/// Deliberately not a `Drop` impl: emitting from a destructor would hide the
+/// control flow this exists to make visible.
 fn run_session_loop(
     config: &mut PersistentXtermSessionConfig,
     channels: SessionLoopChannels<'_>,
     resources: SessionLoopResources<'_>,
     startup: SessionLoopStartup<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut protocol_error_tally = SessionProtocolErrorTally::default();
+    let result = run_session_loop_inner(
+        config,
+        channels,
+        resources,
+        startup,
+        &mut protocol_error_tally,
+    );
+    protocol_error_tally.report();
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => Err(session_failure_with_refused_requests(
+            &error.to_string(),
+            &protocol_error_tally,
+        )
+        .into()),
+    }
+}
+
+fn run_session_loop_inner(
+    config: &mut PersistentXtermSessionConfig,
+    channels: SessionLoopChannels<'_>,
+    resources: SessionLoopResources<'_>,
+    startup: SessionLoopStartup<'_>,
+    protocol_error_tally: &mut SessionProtocolErrorTally,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let SessionLoopChannels {
         authority: authority_receiver,
@@ -468,7 +506,6 @@ fn run_session_loop(
     let mut selection_owner_changes = 0usize;
     let mut selection_conversions = 0usize;
     let mut first_protocol_error = None;
-    let mut protocol_error_tally = SessionProtocolErrorTally::default();
     let mut emergency_exit_requested = false;
     let mut cursor_updates = CursorUpdateState::new(pointer.position().is_some());
     let startup_ready_deadline = config

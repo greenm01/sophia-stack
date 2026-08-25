@@ -42,10 +42,10 @@ use super::{
     production_cycle_native_owner_policy, public_policy_launch_spec,
     public_policy_restart_decision, public_policy_restart_settlement_pending,
     public_session_operations, record_runtime_commits, rects_intersect, resolve_public_shortcuts,
-    route_input_events, session_protocol_errors_are_fatal, settle_session_fatal_error,
-    stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
-    successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
-    take_settled_input_delivery_wait,
+    route_input_events, session_failure_with_refused_requests, session_protocol_errors_are_fatal,
+    settle_session_fatal_error, stable_gpu_frame_proves_post_input_pixels,
+    startup_submission_requirement, successful_primary_exit_ends_session,
+    synchronize_runtime_surface_chrome_style, take_settled_input_delivery_wait,
 };
 use crate::commands::live_session::{
     PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation, policy_cause_subject_is_live,
@@ -710,6 +710,55 @@ fn the_protocol_error_tally_reports_what_a_reset_discarded() {
     assert_eq!(
         tally.summary(),
         format!("139/{SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES}/1x1")
+    );
+}
+
+/// A run that refused nothing still says so.
+///
+/// The tally used to print one line per opcode and nothing at all when there
+/// were none, which made "this session refused nothing" and "nobody kept the
+/// count" the same observation.
+#[test]
+fn a_clean_protocol_error_tally_still_reports_a_line() {
+    let lines = SessionProtocolErrorTally::default().report_lines();
+    assert_eq!(lines.len(), 1, "a clean tally reports exactly once");
+    assert_eq!(
+        lines[0],
+        "sophia_live_session_protocol_error_tally schema=2 status=clean major=0 minor=0 code=0 count=0 distinct=0 discarded=0"
+    );
+}
+
+/// A failure that is not about protocol errors still carries the ones it saw.
+///
+/// This is the regression the whole wrapper exists for: the physical run that
+/// refused seven `BuffersFromPixmap` requests died on its input-sequence timeout
+/// and reported only the timeout, because the tally was read on the clean-exit
+/// path alone.
+#[test]
+fn a_session_failure_carries_the_requests_the_session_refused() {
+    let mut tally = SessionProtocolErrorTally::default();
+    for _ in 0..7 {
+        tally.observe(&sophia_x_authority::XAuthorityProtocolErrorObservation {
+            code: 3,
+            sequence: 1,
+            minor_code: 8,
+            major_code: 139,
+        });
+    }
+    assert_eq!(
+        session_failure_with_refused_requests("physical input sequence timed out", &tally),
+        "physical input sequence timed out; the session also refused 7 X requests by_opcode=[139/8/3x7]"
+    );
+
+    // The refusals reported and the refusals counted reconcile: `total` covers
+    // what a reset dropped, which `summary` no longer holds.
+    assert_eq!(tally.total(), 7);
+
+    // A failure with nothing to attach is left exactly as it was.
+    let clean = SessionProtocolErrorTally::default();
+    assert_eq!(
+        session_failure_with_refused_requests("native page flip stalled", &clean),
+        "native page flip stalled"
     );
 }
 

@@ -37,15 +37,48 @@ impl SessionProtocolErrorTally {
         self.counts.is_empty()
     }
 
+    /// Every observation the tally holds, reset losses included.
+    ///
+    /// Reported alongside the per-opcode lines so a reader can reconcile them:
+    /// the lines sum to this only when `discarded` is zero.
+    fn total(&self) -> u64 {
+        self.counts
+            .values()
+            .copied()
+            .fold(self.discarded, u64::saturating_add)
+    }
+
     /// One line per opcode, never a merged bucket, so a run that hit two causes
     /// cannot disguise itself as one.
-    fn report(&self) {
+    ///
+    /// A tally that saw nothing still produces a line. An absent line is
+    /// indistinguishable from a line nobody emitted, and the difference between
+    /// "refused nothing" and "never counted" is the whole point of the tally.
+    ///
+    /// Built rather than printed so the shape can be asserted; `report` prints
+    /// what this returns.
+    fn report_lines(&self) -> Vec<String> {
         let distinct = self.counts.len();
-        for ((major, minor, code), count) in &self.counts {
-            println!(
-                "sophia_live_session_protocol_error_tally schema=1 status=degraded major={major} minor={minor} code={code} count={count} distinct={distinct} discarded={}",
+        if self.counts.is_empty() {
+            return vec![format!(
+                "sophia_live_session_protocol_error_tally schema=2 status=clean major=0 minor=0 code=0 count=0 distinct=0 discarded={}",
                 self.discarded
-            );
+            )];
+        }
+        self.counts
+            .iter()
+            .map(|((major, minor, code), count)| {
+                format!(
+                    "sophia_live_session_protocol_error_tally schema=2 status=degraded major={major} minor={minor} code={code} count={count} distinct={distinct} discarded={}",
+                    self.discarded
+                )
+            })
+            .collect()
+    }
+
+    fn report(&self) {
+        for line in self.report_lines() {
+            println!("{line}");
         }
     }
 
@@ -59,6 +92,27 @@ impl SessionProtocolErrorTally {
             .collect::<Vec<_>>()
             .join(" ")
     }
+}
+
+/// A session failure, carrying the requests the session refused alongside it.
+///
+/// The two used to be reported apart, and only when the run completed cleanly:
+/// a session that refused seven requests and then timed out waiting for input
+/// named the timeout alone. Which of the two explains the run is exactly the
+/// question an operator is trying to answer, so neither is reported without the
+/// other.
+fn session_failure_with_refused_requests(
+    failure: &str,
+    tally: &SessionProtocolErrorTally,
+) -> String {
+    if tally.is_empty() {
+        return failure.to_owned();
+    }
+    format!(
+        "{failure}; the session also refused {} X requests by_opcode=[{}]",
+        tally.total(),
+        tally.summary()
+    )
 }
 
 fn session_protocol_errors_are_fatal(
