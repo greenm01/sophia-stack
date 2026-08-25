@@ -158,6 +158,24 @@ impl XAuthorityRuntime {
                 depth,
             });
         }
+        // A pbuffer is its own X drawable: the client names the same id when it
+        // asks for geometry, so this is the request that decides whether the
+        // drawable it just created exists at all. Its depth comes from its
+        // configuration, since there is no window to read one from.
+        if let Ok((size, fbconfig)) = self.glx_pbuffer(namespace, drawable)
+            && let Some(config) = crate::x_glx_fb_config(fbconfig)
+        {
+            return Ok(XDrawableFacts {
+                kind: XDrawableKind::GlxPbuffer,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.width,
+                    height: size.height,
+                },
+                depth: config.depth(),
+            });
+        }
         Err(window_error)
     }
 

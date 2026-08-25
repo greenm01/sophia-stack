@@ -1,3 +1,29 @@
+/// The extent Sophia will record for a requested pbuffer, if it will record one.
+///
+/// `GLX_LARGEST_PBUFFER` asks for the largest available rather than an exact
+/// size, so an oversized request clamps instead of failing. Without it, the
+/// bound is a refusal. Both read the same maxima the catalog advertises.
+fn admitted_pbuffer_size(width: u32, height: u32, largest: bool) -> Option<sophia_protocol::Size> {
+    let (width, height) = if largest {
+        (
+            width.min(crate::X_GLX_MAX_PBUFFER_WIDTH),
+            height.min(crate::X_GLX_MAX_PBUFFER_HEIGHT),
+        )
+    } else {
+        (width, height)
+    };
+    if width > crate::X_GLX_MAX_PBUFFER_WIDTH
+        || height > crate::X_GLX_MAX_PBUFFER_HEIGHT
+        || width.saturating_mul(height) > crate::X_GLX_MAX_PBUFFER_PIXELS
+    {
+        return None;
+    }
+    Some(sophia_protocol::Size {
+        width: i32::try_from(width).ok()?,
+        height: i32::try_from(height).ok()?,
+    })
+}
+
 fn dispatch_glx_request(
     context: XDispatchContext,
     request: XWireRequest,
@@ -15,6 +41,9 @@ fn dispatch_glx_request(
             | XWireRequest::GlxMakeCurrent { .. }
             | XWireRequest::GlxIsDirect { .. }
             | XWireRequest::GlxCreateWindow { .. }
+            | XWireRequest::GlxCreatePbuffer { .. }
+            | XWireRequest::GlxDestroyPbuffer { .. }
+            | XWireRequest::GlxMakeContextCurrent { .. }
             | XWireRequest::GlxDeleteWindow { .. }
             | XWireRequest::GlxGetDrawableAttributes { .. }
             | XWireRequest::GlxQueryExtensionsString
@@ -246,6 +275,108 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
+                XWireRequest::GlxCreatePbuffer {
+                    screen,
+                    fbconfig,
+                    pbuffer,
+                    width,
+                    height,
+                    largest,
+                } => {
+                    let outputs = if screen != 0 || crate::x_glx_fb_config(fbconfig).is_none() {
+                        vec![glx_bad_value(
+                            &context,
+                            fbconfig,
+                            crate::X_GLX_CREATE_PBUFFER_MINOR_OPCODE,
+                        )]
+                    } else if let Some(size) = admitted_pbuffer_size(width, height, largest) {
+                        runtime
+                            .create_glx_pbuffer(context.namespace, pbuffer, fbconfig, size)
+                            .err()
+                            .map(|error| {
+                                XClientOutput::Error(x_error_from_runtime(
+                                    error,
+                                    context.sequence,
+                                    context.major_opcode,
+                                    pbuffer.local.raw() as u32,
+                                ))
+                            })
+                            .into_iter()
+                            .collect()
+                    } else {
+                        // Sophia stores no pixels, so the maximum is a refusal
+                        // threshold rather than an allocation that failed. A
+                        // client asking for the largest available gets a clamp
+                        // instead, which is what the attribute means.
+                        vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadAlloc,
+                            sequence: context.sequence,
+                            resource_id: pbuffer.local.raw() as u32,
+                            minor_code: crate::X_GLX_CREATE_PBUFFER_MINOR_OPCODE.into(),
+                            major_code: context.major_opcode,
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::GlxDestroyPbuffer { pbuffer } => {
+                    let outputs = runtime
+                        .destroy_glx_pbuffer(context.namespace, pbuffer)
+                        .err()
+                        .map(|error| {
+                            XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                pbuffer.local.raw() as u32,
+                            ))
+                        })
+                        .into_iter()
+                        .collect();
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // GLX 1.3's replacement for MakeCurrent, which Sophia already
+                // answers for the clients that send the older one. Both drawables
+                // are validated so a context cannot be bound to a surface the
+                // client does not own.
+                XWireRequest::GlxMakeContextCurrent {
+                    drawable,
+                    read_drawable,
+                    context: glx_context,
+                } => {
+                    let bound = glx_context.map_or(Ok(()), |glx_context| {
+                        runtime
+                            .glx_context(context.namespace, glx_context)
+                            .map(|_| ())
+                    });
+                    let outputs = match bound
+                        .and_then(|()| runtime.drawable_facts(context.namespace, drawable))
+                        .and_then(|_| runtime.drawable_facts(context.namespace, read_drawable))
+                    {
+                        Ok(_) => vec![XClientOutput::Reply(XClientReply::GlxMakeCurrent {
+                            sequence: context.sequence,
+                            context_tag: u32::from(glx_context.is_some()),
+                        })],
+                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            drawable.local.raw() as u32,
+                        ))],
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
                 XWireRequest::GlxDeleteWindow { glx_window } => {
                     let outputs = runtime
                         .destroy_glx_window(context.namespace, glx_window)
@@ -267,13 +398,32 @@ fn dispatch_glx_request(
                     }
                 }
                 XWireRequest::GlxGetDrawableAttributes { drawable } => {
-                    let outputs = match runtime.glx_drawable(context.namespace, drawable).and_then(
-                        |(window, config)| {
-                            runtime
-                                .window_geometry(context.namespace, window)
-                                .map(|geometry| (geometry, config))
-                        },
-                    ) {
+                    // A window alias reports its backing window's live geometry;
+                    // an offscreen surface reports the extent it was created
+                    // with, because no window is tracking it.
+                    let resolved = runtime
+                        .glx_pbuffer(context.namespace, drawable)
+                        .map(|(size, config)| {
+                            (
+                                Rect {
+                                    x: 0,
+                                    y: 0,
+                                    width: size.width,
+                                    height: size.height,
+                                },
+                                config,
+                            )
+                        })
+                        .or_else(|_| {
+                            runtime.glx_drawable(context.namespace, drawable).and_then(
+                                |(window, config)| {
+                                    runtime
+                                        .window_geometry(context.namespace, window)
+                                        .map(|geometry| (geometry, config))
+                                },
+                            )
+                        });
+                    let outputs = match resolved {
                         Ok((geometry, config)) => {
                             vec![XClientOutput::Reply(XClientReply::GlxDrawableAttributes {
                                 sequence: context.sequence,

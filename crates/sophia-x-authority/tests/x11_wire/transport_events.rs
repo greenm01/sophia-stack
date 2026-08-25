@@ -859,8 +859,8 @@ fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
     .encoded_outputs(XByteOrder::LittleEndian)
     .remove(0);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[8..12]), 3);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[12..16]), 26);
-    let pair = |config: usize, attribute: usize| 32 + (config * 26 + attribute) * 8;
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[12..16]), 29);
+    let pair = |config: usize, attribute: usize| 32 + (config * 29 + attribute) * 8;
     let aux = pair(0, 10);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &encoded[aux..aux + 4]),

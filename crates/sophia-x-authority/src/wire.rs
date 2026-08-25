@@ -600,6 +600,23 @@ pub enum XWireRequest {
         window: XResourceId,
         glx_window: XResourceId,
     },
+    GlxCreatePbuffer {
+        screen: u32,
+        fbconfig: u32,
+        pbuffer: XResourceId,
+        width: u32,
+        height: u32,
+        /// `GLX_LARGEST_PBUFFER`: take the largest available rather than fail.
+        largest: bool,
+    },
+    GlxDestroyPbuffer {
+        pbuffer: XResourceId,
+    },
+    GlxMakeContextCurrent {
+        drawable: XResourceId,
+        read_drawable: XResourceId,
+        context: Option<XResourceId>,
+    },
     GlxDeleteWindow {
         glx_window: XResourceId,
     },

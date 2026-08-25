@@ -77,6 +77,8 @@ pub enum XDrawableKind {
     Root,
     Window,
     Pixmap,
+    /// An offscreen GLX surface. It answers geometry, and nothing draws into it.
+    GlxPbuffer,
 }
 
 /// The facts every drawable can answer, whatever kind it is.
@@ -101,6 +103,9 @@ struct XGlxDrawableRecord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum XGlxDrawableBacking {
     Window(crate::XResourceId),
+    /// An offscreen surface. Sophia stores no pixels for it, so it carries the
+    /// extent it was created with; nothing else knows one.
+    Pbuffer(Size),
 }
 
 #[derive(Debug)]

@@ -389,10 +389,18 @@ impl XAuthorityRuntime {
          drawable: crate::XResourceId,
      ) -> Result<(crate::XResourceId, u32), XAuthorityRuntimeError> {
          if let Some(record) = self.glx_drawables.get(&drawable) {
-             let XGlxDrawableBacking::Window(window) = record.backing;
-             return (record.owner == namespace)
-                 .then_some((window, record.fbconfig))
-                 .ok_or(XAuthorityRuntimeError::UnknownResource);
+             if record.owner != namespace {
+                 return Err(XAuthorityRuntimeError::UnknownResource);
+             }
+             return match record.backing {
+                 XGlxDrawableBacking::Window(window) => Ok((window, record.fbconfig)),
+                 // A pbuffer has no X window behind it, so it cannot answer a
+                 // question about one. Callers that accept an offscreen surface
+                 // ask for it by name.
+                 XGlxDrawableBacking::Pbuffer(_) => {
+                     Err(XAuthorityRuntimeError::WrongResourceKind)
+                 }
+             };
          }
          self.validate_window_access(namespace, drawable)?;
          // An X window a client never wrapped still answers as its own drawable.
@@ -407,12 +415,79 @@ impl XAuthorityRuntime {
          Ok((drawable, config))
      }
  
+     /// Records an offscreen GLX drawable.
+     ///
+     /// Bookkeeping only, which is the whole of GLX here: a client allocates its
+     /// own buffers and imports them through DRI3, so a drawable with no server
+     /// storage is what a GLX window already is. A pbuffer differs only in having
+     /// no X window to borrow an extent from.
+     pub fn create_glx_pbuffer(
+         &mut self,
+         namespace: NamespaceId,
+         pbuffer: crate::XResourceId,
+         fbconfig: u32,
+         size: Size,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         if self.resources.get(pbuffer).is_some()
+             || self.glx_contexts.contains_key(&pbuffer)
+             || self.glx_drawables.contains_key(&pbuffer)
+         {
+             return Err(XAuthorityRuntimeError::InvalidResource);
+         }
+         self.glx_drawables.insert(
+             pbuffer,
+             XGlxDrawableRecord {
+                 owner: namespace,
+                 fbconfig,
+                 backing: XGlxDrawableBacking::Pbuffer(size),
+             },
+         );
+         Ok(())
+     }
+
+     /// The extent and configuration of an offscreen drawable this client owns.
+     pub fn glx_pbuffer(
+         &self,
+         namespace: NamespaceId,
+         pbuffer: crate::XResourceId,
+     ) -> Result<(Size, u32), XAuthorityRuntimeError> {
+         let record = self
+             .glx_drawables
+             .get(&pbuffer)
+             .filter(|record| record.owner == namespace)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         match record.backing {
+             XGlxDrawableBacking::Pbuffer(size) => Ok((size, record.fbconfig)),
+             XGlxDrawableBacking::Window(_) => Err(XAuthorityRuntimeError::WrongResourceKind),
+         }
+     }
+
+     pub fn destroy_glx_pbuffer(
+         &mut self,
+         namespace: NamespaceId,
+         pbuffer: crate::XResourceId,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         self.glx_pbuffer(namespace, pbuffer)?;
+         self.glx_drawables.remove(&pbuffer);
+         Ok(())
+     }
+
      pub fn destroy_glx_window(
          &mut self,
          namespace: NamespaceId,
          glx_window: crate::XResourceId,
      ) -> Result<(), XAuthorityRuntimeError> {
-         self.glx_drawable(namespace, glx_window)?;
+         // Resolving through `glx_drawable` alone would accept any window this
+         // client owns, since that helper falls through to plain X windows.
+         // Deleting a GLX window must name one.
+         let record = self
+             .glx_drawables
+             .get(&glx_window)
+             .filter(|record| record.owner == namespace)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
+         if !matches!(record.backing, XGlxDrawableBacking::Window(_)) {
+             return Err(XAuthorityRuntimeError::WrongResourceKind);
+         }
          self.glx_drawables.remove(&glx_window);
          Ok(())
      }
@@ -474,6 +549,7 @@ impl XAuthorityRuntime {
          self.window_visuals.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
              XGlxDrawableBacking::Window(underlying) => underlying != window,
+             XGlxDrawableBacking::Pbuffer(_) => true,
          });
          if self
              .input_focus

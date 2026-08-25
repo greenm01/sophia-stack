@@ -123,6 +123,55 @@ fn decode_glx(context: XWireClientContext, bytes: &[u8]) -> Result<XWireRequest,
                 glx_window: XResourceId::new(u64::from(glx), 1),
             })
         }
+        X_GLX_CREATE_PBUFFER_MINOR_OPCODE => {
+            require_len(X_GLX_MAJOR_OPCODE, 20, bytes.len())?;
+            // The count is pairs, not words -- the same shape `CreateWindow`
+            // carries, and the same trap.
+            let count = context.byte_order.u32(&bytes[16..20]) as usize;
+            require_exact_len(
+                X_GLX_MAJOR_OPCODE,
+                20usize.saturating_add(count.saturating_mul(8)),
+                bytes.len(),
+            )?;
+            let pbuffer = context.byte_order.u32(&bytes[12..16]);
+            context.validate_new_resource_id(pbuffer)?;
+            // Reduce the attribute list here so the request stays a passive
+            // record. A name Sophia does not implement is ignored rather than
+            // refused: a client may legitimately ask for more than it needs.
+            let (mut width, mut height, mut largest) = (0, 0, false);
+            for pair in bytes[20..].chunks_exact(8) {
+                let name = context.byte_order.u32(&pair[0..4]);
+                let value = context.byte_order.u32(&pair[4..8]);
+                match name {
+                    X_GLX_PBUFFER_WIDTH_ATTRIBUTE => width = value,
+                    X_GLX_PBUFFER_HEIGHT_ATTRIBUTE => height = value,
+                    X_GLX_LARGEST_PBUFFER_ATTRIBUTE => largest = value != 0,
+                    _ => {}
+                }
+            }
+            Ok(XWireRequest::GlxCreatePbuffer {
+                screen: context.byte_order.u32(&bytes[4..8]),
+                fbconfig: context.byte_order.u32(&bytes[8..12]),
+                pbuffer: XResourceId::new(u64::from(pbuffer), 1),
+                width,
+                height,
+                largest,
+            })
+        }
+        X_GLX_DESTROY_PBUFFER_MINOR_OPCODE => {
+            require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::GlxDestroyPbuffer { pbuffer: id(4) })
+        }
+        X_GLX_MAKE_CONTEXT_CURRENT_MINOR_OPCODE => {
+            require_exact_len(X_GLX_MAJOR_OPCODE, 20, bytes.len())?;
+            let context_id = context.byte_order.u32(&bytes[16..20]);
+            Ok(XWireRequest::GlxMakeContextCurrent {
+                drawable: id(8),
+                read_drawable: id(12),
+                context: (context_id != 0)
+                    .then(|| XResourceId::new(u64::from(context_id), 1)),
+            })
+        }
         X_GLX_DELETE_WINDOW_MINOR_OPCODE => {
             require_exact_len(X_GLX_MAJOR_OPCODE, 8, bytes.len())?;
             Ok(XWireRequest::GlxDeleteWindow { glx_window: id(4) })

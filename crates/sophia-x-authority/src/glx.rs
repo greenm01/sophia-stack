@@ -50,6 +50,20 @@ pub const X_GLX_FB_CONFIGS: [XGlxFbConfig; 3] = [
     },
 ];
 
+/// The largest offscreen surface Sophia will record.
+///
+/// Sophia allocates nothing for a pbuffer, so this is a refusal threshold rather
+/// than a capability claim. It is published as `GLX_MAX_PBUFFER_*` from the same
+/// constants that enforce it, so the advertisement cannot drift from the answer.
+pub const X_GLX_MAX_PBUFFER_WIDTH: u32 = 4096;
+pub const X_GLX_MAX_PBUFFER_HEIGHT: u32 = 4096;
+pub const X_GLX_MAX_PBUFFER_PIXELS: u32 = X_GLX_MAX_PBUFFER_WIDTH * X_GLX_MAX_PBUFFER_HEIGHT;
+
+/// `GLX_DRAWABLE_TYPE`: the drawable kinds these configurations support.
+///
+/// Window and pbuffer, and exactly the kinds Sophia implements.
+pub const X_GLX_DRAWABLE_TYPE_MASK: u32 = 0x5;
+
 /// The configuration a client named, if Sophia offers it.
 pub fn x_glx_fb_config(id: u32) -> Option<XGlxFbConfig> {
     X_GLX_FB_CONFIGS

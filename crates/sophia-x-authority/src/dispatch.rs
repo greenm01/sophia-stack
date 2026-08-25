@@ -96,7 +96,7 @@ fn glx_fb_config(config: crate::XGlxFbConfig) -> Vec<(u32, u32)> {
         (0x8013, id),
         (0x800b, visual),
         (0x8012, 1),
-        (0x8010, 0x3),
+        (0x8010, crate::X_GLX_DRAWABLE_TYPE_MASK),
         (0x8011, 0x1),
         (0x22, 0x8002),
         (0x2, u32::from(config.depth())),
@@ -119,6 +119,12 @@ fn glx_fb_config(config: crate::XGlxFbConfig) -> Vec<(u32, u32)> {
         (0x186a0, 0),
         (0x186a1, 0),
         (0x20b2, srgb),
+        // Appended, because the catalog is read positionally by its tests and by
+        // clients that index the reply. The maxima are the same constants the
+        // pbuffer refusal enforces.
+        (0x8016, crate::X_GLX_MAX_PBUFFER_WIDTH),
+        (0x8017, crate::X_GLX_MAX_PBUFFER_HEIGHT),
+        (0x8018, crate::X_GLX_MAX_PBUFFER_PIXELS),
     ]
 }
 
