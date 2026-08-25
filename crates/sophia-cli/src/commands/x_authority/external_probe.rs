@@ -37,6 +37,9 @@ struct ExternalProbeInvocation<'a> {
     allow_proof_kill_without_transactions: bool,
     allow_client_failure_without_x_error: bool,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+    /// Originates buffers for a client that expects the server to own the
+    /// storage. `None` still serves the client-allocated half.
+    pixmap_allocator: Option<Arc<dyn sophia_x_authority::XServerFrontendPixmapAllocator>>,
     /// How long the client gets to prove itself.
     ///
     /// A property of the client, not of its name: a terminal draws in
@@ -68,6 +71,7 @@ fn run_x_authority_external_probe_smoke(
         allow_proof_kill_without_transactions,
         allow_client_failure_without_x_error,
         render_device_provider,
+        pixmap_allocator,
         proof_timeout,
         isolate_session_bus,
     } = invocation;
@@ -82,6 +86,9 @@ fn run_x_authority_external_probe_smoke(
     }
     if let Some(provider) = render_device_provider {
         server_config = server_config.with_render_device_provider(provider);
+    }
+    if let Some(allocator) = pixmap_allocator {
+        server_config = server_config.with_pixmap_allocator(allocator);
     }
     let server = std::thread::spawn(move || {
         run_x11_core_socket_server_once_config_traced_with_idle_timeout(

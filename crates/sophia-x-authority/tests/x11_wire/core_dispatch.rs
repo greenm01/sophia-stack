@@ -1312,3 +1312,96 @@ fn a_dri3_request_sophia_does_not_implement_is_a_client_visible_error() {
     assert_eq!(error.code, XErrorCode::BadImplementation);
     assert_eq!(error.minor_code, 5);
 }
+
+#[test]
+fn a_pixmap_the_client_did_not_allocate_asks_to_be_backed() {
+    // The other half of DRI3. A client that expects the server to own the
+    // storage never sends a buffer, so the authority has to originate one --
+    // and it needs the extent and depth of the pixmap the client did create.
+    let namespace = NamespaceId::from_raw(45);
+    let pixmap = XResourceId::new(0x220805, 1);
+    let size = Size {
+        width: 64,
+        height: 48,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.create_pixmap(namespace, pixmap, size, 24, 1).unwrap();
+
+    let request = runtime
+        .dri3_pixmap_backing_request(namespace, pixmap)
+        .expect("a pixmap with no buffer of its own asks to be backed");
+    assert_eq!(request.size, size);
+    assert_eq!(request.depth, 24);
+
+    // Backing it makes the recovery answer, in the same shape an import leaves.
+    let descriptor = sophia_protocol::DmaBufDescriptor {
+        handle: sophia_protocol::BufferHandle::from_raw(runtime.next_dma_buf_handle()),
+        size,
+        format: sophia_protocol::DRM_FORMAT_XRGB8888,
+        modifier: 0,
+        plane_count: 1,
+        planes: [
+            Some(sophia_protocol::DmaBufPlaneDescriptor {
+                offset: 0,
+                stride: 256,
+            }),
+            None,
+            None,
+            None,
+        ],
+    };
+    runtime
+        .adopt_dri3_pixmap_backing(namespace, pixmap, descriptor, vec![test_plane_descriptor()])
+        .unwrap();
+
+    let (recovered, fds) = runtime.dri3_pixmap_buffers(namespace, pixmap).unwrap();
+    assert_eq!(recovered.size, size);
+    assert_eq!(recovered.planes[0].unwrap().stride, 256);
+    assert_eq!(fds.len(), 1);
+
+    // Backed once: a second recovery must not ask for another allocation.
+    assert!(runtime.dri3_pixmap_backing_request(namespace, pixmap).is_none());
+
+    // The lifetime is still the pixmap's.
+    runtime.free_pixmap(namespace, pixmap).unwrap();
+    assert!(runtime.dri3_pixmap_buffers(namespace, pixmap).is_err());
+}
+
+#[test]
+fn a_pixmap_holding_drawn_pixels_is_not_backed_underneath_the_client() {
+    // A buffer allocated now would be empty, and adopting it would silently
+    // replace what the client already drew through the CPU path. Refuse instead.
+    let namespace = NamespaceId::from_raw(45);
+    let pixmap = XResourceId::new(0x220806, 1);
+    let size = Size {
+        width: 32,
+        height: 32,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.create_pixmap(namespace, pixmap, size, 24, 1).unwrap();
+    assert!(runtime.dri3_pixmap_backing_request(namespace, pixmap).is_some());
+
+    let marker = [0x11, 0x22, 0x33, 0x00];
+    let response = runtime.apply_put_image(
+        TransactionId::from_raw(7),
+        namespace,
+        pixmap,
+        Region::single(Rect {
+            x: 1,
+            y: 1,
+            width: 1,
+            height: 1,
+        }),
+        Some(&marker),
+        None,
+    );
+    assert!(
+        matches!(response.outcome, XAuthorityResponseOutcome::Accepted),
+        "the CPU upload must land for this test to mean anything",
+    );
+
+    assert!(
+        runtime.dri3_pixmap_backing_request(namespace, pixmap).is_none(),
+        "a pixmap with drawn pixels must not be backed underneath the client",
+    );
+}

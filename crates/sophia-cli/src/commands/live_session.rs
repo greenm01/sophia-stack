@@ -64,7 +64,9 @@ use sophia_x_authority::{
     XAuthorityRouteLeaseUpdate, XAuthorityRouteLeaseUpdateKind, XAuthorityRoutedInput,
     XAuthorityRoutedInputMode, XAuthorityRoutedInputSender, XCoreKeyboardMapper,
     XPresentCompletionMode, XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy,
-    XServerFrontendAdmissionRequest, XServerFrontendConfig, XServerFrontendControlRouter,
+    XServerFrontendAdmissionRequest, XServerFrontendAllocatedPixmap, XServerFrontendConfig,
+    XServerFrontendControlRouter, XServerFrontendPixmapAllocation,
+    XServerFrontendPixmapAllocationError, XServerFrontendPixmapAllocator,
     XServerFrontendProtocolRouter, XServerFrontendRenderDeviceError,
     XServerFrontendRenderDeviceProvider, XServerFrontendRouteBroker,
     XServerFrontendRouteCapacities, XServerFrontendServiceCommand,
@@ -117,6 +119,8 @@ use startup_readiness::{
     startup_output_evidence, startup_submission_requirement, startup_surface_visual_detail,
 };
 use wm_transport_worker::{WmTransportPolicyEvent, WmTransportSubmitError, WmTransportWorker};
+#[cfg(feature = "atomic-scanout-live")]
+use x_frontend::LiveXPixmapAllocator;
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
 
 include!("live_session/config.rs");
@@ -514,6 +518,14 @@ pub(crate) fn run_persistent_xterm_session(
             frontend_config.with_render_device_provider(Arc::new(LiveXRenderDeviceProvider {
                 device: native_scanout.clone_render_device_file()?,
             }));
+        #[cfg(feature = "atomic-scanout-live")]
+        {
+            frontend_config =
+                frontend_config.with_pixmap_allocator(Arc::new(LiveXPixmapAllocator {
+                    device: native_scanout.clone_render_device_file()?,
+                    next_handle: std::sync::atomic::AtomicU64::new(1),
+                }));
+        }
     }
     let (authority_sender, authority_receiver) = sync_channel(SESSION_AUTHORITY_CAPACITY);
     let (control_ack_sender, control_ack_receiver) = sync_channel(SESSION_CONTROL_CAPACITY);

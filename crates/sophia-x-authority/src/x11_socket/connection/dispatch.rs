@@ -763,6 +763,40 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let mut properties = state.properties.lock().map_err(|_| {
                         X11SetupSocketError::new("X11 property table lock poisoned")
                     })?;
+                    // The other half of DRI3: a client that expects the server
+                    // to own the storage and asks for its descriptors back. Back
+                    // the pixmap before the request is answered, so the recovery
+                    // finds the same record an import would have left and nothing
+                    // downstream can tell the two halves apart.
+                    if let Some(pixmap) = dri3_recovered_pixmap
+                        && let Some(backing) =
+                            runtime.dri3_pixmap_backing_request(namespace, pixmap)
+                        && let Some(allocator) = state.pixmap_allocator()
+                    {
+                        match allocator.allocate_pixmap_buffer(backing) {
+                            Ok(allocated) => {
+                                let plane_fds =
+                                    allocated.plane_fds.into_iter().map(Arc::new).collect();
+                                if let Err(error) = runtime.adopt_dri3_pixmap_backing(
+                                    namespace,
+                                    pixmap,
+                                    allocated.descriptor,
+                                    plane_fds,
+                                ) {
+                                    tracing::debug!(
+                                        "sophia_dri3_backing schema=1 status=refused reason=not_adopted pixmap={:#x} error={error:?}",
+                                        pixmap.local.raw(),
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                tracing::debug!(
+                                    "sophia_dri3_backing schema=1 status=refused reason=allocator pixmap={:#x} error={error}",
+                                    pixmap.local.raw(),
+                                );
+                            }
+                        }
+                    }
                     let released_dma_buf = freed_pixmap.and_then(|pixmap| {
                         runtime
                             .dri3_pixmap_descriptor(namespace, pixmap)

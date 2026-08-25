@@ -30,6 +30,14 @@ pub(crate) struct XSoftwareBufferStore {
 }
 
 impl XSoftwareBufferStore {
+    /// Whether this drawable already holds pixels written through the CPU path.
+    ///
+    /// Distinct from a presentation snapshot, which only windows acquire: a
+    /// pixmap's pixels live here from its first upload.
+    pub(crate) fn has_cpu_backing(&self, drawable: XResourceId) -> bool {
+        self.buffers.contains_key(&drawable)
+    }
+
     pub(crate) fn presentation_snapshot(
         &self,
         drawable: XResourceId,

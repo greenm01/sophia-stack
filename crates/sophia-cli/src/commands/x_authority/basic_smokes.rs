@@ -365,6 +365,7 @@ fn run_x_authority_external_probe_smoke_spec(
         allow_proof_kill_without_transactions: spec.allow_proof_kill_without_transactions,
         allow_client_failure_without_x_error: spec.allow_client_failure_without_x_error,
         render_device_provider: None,
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(spec.proof_timeout_secs),
         isolate_session_bus: false,
     })
@@ -402,9 +403,77 @@ fn run_x_authority_xmobar_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: None,
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     })
+}
+
+/// The probe's allocator, when this build has a device to allocate from.
+///
+/// Without the live scanout feature there is no GPU allocation path compiled in,
+/// and a probe that cannot originate a buffer still serves the client-allocated
+/// half exactly as before.
+#[cfg(feature = "atomic-scanout-live")]
+fn external_probe_pixmap_allocator() -> Result<
+    Option<Arc<dyn sophia_x_authority::XServerFrontendPixmapAllocator>>,
+    Box<dyn std::error::Error>,
+> {
+    Ok(Some(Arc::new(ExternalProbePixmapAllocator {
+        device: first_openable_render_node()?,
+        next_handle: std::sync::atomic::AtomicU64::new(1),
+    })))
+}
+
+#[cfg(not(feature = "atomic-scanout-live"))]
+fn external_probe_pixmap_allocator() -> Result<
+    Option<Arc<dyn sophia_x_authority::XServerFrontendPixmapAllocator>>,
+    Box<dyn std::error::Error>,
+> {
+    Ok(None)
+}
+
+/// Originates buffers for the probe, so an offline client can exercise the
+/// half of DRI3 where the server owns the storage.
+#[cfg(feature = "atomic-scanout-live")]
+struct ExternalProbePixmapAllocator {
+    device: std::fs::File,
+    next_handle: std::sync::atomic::AtomicU64,
+}
+
+#[cfg(feature = "atomic-scanout-live")]
+impl sophia_x_authority::XServerFrontendPixmapAllocator for ExternalProbePixmapAllocator {
+    fn allocate_pixmap_buffer(
+        &self,
+        request: sophia_x_authority::XServerFrontendPixmapAllocation,
+    ) -> Result<
+        sophia_x_authority::XServerFrontendAllocatedPixmap,
+        sophia_x_authority::XServerFrontendPixmapAllocationError,
+    > {
+        use sophia_x_authority::XServerFrontendPixmapAllocationError as Error;
+
+        let handle = self
+            .next_handle
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .max(1);
+        let allocation = sophia_backend_live::allocate_shared_buffer(
+            &self.device,
+            handle,
+            request.size,
+            request.depth,
+        )
+        .map_err(|error| match error {
+            sophia_backend_live::LiveSharedBufferError::UnsupportedTarget => {
+                Error::UnsupportedTarget
+            }
+            sophia_backend_live::LiveSharedBufferError::DeviceRejected
+            | sophia_backend_live::LiveSharedBufferError::ExportFailed => Error::AllocationFailed,
+        })?;
+        Ok(sophia_x_authority::XServerFrontendAllocatedPixmap {
+            descriptor: allocation.descriptor,
+            plane_fds: allocation.plane_fds,
+        })
+    }
 }
 
 struct ExternalProbeRenderDeviceProvider {
@@ -452,6 +521,7 @@ fn run_x_authority_zenity_render_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     })
@@ -478,6 +548,7 @@ fn run_x_authority_vkcube_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     })
@@ -509,6 +580,7 @@ fn run_x_authority_glxgears_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     })
@@ -550,6 +622,7 @@ fn run_x_authority_glx_pbuffer_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     });
@@ -601,6 +674,7 @@ fn run_x_authority_browser_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: external_probe_pixmap_allocator()?,
         proof_timeout: Duration::from_secs(30),
         isolate_session_bus: true,
     });
@@ -638,6 +712,7 @@ fn run_x_authority_kitty_smoke()
         allow_proof_kill_without_transactions: false,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
+        pixmap_allocator: None,
         proof_timeout: Duration::from_secs(20),
         isolate_session_bus: true,
     })

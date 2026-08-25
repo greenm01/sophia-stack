@@ -5,8 +5,8 @@ use std::sync::Arc;
 use sophia_protocol::{NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile};
 
 use crate::{
-    X11SetupSocketError, XServerFrontendAdmissionPolicy, XServerFrontendRenderDeviceProvider,
-    XServerFrontendSetupAuthorization,
+    X11SetupSocketError, XServerFrontendAdmissionPolicy, XServerFrontendPixmapAllocator,
+    XServerFrontendRenderDeviceProvider, XServerFrontendSetupAuthorization,
 };
 
 const DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16) {
@@ -21,6 +21,7 @@ pub struct XServerFrontendConfig {
     setup_authorization: XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+    pixmap_allocator: Option<Arc<dyn XServerFrontendPixmapAllocator>>,
     max_concurrent_clients: NonZeroUsize,
     output_topology: sophia_protocol::OutputTopologySnapshot,
     xkb_config: crate::XkbRmlvoConfig,
@@ -39,6 +40,7 @@ impl core::fmt::Debug for XServerFrontendConfig {
                 "has_render_device_provider",
                 &self.render_device_provider.is_some(),
             )
+            .field("has_pixmap_allocator", &self.pixmap_allocator.is_some())
             .field("max_concurrent_clients", &self.max_concurrent_clients)
             .field("output_topology", &self.output_topology)
             .field("xkb_config", &self.xkb_config)
@@ -84,6 +86,7 @@ impl XServerFrontendConfig {
             setup_authorization: XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
             render_device_provider: None,
+            pixmap_allocator: None,
             max_concurrent_clients: DEFAULT_MAX_CONCURRENT_CLIENTS,
             output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
             xkb_config: crate::XkbRmlvoConfig::default(),
@@ -112,6 +115,14 @@ impl XServerFrontendConfig {
         provider: Arc<dyn XServerFrontendRenderDeviceProvider>,
     ) -> Self {
         self.render_device_provider = Some(provider);
+        self
+    }
+
+    pub fn with_pixmap_allocator(
+        mut self,
+        allocator: Arc<dyn XServerFrontendPixmapAllocator>,
+    ) -> Self {
+        self.pixmap_allocator = Some(allocator);
         self
     }
 
@@ -183,6 +194,10 @@ impl XServerFrontendConfig {
         &self,
     ) -> Option<Arc<dyn XServerFrontendRenderDeviceProvider>> {
         self.render_device_provider.clone()
+    }
+
+    pub(crate) fn pixmap_allocator(&self) -> Option<Arc<dyn XServerFrontendPixmapAllocator>> {
+        self.pixmap_allocator.clone()
     }
 
     pub const fn max_concurrent_clients(&self) -> NonZeroUsize {

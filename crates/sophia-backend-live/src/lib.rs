@@ -59,3 +59,6 @@ pub use production_visual_runtime::*;
 #[cfg(feature = "seat-control")]
 pub use seat::*;
 pub use sophia_renderer_live::LivePresentationDisconnectReport;
+#[cfg(feature = "gbm-probe")]
+pub use sophia_renderer_live::allocate_shared_buffer;
+pub use sophia_renderer_live::{LiveSharedBufferAllocation, LiveSharedBufferError};

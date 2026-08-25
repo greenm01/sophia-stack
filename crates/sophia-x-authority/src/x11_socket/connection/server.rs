@@ -103,7 +103,8 @@ pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
         config.output_topology().clone(),
         config.xkb_config(),
     )?
-    .with_optional_render_device_provider(config.render_device_provider());
+    .with_optional_render_device_provider(config.render_device_provider())
+        .with_optional_pixmap_allocator(config.pixmap_allocator());
     serve_x11_core_socket_listener_once_with_setup_authorization(
         &listener,
         config.namespace(),

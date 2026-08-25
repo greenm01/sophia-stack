@@ -37,6 +37,49 @@ impl XServerFrontendAdmissionPolicy for LiveXAdmissionPolicy {
     }
 }
 
+/// Originates buffers for pixmaps a client did not allocate.
+///
+/// Holds the same device the render node is handed from, so a buffer the
+/// authority originates and one the client imports come from one device and can
+/// be composited by the same path.
+#[cfg(feature = "atomic-scanout-live")]
+pub(super) struct LiveXPixmapAllocator {
+    pub(super) device: std::fs::File,
+    pub(super) next_handle: std::sync::atomic::AtomicU64,
+}
+
+#[cfg(feature = "atomic-scanout-live")]
+impl XServerFrontendPixmapAllocator for LiveXPixmapAllocator {
+    fn allocate_pixmap_buffer(
+        &self,
+        request: XServerFrontendPixmapAllocation,
+    ) -> Result<XServerFrontendAllocatedPixmap, XServerFrontendPixmapAllocationError> {
+        let handle = self
+            .next_handle
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .max(1);
+        let allocation = sophia_backend_live::allocate_shared_buffer(
+            &self.device,
+            handle,
+            request.size,
+            request.depth,
+        )
+        .map_err(|error| match error {
+            sophia_backend_live::LiveSharedBufferError::UnsupportedTarget => {
+                XServerFrontendPixmapAllocationError::UnsupportedTarget
+            }
+            sophia_backend_live::LiveSharedBufferError::DeviceRejected
+            | sophia_backend_live::LiveSharedBufferError::ExportFailed => {
+                XServerFrontendPixmapAllocationError::AllocationFailed
+            }
+        })?;
+        Ok(XServerFrontendAllocatedPixmap {
+            descriptor: allocation.descriptor,
+            plane_fds: allocation.plane_fds,
+        })
+    }
+}
+
 pub(super) struct LiveXRenderDeviceProvider {
     pub(super) device: std::fs::File,
 }

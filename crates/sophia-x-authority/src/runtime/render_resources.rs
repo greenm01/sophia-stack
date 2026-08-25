@@ -333,6 +333,72 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
+    /// What a pixmap would need backing at, when it has no buffer of its own.
+    ///
+    /// `None` means no allocation is warranted, which covers the ordinary cases:
+    /// the pixmap already carries an imported buffer, it is not this client's
+    /// pixmap to begin with, or it holds pixels drawn by the CPU path. That last
+    /// one is refused rather than backed, because a buffer allocated now would be
+    /// empty and would silently replace the content the client already drew.
+    pub fn dri3_pixmap_backing_request(
+        &self,
+        namespace: NamespaceId,
+        pixmap: crate::XResourceId,
+    ) -> Option<crate::XServerFrontendPixmapAllocation> {
+        self.validate_pixmap_access(namespace, pixmap).ok()?;
+        if self.dri3_pixmaps.contains_key(&pixmap) {
+            return None;
+        }
+        if self.software_buffers.has_cpu_backing(pixmap) {
+            return None;
+        }
+        let record = self.pixmaps.get(&pixmap)?;
+        Some(crate::XServerFrontendPixmapAllocation {
+            size: record.size,
+            depth: record.depth,
+        })
+    }
+
+    /// Records a buffer the authority originated for a pixmap the client did
+    /// not allocate.
+    ///
+    /// The same record an import produces, so everything downstream -- recovery,
+    /// presentation, release with the pixmap -- cannot tell the two halves of
+    /// DRI3 apart, which is the point.
+    pub fn adopt_dri3_pixmap_backing(
+        &mut self,
+        namespace: NamespaceId,
+        pixmap: crate::XResourceId,
+        descriptor: sophia_protocol::DmaBufDescriptor,
+        plane_fds: Vec<std::sync::Arc<std::os::fd::OwnedFd>>,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.validate_pixmap_access(namespace, pixmap)?;
+        if plane_fds.len() != usize::from(descriptor.plane_count) {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        descriptor
+            .validate()
+            .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+        self.next_dma_buf_handle = descriptor
+            .handle
+            .raw()
+            .saturating_add(1)
+            .max(self.next_dma_buf_handle);
+        self.dri3_pixmaps.insert(
+            pixmap,
+            XDri3PixmapRecord {
+                descriptor,
+                plane_fds,
+            },
+        );
+        Ok(())
+    }
+
+    /// The next buffer handle the authority may originate.
+    pub fn next_dma_buf_handle(&self) -> u64 {
+        self.next_dma_buf_handle.max(1)
+    }
+
     /// The facts and plane descriptors a DRI3 pixmap can be recovered from.
     ///
     /// Refuses a pixmap whose descriptors were never recorded rather than

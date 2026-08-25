@@ -1,6 +1,6 @@
 use std::os::fd::OwnedFd;
 
-use sophia_protocol::{ClientAdmissionContext, ClientAuthenticationMethod};
+use sophia_protocol::{ClientAdmissionContext, ClientAuthenticationMethod, DmaBufDescriptor, Size};
 
 /// Monotonically assigned identity for one live X11 client connection.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -109,6 +109,62 @@ impl std::error::Error for XServerFrontendRenderDeviceError {}
 
 pub trait XServerFrontendRenderDeviceProvider: Send + Sync + 'static {
     fn open_render_device_fd(&self) -> Result<OwnedFd, XServerFrontendRenderDeviceError>;
+}
+
+/// The extent and depth a pixmap needs backing at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XServerFrontendPixmapAllocation {
+    pub size: Size,
+    pub depth: u8,
+}
+
+/// A buffer allocated for a client, and the descriptors that reach it.
+#[derive(Debug)]
+pub struct XServerFrontendAllocatedPixmap {
+    pub descriptor: DmaBufDescriptor,
+    /// One per plane, in plane order, and the same count the descriptor states.
+    pub plane_fds: Vec<OwnedFd>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XServerFrontendPixmapAllocationError {
+    /// No allocator is configured. A frontend without one still serves the
+    /// client-allocated path; it simply cannot originate a buffer.
+    Unavailable,
+    /// The extent or depth is not one the allocator can back.
+    UnsupportedTarget,
+    /// The device refused the allocation or its descriptors could not be
+    /// exported.
+    AllocationFailed,
+}
+
+impl core::fmt::Display for XServerFrontendPixmapAllocationError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Unavailable => formatter.write_str("X11 pixmap allocator is unavailable"),
+            Self::UnsupportedTarget => {
+                formatter.write_str("X11 pixmap allocation target is unsupported")
+            }
+            Self::AllocationFailed => formatter.write_str("X11 pixmap allocation failed"),
+        }
+    }
+}
+
+impl std::error::Error for XServerFrontendPixmapAllocationError {}
+
+/// Originates a buffer for a pixmap the client did not allocate.
+///
+/// DRI3 has two halves. In one the client allocates and the authority wraps what
+/// it is handed; in the other the client expects the server to own the storage
+/// and asks for its descriptors back. This is the second half, kept as a request
+/// the authority makes rather than a capability it holds: the authority owns no
+/// device, no allocator state, and no renderer handle, exactly as it owns none
+/// for the render device it hands to `DRI3 Open`.
+pub trait XServerFrontendPixmapAllocator: Send + Sync + 'static {
+    fn allocate_pixmap_buffer(
+        &self,
+        request: XServerFrontendPixmapAllocation,
+    ) -> Result<XServerFrontendAllocatedPixmap, XServerFrontendPixmapAllocationError>;
 }
 
 fn authorization_data_eq(actual: &[u8], expected: &[u8]) -> bool {

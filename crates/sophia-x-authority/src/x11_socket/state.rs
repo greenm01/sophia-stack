@@ -10,6 +10,7 @@ pub struct X11CoreSocketServerState {
     clients: Arc<Mutex<X11CoreClientLeaseState>>,
     next_transaction_id: Arc<AtomicU64>,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
+    pixmap_allocator: Option<Arc<dyn XServerFrontendPixmapAllocator>>,
 }
 
 #[cfg(unix)]
@@ -33,6 +34,7 @@ impl core::fmt::Debug for X11CoreSocketServerState {
                 "has_render_device_provider",
                 &self.render_device_provider.is_some(),
             )
+            .field("has_pixmap_allocator", &self.pixmap_allocator.is_some())
             .finish()
     }
 }
@@ -63,6 +65,7 @@ impl Default for X11CoreSocketServerState {
             })),
             next_transaction_id: Arc::new(AtomicU64::new(1)),
             render_device_provider: None,
+            pixmap_allocator: None,
         }
     }
 }
@@ -108,6 +111,26 @@ impl X11CoreSocketServerState {
 
     fn has_render_device_provider(&self) -> bool {
         self.render_device_provider.is_some()
+    }
+
+    pub fn with_pixmap_allocator(
+        mut self,
+        allocator: Arc<dyn XServerFrontendPixmapAllocator>,
+    ) -> Self {
+        self.pixmap_allocator = Some(allocator);
+        self
+    }
+
+    fn with_optional_pixmap_allocator(
+        mut self,
+        allocator: Option<Arc<dyn XServerFrontendPixmapAllocator>>,
+    ) -> Self {
+        self.pixmap_allocator = allocator;
+        self
+    }
+
+    fn pixmap_allocator(&self) -> Option<&Arc<dyn XServerFrontendPixmapAllocator>> {
+        self.pixmap_allocator.as_ref()
     }
 
     fn set_policy_map_deferred(&self, deferred: bool) -> Result<(), X11SetupSocketError> {
