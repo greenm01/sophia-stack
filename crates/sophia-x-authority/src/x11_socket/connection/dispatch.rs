@@ -1617,13 +1617,23 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     .iter()
                     .filter(|item| matches!(item, crate::XClientOutput::Event(_)))
                     .count();
+                let (first_error_code, first_error_resource) = output
+                    .outputs
+                    .iter()
+                    .find_map(|item| match item {
+                        crate::XClientOutput::Error(error) => {
+                            Some((error.code as u8, error.resource_id))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or((0, 0));
                 // Reported at the level an operator already runs at. The block
                 // is opt-in behind an environment variable, so demanding a
                 // raised global level as well means the trace can only be had by
                 // changing every other target's level too -- which silences the
                 // telemetry a physical gate polls for, or floods the run.
                 tracing::info!(
-                    "sophia_x11_dispatch schema=1 sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={}",
+                    "sophia_x11_dispatch schema=2 sequence={} major={} minor={} request_len={} parse_failed={} detail_redacted={} replies={} errors={} events={} response={} error_code={} error_resource={:#x}",
                     sequence,
                     major_opcode,
                     request_minor_code,
@@ -1634,6 +1644,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     errors,
                     events,
                     output.response.is_some(),
+                    // Which refusal, and what it named. `errors=1` says a request
+                    // was refused; without these it does not say why, and a
+                    // client that retries the same refusal seven times and gives
+                    // up looks identical to one that simply stopped asking.
+                    first_error_code,
+                    first_error_resource,
                 );
             }
             let observed_received_fds = received_fds
