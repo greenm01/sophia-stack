@@ -1405,3 +1405,63 @@ fn a_pixmap_holding_drawn_pixels_is_not_backed_underneath_the_client() {
         "a pixmap with drawn pixels must not be backed underneath the client",
     );
 }
+
+#[test]
+fn a_gl_drawable_asks_to_be_backed_at_its_own_extent() {
+    // What the browser actually names. A GL client asking the server to own the
+    // storage names the thing it renders into, and that is a GLX drawable, not a
+    // core pixmap -- refusing it as "not a pixmap" is what left the browser
+    // retrying a request it could never satisfy.
+    let namespace = NamespaceId::from_raw(45);
+    let pbuffer = XResourceId::new(0x1a00001, 1);
+    let size = Size {
+        width: 256,
+        height: 128,
+    };
+    let mut runtime = XAuthorityRuntime::new();
+    runtime
+        .create_glx_pbuffer(namespace, pbuffer, 1, size)
+        .unwrap();
+
+    let request = runtime
+        .dri3_pixmap_backing_request(namespace, pbuffer)
+        .expect("a GL drawable with no buffer of its own asks to be backed");
+    assert_eq!(request.size, size);
+
+    let descriptor = sophia_protocol::DmaBufDescriptor {
+        handle: sophia_protocol::BufferHandle::from_raw(runtime.next_dma_buf_handle()),
+        size,
+        format: sophia_protocol::DRM_FORMAT_XRGB8888,
+        modifier: 0,
+        plane_count: 1,
+        planes: [
+            Some(sophia_protocol::DmaBufPlaneDescriptor {
+                offset: 0,
+                stride: 1024,
+            }),
+            None,
+            None,
+            None,
+        ],
+    };
+    runtime
+        .adopt_dri3_pixmap_backing(namespace, pbuffer, descriptor, vec![test_plane_descriptor()])
+        .unwrap();
+
+    let (recovered, fds) = runtime.dri3_pixmap_buffers(namespace, pbuffer).unwrap();
+    assert_eq!(recovered.size, size);
+    assert_eq!(fds.len(), 1);
+    // Backed once.
+    assert!(runtime.dri3_pixmap_backing_request(namespace, pbuffer).is_none());
+}
+
+#[test]
+fn the_root_is_not_a_drawable_to_hand_storage_for() {
+    // The root is the session's own output. A client may name it in a DRI3
+    // request, and it must not become a buffer handed to that client.
+    let namespace = NamespaceId::from_raw(45);
+    let runtime = XAuthorityRuntime::new();
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+
+    assert!(runtime.dri3_pixmap_backing_request(namespace, root).is_none());
+}

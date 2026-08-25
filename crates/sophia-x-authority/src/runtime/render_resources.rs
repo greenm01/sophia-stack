@@ -333,29 +333,43 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
-    /// What a pixmap would need backing at, when it has no buffer of its own.
+    /// What a drawable would need backing at, when it has no buffer of its own.
     ///
-    /// `None` means no allocation is warranted, which covers the ordinary cases:
-    /// the pixmap already carries an imported buffer, it is not this client's
-    /// pixmap to begin with, or it holds pixels drawn by the CPU path. That last
-    /// one is refused rather than backed, because a buffer allocated now would be
-    /// empty and would silently replace the content the client already drew.
+    /// Deliberately wider than a pixmap. A client asking the server to own the
+    /// storage names whatever it renders into, and for a GL client that is a GLX
+    /// drawable -- a window alias or a pbuffer -- not a core pixmap. Refusing
+    /// those as "not a pixmap" is what left the browser retrying a request it
+    /// could never satisfy.
+    ///
+    /// `None` means no allocation is warranted: the drawable already carries a
+    /// buffer, it is not one this client may name, or it holds pixels drawn by
+    /// the CPU path. That last one is refused rather than backed, because a
+    /// buffer allocated now would be empty and would silently replace the
+    /// content the client already drew.
     pub fn dri3_pixmap_backing_request(
         &self,
         namespace: NamespaceId,
-        pixmap: crate::XResourceId,
+        drawable: crate::XResourceId,
     ) -> Option<crate::XServerFrontendPixmapAllocation> {
-        self.validate_pixmap_access(namespace, pixmap).ok()?;
-        if self.dri3_pixmaps.contains_key(&pixmap) {
+        self.validate_dri3_drawable_access(namespace, drawable).ok()?;
+        if self.dri3_pixmaps.contains_key(&drawable) {
             return None;
         }
-        if self.software_buffers.has_cpu_backing(pixmap) {
+        if self.software_buffers.has_cpu_backing(drawable) {
             return None;
         }
-        let record = self.pixmaps.get(&pixmap)?;
+        let facts = self.drawable_facts(namespace, drawable).ok()?;
+        // The root is the session's own output, not a client surface to hand
+        // storage for.
+        if matches!(facts.kind, crate::XDrawableKind::Root) {
+            return None;
+        }
         Some(crate::XServerFrontendPixmapAllocation {
-            size: record.size,
-            depth: record.depth,
+            size: Size {
+                width: facts.geometry.width,
+                height: facts.geometry.height,
+            },
+            depth: facts.depth,
         })
     }
 
@@ -372,7 +386,7 @@ impl XAuthorityRuntime {
         descriptor: sophia_protocol::DmaBufDescriptor,
         plane_fds: Vec<std::sync::Arc<std::os::fd::OwnedFd>>,
     ) -> Result<(), XAuthorityRuntimeError> {
-        self.validate_pixmap_access(namespace, pixmap)?;
+        self.validate_dri3_drawable_access(namespace, pixmap)?;
         if plane_fds.len() != usize::from(descriptor.plane_count) {
             return Err(XAuthorityRuntimeError::InvalidResource);
         }
@@ -419,10 +433,10 @@ impl XAuthorityRuntime {
         // for all of them. Name which, because "not a pixmap here" is a caller
         // mistake while "no imported buffer" is a capability Sophia does not
         // have -- and they need opposite fixes.
-        if let Err(error) = self.validate_pixmap_access(namespace, pixmap) {
+        if let Err(error) = self.validate_dri3_drawable_access(namespace, pixmap) {
             if crate::x11_authority_trace_enabled() {
                 tracing::info!(
-                    "sophia_dri3_recovery schema=1 status=refused reason=not_a_pixmap pixmap={:#x} error={error:?}",
+                    "sophia_dri3_recovery schema=1 status=refused reason=not_a_drawable pixmap={:#x} error={error:?}",
                     pixmap.local.raw(),
                 );
             }
@@ -431,8 +445,9 @@ impl XAuthorityRuntime {
         let Some(record) = self.dri3_pixmaps.get(&pixmap) else {
             if crate::x11_authority_trace_enabled() {
                 tracing::info!(
-                    "sophia_dri3_recovery schema=1 status=refused reason=never_imported pixmap={:#x}",
+                    "sophia_dri3_recovery schema=1 status=refused reason=never_imported pixmap={:#x} kind={:?}",
                     pixmap.local.raw(),
+                    self.drawable_facts(namespace, pixmap).map(|facts| facts.kind).ok(),
                 );
             }
             return Err(XAuthorityRuntimeError::UnknownResource);

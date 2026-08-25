@@ -622,7 +622,7 @@ fn run_x_authority_glx_pbuffer_smoke()
         allow_proof_kill_without_transactions: true,
         allow_client_failure_without_x_error: false,
         render_device_provider: Some(provider),
-        pixmap_allocator: None,
+        pixmap_allocator: external_probe_pixmap_allocator()?,
         proof_timeout: Duration::from_secs(8),
         isolate_session_bus: false,
     });
