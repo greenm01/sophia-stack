@@ -4,7 +4,8 @@ use sophia_protocol::{
     AttentionState, DisplayLabel, OutputId, ShellV1Activation, ShellV1ActivationAck,
     ShellV1ActivationDisposition, ShellV1Candidate, ShellV1CandidateEntry, ShellV1CandidateOutcome,
     ShellV1CandidateOutcomeKind, ShellV1Descriptor, ShellV1DescriptorSnapshot,
-    ToplevelActionCapabilityRef, TransactionId, TrustLevel,
+    ShellV1ReservationEdge, ShellV1WorkAreaReservation, ToplevelActionCapabilityRef, TransactionId,
+    TrustLevel,
 };
 use sophia_runtime::{
     ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole, ShellClientTransport,
@@ -83,6 +84,7 @@ fn protected_shell_completes_candidate_presentation_and_activation() {
             output: snapshot.output,
             visible: true,
             selected_slot: Some(1),
+            reservation: None,
             entries: vec![ShellV1CandidateEntry {
                 slot: 1,
                 generation: 6,
@@ -178,6 +180,7 @@ fn shell_activation_queue_saturation_revokes_the_connection() {
                     output: snapshot.output,
                     visible: true,
                     selected_slot: Some(1),
+                    reservation: None,
                     entries: vec![ShellV1CandidateEntry {
                         slot: 1,
                         generation: 6,
@@ -270,6 +273,7 @@ fn shell_transport_requires_an_exact_snapshot_and_prepare_order() {
                     output: first.output,
                     visible: false,
                     selected_slot: None,
+                    reservation: None,
                     entries: Vec::new(),
                 },
             )
@@ -285,6 +289,7 @@ fn shell_transport_requires_an_exact_snapshot_and_prepare_order() {
                     output: second.output,
                     visible: false,
                     selected_slot: None,
+                    reservation: None,
                     entries: Vec::new(),
                 },
             )
@@ -374,4 +379,57 @@ fn shell_reconnect_burns_the_old_epoch_and_negotiates_a_fresh_one() {
         session.accept_and_negotiate(1, Duration::ZERO),
         Err(ShellTransportError::InvalidConnectionEpoch)
     );
+}
+
+#[test]
+fn shell_transport_carries_a_reservation_through_the_candidate() {
+    let mut session = ShellSessionTransport::bind_for_supervised_uid(
+        directory("reservation"),
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    session.authorize_protected_peer(&evidence()).unwrap();
+    let socket = session.socket_path().to_path_buf();
+    let client = std::thread::spawn(move || {
+        let mut client = ShellClientTransport::connect(socket).unwrap();
+        let (transaction, snapshot) = client.receive_snapshot().unwrap();
+        client
+            .send_candidate(
+                transaction,
+                &ShellV1Candidate {
+                    connection_epoch: client.connection_epoch(),
+                    snapshot_generation: snapshot.snapshot_generation,
+                    candidate_generation: 1,
+                    output: snapshot.output,
+                    visible: true,
+                    selected_slot: Some(1),
+                    reservation: Some(ShellV1WorkAreaReservation {
+                        edge: ShellV1ReservationEdge::Bottom,
+                        thickness_px: 28,
+                    }),
+                    entries: vec![ShellV1CandidateEntry {
+                        slot: 1,
+                        generation: 6,
+                    }],
+                },
+            )
+            .unwrap();
+    });
+    session
+        .accept_and_negotiate(1, Duration::from_secs(2))
+        .unwrap();
+    let candidate_transaction = TransactionId::from_raw(100);
+    let candidate = session
+        .request_candidate(candidate_transaction, &snapshot())
+        .unwrap();
+    // The exact record the client sent, reservation included: the transport
+    // may not flatten or reinterpret the claim on its way to Engine.
+    assert_eq!(
+        candidate.reservation,
+        Some(ShellV1WorkAreaReservation {
+            edge: ShellV1ReservationEdge::Bottom,
+            thickness_px: 28,
+        })
+    );
+    client.join().unwrap();
 }

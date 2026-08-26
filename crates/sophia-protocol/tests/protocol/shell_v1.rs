@@ -87,6 +87,7 @@ fn shell_v1_round_trips_complete_lifecycle_records() {
         output: OutputId::from_raw(7),
         visible: true,
         selected_slot: Some(2),
+        reservation: None,
         entries: vec![
             ShellV1CandidateEntry {
                 slot: 2,
@@ -159,6 +160,7 @@ fn shell_v1_rejects_identity_leaks_and_torn_candidates() {
         output: OutputId::from_raw(7),
         visible: true,
         selected_slot: Some(2),
+        reservation: None,
         entries: vec![ShellV1CandidateEntry {
             slot: 1,
             generation: 9,
@@ -202,10 +204,32 @@ fn shell_v1_rejects_reserved_and_unknown_envelope_fields() {
         output: OutputId::from_raw(7),
         visible: false,
         selected_slot: None,
+        reservation: None,
         entries: Vec::new(),
     };
+    // Byte 33 carried a reserved zero until reservations claimed it for the
+    // edge. It is still refused here, and now for the sharper reason: an edge
+    // with no thickness, on a candidate that is not even visible.
     let mut frame = encode_shell_v1_candidate_frame(transaction, &candidate).unwrap();
     frame[SOPHIA_IPC_HEADER_LEN + 33] = 1;
+    assert!(matches!(
+        decode_shell_v1_candidate_frame(&frame),
+        Err(IpcCodecError::InvalidRecord(_))
+    ));
+
+    // The per-entry reserved field is still reserved, so the envelope check
+    // this test is named for keeps a live subject.
+    let visible = ShellV1Candidate {
+        visible: true,
+        selected_slot: Some(2),
+        entries: vec![ShellV1CandidateEntry {
+            slot: 2,
+            generation: 10,
+        }],
+        ..candidate.clone()
+    };
+    let mut frame = encode_shell_v1_candidate_frame(transaction, &visible).unwrap();
+    frame[SOPHIA_IPC_HEADER_LEN + 42] = 1;
     assert!(matches!(
         decode_shell_v1_candidate_frame(&frame),
         Err(IpcCodecError::ReservedNonZero(1))

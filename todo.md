@@ -273,6 +273,21 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    work's gate. Reservations were deliberately absent from it: the switcher
    presents over the work area rather than claiming one. Previews, icons, MRU
    policy, and generic textures remain out of scope until this lands.
+   The substrate is complete and proven offline. `sophia_shell_v1` candidates
+   carry an optional edge claim in bytes the pre-reservation encoder already
+   wrote as reserved zeroes, so older frames decode unchanged; Rust, C, and Nim
+   move together and a Nim test pins its encoder to the Rust-generated golden
+   byte for byte. `ShellWorkAreaCoordinator` admits a claim against the realized
+   topology, names every refusal, and reduces nothing until its bundle commits;
+   `reduce_output_work_areas` now subtracts shell bands and X-side struts in one
+   reduction. `check_shell_protocol.sh` drives the real Nim shell through the
+   real coordinator and reports `reservations=1`, taking a 1440-tall output to
+   1412 only after commit and restoring it on withdrawal.
+   What remains is the live wiring: both `reduce_output_work_areas` callers
+   still pass an empty band slice, so no session claims a bar yet. That, and a
+   signed physical archive covering bar-visible relayout, shell crash with the
+   work area restored in one visible step, and reconnect at a fresh epoch, are
+   the production gate.
 2. **Close the remaining retained-ledger rows.** The switcher moved
    Recent-window switcher to partial, not complete: recency policy, scope,
    filtering, and debounce are still open, and `docs/triad-port-ledger.md` in

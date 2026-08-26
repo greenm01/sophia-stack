@@ -225,7 +225,9 @@ static int send_candidate(
     uint64_t transaction,
     const struct snapshot *snapshot,
     uint64_t candidate_generation,
-    int visible
+    int visible,
+    uint8_t reservation_edge,
+    uint16_t reservation_thickness
 ) {
     uint8_t payload[40u + MAX_DESCRIPTORS * 12u] = {0};
     size_t index;
@@ -233,13 +235,20 @@ static int send_candidate(
     if (transaction == 0u || candidate_generation == 0u ||
         (visible && snapshot->count == 0u))
         return 0;
+    /* A reservation belongs to a visible candidate, and its edge and
+     * thickness are present together or absent together. */
+    if ((reservation_edge == 0u) != (reservation_thickness == 0u) ||
+        (reservation_edge != 0u && (!visible || reservation_edge > 4u)))
+        return 0;
     write_u64(payload, snapshot->connection_epoch);
     write_u64(payload + 8, snapshot->generation);
     write_u64(payload + 16, candidate_generation);
     write_u64(payload + 24, snapshot->output);
     payload[32] = visible ? 1u : 0u;
+    payload[33] = reservation_edge;
     write_u16(payload + 34, visible ? snapshot->slots[0] : 0u);
     write_u16(payload + 36, visible ? snapshot->count : 0u);
+    write_u16(payload + 38, reservation_thickness);
     for (index = 0; visible && index < snapshot->count; ++index) {
         write_u16(payload + 40u + index * 12u, snapshot->slots[index]);
         write_u64(payload + 44u + index * 12u, snapshot->generations[index]);
@@ -310,7 +319,7 @@ static int run_proof(const char *socket_path) {
     if (socket_fd < 0 || !send_hello(socket_fd) ||
         !receive_welcome(socket_fd, &connection_epoch) ||
         !receive_snapshot(socket_fd, connection_epoch, &first, &first_transaction) ||
-        !send_candidate(socket_fd, first_transaction, &first, 1u, 1) ||
+        !send_candidate(socket_fd, first_transaction, &first, 1u, 1, 2u, 28u) ||
         !receive_outcome(socket_fd, first_transaction, connection_epoch, 1u, 1u, &ignored_epoch) ||
         !receive_outcome(
             socket_fd, first_transaction, connection_epoch, 1u, 2u, &presentation_epoch
@@ -320,7 +329,7 @@ static int run_proof(const char *socket_path) {
             first.slots[0], first.generations[0]
         ) ||
         !receive_snapshot(socket_fd, connection_epoch, &second, &second_transaction) ||
-        !send_candidate(socket_fd, second_transaction, &second, 2u, 0) ||
+        !send_candidate(socket_fd, second_transaction, &second, 2u, 0, 0u, 0u) ||
         !receive_outcome(
             socket_fd, second_transaction, connection_epoch, 2u, 1u, &ignored_epoch
         ) ||

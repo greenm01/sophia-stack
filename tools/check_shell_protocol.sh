@@ -39,6 +39,12 @@ cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell"
 cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell" --serve
+# The reservation half: the real Nim shell claims a bottom strip, Engine's
+# coordinator admits it, and the work area shrinks only once the bundle
+# commits. Driving it here keeps the claim honest offline, where a wrong band
+# costs seconds instead of a rig session.
+cargo run --offline -q -p sophia-runtime \
+    --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell" --bar-proof
 
 printf '%s\n' \
-    'sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true'
+    'sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1'

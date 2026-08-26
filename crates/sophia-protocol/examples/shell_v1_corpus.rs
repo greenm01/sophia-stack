@@ -76,10 +76,45 @@ fn valid_frames() -> Vec<(&'static str, TransactionId, Vec<u8>)> {
             output: OutputId::from_raw(7),
             visible: true,
             selected_slot: Some(2),
+            reservation: None,
             entries: vec![ShellV1CandidateEntry {
                 slot: 2,
                 generation: 10,
             }],
+        },
+    )
+    .unwrap();
+    let candidate_reserved = encode_shell_v1_candidate_frame(
+        transaction,
+        &ShellV1Candidate {
+            connection_epoch: 5,
+            snapshot_generation: 6,
+            candidate_generation: 2,
+            output: OutputId::from_raw(7),
+            visible: true,
+            selected_slot: Some(2),
+            reservation: Some(ShellV1WorkAreaReservation {
+                edge: ShellV1ReservationEdge::Bottom,
+                thickness_px: 28,
+            }),
+            entries: vec![ShellV1CandidateEntry {
+                slot: 2,
+                generation: 10,
+            }],
+        },
+    )
+    .unwrap();
+    let candidate_hidden = encode_shell_v1_candidate_frame(
+        transaction,
+        &ShellV1Candidate {
+            connection_epoch: 5,
+            snapshot_generation: 6,
+            candidate_generation: 3,
+            output: OutputId::from_raw(7),
+            visible: false,
+            selected_slot: None,
+            reservation: None,
+            entries: Vec::new(),
         },
     )
     .unwrap();
@@ -138,6 +173,8 @@ fn valid_frames() -> Vec<(&'static str, TransactionId, Vec<u8>)> {
         ("server_welcome", TransactionId::INVALID, welcome),
         ("descriptor_snapshot", transaction, snapshot),
         ("candidate", transaction, candidate),
+        ("candidate_reserved", transaction, candidate_reserved),
+        ("candidate_hidden", transaction, candidate_hidden),
         ("candidate_outcome", transaction, outcome),
         ("activation", transaction, activation),
         ("activation_ack", transaction, ack),
@@ -156,7 +193,8 @@ fn malformed_frames(
     let welcome = &valid[1].2;
     let snapshot = &valid[2].2;
     let candidate = &valid[3].2;
-    let activation = &valid[5].2;
+    let candidate_hidden = &valid[5].2;
+    let activation = &valid[7].2;
     let mut cases = Vec::new();
     cases.push((
         "truncated_header",
@@ -231,12 +269,51 @@ fn malformed_frames(
         "invalid_transaction",
         frame,
     ));
+    // Byte 57 is the reservation edge and bytes 62..64 its thickness; both
+    // were reserved-zero before reservations existed, so the zero pattern
+    // still decodes as no reservation and these mutations probe the new
+    // validation instead of a reserved check.
     let mut frame = candidate.clone();
     frame[57] = 1;
     cases.push((
-        "candidate_reserved_nonzero",
+        "candidate_edge_without_thickness",
         "candidate",
-        "reserved_nonzero",
+        "invalid_record",
+        frame,
+    ));
+    let mut frame = candidate.clone();
+    frame[62..64].copy_from_slice(&28_u16.to_le_bytes());
+    cases.push((
+        "candidate_thickness_without_edge",
+        "candidate",
+        "invalid_record",
+        frame,
+    ));
+    let mut frame = candidate.clone();
+    frame[57] = 5;
+    frame[62..64].copy_from_slice(&28_u16.to_le_bytes());
+    cases.push((
+        "candidate_unknown_reservation_edge",
+        "candidate",
+        "invalid_enum",
+        frame,
+    ));
+    let mut frame = candidate.clone();
+    frame[57] = 2;
+    frame[62..64].copy_from_slice(&513_u16.to_le_bytes());
+    cases.push((
+        "candidate_reservation_too_thick",
+        "candidate",
+        "invalid_record",
+        frame,
+    ));
+    let mut frame = candidate_hidden.clone();
+    frame[57] = 2;
+    frame[62..64].copy_from_slice(&28_u16.to_le_bytes());
+    cases.push((
+        "candidate_hidden_reservation",
+        "candidate",
+        "invalid_record",
         frame,
     ));
     let mut frame = activation.clone();

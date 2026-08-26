@@ -37,8 +37,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client_mode = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "--proof".to_owned());
-    if !matches!(client_mode.as_str(), "--proof" | "--serve") {
-        return Err("shell client mode must be --proof or --serve".into());
+    if !matches!(client_mode.as_str(), "--proof" | "--serve" | "--bar-proof") {
+        return Err("shell client mode must be --proof, --serve, or --bar-proof".into());
     }
     if !client.is_absolute() || !client.is_file() {
         return Err("shell client must be an absolute executable path".into());
@@ -56,11 +56,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?.path(
         ProtectionPath::read_only(socket.parent().ok_or("shell socket lacks a parent")?),
     )?;
-    let spec = ProcessLaunchSpec::new(client)
-        .arg(client_mode)
+    let bar_proof = client_mode == "--bar-proof";
+    let mut spec = ProcessLaunchSpec::new(client)
+        .arg(&client_mode)
         .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
         .process_group()
         .protection_domain(domain);
+    if bar_proof {
+        spec = spec.env("SOPHIA_SHELL_BAR_THICKNESS", "28");
+    }
     let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
     supervisor.apply(SupervisorCommand::StartProcess {
         process: SupervisedProcessKind::Shell,
@@ -74,6 +78,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     transport.accept_and_negotiate(1, Duration::from_secs(5))?;
 
     let (table, snapshot, surfaces) = fixture();
+    if bar_proof {
+        return run_bar_proof(&mut transport, &mut supervisor, &snapshot);
+    }
     let candidate_transaction = TransactionId::from_raw(1);
     let candidate = transport.request_candidate(candidate_transaction, &snapshot)?;
     let projection_candidate = resolve_candidate(&candidate, &snapshot, &surfaces)?;
@@ -199,6 +206,142 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     supervisor.terminate()?;
     println!(
         "sophia_shell_descriptor_corpus schema=1 status=complete protected=true descriptors=2 activations=1 withdrawn=true surface_ids_disclosed=0 coordinates_disclosed=0 icons_disclosed=0"
+    );
+    Ok(())
+}
+
+/// Reserve, commit, withdraw -- against the real coordinator.
+///
+/// This is the offline half of the reservation gate: it proves the claim
+/// survives the wire, that Engine admits it against a realized topology, that
+/// the work area shrinks only after the bundle commits, and that a withdrawal
+/// carrying no reservation restores the full area through the same path.
+fn run_bar_proof(
+    transport: &mut ShellSessionTransport,
+    supervisor: &mut ProcessSupervisor,
+    snapshot: &ShellV1DescriptorSnapshot,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_engine::{ShellWorkAreaCoordinator, reduce_output_work_areas};
+    use sophia_protocol::Rect;
+
+    let output = snapshot.output;
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let outputs = [(output, bounds)];
+    let mut coordinator = ShellWorkAreaCoordinator::new();
+
+    let transaction = TransactionId::from_raw(1);
+    let candidate = transport.request_candidate(transaction, snapshot)?;
+    let reservation = candidate
+        .reservation
+        .ok_or("shell bar candidate carried no reservation")?;
+    let prepared = coordinator
+        .admit(
+            1,
+            candidate.connection_epoch,
+            candidate.candidate_generation,
+            candidate.output,
+            Some(reservation),
+            bounds,
+            &outputs,
+        )
+        .map_err(|refusal| format!("Engine refused the bar claim: {}", refusal.reason()))?;
+    if prepared.reservation.is_none() {
+        return Err("Engine admitted the bar claim as a withdrawal".into());
+    }
+    // Prepared is not presented: the work area may not move yet.
+    if !coordinator.active_bands().is_empty() {
+        return Err("a prepared bar claim reduced the work area before it presented".into());
+    }
+    transport.send_candidate_outcome(
+        transaction,
+        ShellV1CandidateOutcome {
+            connection_epoch: 1,
+            candidate_generation: candidate.candidate_generation,
+            presentation_epoch: 0,
+            kind: ShellV1CandidateOutcomeKind::Prepared,
+        },
+    )?;
+    transport.send_candidate_outcome(
+        transaction,
+        ShellV1CandidateOutcome {
+            connection_epoch: 1,
+            candidate_generation: candidate.candidate_generation,
+            presentation_epoch: 10,
+            kind: ShellV1CandidateOutcomeKind::Presented,
+        },
+    )?;
+    if !coordinator.commit(candidate.connection_epoch, candidate.candidate_generation) {
+        return Err("Engine refused to commit the exact prepared bar bundle".into());
+    }
+    let reserved = reduce_output_work_areas(
+        bounds,
+        outputs.iter().copied(),
+        &[],
+        &coordinator.active_bands(),
+    )[0]
+    .work
+    .ok_or("the reserved work-area reduction rejected its output")?;
+    let expected = bounds.height - i32::from(reservation.thickness_px);
+    if reserved.height != expected {
+        return Err(format!(
+            "reserved work area is {} tall, expected {expected}",
+            reserved.height
+        )
+        .into());
+    }
+
+    let mut withdrawal_snapshot = snapshot.clone();
+    withdrawal_snapshot.snapshot_generation += 1;
+    let withdrawal_transaction = TransactionId::from_raw(2);
+    let withdrawal = transport.request_candidate(withdrawal_transaction, &withdrawal_snapshot)?;
+    if withdrawal.reservation.is_some() {
+        return Err("shell withdrawal retained its reservation".into());
+    }
+    coordinator
+        .admit(
+            1,
+            withdrawal.connection_epoch,
+            withdrawal.candidate_generation,
+            withdrawal.output,
+            None,
+            bounds,
+            &outputs,
+        )
+        .map_err(|refusal| format!("Engine refused the withdrawal: {}", refusal.reason()))?;
+    transport.send_candidate_outcome(
+        withdrawal_transaction,
+        ShellV1CandidateOutcome {
+            connection_epoch: 1,
+            candidate_generation: withdrawal.candidate_generation,
+            presentation_epoch: 0,
+            kind: ShellV1CandidateOutcomeKind::Prepared,
+        },
+    )?;
+    transport.send_candidate_outcome(
+        withdrawal_transaction,
+        ShellV1CandidateOutcome {
+            connection_epoch: 1,
+            candidate_generation: withdrawal.candidate_generation,
+            presentation_epoch: 11,
+            kind: ShellV1CandidateOutcomeKind::Presented,
+        },
+    )?;
+    if !coordinator.commit(withdrawal.connection_epoch, withdrawal.candidate_generation) {
+        return Err("Engine refused to commit the withdrawal bundle".into());
+    }
+    if !coordinator.active_bands().is_empty() || coordinator.presented().is_some() {
+        return Err("the withdrawal left a presented claim behind".into());
+    }
+    transport.disconnect()?;
+    supervisor.terminate()?;
+    println!(
+        "sophia_shell_reservation_corpus schema=1 status=complete protected=true edge=bottom thickness={} reserved_height={} withdrawn=true",
+        reservation.thickness_px, reserved.height,
     );
     Ok(())
 }

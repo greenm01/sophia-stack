@@ -1,8 +1,9 @@
 use crate::{
     AttentionState, DisplayLabel, MAX_CHROME_LABEL_LEN, OutputId, SOPHIA_SHELL_MAX_DESCRIPTORS,
-    ShellV1Activation, ShellV1ActivationAck, ShellV1ActivationDisposition, ShellV1Candidate,
-    ShellV1CandidateEntry, ShellV1CandidateOutcome, ShellV1CandidateOutcomeKind,
-    ShellV1ClientHello, ShellV1Descriptor, ShellV1DescriptorSnapshot, ShellV1ServerWelcome,
+    SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX, ShellV1Activation, ShellV1ActivationAck,
+    ShellV1ActivationDisposition, ShellV1Candidate, ShellV1CandidateEntry, ShellV1CandidateOutcome,
+    ShellV1CandidateOutcomeKind, ShellV1ClientHello, ShellV1Descriptor, ShellV1DescriptorSnapshot,
+    ShellV1ReservationEdge, ShellV1ServerWelcome, ShellV1WorkAreaReservation,
     ToplevelActionCapabilityRef, TransactionId, TrustLevel,
 };
 
@@ -157,10 +158,20 @@ pub fn encode_shell_v1_candidate_frame(
     push_u64(&mut payload, candidate.candidate_generation);
     push_u64(&mut payload, candidate.output.raw());
     push_u8(&mut payload, u8::from(candidate.visible));
-    push_u8(&mut payload, 0);
+    push_u8(
+        &mut payload,
+        candidate
+            .reservation
+            .map_or(0, |reservation| encode_reservation_edge(reservation.edge)),
+    );
     push_u16(&mut payload, candidate.selected_slot.unwrap_or(0));
     push_u16(&mut payload, candidate.entries.len() as u16);
-    push_u16(&mut payload, 0);
+    push_u16(
+        &mut payload,
+        candidate
+            .reservation
+            .map_or(0, |reservation| reservation.thickness_px),
+    );
     for entry in &candidate.entries {
         push_u16(&mut payload, entry.slot);
         push_u16(&mut payload, 0);
@@ -181,14 +192,15 @@ pub fn decode_shell_v1_candidate_frame(
     let candidate_generation = cursor.u64()?;
     let output = OutputId::from_raw(cursor.u64()?);
     let visible = decode_bool(cursor.u8()?, "shell_candidate_visible")?;
-    require_zero(u16::from(cursor.u8()?), "shell_candidate_byte_reserved")?;
+    let reservation_edge = cursor.u8()?;
     let selected_slot = match cursor.u16()? {
         0 => None,
         slot => Some(slot),
     };
     let count = cursor.u16()? as usize;
     require_count(count, SOPHIA_SHELL_MAX_DESCRIPTORS)?;
-    require_zero(cursor.u16()?, "shell_candidate_reserved")?;
+    let reservation_thickness = cursor.u16()?;
+    let reservation = decode_reservation(reservation_edge, reservation_thickness)?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
         let slot = cursor.u16()?;
@@ -206,6 +218,7 @@ pub fn decode_shell_v1_candidate_frame(
         output,
         visible,
         selected_slot,
+        reservation,
         entries,
     };
     validate_candidate(&candidate)?;
@@ -397,6 +410,22 @@ fn validate_candidate(candidate: &ShellV1Candidate) -> Result<(), IpcCodecError>
     if candidate.visible != !candidate.entries.is_empty() {
         return Err(IpcCodecError::InvalidRecord("shell_candidate_visibility"));
     }
+    if let Some(reservation) = candidate.reservation {
+        // An invisible candidate reserving space would exclude a strip the
+        // shell presents nothing into; refuse it where it is decoded.
+        if !candidate.visible {
+            return Err(IpcCodecError::InvalidRecord(
+                "shell_candidate_hidden_reservation",
+            ));
+        }
+        if reservation.thickness_px == 0
+            || reservation.thickness_px > SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX
+        {
+            return Err(IpcCodecError::InvalidRecord(
+                "shell_candidate_reservation_thickness",
+            ));
+        }
+    }
     let mut slots = std::collections::BTreeSet::new();
     for entry in &candidate.entries {
         if entry.slot == 0 || entry.generation == 0 || !slots.insert(entry.slot) {
@@ -578,6 +607,45 @@ fn decode_outcome(value: u16) -> Result<ShellV1CandidateOutcomeKind, IpcCodecErr
             value: u32::from(other),
         }),
     }
+}
+
+const fn encode_reservation_edge(value: ShellV1ReservationEdge) -> u8 {
+    match value {
+        ShellV1ReservationEdge::Top => 1,
+        ShellV1ReservationEdge::Bottom => 2,
+        ShellV1ReservationEdge::Left => 3,
+        ShellV1ReservationEdge::Right => 4,
+    }
+}
+
+/// Zero edge and zero thickness together mean no reservation, which is the
+/// exact bit pattern the pre-reservation encoder wrote into these reserved
+/// fields, so every previously valid frame still decodes to the same record.
+fn decode_reservation(
+    edge: u8,
+    thickness_px: u16,
+) -> Result<Option<ShellV1WorkAreaReservation>, IpcCodecError> {
+    let edge = match edge {
+        0 => {
+            if thickness_px != 0 {
+                return Err(IpcCodecError::InvalidRecord(
+                    "shell_candidate_reservation_thickness",
+                ));
+            }
+            return Ok(None);
+        }
+        1 => ShellV1ReservationEdge::Top,
+        2 => ShellV1ReservationEdge::Bottom,
+        3 => ShellV1ReservationEdge::Left,
+        4 => ShellV1ReservationEdge::Right,
+        other => {
+            return Err(IpcCodecError::InvalidEnum {
+                field: "shell_candidate_reservation_edge",
+                value: u32::from(other),
+            });
+        }
+    };
+    Ok(Some(ShellV1WorkAreaReservation { edge, thickness_px }))
 }
 
 const fn encode_activation_disposition(value: ShellV1ActivationDisposition) -> u16 {

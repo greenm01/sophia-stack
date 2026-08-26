@@ -202,11 +202,16 @@ pub fn reduce_output_work_areas(
     root: Rect,
     outputs: impl IntoIterator<Item = (OutputId, Rect)>,
     surface_reservations: &[SurfaceOutputReservations],
+    shell_reservations: &[OutputReservation],
 ) -> Vec<OutputWorkArea> {
+    // Two authorities reserve work area: X-side struts arrive per surface,
+    // shell claims arrive as bands the coordinator already realized. Both
+    // reduce identically once flattened.
     let reservations = surface_reservations
         .iter()
         .filter(|surface| surface.is_valid())
         .flat_map(|surface| surface.reservations.iter().copied())
+        .chain(shell_reservations.iter().copied())
         .filter(|reservation| reservation_within_root(*reservation, root))
         .collect::<Vec<_>>();
     outputs

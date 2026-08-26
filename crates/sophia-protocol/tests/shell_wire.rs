@@ -56,7 +56,7 @@ fn roundtrip(name: &str, transaction: TransactionId, frame: &[u8]) -> Vec<u8> {
             assert_eq!(actual, transaction);
             encode_shell_v1_descriptor_snapshot_frame(actual, &message).unwrap()
         }
-        "candidate" => {
+        "candidate" | "candidate_reserved" | "candidate_hidden" => {
             let (actual, message) = decode_shell_v1_candidate_frame(frame).unwrap();
             assert_eq!(actual, transaction);
             encode_shell_v1_candidate_frame(actual, &message).unwrap()
@@ -103,6 +103,8 @@ fn error_name(error: &IpcCodecError) -> &'static str {
         IpcCodecError::ReservedNonZero(_) => "reserved_nonzero",
         IpcCodecError::TrailingBytes(_) => "trailing_bytes",
         IpcCodecError::InvalidTransaction(_) => "invalid_transaction",
+        IpcCodecError::InvalidEnum { .. } => "invalid_enum",
+        IpcCodecError::InvalidRecord(_) => "invalid_record",
         other => panic!("malformed corpus lacks an error name for {other:?}"),
     }
 }

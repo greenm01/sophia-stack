@@ -72,6 +72,9 @@ impl LiveWmSession {
             root,
             full_bounds.iter().copied(),
             &layout.active_output_reservations(),
+            // The shell work-area coordinator is not yet wired into this
+            // session; when it is, its active bands join the reduction here.
+            &[],
         );
         let work_bounds = work_areas
             .iter()

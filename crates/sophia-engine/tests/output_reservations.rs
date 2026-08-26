@@ -56,6 +56,7 @@ fn top_reservation_reduces_only_intersecting_output_span() {
                 (OutputId::from_raw(2), right)
             ],
             &[reservation(1, OutputEdge::Top, 18, 0, 1280)],
+            &[]
         ),
         vec![
             area(
@@ -89,7 +90,7 @@ fn same_edge_uses_maximum_while_different_edges_combine() {
     ];
 
     assert_eq!(
-        reduce_output_work_areas(full, [(OutputId::from_raw(1), full)], &reservations,)[0].work,
+        reduce_output_work_areas(full, [(OutputId::from_raw(1), full)], &reservations, &[])[0].work,
         Some(Rect {
             x: 40,
             y: 24,
@@ -125,6 +126,7 @@ fn root_relative_edge_depth_projects_into_offset_outputs() {
             (OutputId::from_raw(2), bottom),
         ],
         &[reservation(1, OutputEdge::Bottom, 32, 0, 1280)],
+        &[],
     );
 
     assert_eq!(reduced[0].work, Some(top));
@@ -154,6 +156,7 @@ fn opposing_edges_that_consume_output_are_rejected() {
                 reservation(1, OutputEdge::Top, 400, 0, 1280),
                 reservation(2, OutputEdge::Bottom, 400, 0, 1280),
             ],
+            &[]
         )[0]
         .work,
         None
@@ -178,6 +181,7 @@ fn malformed_or_out_of_root_reservations_do_not_change_work_area() {
                 reservation(2, OutputEdge::Top, 18, -1, 1280),
                 reservation(3, OutputEdge::Right, 1281, 0, 720),
             ],
+            &[]
         )[0]
         .work,
         Some(full)
@@ -200,7 +204,12 @@ fn a_mode_change_reprojects_the_work_area_under_a_live_reservation() {
         height: 1440,
     };
     assert_eq!(
-        reduce_output_work_areas(before, [(OutputId::from_raw(1), before)], &reservations),
+        reduce_output_work_areas(
+            before,
+            [(OutputId::from_raw(1), before)],
+            &reservations,
+            &[]
+        ),
         vec![area(
             1,
             before,
@@ -221,7 +230,7 @@ fn a_mode_change_reprojects_the_work_area_under_a_live_reservation() {
         height: 1080,
     };
     assert_eq!(
-        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations),
+        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations, &[]),
         vec![area(
             1,
             after,
@@ -262,7 +271,7 @@ fn a_shrink_that_invalidates_a_reservation_releases_it_rather_than_preserving_it
     };
 
     assert_eq!(
-        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations),
+        reduce_output_work_areas(after, [(OutputId::from_raw(1), after)], &reservations, &[]),
         vec![area(1, after, Some(after))],
         "the reservation is released, not preserved"
     );
