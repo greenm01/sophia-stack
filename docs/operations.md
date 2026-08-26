@@ -56,7 +56,8 @@ identities plus their configuration and executable digests. Installation
 rejects a missing path, wrong version, dirty xmobar source, or digest mismatch.
 It installs six greetd entries:
 
-- `Sophia xmonad (Experimental)` is the frozen compatibility fallback.
+- `Sophia xmonad (Experimental)` is the frozen compatibility fallback. Its
+  blind bridge uses `sophia_wm_v1`; it is not an API-v7 fallback.
 - `Sophia Kitty (Baseline)` is the known-good reduced fallback.
 - `Sophia Firefox Proof` runs the integrated browser evidence workflow.
 - `Sophia Recovery Proof` adds a process-external 45-second watchdog. It is an

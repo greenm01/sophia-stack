@@ -149,31 +149,35 @@ cargo test --offline -q -p sophia-x11-wm-bridge --test policy_projection_adapter
 The first command proves generated envelope and record layouts across Rust and
 C99. The focused Rust gates prove exact supervised-peer admission, negotiation,
 bounded begin/chunk/end assembly, late-epoch discard, semantic record
-conversion, atomic multi-output validation, last-layout preservation, and the
-API v7 adapter. The Rust reference client and generic X11 bridge then prove
-their policy output through the same reducer. They do not switch or qualify
-the installed session path.
+conversion, atomic multi-output validation, and last-layout preservation. The
+Rust reference client and generic X11 bridge then prove their policy output
+through the same reducer. The xmonad compatibility launcher now explicitly
+selects this public path; no compatibility failure downgrades it to API v7.
 
-`tools/check_policy_protocol.sh` additionally runs the Rust reference and
-independent C clients through one authenticated, eleven-cycle revision-3
+`tools/check_policy_protocol.sh` additionally runs the Rust reference,
+independent C, and immutable archived revision-3 C clients through one
+authenticated, eleven-cycle revision-3
 behavior corpus. The retained connection observes constrained single-output
 layout, two-output partitioning, output loss with surface migration, and the
 same raw output returning at a new generation, then an ordered focus action, a
 timed-out candidate, a stale candidate superseded by a newer scene, an invalid
 candidate, and a successful recovery after each rejection. Committed replies
 must pass the canonical reducer without losing an assigned surface or changing
-the declared active output; rejected work must not poison later cycles. Hagia's
-check below runs the exact same host sequence while retaining its private
-adapter across all eleven cycles.
+the declared active output; rejected work must not poison later cycles. Each
+client also runs the corpus across two supervised processes and fresh
+connection epochs; the host pins the last committed projection across the
+replacement boundary. Hagia's check below runs both exact sequences.
 
-The authenticated black-box host covers the three direct `sophia_wm_v1`
-clients: Rust, C, and Hagia. The X11 bridge remains an API-v7 compatibility
-adapter rather than a fourth public-wire client, but its explicit corpus test
-consumes the same eleven canonical scenes and causes, translates synthetic-X
-configure and focus decisions for every affected output, and commits the
-combined proposal through the reducer. This closes topology-scenario parity
-without reversing the bridge/public-wire boundary. Revision 1 still requires
-shared reconnect/restart and archived-client freeze coverage.
+The authenticated black-box host covers four direct `sophia_wm_v1` peers:
+Rust, C, Hagia, and the configured xmonad compatibility bridge. The xmonad gate
+launches the real checked-in xmonad configuration behind its private synthetic
+X server, consumes the same eleven scenes, and uses five fresh processes: one
+normal replacement plus timeout, stale, and invalid replacement/recovery
+boundaries. `tools/check_archived_policy_client.sh` separately verifies fixed
+digests before compiling the frozen C99 codec/client snapshot and running it
+against the current server. Shared restart and archived-client freeze coverage
+are therefore closed. This bounded offline evidence does not replace the
+explicitly authorized physical output apply/rollback archive.
 
 The separate, standalone Hagia checkout verifies its independently written Nim
 decoder against the same retained corpus, then runs its proof client through
@@ -199,8 +203,8 @@ SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
 ```
 
 This is bounded offline integration evidence. It does not freeze the public
-revision or replace dynamic-output ingress, installed physical-session, and
-multi-output gates.
+revision or replace the remaining installed physical output apply/rollback
+gate.
 
 The dynamic-output physical gate is separately armed because it takes
 exclusive DRM/input ownership and asks the operator to disconnect and reconnect

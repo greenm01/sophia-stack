@@ -31,7 +31,7 @@ policy {
   outer-gap 0
   inner-gap 0
 }
-shell { enabled #true; panel 28; }
+shell { enabled #true; }
 shortcut {
   profile "compiled"
   bind "Ctrl+Alt+Delete" "session:logout"

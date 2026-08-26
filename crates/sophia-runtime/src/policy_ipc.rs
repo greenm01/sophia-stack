@@ -4,9 +4,10 @@ use sophia_protocol::{
     PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
     PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
     SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
-    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_CHROME,
-    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS,
+    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND,
+    SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
+    SOPHIA_WM_CAPABILITY_CHROME, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_INDICATORS, SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT,
     SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
     SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
     SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
@@ -26,7 +27,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_POLICY_DIRTY
     | SOPHIA_WM_CAPABILITY_CONFIGURATION
     | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
-    | SOPHIA_WM_CAPABILITY_INDICATORS;
+    | SOPHIA_WM_CAPABILITY_INDICATORS
+    | SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -82,6 +84,9 @@ pub struct AssembledPolicySnapshot {
     pub surface_count: u32,
     pub action_count: u16,
     pub session_operation_count: u16,
+    /// Frozen ordinary-chunk count. Capability-gated extension chunks in
+    /// `chunks` append after this prefix and are deliberately uncounted.
+    pub chunk_count: u16,
     pub chunks: Vec<WmV1SnapshotChunk>,
 }
 
@@ -114,7 +119,7 @@ impl AssembledPolicyProjection {
 
 impl AssembledPolicySnapshot {
     pub fn into_wire_transfer(self) -> WmV1SnapshotTransfer {
-        let chunk_count = self.chunks.len() as u16;
+        let chunk_count = self.chunk_count;
         WmV1SnapshotTransfer {
             transaction: self.transaction,
             begin: WmV1SnapshotBegin {
@@ -523,23 +528,33 @@ struct SnapshotTransfer {
     surface_records: usize,
     action_records: usize,
     session_operation_records: usize,
+    classification_records: usize,
 }
 
 /// Reference client-side assembler for complete server snapshots.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PolicySnapshotAssembler {
     connection_epoch: u64,
+    selected_capabilities: u64,
     used_transactions: BTreeSet<TransactionId>,
     transfer: Option<SnapshotTransfer>,
 }
 
 impl PolicySnapshotAssembler {
     pub fn new(connection_epoch: u64) -> Result<Self, PolicyTransferError> {
+        Self::new_with_capabilities(connection_epoch, 0)
+    }
+
+    pub fn new_with_capabilities(
+        connection_epoch: u64,
+        selected_capabilities: u64,
+    ) -> Result<Self, PolicyTransferError> {
         if connection_epoch == 0 {
             return Err(PolicyTransferError::InvalidConnectionEpoch);
         }
         Ok(Self {
             connection_epoch,
+            selected_capabilities,
             used_transactions: BTreeSet::new(),
             transfer: None,
         })
@@ -583,6 +598,7 @@ impl PolicySnapshotAssembler {
             surface_records: 0,
             action_records: 0,
             session_operation_records: 0,
+            classification_records: 0,
         });
         Ok(())
     }
@@ -611,6 +627,27 @@ impl PolicySnapshotAssembler {
             .filter(|bytes| *bytes <= POLICY_MAX_TRANSFER_BYTES)
             .ok_or(PolicyTransferError::ExcessiveBytes)?;
         let count = chunk.item_count as usize;
+        let ordinary_chunk_count = usize::from(transfer.begin.chunk_count);
+        if chunk.record_kind == SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND {
+            if self.selected_capabilities & SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT == 0 {
+                return Err(PolicyTransferError::UnsupportedCapability);
+            }
+            if transfer.chunks.len() < ordinary_chunk_count {
+                return Err(PolicyTransferError::DuplicateOrReorderedChunk);
+            }
+            let next_total = transfer
+                .classification_records
+                .checked_add(count)
+                .filter(|value| *value <= SOPHIA_WM_MAX_SURFACES)
+                .ok_or(PolicyTransferError::RecordCountMismatch)?;
+            transfer.classification_records = next_total;
+            transfer.bytes = next_bytes;
+            transfer.chunks.push(chunk);
+            return Ok(());
+        }
+        if transfer.chunks.len() >= ordinary_chunk_count {
+            return Err(PolicyTransferError::RecordCountMismatch);
+        }
         let total = match chunk.record_kind {
             SNAPSHOT_OUTPUT_RECORD_KIND => &mut transfer.output_records,
             SNAPSHOT_SURFACE_RECORD_KIND => &mut transfer.surface_records,
@@ -653,7 +690,7 @@ impl PolicySnapshotAssembler {
         {
             return Err(PolicyTransferError::WrongTransferIdentity);
         }
-        if transfer.chunks.len() != usize::from(transfer.begin.chunk_count)
+        if transfer.chunks.len() < usize::from(transfer.begin.chunk_count)
             || transfer.output_records != usize::from(transfer.begin.output_count)
             || transfer.surface_records != transfer.begin.surface_count as usize
             || transfer.action_records != usize::from(transfer.begin.action_count)
@@ -672,6 +709,7 @@ impl PolicySnapshotAssembler {
             surface_count: transfer.begin.surface_count,
             action_count: transfer.begin.action_count,
             session_operation_count: transfer.begin.session_operation_count,
+            chunk_count: transfer.begin.chunk_count,
             chunks: transfer.chunks,
         })
     }

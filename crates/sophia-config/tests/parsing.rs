@@ -8,7 +8,7 @@ const CORE: &str = r##"
 /- kdl-version 2
 schema 2
 session {
-    application "terminal" id=1 executable="/usr/bin/kitty" {
+    application "terminal" id=1 executable="/usr/bin/kitty" placement-class=2 {
         arg "--single-instance"
     }
     startup 1
@@ -59,6 +59,10 @@ fn parses_complete_core_snapshot() {
         parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid core config");
 
     assert_eq!(snapshot.session.applications.len(), 1);
+    assert_eq!(
+        snapshot.session.applications[0].placement_classification,
+        Some(2)
+    );
     assert_eq!(snapshot.session.startup, [1]);
     assert_eq!(
         snapshot.input.source,

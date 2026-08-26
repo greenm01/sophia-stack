@@ -39,6 +39,7 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
         2,
         &scene,
         &actions,
+        &[],
         SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
     )
     .unwrap();
@@ -466,12 +467,14 @@ fn capability_gating_omits_ungated_content_without_perturbing_the_rest() {
     }];
 
     let ungated =
-        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &actions, 0).unwrap();
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &actions, &[], 0)
+            .unwrap();
     let gated = encode_wm_v1_policy_snapshot(
         TransactionId::from_raw(9),
         2,
         &scene,
         &actions,
+        &[],
         SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
     )
     .unwrap();
@@ -512,6 +515,50 @@ fn capability_gating_omits_ungated_content_without_perturbing_the_rest() {
     assert_eq!(decoded_gated.actions, actions);
 }
 
+#[test]
+fn launch_placement_is_an_uncounted_gated_extension() {
+    let scene = gated_scene();
+    let classifications = [PolicySurfaceClassification {
+        surface: scene.surfaces[0].surface,
+        classification: 2,
+    }];
+    let baseline =
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &[], &[], 0).unwrap();
+    let gated_off = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &[],
+        &classifications,
+        0,
+    )
+    .unwrap();
+    assert_eq!(gated_off, baseline);
+
+    let gated = encode_wm_v1_policy_snapshot(
+        TransactionId::from_raw(9),
+        2,
+        &scene,
+        &[],
+        &classifications,
+        SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT,
+    )
+    .unwrap();
+    assert_eq!(gated.begin.chunk_count, baseline.begin.chunk_count);
+    assert_eq!(gated.end.chunk_count, baseline.end.chunk_count);
+    assert_eq!(gated.chunks.len(), baseline.chunks.len() + 1);
+    let extension = gated.chunks.last().unwrap();
+    assert_eq!(extension.ordinal as usize, baseline.chunks.len());
+    assert_eq!(
+        extension.record_kind,
+        SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND
+    );
+    assert_eq!(extension.item_count, 1);
+
+    let decoded = decode_wm_v1_policy_snapshot(&gated).unwrap();
+    assert_eq!(decoded.classifications, classifications);
+}
+
 /// Each governed capability is independently gated, so a client negotiating one
 /// does not receive the other. Corpora pin the default set plus each capability in
 /// isolation; they deliberately do not enumerate combinations.
@@ -529,6 +576,7 @@ fn each_governed_capability_gates_only_its_own_record_kind() {
         2,
         &scene,
         &actions,
+        &[],
         SOPHIA_WM_CAPABILITY_ACTIONS,
     )
     .unwrap();
@@ -542,6 +590,7 @@ fn each_governed_capability_gates_only_its_own_record_kind() {
         2,
         &scene,
         &actions,
+        &[],
         SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
     )
     .unwrap();

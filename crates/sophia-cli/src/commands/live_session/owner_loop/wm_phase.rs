@@ -712,6 +712,7 @@
             }
         }
         if active_output_topology_preparation.is_none()
+            && runtime.is_some()
             && pending_wm_update.is_none()
             && layout.pending.is_none()
             && wm.ordinary_policy_settlement_idle()

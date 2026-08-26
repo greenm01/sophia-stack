@@ -1121,8 +1121,10 @@ spawn, sends complete Engine snapshots, stages complete projections in the
 canonical reducer, and promotes them only with frontend/renderable-content
 settlement. Policy replacement advances the connection epoch and preserves the
 last committed layout while the replacement reconstructs its private state.
-API v7 remains a separately selected migration fallback; no failure silently
-crosses between the two contracts.
+API v7 remains a separately selected migration-only interface; no failure
+silently crosses between the two contracts. The xmonad compatibility profile
+is also a public revision-3 peer, so recovery through xmonad does not cross
+back into Engine-owned workspace authority.
 
 New X11 compatibility remains probe-driven; future application protocols are
 outside the active roadmap. XLibre and Wayland stay archived unless a later

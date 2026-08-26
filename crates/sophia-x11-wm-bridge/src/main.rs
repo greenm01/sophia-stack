@@ -8,12 +8,37 @@ use sophia_protocol::{
 };
 use sophia_x11_wm_bridge::{
     LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_NEXT_LAYOUT,
-    run_wm_socket_server,
+    run_public_xmonad_policy_cycles, run_wm_socket_server,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     match args.first().map(String::as_str) {
+        Some("serve-policy") => {
+            let socket = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--socket="))
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("SOPHIA_WM_SOCKET").map(PathBuf::from))
+                .or_else(|| {
+                    args.get(1)
+                        .filter(|arg| !arg.starts_with('-'))
+                        .map(PathBuf::from)
+                })
+                .ok_or("missing --socket=PATH or SOPHIA_WM_SOCKET")?;
+            let max_cycles = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--cycles="))
+                .or_else(|| {
+                    args.get(2)
+                        .filter(|arg| !arg.starts_with('-'))
+                        .map(String::as_str)
+                })
+                .map(str::parse::<usize>)
+                .transpose()?;
+            let launch = xmonad_launch_spec(&args)?;
+            run_public_xmonad_policy_cycles(socket, launch, max_cycles)?;
+        }
         Some("serve-socket") => {
             let socket = args
                 .iter()
@@ -59,12 +84,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "usage: sophia-x11-wm-bridge serve-socket --socket=PATH --wm=PATH [--profile=layout-only|xmonad] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge xmonad-smoke [--xmonad=PATH]"
+                "usage: sophia-x11-wm-bridge serve-policy --wm=PATH [--socket=PATH] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge serve-socket --socket=PATH --wm=PATH [--profile=layout-only|xmonad] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge xmonad-smoke [--xmonad=PATH]"
                     .into(),
             );
         }
     }
     Ok(())
+}
+
+fn xmonad_launch_spec(args: &[String]) -> Result<LegacyWmLaunchSpec, Box<dyn std::error::Error>> {
+    let executable = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--wm="))
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("SOPHIA_LEGACY_X11_WM").map(PathBuf::from))
+        .ok_or("missing --wm=PATH or SOPHIA_LEGACY_X11_WM")?;
+    let launch = args
+        .iter()
+        .filter_map(|arg| arg.strip_prefix("--wm-arg="))
+        .fold(LegacyWmLaunchSpec::new(executable), |launch, argument| {
+            launch.arg(argument)
+        })
+        .with_profile(LegacyWmProfile::Xmonad);
+    Ok(
+        match args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--wm-private-alias="))
+            .map(ToOwned::to_owned)
+            .or_else(|| std::env::var("SOPHIA_LEGACY_X11_WM_ALIAS").ok())
+        {
+            Some(alias) => launch.with_private_executable_alias(alias),
+            None => launch,
+        },
+    )
 }
 
 fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {

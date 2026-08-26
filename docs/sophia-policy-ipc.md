@@ -186,6 +186,14 @@ classifications — the reduced, opaque form of what a host's window rules ask f
 cross as `(surface, classification)` records in a capability-gated extension chunk,
 never as fields of `SnapshotSurface`.
 
+The retained first use is concrete: capability bit 10 (`launch_placement`) gates
+snapshot record kind `0xFF00`. Each record is 16 bytes — `surface_index: u32`,
+`surface_generation: u32`, and opaque nonzero `classification: u64`. The trusted
+registered-launch coordinator issues at most one classification, for the first
+surface it observes from that launch. The session retains the grant across stale
+responses and policy reconnect, and consumes it only when that surface's manage
+projection commits.
+
 The reason is that such rules are mostly parametric. A default workspace, a column
 proportion, a named scratchpad, and a floating position are values, not classes, and
 no bitfield or enum carries them. `SnapshotSurface.kind` and `capability_bits`
@@ -266,11 +274,14 @@ do not promote until the corresponding `_NET_WM_STATE` and `WM_STATE` update
 has been flushed and acknowledged. Rejection restores the prior frontend value.
 No X atom or ICCCM/EWMH rule enters the public policy schema.
 
-The dormant Rust reference client completes a full authenticated snapshot,
-request, and proposal cycle over this transport. The generic X11 bridge's v7
-response is covered through the canonical projection adapter. A standalone
-C99 client, linked only to the retained C codec and the system C library,
-completes the same session cycle and commits through the same reducer.
+The Rust reference client completes a full authenticated snapshot, request,
+proposal, configuration, and session-operation cycle over this transport. The
+generic X11 bridge now runs xmonad as a configured public revision-3 peer and
+translates only complete metadata-free scenes through a private synthetic X
+server. A standalone C99 client, linked only to the retained C codec and the
+system C library, completes the same session cycle and commits through the same
+reducer. An immutable copy of that C codec and client is retained below
+`protocol/archive/sophia-wm-v1-r3` and must continue to pass unchanged.
 
 ## Stable Spatial Semantics
 

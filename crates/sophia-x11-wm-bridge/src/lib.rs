@@ -14,8 +14,12 @@ use sophia_protocol::{
 };
 
 #[cfg(unix)]
+mod public_policy;
+#[cfg(unix)]
 mod runtime;
 
+#[cfg(unix)]
+pub use public_policy::*;
 #[cfg(unix)]
 pub use runtime::*;
 

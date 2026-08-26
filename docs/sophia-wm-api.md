@@ -69,7 +69,9 @@ actions.
 
 API v7 remains supported only during migration. It is not the first public
 interface, and its workspace ownership, client-hosted socket, and version
-number must not be frozen as ecosystem architecture.
+number must not be frozen as ecosystem architecture. The checked-in xmonad
+compatibility profile no longer uses it: its runner selects `sophia_wm_v1` and
+the bridge returns complete public output projections.
 
 The live session selects the public path with
 `--wm-interface=sophia_wm_v1`. That path uses the session-hosted endpoint,
@@ -308,5 +310,7 @@ broker, and portal authorities. Only after that product port stops exposing
 missing WM facts or operations do the independently implemented Hagia client,
 X11 WM bridge, and C conformance client run identical negotiation, snapshot,
 projection, action, focus, multi-output, rejection, timeout, restart, and
-last-layout freeze tests. Stable revisions remain supported according to
-[Sophia Policy IPC](sophia-policy-ipc.md).
+last-layout freeze tests. Those offline tests now pass, including an immutable
+archived C99 client. Stability still waits for the retained physical output
+apply/rollback archive recorded by the port ledger. Stable revisions remain
+supported according to [Sophia Policy IPC](sophia-policy-ipc.md).

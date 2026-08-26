@@ -582,10 +582,14 @@ fn execute_committed_session_actions(
     let mut logout = false;
     while let Some((transaction, action, target)) = actions.pop_front() {
         if let WmSessionAction::LaunchApplication { application } = action {
+            let placement_classification = config
+                .application_for_action(action)
+                .and_then(|application| application.placement_classification);
             match launches.enqueue(
                 SessionLaunchIntent {
                     transaction,
                     application,
+                    placement_classification,
                 },
                 children.len(),
             ) {

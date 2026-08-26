@@ -16,7 +16,7 @@ use sophia_cli::desktop_output_heads::{
 };
 use sophia_cli::desktop_output_topology::{
     NativeOutputActivationPlan, prepare_native_output_activation_plan,
-    project_native_output_topology,
+    prepare_native_output_authority_candidate, project_native_output_topology,
 };
 use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_cli::input_proof::{PhysicalTextProof, PhysicalTextProofEvent};
@@ -316,6 +316,7 @@ pub(crate) fn run_persistent_xterm_session(
         })
         .transpose()?;
     let mut output_authority_capabilities = None;
+    let mut startup_output_activation = None;
     if let Some(native) = native_scanout.as_ref() {
         let capabilities = native.output_capabilities()?;
         for capability in &capabilities {
@@ -367,14 +368,17 @@ pub(crate) fn run_persistent_xterm_session(
                 Some(card) => {
                     let mut executor =
                         NativeOutputTopologyValidationExecutor::new(card, heads.heads());
-                    let report = run_native_output_activation(activation, &mut executor)?;
+                    let report = run_native_output_activation(activation.clone(), &mut executor)?;
                     (report, "topology_validation", executor.validation())
                 }
                 // One atomic request cannot span two DRM devices, so a topology
                 // that does is not validatable as a unit and must not be reported
                 // as refused.
                 None => (
-                    run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?,
+                    run_native_output_activation(
+                        activation.clone(),
+                        &mut UnavailableNativeOutputExecutor,
+                    )?,
                     "multi_device_unvalidatable",
                     "not_attempted",
                 ),
@@ -386,7 +390,10 @@ pub(crate) fn run_persistent_xterm_session(
                     "native desktop output candidate could not be resolved into heads"
                 );
                 (
-                    run_native_output_activation(activation, &mut UnavailableNativeOutputExecutor)?,
+                    run_native_output_activation(
+                        activation.clone(),
+                        &mut UnavailableNativeOutputExecutor,
+                    )?,
                     "unresolved",
                     "not_attempted",
                 )
@@ -424,6 +431,9 @@ pub(crate) fn run_persistent_xterm_session(
             focused,
             "native desktop output candidate admitted"
         );
+        if validation == "accepted" {
+            startup_output_activation = Some(activation);
+        }
         output_authority_capabilities = Some(capabilities.clone());
     }
     let device_map =
@@ -463,7 +473,23 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout.as_ref(),
         ) {
             (Some(capabilities), Some(native)) => {
-                Some((native.output_authority_snapshot(1)?, capabilities))
+                let snapshot = native.output_authority_snapshot(1)?;
+                let startup_candidate = startup_output_activation
+                    .as_ref()
+                    .map(|plan| {
+                        prepare_native_output_authority_candidate(
+                            plan,
+                            &capabilities,
+                            &snapshot,
+                            initial_head_mapping,
+                        )
+                    })
+                    .transpose()?;
+                Some(LiveOutputAuthorityBootstrap {
+                    snapshot,
+                    capabilities,
+                    startup_candidate,
+                })
             }
             (None, _) => None,
             (Some(_), None) => {

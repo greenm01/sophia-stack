@@ -8,6 +8,7 @@ fn intent(raw: u64) -> SessionLaunchIntent {
     SessionLaunchIntent {
         transaction: TransactionId::from_raw(raw),
         application: SessionApplicationId::from_raw(1),
+        placement_classification: None,
     }
 }
 
@@ -38,7 +39,7 @@ fn launches_advance_only_after_the_observed_surface_is_stable() {
     assert_eq!(queue.begin_next(true, true), None);
 
     let surface = SurfaceId::new(7, 1);
-    assert!(queue.observe_surface(surface));
+    assert!(queue.observe_surface(surface).is_some());
     assert_eq!(queue.complete_if_stable(false, Some(surface)), None);
     assert_eq!(
         queue
@@ -56,7 +57,7 @@ fn an_observed_application_can_exit_before_the_admission_poll_settles() {
     assert_eq!(queue.begin_next(true, true), Some(intent(1)));
     assert!(queue.complete_observed_exit().is_none());
 
-    assert!(queue.observe_surface(SurfaceId::new(9, 1)));
+    assert!(queue.observe_surface(SurfaceId::new(9, 1)).is_some());
     assert_eq!(
         queue
             .complete_observed_exit()
@@ -74,9 +75,9 @@ fn a_multi_toplevel_launch_settles_on_any_presented_observed_surface() {
 
     let transient = SurfaceId::new(10, 1);
     let stable = SurfaceId::new(11, 1);
-    assert!(queue.observe_surface(transient));
-    assert!(queue.observe_surface(stable));
-    assert!(!queue.observe_surface(stable));
+    assert!(queue.observe_surface(transient).is_some());
+    assert!(queue.observe_surface(stable).is_some());
+    assert!(queue.observe_surface(stable).is_none());
     assert_eq!(queue.complete_if_stable(true, None), None);
     assert_eq!(
         queue
@@ -115,7 +116,7 @@ fn a_withdrawn_surface_releases_the_launch_that_was_waiting_for_it() {
 
     let surface = SurfaceId::new(7, 1);
     let untouched = SurfaceId::new(8, 1);
-    assert!(queue.observe_surface(surface));
+    assert!(queue.observe_surface(surface).is_some());
 
     // A withdrawal naming some other surface is not this launch's business.
     assert!(queue.withdraw_current(&[untouched]).is_none());
@@ -133,6 +134,22 @@ fn a_withdrawn_surface_releases_the_launch_that_was_waiting_for_it() {
 
     // The queue moves on rather than staying shut.
     assert_eq!(queue.begin_next(true, true), Some(intent(2)));
+}
+
+#[test]
+fn a_trusted_placement_class_is_issued_for_only_the_first_surface() {
+    let mut queue = SessionLaunchQueue::default();
+    let classified = SessionLaunchIntent {
+        placement_classification: Some(7),
+        ..intent(1)
+    };
+    queue.enqueue(classified, 0);
+    assert_eq!(queue.begin_next(true, true), Some(classified));
+
+    let first = queue.observe_surface(SurfaceId::new(7, 1)).unwrap();
+    let second = queue.observe_surface(SurfaceId::new(8, 1)).unwrap();
+    assert_eq!(first.placement_classification, Some(7));
+    assert_eq!(second.placement_classification, None);
 }
 
 #[test]

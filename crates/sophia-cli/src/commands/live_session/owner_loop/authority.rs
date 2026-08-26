@@ -403,15 +403,21 @@
                         }
                     }
                     for surface in layout_observation.new_surfaces {
-                        if session_launches.observe_surface(surface) {
+                        if let Some(observation) = session_launches.observe_surface(surface) {
+                            if let Some(classification) = observation.placement_classification
+                                && let Some(wm_session) = wm_session.as_mut()
+                            {
+                                wm_session.register_launch_placement(surface, classification)?;
+                                println!(
+                                    "sophia_session_launch_placement schema=1 status=issued transaction={} surface={} class={} source=registered_launch metadata=none",
+                                    observation.intent.transaction.raw(),
+                                    surface.index(),
+                                    classification,
+                                );
+                            }
                             println!(
                                 "sophia_session_app schema=2 status=surface_observed source=action transaction={} surface={}",
-                                session_launches
-                                    .admission()
-                                    .expect("observed launch surface requires an admission")
-                                    .intent
-                                    .transaction
-                                    .raw(),
+                                observation.intent.transaction.raw(),
                                 surface.index(),
                             );
                         }

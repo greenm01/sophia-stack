@@ -210,6 +210,18 @@ pub(super) fn wm_root_bounds(bounds: &[(sophia_protocol::OutputId, Rect)]) -> Op
         )
         .filter(|root| !root.is_empty())
 }
+
+/// Native output authority state retained from read-only startup validation.
+///
+/// The candidate is deliberately still protocol-shaped and resource-free here.
+/// The session loop admits it as a private transaction, then the ordinary live
+/// output path composes frames and owns every renderer/KMS/rollback effect.
+pub(super) struct LiveOutputAuthorityBootstrap {
+    pub(super) snapshot: sophia_protocol::OutputAuthoritySnapshot,
+    pub(super) capabilities: Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
+    pub(super) startup_candidate: Option<sophia_protocol::OutputTopologyCandidate>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PreparedOutputProfile {
     slot: sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate>,

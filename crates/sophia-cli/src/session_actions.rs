@@ -9,6 +9,15 @@ pub const SESSION_ACTION_SURFACE_CAPACITY: usize = 16;
 pub struct SessionLaunchIntent {
     pub transaction: TransactionId,
     pub application: SessionApplicationId,
+    pub placement_classification: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionLaunchSurfaceObservation {
+    pub intent: SessionLaunchIntent,
+    pub surface: SurfaceId,
+    /// Present only for the first surface observed from a classified launch.
+    pub placement_classification: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,6 +25,7 @@ pub struct SessionLaunchAdmission {
     pub intent: SessionLaunchIntent,
     observed_surfaces: [Option<SurfaceId>; SESSION_ACTION_SURFACE_CAPACITY],
     observed_surface_count: usize,
+    placement_classification_consumed: bool,
 }
 
 impl SessionLaunchAdmission {
@@ -76,24 +86,36 @@ impl SessionLaunchQueue {
             intent,
             observed_surfaces: [None; SESSION_ACTION_SURFACE_CAPACITY],
             observed_surface_count: 0,
+            placement_classification_consumed: false,
         });
         Some(intent)
     }
 
-    pub fn observe_surface(&mut self, surface: SurfaceId) -> bool {
+    pub fn observe_surface(
+        &mut self,
+        surface: SurfaceId,
+    ) -> Option<SessionLaunchSurfaceObservation> {
         let Some(admission) = self.admission.as_mut() else {
-            return false;
+            return None;
         };
         if admission
             .observed_surfaces()
             .any(|candidate| candidate == surface)
             || admission.observed_surface_count >= SESSION_ACTION_SURFACE_CAPACITY
         {
-            return false;
+            return None;
         }
         admission.observed_surfaces[admission.observed_surface_count] = Some(surface);
         admission.observed_surface_count += 1;
-        true
+        let placement_classification = (!admission.placement_classification_consumed)
+            .then_some(admission.intent.placement_classification)
+            .flatten();
+        admission.placement_classification_consumed |= placement_classification.is_some();
+        Some(SessionLaunchSurfaceObservation {
+            intent: admission.intent,
+            surface,
+            placement_classification,
+        })
     }
 
     pub fn complete_if_stable(

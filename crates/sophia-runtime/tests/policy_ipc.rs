@@ -1,6 +1,7 @@
 use sophia_protocol::{
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_INDICATORS,
+    SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS,
+    SOPHIA_WM_CAPABILITY_BINDINGS, SOPHIA_WM_CAPABILITY_CONFIGURATION,
+    SOPHIA_WM_CAPABILITY_INDICATORS, SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT,
     SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, TransactionId, WmV1ClientHello, WmV1ProjectionBegin,
     WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
 };
@@ -246,6 +247,86 @@ fn snapshot_assembler_requires_exact_order_and_declared_totals() {
     assert_eq!(snapshot.surface_count, 2);
     assert_eq!(snapshot.action_count, 1);
     assert_eq!(snapshot.chunks.len(), 3);
+}
+
+#[test]
+fn snapshot_extensions_append_after_the_uncounted_ordinary_prefix() {
+    let transaction = TransactionId::from_raw(30);
+    let begin = WmV1SnapshotBegin {
+        connection_epoch: 8,
+        scene_generation: 13,
+        active_output: 1,
+        chunk_count: 2,
+        output_count: 1,
+        surface_count: 1,
+        action_count: 0,
+        session_operation_count: 0,
+    };
+    let mut unsupported = PolicySnapshotAssembler::new(8).unwrap();
+    unsupported.begin(transaction, begin.clone()).unwrap();
+    for (ordinal, record_kind) in [(0, 1), (1, 2)] {
+        unsupported
+            .append(
+                transaction,
+                WmV1SnapshotChunk {
+                    connection_epoch: 8,
+                    ordinal,
+                    record_kind,
+                    item_count: 1,
+                    data: vec![1],
+                },
+            )
+            .unwrap();
+    }
+    assert_eq!(
+        unsupported.append(
+            transaction,
+            WmV1SnapshotChunk {
+                connection_epoch: 8,
+                ordinal: 2,
+                record_kind: SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND,
+                item_count: 1,
+                data: vec![1],
+            },
+        ),
+        Err(PolicyTransferError::UnsupportedCapability)
+    );
+
+    let mut supported =
+        PolicySnapshotAssembler::new_with_capabilities(8, SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT)
+            .unwrap();
+    supported.begin(transaction, begin).unwrap();
+    for (ordinal, record_kind) in [
+        (0, 1),
+        (1, 2),
+        (2, SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND),
+    ] {
+        supported
+            .append(
+                transaction,
+                WmV1SnapshotChunk {
+                    connection_epoch: 8,
+                    ordinal,
+                    record_kind,
+                    item_count: 1,
+                    data: vec![1],
+                },
+            )
+            .unwrap();
+    }
+    let snapshot = supported
+        .finish(
+            transaction,
+            WmV1SnapshotEnd {
+                connection_epoch: 8,
+                scene_generation: 13,
+                chunk_count: 2,
+            },
+        )
+        .unwrap();
+    assert_eq!(snapshot.chunk_count, 2);
+    assert_eq!(snapshot.chunks.len(), 3);
+    assert_eq!(snapshot.into_wire_transfer().begin.chunk_count, 2);
 }
 
 fn negotiated_connection(epoch: u64) -> PolicyConnectionState {

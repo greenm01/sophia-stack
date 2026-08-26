@@ -1,0 +1,48 @@
+schema 1
+
+// Compatibility profile for the blind xmonad policy adapter. The adapter
+// registers this exact bounded catalog over sophia_wm_v1; xmonad never sees
+// client identity, titles, classes, pixels, or the real X namespace.
+policy { view-count 9; }
+shell { enabled #false; }
+shortcut {
+  profile "xmonad-public-v1"
+  bind "Super+j" "policy:focus-next"
+  bind "Super+k" "policy:focus-previous"
+  bind "Super+m" "policy:focus-master"
+  bind "Super+Shift+m" "policy:swap-master"
+  bind "Super+Shift+j" "policy:swap-down"
+  bind "Super+Shift+k" "policy:swap-up"
+  bind "Super+h" "policy:shrink"
+  bind "Super+l" "policy:expand"
+  bind "Super+," "policy:increase-master-count"
+  bind "Super+." "policy:decrease-master-count"
+  bind "Super+Space" "policy:next-layout"
+  bind "Super+Shift+Space" "policy:reset-layout"
+  bind "Super+Ctrl+Space" "policy:toggle-floating"
+  bind "Super+t" "policy:sink"
+  bind "Super+Return" "session:spawn-terminal"
+  bind "Super+Shift+c" "session:close-window"
+  bind "Super+1" "policy:view-workspace 1"
+  bind "Super+2" "policy:view-workspace 2"
+  bind "Super+3" "policy:view-workspace 3"
+  bind "Super+4" "policy:view-workspace 4"
+  bind "Super+5" "policy:view-workspace 5"
+  bind "Super+6" "policy:view-workspace 6"
+  bind "Super+7" "policy:view-workspace 7"
+  bind "Super+8" "policy:view-workspace 8"
+  bind "Super+9" "policy:view-workspace 9"
+  bind "Super+Shift+1" "policy:move-to-workspace 1"
+  bind "Super+Shift+2" "policy:move-to-workspace 2"
+  bind "Super+Shift+3" "policy:move-to-workspace 3"
+  bind "Super+Shift+4" "policy:move-to-workspace 4"
+  bind "Super+Shift+5" "policy:move-to-workspace 5"
+  bind "Super+Shift+6" "policy:move-to-workspace 6"
+  bind "Super+Shift+7" "policy:move-to-workspace 7"
+  bind "Super+Shift+8" "policy:move-to-workspace 8"
+  bind "Super+Shift+9" "policy:move-to-workspace 9"
+}
+session { terminal "terminal"; }
+input { inherit-sophia #true; }
+output { inherit-sophia #true; }
+broker { enabled #false; }

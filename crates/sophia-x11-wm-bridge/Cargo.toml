@@ -7,12 +7,11 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-engine = { path = "../sophia-engine" }
+sophia-wm-demo = { path = "../sophia-wm-demo" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 tracing.workspace = true
-
-[dev-dependencies]
-sophia-engine = { path = "../sophia-engine" }
 
 [lints]
 workspace = true

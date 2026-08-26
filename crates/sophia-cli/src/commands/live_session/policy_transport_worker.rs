@@ -25,6 +25,7 @@ pub(super) enum PolicyTransportCommand {
         request_transaction: TransactionId,
         scene: PolicySceneSnapshot,
         actions: Vec<PolicyActionRegistration>,
+        classifications: Vec<sophia_protocol::PolicySurfaceClassification>,
         request: PolicyProjectionRequest,
     },
     ProjectionOutcome {
@@ -256,6 +257,7 @@ fn run_policy_transport(
                 request_transaction,
                 scene,
                 actions,
+                classifications,
                 request,
             } => {
                 let snapshot = encode_wm_v1_policy_snapshot(
@@ -263,6 +265,7 @@ fn run_policy_transport(
                     connection_epoch,
                     &scene,
                     &actions,
+                    &classifications,
                     transport.selected_capabilities(),
                 )
                 .map_err(|error| format!("policy snapshot encode failed: {error:?}"))?;

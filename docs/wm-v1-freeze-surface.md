@@ -197,24 +197,26 @@ Twenty-eight retained rows across four authority tables. Wire-impact classes:
 | # | Row | State | Wire impact |
 | --- | --- | --- | --- |
 | 1 | Stable logical windows, outputs, tags, views, columns, reconciliation | Complete | None |
-| 2 | Scrolling columns and fixed-point geometry | Partial | None — proportions, centering, gaps, and constraints all reduce to `ProjectionPlacement` geometry already on the wire |
-| 3 | Tags, workspaces, names, dynamic creation/pruning, occupancy navigation, output affinity | Partial | **Decision 1** — everything but configured *names* is None. Names need a home |
-| 4 | Focus, movement, exchange, grouping, histories, cross-output behavior | Partial | None — opaque `SnapshotAction` tokens, 256 available |
-| 5 | Floating, fullscreen, maximize, minimize, restore, client-visible state | Partial | None for the four proven states; **Enum** if a fifth presentation state appears in `presentation_bits` |
+| 2 | Scrolling columns and fixed-point geometry | Complete | None — retained proportions, centering, movement, gaps, and constraints reduce to `ProjectionPlacement` geometry already on the wire |
+| 3 | Tags, workspaces, names, dynamic creation/pruning, occupancy navigation, output affinity | Complete | **Decision 1** — the retained profile uses indicator labels and configures no custom names |
+| 4 | Focus, movement, exchange, grouping, histories, cross-output behavior | Complete | None — every checked-in target resolves through opaque `SnapshotAction` tokens |
+| 5 | Floating, fullscreen, maximize, minimize, restore, client-visible state | Complete | None for the retained proven states; excluded snapping and rule defaults do not widen `presentation_bits` |
 | 6 | Dialogs, transients, popups, scratchpads | Complete | None — `transient_index`/`transient_generation` already carry reduced parent facts |
-| 7 | Additional native layouts, frames, tabs, BSP/split trees, grid, layout switching | Partial | **Separate** — the row itself says shell chrome stays outside WM policy. Layout switching is an opaque action: None |
+| 7 | Additional native layouts, frames, tabs, BSP/split trees, grid, layout switching | Complete | **Separate** — the retained five-layout profile is complete; excluded additional layout chrome stays outside WM policy. Layout switching is an opaque action: None |
 | 8 | Declarative policy configuration | Complete | None — `PolicyConfiguration` and the profile messages exist |
-| 9 | Janet commands and layouts | Open | None — sandboxing, determinism, and memory bounds are Hagia-internal; the output is an ordinary projection |
-| 10 | Placement, sticky behavior, swallowing, size policy, window rules | Open | **Decision 2** — the highest wire risk in the ledger |
-| 11 | Completed and continuous pointer policy interactions | Partial | **Enum**, and see Decision 3 |
+| 9 | Janet commands and layouts | Excluded | None — sandboxing, determinism, and memory bounds are Hagia-internal; the output is an ordinary projection |
+| 10 | Placement, sticky behavior, swallowing, size policy, window rules | Complete | **Decision 2** — trusted one-shot launch placement is capability-gated and committed once; metadata rules remain excluded |
+| 11 | Completed and continuous pointer policy interactions | Complete | **Enum**, and see Decision 3; the retained profile uses move and resize only |
 | 12 | Checkpoint, crash, reconnect, last-layout preservation | Partial | None — corpus, host, and driver work; Engine already supports the epoch advance |
 
 ### Visible Desktop — Hagia Shell
 
-All five rows are Open, and all five are **Separate** by construction: they need a
-least-authority shell endpoint and target-resolved input, not WM messages. The
-shell reservation to work-area to WM projection chain rides `SnapshotOutput`'s
-existing `work_x/work_y/work_width/work_height`, so coordinating it costs no
+The retained Tier-0 status and generic switcher rows are Complete; overview,
+layout chrome, and general overlays are Excluded from this freeze. All five are
+**Separate** by construction: they need a least-authority shell endpoint and
+target-resolved input, not WM messages. The shell reservation to work-area to WM
+projection chain rides `SnapshotOutput`'s existing
+`work_x/work_y/work_width/work_height`, so coordinating it costs no
 `sophia_wm_v1` change.
 
 One caveat that is *not* a wire risk but is an implementation-coupling risk: the
@@ -228,29 +230,35 @@ anyway, because it is the only shell question with a back-edge into shared code.
 
 | # | Row | State | Wire impact |
 | --- | --- | --- | --- |
-| 1 | Physical key, pointer, axis, gesture, switch, shortcut matching | Partial | **Enum** if axis, gesture, and switch bindings need a binding-kind discriminant Hagia can see; None if they resolve entirely in Engine and surface as ordinary opaque actions |
-| 2 | Input-device and XKB configuration | Partial | None — session-owned, never crosses policy IPC |
+| 1 | Physical key, pointer, axis, gesture, switch, shortcut matching | Complete | None — the retained key and move/resize pointer bindings resolve entirely in Engine; axis, gesture, and switch bindings are excluded |
+| 2 | Input-device and XKB configuration | Complete | None — the retained startup candidate is session-owned and never crosses policy IPC |
 | 3 | Output mode, scale, position, transform, VRR, enablement, power, reservations | Partial | None, **conditional on Decision 4** |
-| 4 | Launch, startup environment, configured processes, shell supervision | Partial | None — opaque session-operation tokens |
-| 5 | Lock, logout, session exit, idle inhibition, shortcut inhibition | Open | None — `connection_epoch` is already on every message, which is the barrier these transitions advance |
-| 6 | Cursor theme, visibility, inactivity, and find feedback | Open | None — Engine owns the cursor; configuration and shell feedback stay outside WM policy |
-| 7 | Configuration discovery, validation, activation, reload, rollback | Open | **Message** — the separate visibility and recovery protocol required before watched reload should take new message kinds at 53 and above, not new fields |
+| 4 | Launch, startup environment, configured processes, shell supervision | Complete | None — retained registered launches use opaque session-operation tokens |
+| 5 | Lock, logout, session exit, idle inhibition, shortcut inhibition | Excluded | None — clean logout remains retained elsewhere; the security authority is post-freeze |
+| 6 | Cursor theme, visibility, inactivity, and find feedback | Excluded | None — Engine owns the cursor; later configuration and shell feedback stay outside WM policy |
+| 7 | Configuration discovery, validation, activation, reload, rollback | Complete | **Message** only for excluded watched reload; retained startup activation and rollback need no new message |
 
 ### Brokers And Portals
 
 | # | Row | State | Wire impact |
 | --- | --- | --- | --- |
-| 1 | Application classification and launch placement | Open | **Decision 2** — same boundary as Spatial row 10; these close together |
-| 2 | Window lists and shell-facing descriptors | Open | **Separate** — shell endpoint; must stay out of WM policy |
-| 3 | Screenshots and capture sessions | Open | **Separate** — portal |
-| 4 | Clipboard, drag-and-drop, files, notifications | Open | **Separate** — portal |
+| 1 | Application classification and launch placement | Complete | **Decision 2** — trusted registered-launch provenance emits one opaque class in extension kind `0xFF00` |
+| 2 | Window lists and shell-facing descriptors | Complete | **Separate** — the proven generic switcher endpoint stays out of WM policy |
+| 3 | Screenshots and capture sessions | Excluded | **Separate** — portal |
+| 4 | Clipboard, drag-and-drop, files, notifications | Complete | **Separate** — bounded text clipboard is retained; broader transfers are excluded |
 
 ### Result
 
-Twenty-four of twenty-eight rows need no `sophia_wm_v1` change. The residue is
-four decisions, below. That is the useful output of this pass: the wire risk is
-bounded and small, but it is not zero, and three of the four must be settled
-before the freeze rather than discovered after it.
+Twenty-four of twenty-eight rows need no `sophia_wm_v1` change. The four wire
+decisions below are settled. The only retained addition is the already-chosen
+capability-gated extension-chunk shape for trusted one-shot launch placement;
+it does not widen an existing record or enum.
+
+That addition is now implemented. Capability bit 10 gates snapshot extension
+kind `0xFF00`; its fixed 16-byte records carry only surface index, surface
+generation, and opaque nonzero `u64` classification. The ordinary chunk count
+remains unchanged, the extension appends last with a dense ordinal, and the
+default-capability stream is byte-identical.
 
 ---
 
@@ -375,17 +383,14 @@ reserving in it before the freeze**. That is the substantive change: the pre-fre
 obligation this decision was believed to carry has been removed rather than
 satisfied.
 
-#### What remains pre-freeze
+#### Pre-freeze obligations resolved
 
-Two things, both small:
-
-1. The reserved range is defended only by review. Add a check that no declared
-   record kind falls in `0xFF00`–`0xFFFF`, so an ordinary record cannot be allocated
-   there by accident and collide with a future extension.
-2. The ledger row itself — "Placement, sticky behavior, swallowing, size policy, and
-   window rules" — must still be complete before the freeze, which means the broker
-   and this chunk must both exist by then. What the freeze no longer constrains is
-   the *vocabulary* they carry.
+The generator rejects every ordinary record kind in `0xFF00`–`0xFFFF`, and the
+trusted registered-launch path now supplies the retained classification without a
+general metadata broker. Capability gating, uncounted transfer assembly,
+retry/reconnect retention, one-shot commit consumption, and Hagia placement all
+have executable regressions. The classification vocabulary remains outside the
+frozen record layouts.
 
 ### Decision 3 — The continuous-pointer payload
 

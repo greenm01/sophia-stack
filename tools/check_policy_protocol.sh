@@ -27,6 +27,11 @@ cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- 
     "$build_dir/sophia-wm-v1-client" "$build_dir/c" all
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
     "$root/target/debug/sophia-wm-demo" "$build_dir/rust" all policy-v1-proof
+cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
+    "$build_dir/sophia-wm-v1-client" "$build_dir/c-restart" restart
+cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
+    "$root/target/debug/sophia-wm-demo" "$build_dir/rust-restart" restart policy-v1-proof
+tools/check_archived_policy_client.sh
 
 printf '%s\n' \
-    'sophia_policy_behavior_corpus schema=3 status=complete revision=3 clients=rust,c scenarios=11 sequential=true action=true timeout_recovery=true stale_recovery=true invalid_recovery=true'
+    'sophia_policy_behavior_corpus schema=5 status=complete revision=3 clients=rust,c,archived-c-r3 scenarios=11 sequential=true action=true timeout_recovery=true stale_recovery=true invalid_recovery=true reconnect_restart=true preserved_commit=true archived_client=true'

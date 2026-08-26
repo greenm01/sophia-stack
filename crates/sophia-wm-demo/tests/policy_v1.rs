@@ -4,17 +4,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use sophia_protocol::{
-    LayoutNodeCapabilities, OutputId, PolicyOutputSnapshot, PolicyPresentationState,
-    PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot, PolicySurfaceKind,
-    PolicySurfaceSnapshot, Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_WM_CAPABILITY_CONFIGURATION,
-    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, SOPHIA_WM_INTERFACE_REVISION,
+    LayoutNodeCapabilities, OutputId, PolicyActionRegistration, PolicyOutputSnapshot,
+    PolicyPresentationState, PolicyProjectionRequest, PolicyRequestCause, PolicySceneSnapshot,
+    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SOPHIA_IPC_HEADER_LEN,
+    SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, SOPHIA_WM_INTERFACE_REVISION,
     SOPHIA_WM_OUTCOME_COMMITTED, Size, SurfaceConstraints, SurfaceId, TransactionId,
-    WM_V1_PROFILE_DIGEST_BYTES, WmV1PolicyConfigurationOutcome, WmV1ProfileCommand,
-    WmV1ProfileIdentity, WmV1ServerWelcome, decode_wm_v1_client_hello_frame,
-    decode_wm_v1_policy_configuration, decode_wm_v1_policy_configuration_frame,
+    WM_V1_PROFILE_DIGEST_BYTES, WmActionId, WmChromePolicy, WmV1PolicyConfigurationOutcome,
+    WmV1ProfileCommand, WmV1ProfileIdentity, WmV1ServerWelcome, WmV1SessionOperationOutcome,
+    decode_wm_v1_client_hello_frame, decode_wm_v1_policy_configuration,
+    decode_wm_v1_policy_configuration_frame, decode_wm_v1_policy_session_operation_request,
     decode_wm_v1_profile_active, decode_wm_v1_profile_prepared,
-    encode_wm_v1_policy_configuration_outcome_frame, encode_wm_v1_profile_activate,
-    encode_wm_v1_profile_prepare, encode_wm_v1_server_welcome_frame,
+    decode_wm_v1_session_operation_request_frame, encode_wm_v1_policy_configuration_outcome_frame,
+    encode_wm_v1_profile_activate, encode_wm_v1_profile_prepare, encode_wm_v1_server_welcome_frame,
+    encode_wm_v1_session_operation_outcome_frame,
 };
 use sophia_wm_demo::{
     PolicyV1Client, StatelessReferenceProjectionDecision, partition_policy_scene_across_outputs,
@@ -358,6 +361,121 @@ fn live_reference_policy_accepts_profile_and_configures_before_scene_intake() {
 
     let mut client = PolicyV1Client::connect(&socket, Duration::from_secs(1)).unwrap();
     client.activate_profile_and_configure().unwrap();
+
+    server.join().unwrap();
+    std::fs::remove_file(socket).unwrap();
+}
+
+#[test]
+fn configured_reference_policy_requests_one_advertised_session_operation() {
+    let socket = std::env::temp_dir().join(format!(
+        "sophia-wm-demo-policy-v1-operation-{}-{}",
+        std::process::id(),
+        NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
+    ));
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let hello = decode_wm_v1_client_hello_frame(&read_frame(&mut stream)).unwrap();
+        assert_ne!(
+            hello.capabilities & SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+            0
+        );
+        stream
+            .write_all(
+                &encode_wm_v1_server_welcome_frame(&WmV1ServerWelcome {
+                    selected_revision: SOPHIA_WM_INTERFACE_REVISION,
+                    capabilities: hello.capabilities,
+                    connection_epoch: 9,
+                    max_outputs: 16,
+                    max_bindings: 256,
+                    max_surfaces: 1024,
+                    max_chunk_bytes: 65_520,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let identity = WmV1ProfileIdentity::new(9, 1, [0x3c; WM_V1_PROFILE_DIGEST_BYTES]).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_profile_prepare(WmV1ProfileCommand {
+                    transaction: TransactionId::from_raw(1),
+                    identity,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let _ = decode_wm_v1_profile_prepared(&read_frame(&mut stream)).unwrap();
+        stream
+            .write_all(
+                &encode_wm_v1_profile_activate(WmV1ProfileCommand {
+                    transaction: TransactionId::from_raw(2),
+                    identity,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let _ = decode_wm_v1_profile_active(&read_frame(&mut stream)).unwrap();
+
+        let (configuration_transaction, wire) =
+            decode_wm_v1_policy_configuration_frame(&read_frame(&mut stream)).unwrap();
+        let configuration = decode_wm_v1_policy_configuration(&wire).unwrap();
+        assert_eq!(configuration.actions.len(), 1);
+        assert_eq!(configuration.actions[0].name, "spawn-terminal");
+        assert_eq!(configuration.actions[0].session_operation_slot, Some(1));
+        stream
+            .write_all(
+                &encode_wm_v1_policy_configuration_outcome_frame(
+                    configuration_transaction,
+                    &WmV1PolicyConfigurationOutcome {
+                        connection_epoch: 9,
+                        configuration_generation: 1,
+                        outcome: SOPHIA_WM_OUTCOME_COMMITTED,
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let (operation_transaction, wire) =
+            decode_wm_v1_session_operation_request_frame(&read_frame(&mut stream)).unwrap();
+        let operation = decode_wm_v1_policy_session_operation_request(&wire).unwrap();
+        assert_eq!(operation.connection_epoch, 9);
+        assert_eq!(operation.operation, 77);
+        assert_eq!(operation.target, Some(SurfaceId::new(4, 2)));
+        stream
+            .write_all(
+                &encode_wm_v1_session_operation_outcome_frame(
+                    operation_transaction,
+                    &WmV1SessionOperationOutcome {
+                        connection_epoch: 9,
+                        request_id: operation.request_id,
+                        outcome: SOPHIA_WM_OUTCOME_COMMITTED,
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+    });
+
+    let mut client = PolicyV1Client::connect(&socket, Duration::from_secs(1)).unwrap();
+    client
+        .activate_profile_and_configure_with(
+            vec![PolicyActionRegistration {
+                action: WmActionId::from_raw(0x300),
+                name: "spawn-terminal".to_owned(),
+                session_operation_slot: Some(1),
+            }],
+            WmChromePolicy::default(),
+        )
+        .unwrap();
+    let outcome = client
+        .request_session_operation(77, Some(SurfaceId::new(4, 2)))
+        .unwrap();
+    assert_eq!(
+        outcome.outcome,
+        sophia_protocol::PolicyProjectionOutcome::Committed
+    );
 
     server.join().unwrap();
     std::fs::remove_file(socket).unwrap();

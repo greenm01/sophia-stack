@@ -19,6 +19,13 @@ RMLVO, repeat timing, output policy, namespace profile, external-WM launch
 specification, diagnostic policy, and fallback compositor chrome plus hard
 chrome limits.
 
+A registered session application may set `placement-class=N`, where `N` is a
+nonzero opaque `u64`. For an action-launched application, the session attaches
+that class only to the first newly observed surface. It never derives or sends a
+title, app ID, PID, executable path, namespace, or match expression. The public
+policy client may interpret the class for one admission; clients that do not
+negotiate launch placement receive the exact pre-extension snapshot stream.
+
 `wm.kdl` belongs only to a Sophia-native WM. It owns opaque action behavior,
 bindings, workspace policy, native layout selection, timeout policy, and
 active compositor-chrome preference. It cannot change input admission,

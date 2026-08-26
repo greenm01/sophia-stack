@@ -15,7 +15,7 @@ mod wm_proof;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
 use output::{
-    PreparedOutputProfile, output_topology_from_engine_outputs,
+    LiveOutputAuthorityBootstrap, PreparedOutputProfile, output_topology_from_engine_outputs,
     output_topology_from_authority_at_generation,
     output_topology_from_engine_outputs_at_generation,
     output_topology_from_resolved_at_generation, resolved_output_bounds, wm_output_bounds,
@@ -808,6 +808,7 @@ impl PersistentXtermSessionConfig {
                     id: app.name.clone(),
                     executable: app.executable.clone(),
                     arguments: app.arguments.clone(),
+                    placement_classification: app.placement_classification,
                 },
             );
             match app.id {

@@ -81,6 +81,17 @@ pub struct PolicySceneSnapshot {
     pub session_operations: Vec<PolicySessionOperation>,
 }
 
+/// One opaque, trusted placement classification attached to a surface created
+/// by a registered session launch.
+///
+/// The session does not interpret the value and no identifying client metadata
+/// crosses with it. Policy may consume it once while admitting the surface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicySurfaceClassification {
+    pub surface: SurfaceId,
+    pub classification: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyConfiguration {
     pub connection_epoch: u64,

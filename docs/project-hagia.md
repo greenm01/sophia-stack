@@ -222,6 +222,14 @@ mappings remain superior. Before a normal `sophia_wm_v1` session starts, the
 coordinator also rejects any shortcut whose required session capability is not
 available. Hagia receives only the resulting opaque operation slots.
 
+A trusted registry entry may additionally carry a nonzero opaque placement
+class. The registered-launch admission queue attaches it only to the first
+surface observed for that launch. Capability bit 10 carries the pair through
+uncounted snapshot extension kind `0xFF00`; stale responses and supervised
+reconnect retain it, while a committed Manage projection consumes it. Hagia's
+retained class vocabulary maps 1..9 to view slots without changing the active
+view. No metadata matcher or executable identity crosses the policy socket.
+
 The coordinator also prepares the input fragment as a typed startup candidate.
 Keyboard RMLVO, repeat timing, and initial Caps Lock and Num Lock state overlay
 Sophia's effective input configuration, while explicit CLI RMLVO values remain

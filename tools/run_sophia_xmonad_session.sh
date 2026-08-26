@@ -605,16 +605,23 @@ else
 fi
 if [[ "$SESSION_PROFILE" == xmonad ]]; then
     core_config="${SOPHIA_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia-xmonad/core.kdl}"
+    desktop_profile="${SOPHIA_DESKTOP_PROFILE:-$ROOT_DIR/tools/config/sophia-xmonad/desktop.kdl}"
     [[ "$core_config" == /* && -f "$core_config" ]] || {
         echo "Sophia's xmonad core configuration must be an absolute existing path: $core_config" >&2
         exit 1
     }
+    [[ "$desktop_profile" == /* && -f "$desktop_profile" ]] || {
+        echo "Sophia's xmonad desktop profile must be an absolute existing path: $desktop_profile" >&2
+        exit 1
+    }
     session_args+=(
         "--config=$core_config"
+        "--desktop-profile=$desktop_profile"
         --session-action-app=terminal=terminal
         --wm-process="$SOPHIA_WM_BRIDGE_BIN"
+        --wm-interface=sophia_wm_v1
+        --wm-process-arg=serve-policy
         --wm-process-arg="--wm=$xmonad_bin"
-        --wm-process-arg=--profile=xmonad
         --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
     )
     if [[ -n "$xmobar_bin" ]]; then

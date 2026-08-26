@@ -49,6 +49,41 @@ fn resolve_public_policy_affected_outputs(
     retained
 }
 
+fn public_launch_classification_snapshot(
+    classifications: &BTreeMap<SurfaceId, u64>,
+    scene: &sophia_protocol::PolicySceneSnapshot,
+) -> Vec<sophia_protocol::PolicySurfaceClassification> {
+    let live_surfaces = scene
+        .surfaces
+        .iter()
+        .map(|surface| surface.surface)
+        .collect::<BTreeSet<_>>();
+    classifications
+        .iter()
+        .filter(|(surface, _)| live_surfaces.contains(surface))
+        .map(|(surface, classification)| sophia_protocol::PolicySurfaceClassification {
+            surface: *surface,
+            classification: *classification,
+        })
+        .collect()
+}
+
+fn consume_public_launch_classification(
+    classifications: &mut BTreeMap<SurfaceId, u64>,
+    source: Option<LiveWmProposalSource>,
+    outcome: sophia_protocol::PolicyProjectionOutcome,
+) -> Option<(SurfaceId, u64)> {
+    if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
+        return None;
+    }
+    let Some(LiveWmProposalSource::Manage(surface)) = source else {
+        return None;
+    };
+    classifications
+        .remove(&surface)
+        .map(|classification| (surface, classification))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LivePolicySettlementIdentity {
     connection_epoch: u64,
@@ -122,6 +157,9 @@ struct LivePublicPolicyState {
     output_service: Option<sophia_runtime::OutputTransportService>,
     output_authority: Option<sophia_cli::live_output_authority::LiveOutputAuthorityOwner>,
     output_effect_dispatched: bool,
+    /// Private desktop-profile transaction. It shares the physical authority
+    /// reducer with client proposals but has no protocol peer awaiting an outcome.
+    startup_output_transaction: Option<TransactionId>,
     output_cancel_requested: Option<(TransactionId, String)>,
     output_pending_connection_epoch: Option<u64>,
     next_output_snapshot_transaction: u64,
@@ -148,6 +186,10 @@ struct LivePublicPolicyState {
     shortcut_profile_slot:
         sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopShortcutCandidate>,
     actions: Vec<sophia_protocol::PolicyActionRegistration>,
+    /// One-shot trusted launch classes retained until the surface's manage
+    /// projection commits. Reconnects replay them; rejected/stale cycles do not
+    /// consume them.
+    launch_classifications: BTreeMap<SurfaceId, u64>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
@@ -579,7 +621,7 @@ impl LivePublicPolicyState {
                         .as_mut()
                         .ok_or("output service connected without an authority owner")?;
                     if connection_epoch > authority.connection_epoch() {
-                        if self.output_effect_dispatched {
+                        if authority.active_transaction().is_some() {
                             self.output_pending_connection_epoch = Some(
                                 self.output_pending_connection_epoch
                                     .map_or(connection_epoch, |pending| {
@@ -766,17 +808,25 @@ impl LivePublicPolicyState {
         &mut self,
         settlement: sophia_cli::live_output_authority::LiveOutputAuthoritySettlement,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let startup = self.startup_output_transaction == Some(settlement.transaction);
         let cancelled = self
             .output_cancel_requested
             .as_ref()
             .is_some_and(|(transaction, _)| *transaction == settlement.transaction);
-        if cancelled {
-            let reason = self
-                .output_cancel_requested
-                .as_ref()
-                .expect("matching output cancellation remains recorded")
-                .1
-                .clone();
+        let local_reason = cancelled
+            .then(|| {
+                self.output_cancel_requested
+                    .as_ref()
+                    .expect("matching output cancellation remains recorded")
+                    .1
+                    .clone()
+            })
+            .or_else(|| startup.then(|| "desktop profile startup".to_owned()));
+        let publish_committed = (settlement.outcome.kind
+            == sophia_protocol::OutputV1OutcomeKind::Committed)
+            .then(|| settlement.published_snapshot.clone())
+            .flatten();
+        if let Some(reason) = local_reason {
             if let Some(connection_epoch) = self.output_pending_connection_epoch {
                 let mut replacement = self
                     .output_authority
@@ -786,21 +836,21 @@ impl LivePublicPolicyState {
                 replacement.replace_connection_epoch(connection_epoch)?;
                 self.output_authority = Some(replacement);
             }
-            self.output_cancel_requested = None;
+            if cancelled {
+                self.output_cancel_requested = None;
+            }
+            if startup {
+                self.startup_output_transaction = None;
+            }
             self.output_pending_connection_epoch = None;
             println!(
-                "sophia_live_output_authority schema=2 status=settled_locally transaction={} outcome={:?} topology_epoch={} reason={reason:?} preserved_topology=true",
+                "sophia_live_output_authority schema=3 status=settled_locally transaction={} outcome={:?} topology_epoch={} reason={reason:?} preserved_topology={}",
                 settlement.transaction.raw(),
                 settlement.outcome.kind,
                 settlement.outcome.topology_epoch,
+                publish_committed.is_none(),
             );
-            return Ok(());
-        }
-        let publish_committed = (settlement.outcome.kind
-            == sophia_protocol::OutputV1OutcomeKind::Committed)
-            .then(|| settlement.published_snapshot.clone())
-            .flatten();
-        if let Err(error) = self.send_output_settlement(settlement.clone()) {
+        } else if let Err(error) = self.send_output_settlement(settlement.clone()) {
             // The reducer is already terminal. In particular, a committed
             // topology has crossed physical first presentation and cannot be
             // made private again because its peer vanished between owner turns.
@@ -842,6 +892,18 @@ impl LivePublicPolicyState {
                     .map_or(connection_epoch, |pending| pending.max(connection_epoch)),
             );
         }
+        let startup_active = self.startup_output_transaction.is_some_and(|startup| {
+            self.output_authority
+                .as_ref()
+                .and_then(|authority| authority.active_transaction())
+                == Some(startup)
+        });
+        if startup_active {
+            tracing::warn!(
+                "sophia_live_output_authority schema=3 status=startup_peer_loss_ignored reason={reason:?} preserved_candidate=true"
+            );
+            return Ok(());
+        }
         if self.output_effect_dispatched {
             let transaction = self
                 .output_authority
@@ -873,7 +935,10 @@ impl LivePublicPolicyState {
     /// `publish_output_authority_snapshot` refuses, so callers holding one ask
     /// here rather than discovering it as a session-ending error.
     fn output_candidate_active(&self) -> bool {
-        self.output_effect_dispatched || self.output_cancel_requested.is_some()
+        self.output_authority
+            .as_ref()
+            .is_some_and(|authority| authority.active_transaction().is_some())
+            || self.output_cancel_requested.is_some()
     }
 
     fn output_authority_topology_epoch(&self) -> Option<u64> {
@@ -933,7 +998,7 @@ impl LivePublicPolicyState {
         let Some(authority) = self.output_authority.as_ref() else {
             return Ok(false);
         };
-        if self.output_effect_dispatched || self.output_cancel_requested.is_some() {
+        if self.output_candidate_active() {
             return Err("hardware output publication raced an active policy candidate".into());
         }
         let mut replacement = authority.clone();
@@ -1159,7 +1224,11 @@ impl LivePublicPolicyState {
         let Some(authority) = self.output_authority.as_mut() else {
             return Ok(());
         };
-        if authority.active_transaction().is_some() {
+        let active = authority.active_transaction();
+        if active.is_some() && active == self.startup_output_transaction {
+            return Ok(());
+        }
+        if active.is_some() {
             authority.fail(sophia_engine::OutputTopologyTransactionFailure::Stale)?;
             let _ = authority.settle_terminal()?;
             self.output_effect_dispatched = false;
@@ -1269,6 +1338,17 @@ impl LivePublicPolicyState {
     /// never coming and died on its socket deadline, and the resulting restarts
     /// exhausted the supervisor budget.
     fn settle_public_projection(&mut self, outcome: sophia_protocol::PolicyProjectionOutcome) {
+        if let Some((surface, _)) = consume_public_launch_classification(
+            &mut self.launch_classifications,
+            self.in_flight_source,
+            outcome,
+        )
+        {
+            println!(
+                "sophia_session_launch_placement schema=1 status=consumed surface={} metadata=none",
+                surface.index(),
+            );
+        }
         self.cycle_submitted = false;
         self.in_flight_request = None;
         self.in_flight_source = None;
@@ -1792,10 +1872,7 @@ impl LiveWmSession {
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
         started_launch: StartedPublicPolicyLaunch,
-        output_bootstrap: Option<(
-            sophia_protocol::OutputAuthoritySnapshot,
-            Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
-        )>,
+        output_bootstrap: Option<LiveOutputAuthorityBootstrap>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let StartedPublicPolicyLaunch {
             profile_fragments,
@@ -1817,23 +1894,59 @@ impl LiveWmSession {
             profile_key,
         } = started_launch;
 
-        let (output_service, output_authority, output_capabilities) =
+        let (output_service, output_authority, output_capabilities, startup_output_transaction) =
             match (output_transport, output_bootstrap) {
-                (Some(transport), Some((snapshot, capabilities))) => {
-                    let authority =
+                (
+                    Some(transport),
+                    Some(LiveOutputAuthorityBootstrap {
+                        snapshot,
+                        capabilities,
+                        startup_candidate,
+                    }),
+                ) => {
+                    let mut authority =
                         sophia_cli::live_output_authority::LiveOutputAuthorityOwner::new(
                             1,
                             snapshot.clone(),
                         )?;
+                    let startup_transaction = startup_candidate
+                        .map(|candidate| -> Result<_, Box<dyn std::error::Error>> {
+                            let transaction = TransactionId::from_raw(u64::MAX);
+                            let admission = authority.admit(
+                                transaction,
+                                &sophia_protocol::OutputV1Proposal {
+                                    connection_epoch: 1,
+                                    candidate,
+                                },
+                                &capabilities,
+                            )?;
+                            if !matches!(
+                                admission,
+                                sophia_cli::live_output_authority::LiveOutputAuthorityAdmission::Prepared
+                            ) {
+                                return Err("startup output candidate did not prepare".into());
+                            }
+                            tracing::info!(
+                                "sophia_live_output_authority schema=3 status=startup_effect_pending transaction={} preserved_topology=true",
+                                transaction.raw(),
+                            );
+                            Ok(transaction)
+                        })
+                        .transpose()?;
                     let service = sophia_runtime::OutputTransportService::spawn(
                         transport,
                         1,
                         TransactionId::from_raw(1),
                         snapshot,
                     )?;
-                    (Some(service), Some(authority), capabilities)
+                    (
+                        Some(service),
+                        Some(authority),
+                        capabilities,
+                        startup_transaction,
+                    )
                 }
-                (None, None) => (None, None, Vec::new()),
+                (None, None) => (None, None, Vec::new(), None),
                 (Some(_), None) => {
                     return Err("native output role has no capability snapshot".into());
                 }
@@ -1879,6 +1992,7 @@ impl LiveWmSession {
             output_service,
             output_authority,
             output_effect_dispatched: false,
+            startup_output_transaction,
             output_cancel_requested: None,
             output_pending_connection_epoch: None,
             next_output_snapshot_transaction: 2,
@@ -1899,6 +2013,7 @@ impl LiveWmSession {
             prepared: None,
             shortcut_profile_slot,
             actions: Vec::new(),
+            launch_classifications: BTreeMap::new(),
             outputs: outputs.to_vec(),
             output_bounds,
             output_generations,
@@ -2262,6 +2377,8 @@ impl LiveWmSession {
                 .issue_request_with_cause(affected_outputs, cause.cause)?;
             let snapshot_transaction = public.mint_transaction()?;
             let request_transaction = public.mint_transaction()?;
+            let classifications =
+                public_launch_classification_snapshot(&public.launch_classifications, &scene);
             public
                 .worker
                 .as_ref()
@@ -2271,6 +2388,7 @@ impl LiveWmSession {
                     request_transaction,
                     scene,
                     actions: public.actions.clone(),
+                    classifications,
                     request: request.clone(),
                 })
                 .map_err(|_| "public WM cycle queue is busy")?;

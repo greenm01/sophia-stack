@@ -6,11 +6,13 @@
 // the supervisor budget and killed the session.
 
 use super::*;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::commands::live_session::{
     LivePublicPolicyCause, LiveWmProposalSource, LiveWmRequestAdmission,
-    enqueue_public_policy_cause, materialize_public_dirty_cause, public_policy_rearm_after_outcome,
+    consume_public_launch_classification, enqueue_public_policy_cause,
+    materialize_public_dirty_cause, public_launch_classification_snapshot,
+    public_policy_rearm_after_outcome,
 };
 
 fn relayout_cause(outputs: &[u64]) -> LivePublicPolicyCause {
@@ -23,6 +25,99 @@ fn relayout_cause(outputs: &[u64]) -> LivePublicPolicyCause {
 
 fn output_set(outputs: &[u64]) -> BTreeSet<OutputId> {
     outputs.iter().copied().map(OutputId::from_raw).collect()
+}
+
+#[test]
+fn launch_classification_survives_retry_and_is_consumed_only_by_manage_commit() {
+    let surface = SurfaceId::new(7, 1);
+    let mut classifications = BTreeMap::from([(surface, 2)]);
+    let source = Some(LiveWmProposalSource::Manage(surface));
+    for outcome in [
+        sophia_protocol::PolicyProjectionOutcome::RejectedStale,
+        sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
+        sophia_protocol::PolicyProjectionOutcome::TimedOut,
+        sophia_protocol::PolicyProjectionOutcome::Disconnected,
+    ] {
+        assert_eq!(
+            consume_public_launch_classification(&mut classifications, source, outcome),
+            None
+        );
+        assert_eq!(classifications.get(&surface), Some(&2));
+    }
+    assert_eq!(
+        consume_public_launch_classification(
+            &mut classifications,
+            Some(LiveWmProposalSource::Relayout),
+            sophia_protocol::PolicyProjectionOutcome::Committed,
+        ),
+        None
+    );
+    assert_eq!(classifications.get(&surface), Some(&2));
+    assert_eq!(
+        consume_public_launch_classification(
+            &mut classifications,
+            source,
+            sophia_protocol::PolicyProjectionOutcome::Committed,
+        ),
+        Some((surface, 2))
+    );
+    assert!(classifications.is_empty());
+}
+
+#[test]
+fn launch_classification_snapshot_excludes_withdrawn_surfaces() {
+    let live = SurfaceId::new(7, 1);
+    let withdrawn = SurfaceId::new(8, 1);
+    let scene = sophia_protocol::PolicySceneSnapshot {
+        generation: 1,
+        active_output: OutputId::from_raw(1),
+        outputs: vec![sophia_protocol::PolicyOutputSnapshot {
+            output: OutputId::from_raw(1),
+            generation: 1,
+            focus: None,
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            work_area: Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+        }],
+        surfaces: vec![sophia_protocol::PolicySurfaceSnapshot {
+            surface: live,
+            generation: 1,
+            current_output: None,
+            kind: sophia_protocol::PolicySurfaceKind::Toplevel,
+            capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+            constraints: sophia_protocol::SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            exact_size: None,
+            requested_state: sophia_protocol::PolicyPresentationState::default(),
+            current_state: sophia_protocol::PolicyPresentationState::default(),
+            transient_owner: None,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 50,
+                height: 50,
+            },
+        }],
+        session_operations: Vec::new(),
+    };
+    assert_eq!(
+        public_launch_classification_snapshot(&BTreeMap::from([(live, 2), (withdrawn, 3)]), &scene,),
+        vec![sophia_protocol::PolicySurfaceClassification {
+            surface: live,
+            classification: 2,
+        }]
+    );
 }
 
 #[test]

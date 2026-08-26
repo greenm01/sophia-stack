@@ -6,11 +6,12 @@ use crate::{
     PolicyOutputProjection, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionIndicator, PolicyProjectionOutcome, PolicyProjectionOutputStatus,
     PolicyProjectionProposal, PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation,
-    PolicySessionOperationOutcome, PolicySessionOperationRequest, PolicySurfaceKind,
-    PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
-    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size,
-    SurfaceConstraints, SurfaceId, TransactionId, WmActionId, WmChromePolicy, WmFocusRingStyle,
-    WmFrameStyle, WmRgb8, valid_policy_interaction_payload,
+    PolicySessionOperationOutcome, PolicySessionOperationRequest, PolicySurfaceClassification,
+    PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot, PolicyTransform, Rect,
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT,
+    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, Size, SurfaceConstraints, SurfaceId, TransactionId,
+    WmActionId, WmChromePolicy, WmFocusRingStyle, WmFrameStyle, WmRgb8,
+    valid_policy_interaction_payload,
 };
 
 use super::{
@@ -37,6 +38,11 @@ use super::{
 };
 
 const OUTPUT_ID_WIRE_SIZE: usize = size_of::<u64>();
+
+/// First capability-gated snapshot extension. It deliberately lives outside
+/// the generated ordinary-record range; see the forward-compatibility rule.
+pub const SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND: u16 = 0xFF00;
+const SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_SIZE: usize = 16;
 
 pub const POLICY_SURFACE_CAPABILITY_MOVABLE: u16 = 1 << 0;
 pub const POLICY_SURFACE_CAPABILITY_RESIZABLE: u16 = 1 << 1;
@@ -67,6 +73,66 @@ pub struct WmV1SnapshotTransfer {
 pub struct WmV1DecodedSnapshot {
     pub scene: PolicySceneSnapshot,
     pub actions: Vec<PolicyActionRegistration>,
+    pub classifications: Vec<PolicySurfaceClassification>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmV1SnapshotSurfaceClassificationRecord {
+    pub surface_index: u32,
+    pub surface_generation: u32,
+    pub classification: u64,
+}
+
+pub fn encode_wm_v1_snapshot_surface_classification_records(
+    records: &[WmV1SnapshotSurfaceClassificationRecord],
+) -> Result<Vec<u8>, IpcCodecError> {
+    if records.len() > crate::POLICY_MAX_SURFACES {
+        return Err(IpcCodecError::CountTooLarge {
+            count: records.len(),
+            max: crate::POLICY_MAX_SURFACES,
+        });
+    }
+    let mut data = Vec::with_capacity(records.len() * SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_SIZE);
+    for record in records {
+        data.extend_from_slice(&record.surface_index.to_le_bytes());
+        data.extend_from_slice(&record.surface_generation.to_le_bytes());
+        data.extend_from_slice(&record.classification.to_le_bytes());
+    }
+    Ok(data)
+}
+
+pub fn decode_wm_v1_snapshot_surface_classification_records(
+    data: &[u8],
+    item_count: u32,
+) -> Result<Vec<WmV1SnapshotSurfaceClassificationRecord>, IpcCodecError> {
+    let count = item_count as usize;
+    if count > crate::POLICY_MAX_SURFACES {
+        return Err(IpcCodecError::CountTooLarge {
+            count,
+            max: crate::POLICY_MAX_SURFACES,
+        });
+    }
+    let expected = count
+        .checked_mul(SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_SIZE)
+        .ok_or(IpcCodecError::CountTooLarge {
+            count,
+            max: crate::POLICY_MAX_SURFACES,
+        })?;
+    if data.len() < expected {
+        return Err(IpcCodecError::Truncated);
+    }
+    if data.len() > expected {
+        return Err(IpcCodecError::TrailingBytes(data.len() - expected));
+    }
+    let mut records = Vec::with_capacity(count);
+    for record in data.chunks_exact(SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_SIZE) {
+        records.push(WmV1SnapshotSurfaceClassificationRecord {
+            surface_index: u32::from_le_bytes(record[0..4].try_into().expect("fixed record")),
+            surface_generation: u32::from_le_bytes(record[4..8].try_into().expect("fixed record")),
+            classification: u64::from_le_bytes(record[8..16].try_into().expect("fixed record")),
+        });
+    }
+    Ok(records)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -633,6 +699,7 @@ pub fn encode_wm_v1_policy_snapshot(
     connection_epoch: u64,
     scene: &PolicySceneSnapshot,
     actions: &[PolicyActionRegistration],
+    classifications: &[PolicySurfaceClassification],
     selected_capabilities: u64,
 ) -> Result<WmV1SnapshotTransfer, IpcCodecError> {
     if !transaction.is_valid() {
@@ -706,6 +773,36 @@ pub fn encode_wm_v1_policy_snapshot(
             })
             .collect::<Vec<_>>()
     };
+    let classifications = if selected_capabilities & SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT == 0 {
+        Vec::new()
+    } else {
+        let live_surfaces = scene
+            .surfaces
+            .iter()
+            .map(|surface| surface.surface)
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut seen = std::collections::BTreeSet::new();
+        classifications
+            .iter()
+            .map(|classification| {
+                if !classification.surface.is_valid()
+                    || classification.classification == 0
+                    || !live_surfaces.contains(&classification.surface)
+                    || !seen.insert(classification.surface)
+                {
+                    return Err(invalid(
+                        "surface_classification",
+                        classification.surface.index(),
+                    ));
+                }
+                Ok(WmV1SnapshotSurfaceClassificationRecord {
+                    surface_index: classification.surface.index(),
+                    surface_generation: classification.surface.generation(),
+                    classification: classification.classification,
+                })
+            })
+            .collect::<Result<Vec<_>, IpcCodecError>>()?
+    };
     let mut chunks = Vec::new();
     push_snapshot_chunk(
         &mut chunks,
@@ -735,10 +832,20 @@ pub fn encode_wm_v1_policy_snapshot(
         session_operations.len(),
         encode_wm_v1_snapshot_session_operation_records(&session_operations)?,
     )?;
+    // The frozen count describes only ordinary record chunks. Negotiated
+    // extensions append after them with dense ordinals but do not spend any
+    // SnapshotBegin or SnapshotEnd field.
     let chunk_count = u16::try_from(chunks.len()).map_err(|_| IpcCodecError::CountTooLarge {
         count: chunks.len(),
         max: u16::MAX as usize,
     })?;
+    push_snapshot_chunk(
+        &mut chunks,
+        connection_epoch,
+        SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND,
+        classifications.len(),
+        encode_wm_v1_snapshot_surface_classification_records(&classifications)?,
+    )?;
     let begin = WmV1SnapshotBegin {
         connection_epoch,
         scene_generation: scene.generation,
@@ -774,7 +881,7 @@ pub fn decode_wm_v1_policy_snapshot(
     if transfer.begin.connection_epoch != transfer.end.connection_epoch
         || transfer.begin.scene_generation != transfer.end.scene_generation
         || transfer.begin.chunk_count != transfer.end.chunk_count
-        || usize::from(transfer.begin.chunk_count) != transfer.chunks.len()
+        || usize::from(transfer.begin.chunk_count) > transfer.chunks.len()
         || transfer.begin.active_output == 0
     {
         return Err(invalid("snapshot_transfer", 0));
@@ -783,29 +890,34 @@ pub fn decode_wm_v1_policy_snapshot(
     let mut surfaces = Vec::new();
     let mut actions = Vec::new();
     let mut session_operations = Vec::new();
+    let mut classifications = Vec::new();
+    let ordinary_chunk_count = usize::from(transfer.begin.chunk_count);
     for (ordinal, chunk) in transfer.chunks.iter().enumerate() {
         if chunk.connection_epoch != transfer.begin.connection_epoch
             || usize::from(chunk.ordinal) != ordinal
         {
             return Err(invalid("snapshot_chunk_identity", chunk.ordinal as u32));
         }
-        match chunk.record_kind {
-            SNAPSHOT_OUTPUT_RECORD_KIND => outputs.extend(decode_wm_v1_snapshot_output_records(
-                &chunk.data,
-                chunk.item_count,
-            )?),
-            SNAPSHOT_SURFACE_RECORD_KIND => surfaces.extend(decode_wm_v1_snapshot_surface_records(
-                &chunk.data,
-                chunk.item_count,
-            )?),
-            SNAPSHOT_ACTION_RECORD_KIND => actions.extend(decode_wm_v1_snapshot_action_records(
-                &chunk.data,
-                chunk.item_count,
-            )?),
-            SNAPSHOT_SESSION_OPERATION_RECORD_KIND => session_operations.extend(
+        match (ordinal < ordinary_chunk_count, chunk.record_kind) {
+            (true, SNAPSHOT_OUTPUT_RECORD_KIND) => outputs.extend(
+                decode_wm_v1_snapshot_output_records(&chunk.data, chunk.item_count)?,
+            ),
+            (true, SNAPSHOT_SURFACE_RECORD_KIND) => surfaces.extend(
+                decode_wm_v1_snapshot_surface_records(&chunk.data, chunk.item_count)?,
+            ),
+            (true, SNAPSHOT_ACTION_RECORD_KIND) => actions.extend(
+                decode_wm_v1_snapshot_action_records(&chunk.data, chunk.item_count)?,
+            ),
+            (true, SNAPSHOT_SESSION_OPERATION_RECORD_KIND) => session_operations.extend(
                 decode_wm_v1_snapshot_session_operation_records(&chunk.data, chunk.item_count)?,
             ),
-            other => return Err(invalid("snapshot_record_kind", u32::from(other))),
+            (false, SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND) => {
+                classifications.extend(decode_wm_v1_snapshot_surface_classification_records(
+                    &chunk.data,
+                    chunk.item_count,
+                )?)
+            }
+            (_, other) => return Err(invalid("snapshot_record_kind", u32::from(other))),
         }
     }
     require_count(outputs.len(), transfer.begin.output_count as usize)?;
@@ -815,59 +927,83 @@ pub fn decode_wm_v1_policy_snapshot(
         session_operations.len(),
         transfer.begin.session_operation_count as usize,
     )?;
+    let scene = PolicySceneSnapshot {
+        generation: transfer.begin.scene_generation,
+        active_output: OutputId::from_raw(transfer.begin.active_output),
+        outputs: outputs
+            .into_iter()
+            .map(|record| {
+                Ok(PolicyOutputSnapshot {
+                    output: OutputId::from_raw(record.output),
+                    generation: record.generation,
+                    focus: decode_optional_surface(
+                        record.focus_index,
+                        record.focus_generation,
+                        "output_focus",
+                    )?,
+                    bounds: Rect {
+                        x: record.x,
+                        y: record.y,
+                        width: record.width,
+                        height: record.height,
+                    },
+                    work_area: Rect {
+                        x: record.work_x,
+                        y: record.work_y,
+                        width: record.work_width,
+                        height: record.work_height,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
+        surfaces: surfaces
+            .into_iter()
+            .map(decode_surface_record)
+            .collect::<Result<Vec<_>, _>>()?,
+        session_operations: session_operations
+            .into_iter()
+            .map(|record| {
+                if record.operation == 0
+                    || record.slot == 0
+                    || record.target_bits & !POLICY_SESSION_OPERATION_SURFACE_TARGET != 0
+                {
+                    return Err(invalid("session_operation", record.target_bits.into()));
+                }
+                Ok(PolicySessionOperation {
+                    token: record.operation,
+                    slot: record.slot,
+                    permits_surface_target: record.target_bits
+                        & POLICY_SESSION_OPERATION_SURFACE_TARGET
+                        != 0,
+                })
+            })
+            .collect::<Result<Vec<_>, IpcCodecError>>()?,
+    };
+    let live_surfaces = scene
+        .surfaces
+        .iter()
+        .map(|surface| surface.surface)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut seen_classifications = std::collections::BTreeSet::new();
+    let classifications = classifications
+        .into_iter()
+        .map(|record| {
+            let surface = SurfaceId::new(record.surface_index, record.surface_generation);
+            if !surface.is_valid()
+                || record.classification == 0
+                || !live_surfaces.contains(&surface)
+                || !seen_classifications.insert(surface)
+            {
+                return Err(invalid("surface_classification", record.surface_index));
+            }
+            Ok(PolicySurfaceClassification {
+                surface,
+                classification: record.classification,
+            })
+        })
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
     Ok(WmV1DecodedSnapshot {
-        scene: PolicySceneSnapshot {
-            generation: transfer.begin.scene_generation,
-            active_output: OutputId::from_raw(transfer.begin.active_output),
-            outputs: outputs
-                .into_iter()
-                .map(|record| {
-                    Ok(PolicyOutputSnapshot {
-                        output: OutputId::from_raw(record.output),
-                        generation: record.generation,
-                        focus: decode_optional_surface(
-                            record.focus_index,
-                            record.focus_generation,
-                            "output_focus",
-                        )?,
-                        bounds: Rect {
-                            x: record.x,
-                            y: record.y,
-                            width: record.width,
-                            height: record.height,
-                        },
-                        work_area: Rect {
-                            x: record.work_x,
-                            y: record.work_y,
-                            width: record.work_width,
-                            height: record.work_height,
-                        },
-                    })
-                })
-                .collect::<Result<Vec<_>, IpcCodecError>>()?,
-            surfaces: surfaces
-                .into_iter()
-                .map(decode_surface_record)
-                .collect::<Result<Vec<_>, _>>()?,
-            session_operations: session_operations
-                .into_iter()
-                .map(|record| {
-                    if record.operation == 0
-                        || record.slot == 0
-                        || record.target_bits & !POLICY_SESSION_OPERATION_SURFACE_TARGET != 0
-                    {
-                        return Err(invalid("session_operation", record.target_bits.into()));
-                    }
-                    Ok(PolicySessionOperation {
-                        token: record.operation,
-                        slot: record.slot,
-                        permits_surface_target: record.target_bits
-                            & POLICY_SESSION_OPERATION_SURFACE_TARGET
-                            != 0,
-                    })
-                })
-                .collect::<Result<Vec<_>, IpcCodecError>>()?,
-        },
+        scene,
         actions: actions
             .into_iter()
             .map(|record| {
@@ -879,6 +1015,7 @@ pub fn decode_wm_v1_policy_snapshot(
                 })
             })
             .collect::<Result<Vec<_>, IpcCodecError>>()?,
+        classifications,
     })
 }
 

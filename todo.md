@@ -251,12 +251,15 @@ promotion gate.
    health and teardown. The first attempt on `fd44d748` was a correct session
    refused by a totals check that no run could satisfy; see the research log.
    Reservations are deliberately still absent.
-   The authoritative retained-behavior ledger still has 28 rows: 3 complete,
-   14 partial, and 11 open.
-7. Only after the retained ledger closes, run the complete cross-client
-   reconnect/restart corpus, evaluate experimental interface revision 3 for
-   stability, migrate the xmonad recovery profile through the public projection
-   adapter, and remove API v7 and Engine-owned workspace policy.
+   The authoritative retained-behavior ledger still has 28 classified rows,
+   but the freeze profile is now explicit: 20 complete, 1 partial, 0 open, and
+   7 excluded with written product rationales. The checked-in Hagia
+   daily-driver profile, not all 137 historical Triad bindings, defines the
+   retained surface.
+7. The complete cross-client reconnect/restart corpus, public xmonad projection
+   migration, and digest-pinned revision-3 client candidate now pass. After the
+   sole remaining physical output row closes, evaluate revision 3 for stability
+   and remove API v7 plus Engine-owned workspace policy.
 
 Cross-drawable `CopyArea` replay, alternative upscale kernels, linear-light
 fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
@@ -291,9 +294,12 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    before the candidate is prepared, commits it in the same step its pixels
    present, and retains it across disconnect; the WM session mirrors the
    committed bands and reprojects only when they change.
-   The depth is a configuration decision: `shell { panel 28; }` in the compiled
-   profile, validated against the wire's own reservation maximum and refused
-   outright when no shell is enabled. An earlier entry here named an
+   The depth remains a configuration decision, validated against the wire's
+   own reservation maximum and refused outright when no shell is enabled. The
+   ordinary compiled profile no longer asks the window switcher to reserve a
+   panel: a transient switcher stream is not a persistent panel. The signed
+   archive remains the regression for an explicitly configured reservation.
+   An earlier entry here named an
    environment variable instead; that variable existed only in the offline
    conformance host, so no session could set it and no session could raise a
    claim. The profile key is what makes the coordinator reachable.
@@ -312,10 +318,16 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    at all, so the reduction is evidenced by the shell's own
    `reservation_reduced` records rather than by a work-area line the fixture
    had briefly invented.
-2. **Close the remaining retained-ledger rows.** The switcher moved
-   Recent-window switcher to partial, not complete: recency policy, scope,
-   filtering, and debounce are still open, and `docs/triad-port-ledger.md` in
-   the Hagia checkout stays authoritative for what the freeze waits on.
+2. **Close the one partial retained-ledger row.** The checked-in Hagia
+   command and pointer surface is closed by executable catalog coverage plus
+   its deterministic and physical gates. Trusted one-shot launch placement and
+   frame-fed atomic output activation are implemented and offline-proven. Finish
+   the shared restart corpus is complete. Archive an explicitly authorized
+   physical output apply/rollback run.
+   Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
+   reservation archive `0007` already close their retained slices. MRU policy,
+   filters, previews, icons, persistent panels, Janet, broad portals, watched
+   reload, and other excluded behavior remain explicit post-freeze work.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -542,9 +554,10 @@ future compatibility target, not a prerequisite.
   transport and canonical reducer, with no silent API-v7 fallback.
 - [x] Promote that profile to the installed native default while retaining
   Kitty, xmonad, and the previous immutable release as recovery routes.
-- [ ] Remove v7 and Engine-owned workspace state after the complete Hagia
-  restart and last-layout gates. Migrate xmonad later through the compatibility
-  adapter.
+- [ ] Remove v7 and Engine-owned workspace state after the retained physical
+  output apply/rollback gate. Xmonad now runs through the public compatibility
+  adapter and the complete restart/last-layout corpus passes; removal remains
+  deliberately blocked on the final retained-ledger row.
 - [x] Preserve registered physical actions and session operations as opaque,
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
@@ -881,10 +894,17 @@ is excluded; retained product behavior is not.
   Both the precondition and head composition read the currently scanned-out
   framebuffer through one reader, `read_native_current_framebuffer`, so they cannot
   disagree about what "currently displayed" means.
-  What remains for a real apply is the renderer half: resizing the frame target on a
-  configured mode change and recomposing before activation runs. The three-slot
-  recycling pool in Milestone 14 stays gated on its own measurement and is not a
-  prerequisite here.
+  The renderer half is now wired into normal session startup. An accepted desktop
+  output plan is projected into the resource-free authority candidate, retained as
+  a private startup transaction, and dispatched only after the visual runtime can
+  resize its frame targets and compose the candidate frame from committed scene
+  state. It then follows the ordinary atomic apply/rollback, first-presentation,
+  and publication sequence; no output-policy peer owns or settles this private
+  candidate, and peer reconnect cannot cancel it. The projection and complete
+  `sophia-cli` all-features suite pass. What remains is the explicitly authorized
+  physical apply plus injected rollback proof on the reference DRM hardware. The
+  three-slot recycling pool in Milestone 14 stays gated on its own measurement and
+  is not a prerequisite here.
   Rollback heads are resolved beside apply heads, before anything is submitted,
   from the topology still on screen. Sourcing them afterwards would source them from
   a desktop that is already wrong. An output that cannot be restored fails the whole
@@ -1150,21 +1170,24 @@ Detailed physical-run diagnoses remain in
   generation-advancing publications, Hagia policy commitments, later
   presentations, released input quarantine, and clean topology and session
   teardown. That closes the combined item.
-- [ ] Run one black-box conformance corpus against the Rust reference WM,
+- [x] Run one black-box conformance corpus against the Rust reference WM,
   Hagia, the X11 bridge, and the independent C client. This is draft boundary
   evidence while the Triad port is incomplete; it does not publish or freeze
   `sophia_wm_v1`.
   The authenticated behavior host now runs the Rust reference, independent C,
-  and Hagia clients through the same sequential eleven-scenario corpus:
+  immutable revision-3 C snapshot, Hagia, and configured public xmonad bridge
+  through the same sequential eleven-scenario corpus:
   constrained single output, two-output partition, output loss/migration, and
   generational return, followed by an ordered focus action, timeout discard,
-  and successful post-timeout recovery. Hagia retains its private adapter
-  across the sequence. Stale-scene and invalid-candidate outcomes are also
-  discarded before later successful cycles. The X11 bridge's explicit API-v7
-  corpus adapter consumes the same canonical scenes and causes, combines each
-  affected output, and passes the reducer without claiming public-wire
-  negotiation. Shared reconnect/restart remains open, as does the archived
-  revision-1 client.
+  and successful post-timeout recovery. Stale-scene and invalid-candidate
+  outcomes are also discarded before later successful cycles. Rust, C, and
+  Hagia additionally run the corpus across two supervised processes. The real
+  configured xmonad bridge negotiates profile activation and its action catalog
+  over the public wire, then passes the same scenes across five epochs covering
+  normal replacement and each noncommitted recovery. The candidate archive
+  retains its own C codec, client, schema, and fixed digests; its permanent
+  compatibility status begins only when the remaining physical ledger row
+  closes and revision 3 freezes.
 
 ### 13.5 Migrate And Promote The Native Policy Path
 
@@ -1220,8 +1243,10 @@ Detailed physical-run diagnoses remain in
   wording. It exists to encode and decode v7 frames, eleven call sites of them, and
   is reached only by the legacy bridge; the public path uses `PolicyTransport` and
   never touches it. Moving it would relocate v7 code rather than free anything, and
-  it should be deleted with v7 once the xmonad profile migrates to the public
-  projection transport.
+  xmonad no longer reaches it: the compatibility runner explicitly selects
+  `sophia_wm_v1`, and `serve-policy` translates public scenes through the
+  private synthetic X server. The transport can be deleted with v7 once the
+  final physical freeze gate closes.
   The extraction item is therefore complete. Engine-owned `WmWorkspaceState` is
   *not* a second extraction: it lives in `wm_policy.rs`, already a separate module
   from the v7 one, and the public path's use of it is removed by the gated item in
@@ -1229,19 +1254,25 @@ Detailed physical-run diagnoses remain in
   anything. `wm_policy.rs` does import `WM_API_VERSION` and v7 packet types, so it
   still has to be untangled before v7 is deleted, but that untangling is part of the
   gated removal and is deliberately not ahead of its gate.
-- [ ] Freeze `sophia_wm_v1` and retain an archived revision-1 client only after
+- [ ] Freeze `sophia_wm_v1` and retain an archived revision-3 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart
   corpus. Do not remove API v7, declare stability, or create the permanent
-  archived compatibility client before both conditions hold.
+  archived compatibility client before both conditions hold. A digest-pinned
+  candidate snapshot may run beforehand, but it is not designated stable until
+  this item closes.
   The first condition is defined by Hagia's `docs/triad-port-ledger.md` at Triad
   baseline `fb8fb27e`; `docs/triad-port-ledger-pointer.md` locates it and
-  summarizes its 28 retained rows. The shell and broker/portal tables are
-  entirely open and are inside the gate, so the freeze is not near.
+  summarizes its 28 classified rows. Twenty are complete, one is partial,
+  none are open, and seven are excluded with written product rationales. The
+  retained implementation is offline-complete. The physical output
+  apply/rollback archive is the sole remaining retained gate. Shared
+  reconnect/restart, public xmonad migration, and the immutable archived-client
+  candidate all pass.
   Before it lands, settle the wire decisions enumerated in
   `docs/wm-v1-freeze-surface.md`. Twenty-four of the 28 rows need no wire change;
   the residue was workspace-name projection, broker classification shape, the
-  continuous-pointer payload, and the output logical-space contract. Two of the four
+  continuous-pointer payload, and the output logical-space contract. All four
   are now settled and normative in `docs/sophia-policy-ipc.md`. The output
   logical-space contract landed ahead of the output-authority tranche that would
   otherwise be the first thing tempted to widen `SnapshotOutput`.

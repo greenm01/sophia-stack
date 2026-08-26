@@ -7,23 +7,26 @@ use std::time::Duration;
 use sophia_protocol::{
     IpcCodecError, OutputId, POLICY_MAX_OUTPUTS, PolicyConfiguration, PolicyOutputProjection,
     PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest,
-    PolicySceneSnapshot, PolicySurfacePlacement, PolicyTransform, Rect, SOPHIA_IPC_HEADER_LEN,
+    PolicySceneSnapshot, PolicySessionOperationOutcome, PolicySessionOperationRequest,
+    PolicySurfacePlacement, PolicyTransform, Rect, SOPHIA_IPC_HEADER_LEN,
     SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
     SOPHIA_WM_CAPABILITY_CONFIGURATION, SOPHIA_WM_CAPABILITY_MULTI_OUTPUT,
-    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS,
-    SOPHIA_WM_MAX_SURFACES, SOPHIA_WM_OUTCOME_COMMITTED, Size, TransactionId, WmChromePolicy,
-    WmV1ClientHello, WmV1DecodedSnapshot, WmV1ProfileCompletion, WmV1ProfileOutcome,
-    WmV1SnapshotTransfer, decode_wm_v1_policy_configuration_outcome_frame,
-    decode_wm_v1_policy_projection_outcome, decode_wm_v1_policy_projection_request,
+    SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION, SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
+    SOPHIA_WM_MAX_BINDINGS, SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES,
+    SOPHIA_WM_OUTCOME_COMMITTED, Size, SurfaceId, TransactionId, WmChromePolicy, WmV1ClientHello,
+    WmV1DecodedSnapshot, WmV1ProfileCompletion, WmV1ProfileOutcome, WmV1SnapshotTransfer,
+    decode_wm_v1_policy_configuration_outcome_frame, decode_wm_v1_policy_projection_outcome,
+    decode_wm_v1_policy_projection_request, decode_wm_v1_policy_session_operation_outcome,
     decode_wm_v1_policy_snapshot, decode_wm_v1_profile_activate, decode_wm_v1_profile_prepare,
     decode_wm_v1_projection_outcome_frame, decode_wm_v1_projection_request_frame,
-    decode_wm_v1_server_welcome_frame, decode_wm_v1_snapshot_begin_frame,
-    decode_wm_v1_snapshot_chunk_frame, decode_wm_v1_snapshot_end_frame,
-    encode_wm_v1_client_hello_frame, encode_wm_v1_policy_configuration,
-    encode_wm_v1_policy_configuration_frame, encode_wm_v1_policy_projection,
+    decode_wm_v1_server_welcome_frame, decode_wm_v1_session_operation_outcome_frame,
+    decode_wm_v1_snapshot_begin_frame, decode_wm_v1_snapshot_chunk_frame,
+    decode_wm_v1_snapshot_end_frame, encode_wm_v1_client_hello_frame,
+    encode_wm_v1_policy_configuration, encode_wm_v1_policy_configuration_frame,
+    encode_wm_v1_policy_projection, encode_wm_v1_policy_session_operation_request,
     encode_wm_v1_profile_active, encode_wm_v1_profile_prepared,
     encode_wm_v1_projection_begin_frame, encode_wm_v1_projection_chunk_frame,
-    encode_wm_v1_projection_end_frame,
+    encode_wm_v1_projection_end_frame, encode_wm_v1_session_operation_request_frame,
 };
 
 #[derive(Debug)]
@@ -112,8 +115,8 @@ impl From<IpcCodecError> for PolicyV1ClientError {
     }
 }
 
-/// Dormant public-v1 reference client. The installed session remains on API v7
-/// until its immutable promotion gate permits a production migration.
+/// Public revision-3 reference client shared by the conformance host and the
+/// xmonad compatibility adapter.
 pub struct PolicyV1Client {
     stream: UnixStream,
     connection_epoch: u64,
@@ -136,7 +139,8 @@ impl PolicyV1Client {
                 | SOPHIA_WM_CAPABILITY_ACTIONS
                 | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
                 | SOPHIA_WM_CAPABILITY_CONFIGURATION
-                | SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
+                | SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION
+                | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
         };
         stream.write_all(&encode_wm_v1_client_hello_frame(&hello)?)?;
         stream.flush()?;
@@ -179,8 +183,22 @@ impl PolicyV1Client {
     /// Accepts the exact startup profile and installs an empty, valid policy
     /// configuration before the host publishes its first scene.
     pub fn activate_profile_and_configure(&mut self) -> Result<(), PolicyV1ClientError> {
+        self.activate_profile_and_configure_with(Vec::new(), WmChromePolicy::default())
+    }
+
+    /// Accepts the exact startup profile and installs the caller's bounded
+    /// action catalog before the host publishes its first scene.
+    pub fn activate_profile_and_configure_with(
+        &mut self,
+        actions: Vec<sophia_protocol::PolicyActionRegistration>,
+        chrome: WmChromePolicy,
+    ) -> Result<(), PolicyV1ClientError> {
         if self.capabilities & SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION == 0
             || self.capabilities & SOPHIA_WM_CAPABILITY_CONFIGURATION == 0
+            || actions
+                .iter()
+                .any(|action| action.session_operation_slot.is_some())
+                && self.capabilities & SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS == 0
         {
             return Err(PolicyV1ClientError::ProfileActivationUnavailable);
         }
@@ -212,8 +230,8 @@ impl PolicyV1Client {
         let configuration = encode_wm_v1_policy_configuration(&PolicyConfiguration {
             connection_epoch: self.connection_epoch,
             generation: 1,
-            actions: Vec::new(),
-            chrome: WmChromePolicy::default(),
+            actions,
+            chrome,
         })?;
         self.stream
             .write_all(&encode_wm_v1_policy_configuration_frame(
@@ -233,6 +251,42 @@ impl PolicyV1Client {
             return Err(PolicyV1ClientError::ConfigurationRejected);
         }
         Ok(())
+    }
+
+    /// Requests one operation advertised in the scene snapshot and waits for
+    /// the owner's terminal outcome.
+    pub fn request_session_operation(
+        &mut self,
+        operation: u64,
+        target: Option<SurfaceId>,
+    ) -> Result<PolicySessionOperationOutcome, PolicyV1ClientError> {
+        if self.capabilities & SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS == 0 {
+            return Err(PolicyV1ClientError::MissingCapability);
+        }
+        let transaction = self.mint_transaction()?;
+        let request = PolicySessionOperationRequest {
+            connection_epoch: self.connection_epoch,
+            request_id: transaction.raw(),
+            operation,
+            target,
+        };
+        let wire = encode_wm_v1_policy_session_operation_request(request)?;
+        self.stream
+            .write_all(&encode_wm_v1_session_operation_request_frame(
+                transaction,
+                &wire,
+            )?)?;
+        self.stream.flush()?;
+        let (outcome_transaction, wire) =
+            decode_wm_v1_session_operation_outcome_frame(&read_frame(&mut self.stream)?)?;
+        let outcome = decode_wm_v1_policy_session_operation_outcome(&wire)?;
+        if outcome_transaction != transaction
+            || outcome.connection_epoch != self.connection_epoch
+            || outcome.request_id != request.request_id
+        {
+            return Err(PolicyV1ClientError::ConnectionEpochMismatch);
+        }
+        Ok(outcome)
     }
 
     pub fn receive_snapshot(&mut self) -> Result<WmV1DecodedSnapshot, PolicyV1ClientError> {
@@ -338,6 +392,10 @@ impl PolicyV1Client {
 
     pub const fn connection_epoch(&self) -> u64 {
         self.connection_epoch
+    }
+
+    pub fn new_transaction(&mut self) -> Result<TransactionId, PolicyV1ClientError> {
+        self.mint_transaction()
     }
 
     fn mint_transaction(&mut self) -> Result<TransactionId, PolicyV1ClientError> {

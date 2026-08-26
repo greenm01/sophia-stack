@@ -24,7 +24,8 @@ ledger.
 ## Completion Rule
 
 Interface revision 3 remains experimental while **any** retained row is partial
-or open.
+or open. Excluded rows stay visible as post-freeze product work and carry a
+written rationale; they are not silently treated as implemented.
 The gate closes only when every Triad feature family is classified as retained or
 excluded; every retained family works through its assigned authority with no
 hidden River, Wayland, Triad, or Niri runtime dependency; the retained default
@@ -38,29 +39,36 @@ implemented" is not an exclusion.
 
 ## Row States
 
-Twenty-eight retained rows across four authority tables:
+Twenty-eight classified rows across four authority tables:
 
-| Table | Rows | Complete | Partial | Open |
-| --- | --- | --- | --- | --- |
-| Spatial Policy — Hagia | 12 | 3 | 7 | 2 |
-| Visible Desktop — Hagia Shell | 5 | 0 | 2 | **3** |
-| Session And Dedicated Sophia Authorities | 7 | 0 | 4 | 3 |
-| Brokers And Portals | 4 | 0 | 1 | **3** |
+| Table | Rows | Complete | Partial | Open | Excluded |
+| --- | --- | --- | --- | --- | --- |
+| Spatial Policy — Hagia | 12 | 11 | 0 | 0 | 1 |
+| Visible Desktop — Hagia Shell | 5 | 2 | 0 | 0 | 3 |
+| Session And Dedicated Sophia Authorities | 7 | 4 | 1 | 0 | 2 |
+| Brokers And Portals | 4 | 3 | 0 | 0 | 1 |
 
-Totals: 3 complete, 14 partial, 11 open. The shell and broker/portal tables
-hold no complete row, and they are inside the gate. A reader who assumes the
-freeze waits only on WM-side rows will underestimate it by nine rows.
+Totals: 20 complete, 1 partial, 0 open, and 7 excluded. The checked-in Hagia
+daily-driver profile, rather than every binding in Triad's historical default,
+defines the freeze surface. Trusted one-shot launch placement and frame-fed
+output activation are implemented and offline-proven. The shared
+reconnect/restart corpus, public xmonad migration, and immutable archived
+revision-3 client now pass. The sole remaining retained gate is physical output
+apply/rollback evidence.
 
 `hagia-shell` now exists as source: Hagia commits `216fb87`, `3795dce`,
 `c33a1f4`, and `a76528f` add the experimental client, the live shell service,
-the protected switcher, and unlabeled descriptor decoding. That moved
-Recent-window switcher and Panels/status to partial; it closed no row, and the
-28-row headline is unchanged.
+the protected switcher, and unlabeled descriptor decoding. Signed archive
+`0006` proves the retained generic switcher; signed archive `0007` separately
+proves coherent work-area reservation and reconnect. MRU policy, previews,
+icons, and persistent Tier-1 panels are explicit post-freeze work.
 
 ## Consequences For Work In This Repository
 
-- **API v7 cannot be removed until the freeze conditions hold.** Because the
-  freeze is far off, v7 is load-bearing for a long time. Extraction from the v7
+- **API v7 cannot be removed until the freeze conditions hold.** The one
+  partial retained output row now bounds that work; public xmonad migration,
+  shared restart coverage, and the archived-client check are complete.
+  Extraction from the v7
   module is *not* gated and happened early: `WmShortcutRegistry` and
   `WmShortcutRouter` now live in `crates/sophia-engine/src/shortcut.rs`, and the
   public path builds its registry from configuration rather than fabricating a
@@ -69,12 +77,10 @@ Recent-window switcher and Panels/status to partial; it closed no row, and the
   rather than free anything. Engine-owned `WmWorkspaceState` is the remaining
   extraction.
 - **Several items filed under `todo.md`'s Post-Promotion Capability Roadmap are
-  pre-freeze requirements**, because the ledger names the same behavior as a
-  retained row. Check the ledger before treating an item there as post-freeze
-  work. The known cases are explicit-grab reduction with the lock and security
-  epoch barrier, protection-domain enforcement in session supervision, the
-  redacted status feed, and the output authority's atomic multi-output
-  test/apply/rollback with reservations and a separate power authority.
+  already on the freeze path.** Protection-domain enforcement, the redacted
+  status feed, and explicit-grab reduction are complete. Frame-fed atomic
+  multi-output apply/rollback remains retained; lock, watched reload, and a
+  separate output-power authority are explicitly post-freeze.
 - **Wire-layout risk is enumerated separately** in
   `docs/wm-v1-freeze-surface.md`, which classifies every ledger row by whether
   closing it can force a `sophia_wm_v1` layout change.
@@ -86,9 +92,9 @@ Interface revision 3 admits **256** binding registrations. Hagia's compiled prof
 contains 51 Sophia-owned chords resolved against its 66-entry action catalog,
 while Triad's baseline default holds 132 key and 137 total physical bindings, of
 which the semantic migrator emits 39 key plus 2 pointer bindings today. The
-remaining bindings are classified but land in shell, broker, portal, and session
-authorities that do not exist yet.
+remaining bindings stay classified with explicit retained or excluded
+dispositions; exclusion does not consume a WM registration slot.
 
-So the open question is the **authority split**, not a slot count. The ledger's
-remark that a smaller bound "cannot be frozen without first classifying and
-migrating that set" is about a proposed freeze bound, not a current wire limit.
+The constraint is the **authority split**, not a slot count. Every accepted
+binding must name its matching owner and behavior owner; every excluded binding
+must remain visible in the migration report.

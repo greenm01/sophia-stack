@@ -668,13 +668,21 @@ impl LegacyX11WmBridgeRuntime {
         } else {
             XMONAD_RESIZE_TIMEOUT_MSEC
         };
+        let response_output = match &request.kind {
+            WmRequestKind::ManageSurface(manage) => Some(manage.output),
+            WmRequestKind::RelayoutWorkspace(relayout) => Some(relayout.output),
+            WmRequestKind::ActionActivated(activation) => Some(activation.output),
+            WmRequestKind::FocusRequested(focus) => Some(focus.output),
+            WmRequestKind::PointerGestureCompleted(gesture) => Some(gesture.output),
+            WmRequestKind::SurfaceRemoved { .. } => None,
+        };
         let mut response = self
             .bridge
             .translate_legacy_requests_for_output(
                 request.transaction,
                 &requests,
                 resize_timeout_msec,
-                pointer_gesture.map(|gesture| gesture.output),
+                response_output,
             )
             .map_err(BridgeRuntimeError::from)?;
         if let Some(toggle) = floating_toggle {

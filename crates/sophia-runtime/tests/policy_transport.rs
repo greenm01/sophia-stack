@@ -62,6 +62,7 @@ fn session_and_reference_client_exchange_one_complete_policy_cycle() {
         1,
         &scene,
         &[],
+        &[],
         SOPHIA_WM_CAPABILITY_ACTIONS | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS,
     )
     .unwrap();

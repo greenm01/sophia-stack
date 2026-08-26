@@ -149,6 +149,9 @@ pub struct ApplicationConfig {
     pub name: String,
     pub executable: PathBuf,
     pub arguments: Vec<String>,
+    /// Optional opaque class emitted once for the first surface observed from
+    /// this trusted registered launch.
+    pub placement_classification: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

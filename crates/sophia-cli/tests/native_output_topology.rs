@@ -2,18 +2,20 @@
 
 use sophia_backend_live::{
     LibdrmNativeOutputCapability, LibdrmNativeOutputTiming, LibdrmNativeVrrPropertyDiscoveryStatus,
+    project_live_output_authority_snapshot,
 };
 use sophia_cli::desktop_output_topology::{
     NativeOutputActivationPlanError, NativeOutputTopologyProjectionError,
-    prepare_native_output_activation_plan, project_native_output_topology,
+    prepare_native_output_activation_plan, prepare_native_output_authority_candidate,
+    project_native_output_topology,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopNamedOutputCandidate, DesktopOutputCandidate,
     DesktopOutputMode, DesktopOutputScale, DesktopOutputTransformSet, DesktopOutputVrrMode,
     reconcile_desktop_output_candidate,
 };
-use sophia_engine::HeadlessOutput;
-use sophia_protocol::{OutputId, Size};
+use sophia_engine::{HeadlessOutput, RenderHeadId};
+use sophia_protocol::{OutputHeadMapping, OutputId, OutputVrrPolicy, Size};
 
 fn capability(
     output: u64,
@@ -205,6 +207,86 @@ fn native_activation_plan_retains_stable_targets_and_rollback_state() {
         DesktopOutputVrrMode::Always
     );
     assert_eq!(plan.targets()[1].rollback(), plan.targets()[1].requested());
+}
+
+#[test]
+fn startup_authority_candidate_preserves_profile_geometry_modes_and_focus() {
+    let capabilities = [
+        capability(1, "DP-1", 2560, 1440, true)
+            .bind_head(RenderHeadId::from_raw(11))
+            .unwrap(),
+        capability(2, "DP-2", 1920, 1080, false)
+            .bind_head(RenderHeadId::from_raw(12))
+            .unwrap(),
+    ];
+    let outputs = [output(1, 2560, 1440, 1), output(2, 1920, 1080, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let profile = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(4),
+        digest: ConfigDigest::new([4; 32]),
+        inherit_sophia: true,
+        named: vec![
+            DesktopNamedOutputCandidate {
+                connector: "DP-1".to_owned(),
+                mode: Some(DesktopOutputMode::Exact {
+                    width: 2560,
+                    height: 1440,
+                    refresh_millihz: 120_000,
+                }),
+                scale: Some(DesktopOutputScale::FixedMilli(2_000)),
+                position: Some((-1280, 0)),
+                transform: None,
+                enabled: Some(true),
+                focus_at_startup: None,
+                vrr: Some(DesktopOutputVrrMode::Always),
+                mirror_fit: None,
+                mirror: Vec::new(),
+            },
+            DesktopNamedOutputCandidate {
+                connector: "DP-2".to_owned(),
+                mode: None,
+                scale: None,
+                position: Some((0, 0)),
+                transform: None,
+                enabled: Some(true),
+                focus_at_startup: Some(true),
+                vrr: None,
+                mirror_fit: None,
+                mirror: Vec::new(),
+            },
+        ],
+    };
+    let reconciliation = reconcile_desktop_output_candidate(&profile, &topology).unwrap();
+    let plan =
+        prepare_native_output_activation_plan(&capabilities, &topology, &reconciliation).unwrap();
+    let snapshot = project_live_output_authority_snapshot(&capabilities, &outputs, 7).unwrap();
+
+    let candidate = prepare_native_output_authority_candidate(
+        &plan,
+        &capabilities,
+        &snapshot,
+        OutputHeadMapping::Exact,
+    )
+    .unwrap();
+
+    assert_eq!(candidate.base_topology_epoch, 7);
+    assert_eq!(candidate.primary_group_index, 1);
+    assert_eq!(candidate.groups[0].logical.x, 0);
+    assert_eq!(candidate.groups[0].logical.width, 1280);
+    assert_eq!(candidate.groups[0].logical.height, 720);
+    assert_eq!(candidate.groups[1].logical.x, 1280);
+    assert_eq!(
+        candidate.groups[0].members[0].mapping,
+        OutputHeadMapping::Exact
+    );
+    assert_eq!(candidate.heads[0].vrr, OutputVrrPolicy::Always);
+    let first_mode = snapshot.heads[0]
+        .modes
+        .iter()
+        .find(|mode| mode.mode == candidate.heads[0].mode)
+        .unwrap();
+    assert_eq!(first_mode.refresh_millihz, 120_000);
+    candidate.validate_against(&snapshot).unwrap();
 }
 
 #[test]

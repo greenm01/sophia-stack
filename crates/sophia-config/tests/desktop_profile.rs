@@ -779,11 +779,11 @@ fn desktop_profile_discovery_prefers_explicit_then_xdg() {
 }
 
 #[test]
-fn the_compiled_profile_reserves_a_panel_and_reports_its_thickness() {
+fn the_compiled_profile_keeps_the_switcher_out_of_the_work_area() {
     let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
 
     assert!(desktop_profile_shell_enabled(&profile));
-    assert_eq!(desktop_profile_shell_panel_thickness(&profile), Some(28));
+    assert_eq!(desktop_profile_shell_panel_thickness(&profile), None);
 }
 
 #[test]

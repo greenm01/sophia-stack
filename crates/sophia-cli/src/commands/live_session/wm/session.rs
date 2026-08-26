@@ -381,10 +381,7 @@ impl LiveWmSession {
         config: &PersistentXtermSessionConfig,
         outputs: &[sophia_engine::HeadlessOutput],
         public_launch: Option<StartedPublicPolicyLaunch>,
-        output_bootstrap: Option<(
-            sophia_protocol::OutputAuthoritySnapshot,
-            Vec<sophia_backend_live::LibdrmNativeOutputCapability>,
-        )>,
+        output_bootstrap: Option<LiveOutputAuthorityBootstrap>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
         let Some(process) = config.wm_process.as_deref() else {
             if public_launch.is_some() {
@@ -719,6 +716,7 @@ impl LiveWmSession {
         surface: SurfaceId,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         if let Some(public) = self.public.as_mut() {
+            public.launch_classifications.remove(&surface);
             let active = public
                 .outputs
                 .first()
@@ -746,6 +744,33 @@ impl LiveWmSession {
             ordered_action: None,
             queued_at: Instant::now(),
         })
+    }
+
+    fn register_launch_placement(
+        &mut self,
+        surface: SurfaceId,
+        classification: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !surface.is_valid() || classification == 0 {
+            return Err("trusted launch placement has an invalid identity".into());
+        }
+        let Some(public) = self.public.as_mut() else {
+            return Ok(());
+        };
+        match public.launch_classifications.entry(surface) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(classification);
+                Ok(())
+            }
+            std::collections::btree_map::Entry::Occupied(entry)
+                if *entry.get() == classification =>
+            {
+                Ok(())
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err("trusted launch placement changed for one surface".into())
+            }
+        }
     }
 
     fn enqueue_action(

@@ -15,16 +15,19 @@ fn the_profile_ceiling_is_the_wire_ceiling() {
 }
 
 #[test]
-fn the_compiled_profile_asks_for_a_panel_the_wire_accepts() {
+fn the_compiled_switcher_reserves_nothing_and_the_configured_ceiling_round_trips() {
     let profile =
         sophia_config::load_desktop_profile(None, sophia_config::ConfigGeneration::INITIAL)
             .expect("the compiled profile loads");
-    let thickness = sophia_config::desktop_profile_shell_panel_thickness(&profile)
-        .expect("the compiled profile reserves a panel");
+    assert_eq!(
+        sophia_config::desktop_profile_shell_panel_thickness(&profile),
+        None,
+        "a transient switcher is not a persistent panel",
+    );
+    let thickness = sophia_config::SHELL_PANEL_MAX_THICKNESS_PX;
 
-    // The claim the session will make on this profile, encoded and decoded as
-    // the shell would send it, so the compiled default cannot be a value the
-    // candidate codec rejects.
+    // An explicitly configured claim at the profile ceiling still has to be a
+    // value the shell candidate codec accepts.
     let candidate = sophia_protocol::ShellV1Candidate {
         connection_epoch: 1,
         snapshot_generation: 1,

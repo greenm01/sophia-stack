@@ -467,7 +467,10 @@ impl PolicyWmSessionTransport {
             .stream
             .as_mut()
             .ok_or(PolicyTransportError::NotConnected)?;
-        let mut assembler = PolicySnapshotAssembler::new(begin.connection_epoch)?;
+        let mut assembler = PolicySnapshotAssembler::new_with_capabilities(
+            begin.connection_epoch,
+            self.connection.selected_capabilities(),
+        )?;
         assembler.begin(transaction, begin.clone())?;
         for chunk in chunks {
             assembler.append(transaction, chunk.clone())?;

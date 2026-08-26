@@ -3,6 +3,118 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-25: xmonad and restart recovery now cross the public revision-3 boundary
+
+- The xmonad session runner now selects `sophia_wm_v1` and a dedicated bounded
+  desktop profile. Its bridge accepts profile activation, publishes the exact
+  action catalog, consumes complete metadata-free scenes, runs the checked-in
+  xmonad configuration behind the private synthetic X server, and returns
+  canonical output projections. Terminal and close remain opaque
+  session-operation slots; no client metadata or real X identity crosses.
+- Exercising the real xmonad binary against the two-output scene exposed one
+  compatibility bug that the old API-v7-shaped unit path hid: legacy geometry
+  was clamped against the union root unless the request was a pointer gesture.
+  Every request kind now scopes translation to its affected output. The full
+  configured eleven-scene public corpus passes across five fresh processes,
+  covering normal replacement plus timeout, stale, and invalid recovery.
+- The shared black-box host now has a two-process restart mode. Rust, current C,
+  and independent Nim clients pass all eleven scenes at fresh connection epochs
+  while the canonical reducer proves the last committed projection unchanged
+  across replacement. Hagia's complete policy/profile gate passes with that
+  additional run.
+- `protocol/archive/sophia-wm-v1-r3` pins a candidate C99 codec, client, schema,
+  and fixed digests. Its gate compiles those copies without the live generated
+  binding and proves both the retained and restart corpora against the current
+  server. It becomes the permanent stable-client archive only when revision 3
+  freezes.
+- Installed xmonad releases now carry the bounded public-policy desktop profile
+  beside the Engine theme. Release-manifest schema 4 pins both files, the
+  packaged verifier requires their exact digests, and the installer regression
+  rejects a changed desktop profile before promotion.
+- The retained ledger is now 20 Complete, 1 Partial, 0 Open, and 7 Excluded.
+  The sole remaining freeze gate is the explicitly authorized physical
+  frame-fed output apply/rollback archive. Revision 3 is not declared stable and
+  API v7 is not removed before that evidence exists.
+
+## 2026-08-25: trusted launch placement is one grant, not a metadata rule engine
+
+- A registered application's optional nonzero `placement-class` enters the
+  session launch intent. Only the first new surface observed while that launch
+  owns admission receives it; later dialogs or additional toplevels receive no
+  implicit placement. CLI-added executables carry no class, so the authority is
+  available only to the trusted core registry.
+- Capability bit 10 gates snapshot extension kind `0xFF00`. Its 16-byte records
+  contain only the generational surface handle and opaque `u64` class. Frozen
+  begin/end counts still name the ordinary chunk prefix; extensions append with
+  dense ordinals before `SnapshotEnd`. The assembler refuses the kind without
+  negotiation, and a producer pin proves gated-off output is byte-identical.
+- The public owner retains the grant through stale, invalid, timeout,
+  disconnect, and supervised restart paths. It filters withdrawn surfaces and
+  consumes a grant only after the matching Manage projection commits. No title,
+  app ID, PID, executable path, namespace, or match expression is available to
+  policy.
+- Hagia requests the capability and maps the retained classes 1..9 to view
+  slots on the active output without switching the active view. Unknown classes
+  remain advisory. Its independent uncounted-extension socket fixture, adapter
+  one-shot test, `nph`, and full serial `nimble test` pass; Sophia's config,
+  protocol, runtime, and CLI all-features suites pass as well.
+
+## 2026-08-25: startup output activation now enters the frame-fed authority path
+
+- An accepted startup desktop-output plan no longer stops at validation. The
+  session projects it into the same resource-free topology candidate used by the
+  live output authority, including normalized logical geometry, requested modes,
+  transforms, scale, VRR, mirroring, and primary/focus selection.
+- The public WM admits that candidate as a private startup transaction. It is not
+  sent to an output-policy peer and is not abandoned when that peer disconnects;
+  nevertheless it uses the ordinary quiescence, committed-state composition,
+  native renderer preparation, atomic apply/rollback, first-presentation, and
+  publication sequence. Hardware state is not published while either the startup
+  transaction or a peer transaction is active.
+- This is the frame-fed rather than scratch-fed activation promised by the
+  renderer-import boundary: output effects cannot dispatch before the visual
+  runtime exists, so every KMS candidate names a frame composed from committed
+  scene state. A failed apply restores both hardware and the candidate frame;
+  successful publication waits for presentation.
+- `cargo test --offline -q -p sophia-cli --all-features`, formatting, and the diff
+  check pass. The projection regression covers profile modes, negative-origin
+  normalization, transforms, scale, VRR, and focus. The remaining evidence is a
+  deliberately authorized physical session applying and, under an injected
+  failure, rolling back the candidate on the reference DRM hardware.
+
+## 2026-08-25: the freeze profile is a product contract, not every historical binding
+
+- The 28-row Triad ledger had turned interface stability into an unbounded
+  desktop-parity program. Rows for Janet, previews, persistent panels, lock,
+  screenshots, general transfers, and watched reload remained freeze blockers
+  even though they belong to separate authorities and the checked-in Hagia
+  daily-driver profile does not select them. That gate could never say what
+  product had to work before the WM wire became stable.
+- The freeze profile is now explicit. It retains the checked-in Hagia command
+  surface, five layouts, Tier-0 status, the bounded generic switcher,
+  startup-only transactional configuration, frame-fed output activation,
+  registered launches, trusted one-shot launch placement, and the proven small
+  text clipboard. Every historical binding remains classified, but behavior
+  outside that profile carries an `Excluded` disposition and a written product
+  rationale rather than an indefinite `Open` state.
+- Exclusion does not remove work from the product roadmap and does not move it
+  into the blind WM. Janet and extra layout chrome remain Hagia/shell work;
+  previews, icons, persistent panels, overlays, and notifications remain shell
+  or portal work; lock and watched reload remain dedicated-authority work. The
+  separation is what makes them safe to build after the WM freeze.
+- The generic switcher and Tier-0 status are complete for the retained surface.
+  Signed archives `0006` and `0005` prove them, and archive `0007` remains the
+  regression for an explicitly configured shell reservation. The ordinary
+  compiled profile no longer asks the transient switcher stream to reserve a
+  panel, because a visible switcher is not a persistent panel.
+- The resulting classification is now 19 Complete, 2 Partial, 0 Open, and 7
+  Excluded. An executable profile gate now resolves every accepted `policy:`
+  target to Hagia's action catalog or the two Engine-owned pointer modes. The
+  remaining cross-authority product work is bounded: the physical frame-fed
+  output apply/rollback archive and shared reconnect/restart corpus gate public
+  xmonad migration, interface-major v1/wire-revision-3 stability, and API-v7
+  removal.
+
 ## 2026-08-22: a domain nobody demands is a capability, not a posture
 
 - Protection domains were complete and unused. `ProtectionDomainSpec` refused

@@ -37,6 +37,7 @@ xmonad_config_sha256="$(sha256sum tools/config/sophia-xmonad/Main.hs | awk '{pri
 xmonad_cabal_sha256="$(sha256sum tools/config/sophia-xmonad/sophia-xmonad.cabal | awk '{print $1}')"
 xmonad_project_sha256="$(sha256sum tools/config/sophia-xmonad/cabal.project | awk '{print $1}')"
 xmonad_core_config_sha256="$(sha256sum tools/config/sophia-xmonad/core.kdl | awk '{print $1}')"
+xmonad_desktop_profile_sha256="$(sha256sum tools/config/sophia-xmonad/desktop.kdl | awk '{print $1}')"
 xmobar_config_sha256="$(sha256sum tools/fixtures/xmobar_sophia.config | awk '{print $1}')"
 if [[ -n "$hagia_bin" && ! -x "$hagia_bin" ]]; then
     echo "SOPHIA_HAGIA_BIN is not executable: $hagia_bin" >&2
@@ -217,6 +218,7 @@ install -m 644 tools/config/sophia-xmonad/Main.hs \
     tools/config/sophia-xmonad/sophia-xmonad.cabal \
     tools/config/sophia-xmonad/cabal.project \
     tools/config/sophia-xmonad/core.kdl \
+    tools/config/sophia-xmonad/desktop.kdl \
     "$artifact/share/sophia-policy/xmonad/"
 install -m 644 docs/operations.md "$artifact/share/doc/sophia/operations.md"
 
@@ -278,10 +280,11 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
-printf 'schema=3\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_version=%s\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=%s\nxmobar_source_commit=%s\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
+printf 'schema=4\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_version=%s\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_desktop_profile_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=%s\nxmobar_source_commit=%s\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$xmonad_version" "$xmonad_config_sha256" "$xmonad_cabal_sha256" \
     "$xmonad_project_sha256" "$xmonad_core_config_sha256" \
+    "$xmonad_desktop_profile_sha256" \
     "$(sha256sum "$xmonad_bin" | awk '{print $1}')" \
     "$xmobar_version" "$xmobar_source_commit" "$xmobar_config_sha256" \
     "$(sha256sum "$xmobar_bin" | awk '{print $1}')" \

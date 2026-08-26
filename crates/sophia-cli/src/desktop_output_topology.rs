@@ -10,7 +10,11 @@ use sophia_config::{
     validate_desktop_output_topology_snapshot,
 };
 use sophia_engine::HeadlessOutput;
-use sophia_protocol::OutputId;
+use sophia_protocol::{
+    DisplayHeadId, OutputAuthoritySnapshot, OutputGroupMember, OutputHeadMapping,
+    OutputHeadTargetProposal, OutputId, OutputLogicalGroupProposal, OutputTopologyCandidate,
+    OutputTopologyCandidateError, OutputTopologyIntent, OutputTransform, OutputVrrPolicy, Rect,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeOutputActivationTarget {
@@ -112,6 +116,63 @@ pub enum NativeOutputActivationPlanError {
     UnexpectedCapability(String),
     CapabilityDrift(String),
     InvalidReconciliation(DesktopOutputReconcileError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeOutputAuthorityCandidateError {
+    InvalidSnapshot(OutputTopologyCandidateError),
+    MissingCapability(String),
+    MissingOpaqueHead(String),
+    MissingSnapshotHead(u64),
+    MissingMode(String),
+    MissingMirrorPrimary(String),
+    InvalidLogicalGeometry(String),
+    InvalidCandidate(OutputTopologyCandidateError),
+}
+
+impl fmt::Display for NativeOutputAuthorityCandidateError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidSnapshot(error) => write!(formatter, "invalid output snapshot: {error}"),
+            Self::MissingCapability(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} has no DRM capability"
+                )
+            }
+            Self::MissingOpaqueHead(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} has no opaque head"
+                )
+            }
+            Self::MissingSnapshotHead(head) => {
+                write!(
+                    formatter,
+                    "native head {head} is absent from the output snapshot"
+                )
+            }
+            Self::MissingMode(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} has no requested output mode"
+                )
+            }
+            Self::MissingMirrorPrimary(connector) => {
+                write!(
+                    formatter,
+                    "mirror member {connector:?} has no enabled primary"
+                )
+            }
+            Self::InvalidLogicalGeometry(connector) => {
+                write!(
+                    formatter,
+                    "native connector {connector:?} has invalid logical geometry"
+                )
+            }
+            Self::InvalidCandidate(error) => write!(formatter, "invalid output candidate: {error}"),
+        }
+    }
 }
 
 impl fmt::Display for NativeOutputActivationPlanError {
@@ -222,9 +283,252 @@ pub fn prepare_native_output_activation_plan(
     })
 }
 
+/// Projects a validated desktop-profile plan into the same complete candidate
+/// consumed by the live output authority.
+///
+/// Startup uses this only after topology-only kernel validation succeeds. The
+/// result contains no framebuffer or KMS handle: the live session owner later
+/// composes candidate-sized frames from committed scene state and resolves the
+/// physical resources through its ordinary prepare/apply/rollback transaction.
+pub fn prepare_native_output_authority_candidate(
+    plan: &NativeOutputActivationPlan,
+    capabilities: &[LibdrmNativeOutputCapability],
+    snapshot: &OutputAuthoritySnapshot,
+    mapping: OutputHeadMapping,
+) -> Result<OutputTopologyCandidate, NativeOutputAuthorityCandidateError> {
+    snapshot
+        .validate()
+        .map_err(NativeOutputAuthorityCandidateError::InvalidSnapshot)?;
+
+    let capabilities = capabilities
+        .iter()
+        .map(|capability| (capability.connector_name(), capability))
+        .collect::<BTreeMap<_, _>>();
+    let snapshot_heads = snapshot
+        .heads
+        .iter()
+        .map(|head| (head.head, head))
+        .collect::<BTreeMap<_, _>>();
+
+    struct EnabledTarget<'a> {
+        state: &'a DesktopOutputState,
+        output: OutputId,
+        head: DisplayHeadId,
+        proposal: OutputHeadTargetProposal,
+    }
+
+    let mut enabled = Vec::new();
+    for target in plan
+        .targets()
+        .iter()
+        .filter(|target| target.requested().enabled)
+    {
+        let state = target.requested();
+        let capability = capabilities
+            .get(state.connector.as_str())
+            .copied()
+            .ok_or_else(|| {
+                NativeOutputAuthorityCandidateError::MissingCapability(state.connector.clone())
+            })?;
+        let head = capability.head().ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::MissingOpaqueHead(state.connector.clone())
+        })?;
+        let head = DisplayHeadId::from_raw(head.raw());
+        let descriptor = snapshot_heads.get(&head).copied().ok_or(
+            NativeOutputAuthorityCandidateError::MissingSnapshotHead(head.raw()),
+        )?;
+        let mode = descriptor
+            .modes
+            .iter()
+            .find(|mode| {
+                u32::try_from(mode.pixel_size.width).ok() == Some(state.mode.width)
+                    && u32::try_from(mode.pixel_size.height).ok() == Some(state.mode.height)
+                    && mode.refresh_millihz == state.mode.refresh_millihz
+            })
+            .map(|mode| mode.mode)
+            .ok_or_else(|| {
+                NativeOutputAuthorityCandidateError::MissingMode(state.connector.clone())
+            })?;
+        enabled.push(EnabledTarget {
+            state,
+            output: capability.output(),
+            head,
+            proposal: OutputHeadTargetProposal {
+                head,
+                head_generation: descriptor.generation,
+                mode,
+                transform: protocol_transform(state.transform),
+                vrr: protocol_vrr(state.vrr),
+            },
+        });
+    }
+
+    let mut groups = Vec::new();
+    let mut group_outputs = Vec::new();
+    for primary in enabled
+        .iter()
+        .filter(|target| target.state.mirror_of.is_none())
+    {
+        let mut members = enabled
+            .iter()
+            .filter(|target| {
+                target
+                    .state
+                    .mirror_of
+                    .as_deref()
+                    .unwrap_or(target.state.connector.as_str())
+                    == primary.state.connector
+            })
+            .collect::<Vec<_>>();
+        members.sort_by_key(|target| target.head);
+        if let Some(index) = members
+            .iter()
+            .position(|target| target.head == primary.head)
+        {
+            members.swap(0, index);
+        }
+        let logical = logical_rect(primary.state)?;
+        groups.push(OutputLogicalGroupProposal {
+            output: primary.output,
+            logical,
+            members: members
+                .into_iter()
+                .map(|target| OutputGroupMember {
+                    head: target.head,
+                    mapping,
+                })
+                .collect(),
+        });
+        group_outputs.push(primary.output);
+    }
+    if let Some(orphan) = enabled.iter().find(|target| {
+        target.state.mirror_of.as_ref().is_some_and(|primary| {
+            !enabled.iter().any(|candidate| {
+                candidate.state.mirror_of.is_none() && candidate.state.connector == *primary
+            })
+        })
+    }) {
+        return Err(NativeOutputAuthorityCandidateError::MissingMirrorPrimary(
+            orphan.state.connector.clone(),
+        ));
+    }
+
+    normalize_logical_origin(&mut groups)?;
+    let primary_output = plan
+        .focused_output()
+        .filter(|output| group_outputs.contains(output))
+        .or_else(|| {
+            group_outputs
+                .contains(&snapshot.primary_output)
+                .then_some(snapshot.primary_output)
+        })
+        .or_else(|| group_outputs.first().copied())
+        .ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry("none".into())
+        })?;
+    let primary_group_index = group_outputs
+        .iter()
+        .position(|output| *output == primary_output)
+        .and_then(|index| u16::try_from(index).ok())
+        .ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry("primary".into())
+        })?;
+    let candidate = OutputTopologyCandidate {
+        base_topology_epoch: snapshot.topology_epoch,
+        intent: OutputTopologyIntent::Apply,
+        primary_group_index,
+        heads: enabled.into_iter().map(|target| target.proposal).collect(),
+        groups,
+    };
+    candidate
+        .validate_against(snapshot)
+        .map_err(NativeOutputAuthorityCandidateError::InvalidCandidate)?;
+    Ok(candidate)
+}
+
+fn logical_rect(state: &DesktopOutputState) -> Result<Rect, NativeOutputAuthorityCandidateError> {
+    let (width, height) = match state.transform {
+        DesktopOutputTransform::Rotate90
+        | DesktopOutputTransform::Rotate270
+        | DesktopOutputTransform::Flipped90
+        | DesktopOutputTransform::Flipped270 => (state.mode.height, state.mode.width),
+        DesktopOutputTransform::Normal
+        | DesktopOutputTransform::Rotate180
+        | DesktopOutputTransform::Flipped
+        | DesktopOutputTransform::Flipped180 => (state.mode.width, state.mode.height),
+    };
+    let logical = |pixels: u32| {
+        pixels
+            .checked_mul(1_000)?
+            .checked_add(state.scale_milli.checked_sub(1)?)?
+            .checked_div(state.scale_milli)
+            .and_then(|extent| i32::try_from(extent).ok())
+            .filter(|extent| *extent > 0)
+    };
+    Ok(Rect {
+        x: state.position.0,
+        y: state.position.1,
+        width: logical(width).ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry(state.connector.clone())
+        })?,
+        height: logical(height).ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry(state.connector.clone())
+        })?,
+    })
+}
+
+fn normalize_logical_origin(
+    groups: &mut [OutputLogicalGroupProposal],
+) -> Result<(), NativeOutputAuthorityCandidateError> {
+    let minimum_x = groups
+        .iter()
+        .map(|group| group.logical.x)
+        .min()
+        .unwrap_or(0)
+        .min(0);
+    let minimum_y = groups
+        .iter()
+        .map(|group| group.logical.y)
+        .min()
+        .unwrap_or(0)
+        .min(0);
+    for group in groups {
+        group.logical.x = group.logical.x.checked_sub(minimum_x).ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry("origin".into())
+        })?;
+        group.logical.y = group.logical.y.checked_sub(minimum_y).ok_or_else(|| {
+            NativeOutputAuthorityCandidateError::InvalidLogicalGeometry("origin".into())
+        })?;
+    }
+    Ok(())
+}
+
+const fn protocol_transform(transform: DesktopOutputTransform) -> OutputTransform {
+    match transform {
+        DesktopOutputTransform::Normal => OutputTransform::Normal,
+        DesktopOutputTransform::Rotate90 => OutputTransform::Rotate90,
+        DesktopOutputTransform::Rotate180 => OutputTransform::Rotate180,
+        DesktopOutputTransform::Rotate270 => OutputTransform::Rotate270,
+        DesktopOutputTransform::Flipped => OutputTransform::Flipped,
+        DesktopOutputTransform::Flipped90 => OutputTransform::Flipped90,
+        DesktopOutputTransform::Flipped180 => OutputTransform::Flipped180,
+        DesktopOutputTransform::Flipped270 => OutputTransform::Flipped270,
+    }
+}
+
+const fn protocol_vrr(vrr: DesktopOutputVrrMode) -> OutputVrrPolicy {
+    match vrr {
+        DesktopOutputVrrMode::Disabled => OutputVrrPolicy::Disabled,
+        DesktopOutputVrrMode::Automatic => OutputVrrPolicy::Automatic,
+        DesktopOutputVrrMode::Always => OutputVrrPolicy::Always,
+    }
+}
+
 impl std::error::Error for NativeOutputTopologyProjectionError {}
 
 impl std::error::Error for NativeOutputActivationPlanError {}
+
+impl std::error::Error for NativeOutputAuthorityCandidateError {}
 
 pub fn project_native_output_topology(
     capabilities: &[LibdrmNativeOutputCapability],

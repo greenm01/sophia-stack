@@ -33,6 +33,7 @@ pub(super) struct SessionApplicationSpec {
     pub(super) id: String,
     pub(super) executable: std::path::PathBuf,
     pub(super) arguments: Vec<String>,
+    pub(super) placement_classification: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -187,6 +188,7 @@ impl SessionApplicationOverrides {
                 id: id.to_owned(),
                 executable,
                 arguments: Vec::new(),
+                placement_classification: None,
             });
         }
 

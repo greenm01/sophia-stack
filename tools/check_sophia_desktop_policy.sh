@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 XMONAD_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/Main.hs"
 CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
+DESKTOP_PROFILE="$ROOT_DIR/tools/config/sophia-xmonad/desktop.kdl"
 
 bash -n \
     "$ROOT_DIR/tools/build_sophia_xmonad.sh" \
@@ -37,6 +38,8 @@ grep -Fq 'frame enabled=#true width=1 focused-color="#ffb6b0" unfocused-color="#
     "$CORE_CONFIG"
 cargo run --offline -q -p sophia-cli -- config check \
     "--config=$CORE_CONFIG" >/dev/null
+cargo run --offline -q -p sophia-cli -- config check \
+    "--desktop-profile=$DESKTOP_PROFILE" >/dev/null
 
 xmonad_bin="$($ROOT_DIR/tools/build_sophia_xmonad.sh 2>/dev/null)"
 xmobar_bin="$($ROOT_DIR/tools/build_sophia_xmobar.sh 2>/dev/null)"
@@ -55,5 +58,15 @@ grep -Fq 'SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"' \
     "$ROOT_DIR/tools/installed/sophia-session"
 grep -Fq 'SOPHIA_CORE_CONFIG="$RELEASE_DIR/share/sophia-policy/xmonad/core.kdl"' \
     "$ROOT_DIR/tools/installed/sophia-session"
+grep -Fq 'SOPHIA_DESKTOP_PROFILE="$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl"' \
+    "$ROOT_DIR/tools/installed/sophia-session"
+grep -Fq -- '--wm-interface=sophia_wm_v1' \
+    "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
+grep -Fq -- '--wm-process-arg=serve-policy' \
+    "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
+if grep -Fq -- '--profile=xmonad' "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"; then
+    echo "Sophia's xmonad runner still selects the private API-v7 profile." >&2
+    exit 1
+fi
 
 echo "Sophia desktop policy build checks passed."

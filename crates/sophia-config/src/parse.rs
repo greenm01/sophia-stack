@@ -245,7 +245,7 @@ fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
     for child in children.nodes() {
         match child.name().value() {
             "application" => {
-                exact_shape(child, 1, &["id", "executable"], true)?;
+                exact_shape(child, 1, &["id", "executable", "placement-class"], true)?;
                 if applications.len() >= SOPHIA_CONFIG_MAX_APPLICATIONS {
                     return schema_error("too many session applications");
                 }
@@ -253,6 +253,8 @@ fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
                 validate_identifier(&name, "application name")?;
                 let id = integer_property_u64(child, "id", 1, u64::MAX)?;
                 let executable = absolute_path_property(child, "executable")?;
+                let placement_classification =
+                    optional_integer_property_u64(child, "placement-class", 1, u64::MAX)?;
                 if !application_ids.insert(id) {
                     return schema_error(format!("duplicate application ID {id}"));
                 }
@@ -269,6 +271,7 @@ fn parse_session(node: &KdlNode) -> Result<SessionConfig, ConfigParseError> {
                     name,
                     executable,
                     arguments,
+                    placement_classification,
                 });
             }
             "startup" => {
