@@ -132,7 +132,7 @@ promotion gate.
    unequal heads, damage, cache bounds, cancellation, and authority epochs;
    the 16-entry two-head probe measured 110 us p95 against a 16,667 us budget.
    This is a reference boundary, not a shell protocol or live shortcut.
-6. **Current.** Add the protected shell-role transport and use it for the first
+6. **Complete.** Add the protected shell-role transport and use it for the first
    separately authorized `hagia-shell` descriptor switcher. Model the minimum
    candidate, presentation, target, action, reconnect, and revocation lifecycle
    before freezing records. Keep ordering, selection, and lifecycle in the
@@ -241,8 +241,16 @@ promotion gate.
    reproduced offline by `x-authority-browser-smoke`, but only at partial
    fidelity -- it stops after negotiating the GLX and DRI3 versions, where the
    rig brings a GL context up before going quiet, so it does not yet stand in
-   for the rig. The corrected signed physical rerun remains open. Reservations
-   are deliberately still absent.
+   for the rig. Signed Hagia archive `0006` closed the row on signed source
+   `f97e8e807e3e15716fde50b25b4b9aaaf07806f1` and signed Hagia source
+   `a76528fcf6e227e5c0a58772da655f44b85d0821`. It retained zero protocol errors,
+   the complete `Super+P` proof -- three shortcut admissions, a restart at
+   `visible_presentation=2 retained_pixels=true`, a fresh `connection_epoch=2`,
+   an inert click on the retained pixels at `activation=false`, and two admitted
+   activations -- nonzero presentation on both outputs, exact text, and clean
+   health and teardown. The first attempt on `fd44d748` was a correct session
+   refused by a totals check that no run could satisfy; see the research log.
+   Reservations are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
@@ -260,19 +268,15 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Prove the live no-reservation switcher.** Application/shell pointer
-   arbitration, its release and epoch tests, compiled shell enablement, and the
-   `Super+P` binding are complete. The physical run must bind signed Sophia,
-   Hagia, and Hagia Shell binaries, activate one exact presented row,
-   crash and reconnect the shell, then repeat activation and withdrawal. It
-   must retain inert pixels during loss, negotiate a fresh recipient epoch,
-   validate the broker issuer, route focus through the WM, present nonzero
-   output-local pixels, and tear down cleanly. Only after that archive passes
-   should the work-area reservation coordinator enter production. Previews,
-   icons, MRU policy, and generic textures remain out of this gate.
-   Offline proof is exhausted at this identity: the repo checks, the full
-   suite, the shell protocol and physical-matcher checks, and the real-Mesa
-   pbuffer smoke all pass. Only the physical archive is missing.
+1. **Bring the work-area reservation coordinator into production.** Signed
+   Hagia archive `0006` proved the live no-reservation switcher, which was that
+   work's gate. Reservations were deliberately absent from it: the switcher
+   presents over the work area rather than claiming one. Previews, icons, MRU
+   policy, and generic textures remain out of scope until this lands.
+2. **Close the remaining retained-ledger rows.** The switcher moved
+   Recent-window switcher to partial, not complete: recency policy, scope,
+   filtering, and debounce are still open, and `docs/triad-port-ledger.md` in
+   the Hagia checkout stays authoritative for what the freeze waits on.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
