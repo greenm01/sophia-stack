@@ -23,16 +23,10 @@ ledger.
 
 ## Completion Rule
 
-Interface revision 3 remains experimental while **any** retained row is partial
-or open. Excluded rows stay visible as post-freeze product work and carry a
-written rationale; they are not silently treated as implemented.
-The gate closes only when every Triad feature family is classified as retained or
-excluded; every retained family works through its assigned authority with no
-hidden River, Wayland, Triad, or Niri runtime dependency; the retained default
-desktop configuration has a validated migration with no accepted command silently
-losing behavior; deterministic parity scenarios cover state transitions, failure,
-restart, and authority loss; and ordinary installed sessions cover the physical
-workflows that cannot be established offline.
+Interface major 1, wire revision 3 is stable. The gate closed on 2026-08-26
+after every retained row was complete. Excluded rows stay visible as
+post-freeze product work and carry a written rationale; they are not silently
+treated as implemented.
 
 An exclusion requires a written architectural or product rationale. "Not yet
 implemented" is not an exclusion.
@@ -45,16 +39,17 @@ Twenty-eight classified rows across four authority tables:
 | --- | --- | --- | --- | --- | --- |
 | Spatial Policy — Hagia | 12 | 11 | 0 | 0 | 1 |
 | Visible Desktop — Hagia Shell | 5 | 2 | 0 | 0 | 3 |
-| Session And Dedicated Sophia Authorities | 7 | 4 | 1 | 0 | 2 |
+| Session And Dedicated Sophia Authorities | 7 | 5 | 0 | 0 | 2 |
 | Brokers And Portals | 4 | 3 | 0 | 0 | 1 |
 
-Totals: 20 complete, 1 partial, 0 open, and 7 excluded. The checked-in Hagia
+Totals: 21 complete, 0 partial, 0 open, and 7 excluded. The checked-in Hagia
 daily-driver profile, rather than every binding in Triad's historical default,
 defines the freeze surface. Trusted one-shot launch placement and frame-fed
-output activation are implemented and offline-proven. The shared
-reconnect/restart corpus, public xmonad migration, and immutable archived
-revision-3 client now pass. The sole remaining retained gate is physical output
-apply/rollback evidence.
+output activation are implemented and proven. Frame-fed physical archive `0001`
+binds Sophia `870ba46ae231081220b982ecc3a5a95517df7a90` and Hagia
+`a83c8fa022a4ceff5d8b96a01c46052bbd8ba64a`; the shared reconnect/restart
+corpus, public xmonad migration, and immutable archived revision-3 client also
+pass.
 
 `hagia-shell` now exists as source: Hagia commits `216fb87`, `3795dce`,
 `c33a1f4`, and `a76528f` add the experimental client, the live shell service,
@@ -65,10 +60,8 @@ icons, and persistent Tier-1 panels are explicit post-freeze work.
 
 ## Consequences For Work In This Repository
 
-- **API v7 cannot be removed until the freeze conditions hold.** The one
-  partial retained output row now bounds that work; public xmonad migration,
-  shared restart coverage, and the archived-client check are complete.
-  Extraction from the v7
+- **API v7 can now be removed.** The retained output row and revision-3 freeze
+  conditions are complete. Extraction from the v7
   module is *not* gated and happened early: `WmShortcutRegistry` and
   `WmShortcutRouter` now live in `crates/sophia-engine/src/shortcut.rs`, and the
   public path builds its registry from configuration rather than fabricating a
@@ -77,9 +70,9 @@ icons, and persistent Tier-1 panels are explicit post-freeze work.
   rather than free anything. Engine-owned `WmWorkspaceState` is the remaining
   extraction.
 - **Several items filed under `todo.md`'s Post-Promotion Capability Roadmap are
-  already on the freeze path.** Protection-domain enforcement, the redacted
-  status feed, and explicit-grab reduction are complete. Frame-fed atomic
-  multi-output apply/rollback remains retained; lock, watched reload, and a
+  already completed the freeze path.** Protection-domain enforcement, the
+  redacted status feed, explicit-grab reduction, and frame-fed atomic
+  multi-output apply/rollback are complete; lock, watched reload, and a
   separate output-power authority are explicitly post-freeze.
 - **Wire-layout risk is enumerated separately** in
   `docs/wm-v1-freeze-surface.md`, which classifies every ledger row by whether

@@ -176,8 +176,8 @@ normal replacement plus timeout, stale, and invalid replacement/recovery
 boundaries. `tools/check_archived_policy_client.sh` separately verifies fixed
 digests before compiling the frozen C99 codec/client snapshot and running it
 against the current server. Shared restart and archived-client freeze coverage
-are therefore closed. This bounded offline evidence does not replace the
-explicitly authorized physical output apply/rollback archive.
+are therefore closed. The separately authorized physical output apply/rollback
+archive described below supplies the hardware evidence.
 
 The separate, standalone Hagia checkout verifies its independently written Nim
 decoder against the same retained corpus, then runs its proof client through
@@ -202,9 +202,8 @@ deterministic opaque-operation activation driver is retained.
 SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
 ```
 
-This is bounded offline integration evidence. It does not freeze the public
-revision or replace the remaining installed physical output apply/rollback
-gate.
+This is bounded offline integration evidence. The installed physical output
+apply/rollback gate below supplies the separate freeze evidence.
 
 The dynamic-output physical gate is separately armed because it takes
 exclusive DRM/input ownership and asks the operator to disconnect and reconnect
@@ -243,6 +242,16 @@ is archived under
 configuration outside the signed commit, identity drift, forbidden rollback
 publication, or checksum drift is refused. This gate changes real output state
 and must not be run without explicit operator authorization.
+
+The retained run is frame-fed archive `0001`. It binds Sophia
+`870ba46ae231081220b982ecc3a5a95517df7a90`, Hagia
+`a83c8fa022a4ceff5d8b96a01c46052bbd8ba64a`, success evidence
+`7dbcc54326d48168df930edf88d81f5cf64fb64251f3b2a9b150e159a37431e5`, and
+rollback evidence
+`267f8b11cc3de692708ee4c634efe6a09b6eb31da992483566e3ba520114f69d`.
+Independent archive verification reports `status=passed`, boundary
+`after_apply`, and two phases. This closes the hardware gate for stable
+interface major 1, wire revision 3.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

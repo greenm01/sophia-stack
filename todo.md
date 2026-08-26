@@ -55,10 +55,10 @@ criterion. Milestone 13 owns the active product path. Hagia is already the
 ordinary remembered installed session: it passed bounded deterministic
 preflight as attempt `0004`, records every real session automatically, and
 leaves Kitty, xmonad, and the previous immutable release available for
-recovery. What remains in Milestone 13 is the `sophia_wm_v1` freeze and the
-retained Triad behavior port that gates it. Protocol freeze and legacy-policy
-removal remain separate evidence-driven decisions, in that order: API v7 may
-not be removed until the freeze conditions hold.
+recovery. The retained Triad behavior port is complete and `sophia_wm_v1`
+interface major 1, wire revision 3 is frozen. The next Milestone 13 critical
+path is removal of API v7 and its Engine-owned workspace policy, followed by a
+new packaged installed candidate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -251,15 +251,15 @@ promotion gate.
    health and teardown. The first attempt on `fd44d748` was a correct session
    refused by a totals check that no run could satisfy; see the research log.
    Reservations are deliberately still absent.
-   The authoritative retained-behavior ledger still has 28 classified rows,
-   but the freeze profile is now explicit: 20 complete, 1 partial, 0 open, and
-   7 excluded with written product rationales. The checked-in Hagia
+   The authoritative retained-behavior ledger has 28 classified rows. The
+   frozen profile is 21 complete, 0 partial, 0 open, and 7 excluded with written
+   product rationales. The checked-in Hagia
    daily-driver profile, not all 137 historical Triad bindings, defines the
    retained surface.
-7. The complete cross-client reconnect/restart corpus, public xmonad projection
-   migration, and digest-pinned revision-3 client candidate now pass. After the
-   sole remaining physical output row closes, evaluate revision 3 for stability
-   and remove API v7 plus Engine-owned workspace policy.
+7. **Complete.** The complete cross-client reconnect/restart corpus, public
+   xmonad projection migration, digest-pinned revision-3 client, and signed
+   frame-fed output archive pass. Revision 3 is stable. Remove API v7 plus
+   Engine-owned workspace policy next.
 
 Cross-drawable `CopyArea` replay, alternative upscale kernels, linear-light
 fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
@@ -318,7 +318,7 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    at all, so the reduction is evidenced by the shell's own
    `reservation_reduced` records rather than by a work-area line the fixture
    had briefly invented.
-2. **Close the one partial retained-ledger row.** The checked-in Hagia
+2. **Complete.** The checked-in Hagia
    command and pointer surface is closed by executable catalog coverage plus
    its deterministic and physical gates. Trusted one-shot launch placement and
    frame-fed atomic output activation are implemented and offline-proven, and
@@ -341,12 +341,17 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    rendering, submitted, and displayed ownership; the last redundant flip lost
    its callback before the text proof. The reducer now suppresses only when the
    newest owned logical scene matches, with pending/rendering/submitted/presented
-   and newer-different precedence regressions. A clean signed successor must
-   rerun and archive the physical success/rollback pair.
+   and newer-different precedence regressions. Signed source
+   `870ba46ae231081220b982ecc3a5a95517df7a90` then passed both phases, and
+   frame-fed archive `0001` independently verifies the bound success/rollback
+   pair, physical input, and clean teardown.
    Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched
    reload, and other excluded behavior remain explicit post-freeze work.
+3. **Remove API v7 and Engine-owned workspace policy.** Revision 3's freeze gate
+   is closed; deletion must preserve the public Hagia and archived-client gates
+   before packaging a new installed candidate.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -573,10 +578,9 @@ future compatibility target, not a prerequisite.
   transport and canonical reducer, with no silent API-v7 fallback.
 - [x] Promote that profile to the installed native default while retaining
   Kitty, xmonad, and the previous immutable release as recovery routes.
-- [ ] Remove v7 and Engine-owned workspace state after the retained physical
-  output apply/rollback gate. Xmonad now runs through the public compatibility
-  adapter and the complete restart/last-layout corpus passes; removal remains
-  deliberately blocked on the final retained-ledger row.
+- [ ] Remove v7 and Engine-owned workspace state. Xmonad runs through the public
+  compatibility adapter, the complete restart/last-layout corpus passes, and
+  signed frame-fed archive `0001` has closed the final retained-ledger gate.
 - [x] Preserve registered physical actions and session operations as opaque,
   capability-gated tokens. Keep raw input, executable commands, client
   metadata, protocol objects, namespaces, pixels, and renderer handles out of
@@ -595,14 +599,13 @@ future compatibility target, not a prerequisite.
   admitted peer, preserve the committed scene across replacement, and keep
   policy checkpoints private to that peer.
 
-### 13.4 Prove The Draft Boundary And Port Triad
+### 13.4 Prove The Boundary And Port Triad
 
-Interface revision 3 remains experimental throughout this section. The fixed nine-view
-scroller proves the public boundary and supports daily use, but it is not the
-feature ceiling. Before any freeze, close Hagia's retained-behavior port ledger
-across spatial policy, Hagia Shell, Sophia session/dedicated authorities, and
-the required brokers/portals. River/Wayland and Niri compatibility machinery
-is excluded; retained product behavior is not.
+Interface major 1, wire revision 3 is stable. The fixed nine-view scroller is
+the frozen profile, not the feature ceiling. Hagia's retained-behavior port
+ledger closed across spatial policy, Hagia Shell, Sophia session/dedicated
+authorities, and the required brokers/portals. River/Wayland and Niri
+compatibility machinery is excluded; retained product behavior is not.
 
 - [ ] Implement the minimum experimental display-list, target-resolved input,
   redacted broker, and shell-role transport needed to port retained Triad shell
@@ -1282,7 +1285,7 @@ Detailed physical-run diagnoses remain in
   anything. `wm_policy.rs` does import `WM_API_VERSION` and v7 packet types, so it
   still has to be untangled before v7 is deleted, but that untangling is part of the
   gated removal and is deliberately not ahead of its gate.
-- [ ] Freeze `sophia_wm_v1` and retain an archived revision-3 client only after
+- [x] Freeze `sophia_wm_v1` and retain an archived revision-3 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart
   corpus. Do not remove API v7, declare stability, or create the permanent
@@ -1291,12 +1294,11 @@ Detailed physical-run diagnoses remain in
   this item closes.
   The first condition is defined by Hagia's `docs/triad-port-ledger.md` at Triad
   baseline `fb8fb27e`; `docs/triad-port-ledger-pointer.md` locates it and
-  summarizes its 28 classified rows. Twenty are complete, one is partial,
-  none are open, and seven are excluded with written product rationales. The
-  retained implementation is offline-complete. The physical output
-  apply/rollback archive is the sole remaining retained gate. Shared
-  reconnect/restart, public xmonad migration, and the immutable archived-client
-  candidate all pass.
+  summarizes its 28 classified rows. Twenty-one are complete, none are partial
+  or open, and seven are excluded with written product rationales. Signed
+  frame-fed archive `0001` closes the physical output gate. Shared
+  reconnect/restart, public xmonad migration, and the immutable archived client
+  also pass.
   Before it lands, settle the wire decisions enumerated in
   `docs/wm-v1-freeze-surface.md`. Twenty-four of the 28 rows need no wire change;
   the residue was workspace-name projection, broker classification shape, the
@@ -1322,8 +1324,7 @@ Detailed physical-run diagnoses remain in
   Workspace names project as `ProjectionIndicator` labels: no field, no record, a
   hard 32-byte UTF-8 ceiling truncated on a character boundary, and a name is never
   an identity — activation stays on the action token so a label cannot become a
-  namespace. This closes the naming half of its row; complete command parity is what
-  keeps the row partial.
+  namespace. The retained command surface closes the rest of that row.
   The continuous-pointer payload fixes its vocabulary now and its behavior later.
   `PolicyInteractionKind` gains `Drag` and `Scroll`, and four values is the whole
   vocabulary; the payload rides the existing `interaction_*` fields with the axis
@@ -1334,8 +1335,8 @@ Detailed physical-run diagnoses remain in
   coalescing rule and `Cancel`'s revocation semantics are behavior rather than
   layout, and both stay gated on the lock and security-authority epoch barrier: a
   guessed revocation contract would be worse than a late one.
-  What remains pre-freeze from this analysis is implementation, not decisions. The binding
-  constraint is server-to-client enum vocabularies, not record kinds: an uncounted
+  The pre-freeze implementation from this analysis is complete. The binding
+  constraint remains server-to-client enum vocabularies, not record kinds: an uncounted
   extension chunk in reserved kinds `0xFF00`–`0xFFFF` stays available after the
   freeze, but enum values sit at fixed offsets inside fixed-width records where no
   side channel reaches them.

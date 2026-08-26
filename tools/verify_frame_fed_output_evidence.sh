@@ -92,7 +92,16 @@ success_install="$(line_for "$success_log" "status=candidate_installed transacti
 success_present="$(line_for "$success_log" "status=first_presented transaction=$success_transaction " 'success first presentation')"
 success_frontend="$(line_for "$success_log" "status=frontend_candidate_published transaction=$success_transaction " 'success frontend publication')"
 success_settle="$(line_for "$success_log" "status=settled_locally transaction=$success_transaction outcome=Committed .* preserved_topology=false$" 'success local settlement')"
-success_snapshot="$(line_for "$success_log" "status=committed_snapshot_published transaction=$success_transaction " 'success committed snapshot publication')"
+mapfile -t success_topology_epochs < <(
+    sed -n "s/.*status=settled_locally transaction=$success_transaction outcome=Committed topology_epoch=\([0-9][0-9]*\) .*/\1/p" "$success_log"
+)
+(( ${#success_topology_epochs[@]} == 1 && success_topology_epochs[0] > 0 )) \
+    || fail "success local settlement must carry one nonzero topology epoch"
+success_topology_epoch="${success_topology_epochs[0]}"
+# Snapshot publication is a distinct unsolicited transport update, so its
+# transaction belongs to that transport rather than to the private startup
+# authority transaction. The shared fact is the committed topology epoch.
+success_snapshot="$(line_for "$success_log" "status=committed_snapshot_published transaction=[1-9][0-9]* topology_epoch=$success_topology_epoch transport_published=true$" 'success committed snapshot publication')"
 success_commit="$(line_for "$success_log" "status=committed transaction=$success_transaction " 'success topology commit')"
 success_input="$(line_for "$success_log" "^sophia_live_session_input schema=2 status=complete source=physical text=$success_text " 'success physical confirmation')"
 require_order "$success_start" "$success_prepare" "$success_apply" "$success_install" \
@@ -114,7 +123,10 @@ rollback_input="$(line_for "$rollback_log" "^sophia_live_session_input schema=2 
 require_order "$rollback_start" "$rollback_prepare" "$rollback_apply" "$rollback_trigger" \
     "$rollback_started" "$rollback_settle" "$rollback_complete" "$rollback_input"
 
-for forbidden in candidate_installed first_presented frontend_candidate_published committed_snapshot_published committed; do
+if grep -Eq 'status=committed_snapshot_published ' "$rollback_log"; then
+    fail "rollback phase crossed forbidden boundary: committed_snapshot_published"
+fi
+for forbidden in candidate_installed first_presented frontend_candidate_published committed; do
     if grep -Eq "status=$forbidden transaction=$rollback_transaction " "$rollback_log"; then
         fail "rollback phase crossed forbidden boundary: $forbidden"
     fi

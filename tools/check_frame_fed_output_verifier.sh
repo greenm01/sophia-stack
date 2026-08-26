@@ -40,7 +40,7 @@ write_success() {
         echo 'sophia_live_output_authority schema=2 status=first_presented transaction=18446744073709551615 outputs=2 published=false rollback_retained=true'
         echo 'sophia_live_output_authority schema=3 status=frontend_candidate_published transaction=18446744073709551615 generation=2 published=false rollback_retained=true'
         echo 'sophia_live_output_authority schema=3 status=settled_locally transaction=18446744073709551615 outcome=Committed topology_epoch=2 reason="desktop profile startup" preserved_topology=false'
-        echo 'sophia_live_output_authority schema=2 status=committed_snapshot_published transaction=18446744073709551615 topology_epoch=2 transport_published=true'
+        echo 'sophia_live_output_authority schema=2 status=committed_snapshot_published transaction=2 topology_epoch=2 transport_published=true'
         echo 'sophia_live_output_authority schema=2 status=committed transaction=18446744073709551615 topology_epoch=2 outputs=2 policy_required=true input=quarantined'
         echo 'sophia_live_session_input schema=2 status=complete source=physical text=outputapply expected_events=12 matched_events=12 pixel_change=true'
         echo 'sophia_live_session schema=16 status=bounded_complete display=:296 elapsed_msec=1000 native_in_flight=false native_cleanup_pending=false physical_input=enabled wm_policy=enabled wm_restarts=0 wm_degraded=false output_update=applied'
@@ -119,6 +119,12 @@ expect_evidence_failure "$success" "$work/mutated-rollback.log" 'candidate insta
 write_rollback "$work/mutated-rollback.log"
 sed -i 's/hagia_sha256=[0-9a-f]*/hagia_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/' "$work/mutated-rollback.log"
 expect_evidence_failure "$success" "$work/mutated-rollback.log" 'phase identity mismatch'
+write_success "$work/mutated-success.log"
+sed -i 's/status=committed_snapshot_published transaction=2 topology_epoch=2/status=committed_snapshot_published transaction=2 topology_epoch=3/' "$work/mutated-success.log"
+expect_evidence_failure "$work/mutated-success.log" "$rollback" 'committed snapshot epoch mismatch'
+write_rollback "$work/mutated-rollback.log"
+sed -i '/status=bounded_complete/i sophia_live_output_authority schema=2 status=committed_snapshot_published transaction=2 topology_epoch=1 transport_published=true' "$work/mutated-rollback.log"
+expect_evidence_failure "$success" "$work/mutated-rollback.log" 'snapshot publication during rollback'
 
 archive_output="$(
     XDG_STATE_HOME="$work/state" \
