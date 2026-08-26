@@ -393,6 +393,58 @@ impl LiveProductionScanoutContent {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionRetainedSceneQueueStatus {
+    Queue,
+    UnchangedPending,
+    UnchangedRendering,
+    UnchangedSubmitted,
+    UnchangedPresented,
+}
+
+/// Reduces retained-scene queueing against the newest frame a head owns.
+///
+/// Ownership order matters. If a different pending frame is newer than a
+/// matching displayed frame, the requested checksum is a real change back and
+/// must queue. Otherwise an identical rendering, submitted, or displayed scene
+/// is already sufficient and another KMS flip would carry no new pixels.
+pub fn reduce_live_production_retained_scene_queue(
+    pending: Option<LiveProductionScanoutContent>,
+    rendering: Option<LiveProductionScanoutContent>,
+    submitted: Option<LiveProductionScanoutContent>,
+    presented: Option<LiveProductionScanoutContent>,
+    checksum: u64,
+) -> LiveProductionRetainedSceneQueueStatus {
+    for (content, unchanged) in [
+        (
+            pending,
+            LiveProductionRetainedSceneQueueStatus::UnchangedPending,
+        ),
+        (
+            rendering,
+            LiveProductionRetainedSceneQueueStatus::UnchangedRendering,
+        ),
+        (
+            submitted,
+            LiveProductionRetainedSceneQueueStatus::UnchangedSubmitted,
+        ),
+        (
+            presented,
+            LiveProductionRetainedSceneQueueStatus::UnchangedPresented,
+        ),
+    ] {
+        let Some(content) = content else {
+            continue;
+        };
+        return if content.logical_checksum() == Some(checksum) {
+            unchanged
+        } else {
+            LiveProductionRetainedSceneQueueStatus::Queue
+        };
+    }
+    LiveProductionRetainedSceneQueueStatus::Queue
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionMirrorGenerationQueue {
     Install,
     DeferUntilPrimarySubmission,

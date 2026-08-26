@@ -4,13 +4,15 @@ use sophia_backend_live::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveProductionCpuFrameQueueStatus,
     LiveProductionMixedLayerSource, LiveProductionNativeSuspendError,
     LiveProductionNativeSuspendOutcome, LiveProductionNativeSuspendReport,
-    LiveProductionPageFlipWatchdogStatus, LiveProductionScanoutContent,
-    LiveProductionVisualRuntime, finish_live_production_native_suspend,
-    live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_retained_projection_admitted, live_production_retained_surface_order,
-    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRetainedSceneQueueStatus,
+    LiveProductionScanoutContent, LiveProductionVisualRuntime,
+    finish_live_production_native_suspend, live_production_mixed_layer_order,
+    live_production_projection_requires_gpu_scanout, live_production_retained_projection_admitted,
+    live_production_retained_surface_order, live_production_should_preserve_gpu_output,
+    live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
+    reduce_live_production_retained_scene_queue,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -464,6 +466,63 @@ fn cpu_frame_queue_suppresses_only_matching_cpu_content() {
     assert_eq!(
         reduce_live_production_cpu_frame_queue(None, mixed, None, false, false, checksum),
         LiveProductionCpuFrameQueueStatus::GpuFrameOwned
+    );
+}
+
+#[test]
+fn retained_scene_queue_suppresses_the_matching_newest_owned_frame() {
+    let matching = Some(LiveProductionScanoutContent::HeadComposition {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
+        logical_content_checksum: 42,
+        nonzero_rgb_pixels: 1,
+    });
+    let different = Some(LiveProductionScanoutContent::HeadComposition {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(2),
+        logical_content_checksum: 43,
+        nonzero_rgb_pixels: 1,
+    });
+    let present = Some(LiveProductionScanoutContent::MixedPresent {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(3),
+        transaction: TransactionId::from_raw(9),
+        nonzero_rgb_pixels: 1,
+    });
+
+    for (owned, expected) in [
+        (
+            [matching, None, None, None],
+            LiveProductionRetainedSceneQueueStatus::UnchangedPending,
+        ),
+        (
+            [None, matching, None, None],
+            LiveProductionRetainedSceneQueueStatus::UnchangedRendering,
+        ),
+        (
+            [None, None, matching, None],
+            LiveProductionRetainedSceneQueueStatus::UnchangedSubmitted,
+        ),
+        (
+            [None, None, None, matching],
+            LiveProductionRetainedSceneQueueStatus::UnchangedPresented,
+        ),
+    ] {
+        assert_eq!(
+            reduce_live_production_retained_scene_queue(owned[0], owned[1], owned[2], owned[3], 42,),
+            expected
+        );
+    }
+    assert_eq!(
+        reduce_live_production_retained_scene_queue(different, None, None, matching, 42,),
+        LiveProductionRetainedSceneQueueStatus::Queue,
+        "a different newer frame must not be hidden by matching displayed pixels"
+    );
+    assert_eq!(
+        reduce_live_production_retained_scene_queue(present, None, None, matching, 42,),
+        LiveProductionRetainedSceneQueueStatus::Queue,
+        "present-owned pixels have no interchangeable logical-scene checksum"
+    );
+    assert_eq!(
+        reduce_live_production_retained_scene_queue(None, None, None, None, 42),
+        LiveProductionRetainedSceneQueueStatus::Queue
     );
 }
 

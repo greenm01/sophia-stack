@@ -334,8 +334,15 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    rejected Hagia's configuration because the output-only runner omitted browser
    operation slot 2 while Hagia advertises all four session-operation slots. The
    runner now aliases that unused slot to its existing terminal application and
-   has a regression requiring slots 1--4. A clean signed successor must rerun and
-   archive the physical success/rollback pair.
+   has a regression requiring slots 1--4. The next signed run passed the complete
+   success phase and reached the exact forced rollback, which restored and then
+   presented DP-2 correctly. Later scene churn nevertheless submitted two more
+   byte-identical DP-2 frames because retained-scene suppression ignored
+   rendering, submitted, and displayed ownership; the last redundant flip lost
+   its callback before the text proof. The reducer now suppresses only when the
+   newest owned logical scene matches, with pending/rendering/submitted/presented
+   and newer-different precedence regressions. A clean signed successor must
+   rerun and archive the physical success/rollback pair.
    Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched

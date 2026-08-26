@@ -934,13 +934,13 @@ impl LiveProductionNativeScanout {
         Ok(queued)
     }
 
-    /// Whether this output already holds an unscanned frame of the same scene.
+    /// Whether this output already owns the same newest logical scene.
     ///
-    /// Queueing would clobber that pending frame with a copy of itself, so the
-    /// work is redundant rather than merely late and skipping it loses nothing.
-    /// Retained composition is edge-triggered with no re-arm, which is why this
-    /// compares against content still waiting in the head rather than against
-    /// the last checksum queued: that value outlives the frame it described.
+    /// Queueing would render and submit a copy of pixels already pending,
+    /// rendering, submitted, or displayed. Retained composition is
+    /// edge-triggered with no re-arm, so the newest owned content is the
+    /// authoritative comparison. A different newer frame still queues even if
+    /// an older displayed frame has the requested checksum.
     ///
     /// Mirror cohorts are never suppressed. Their pending content is arbitrated
     /// by mirror generation rather than held per head, and their queue lines are
@@ -956,18 +956,22 @@ impl LiveProductionNativeScanout {
         let Some(head) = indices.first().and_then(|index| self.heads.get(*index)) else {
             return false;
         };
-        let suppressed = head
-            .pending_content
-            .and_then(LiveProductionScanoutContent::logical_checksum)
-            == Some(checksum);
-        if suppressed {
+        let decision = reduce_live_production_retained_scene_queue(
+            head.pending_content,
+            head.rendering_content,
+            head.submitted_content,
+            head.presented_content,
+            checksum,
+        );
+        if decision != LiveProductionRetainedSceneQueueStatus::Queue {
             tracing::debug!(
                 output = output.raw(),
                 logical_content_checksum = checksum,
-                "retained scene already pending for this output"
+                status = ?decision,
+                "retained scene already owned by this output"
             );
         }
-        suppressed
+        decision != LiveProductionRetainedSceneQueueStatus::Queue
     }
 
     fn queue_head_composition_frames_with_content(

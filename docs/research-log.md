@@ -15473,3 +15473,26 @@ terminal application, and a parser-level regression requires the resulting
 Hagia-facing catalog to contain slots 1 through 4. The retained failed evidence
 is `/tmp/sophia-frame-fed-output/249c429e328f-20260826T104207Z-10055/success.log`;
 it is diagnostic evidence, not a promotion archive.
+
+The next signed run closed the entire success phase, including physical text and
+clean teardown, and the rollback phase crossed the intended boundary exactly:
+candidate KMS acceptance, proof trigger before installation, reverse-card KMS
+acceptance, local `RolledBack`, no candidate publication. DP-2 then retired both
+the restored owner and the first post-rollback composed scene. Scene changes on
+DP-1 kept producing the same blank logical checksum on DP-2, but retained-scene
+suppression checked only the pending slot. Once each identical frame reached
+displayed ownership, the next global scene queued it again. Two redundant DP-2
+flips followed; the last delivered no callback and the 500 ms watchdog fired
+roughly 400 ms after the physical-text matcher became ready, before a human
+could complete `outputrollback`.
+
+The correction is an ownership reducer rather than a longer watchdog or a proof
+exception. It compares the requested retained checksum with the newest of
+pending, rendering, submitted, and presented content. An identical newest frame
+suppresses work at every stage; a different newer frame still queues even when
+an older displayed frame matches, and Present-owned pixels remain
+non-interchangeable because they expose no logical-scene checksum. The retained
+failed evidence is
+`/tmp/sophia-frame-fed-output/aa72ea2c183c-20260826T104521Z-17250/rollback.log`;
+it proves rollback mechanics but is not a promotion archive. A clean signed
+successor must still run both phases under one bound identity.
