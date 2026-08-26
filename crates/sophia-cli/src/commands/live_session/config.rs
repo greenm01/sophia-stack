@@ -19,6 +19,7 @@ use output::{
     output_topology_from_authority_at_generation,
     output_topology_from_engine_outputs_at_generation,
     output_topology_from_resolved_at_generation, resolved_output_bounds, wm_output_bounds,
+    wm_root_bounds,
 };
 use session::{
     SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec,

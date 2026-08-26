@@ -191,6 +191,10 @@ struct LiveWmSession {
     action_requests_ordered: usize,
     stale_responses: usize,
     work_area_relayout_required: bool,
+    /// The shell's presented work-area claim, mirrored here because the WM
+    /// session owns the reduction. The coordinator that admits it lives with
+    /// the shell connection; this is the committed result only.
+    shell_reservation_bands: Vec<sophia_protocol::OutputReservation>,
     shortcuts: Option<WmShortcutRouter>,
     wm_chrome_supported: bool,
     chrome: sophia_protocol::WmChromePolicy,
@@ -465,6 +469,7 @@ impl LiveWmSession {
             action_requests_ordered: 0,
             stale_responses: 0,
             work_area_relayout_required: false,
+            shell_reservation_bands: Vec::new(),
             committed: 0,
             last_committed_at: None,
             max_request: Duration::ZERO,

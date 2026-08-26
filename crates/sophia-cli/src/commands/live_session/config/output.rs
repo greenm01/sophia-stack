@@ -182,6 +182,34 @@ pub(super) fn wm_output_bounds(
         })
         .collect()
 }
+
+/// The rectangle every output bound sits inside.
+///
+/// Reservation bands are root-relative, so a claim on one output has to be
+/// measured against this and not against the output alone. Returns `None`
+/// when the bounds do not describe a usable root, which the callers report
+/// rather than reserving against a rectangle they invented.
+pub(super) fn wm_root_bounds(bounds: &[(sophia_protocol::OutputId, Rect)]) -> Option<Rect> {
+    bounds
+        .iter()
+        .try_fold(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            |root, (_, bounds)| {
+                Some(Rect {
+                    x: 0,
+                    y: 0,
+                    width: root.width.max(bounds.x.checked_add(bounds.width)?),
+                    height: root.height.max(bounds.y.checked_add(bounds.height)?),
+                })
+            },
+        )
+        .filter(|root| !root.is_empty())
+}
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PreparedOutputProfile {
     slot: sophia_config::DesktopProfileCandidateSlot<sophia_config::DesktopOutputCandidate>,

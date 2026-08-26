@@ -25,6 +25,29 @@ impl LiveWmSession {
             })
     }
 
+    /// Adopts the shell's committed work-area claim.
+    ///
+    /// Returns whether the claim differs from the one already reduced, so the
+    /// caller reprojects exactly when the work area actually moves. The claim
+    /// arrives already admitted and already presented: this session does not
+    /// re-validate it, because the coordinator that owns that decision has
+    /// made it against the same realized topology.
+    pub(super) fn set_shell_reservation_bands(
+        &mut self,
+        bands: Vec<sophia_protocol::OutputReservation>,
+    ) -> bool {
+        if self.shell_reservation_bands == bands {
+            return false;
+        }
+        self.shell_reservation_bands = bands;
+        true
+    }
+
+    /// How many bands the shell's claim currently contributes.
+    pub(super) fn shell_reservation_band_count(&self) -> usize {
+        self.shell_reservation_bands.len()
+    }
+
     fn update_output_work_areas(
         &mut self,
         layout: &PersistentLiveLayout,
@@ -72,9 +95,7 @@ impl LiveWmSession {
             root,
             full_bounds.iter().copied(),
             &layout.active_output_reservations(),
-            // The shell work-area coordinator is not yet wired into this
-            // session; when it is, its active bands join the reduction here.
-            &[],
+            &self.shell_reservation_bands,
         );
         let work_bounds = work_areas
             .iter()

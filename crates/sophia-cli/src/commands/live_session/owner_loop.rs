@@ -441,6 +441,9 @@ fn run_session_loop_inner(
     let mut application_route_leases = ApplicationRouteLeaseState::default();
     let mut shell_proof_visible_presentations = 0_u32;
     let mut shell_proof_restart_triggered = false;
+    // Carries the shell's committed work-area claim from the shell phase to
+    // the WM phase within one tick.
+    let mut shell_work_area_bands: Option<Vec<sophia_protocol::OutputReservation>> = None;
     let mut shell_proof_waiting_for_inert_click = false;
     let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
     let mut descriptor_captures = sophia_engine::PresentedChromeCaptureState::default();

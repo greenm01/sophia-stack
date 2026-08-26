@@ -504,11 +504,14 @@ macro_rules! drain_physical_input {
                         "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=stale_issuer target=redacted"
                     );
                 }
-                let bounds = wm_output_bounds(&outputs)
-                    .into_iter()
+                let output_bounds = wm_output_bounds(&outputs);
+                let bounds = output_bounds
+                    .iter()
                     .find(|(output, _)| *output == shell_output)
-                    .map(|(_, bounds)| bounds)
+                    .map(|(_, bounds)| *bounds)
                     .ok_or("descriptor withdrawal has no output bounds")?;
+                let root = wm_root_bounds(&output_bounds)
+                    .ok_or("descriptor withdrawal has no root bounds")?;
                 let activation_surfaces = live_shell_activation_surfaces(
                     &layout.layers,
                     &layout.presentation_roles,
@@ -517,6 +520,8 @@ macro_rules! drain_physical_input {
                     broker,
                     action_output,
                     bounds,
+                    root,
+                    &output_bounds,
                     &activation_surfaces,
                 ) {
                     Ok(withdrawal) => withdrawal,
@@ -559,11 +564,14 @@ macro_rules! drain_physical_input {
                         );
                         continue;
                     }
-                    let bounds = wm_output_bounds(&outputs)
-                        .into_iter()
+                    let output_bounds = wm_output_bounds(&outputs);
+                    let bounds = output_bounds
+                        .iter()
                         .find(|(candidate, _)| *candidate == output.id)
-                        .map(|(_, bounds)| bounds)
+                        .map(|(_, bounds)| *bounds)
                         .ok_or("shell shortcut has no output bounds")?;
+                    let root = wm_root_bounds(&output_bounds)
+                        .ok_or("shell shortcut has no root bounds")?;
                     let activation_surfaces = live_shell_activation_surfaces(
                         &layout.layers,
                         &layout.presentation_roles,
@@ -572,6 +580,8 @@ macro_rules! drain_physical_input {
                         broker,
                         output,
                         bounds,
+                        root,
+                        &output_bounds,
                         &activation_surfaces,
                     ) {
                         Ok(overlay) => overlay,
@@ -1036,8 +1046,25 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     runtime.revoke_descriptor_overlay_interaction();
                 }
             }
+            shell_work_area_bands = Some(shell.work_area_bands());
         }
         if let Some(wm) = wm_session.as_mut() {
+            // The shell's committed claim reaches the reduction here. Only a
+            // change reprojects: an unchanged claim every tick would relayout
+            // the desktop forever.
+            if let Some(bands) = shell_work_area_bands.take()
+                && wm.set_shell_reservation_bands(bands)
+            {
+                let primary = outputs
+                    .first()
+                    .copied()
+                    .ok_or("shell reservation change has no primary output")?;
+                println!(
+                    "sophia_live_metadata_shell schema=1 status=reservation_reduced bands={}",
+                    wm.shell_reservation_band_count(),
+                );
+                wm.update_output_work_areas(&layout, &outputs, primary)?;
+            }
             wm.service_policy_update()?;
         }
         service_core_config_reload!();

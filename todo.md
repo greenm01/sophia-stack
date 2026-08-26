@@ -283,11 +283,17 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    reduction. `check_shell_protocol.sh` drives the real Nim shell through the
    real coordinator and reports `reservations=1`, taking a 1440-tall output to
    1412 only after commit and restoring it on withdrawal.
-   What remains is the live wiring: both `reduce_output_work_areas` callers
-   still pass an empty band slice, so no session claims a bar yet. That, and a
-   signed physical archive covering bar-visible relayout, shell crash with the
-   work area restored in one visible step, and reconnect at a fresh epoch, are
-   the production gate.
+   The live wiring is in place. The session's shell owner holds the
+   coordinator, admits each candidate's claim against the realized topology
+   before the candidate is prepared, commits it in the same step its pixels
+   present, and retains it across disconnect; the WM session mirrors the
+   committed bands and reprojects only when they change. `SOPHIA_SHELL_BAR_THICKNESS`
+   selects the strip, so the session and not the shell decides how much of the
+   desktop a panel may claim; unset, the shell reserves nothing and behaves as
+   the switcher-only shell did.
+   What remains is a signed physical archive covering bar-visible relayout,
+   shell crash with the work area restored in one visible step, and reconnect
+   at a fresh epoch. That archive is the production gate.
 2. **Close the remaining retained-ledger rows.** The switcher moved
    Recent-window switcher to partial, not complete: recency policy, scope,
    filtering, and debounce are still open, and `docs/triad-port-ledger.md` in

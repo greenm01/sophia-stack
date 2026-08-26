@@ -13,6 +13,7 @@ const SHELL_RECONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
 struct PendingShellPresentation {
     transaction: TransactionId,
     candidate_generation: u64,
+    connection_epoch: u64,
     output: sophia_protocol::OutputId,
     visible: bool,
     actions: BTreeMap<sophia_protocol::ToplevelActionCapabilityRef, SurfaceId>,
@@ -50,6 +51,7 @@ pub(super) struct LiveMetadataShell {
     pending: Option<PendingShellPresentation>,
     presented: Option<PresentedShellCandidate>,
     presented_actions: BTreeMap<sophia_protocol::ToplevelActionCapabilityRef, SurfaceId>,
+    reservations: sophia_engine::ShellWorkAreaCoordinator,
     connected: bool,
     reconnect_at: Option<Instant>,
 }
@@ -93,6 +95,7 @@ impl LiveMetadataShell {
             pending: None,
             presented: None,
             presented_actions: BTreeMap::new(),
+            reservations: sophia_engine::ShellWorkAreaCoordinator::new(),
             connected: false,
             reconnect_at: None,
         };
@@ -175,6 +178,8 @@ impl LiveMetadataShell {
         broker: &LiveMetadataBroker,
         output: sophia_engine::HeadlessOutput,
         bounds: sophia_protocol::Rect,
+        root: sophia_protocol::Rect,
+        output_bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
         activation_surfaces: &BTreeSet<SurfaceId>,
     ) -> Result<Option<sophia_engine::DescriptorOverlayProjection>, Box<dyn std::error::Error>>
     {
@@ -289,6 +294,41 @@ impl LiveMetadataShell {
             }
             None
         };
+        // The claim is admitted before the candidate is prepared: a refusal
+        // must not reach the shell as a prepared candidate it can expect to
+        // present. Admission reduces nothing yet -- only the commit that
+        // follows presentation moves the work area.
+        match self.reservations.admit(
+            connection_epoch,
+            candidate.connection_epoch,
+            candidate.candidate_generation,
+            output.id,
+            candidate.reservation,
+            root,
+            output_bounds,
+        ) {
+            Ok(prepared) => {
+                if let Some(admitted) = prepared.reservation {
+                    println!(
+                        "sophia_live_metadata_shell schema=1 status=reservation_admitted candidate_generation={} output={} depth={}",
+                        candidate.candidate_generation,
+                        output.id.raw(),
+                        admitted.band.depth,
+                    );
+                }
+            }
+            Err(refusal) => {
+                eprintln!(
+                    "sophia_live_metadata_shell schema=1 status=reservation_refused candidate_generation={} output={} reason={}",
+                    candidate.candidate_generation,
+                    output.id.raw(),
+                    refusal.reason(),
+                );
+                return Err(
+                    format!("metadata shell reservation refused: {}", refusal.reason()).into(),
+                );
+            }
+        }
         self.transport.send_candidate_outcome(
             transaction,
             sophia_protocol::ShellV1CandidateOutcome {
@@ -301,6 +341,7 @@ impl LiveMetadataShell {
         self.pending = Some(PendingShellPresentation {
             transaction,
             candidate_generation: candidate.candidate_generation,
+            connection_epoch: candidate.connection_epoch,
             output: output.id,
             visible: candidate.visible,
             actions,
@@ -323,6 +364,20 @@ impl LiveMetadataShell {
             return Ok(false);
         };
         let pending = self.pending.take().expect("checked above");
+        // The work area moves here and nowhere else: the claim becomes
+        // presented in the same step its pixels do.
+        if self
+            .reservations
+            .commit(pending.connection_epoch, pending.candidate_generation)
+            && let Some(presented) = self.reservations.presented()
+        {
+            println!(
+                "sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation={} output={} depth={}",
+                pending.candidate_generation,
+                presented.output.raw(),
+                presented.band.depth,
+            );
+        }
         self.transport.send_candidate_outcome(
             pending.transaction,
             sophia_protocol::ShellV1CandidateOutcome {
@@ -353,7 +408,15 @@ impl LiveMetadataShell {
         Ok(true)
     }
 
+    /// The shell's committed work-area claim, as bands the reduction consumes.
+    pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
+        self.reservations.active_bands()
+    }
+
     pub(super) fn reject_pending(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+        // A rejected bundle takes its claim with it; the presented work area
+        // is preserved, since nothing coherent has replaced it.
+        self.reservations.reject_prepared();
         let Some(pending) = self.pending.take() else {
             return Ok(false);
         };
@@ -462,6 +525,12 @@ impl LiveMetadataShell {
         self.pending = None;
         self.presented = None;
         self.presented_actions.clear();
+        // The in-flight claim dies with the connection. The presented one is
+        // deliberately retained beside the inert pixels: growing the work area
+        // while no shell can reproject it is the half-new desktop the
+        // coordination model rules out. A fresh epoch withdraws it by
+        // presenting a candidate that reserves nothing.
+        self.reservations.on_disconnect();
         match self.launch_and_negotiate() {
             Ok((peer_pid, revision, connection_epoch)) => {
                 self.connected = true;
