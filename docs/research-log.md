@@ -15424,3 +15424,26 @@ and the reconnect, where nothing appears. Had either been written as a strict
 before-the-restart ordering, a correct run would have failed. Cumulative counts
 and narrowly anchored windows are what made an assumption about ordering
 survive being wrong.
+
+## 2026-08-26: rollback is injected after acceptance, not after publication
+
+The final frame-fed output proof now has one deliberately narrow fault control.
+`--output-proof-rollback-after-apply` can target only the private startup output
+transaction in a bounded native public-Hagia session, and requires an explicit
+hardware arm. It fires on the backend's final `Applied` transition, which means
+every ordered KMS card has accepted the candidate, but before Engine installs
+candidate resources, queues first frames, or publishes anything to X or policy.
+The ordinary reverse-card rollback and local noncommitted settlement then do all
+recovery work. No protocol field or outcome was added for a proof-only concern.
+
+The physical gate is a pair rather than one run with two branches. The first run
+must prove installation, first presentation, frontend acknowledgement, committed
+snapshot publication, physical input, and clean teardown before the second run
+may start. The second proves the selected rollback boundary and must contain none
+of those candidate-publication events. Both runs bind the same signed Sophia and
+Hagia commits, binary hashes, checked-in core/profile blobs, and exact DP-1/DP-2
+connector facts. The archive verifier rechecks commit signatures and blobs; the
+recorder refuses a duplicate evidence pair. Synthetic fixtures remove every
+required event and mutate identities, forbidden rollback events, signed profile
+selection, and checksum closure. The harness is complete offline. The real TTY4
+run remains explicitly authorized work and is not claimed by these fixtures.

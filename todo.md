@@ -321,9 +321,13 @@ lives rather than restating it; this is a priority index, not a second roadmap.
 2. **Close the one partial retained-ledger row.** The checked-in Hagia
    command and pointer surface is closed by executable catalog coverage plus
    its deterministic and physical gates. Trusted one-shot launch placement and
-   frame-fed atomic output activation are implemented and offline-proven. Finish
-   the shared restart corpus is complete. Archive an explicitly authorized
-   physical output apply/rollback run.
+   frame-fed atomic output activation are implemented and offline-proven, and
+   the shared restart corpus is complete. The signed-harness candidate now has
+   a one-shot proof control at the exact boundary after every KMS card accepts
+   the startup candidate but before installation or publication. Its TTY4
+   runner, paired evidence/archive verifiers, reference profile, and mutation
+   fixtures pass offline. Commit and push that harness, then archive its
+   explicitly authorized physical success/rollback run.
    Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched
@@ -901,8 +905,17 @@ is excluded; retained product behavior is not.
   state. It then follows the ordinary atomic apply/rollback, first-presentation,
   and publication sequence; no output-policy peer owns or settles this private
   candidate, and peer reconnect cannot cancel it. The projection and complete
-  `sophia-cli` all-features suite pass. What remains is the explicitly authorized
-  physical apply plus injected rollback proof on the reference DRM hardware. The
+  `sophia-cli` all-features suite pass. The bounded
+  `--output-proof-rollback-after-apply` control now forces only that private
+  startup transaction into the existing reverse-card rollback path after final
+  KMS acceptance and before candidate installation. It requires normal public
+  Hagia, native scanout, a bounded runtime, a prepared startup candidate, and
+  explicit hardware arming. `tools/run_frame_fed_output_gate_tty4.sh` binds one
+  signed Sophia/Hagia build and exact DP-1/DP-2 profile to separate successful
+  apply and forced-rollback logs; its verifier rejects publication in the
+  rollback phase and its archive binds source, binaries, configurations, and
+  connector facts. Synthetic mutation coverage passes. What remains is running
+  this gate with explicit authorization on the reference DRM hardware. The
   three-slot recycling pool in Milestone 14 stays gated on its own measurement and
   is not a prerequisite here.
   Rollback heads are resolved beside apply heads, before anything is submitted,

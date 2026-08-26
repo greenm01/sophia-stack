@@ -534,6 +534,8 @@ fn run_session_loop_inner(
     let mut seat_release_prepared = false;
     let mut suspended_renderer_images = None;
     let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
+    let mut output_proof_rollback_after_apply =
+        OutputProofRollbackAfterApply::new(config.output_proof_rollback_after_apply);
 
     macro_rules! revoke_floating_pointer_interaction {
         ($reason:literal) => {{

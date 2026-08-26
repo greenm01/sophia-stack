@@ -224,6 +224,26 @@ publications with advancing generations, matching policy settlements, later
 page-flip retirements, a surviving Kitty input proof, and clean
 non-quarantined shutdown.
 
+Revision 3's final output-authority proof is a separate two-phase TTY4 gate:
+
+```sh
+SOPHIA_FRAME_FED_OUTPUT_ARM=1 tools/run_frame_fed_output_gate_tty4.sh
+```
+
+It is reference-rig-specific and refuses anything except connected `DP-1`
+2560×1440 and `DP-2` 1920×1080. Before taking DRM or input ownership it requires
+clean, signed Sophia and Hagia HEADs equal to their locally known
+`origin/master`, then builds and hashes the exact release binaries. The first
+normal public-Hagia session applies, first-presents, and publishes the checked-in
+profile. The second applies the same startup candidate and forces reverse-card
+rollback after final KMS acceptance but before candidate installation. Both
+require distinct physical text confirmation and clean teardown. A verified pair
+is archived under
+`$XDG_STATE_HOME/sophia/promotion/frame-fed-output-runs/`; duplicate evidence,
+configuration outside the signed commit, identity drift, forbidden rollback
+publication, or checksum drift is refused. This gate changes real output state
+and must not be run without explicit operator authorization.
+
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
 [X11 compatibility matrix](x11-compatibility-matrix.md) identifies each

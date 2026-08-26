@@ -1,10 +1,21 @@
 use super::super::{
     LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
-    LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild,
+    LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild, OutputProofRollbackAfterApply,
     begin_output_topology_first_presentation_rollback, hardware_output_snapshot_is_stale,
 };
 use sophia_protocol::{OutputId, Size, TransactionId};
 use std::cell::RefCell;
+
+#[test]
+fn post_apply_output_proof_is_startup_only_and_one_shot() {
+    let mut control = OutputProofRollbackAfterApply::new(true);
+    assert!(!control.take_for_startup(false));
+    assert!(control.take_for_startup(true));
+    assert!(!control.take_for_startup(true));
+
+    let mut disabled = OutputProofRollbackAfterApply::new(false);
+    assert!(!disabled.take_for_startup(true));
+}
 
 /// Rebuild with one head per output: the ordinary unmirrored desktop, and every
 /// case here except the group that loses a connector.

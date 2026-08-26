@@ -1,0 +1,39 @@
+schema 1
+
+// Revision 3's final output proof uses one ordinary Hagia session and changes
+// only the two reference-rig heads. Disconnected or unrelated connectors keep
+// their current state, while the gate below refuses any connected-head drift.
+policy {
+  layout "scroller"
+  view-count 9
+  outer-gap 0
+  inner-gap 0
+}
+shell { enabled #false; }
+shortcut {
+  profile "frame-fed-output-proof"
+}
+session { terminal "terminal"; }
+input { inherit-sophia #true; }
+output {
+  inherit-sophia #true
+  named "DP-1" {
+    mode "preferred"
+    scale 1
+    position 0 0
+    transform "normal"
+    enabled #true
+    focus-at-startup #true
+    vrr 0
+  }
+  named "DP-2" {
+    mode "preferred"
+    scale 1
+    position 2560 0
+    transform "normal"
+    enabled #true
+    focus-at-startup #false
+    vrr 0
+  }
+}
+broker { enabled #false; }

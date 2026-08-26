@@ -6,6 +6,8 @@ mod firefox_stage;
 mod input_profile;
 #[path = "config/output.rs"]
 mod output;
+#[path = "config/output_proof.rs"]
+mod output_proof;
 #[path = "config/session.rs"]
 mod session;
 #[path = "config/session_profile.rs"]
@@ -20,6 +22,10 @@ use output::{
     output_topology_from_engine_outputs_at_generation,
     output_topology_from_resolved_at_generation, resolved_output_bounds, wm_output_bounds,
     wm_root_bounds,
+};
+use output_proof::{
+    OutputProofRollbackAfterApply, parse_output_proof_rollback_after_apply,
+    validate_prepared_output_proof_candidate,
 };
 use session::{
     SessionApplicationConfig, SessionApplicationOverrides, SessionApplicationSpec,
@@ -71,6 +77,7 @@ struct PersistentXtermSessionConfig {
     wm_interface: sophia_config::ExternalWmInterface,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_public_restart_after_action: Option<WmActionId>,
+    output_proof_rollback_after_apply: bool,
     wm_socket_path: std::path::PathBuf,
     input_quiet_msec: u64,
     namespace_profile: NamespaceProfile,
@@ -604,6 +611,14 @@ impl PersistentXtermSessionConfig {
         }
         let (wm_public_fault_after, wm_public_restart_after_action) =
             wm_proof::parse_wm_proof_controls(args, wm_interface, max_runtime)?;
+        let output_proof_rollback_after_apply = parse_output_proof_rollback_after_apply(
+            args,
+            native_scanout,
+            normal_session,
+            wm_interface,
+            max_runtime,
+            wm_public_fault_after.is_some() || wm_public_restart_after_action.is_some(),
+        )?;
         if native_scanout && std::env::var_os("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE").is_none() {
             return Err(
                 "set SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 to run persistent native scanout"
@@ -758,6 +773,7 @@ impl PersistentXtermSessionConfig {
             wm_interface,
             wm_public_fault_after,
             wm_public_restart_after_action,
+            output_proof_rollback_after_apply,
             wm_socket_path: std::env::temp_dir().join(format!(
                 "sophia-live-wm-{}-{display_number}.sock",
                 std::process::id()

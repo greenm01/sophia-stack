@@ -103,6 +103,7 @@ mod authority_merge_tests;
 mod desktop_shortcut_tests;
 mod input_policy_tests;
 mod metadata_shell_tests;
+mod output_proof_tests;
 mod output_topology_owner_tests;
 mod policy_transport_worker_tests;
 mod present_retirement_tests;

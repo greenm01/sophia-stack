@@ -78,6 +78,12 @@ bash -n tools/run_mixed_output_gate_tty4.sh \
     tools/verify_mixed_output_physical_archive.sh \
     tools/test_verify_mixed_output_evidence.sh
 bash tools/test_verify_mixed_output_evidence.sh
+bash -n tools/run_frame_fed_output_gate_tty4.sh \
+    tools/verify_frame_fed_output_evidence.sh \
+    tools/archive_frame_fed_output_physical_run.sh \
+    tools/verify_frame_fed_output_physical_archive.sh \
+    tools/check_frame_fed_output_verifier.sh
+bash tools/check_frame_fed_output_verifier.sh
 bash -n tools/operator_keyboard_hardware_proof.sh
 bash -n tools/finish_milestones_1_2.sh
 bash -n tools/run_sophia_xmonad_session.sh
