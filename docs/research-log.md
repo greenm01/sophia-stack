@@ -15457,3 +15457,19 @@ there is therefore no honest basis for classifying the runtime exit yet. Failed
 runs now remain in `/tmp/sophia-frame-fed-output/`, and the trap prints the exact
 directory and exit status. The physical pair remains open until a clean signed
 successor either passes or retains enough evidence to diagnose the exit.
+
+The retained successor did diagnose it, and the display transaction itself was
+successful: both candidate frames were prepared, the atomic card effect was
+accepted, both page flips retired, the frontend acknowledged generation 2, and
+the startup transaction committed. Failure came afterwards at Hagia
+configuration. Hagia advertises all four session-operation slots; normal session
+construction already admitted terminal, close, and logout, but the output-only
+gate supplied no browser application and therefore omitted slot 2. Sophia's
+all-slots admission check rejected the configuration, three supervised restarts
+repeated the same rejection, and bounded cleanup then removed the X display
+before Kitty finished connecting. The Kitty/GLFW error was a cleanup consequence,
+not the trigger. The runner now maps the unused browser operation to its existing
+terminal application, and a parser-level regression requires the resulting
+Hagia-facing catalog to contain slots 1 through 4. The retained failed evidence
+is `/tmp/sophia-frame-fed-output/249c429e328f-20260826T104207Z-10055/success.log`;
+it is diagnostic evidence, not a promotion archive.

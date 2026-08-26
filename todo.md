@@ -329,8 +329,13 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    fixtures pass offline. The first explicitly authorized run passed the atomic
    hardware preflight, then Sophia exited before either phase could be archived;
    the runner's error trap incorrectly erased that phase log. Its signed
-   successor must retain and print the diagnostic directory on every failure,
-   then rerun and archive the physical success/rollback pair.
+   successor retained the retry and proved the whole success-side KMS apply,
+   first presentation, frontend publication, and local commit. The session then
+   rejected Hagia's configuration because the output-only runner omitted browser
+   operation slot 2 while Hagia advertises all four session-operation slots. The
+   runner now aliases that unused slot to its existing terminal application and
+   has a regression requiring slots 1--4. A clean signed successor must rerun and
+   archive the physical success/rollback pair.
    Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched

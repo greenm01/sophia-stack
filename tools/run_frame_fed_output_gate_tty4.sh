@@ -161,6 +161,7 @@ run_phase() {
         --session-app=terminal="$KITTY_BIN" \
         --session-start=terminal \
         --session-action-app=terminal=terminal \
+        --session-action-app=browser=terminal \
         --session-app-arg=terminal=--config \
         --session-app-arg=terminal=NONE \
         --session-app-arg=terminal=--override \

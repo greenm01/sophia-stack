@@ -886,6 +886,35 @@ fn mixed_output_gate_apps_satisfy_probe_profile() {
 }
 
 #[test]
+fn frame_fed_output_gate_admits_hagias_complete_session_operation_catalog() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let core = root.join("tools/config/sophia-xmonad/core.kdl");
+    let desktop = root.join("tools/fixtures/frame_fed_output_proof.kdl");
+    let config = PersistentXtermSessionConfig::from_args(&[
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", desktop.display()),
+        "--session-mode=normal".to_owned(),
+        "--session-app=terminal=/usr/bin/kitty".to_owned(),
+        "--session-start=terminal".to_owned(),
+        "--session-action-app=terminal=terminal".to_owned(),
+        "--session-action-app=browser=terminal".to_owned(),
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        "--max-runtime-ms=180000".to_owned(),
+    ])
+    .unwrap();
+
+    let (operations, _) = public_session_operations(&config);
+    assert_eq!(
+        operations
+            .iter()
+            .map(|operation| operation.slot)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4]
+    );
+}
+
+#[test]
 fn session_authority_preparation_is_deterministic_and_rejection_preserves_active_state() {
     let args = [
         "--session-mode=normal".to_owned(),
