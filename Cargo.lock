@@ -1005,9 +1005,6 @@ dependencies = [
 name = "sophia-wm-demo"
 version = "0.1.0"
 dependencies = [
- "rustix",
- "sophia-config",
- "sophia-engine",
  "sophia-protocol",
 ]
 

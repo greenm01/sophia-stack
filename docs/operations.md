@@ -56,8 +56,8 @@ identities plus their configuration and executable digests. Installation
 rejects a missing path, wrong version, dirty xmobar source, or digest mismatch.
 It installs six greetd entries:
 
-- `Sophia xmonad (Experimental)` is the frozen compatibility fallback. Its
-  blind bridge uses `sophia_wm_v1`; it is not an API-v7 fallback.
+- `Sophia xmonad (Experimental)` is the frozen classical-WM compatibility
+  fallback. Its blind bridge is a `sophia_wm_v1` client.
 - `Sophia Kitty (Baseline)` is the known-good reduced fallback.
 - `Sophia Firefox Proof` runs the integrated browser evidence workflow.
 - `Sophia Recovery Proof` adds a process-external 45-second watchdog. It is an
@@ -73,7 +73,7 @@ An artifact packaged with explicit `SOPHIA_HAGIA_BIN` and
 If the shell path is omitted, packaging looks for `hagia-shell` and then
 Nimble's `hagia_shell` beside `hagia`. Both executable digests are retained in
 the manifest, and installation rejects a missing shell. The entry never falls
-back to API v7 or xmonad. After
+back to xmonad. After
 bounded deterministic preflight, select it once to make it the remembered
 ordinary session; packaging alone does not freeze either protocol or remove
 recovery paths.

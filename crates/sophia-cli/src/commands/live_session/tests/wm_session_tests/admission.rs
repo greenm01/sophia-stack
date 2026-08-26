@@ -31,13 +31,11 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::from([surface]),
         source: Some(LiveWmProposalSource::Manage(surface)),
-        effects: None,
         policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -57,7 +55,6 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
     assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
     assert_eq!(controls.pending_len(), 0);
     assert!(layout.unmanaged_surfaces.contains(&surface));
-    assert!(wm_transport_requires_reseed(&result));
 
     let mut routed =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(5));
@@ -108,13 +105,11 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::from([surface]),
         source: Some(LiveWmProposalSource::Manage(surface)),
-        effects: None,
         policy_settlement: None,
     });
 
@@ -128,7 +123,6 @@ fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
     assert!(!layout.unmanaged_surfaces.contains(&surface));
     assert!(!layout.admission_retries.contains_key(&surface));
     assert_eq!(layout.layout_epochs.pending_target(surface), None);
-    assert!(wm_transport_requires_reseed(&withdrawal));
 }
 
 #[test]
@@ -241,11 +235,9 @@ fn admitted_pixels_cross_the_visual_boundary_once_at_planned_geometry() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: None,
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -535,11 +527,9 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: None,
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -562,16 +552,7 @@ fn recovered_awaiting_pixels_admission_releases_its_present_at_commit() {
             geometry,
         }
     );
-    // The projection adapter has no competing positive-focus command. The
-    // exact presented candidate is the only transition that may release it.
-    assert_eq!(
-        hidden_wm_focus_to_clear(
-            recovery_transaction,
-            Some(SurfaceId::new(6, 1)),
-            Some(surface),
-        ),
-        None
-    );
+    // The exact presented candidate is the only transition that may release it.
     assert_eq!(layout.focus_to_apply, None);
     let empty =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(24));
@@ -696,11 +677,9 @@ fn recovery_cannot_publish_admission_chrome_from_retained_size_without_pixels() 
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: None,
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();

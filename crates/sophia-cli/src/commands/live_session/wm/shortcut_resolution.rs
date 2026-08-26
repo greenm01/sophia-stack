@@ -87,9 +87,8 @@ fn resolve_public_shortcuts(
             },
         });
     }
-    // Built from configuration, so there is no protocol revision to declare and no
-    // hello to fabricate. The public path never spoke API v7; it only borrowed its
-    // constructor.
+    // Built from prepared authorities, so there is no transport handshake to
+    // fabricate before constructing Engine's shortcut registry.
     sophia_engine::WmShortcutRegistry::new(
         &bindings,
         sophia_protocol::WmCapabilities::all_supported(),

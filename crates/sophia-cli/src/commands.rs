@@ -15,8 +15,8 @@ mod prelude {
         AuthorityTransactionInbox, AuthorityTransactionIntake, CompositorBackendTickInput,
         FrameClockTick, FrameScheduleDecision, HeadlessCompositorBackendAssembly, HeadlessEngine,
         HeadlessSessionDriver, HeadlessSessionDriverTick, LayoutEpochState,
-        LiveRuntimeDriverAdapter, LiveRuntimeDriverIntake, WmSocketTransport,
-        WmSocketTransportConfig, WmTransactionUpdate, schedule_frame_from_damage,
+        LiveRuntimeDriverAdapter, LiveRuntimeDriverIntake, WmTransactionUpdate,
+        schedule_frame_from_damage,
     };
     pub(crate) use sophia_portal::PortalCommand;
     pub(crate) use sophia_protocol::{
@@ -24,8 +24,8 @@ mod prelude {
         DamageFrame, LayerSnapshot, LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot,
         LayoutNodeState, NamespaceId, PortalTransferId, Rect, Region, ResizeSyncCapability, Size,
         SurfaceConstraints, SurfaceId, SurfaceTransaction, TransactionCommit, TransactionId,
-        TransactionOutcome, Transform, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket,
-        WorkspaceId, decode_broker_health_frame, encode_broker_health_frame,
+        TransactionOutcome, Transform, WorkspaceId, decode_broker_health_frame,
+        encode_broker_health_frame,
     };
     pub(crate) use sophia_runtime::{
         ProcessLaunchSpec, ProcessSupervisor, RestartPolicy, RuntimeBrokerSupervisors,

@@ -1065,7 +1065,6 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 );
                 wm.update_output_work_areas(&layout, &outputs, primary)?;
             }
-            wm.service_policy_update()?;
         }
         service_core_config_reload!();
         service_session_controls!();

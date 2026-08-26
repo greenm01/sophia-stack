@@ -74,7 +74,7 @@ fn parses_complete_core_snapshot() {
     assert_eq!(snapshot.max_chrome_width, 12);
     assert_eq!(
         snapshot.external_wm.as_ref().map(|wm| wm.interface),
-        Some(ExternalWmInterface::ApiV7)
+        Some(ExternalWmInterface::SophiaWmV1)
     );
     assert!(snapshot.verbose_diagnostics);
 }
@@ -90,6 +90,21 @@ fn parses_public_external_wm_interface() {
     assert_eq!(
         snapshot.external_wm.as_ref().map(|wm| wm.interface),
         Some(ExternalWmInterface::SophiaWmV1)
+    );
+}
+
+#[test]
+fn rejects_removed_api_v7_external_wm_interface() {
+    let source = CORE.replace(
+        "external-wm executable=\"/usr/bin/xmonad\"",
+        "external-wm executable=\"/usr/bin/xmonad\" interface=\"api_v7\"",
+    );
+    let error = parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL)
+        .expect_err("the removed private transport must not remain selectable");
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported external WM interface")
     );
 }
 

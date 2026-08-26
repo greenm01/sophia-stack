@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use sophia_engine::PolicyProjectionError;
 use sophia_protocol::{
-    LayoutTransaction, OutputId, Rect, SurfaceId, SurfacePlacement, SurfaceSizeRequest,
-    TransactionId, WM_API_VERSION, WmCommand, WmOutputWorkspace, WmResponsePacket, WmSessionAction,
-    WmSessionDescriptor, WorkspaceId,
+    LayoutTransaction, OutputId, PolicyOutputProjection, PolicyProjectionProposal,
+    PolicyProjectionRequest, PolicySceneSnapshot, PolicySurfacePlacement, PolicyTransform, Rect,
+    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WmCommand,
+    WmResponsePacket, WmSessionAction, WorkspaceId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -11,6 +13,13 @@ pub struct WmOutputPolicyState {
     pub bounds: Rect,
     pub workspace: WorkspaceId,
     pub focus: Option<SurfaceId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacySessionDescriptor {
+    pub workspaces: Vec<WorkspaceId>,
+    pub active_workspaces: Vec<(OutputId, WorkspaceId)>,
+    pub session_actions: Vec<WmSessionAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,17 +120,13 @@ impl WmWorkspaceState {
         })
     }
 
-    pub fn descriptor(&self, session_actions: Vec<WmSessionAction>) -> WmSessionDescriptor {
-        WmSessionDescriptor {
-            api_version: WM_API_VERSION,
+    pub fn descriptor(&self, session_actions: Vec<WmSessionAction>) -> LegacySessionDescriptor {
+        LegacySessionDescriptor {
             workspaces: self.workspaces.clone(),
             active_workspaces: self
                 .outputs
                 .iter()
-                .map(|(output, state)| WmOutputWorkspace {
-                    output: *output,
-                    workspace: state.workspace,
-                })
+                .map(|(output, state)| (*output, state.workspace))
                 .collect(),
             session_actions,
         }
@@ -527,4 +532,82 @@ impl WmWorkspaceState {
             Err(WmPolicyError::UnknownSurface)
         }
     }
+}
+
+/// Adapts the bridge's private workspace candidate into the stable public
+/// output-projection shape. Workspace interpretation never enters Engine.
+pub fn adapt_legacy_policy_plan(
+    request: &PolicyProjectionRequest,
+    scene: &PolicySceneSnapshot,
+    plan: &WmPolicyPlan,
+) -> Result<PolicyProjectionProposal, PolicyProjectionError> {
+    let surfaces = scene
+        .surfaces
+        .iter()
+        .map(|surface| (surface.surface, surface))
+        .collect::<BTreeMap<_, _>>();
+    let rendered = plan
+        .layout
+        .render_positions
+        .iter()
+        .map(|placement| (placement.surface, placement))
+        .collect::<BTreeMap<_, _>>();
+    let requested_sizes = plan
+        .layout
+        .requested_sizes
+        .iter()
+        .map(|request| (request.surface, request.size))
+        .collect::<BTreeMap<_, _>>();
+    let mut outputs = Vec::with_capacity(request.affected_outputs.len());
+    for output in &request.affected_outputs {
+        let output_state = plan
+            .candidate
+            .output(*output)
+            .ok_or(PolicyProjectionError::LegacyAdapterState)?;
+        let visible = plan
+            .candidate
+            .visible_surfaces(*output)
+            .map_err(|_| PolicyProjectionError::LegacyAdapterState)?;
+        let mut placements = visible
+            .into_iter()
+            .map(|surface| {
+                let snapshot = surfaces
+                    .get(&surface)
+                    .ok_or(PolicyProjectionError::LegacyAdapterState)?;
+                let rendered = rendered.get(&surface).copied();
+                Ok(PolicySurfacePlacement {
+                    surface,
+                    surface_generation: snapshot.generation,
+                    geometry: rendered.map_or(snapshot.geometry, |placement| placement.geometry),
+                    requested_size: requested_sizes.get(&surface).copied(),
+                    crop: rendered.and_then(|placement| placement.crop),
+                    transform: match rendered.map(|placement| placement.transform) {
+                        None | Some(Transform::IDENTITY) => PolicyTransform::Identity,
+                        Some(_) => return Err(PolicyProjectionError::LegacyAdapterState),
+                    },
+                    presentation: snapshot.current_state,
+                })
+            })
+            .collect::<Result<Vec<_>, PolicyProjectionError>>()?;
+        placements.sort_by_key(|placement| {
+            rendered
+                .get(&placement.surface)
+                .map_or(0, |rendered| rendered.z_index)
+        });
+        outputs.push(PolicyOutputProjection {
+            output: *output,
+            placements,
+            focus: output_state.focus,
+        });
+    }
+    Ok(PolicyProjectionProposal {
+        transaction: plan.transaction,
+        connection_epoch: request.connection_epoch,
+        request_id: request.request_id,
+        base_generation: request.scene_generation,
+        active_output: scene.active_output,
+        outputs,
+        indicators: Vec::new(),
+        output_statuses: Vec::new(),
+    })
 }

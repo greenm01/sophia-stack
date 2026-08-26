@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
-    SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmActionActivation, WmActionId,
-    WmCommand, WmFocusRequest, WmManageSurface, WmOutputWorkspace, WmRelayoutWorkspace,
-    WmRequestKind, WmRequestPacket, WmSessionDescriptor, WorkspaceId,
+    SurfaceConstraints, SurfaceId, TransactionId, WmActionActivation, WmActionId, WmCommand,
+    WmFocusRequest, WmManageSurface, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket,
+    WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_NEXT_LAYOUT,
-    run_public_xmonad_policy_cycles, run_wm_socket_server,
+    LegacySessionDescriptor, LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime,
+    XMONAD_ACTION_NEXT_LAYOUT, run_public_xmonad_policy_cycles,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,40 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let launch = xmonad_launch_spec(&args)?;
             run_public_xmonad_policy_cycles(socket, launch, max_cycles)?;
         }
-        Some("serve-socket") => {
-            let socket = args
-                .iter()
-                .find_map(|arg| arg.strip_prefix("--socket="))
-                .ok_or("missing --socket=PATH")?;
-            let executable = args
-                .iter()
-                .find_map(|arg| arg.strip_prefix("--wm="))
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("SOPHIA_LEGACY_X11_WM").map(PathBuf::from))
-                .ok_or("missing --wm=PATH or SOPHIA_LEGACY_X11_WM")?;
-            let launch = args
-                .iter()
-                .filter_map(|arg| arg.strip_prefix("--wm-arg="))
-                .fold(LegacyWmLaunchSpec::new(executable), |launch, argument| {
-                    launch.arg(argument)
-                });
-            let launch = match args
-                .iter()
-                .find_map(|arg| arg.strip_prefix("--wm-private-alias="))
-            {
-                Some(alias) => launch.with_private_executable_alias(alias),
-                None => launch,
-            };
-            let profile = match args.iter().find_map(|arg| arg.strip_prefix("--profile=")) {
-                None | Some("layout-only") => LegacyWmProfile::LayoutOnly,
-                Some("xmonad") => LegacyWmProfile::Xmonad,
-                Some(profile) => {
-                    return Err(format!("unsupported legacy WM profile {profile:?}").into());
-                }
-            };
-            let launch = launch.with_profile(profile);
-            run_wm_socket_server(socket, launch)?;
-        }
         Some("xmonad-smoke" | "smoke") => {
             let xmonad = args
                 .iter()
@@ -84,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "usage: sophia-x11-wm-bridge serve-policy --wm=PATH [--socket=PATH] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge serve-socket --socket=PATH --wm=PATH [--profile=layout-only|xmonad] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge xmonad-smoke [--xmonad=PATH]"
+                "usage: sophia-x11-wm-bridge serve-policy --wm=PATH [--socket=PATH] [--wm-arg=ARG ...] [--wm-private-alias=RELATIVE]\n       sophia-x11-wm-bridge xmonad-smoke [--xmonad=PATH]"
                     .into(),
             );
         }
@@ -131,13 +97,9 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .with_private_executable_alias("xmonad/xmonad-x86_64-linux")
         .with_profile(LegacyWmProfile::Xmonad);
     let mut runtime = LegacyX11WmBridgeRuntime::start_with_root(launch.clone(), bounds)?;
-    runtime.configure_session(WmSessionDescriptor {
-        api_version: WM_API_VERSION,
+    runtime.configure_session(LegacySessionDescriptor {
         workspaces: vec![workspace],
-        active_workspaces: vec![WmOutputWorkspace {
-            output: OutputId::from_raw(1),
-            workspace,
-        }],
+        active_workspaces: vec![(OutputId::from_raw(1), workspace)],
         session_actions: Vec::new(),
     })?;
     let first = WmRequestPacket {
@@ -494,13 +456,9 @@ fn run_xmonad_smoke(xmonad: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     drop(runtime);
     let mut restarted = LegacyX11WmBridgeRuntime::start_with_root(launch, bounds)?;
-    restarted.configure_session(WmSessionDescriptor {
-        api_version: WM_API_VERSION,
+    restarted.configure_session(LegacySessionDescriptor {
         workspaces: vec![workspace],
-        active_workspaces: vec![WmOutputWorkspace {
-            output: OutputId::from_raw(1),
-            workspace,
-        }],
+        active_workspaces: vec![(OutputId::from_raw(1), workspace)],
         session_actions: Vec::new(),
     })?;
     let committed_seed = restarted.handle_request(&WmRequestPacket {

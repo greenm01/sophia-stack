@@ -19,15 +19,14 @@ use super::{
     PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy, PublicPolicyFaultPoint,
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
-    SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC,
-    SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC, SHELL_SWITCHER_SHORTCUT_ACTION,
-    SessionFatalCleanupEvidence, SessionPointerPlacement, SessionProcessGuard,
-    SessionProtocolErrorTally, Size, Transform, XPresentCadence, authority_batch_has_engine_work,
-    authority_batch_is_pure_content, authority_merge_run_len, authority_transaction_count,
-    authority_wait_timeout, center_geometry_without_scaling, clamp_floating_pointer_outline,
-    clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
-    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
-    global_runtime_deadline_ends_session, hidden_wm_focus_to_clear,
+    SESSION_POLICY_RESPONSE_TIMEOUT_MSEC, SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES,
+    SHELL_SWITCHER_SHORTCUT_ACTION, SessionFatalCleanupEvidence, SessionPointerPlacement,
+    SessionProcessGuard, SessionProtocolErrorTally, Size, Transform, XPresentCadence,
+    authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
+    authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
+    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
+    completed_pointer_gesture_geometry, current_cpu_frame_is_presented,
+    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
     independent_native_output_presented, initial_session_focus_candidate,
     input_baseline_is_presented, is_shell_switcher_shortcut, live_transaction_observed_size,
     live_transaction_raster_size, live_transaction_visual_evidence,
@@ -69,8 +68,7 @@ use sophia_engine::{
 use sophia_protocol::{
     AuthorityKind, DeviceId, InputEventKind, InputEventPacket, NamespaceCapabilities,
     NamespaceProfile, Point, SeatId, SurfaceId, SurfaceTransaction, SurfaceTransactionReadiness,
-    WM_API_VERSION, WmActionId, WmBindingRegistration, WmCapabilities, WmHello, WmModifierMask,
-    WmSessionAction,
+    WmActionId, WmBindingRegistration, WmCapabilities, WmModifierMask, WmSessionAction,
 };
 use sophia_protocol::{OutputId, TransactionId};
 use sophia_x_authority::{
@@ -114,10 +112,8 @@ mod public_policy_recovery_tests;
 mod session_config_tests;
 mod startup_output_tests;
 mod visual_candidate_tests;
-mod wm_action_tests;
 mod wm_admission_tests;
 mod wm_session_tests;
-mod wm_transport_worker_tests;
 
 fn test_key_repeat_parts() -> (KeyRepeatState, XkbKeymapSnapshot) {
     (
@@ -828,19 +824,18 @@ fn external_wm_never_reconciles_focus_to_a_committed_hidden_surface() {
 #[test]
 fn shortcut_only_input_activates_super_enter_without_routing_unfocused_keys() {
     let action = WmActionId::from_raw(7);
-    let registry = WmShortcutRegistry::from_hello(&WmHello {
-        api_version: WM_API_VERSION,
-        capabilities: WmCapabilities::all_supported(),
-        policy_generation: 1,
-        chrome: sophia_protocol::WmChromePolicy::default(),
-        bindings: vec![WmBindingRegistration {
+    let registry = WmShortcutRegistry::new(
+        &[WmBindingRegistration {
             action,
             keycode: 28,
             modifiers: WmModifierMask {
                 bits: WmModifierMask::SUPER,
             },
         }],
-    })
+        WmCapabilities::all_supported(),
+        1,
+        sophia_protocol::WmChromePolicy::default(),
+    )
     .unwrap();
     let mut shortcuts = WmShortcutRouter::new(registry);
     let events = [125, 28]

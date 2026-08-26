@@ -1,11 +1,10 @@
-use sophia_engine::{PolicyProjectionReducer, WmWorkspaceState, adapt_v7_policy_plan};
+use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
     LayoutNodeCapabilities, OutputId, PolicyOutputProjection, PolicyOutputSnapshot,
     PolicyPresentationState, PolicyProjectionIndicator, PolicyProjectionOutcome,
     PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicyRequestCause,
     PolicySceneSnapshot, PolicySurfaceKind, PolicySurfacePlacement, PolicySurfaceSnapshot,
-    PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId, Transform, WmActionId,
-    WmCommand, WmResponsePacket, WorkspaceId,
+    PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId, WmActionId,
 };
 
 #[test]
@@ -304,65 +303,6 @@ fn invalid_descriptor_preserves_the_last_good_projection_and_publication() {
     );
     assert_eq!(reducer.indicator_publication(), before);
     assert_eq!(reducer.commit_serial(), 0);
-}
-
-#[test]
-fn api_v7_workspace_plan_enters_the_same_projection_reducer() {
-    let scene = scene(1, &[surface(1)]);
-    let mut reducer = PolicyProjectionReducer::new(scene.clone()).unwrap();
-    reducer.connect(1).unwrap();
-    let request = reducer.issue_request(vec![output(1), output(2)]).unwrap();
-
-    let workspace = WorkspaceId::from_raw(1);
-    let mut state = WmWorkspaceState::new(
-        [
-            (
-                output(1),
-                Rect {
-                    x: 0,
-                    y: 0,
-                    width: 100,
-                    height: 100,
-                },
-            ),
-            (
-                output(2),
-                Rect {
-                    x: 100,
-                    y: 0,
-                    width: 100,
-                    height: 100,
-                },
-            ),
-        ],
-        2,
-    )
-    .unwrap();
-    state.register_surface(surface_id(1), workspace).unwrap();
-    let response = WmResponsePacket {
-        transaction: TransactionId::from_raw(12),
-        commands: vec![
-            WmCommand::RenderSurface(sophia_protocol::SurfacePlacement {
-                surface: surface_id(1),
-                geometry: rect(0, 0),
-                z_index: 0,
-                crop: None,
-                transform: Transform::IDENTITY,
-            }),
-            WmCommand::FocusSurface(surface_id(1)),
-        ],
-        timeout_msec: 100,
-    };
-    let plan = state.plan_response(&response, &[]).unwrap();
-    let proposal = adapt_v7_policy_plan(&request, &scene, &plan).unwrap();
-
-    assert_eq!(
-        reducer.apply_proposal(&proposal),
-        PolicyProjectionOutcome::Committed
-    );
-    let committed = reducer.committed();
-    assert_eq!(committed[0].focus, Some(surface_id(1)));
-    assert!(committed[1].placements.is_empty());
 }
 
 #[test]

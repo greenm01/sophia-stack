@@ -675,7 +675,7 @@ fn x_authority_codec_round_trips_every_explicit_portal_kind() {
 fn x_authority_codec_rejects_wrong_message_kind() {
     let payload = Vec::new();
     let frame = encode_frame(
-        IpcMessageKind::WmRequest,
+        IpcMessageKind::BrokerHealth,
         TransactionId::from_raw(104),
         &payload,
     )
@@ -685,7 +685,7 @@ fn x_authority_codec_rejects_wrong_message_kind() {
         decode_x_authority_request_frame(&frame),
         Err(IpcCodecError::InvalidEnum {
             field: "message_kind",
-            value: IpcMessageKind::WmRequest as u32,
+            value: IpcMessageKind::BrokerHealth as u32,
         })
     );
 }

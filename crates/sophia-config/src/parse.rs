@@ -434,11 +434,11 @@ fn parse_namespace(node: &KdlNode) -> Result<String, ConfigParseError> {
 
 fn parse_external_wm(node: &KdlNode) -> Result<ExternalWmConfig, ConfigParseError> {
     exact_shape(node, 0, &["executable", "interface"], true)?;
-    let interface = match optional_string_property(node, "interface", "api_v7", 1, 64)?.as_str() {
-        "api_v7" => ExternalWmInterface::ApiV7,
-        "sophia_wm_v1" => ExternalWmInterface::SophiaWmV1,
-        other => return schema_error(format!("unsupported external WM interface {other:?}")),
-    };
+    let interface =
+        match optional_string_property(node, "interface", "sophia_wm_v1", 1, 64)?.as_str() {
+            "sophia_wm_v1" => ExternalWmInterface::SophiaWmV1,
+            other => return schema_error(format!("unsupported external WM interface {other:?}")),
+        };
     Ok(ExternalWmConfig {
         executable: absolute_path_property(node, "executable")?,
         arguments: node

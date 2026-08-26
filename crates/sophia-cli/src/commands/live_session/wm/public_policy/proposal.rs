@@ -57,7 +57,7 @@ fn reconcile_public_policy_proposal(
                         sophia_protocol::PolicyTransform::Identity => Transform::IDENTITY,
                     },
                 }],
-                timeout_msec: u32::try_from(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC)
+                timeout_msec: u32::try_from(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC)
                     .unwrap_or(u32::MAX),
             };
             let transaction =
@@ -206,18 +206,16 @@ fn public_live_proposal(
         presentation_states,
         configure_deliveries: 0,
         focus,
-        timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
+        timeout: Duration::from_millis(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC),
         update: WmTransactionUpdate {
             commit: TransactionCommit {
                 transaction,
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces,
             },
-            ipc_error: None,
         },
         moved_surfaces,
         source: Some(source),
-        effects: None,
         policy_settlement: Some(settlement),
     })
 }
@@ -241,11 +239,9 @@ fn public_operation_proposal(
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: Vec::new(),
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: None,
-        effects: None,
         policy_settlement: Some(settlement),
     }
 }

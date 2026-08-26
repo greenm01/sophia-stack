@@ -134,11 +134,9 @@ fn move_only_surface_receives_geometry_control_without_becoming_a_resize_obligat
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: surfaces.to_vec(),
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(3))),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -190,11 +188,9 @@ fn focus_only_layout_emits_no_geometry_control() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 1,
         source: Some(LiveWmProposalSource::Focus(surface)),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -241,11 +237,9 @@ fn recovery_reseed_reasserts_geometry_when_only_committed_pixels_are_stale() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -314,11 +308,9 @@ fn duplicate_target_awaiting_retirement_does_not_send_a_second_configure() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -386,11 +378,9 @@ fn standing_visual_target_still_configures_geometry_that_is_not_installed() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -450,13 +440,11 @@ fn resize_timeout_restores_the_complete_committed_rectangle() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 1,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::new(),
         source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(3))),
-        effects: None,
         policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -513,11 +501,9 @@ fn public_presentation_state_waits_for_frontend_acknowledgement() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         source: None,
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -582,13 +568,11 @@ fn rejected_presentation_state_restores_the_last_frontend_value() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::new(),
         source: None,
-        effects: None,
         policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -669,11 +653,9 @@ fn a_pixel_silent_surface_does_not_gate_a_sibling_resize() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![settled, launching],
             },
-            ipc_error: None,
         },
         moved_surfaces: 2,
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     };
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -751,13 +733,11 @@ fn a_deferred_surface_spends_no_admission_retry() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![settled],
             },
-            ipc_error: None,
         },
         moved_surfaces: 2,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::from([launching]),
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();
@@ -805,13 +785,11 @@ fn an_exhausted_admission_records_the_surface_it_withdrew() {
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 1,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::from([surface]),
         source: Some(LiveWmProposalSource::Relayout),
-        effects: None,
         policy_settlement: None,
     });
     let mut controls = sophia_cli::session_control::SessionControlQueue::default();

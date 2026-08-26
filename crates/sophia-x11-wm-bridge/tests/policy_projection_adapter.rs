@@ -1,4 +1,4 @@
-use sophia_engine::{PolicyProjectionReducer, WmWorkspaceState, adapt_v7_policy_plan};
+use sophia_engine::PolicyProjectionReducer;
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId,
     PolicyOutputSnapshot, PolicyPresentationState, PolicyProjectionOutcome, PolicySceneSnapshot,
@@ -7,7 +7,9 @@ use sophia_protocol::{
     WmRequestPacket, WmResponsePacket, WorkspaceId, sophia_wm_v1_behavior_cause,
     sophia_wm_v1_behavior_scene,
 };
-use sophia_x11_wm_bridge::{LegacyWmRequest, X11WmBridgeState};
+use sophia_x11_wm_bridge::{
+    LegacyWmRequest, WmWorkspaceState, X11WmBridgeState, adapt_legacy_policy_plan,
+};
 
 #[test]
 fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
@@ -87,7 +89,7 @@ fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {
     let mut reducer = PolicyProjectionReducer::new(scene.clone()).unwrap();
     reducer.connect(1).unwrap();
     let request = reducer.issue_request(vec![output]).unwrap();
-    let proposal = adapt_v7_policy_plan(&request, &scene, &plan).unwrap();
+    let proposal = adapt_legacy_policy_plan(&request, &scene, &plan).unwrap();
 
     assert_eq!(
         reducer.apply_proposal(&proposal),
@@ -203,7 +205,7 @@ fn legacy_x11_adapter_accepts_every_revision_one_behavior_scene() {
         let request = reducer
             .issue_request_with_cause(affected, sophia_wm_v1_behavior_cause(scenario).unwrap())
             .unwrap();
-        let proposal = adapt_v7_policy_plan(&request, &scene, &plan).unwrap();
+        let proposal = adapt_legacy_policy_plan(&request, &scene, &plan).unwrap();
         let outcome = match scenario {
             "timeout-discard" => reducer.timeout(proposal.request_id),
             "stale-discard" => {

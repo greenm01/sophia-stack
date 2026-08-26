@@ -702,7 +702,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
         ])
         .unwrap_err()
         .to_string()
-        .contains("requires --wm-interface=sophia_wm_v1")
+        .contains("requires a configured sophia_wm_v1 --wm-process")
     );
     assert!(
         PersistentXtermSessionConfig::from_args(&[
@@ -1047,22 +1047,14 @@ fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
 }
 
 #[test]
-fn application_admission_outlives_the_longest_wm_transaction() {
-    assert!(
-        SESSION_APP_ADMISSION_TIMEOUT_MSEC > u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC)
-    );
+fn application_admission_outlives_a_policy_response() {
+    assert!(SESSION_APP_ADMISSION_TIMEOUT_MSEC > SESSION_POLICY_RESPONSE_TIMEOUT_MSEC);
 }
 
 #[test]
-fn wm_deadlines_follow_transport_transaction_and_admission_order() {
-    assert!(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC > 3_000);
-    assert!(
-        SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC
-            < u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC)
-    );
-    assert!(
-        u64::from(SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC) < SESSION_APP_ADMISSION_TIMEOUT_MSEC
-    );
+fn policy_deadlines_follow_response_and_admission_order() {
+    assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC > 3_000);
+    assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC < SESSION_APP_ADMISSION_TIMEOUT_MSEC);
 }
 
 #[test]

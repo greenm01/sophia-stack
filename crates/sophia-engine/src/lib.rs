@@ -1,11 +1,8 @@
 mod prelude {
     pub(crate) use core::fmt;
     pub(crate) use std::collections::{BTreeMap, BTreeSet};
-    pub(crate) use std::io::{self, Read, Write};
-    #[cfg(unix)]
-    pub(crate) use std::os::unix::net::UnixStream;
+    pub(crate) use std::io;
     pub(crate) use std::sync::mpsc::{Receiver, TryRecvError};
-    pub(crate) use std::time::Duration;
 
     pub(crate) use sophia_portal::{
         MAX_NOTIFICATION_ACTION_LEN, MAX_NOTIFICATION_ACTIONS, MAX_NOTIFICATION_BODY_LEN,
@@ -15,20 +12,17 @@ mod prelude {
         AxisSpan, BrokerHealthPacket, BufferSource, ChromeActionKind, ChromeActionRequest,
         ChromeDescriptor, CommittedSurfaceState, DamageFrame, DeviceId, DisplayLabel,
         FrameSnapshot, InputEventKind, InputEventPacket, InputRoute, InputRouteOutcome,
-        IpcCodecError, LayerSnapshot, LayoutNodeSnapshot, LayoutTransaction, MAX_CHROME_LABEL_LEN,
-        OutputEdge, OutputHeadMapping, OutputId, OutputReservation, OutputTransform, Point,
-        PortalTransferId, Rect, Region, RenderCommand, RenderCommandKind, ResizeSyncCapability,
-        RoutedInputRequest, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN,
+        LayerSnapshot, LayoutNodeSnapshot, LayoutTransaction, MAX_CHROME_LABEL_LEN, OutputEdge,
+        OutputHeadMapping, OutputId, OutputReservation, OutputTransform, Point, PortalTransferId,
+        Rect, Region, RenderCommand, RenderCommandKind, ResizeSyncCapability, RoutedInputRequest,
         SanitizedChromeMetadata, SeatId, Size, SurfaceContentSet, SurfaceId,
         SurfaceOutputReservations, SurfacePresentationRole, SurfaceTransaction,
         SurfaceTransactionKey, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
-        TransactionOutcome, WmRequestKind, WmRequestPacket, WmResponsePacket, WorkspaceId,
+        TransactionOutcome, WmRequestKind, WmRequestPacket, WorkspaceId,
     };
     pub(crate) use sophia_runtime::{
-        RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop,
-        SessionRuntimeObservation, SessionRuntimeObservationError, SessionRuntimeState,
-        SophiaErrorExt, SophiaErrorKind, SupervisedProcessKind, SupervisorCommand, SupervisorEvent,
-        SupervisorState, update_supervisor,
+        RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeLoop, SessionRuntimeObservation,
+        SessionRuntimeObservationError, SessionRuntimeState, SophiaErrorExt, SophiaErrorKind,
     };
     pub(crate) use tracing::{debug, instrument, trace, warn};
 }
@@ -60,9 +54,7 @@ mod surface_admission;
 mod surface_content_stream;
 mod transaction_presentation;
 mod visual_state;
-mod wm;
 
-mod wm_policy;
 pub use backend_assembly::*;
 pub use chrome::*;
 pub use composition_cohort::*;
@@ -90,8 +82,6 @@ pub use surface_admission::*;
 pub use surface_content_stream::*;
 pub use transaction_presentation::*;
 pub use visual_state::*;
-pub use wm::*;
 
 pub use sophia_protocol::ToplevelActionCapabilityRef;
 pub use sophia_runtime::{RuntimeScanoutState, SessionRuntimeObservation};
-pub use wm_policy::*;

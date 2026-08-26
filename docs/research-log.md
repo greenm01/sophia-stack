@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-26: the frozen public policy boundary is the only WM transport
+
+- API v7 was removed after the retained ledger, shared restart corpus,
+  immutable revision-3 client, and signed frame-fed output archive closed its
+  gate. Configuration accepts only `sophia_wm_v1` and rejects `api_v7`.
+- The client-hosted socket, v7 message kinds and codecs, Engine transport and
+  IPC restart path, policy reload exchange, demo server/process modes, and
+  their transport-specific tests are deleted. Public policy remains
+  session-hosted, peer-authenticated, bounded, and fail closed.
+- Engine no longer owns a workspace reducer. That model now lives inside
+  `sophia-x11-wm-bridge`, where it interprets the private synthetic-X WM and is
+  adapted into complete public projections. Engine retains only authoritative
+  scene validation, transaction settlement, rendering, and scanout.
+- The full offline all-feature workspace suite passes after removal. The next
+  product step is packaging and installing a new public-policy-only candidate.
+
 ## 2026-08-25: xmonad and restart recovery now cross the public revision-3 boundary
 
 - The xmonad session runner now selects `sophia_wm_v1` and a dedicated bounded

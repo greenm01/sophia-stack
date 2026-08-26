@@ -1,10 +1,9 @@
 # Sophia Policy IPC
 
 **Role:** normative target contract for external policy and shell interfaces.
-**Status:** experimental implementation. The codecs, session-owned transport,
-transfer reducers, canonical Engine projection reducer, and supervised Hagia
-session path are implemented. API v7 remains available during migration;
-`sophia_wm_v1` is not yet stable.
+**Status:** implemented and stable at interface major 1, wire revision 3. The
+codecs, session-owned transport, transfer reducers, canonical Engine projection
+reducer, and supervised Hagia session path are production contracts.
 
 Sophia exposes replaceable desktop policy through local, language-neutral IPC.
 The protocol is the extension point. Hagia, the X11 WM bridge, and later shells
@@ -232,8 +231,9 @@ to the current internal model; Engine does not accumulate version branches.
 Retiring a stable revision requires an explicit security amendment to the
 project specification.
 
-The existing Rust WM API v7 is an experimental implementation contract. It is
-not `sophia_wm_v1` and receives no permanent compatibility promise.
+The former Rust WM API v7 was an experimental implementation contract and has
+been removed. Its message-kind numbers remain unassigned; they are not a
+compatibility surface.
 
 ## Bounded Transfers
 
@@ -257,8 +257,9 @@ The Rust boundary is split deliberately. `sophia-runtime` hosts the
 owner-only socket, authenticates the exact supervised peer, negotiates a
 connection epoch, and assembles transfers. `sophia-protocol` owns generated
 records and semantic conversion. `sophia-engine` owns the canonical atomic
-projection reducer. The session selects this path explicitly with
-`--wm-interface=sophia_wm_v1`; omitting the selector retains API v7.
+projection reducer. The session accepts only this path.
+`--wm-interface=sophia_wm_v1` may make the choice explicit; the removed
+`api_v7` value is rejected.
 
 The public session binds the endpoint before spawning its one policy process,
 authorizes the exact child PID, and keeps blocking wire I/O in a bounded
@@ -401,9 +402,8 @@ fail closed. The experimental public session mints fresh session-local tokens.
 A committed binding explicitly names an optional operation slot; no numeric
 action range has operation semantics. The session validates connection epoch,
 the bound and advertised slot, opaque token, target permission, and exact
-request identity, and executes the corresponding session-owned operation
-only after the projection transaction commits. API-v7 tokens do not claim this
-encoding.
+request identity, and executes the corresponding session-owned operation only
+after the projection transaction commits. No alternate token encoding exists.
 
 ## Output Authority Interface
 

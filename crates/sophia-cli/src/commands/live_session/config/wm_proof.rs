@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn parse_wm_proof_controls(
     args: &[String],
-    wm_interface: sophia_config::ExternalWmInterface,
+    wm_process_configured: bool,
     max_runtime: Option<Duration>,
 ) -> Result<(Option<PublicPolicyFaultPoint>, Option<WmActionId>), Box<dyn std::error::Error>> {
     let fault_after = arg_value(args, "--wm-proof-fault-after")
@@ -24,8 +24,7 @@ pub(super) fn parse_wm_proof_controls(
         );
     }
     if (fault_after.is_some() || restart_after_action.is_some())
-        && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
-            || max_runtime.is_none())
+        && (!wm_process_configured || max_runtime.is_none())
     {
         let flag = if restart_after_action.is_some() {
             "--wm-proof-restart-after-action"
@@ -33,7 +32,7 @@ pub(super) fn parse_wm_proof_controls(
             "--wm-proof-fault-after"
         };
         return Err(format!(
-            "{flag} requires --wm-interface=sophia_wm_v1 and --max-runtime-ms"
+            "{flag} requires a configured sophia_wm_v1 --wm-process and --max-runtime-ms"
         )
         .into());
     }

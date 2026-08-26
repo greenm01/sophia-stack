@@ -47,13 +47,11 @@ fn hold_resize(
                 outcome: TransactionOutcome::Committed,
                 applied_surfaces: vec![surface],
             },
-            ipc_error: None,
         },
         moved_surfaces: 0,
         staged_transactions: BTreeMap::new(),
         admission_surfaces: BTreeSet::new(),
         source: None,
-        effects: None,
         policy_settlement: None,
     });
 }

@@ -232,14 +232,12 @@ pub struct OutputConfig {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ExternalWmInterface {
     #[default]
-    ApiV7,
     SophiaWmV1,
 }
 
 impl ExternalWmInterface {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::ApiV7 => "api_v7",
             Self::SophiaWmV1 => "sophia_wm_v1",
         }
     }

@@ -84,7 +84,6 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
                     outcome: TransactionOutcome::Committed,
                     applied_surfaces: vec![SurfaceId::new(1, 1)],
                 },
-                ipc_error: None,
             }),
             portal_commands: vec![PortalCommand::DropNotification {
                 transfer: PortalTransferId::from_raw(1),

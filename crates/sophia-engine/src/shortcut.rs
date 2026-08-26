@@ -1,13 +1,8 @@
 //! Physical shortcut matching, owed to no protocol revision.
 //!
 //! Engine matches physical input against registered chords and emits opaque action
-//! tokens. That behavior predates API v7 and outlives it: the public
-//! `sophia_wm_v1` path resolves its bindings from configuration, and the v7 bridge
-//! resolves the same bindings from a `WmHello`. Both arrive here.
-//!
-//! Nothing in this module mentions an API version, a hello, or a wire frame. The
-//! v7 adapters that do live in `wm.rs`, which is what lets that module be deleted
-//! when v7 goes without taking shortcut matching with it.
+//! tokens. The public `sophia_wm_v1` path resolves these bindings from the
+//! prepared shortcut and policy catalogs before they arrive here.
 
 use crate::prelude::*;
 use sophia_protocol::{
@@ -17,10 +12,9 @@ use sophia_protocol::{
 
 /// Why a set of bindings could not become a registry.
 ///
-/// A `&'static str` rather than an enum because the only consumers format it: the
-/// v7 path wraps it in `WmIpcError::Negotiation`, and the public path reduces every
-/// cause to one message. A parallel enum would duplicate this vocabulary without
-/// giving anyone a decision to make on it.
+/// A `&'static str` rather than an enum because callers reduce every cause to one
+/// preparation message. A parallel enum would duplicate this vocabulary without
+/// giving anyone another decision to make.
 pub type WmShortcutRegistryError = &'static str;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

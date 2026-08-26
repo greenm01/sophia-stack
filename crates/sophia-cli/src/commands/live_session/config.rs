@@ -525,22 +525,16 @@ impl PersistentXtermSessionConfig {
             return Err("--wm-process-arg requires --wm-process".into());
         }
         let wm_interface = match arg_value(args, "--wm-interface").as_deref() {
-            Some("api_v7") => sophia_config::ExternalWmInterface::ApiV7,
             Some("sophia_wm_v1") => sophia_config::ExternalWmInterface::SophiaWmV1,
             Some(other) => {
-                return Err(format!(
-                    "--wm-interface expects api_v7 or sophia_wm_v1, got {other:?}"
-                )
-                .into());
+                return Err(format!("--wm-interface expects sophia_wm_v1, got {other:?}").into());
             }
             None => configured_wm.map_or(
-                sophia_config::ExternalWmInterface::ApiV7,
+                sophia_config::ExternalWmInterface::default(),
                 |wm| wm.interface,
             ),
         };
-        if wm_process.is_none()
-            && wm_interface != sophia_config::ExternalWmInterface::ApiV7
-        {
+        if wm_process.is_none() && arg_value(args, "--wm-interface").is_some() {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
         let explicit_shell_process = arg_value(args, "--shell-process");
@@ -606,16 +600,16 @@ impl PersistentXtermSessionConfig {
         if shell_proof_restart_after_visible.is_some() && shell_process.is_none() {
             return Err("--shell-proof-restart-after-visible requires an enabled shell".into());
         }
-        if normal_session && wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
+        if normal_session && wm_process.is_some() {
             applications.validate_shortcuts(&shortcut_profile_candidate, live_shell_enabled)?;
         }
         let (wm_public_fault_after, wm_public_restart_after_action) =
-            wm_proof::parse_wm_proof_controls(args, wm_interface, max_runtime)?;
+            wm_proof::parse_wm_proof_controls(args, wm_process.is_some(), max_runtime)?;
         let output_proof_rollback_after_apply = parse_output_proof_rollback_after_apply(
             args,
             native_scanout,
             normal_session,
-            wm_interface,
+            wm_process.is_some(),
             max_runtime,
             wm_public_fault_after.is_some() || wm_public_restart_after_action.is_some(),
         )?;

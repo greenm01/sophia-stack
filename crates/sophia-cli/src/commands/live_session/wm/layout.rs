@@ -22,7 +22,6 @@ struct PendingLiveWmLayout {
     staged_transactions: BTreeMap<SurfaceId, SurfaceTransaction>,
     admission_surfaces: BTreeSet<SurfaceId>,
     source: Option<LiveWmProposalSource>,
-    effects: Option<LiveWmCommitEffects>,
     policy_settlement: Option<LivePolicySettlementIdentity>,
 }
 
@@ -592,31 +591,13 @@ impl PersistentLiveLayout {
     /// sent until the facts change, so an idle admission pipeline is the honest
     /// answer rather than a pending one.
     fn next_unmanaged_surface(&self) -> Option<SurfaceId> {
-        select_wm_admission(
-            self.wm_admission_candidates(),
-            self.layout_epochs.rollback_surfaces().next().is_some(),
-            WmAdmissionSelection::Ordinary,
-        )
-    }
-
-    fn next_reseed_unmanaged_surface(&self) -> Option<SurfaceId> {
-        select_wm_admission(
-            self.wm_admission_candidates(),
-            self.layout_epochs.rollback_surfaces().next().is_some(),
-            WmAdmissionSelection::ReseedReplay,
-        )
-    }
-
-    fn wm_admission_candidates(
-        &self,
-    ) -> impl Iterator<Item = WmReseedAdmissionCandidate> + '_ {
-        self.unmanaged_surfaces.iter().map(|surface| {
-            WmReseedAdmissionCandidate {
-                surface: *surface,
-                known: self.knows_surface(*surface),
-                retries: self.admission_retries.get(surface).copied().unwrap_or(0),
-                settled: self.manage_settlements.contains_key(surface),
-            }
+        if self.layout_epochs.rollback_surfaces().next().is_some() {
+            return None;
+        }
+        self.unmanaged_surfaces.iter().copied().find(|surface| {
+            self.knows_surface(*surface)
+                && self.admission_retries.get(surface).copied().unwrap_or(0) <= 1
+                && !self.manage_settlements.contains_key(surface)
         })
     }
 
@@ -950,7 +931,6 @@ impl PersistentLiveLayout {
             staged_transactions,
             admission_surfaces,
             source: proposal.source,
-            effects: proposal.effects,
             policy_settlement: proposal.policy_settlement,
         });
         // `surfaces` counts what the epoch actually waits on, so `deferred`
@@ -1257,13 +1237,11 @@ impl PersistentLiveLayout {
                     outcome: TransactionOutcome::TimedOut,
                     applied_surfaces: Vec::new(),
                 },
-                ipc_error: None,
             },
             // The external WM has already applied the request that produced
             // this proposal. Retain its source so the owner can restart and
             // reseed that speculative peer after rejecting the layout.
             source: pending.source,
-            effects: None,
             policy_settlement: pending.policy_settlement,
         }))
     }

@@ -28,11 +28,11 @@ pub use sophia_engine::{
     RenderHeadId, RendererSelection, RoutedInputCoalescer, RoutedInputFlushReason,
     RoutedInputQueueAction, RoutedInputRequestError, SessionCommand, SessionEvent,
     SessionLayerSource, SessionTickRequest, SlowClientVisualDecision, StaticInputDiscoveryBackend,
-    SurfaceTimeoutPolicy, SurfaceTransactionCommitReadiness, SurfaceVisualStateTable, WmIpcError,
-    WmRestartReason, WmRuntimeAction, WmTransactionUpdate, decide_output_vrr,
-    discover_live_compositor_backend, explicit_sync_surfaces, hit_test_scene_for_input,
-    hit_test_scene_surface_for_input, layout_epoch_for_explicit_sync, measure_resize_behavior,
-    notification_chrome_command_from_portal, request_wm_over_stream, route_scene_surface_for_input,
+    SurfaceTimeoutPolicy, SurfaceTransactionCommitReadiness, SurfaceVisualStateTable,
+    WmTransactionUpdate, decide_output_vrr, discover_live_compositor_backend,
+    explicit_sync_surfaces, hit_test_scene_for_input, hit_test_scene_surface_for_input,
+    layout_epoch_for_explicit_sync, measure_resize_behavior,
+    notification_chrome_command_from_portal, route_scene_surface_for_input,
     routed_input_request_from_physical_event, routed_input_requests_from_flush,
     runtime_observation_from_authority_transaction_commit,
     runtime_observation_from_metadata_chrome_updates,
@@ -40,7 +40,7 @@ pub use sophia_engine::{
     runtime_observation_from_render_frame_report, runtime_observation_from_session_tick_report,
     runtime_observation_from_slow_client_visual_decisions,
     runtime_observation_from_wm_transaction_update, schedule_frame_from_damage,
-    surface_transaction_readiness_for_epoch, update_wm_supervisor_from_runtime_action,
+    surface_transaction_readiness_for_epoch,
 };
 pub use sophia_portal::{NotificationRequest, NotificationUrgency, PortalCommand};
 pub use sophia_protocol::{
@@ -55,15 +55,15 @@ pub use sophia_protocol::{
     SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAGIC, SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_IPC_VERSION,
     SanitizedChromeMetadata, SeatId, Size, SurfaceConstraints, SurfaceId, SurfacePlacement,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionCommit, TransactionId,
-    TransactionOutcome, Transform, TrustLevel, WmCommand, WmRequestKind, WmRequestPacket,
-    WmResponsePacket, WorkspaceId, XWindowId, decode_wm_request_frame, encode_wm_response_frame,
+    TransactionOutcome, Transform, TrustLevel, WmRequestKind, WmRequestPacket, WorkspaceId,
+    XWindowId,
 };
 pub use sophia_runtime::{
     RestartPolicy, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeObservation,
     SessionRuntimePhase, SupervisedProcessKind, SupervisorCommand, SupervisorState,
 };
 pub use std::fs;
-pub use std::io::{Cursor, Read, Result as IoResult, Write};
+pub use std::io::Result as IoResult;
 pub use std::path::{Path, PathBuf};
 pub use std::time::Duration;
 
@@ -157,16 +157,6 @@ pub fn damage_frame(frame_serial: u64, affected_surfaces: &[SurfaceId]) -> Damag
     }
 }
 
-pub fn wm_request(transaction: TransactionId) -> WmRequestPacket {
-    WmRequestPacket {
-        transaction,
-        kind: WmRequestKind::SurfaceRemoved {
-            surface: SurfaceId::new(1, 1),
-            workspace: WorkspaceId::from_raw(1),
-        },
-    }
-}
-
 pub fn metadata(surface: SurfaceId, label: &str, generation: u64) -> SanitizedChromeMetadata {
     SanitizedChromeMetadata {
         surface,
@@ -189,37 +179,6 @@ pub fn notification_request(raw_transfer: u64) -> NotificationRequest {
         urgency: NotificationUrgency::Normal,
         actions: vec!["Open log".to_owned()],
         generation: 7,
-    }
-}
-
-pub struct TestDuplex {
-    read: Cursor<Vec<u8>>,
-    pub written: Vec<u8>,
-}
-
-impl TestDuplex {
-    pub fn new(read: Vec<u8>) -> Self {
-        Self {
-            read: Cursor::new(read),
-            written: Vec::new(),
-        }
-    }
-}
-
-impl Read for TestDuplex {
-    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
-        self.read.read(buf)
-    }
-}
-
-impl Write for TestDuplex {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.written.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
     }
 }
 

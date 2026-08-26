@@ -14,7 +14,6 @@ impl PersistentLiveLayout {
             staged_transactions: BTreeMap::new(),
             admission_surfaces: BTreeSet::new(),
             source: proposal.source,
-            effects: proposal.effects,
             policy_settlement: proposal.policy_settlement,
         };
         self.commit_pending(pending)
@@ -171,18 +170,13 @@ impl PersistentLiveLayout {
         self.release_admission_groups(&selected_admission_transactions);
         // A committed relayout can intentionally exclude admissions queued
         // behind it. Keep those surfaces eligible for their own ManageSurface
-        // response while they remain in the planning table. The legacy path
-        // consumes ownership through its candidate workspace assignment; the
-        // public reducer has no private workspace effect, so its exact
-        // committed Manage source plus retained placement is the equivalent
-        // ownership boundary. The surface can remain visually fenced in
-        // AwaitingRetirement without being planned again.
+        // response while they remain in the planning table. The exact committed
+        // Manage source plus retained placement is the ownership boundary. The
+        // surface can remain visually fenced in AwaitingRetirement without being
+        // planned again.
         self.unmanaged_surfaces.retain(|surface| {
             Some(*surface) != committed_public_admission
                 && self.planning_surfaces.contains_key(surface)
-                && pending.effects.as_ref().is_none_or(|effects| {
-                    effects.workspace_state.surface_workspace(*surface).is_none()
-                })
         });
         self.admission_retries
             .retain(|surface, _| self.unmanaged_surfaces.contains(surface));
@@ -261,7 +255,6 @@ impl PersistentLiveLayout {
         LiveWmCommitResult {
             update: pending.update,
             source: pending.source,
-            effects: pending.effects,
             policy_settlement: pending.policy_settlement,
         }
     }

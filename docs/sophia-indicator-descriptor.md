@@ -213,13 +213,12 @@ answers coexist:
 Tier 0 ships first. It also removes the unresolved 64 KiB texture question from
 the critical path, since that constraint binds Tier 1 alone.
 
-The production public-policy session reserves a fixed 14 logical pixels at the
-top of every output before its first WM snapshot. Surface reservations reduce
-the remaining work area, and descriptor loss clears the labels and targets
-without returning that space to managed windows. Legacy API-v7 sessions do not
-receive this reservation. Fullscreen remains a full-output allocation with the
-strip composited above it; ordinary and maximized siblings are reconciled
-independently against the reserved work area.
+The production policy session reserves a fixed 14 logical pixels at the top of
+every output before its first WM snapshot. Surface reservations reduce the
+remaining work area, and descriptor loss clears the labels and targets without
+returning that space to managed windows. Fullscreen remains a full-output
+allocation with the strip composited above it; ordinary and maximized siblings
+are reconciled independently against the reserved work area.
 
 The renderer uses the included JetBrains Mono NL Regular 2.304 font at 10
 logical pixels with no system-font fallback. Its deterministic XRGB palette is

@@ -5,11 +5,8 @@ use sophia_protocol::{
     POLICY_MAX_OUTPUT_STATUSES, POLICY_MAX_SURFACES, POLICY_OUTPUT_STATUS_FOCUS_MASK,
     PolicyOutputProjection, PolicyProjectionIndicator, PolicyProjectionOutcome,
     PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicyProjectionRequest,
-    PolicyRequestCause, PolicySceneSnapshot, PolicySurfacePlacement, PolicyTransform, Rect,
-    SurfaceId, Transform,
+    PolicyRequestCause, PolicySceneSnapshot, Rect, SurfaceId,
 };
-
-use crate::WmPolicyPlan;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyProjectionError {
@@ -51,7 +48,7 @@ pub enum PolicyProjectionError {
     UnknownAffectedOutput,
     InvalidRequestCause,
     RequestIdExhausted,
-    V7AdapterState,
+    LegacyAdapterState,
     InvalidIndicator,
     DuplicateIndicator,
     DuplicateIndicatorSlot,
@@ -632,84 +629,6 @@ impl PolicyProjectionReducer {
         }
         Ok((indicators, statuses))
     }
-}
-
-/// Adapts one API v7 candidate through the canonical output-projection shape.
-/// The adapter owns workspace interpretation; the reducer never stores it.
-pub fn adapt_v7_policy_plan(
-    request: &PolicyProjectionRequest,
-    scene: &PolicySceneSnapshot,
-    plan: &WmPolicyPlan,
-) -> Result<PolicyProjectionProposal, PolicyProjectionError> {
-    let surfaces = scene
-        .surfaces
-        .iter()
-        .map(|surface| (surface.surface, surface))
-        .collect::<BTreeMap<_, _>>();
-    let rendered = plan
-        .layout
-        .render_positions
-        .iter()
-        .map(|placement| (placement.surface, placement))
-        .collect::<BTreeMap<_, _>>();
-    let requested_sizes = plan
-        .layout
-        .requested_sizes
-        .iter()
-        .map(|request| (request.surface, request.size))
-        .collect::<BTreeMap<_, _>>();
-    let mut outputs = Vec::with_capacity(request.affected_outputs.len());
-    for output in &request.affected_outputs {
-        let output_state = plan
-            .candidate
-            .output(*output)
-            .ok_or(PolicyProjectionError::V7AdapterState)?;
-        let visible = plan
-            .candidate
-            .visible_surfaces(*output)
-            .map_err(|_| PolicyProjectionError::V7AdapterState)?;
-        let mut placements = visible
-            .into_iter()
-            .map(|surface| {
-                let snapshot = surfaces
-                    .get(&surface)
-                    .ok_or(PolicyProjectionError::V7AdapterState)?;
-                let rendered = rendered.get(&surface).copied();
-                Ok(PolicySurfacePlacement {
-                    surface,
-                    surface_generation: snapshot.generation,
-                    geometry: rendered.map_or(snapshot.geometry, |placement| placement.geometry),
-                    requested_size: requested_sizes.get(&surface).copied(),
-                    crop: rendered.and_then(|placement| placement.crop),
-                    transform: match rendered.map(|placement| placement.transform) {
-                        None | Some(Transform::IDENTITY) => PolicyTransform::Identity,
-                        Some(_) => return Err(PolicyProjectionError::V7AdapterState),
-                    },
-                    presentation: snapshot.current_state,
-                })
-            })
-            .collect::<Result<Vec<_>, PolicyProjectionError>>()?;
-        placements.sort_by_key(|placement| {
-            rendered
-                .get(&placement.surface)
-                .map_or(0, |rendered| rendered.z_index)
-        });
-        outputs.push(PolicyOutputProjection {
-            output: *output,
-            placements,
-            focus: output_state.focus,
-        });
-    }
-    Ok(PolicyProjectionProposal {
-        transaction: plan.transaction,
-        connection_epoch: request.connection_epoch,
-        request_id: request.request_id,
-        base_generation: request.scene_generation,
-        active_output: scene.active_output,
-        outputs,
-        indicators: Vec::new(),
-        output_statuses: Vec::new(),
-    })
 }
 
 mod validation;

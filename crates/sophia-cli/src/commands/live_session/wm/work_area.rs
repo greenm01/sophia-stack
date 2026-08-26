@@ -1,28 +1,13 @@
 impl LiveWmSession {
     fn has_current_relayout_request(&self, layout: &PersistentLiveLayout) -> bool {
-        if let Some(public) = self.public.as_ref() {
-            return public.in_flight_source == Some(LiveWmProposalSource::Relayout)
+        let _ = layout;
+        self.public.as_ref().is_some_and(|public| {
+            public.in_flight_source == Some(LiveWmProposalSource::Relayout)
                 || public
                     .queue
                     .iter()
-                    .any(|cause| cause.source == LiveWmProposalSource::Relayout);
-        }
-        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &self.workspace_state);
-        self.in_flight_request
-            .iter()
-            .chain(self.queued_requests.iter())
-            .any(|request| {
-                matches!(
-                    &request.kind,
-                    LiveWmQueuedKind::Proposal {
-                        base_state,
-                        fingerprint: pending_fingerprint,
-                        source: LiveWmProposalSource::Relayout,
-                        ..
-                    } if *base_state == self.workspace_state
-                        && *pending_fingerprint == fingerprint
-                )
-            })
+                    .any(|cause| cause.source == LiveWmProposalSource::Relayout)
+        })
     }
 
     /// Adopts the shell's committed work-area claim.
@@ -105,61 +90,7 @@ impl LiveWmSession {
                     .ok_or("live WM output work-area reduction rejected an output")
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if self.public.is_some() {
-            let admission =
-                self.update_public_work_areas_at(layout, outputs, full_bounds, primary)?;
-            if admission != LiveWmRequestAdmission::RejectedCapacity {
-                self.workspace_state.replace_outputs(work_bounds)?;
-            }
-            return Ok(admission);
-        }
-        let changed = usize::from(self.workspace_state.replace_outputs(work_bounds)?);
-        let mut rejected = 0usize;
-        for area in &work_areas {
-            let Some(work) = area.work else {
-                rejected = rejected.saturating_add(1);
-                println!(
-                    "sophia_live_work_area schema=1 status=preserved output={} reason=invalid_reduction full={}x{}_{}_{}",
-                    area.output.raw(),
-                    area.full.width,
-                    area.full.height,
-                    area.full.x,
-                    area.full.y,
-                );
-                continue;
-            };
-            println!(
-                "sophia_live_work_area schema=1 status=applied output={} full={}x{}_{}_{} work={}x{}_{}_{}",
-                area.output.raw(),
-                area.full.width,
-                area.full.height,
-                area.full.x,
-                area.full.y,
-                work.width,
-                work.height,
-                work.x,
-                work.y,
-            );
-        }
-        println!(
-            "sophia_live_work_area schema=1 status=reduced outputs={} changed={} rejected={} active_reservations={}",
-            work_areas.len(),
-            changed,
-            rejected,
-            layout.active_output_reservations().len(),
-        );
-        if changed == 0 {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let managed_surfaces_visible = work_areas.iter().any(|area| {
-            self.workspace_state
-                .visible_surfaces(area.output)
-                .is_ok_and(|surfaces| !surfaces.is_empty())
-        });
-        self.work_area_relayout_required = managed_surfaces_visible;
-        if !managed_surfaces_visible {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        self.enqueue_relayout(layout, primary)
+        let _ = work_bounds;
+        self.update_public_work_areas_at(layout, outputs, full_bounds, primary)
     }
 }

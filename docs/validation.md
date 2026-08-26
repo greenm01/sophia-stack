@@ -151,8 +151,8 @@ C99. The focused Rust gates prove exact supervised-peer admission, negotiation,
 bounded begin/chunk/end assembly, late-epoch discard, semantic record
 conversion, atomic multi-output validation, and last-layout preservation. The
 Rust reference client and generic X11 bridge then prove their policy output
-through the same reducer. The xmonad compatibility launcher now explicitly
-selects this public path; no compatibility failure downgrades it to API v7.
+through the same reducer. The xmonad compatibility launcher uses only this
+public path; the removed compatibility transport cannot receive a downgrade.
 
 `tools/check_policy_protocol.sh` additionally runs the Rust reference,
 independent C, and immutable archived revision-3 C clients through one
@@ -1625,10 +1625,10 @@ identities and fields that could contain typed, clipboard, or window content.
 
 `SOPHIA_INSTALL_PREFIX`, `SOPHIA_SESSION_DIR`, and `SOPHIA_COMMAND_DIR` allow a
 non-system staging installation for verifier tests. Installation alone does
-not freeze the policy protocol or authorize removal of API v7. Those decisions
-require the deterministic reconnect/restart corpus, the archived revision-1
-client, applicable bounded physical scenarios, and no unresolved critical
-Hagia defect; they do not require a wall-clock soak.
+did not freeze the policy protocol or authorize removal of API v7. The
+deterministic reconnect/restart corpus, archived revision-3 client, applicable
+bounded physical scenarios, and zero unresolved critical Hagia defects closed
+those gates before removal; they did not require a wall-clock soak.
 
 If an interactive physical run loses visible terminal content after typing,
 capture a bounded exact-input diagnostic instead of repeating an open-ended

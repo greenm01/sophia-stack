@@ -56,9 +56,9 @@ ordinary remembered installed session: it passed bounded deterministic
 preflight as attempt `0004`, records every real session automatically, and
 leaves Kitty, xmonad, and the previous immutable release available for
 recovery. The retained Triad behavior port is complete and `sophia_wm_v1`
-interface major 1, wire revision 3 is frozen. The next Milestone 13 critical
-path is removal of API v7 and its Engine-owned workspace policy, followed by a
-new packaged installed candidate.
+interface major 1, wire revision 3 is frozen. API v7 and its Engine-owned
+workspace policy are removed. The next Milestone 13 critical path is a new
+packaged installed candidate.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -258,8 +258,8 @@ promotion gate.
    retained surface.
 7. **Complete.** The complete cross-client reconnect/restart corpus, public
    xmonad projection migration, digest-pinned revision-3 client, and signed
-   frame-fed output archive pass. Revision 3 is stable. Remove API v7 plus
-   Engine-owned workspace policy next.
+   frame-fed output archive pass. Revision 3 is stable. API v7 and Engine-owned
+   workspace policy are removed.
 
 Cross-drawable `CopyArea` replay, alternative upscale kernels, linear-light
 fixed-function blending, mirror re-moding, scanout cloning, and Milestone 14
@@ -349,9 +349,9 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched
    reload, and other excluded behavior remain explicit post-freeze work.
-3. **Remove API v7 and Engine-owned workspace policy.** Revision 3's freeze gate
-   is closed; deletion must preserve the public Hagia and archived-client gates
-   before packaging a new installed candidate.
+3. **Complete.** API v7 and Engine-owned workspace policy are removed. The
+   public Hagia, xmonad adapter, archived-client, and protocol gates remain
+   green. Package a new installed candidate next.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -578,7 +578,7 @@ future compatibility target, not a prerequisite.
   transport and canonical reducer, with no silent API-v7 fallback.
 - [x] Promote that profile to the installed native default while retaining
   Kitty, xmonad, and the previous immutable release as recovery routes.
-- [ ] Remove v7 and Engine-owned workspace state. Xmonad runs through the public
+- [x] Remove v7 and Engine-owned workspace state. Xmonad runs through the public
   compatibility adapter, the complete restart/last-layout corpus passes, and
   signed frame-fed archive `0001` has closed the final retained-ledger gate.
 - [x] Preserve registered physical actions and session operations as opaque,
@@ -1256,35 +1256,15 @@ Detailed physical-run diagnoses remain in
   and archive verification. Hagia is now the ordinary remembered session; the
   item remains open for the named restart, state-transition, application, and
   output-topology scenarios above.
-- [ ] Remove API v7 and Engine-owned workspace policy only after both freeze
-  conditions below hold. Keep the adapter and its deterministic xmonad
-  regressions until classical-WM migration resumes.
-  Extraction was not gated and came first. The shortcut half is done:
-  `WmShortcutRegistry` and `WmShortcutRouter` now live in
-  `crates/sophia-engine/src/shortcut.rs`, which mentions no API version, hello, or
-  wire frame. `WmShortcutRegistry::new` takes the bindings, capabilities,
-  generation, and chrome a caller already resolved, so the public path builds its
-  registry from configuration instead of fabricating a `WmHello` stamped
-  `WM_API_VERSION`. No such fabrication remains outside tests. The v7 adapters —
-  `from_hello`, which adds only the API-version check, and `apply_policy_update`,
-  which speaks `WmPolicyUpdate` and `WmPolicyAck` — stay in `wm.rs` as `impl`
-  blocks on the extracted types, so deleting that module deletes the adapters and
-  not the behavior.
-  `WmSocketTransport` was deliberately **not** lifted, against the ledger pointer's
-  wording. It exists to encode and decode v7 frames, eleven call sites of them, and
-  is reached only by the legacy bridge; the public path uses `PolicyTransport` and
-  never touches it. Moving it would relocate v7 code rather than free anything, and
-  xmonad no longer reaches it: the compatibility runner explicitly selects
-  `sophia_wm_v1`, and `serve-policy` translates public scenes through the
-  private synthetic X server. The transport can be deleted with v7 once the
-  final physical freeze gate closes.
-  The extraction item is therefore complete. Engine-owned `WmWorkspaceState` is
-  *not* a second extraction: it lives in `wm_policy.rs`, already a separate module
-  from the v7 one, and the public path's use of it is removed by the gated item in
-  13.3 — "after the complete Hagia restart and last-layout gates" — not by lifting
-  anything. `wm_policy.rs` does import `WM_API_VERSION` and v7 packet types, so it
-  still has to be untangled before v7 is deleted, but that untangling is part of the
-  gated removal and is deliberately not ahead of its gate.
+- [x] Remove API v7 and Engine-owned workspace policy only after both freeze
+  conditions below hold. The freeze conditions closed first. Configuration now
+  accepts only `sophia_wm_v1`; the v7 frame codec, client-hosted socket,
+  transport worker, policy reload exchange, Engine IPC error/restart branch,
+  demo server/process modes, and obsolete tests are deleted. Shortcut matching
+  remains protocol-neutral in Engine. The workspace reducer moved to
+  `sophia-x11-wm-bridge`, where it is private compatibility state translated
+  into complete public projections. The deterministic xmonad and public-policy
+  regressions remain.
 - [x] Freeze `sophia_wm_v1` and retain an archived revision-3 client only after
   the retained Triad behavior port is complete and the Rust reference, Hagia,
   X11 bridge, and C client pass the complete black-box reconnect/restart

@@ -521,11 +521,9 @@
                                 outcome: TransactionOutcome::Committed,
                                 applied_surfaces: vec![surface],
                             },
-                            ipc_error: None,
                         },
                         moved_surfaces: 0,
                         source: None,
-                        effects: None,
                         policy_settlement: None,
                     };
                     if let Some(result) =

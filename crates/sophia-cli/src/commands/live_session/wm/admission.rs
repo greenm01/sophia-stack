@@ -649,40 +649,6 @@ impl PersistentLiveLayout {
         }).or_else(|| self.authority_surface_facts.get(&surface).copied())
     }
 
-    fn planning_layers_for_workspace_state(
-        &self,
-        workspace_state: &WmWorkspaceState,
-    ) -> Vec<LayerSnapshot> {
-        let mut layers = self.layers.values().cloned().collect::<Vec<_>>();
-        for facts in self.planning_surfaces.values() {
-            if self.layers.contains_key(&facts.surface)
-                || workspace_state.surface_workspace(facts.surface).is_none()
-            {
-                continue;
-            }
-            layers.push(LayerSnapshot {
-                surface: facts.surface,
-                authority_local_id: None,
-                namespace: None,
-                stack_rank: u32::try_from(layers.len()).unwrap_or(u32::MAX - 1),
-                geometry: facts.geometry,
-                source: BufferSource::None,
-                // A planning surface names no raster yet, so this is a placeholder.
-                source_size: sophia_protocol::Size {
-                    width: facts.geometry.width,
-                    height: facts.geometry.height,
-                },
-                damage: Region::empty(),
-                opacity: 1.0,
-                crop: None,
-                transform: Transform::IDENTITY,
-                generation: facts.generation,
-                resize_sync: ResizeSyncCapability::ImplicitOnly,
-            });
-        }
-        layers
-    }
-
     fn is_policy_managed(&self, surface: SurfaceId) -> bool {
         !self.is_client_positioned(surface)
     }
@@ -743,30 +709,4 @@ impl PersistentLiveLayout {
             }
         }
     }
-}
-
-fn live_layout_node_from_facts(
-    facts: sophia_engine::SurfaceLayoutFacts,
-    workspace: WorkspaceId,
-    coordinator: &LayoutEpochCoordinator,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
-    let mut capabilities = LayoutNodeCapabilities::STANDARD_TOPLEVEL;
-    capabilities.resizable = coordinator.surface_declared_resizable(facts.surface);
-    Ok(LayoutNodeSnapshot {
-        surface: facts.surface,
-        workspace,
-        kind: facts.kind,
-        placement_preference: facts.placement_preference,
-        transient_owner: facts.presentation_owner,
-        capabilities,
-        state: LayoutNodeState {
-            floating: facts.placement_preference
-                == sophia_protocol::SurfacePlacementPreference::Floating,
-            ..LayoutNodeState::NORMAL
-        },
-        constraints: sophia_engine::outer_surface_constraints(facts.constraints, chrome)?,
-        geometry: sophia_engine::outer_surface_geometry(facts.geometry, chrome)?,
-        generation: facts.generation,
-    })
 }

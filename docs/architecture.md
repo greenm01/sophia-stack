@@ -1121,10 +1121,9 @@ spawn, sends complete Engine snapshots, stages complete projections in the
 canonical reducer, and promotes them only with frontend/renderable-content
 settlement. Policy replacement advances the connection epoch and preserves the
 last committed layout while the replacement reconstructs its private state.
-API v7 remains a separately selected migration-only interface; no failure
-silently crosses between the two contracts. The xmonad compatibility profile
-is also a public revision-3 peer, so recovery through xmonad does not cross
-back into Engine-owned workspace authority.
+The removed API v7 transport cannot be selected or reached. The xmonad
+compatibility profile is a public revision-3 peer, and its workspace model is
+contained inside the private bridge rather than Engine.
 
 New X11 compatibility remains probe-driven; future application protocols are
 outside the active roadmap. XLibre and Wayland stay archived unless a later
@@ -1141,9 +1140,8 @@ specification decision admits a bounded provider.
 - macOS WindowServer/Core Animation: transaction-first presentation and
   fail-closed visual integrity.
 
-The current Rust WM API v7 is an experimental implementation contract. The
-first durable public boundary will be the independently versioned
-`sophia_wm_v1` interface described in
+The former Rust WM API v7 transport is removed. The durable public boundary is
+the independently versioned `sophia_wm_v1` interface described in
 [Sophia Policy IPC](sophia-policy-ipc.md). Engine owns physical shortcut
 matching, projection validation, visibility, focus authority, and opaque
 session actions. Native Sophia WMs consume this contract directly; legacy X11

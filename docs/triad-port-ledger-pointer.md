@@ -60,15 +60,12 @@ icons, and persistent Tier-1 panels are explicit post-freeze work.
 
 ## Consequences For Work In This Repository
 
-- **API v7 can now be removed.** The retained output row and revision-3 freeze
-  conditions are complete. Extraction from the v7
-  module is *not* gated and happened early: `WmShortcutRegistry` and
-  `WmShortcutRouter` now live in `crates/sophia-engine/src/shortcut.rs`, and the
-  public path builds its registry from configuration rather than fabricating a
-  `WmHello`. `WmSocketTransport` was left in place on purpose — it is v7 frame
-  coding reached only by the legacy bridge, so lifting it would move v7 code
-  rather than free anything. Engine-owned `WmWorkspaceState` is the remaining
-  extraction.
+- **API v7 is removed.** The retained output row and revision-3 freeze
+  conditions closed first. The client-hosted socket, codecs, demo server,
+  Engine transport, and selectable configuration value are gone. Shortcut
+  matching remains protocol-neutral in Engine, while the workspace model now
+  belongs only to the private X11 compatibility bridge. The public Hagia and
+  archived-client gates remain the regression boundary.
 - **Several items filed under `todo.md`'s Post-Promotion Capability Roadmap are
   already completed the freeze path.** Protection-domain enforcement, the
   redacted status feed, explicit-grab reduction, and frame-fed atomic

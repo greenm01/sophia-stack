@@ -1,10 +1,9 @@
+use crate::EngineError;
 use crate::prelude::*;
-use crate::{EngineError, WmIpcError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WmTransactionUpdate {
     pub commit: TransactionCommit,
-    pub ipc_error: Option<WmIpcError>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

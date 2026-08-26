@@ -113,20 +113,6 @@ fn commit_layout_transaction_reports_outcome() {
 }
 
 #[test]
-fn absent_wm_preserves_committed_layers() {
-    let engine = HeadlessEngine::default();
-    let layers = vec![test_layer(0, 0, 0, Region::empty())];
-    let before = layers.clone();
-
-    let commit = engine.preserve_layout_on_wm_absent(TransactionId::from_raw(45), &layers);
-
-    assert_eq!(commit.transaction, TransactionId::from_raw(45));
-    assert_eq!(commit.outcome, TransactionOutcome::TimedOut);
-    assert!(commit.applied_surfaces.is_empty());
-    assert_eq!(layers, before);
-}
-
-#[test]
 fn ready_surface_transaction_commits_geometry_and_buffer_together() {
     let engine = HeadlessEngine::default();
     let old_layer = test_layer(0, 0, 0, Region::empty());

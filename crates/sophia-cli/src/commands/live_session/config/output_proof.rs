@@ -29,7 +29,7 @@ pub(super) fn parse_output_proof_rollback_after_apply(
     args: &[String],
     native_scanout: bool,
     normal_session: bool,
-    wm_interface: sophia_config::ExternalWmInterface,
+    wm_process_configured: bool,
     max_runtime: Option<Duration>,
     other_proof_control: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -40,7 +40,7 @@ pub(super) fn parse_output_proof_rollback_after_apply(
         requested,
         native_scanout,
         normal_session,
-        wm_interface,
+        wm_process_configured,
         max_runtime,
         std::env::var_os("SOPHIA_FRAME_FED_OUTPUT_ARM").as_deref()
             == Some(std::ffi::OsStr::new("1")),
@@ -53,7 +53,7 @@ pub(super) fn validate_output_proof_rollback_after_apply(
     requested: bool,
     native_scanout: bool,
     normal_session: bool,
-    wm_interface: sophia_config::ExternalWmInterface,
+    wm_process_configured: bool,
     max_runtime: Option<Duration>,
     hardware_armed: bool,
     other_proof_control: bool,
@@ -63,11 +63,11 @@ pub(super) fn validate_output_proof_rollback_after_apply(
     }
     if !native_scanout
         || !normal_session
-        || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
+        || !wm_process_configured
         || max_runtime.is_none()
     {
         return Err(
-            "--output-proof-rollback-after-apply requires --native-scanout, --session-mode=normal, --wm-interface=sophia_wm_v1, and --max-runtime-ms",
+            "--output-proof-rollback-after-apply requires --native-scanout, --session-mode=normal, a configured sophia_wm_v1 --wm-process, and --max-runtime-ms",
         );
     }
     if !hardware_armed {

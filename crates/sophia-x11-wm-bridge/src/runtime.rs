@@ -16,17 +16,13 @@ mod wire;
 
 use wire::*;
 
-use sophia_protocol::{
-    Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN, WM_API_VERSION, WmCommand,
-    WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionDescriptor, decode_wm_request_frame,
-    decode_wm_session_descriptor_frame, encode_wm_hello_frame, encode_wm_response_frame,
-};
+use sophia_protocol::{Rect, WmCommand, WmRequestKind, WmRequestPacket, WmResponsePacket};
 use sophia_x_authority::{XByteOrder, serve_x11_setup_socket_client_with_root_size};
 
 use crate::{
-    BridgeEngineUpdate, LegacyWmProfile, LegacyWmRequest, SYNTHETIC_ROOT_XID,
-    SyntheticManageProfile, SyntheticXEvent, SyntheticXWindowId, X11WmBridgeError,
-    X11WmBridgeState, XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND,
+    BridgeEngineUpdate, LegacySessionDescriptor, LegacyWmProfile, LegacyWmRequest,
+    SYNTHETIC_ROOT_XID, SyntheticManageProfile, SyntheticXEvent, SyntheticXWindowId,
+    X11WmBridgeError, X11WmBridgeState, XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND,
     XMONAD_ACTION_FOCUS_MASTER, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
     XMONAD_ACTION_INCREASE_MASTER_COUNT, XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT,
     XMONAD_ACTION_SHRINK, XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER,
@@ -212,7 +208,7 @@ pub struct LegacyX11WmBridgeRuntime {
     display_lease: File,
     config_dir: PathBuf,
     profile: LegacyWmProfile,
-    session: Option<WmSessionDescriptor>,
+    session: Option<LegacySessionDescriptor>,
     request_failed: bool,
 }
 
@@ -798,11 +794,8 @@ impl LegacyX11WmBridgeRuntime {
 
     pub fn configure_session(
         &mut self,
-        descriptor: WmSessionDescriptor,
+        descriptor: LegacySessionDescriptor,
     ) -> Result<(), BridgeRuntimeError> {
-        if descriptor.api_version != WM_API_VERSION {
-            return Err(BridgeRuntimeError::new("unsupported Sophia WM API version"));
-        }
         self.session = Some(descriptor);
         Ok(())
     }

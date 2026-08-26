@@ -161,12 +161,12 @@ checked.
 
 ## Running The Bridge
 
-The production-facing process speaks the standard framed Sophia WM protocol on
-a Unix socket and supervises exactly one configured legacy X11 WM process:
+The production-facing process is a `sophia_wm_v1` client and supervises exactly
+one configured legacy X11 WM process behind its private synthetic X server:
 
 ```sh
 cargo run --offline -p sophia-x11-wm-bridge -- \
-  serve-socket --socket=/tmp/sophia-wm.sock --wm=/path/to/wm \
+  serve-policy --socket=/tmp/sophia-wm.sock --wm=/path/to/wm \
   --wm-arg=optional-argument --wm-private-alias=compiled/wm
 ```
 

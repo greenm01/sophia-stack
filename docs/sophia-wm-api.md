@@ -1,9 +1,8 @@
 # Sophia Window Manager API
 
 **Role:** normative spatial-policy boundary and compatibility contract.
-**Status:** API v7 and the experimental `sophia_wm_v1` Hagia session path are
-both implemented. API v7 remains the compatibility fallback during migration;
-the public interface is not stable.
+**Status:** `sophia_wm_v1` interface major 1, wire revision 3 is stable. The
+experimental Rust API v7 transport has been removed.
 
 Sophia has one spatial-policy role. A native WM speaks that role directly. A
 classical X11 WM speaks only to the private synthetic X server inside
@@ -49,35 +48,15 @@ metadata-bearing shell, broker, portal, and application-frontend roles. One
 source tree or executable may launch those processes; they may not retain
 ambient IPC that recombines their authority.
 
-## Current Experimental API v7
+## Removed Experimental API v7
 
-The retained compatibility path implements `WM_API_VERSION = 7`. It uses the
-common Sophia frame version 1 and has these negotiated capabilities:
-
-- registered opaque bindings;
-- nine Engine-owned workspaces and output/workspace activation;
-- opaque session actions; and
-- bounded Engine-rendered focus-ring and frame policy.
-
-The WM creates the present filesystem socket and Engine connects. `WmHello`
-carries a client-selected policy generation, capabilities, bindings, and
-chrome policy. `WmSessionDescriptor` returns workspaces, active output mappings,
-and session actions. Manage, relayout, remove, action, focus, and reduced
-pointer-gesture requests receive command lists containing workspace assignment,
-size, focus, placement, workspace activation, floating state, and session
-actions.
-
-API v7 remains supported only during migration. It is not the first public
-interface, and its workspace ownership, client-hosted socket, and version
-number must not be frozen as ecosystem architecture. The checked-in xmonad
-compatibility profile no longer uses it: its runner selects `sophia_wm_v1` and
-the bridge returns complete public output projections.
-
-The live session selects the public path with
-`--wm-interface=sophia_wm_v1`. That path uses the session-hosted endpoint,
-complete snapshots and projections, canonical staged reducer, and connection
-epochs described below. The selector is explicit so public-path failures
-cannot silently downgrade to API v7.
+The client-hosted Rust socket, revision negotiation, workspace reducer, policy
+reload frames, demo server, and Engine transport were removed after the
+revision-3 freeze gates closed. Configuration accepts only
+`--wm-interface=sophia_wm_v1`; `api_v7` fails closed. Classical X11 policy is
+implemented inside `sophia-x11-wm-bridge`, which translates its private
+synthetic-X model into complete public projections without giving Engine an
+alternate workspace-policy path.
 
 ## Public `sophia_wm_v1` Negotiation
 

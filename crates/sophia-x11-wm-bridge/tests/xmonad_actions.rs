@@ -10,13 +10,12 @@ use std::{
 
 use sophia_protocol::{
     LayoutNodeCapabilities, LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, Rect,
-    SurfaceConstraints, SurfaceId, TransactionId, WM_API_VERSION, WmActionActivation, WmActionId,
-    WmCommand, WmManageSurface, WmOutputWorkspace, WmPointerGestureCompleted, WmPointerGestureMode,
-    WmPointerPosition, WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WmSessionDescriptor,
-    WorkspaceId,
+    SurfaceConstraints, SurfaceId, TransactionId, WmActionActivation, WmActionId, WmCommand,
+    WmManageSurface, WmPointerGestureCompleted, WmPointerGestureMode, WmPointerPosition,
+    WmRelayoutWorkspace, WmRequestKind, WmRequestPacket, WorkspaceId,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime,
+    LegacySessionDescriptor, LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime,
     XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND, XMONAD_ACTION_FOCUS_MASTER,
     XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS, XMONAD_ACTION_INCREASE_MASTER_COUNT,
     XMONAD_ACTION_MOVE_WORKSPACE_BASE, XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT,
@@ -487,13 +486,9 @@ fn configure_session_with_workspaces(
     workspaces: Vec<WorkspaceId>,
 ) {
     runtime
-        .configure_session(WmSessionDescriptor {
-            api_version: WM_API_VERSION,
+        .configure_session(LegacySessionDescriptor {
             workspaces,
-            active_workspaces: vec![WmOutputWorkspace {
-                output: OutputId::from_raw(1),
-                workspace: WorkspaceId::from_raw(1),
-            }],
+            active_workspaces: vec![(OutputId::from_raw(1), WorkspaceId::from_raw(1))],
             session_actions: Vec::new(),
         })
         .unwrap();

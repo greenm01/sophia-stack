@@ -1,95 +1,16 @@
 #[test]
-fn wm_runtime_action_keeps_running_after_valid_response() {
-    let engine = HeadlessEngine::default();
-    let request = wm_request(TransactionId::from_raw(60));
-    let response = WmResponsePacket {
-        transaction: request.transaction,
-        commands: Vec::new(),
-        timeout_msec: 250,
-    };
-    let mut stream = TestDuplex::new(encode_wm_response_frame(&response).unwrap());
-    let mut layers = vec![test_layer(0, 0, 0, Region::empty())];
-
-    let update = engine.request_and_commit_wm_transaction(&mut stream, &request, &mut layers);
-
-    assert_eq!(update.runtime_action(), WmRuntimeAction::KeepRunning);
-}
-
-#[test]
-fn wm_runtime_action_restarts_after_ipc_failure() {
-    let engine = HeadlessEngine::default();
-    let request = wm_request(TransactionId::from_raw(61));
-    let mut stream = TestDuplex::new(Vec::new());
-    let mut layers = vec![test_layer(0, 0, 0, Region::empty())];
-
-    let update = engine.request_and_commit_wm_transaction(&mut stream, &request, &mut layers);
-
-    assert!(matches!(
-        update.runtime_action(),
-        WmRuntimeAction::RestartWm {
-            reason: WmRestartReason::IpcFailure(WmIpcError::Io(_))
-        }
-    ));
-}
-
-#[test]
-fn wm_runtime_action_does_not_restart_for_valid_rejected_layout() {
-    let engine = HeadlessEngine::default();
-    let request = wm_request(TransactionId::from_raw(62));
-    let response = WmResponsePacket {
-        transaction: request.transaction,
-        commands: vec![WmCommand::RenderSurface(SurfacePlacement {
-            surface: SurfaceId::new(99, 1),
-            geometry: Rect {
-                x: 0,
-                y: 0,
-                width: 10,
-                height: 10,
-            },
-            z_index: 0,
-            crop: None,
-            transform: Transform::IDENTITY,
-        })],
-        timeout_msec: 250,
-    };
-    let mut stream = TestDuplex::new(encode_wm_response_frame(&response).unwrap());
-    let mut layers = vec![test_layer(0, 0, 0, Region::empty())];
-
-    let update = engine.request_and_commit_wm_transaction(&mut stream, &request, &mut layers);
-
-    assert_eq!(
-        update.commit.outcome,
-        TransactionOutcome::RejectedInvalidSurface
-    );
-    assert_eq!(update.runtime_action(), WmRuntimeAction::KeepRunning);
-}
-
-#[test]
 fn wm_transaction_update_maps_to_runtime_observation() {
-    let engine = HeadlessEngine::default();
-    let request = wm_request(TransactionId::from_raw(63));
-    let response = WmResponsePacket {
-        transaction: request.transaction,
-        commands: Vec::new(),
-        timeout_msec: 250,
+    let update = WmTransactionUpdate {
+        commit: TransactionCommit {
+            transaction: TransactionId::from_raw(63),
+            outcome: TransactionOutcome::Committed,
+            applied_surfaces: Vec::new(),
+        },
     };
-    let mut stream = TestDuplex::new(encode_wm_response_frame(&response).unwrap());
-    let mut layers = vec![test_layer(0, 0, 0, Region::empty())];
-
-    let update = engine.request_and_commit_wm_transaction(&mut stream, &request, &mut layers);
 
     assert_eq!(
         runtime_observation_from_wm_transaction_update(&update),
         SessionRuntimeObservation::WmLayoutReady
-    );
-
-    let mut closed_stream = TestDuplex::new(Vec::new());
-    let restart_update =
-        engine.request_and_commit_wm_transaction(&mut closed_stream, &request, &mut layers);
-
-    assert_eq!(
-        runtime_observation_from_wm_transaction_update(&restart_update),
-        SessionRuntimeObservation::WmRestartRequested
     );
 }
 
@@ -270,7 +191,6 @@ fn headless_session_driver_executes_runtime_commands_to_idle() {
                     outcome: TransactionOutcome::Committed,
                     applied_surfaces: vec![SurfaceId::new(1, 1)],
                 },
-                ipc_error: None,
             }),
             portal_commands: vec![PortalCommand::DropNotification {
                 transfer: PortalTransferId::from_raw(1),
@@ -387,7 +307,6 @@ fn live_runtime_driver_adapter_builds_from_nonblocking_intake_values() {
             outcome: TransactionOutcome::Committed,
             applied_surfaces: vec![SurfaceId::new(1, 1)],
         },
-        ipc_error: None,
     };
 
     let adapter = LiveRuntimeDriverAdapter::from_intake(LiveRuntimeDriverIntake {

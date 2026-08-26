@@ -1,16 +1,14 @@
 use crate::prelude::*;
 use crate::{
     MetadataChromeUpdate, NotificationChromeUpdate, RenderFrameReport, SessionTickReport,
-    SlowClientVisualDecision, WmRuntimeAction, WmTransactionUpdate,
+    SlowClientVisualDecision, WmTransactionUpdate,
 };
 
 pub fn runtime_observation_from_wm_transaction_update(
     update: &WmTransactionUpdate,
 ) -> SessionRuntimeObservation {
-    match update.runtime_action() {
-        WmRuntimeAction::KeepRunning => SessionRuntimeObservation::WmLayoutReady,
-        WmRuntimeAction::RestartWm { .. } => SessionRuntimeObservation::WmRestartRequested,
-    }
+    let _ = update;
+    SessionRuntimeObservation::WmLayoutReady
 }
 
 pub fn runtime_observation_from_authority_transaction_commit(

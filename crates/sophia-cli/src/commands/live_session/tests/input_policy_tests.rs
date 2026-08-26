@@ -876,19 +876,18 @@ fn unknown_surface_keeps_wm_focus_request_pending() {
 #[test]
 fn held_application_pointer_delivery_does_not_freeze_cursor() {
     let action = WmActionId::from_raw(7);
-    let registry = WmShortcutRegistry::from_hello(&WmHello {
-        api_version: WM_API_VERSION,
-        capabilities: WmCapabilities::all_supported(),
-        policy_generation: 1,
-        chrome: sophia_protocol::WmChromePolicy::default(),
-        bindings: vec![WmBindingRegistration {
+    let registry = WmShortcutRegistry::new(
+        &[WmBindingRegistration {
             action,
             keycode: 28,
             modifiers: WmModifierMask {
                 bits: WmModifierMask::SUPER,
             },
         }],
-    })
+        WmCapabilities::all_supported(),
+        1,
+        sophia_protocol::WmChromePolicy::default(),
+    )
     .unwrap();
     let mut shortcuts = WmShortcutRouter::new(registry);
     let events = vec![

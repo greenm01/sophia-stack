@@ -8,17 +8,11 @@ pub const SOPHIA_IPC_MAX_ITEMS: usize = 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IpcMessageKind {
-    WmRequest = 1,
-    WmResponse = 2,
     BrokerHealth = 3,
     XAuthorityRequest = 4,
     XAuthorityResponse = 5,
     PortalBrokerRequest = 6,
     PortalBrokerResponse = 7,
-    WmHello = 9,
-    WmSessionDescriptor = 10,
-    WmPolicyUpdate = 11,
-    WmPolicyAck = 12,
     PortalClipboardPayload = 8,
     WmV1ClientHello = 32,
     WmV1ServerWelcome = 33,

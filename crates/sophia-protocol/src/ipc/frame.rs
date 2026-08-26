@@ -43,18 +43,12 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
     }
 
     let message_kind = match cursor.u16()? {
-        1 => IpcMessageKind::WmRequest,
-        2 => IpcMessageKind::WmResponse,
         3 => IpcMessageKind::BrokerHealth,
         4 => IpcMessageKind::XAuthorityRequest,
         5 => IpcMessageKind::XAuthorityResponse,
         6 => IpcMessageKind::PortalBrokerRequest,
         7 => IpcMessageKind::PortalBrokerResponse,
         8 => IpcMessageKind::PortalClipboardPayload,
-        9 => IpcMessageKind::WmHello,
-        10 => IpcMessageKind::WmSessionDescriptor,
-        11 => IpcMessageKind::WmPolicyUpdate,
-        12 => IpcMessageKind::WmPolicyAck,
         32 => IpcMessageKind::WmV1ClientHello,
         33 => IpcMessageKind::WmV1ServerWelcome,
         34 => IpcMessageKind::WmV1SnapshotBegin,

@@ -7,12 +7,11 @@ fn offset(haystack: &str, needle: &str) -> usize {
         .unwrap_or_else(|| panic!("missing {needle:?}"))
 }
 
-/// A work area that moved must be relaid out whoever is driving policy.
+/// A moved work area must be relaid out before public policy is polled.
 ///
-/// The relayout check sat below the early return into the public path, so it ran
-/// only for a private policy. Three places set `work_area_relayout_required` and
-/// one place read it, and that reader was unreachable in every session running a
-/// public policy client -- which is every session that runs the reference WM.
+/// The relayout check once sat below an early return into the public path. Three
+/// places set `work_area_relayout_required` and one place read it, and that
+/// reader was unreachable in every session running the reference WM.
 ///
 /// The visible cost was window chrome. Chrome clearance changing from zero to
 /// two raised the flag, nothing consumed it, and windows stayed placed against
@@ -22,14 +21,14 @@ fn offset(haystack: &str, needle: &str) -> usize {
 /// a neighbouring output in root space -- a border from one monitor's window
 /// appearing on another monitor, and no border at all on its own.
 ///
-/// `enqueue_relayout` opens by handling the public case, so the capability was
-/// always there; only the ordering kept it from being reached.
+/// `enqueue_relayout` already submits the public request. Only the ordering kept
+/// it from being reached.
 #[test]
-fn a_moved_work_area_is_relaid_out_for_public_and_private_policy_alike() {
+fn a_moved_work_area_is_relaid_out_before_public_policy_is_polled() {
     let relayout = offset(&WM_SESSION[..], "if self.work_area_relayout_required {");
     let public_return = offset(
         &WM_SESSION[..],
-        "return self.poll_public_request(layout, output, allow_new_cycle);",
+        "self.poll_public_request(layout, output, allow_new_cycle)",
     );
     assert!(
         relayout < public_return,
@@ -45,18 +44,11 @@ fn a_moved_work_area_is_relaid_out_for_public_and_private_policy_alike() {
         1,
         "a second reader would make the ordering above insufficient"
     );
-    // And the capability it reaches genuinely covers the public case.
+    // And the capability it reaches genuinely submits to the public policy.
     let enqueue = offset(&WM_SESSION[..], "fn enqueue_relayout(");
-    let public_branch = WM_SESSION[enqueue..]
-        .find("if let Some(public) = self.public.as_mut() {")
-        .expect("enqueue_relayout handles the public policy case");
-    let private_work = WM_SESSION[enqueue..]
-        .find("if self.has_current_relayout_request(layout) {")
-        .expect("enqueue_relayout also handles the private case");
-    assert!(
-        public_branch < private_work,
-        "enqueue_relayout answers the public case before falling through"
-    );
+    WM_SESSION[enqueue..]
+        .find("let public = self.public.as_mut().ok_or(\"public WM state is unavailable\")?;")
+        .expect("enqueue_relayout submits through public policy state");
 
     // Nothing in the public path consumes the flag itself, which is why the
     // ordering above is what makes it reachable at all.

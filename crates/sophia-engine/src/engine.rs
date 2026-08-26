@@ -2,7 +2,6 @@ mod core;
 mod layout;
 mod rendering;
 mod session_tick;
-mod wm_transaction;
 
 use crate::{EngineError, FramePlanRequest, HeadlessOutput, ReplayReport};
 use sophia_protocol::{

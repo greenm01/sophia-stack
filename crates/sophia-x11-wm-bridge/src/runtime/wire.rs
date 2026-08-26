@@ -55,33 +55,3 @@ pub(super) fn push_i16(bytes: &mut Vec<u8>, value: i16) {
 pub(super) fn push_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
-
-pub(super) fn read_wm_session_descriptor(
-    stream: &mut UnixStream,
-) -> Result<WmSessionDescriptor, BridgeRuntimeError> {
-    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header).map_err(|error| {
-        BridgeRuntimeError::new(format!(
-            "failed to read WM session descriptor header: {error}"
-        ))
-    })?;
-    let payload_len = u32::from_le_bytes(header[16..20].try_into().expect("fixed header")) as usize;
-    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-        return Err(BridgeRuntimeError::new(format!(
-            "WM session descriptor payload too large: {payload_len}"
-        )));
-    }
-    let mut frame = Vec::with_capacity(SOPHIA_IPC_HEADER_LEN + payload_len);
-    frame.extend_from_slice(&header);
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
-    stream
-        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .map_err(|error| {
-            BridgeRuntimeError::new(format!(
-                "failed to read WM session descriptor payload: {error}"
-            ))
-        })?;
-    decode_wm_session_descriptor_frame(&frame).map_err(|error| {
-        BridgeRuntimeError::new(format!("failed to decode WM session descriptor: {error:?}"))
-    })
-}

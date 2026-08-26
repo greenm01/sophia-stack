@@ -162,48 +162,6 @@ fn live_runtime_driver_adapter_commits_authority_batches_before_rendering() {
 }
 
 #[test]
-fn headless_session_driver_stops_before_rendering_when_wm_restart_is_requested() {
-    let engine = HeadlessEngine::default();
-    let output = engine.output();
-    let mut driver = HeadlessSessionDriver::new(engine);
-    let transaction = TransactionId::from_raw(81);
-
-    let report = driver
-        .run_tick(HeadlessSessionDriverTick {
-            output: output.id,
-            frame_serial: 91,
-            x_event_count: 1,
-            layers: vec![test_layer(1, 0, 0, Region::empty())],
-            wm_update: Some(WmTransactionUpdate {
-                commit: TransactionCommit {
-                    transaction,
-                    outcome: TransactionOutcome::TimedOut,
-                    applied_surfaces: Vec::new(),
-                },
-                ipc_error: Some(WmIpcError::Io("closed".to_owned())),
-            }),
-            portal_commands: Vec::new(),
-            chrome_command_count: 0,
-        })
-        .unwrap();
-
-    assert_eq!(
-        report.runtime_commands,
-        vec![
-            SessionRuntimeCommand::PollXEvents,
-            SessionRuntimeCommand::RequestWmLayout,
-            SessionRuntimeCommand::RestartWindowManager,
-        ]
-    );
-    assert_eq!(
-        report.runtime_state.phase,
-        SessionRuntimePhase::ApplyingWmPolicy
-    );
-    assert_eq!(report.runtime_state.frames_rendered, 0);
-    assert!(report.session_tick.is_none());
-}
-
-#[test]
 fn live_x_runtime_adapter_emits_bounded_event_count_observation() {
     let adapter = LiveXRuntimeAdapter {
         pending_event_count: 12,
@@ -240,7 +198,7 @@ fn live_x_runtime_adapter_emits_authority_commit_observations() {
 }
 
 #[test]
-fn live_wm_runtime_adapter_maps_restart_update_to_observation() {
+fn live_wm_runtime_adapter_maps_update_to_ready_observation() {
     let adapter = LiveWmRuntimeAdapter {
         update: Some(WmTransactionUpdate {
             commit: TransactionCommit {
@@ -248,13 +206,12 @@ fn live_wm_runtime_adapter_maps_restart_update_to_observation() {
                 outcome: TransactionOutcome::TimedOut,
                 applied_surfaces: Vec::new(),
             },
-            ipc_error: Some(WmIpcError::Io("closed".to_owned())),
         }),
     };
 
     assert_eq!(
         adapter.layout_observation(),
-        SessionRuntimeObservation::WmRestartRequested
+        SessionRuntimeObservation::WmLayoutReady
     );
 }
 
@@ -388,45 +345,5 @@ fn live_chrome_runtime_adapter_counts_metadata_updates() {
     assert_eq!(
         chrome.present_observation(),
         SessionRuntimeObservation::ChromeCommandsReady { count: 2 }
-    );
-}
-
-#[test]
-fn wm_supervisor_adapter_keeps_supervisor_idle_when_wm_keeps_running() {
-    let state = SupervisorState::new(SupervisedProcessKind::WindowManager);
-
-    let (state, command) = update_wm_supervisor_from_runtime_action(
-        state,
-        WmRuntimeAction::KeepRunning,
-        RestartPolicy::default(),
-    );
-
-    assert_eq!(state.restart_attempts, 0);
-    assert_eq!(command, SupervisorCommand::None);
-}
-
-#[test]
-fn wm_supervisor_adapter_restarts_wm_after_runtime_restart_action() {
-    let state = SupervisorState::new(SupervisedProcessKind::WindowManager);
-
-    let (state, command) = update_wm_supervisor_from_runtime_action(
-        state,
-        WmRuntimeAction::RestartWm {
-            reason: WmRestartReason::IpcFailure(WmIpcError::Io("closed".to_owned())),
-        },
-        RestartPolicy {
-            max_attempts: 2,
-            initial_backoff: Duration::from_millis(25),
-            max_backoff: Duration::from_millis(100),
-        },
-    );
-
-    assert_eq!(state.restart_attempts, 1);
-    assert_eq!(
-        command,
-        SupervisorCommand::StartProcess {
-            process: SupervisedProcessKind::WindowManager,
-            delay: Duration::ZERO
-        }
     );
 }

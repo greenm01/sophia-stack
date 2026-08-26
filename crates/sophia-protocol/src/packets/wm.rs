@@ -17,7 +17,6 @@ pub struct LayoutTransaction {
     pub timeout_msec: u32,
 }
 
-pub const WM_API_VERSION: u16 = 7;
 pub const WM_MAX_BINDINGS: usize = 256;
 pub const WM_DEFAULT_WORKSPACES: usize = 9;
 
@@ -134,55 +133,11 @@ impl WmChromePolicy {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WmHello {
-    pub api_version: u16,
-    pub capabilities: WmCapabilities,
-    pub policy_generation: u64,
-    pub bindings: Vec<WmBindingRegistration>,
-    pub chrome: WmChromePolicy,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WmPolicyUpdate {
-    pub api_version: u16,
-    pub generation: u64,
-    pub bindings: Vec<WmBindingRegistration>,
-    pub chrome: WmChromePolicy,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WmPolicyAckOutcome {
-    Applied,
-    RejectedStale,
-    RejectedInvalid,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmPolicyAck {
-    pub generation: u64,
-    pub outcome: WmPolicyAckOutcome,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmOutputWorkspace {
-    pub output: OutputId,
-    pub workspace: WorkspaceId,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WmSessionAction {
     LaunchApplication { application: SessionApplicationId },
     CloseFocused,
     Logout,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WmSessionDescriptor {
-    pub api_version: u16,
-    pub workspaces: Vec<WorkspaceId>,
-    pub active_workspaces: Vec<WmOutputWorkspace>,
-    pub session_actions: Vec<WmSessionAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

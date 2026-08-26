@@ -48,13 +48,11 @@ use sophia_engine::{
     ApplicationRouteScope, FocusedInputRoute, InputFocusDecision, InputFocusState, KeyRepeatConfig,
     KeyRepeatState, KeyRepeatTarget, KeyboardFocusHandoffState, LayoutEpochCoordinator,
     NonBlockingInputPoller, OutputFrameServiceRequest, OutputNativeFramePhase,
-    PointerFocusHandoffState, WmPolicyApplyOutcome, WmShortcutRegistry, WmShortcutRouter,
-    WmWorkspaceState,
+    PointerFocusHandoffState, WmShortcutRouter,
 };
 use sophia_protocol::{
     ClientAdmissionContext, DeviceId, NamespaceCapabilities, NamespaceId, NamespaceProfile, Point,
-    SeatId, SessionApplicationId, WM_DEFAULT_WORKSPACES, WmActionActivation, WmActionId,
-    WmManageSurface, WmPolicyAckOutcome, WmPolicyUpdate, WmResponsePacket, WmSessionAction,
+    SeatId, SessionApplicationId, WmActionId, WmSessionAction,
 };
 use sophia_runtime::NamespaceRegistry;
 use sophia_x_authority::{
@@ -94,7 +92,6 @@ mod policy_transport_worker;
 mod process_supervision;
 mod proof_artifacts;
 mod startup_readiness;
-mod wm_transport_worker;
 mod x_frontend;
 
 use authority_file::{LiveXAuthorityFile, fill_session_random};
@@ -118,7 +115,6 @@ use startup_readiness::{
     logical_synchronous_modeset_records, rects_intersect, startup_native_recovery_reason,
     startup_output_evidence, startup_submission_requirement, startup_surface_visual_detail,
 };
-use wm_transport_worker::{WmTransportPolicyEvent, WmTransportSubmitError, WmTransportWorker};
 #[cfg(feature = "atomic-scanout-live")]
 use x_frontend::LiveXPixmapAllocator;
 use x_frontend::{LiveXAdmissionPolicy, LiveXRenderDeviceProvider};
@@ -141,8 +137,7 @@ const SESSION_INPUT_QUIET_MSEC: u64 = 500;
 const SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC: u64 = 15_000;
 const SESSION_PHYSICAL_PIXEL_TIMEOUT_MSEC: u64 = 5_000;
 const SESSION_COMPLETION_TIMEOUT_MSEC: u64 = 5_000;
-const SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC: u64 = 4_000;
-const SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC: u32 = 10_000;
+const SESSION_POLICY_RESPONSE_TIMEOUT_MSEC: u64 = 4_000;
 const SESSION_APP_ADMISSION_TIMEOUT_MSEC: u64 = 12_000;
 const SESSION_INPUT_DELIVERY_TIMEOUT_MSEC: u64 = 1_000;
 const SESSION_SEAT_RAW: u64 = 1;
@@ -611,8 +606,9 @@ pub(crate) fn run_persistent_xterm_session(
         )
     }));
     wait_for_x_server_socket(&config.socket_path, &mut server)?;
-    let mut metadata_broker = (config.wm_interface
-        == sophia_config::ExternalWmInterface::SophiaWmV1)
+    let mut metadata_broker = config
+        .wm_process
+        .is_some()
         .then(LiveMetadataBroker::start)
         .transpose()?;
     let mut metadata_shell = config

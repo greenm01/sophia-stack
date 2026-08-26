@@ -7,12 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rustix = { workspace = true, features = ["net", "std"] }
-sophia-config = { path = "../sophia-config" }
 sophia-protocol = { path = "../sophia-protocol" }
-
-[dev-dependencies]
-sophia-engine = { path = "../sophia-engine" }
 
 [lints]
 workspace = true

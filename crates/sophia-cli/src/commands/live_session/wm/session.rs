@@ -1,7 +1,3 @@
-use sophia_cli::wm_recovery::{
-    WmAdmissionSelection, WmReseedAdmissionCandidate, select_wm_admission, select_wm_reseed_plan,
-};
-
 const WM_OWNER_REQUEST_CAPACITY: usize = 16;
 const WM_OWNER_REJECTION_DIAGNOSTIC_LIMIT: usize = 16;
 
@@ -39,79 +35,6 @@ fn completed_pointer_gesture_geometry(
             height: initial.height.saturating_add(delta_y).max(1),
             ..initial
         },
-    }
-}
-
-impl LiveWmProposalSource {
-    const fn reduced_name(self) -> &'static str {
-        match self {
-            Self::Action(_) => "action",
-            Self::Focus(_) => "focus",
-            Self::PointerGesture { .. } => "pointer_gesture",
-            Self::Manage(_) => "manage",
-            Self::Relayout => "relayout",
-        }
-    }
-}
-
-enum LiveWmQueuedKind {
-    Proposal {
-        base_state: WmWorkspaceState,
-        fingerprint: LiveWmLayoutFingerprint,
-        source: LiveWmProposalSource,
-    },
-    SurfaceRemoved {
-        surface: SurfaceId,
-    },
-}
-
-struct LiveWmQueuedRequest {
-    packet: WmRequestPacket,
-    kind: LiveWmQueuedKind,
-    ordered_action: Option<WmActionId>,
-    queued_at: Instant,
-}
-
-struct LiveWmOwnerQueue<T> {
-    pending: VecDeque<T>,
-    capacity: usize,
-}
-
-impl<T> LiveWmOwnerQueue<T> {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            pending: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    fn try_push_back(&mut self, value: T, in_flight: bool) -> Result<(), T> {
-        if self.pending.len().saturating_add(usize::from(in_flight)) >= self.capacity {
-            return Err(value);
-        }
-        self.pending.push_back(value);
-        Ok(())
-    }
-
-    fn push_front(&mut self, value: T) {
-        debug_assert!(self.pending.len() < self.capacity);
-        self.pending.push_front(value);
-    }
-
-    fn pop_front(&mut self) -> Option<T> {
-        self.pending.pop_front()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &T> {
-        self.pending.iter()
-    }
-
-    fn len(&self) -> usize {
-        self.pending.len()
-    }
-
-    fn clear(&mut self) {
-        self.pending.clear();
     }
 }
 
@@ -157,34 +80,14 @@ fn require_wm_request_admission(
     }
 }
 
-fn planning_state_for_response(
-    current: &WmWorkspaceState,
-    request: &WmRequestPacket,
-) -> Result<WmWorkspaceState, Box<dyn std::error::Error>> {
-    let mut planning_state = current.clone();
-    if let WmRequestKind::ManageSurface(manage) = &request.kind
-        && planning_state
-            .surface_workspace(manage.node.surface)
-            .is_none()
-    {
-        planning_state.register_surface(manage.node.surface, manage.workspace)?;
-        planning_state.set_surface_floating(manage.node.surface, manage.node.state.floating)?;
-    }
-    Ok(planning_state)
-}
-
 struct LiveWmSession {
     supervisor: ProcessSupervisor,
     supervisor_state: sophia_runtime::SupervisorState,
     restart_policy: RestartPolicy,
     socket_path: std::path::PathBuf,
-    transport: Option<WmTransportWorker>,
     public: Option<LivePublicPolicyState>,
     _shell_profile: Option<PreparedAuthorityFragment>,
     _broker_profile: Option<PreparedAuthorityFragment>,
-    queued_requests: LiveWmOwnerQueue<LiveWmQueuedRequest>,
-    in_flight_request: Option<LiveWmQueuedRequest>,
-    next_transaction: u64,
     requests: usize,
     request_peak_depth: usize,
     request_rejections: usize,
@@ -201,10 +104,7 @@ struct LiveWmSession {
     fallback_chrome: sophia_engine::SurfaceChromeStyle,
     visual_chrome: sophia_engine::SurfaceChromeStyle,
     pending_visual_chrome: Option<sophia_engine::SurfaceChromeStyle>,
-    pending_policy_update: Option<WmPolicyUpdate>,
     force_transport_restart: bool,
-    workspace_state: WmWorkspaceState,
-    session_actions: Vec<WmSessionAction>,
     committed: usize,
     last_committed_at: Option<Instant>,
     max_request: Duration,
@@ -224,20 +124,12 @@ struct LiveWmProposal {
     update: WmTransactionUpdate,
     moved_surfaces: usize,
     source: Option<LiveWmProposalSource>,
-    effects: Option<LiveWmCommitEffects>,
     policy_settlement: Option<LivePolicySettlementIdentity>,
-}
-
-struct LiveWmCommitEffects {
-    workspace_state: WmWorkspaceState,
-    transaction: TransactionId,
-    session_action: Option<(WmSessionAction, Option<SurfaceId>)>,
 }
 
 struct LiveWmCommitResult {
     update: WmTransactionUpdate,
     source: Option<LiveWmProposalSource>,
-    effects: Option<LiveWmCommitEffects>,
     policy_settlement: Option<LivePolicySettlementIdentity>,
 }
 
@@ -383,147 +275,15 @@ impl LiveWmSession {
         public_launch: Option<StartedPublicPolicyLaunch>,
         output_bootstrap: Option<LiveOutputAuthorityBootstrap>,
     ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let Some(process) = config.wm_process.as_deref() else {
+        let Some(_) = config.wm_process.as_deref() else {
             if public_launch.is_some() {
                 return Err("public WM preparation exists without a configured process".into());
             }
             return Ok(None);
         };
-        if config.wm_interface == sophia_config::ExternalWmInterface::SophiaWmV1 {
-            let started = public_launch
-                .ok_or("public WM launch requires an activated desktop profile")?;
-            return Self::from_started_public_config(config, outputs, started, output_bootstrap)
-                .map(Some);
-        }
-        let _ = output_bootstrap;
-        if public_launch.is_some() {
-            return Err("legacy WM launch cannot consume public profile preparation".into());
-        }
-        let _ = std::fs::remove_file(&config.wm_socket_path);
-        let socket_arg = format!("--socket={}", config.wm_socket_path.display());
-        let spec = config.wm_process_args.iter().fold(
-            ProcessLaunchSpec::new(process)
-                .arg("serve-socket")
-                .arg(socket_arg)
-                .process_group(),
-            |spec, argument| spec.arg(argument),
-        );
-        let workspace_state =
-            WmWorkspaceState::new(wm_output_bounds(outputs), WM_DEFAULT_WORKSPACES)?;
-        let mut session_actions = vec![WmSessionAction::CloseFocused, WmSessionAction::Logout];
-        if !config.normal_session || config.applications.terminal.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplication {
-                application: TERMINAL_APPLICATION_ID,
-            });
-        }
-        if config.normal_session && config.applications.launcher.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplication {
-                application: LAUNCHER_APPLICATION_ID,
-            });
-        }
-        if config.normal_session && config.applications.browser.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplication {
-                application: BROWSER_APPLICATION_ID,
-            });
-        }
-        if config.session_launcher.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplication {
-                application: LAUNCHER_APPLICATION_ID,
-            });
-        }
-        if config.session_browser.is_some() {
-            session_actions.push(WmSessionAction::LaunchApplication {
-                application: BROWSER_APPLICATION_ID,
-            });
-        }
-        let mut session = Self {
-            supervisor: ProcessSupervisor::new(SupervisedProcessKind::WindowManager, spec),
-            supervisor_state: sophia_runtime::SupervisorState::new(
-                SupervisedProcessKind::WindowManager,
-            ),
-            restart_policy: RestartPolicy::default(),
-            shortcuts: None,
-            wm_chrome_supported: false,
-            chrome: sophia_protocol::WmChromePolicy::default(),
-            fallback_chrome: config.surface_chrome_style,
-            visual_chrome: config.surface_chrome_style,
-            pending_visual_chrome: None,
-            pending_policy_update: None,
-            force_transport_restart: false,
-            workspace_state,
-            session_actions,
-            socket_path: config.wm_socket_path.clone(),
-            transport: None,
-            public: None,
-            _shell_profile: None,
-            _broker_profile: None,
-            queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
-            in_flight_request: None,
-            next_transaction: 1,
-            requests: 0,
-            request_peak_depth: 0,
-            request_rejections: 0,
-            action_requests_ordered: 0,
-            stale_responses: 0,
-            work_area_relayout_required: false,
-            shell_reservation_bands: Vec::new(),
-            committed: 0,
-            last_committed_at: None,
-            max_request: Duration::ZERO,
-            max_queue_dwell: Duration::ZERO,
-            restarts: 0,
-            degraded: false,
-        };
-        session.start(SupervisorEvent::StartRequested)?;
-        println!("sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0");
-        Ok(Some(session))
-    }
-
-    fn start(&mut self, event: SupervisorEvent) -> Result<(), Box<dyn std::error::Error>> {
-        let _ = std::fs::remove_file(&self.socket_path);
-        let (state, command) =
-            update_supervisor(self.supervisor_state.clone(), event, self.restart_policy);
-        self.supervisor_state = state;
-        let start_event = self
-            .supervisor
-            .apply(command)?
-            .ok_or("WM supervisor did not start the configured process")?;
-        let (state, _) = update_supervisor(
-            self.supervisor_state.clone(),
-            start_event,
-            self.restart_policy,
-        );
-        self.supervisor_state = state;
-        super::x_authority::wait_for_socket_path(&self.socket_path)?;
-        let stream = UnixStream::connect(&self.socket_path)?;
-        let mut transport = WmSocketTransport::new(
-            stream,
-            WmSocketTransportConfig {
-                // The legacy bridge may spend up to three seconds collecting
-                // a bounded WM response. Keep the transport deadline outside
-                // that contract but inside the owner transaction deadline.
-                response_timeout: Duration::from_millis(SESSION_WM_TRANSPORT_RESPONSE_TIMEOUT_MSEC),
-            },
-        );
-        let descriptor = self
-            .workspace_state
-            .descriptor(self.session_actions.clone());
-        let registry = transport.negotiate(&descriptor)?;
-        self.accept_negotiated_chrome(&registry);
-        match self.shortcuts.as_mut() {
-            Some(shortcuts) => shortcuts.replace_registry(registry),
-            None => self.shortcuts = Some(WmShortcutRouter::new(registry)),
-        }
-        self.pending_policy_update = None;
-        self.force_transport_restart = false;
-        self.transport = Some(WmTransportWorker::new(transport)?);
-        let (state, _) = update_supervisor(
-            self.supervisor_state.clone(),
-            SupervisorEvent::ProcessHealthy,
-            self.restart_policy,
-        );
-        self.supervisor_state = state;
-        Ok(())
+        let started =
+            public_launch.ok_or("public WM launch requires an activated desktop profile")?;
+        Self::from_started_public_config(config, outputs, started, output_bootstrap).map(Some)
     }
 
     fn request_transport_restart(&mut self, reason: &str, error: Option<&str>) {
@@ -539,66 +299,7 @@ impl LiveWmSession {
         layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
-        if self.public.is_some() {
-            return self.poll_public_restart(layout, output);
-        }
-        if self.degraded {
-            return Ok(None);
-        }
-        let restart_requested = self.force_transport_restart;
-        let process_exited = self.supervisor.poll()?.is_some();
-        if !restart_requested && !process_exited {
-            return Ok(None);
-        }
-        if restart_requested && !process_exited {
-            self.supervisor.terminate()?;
-        }
-        self.transport = None;
-        self.pending_policy_update = None;
-        self.force_transport_restart = false;
-        self.queued_requests.clear();
-        self.in_flight_request = None;
-        self.restarts = self.restarts.saturating_add(1);
-        if let Err(error) = self.start(SupervisorEvent::ProcessExited) {
-            if self.committed == 0 {
-                return Err(error);
-            }
-            self.degraded = true;
-            println!(
-                "sophia_live_wm schema=1 status=degraded reason=restart_failed preserved_layout=true error={error:?}"
-            );
-            return Ok(None);
-        }
-        println!(
-            "sophia_live_wm schema=1 status=restarted restarts={} preserved_layout=true",
-            self.restarts
-        );
-        let has_committed_layout = !self.workspace_state.visible_surfaces(output.id)?.is_empty();
-        let reseed =
-            select_wm_reseed_plan(layout.next_reseed_unmanaged_surface(), has_committed_layout);
-        if reseed.seed_committed_layout {
-            require_wm_request_admission(
-                self.enqueue_relayout(layout, output)?,
-                "committed-layout reseed",
-            )?;
-            println!(
-                "sophia_live_wm schema=4 status=reseed_queued phase=committed_layout request=relayout"
-            );
-        }
-        if let Some(surface) = reseed.replay_manage {
-            require_wm_request_admission(
-                self.enqueue_manage(surface, layout, output)?,
-                "pending-admission reseed",
-            )?;
-            println!(
-                "sophia_live_wm schema=4 status=reseed_queued phase=pending_admission request=manage surface={}",
-                surface.index(),
-            );
-        }
-        if !reseed.seed_committed_layout && reseed.replay_manage.is_none() {
-            println!("sophia_live_wm schema=4 status=reseed_queued phase=none request=none");
-        }
-        Ok(None)
+        self.poll_public_restart(layout, output)
     }
 
     fn enqueue_manage(
@@ -607,62 +308,15 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if let Some(public) = self.public.as_mut() {
-            if !layout.is_policy_managed(surface) {
-                return Ok(LiveWmRequestAdmission::Duplicate);
-            }
-            return Ok(public.queue_cause(LivePublicPolicyCause {
-                source: LiveWmProposalSource::Manage(surface),
-                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
-                affected_outputs: public.all_outputs(output.id),
-            }));
-        }
         if !layout.is_policy_managed(surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        if self.has_request_source(LiveWmProposalSource::Manage(surface)) {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let facts = layout
-            .layout_facts(surface)
-            .ok_or("new WM surface is missing from live layout")?;
-        let workspace = self
-            .workspace_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?
-            .workspace;
-        let bounds = self
-            .workspace_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?
-            .bounds;
-        let mut planning_state = self.workspace_state.clone();
-        planning_state.register_surface(surface, workspace)?;
-        let request = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::ManageSurface(WmManageSurface {
-                node: live_layout_node_from_facts(
-                    facts,
-                    workspace,
-                    &layout.layout_epochs,
-                    self.candidate_chrome_style(),
-                )?,
-                output: output.id,
-                workspace,
-                bounds,
-            }),
-        };
-        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &planning_state);
-        Ok(self.enqueue_request(LiveWmQueuedRequest {
-            packet: request,
-            kind: LiveWmQueuedKind::Proposal {
-                base_state: self.workspace_state.clone(),
-                fingerprint,
-                source: LiveWmProposalSource::Manage(surface),
-            },
-            ordered_action: None,
-            queued_at: Instant::now(),
-        })?)
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        Ok(public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Manage(surface),
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs: public.all_outputs(output.id),
+        }))
     }
 
     fn enqueue_relayout(
@@ -670,80 +324,31 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if let Some(public) = self.public.as_mut() {
-            return Ok(public.queue_cause(LivePublicPolicyCause {
-                source: LiveWmProposalSource::Relayout,
-                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
-                affected_outputs: public.all_outputs(output.id),
-            }));
-        }
-        if self.has_current_relayout_request(layout) {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let output_state = self
-            .workspace_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?;
-        let workspace = output_state.workspace;
-        let request = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
-                output: output.id,
-                workspace,
-                bounds: output_state.bounds,
-                nodes: committed_relayout_nodes(
-                    layout,
-                    &self.workspace_state,
-                    workspace,
-                    self.candidate_chrome_style(),
-                )?,
-            }),
-        };
-        self.enqueue_request(LiveWmQueuedRequest {
-            packet: request,
-            kind: LiveWmQueuedKind::Proposal {
-                base_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
-                source: LiveWmProposalSource::Relayout,
-            },
-            ordered_action: None,
-            queued_at: Instant::now(),
-        })
+        let _ = layout;
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        Ok(public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Relayout,
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs: public.all_outputs(output.id),
+        }))
     }
 
     fn enqueue_surface_removed(
         &mut self,
         surface: SurfaceId,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if let Some(public) = self.public.as_mut() {
-            public.launch_classifications.remove(&surface);
-            let active = public
-                .outputs
-                .first()
-                .map(|output| output.id)
-                .ok_or("public WM has no live output")?;
-            return Ok(public.queue_cause(LivePublicPolicyCause {
-                source: LiveWmProposalSource::Manage(surface),
-                cause: sophia_protocol::PolicyRequestCause::SceneChanged,
-                affected_outputs: public.all_outputs(active),
-            }));
-        }
-        let Some(workspace) = self.workspace_state.surface_workspace(surface) else {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        };
-        if self.has_surface_removal(surface) {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let request = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::SurfaceRemoved { surface, workspace },
-        };
-        self.enqueue_request(LiveWmQueuedRequest {
-            packet: request,
-            kind: LiveWmQueuedKind::SurfaceRemoved { surface },
-            ordered_action: None,
-            queued_at: Instant::now(),
-        })
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        public.launch_classifications.remove(&surface);
+        let active = public
+            .outputs
+            .first()
+            .map(|output| output.id)
+            .ok_or("public WM has no live output")?;
+        Ok(public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Manage(surface),
+            cause: sophia_protocol::PolicyRequestCause::SceneChanged,
+            affected_outputs: public.all_outputs(active),
+        }))
     }
 
     fn register_launch_placement(
@@ -754,9 +359,7 @@ impl LiveWmSession {
         if !surface.is_valid() || classification == 0 {
             return Err("trusted launch placement has an invalid identity".into());
         }
-        let Some(public) = self.public.as_mut() else {
-            return Ok(());
-        };
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
         match public.launch_classifications.entry(surface) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(classification);
@@ -776,56 +379,27 @@ impl LiveWmSession {
     fn enqueue_action(
         &mut self,
         action: WmActionId,
-        layout: &PersistentLiveLayout,
-        output: sophia_engine::HeadlessOutput,
+        _layout: &PersistentLiveLayout,
+        _output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveOrderedWmActionAdmission, Box<dyn std::error::Error>> {
-        if let Some(public) = self.public.as_mut() {
-            let activation_serial = public.mint_transaction()?.raw();
-            let active_output = public.active_output;
-            let admission = public.queue_cause(LivePublicPolicyCause {
-                source: LiveWmProposalSource::Action(action),
-                cause: sophia_protocol::PolicyRequestCause::Action {
-                    activation_serial,
-                    action,
-                },
-                affected_outputs: public.all_outputs(active_output),
-            });
-            return match admission {
-                LiveWmRequestAdmission::Admitted => {
-                    self.action_requests_ordered = self.action_requests_ordered.saturating_add(1);
-                    Ok(LiveOrderedWmActionAdmission::Admitted)
-                }
-                LiveWmRequestAdmission::RejectedCapacity => {
-                    self.request_rejections = self.request_rejections.saturating_add(1);
-                    Ok(LiveOrderedWmActionAdmission::RejectedCapacity {
-                        report: report_wm_rejection_diagnostic(self.request_rejections),
-                    })
-                }
-                LiveWmRequestAdmission::Duplicate => {
-                    unreachable!("public ordered actions are never duplicate-elided")
-                }
-            };
-        }
-        let transaction = self.mint_transaction()?;
-        let (packet, kind) = ordered_wm_action_request(
-            transaction,
-            action,
-            layout,
-            &self.workspace_state,
-            output,
-            self.candidate_chrome_style(),
-        )?;
-        match self.enqueue_request(LiveWmQueuedRequest {
-            packet,
-            kind,
-            ordered_action: Some(action),
-            queued_at: Instant::now(),
-        })? {
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        let activation_serial = public.mint_transaction()?.raw();
+        let active_output = public.active_output;
+        let admission = public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Action(action),
+            cause: sophia_protocol::PolicyRequestCause::Action {
+                activation_serial,
+                action,
+            },
+            affected_outputs: public.all_outputs(active_output),
+        });
+        match admission {
             LiveWmRequestAdmission::Admitted => {
                 self.action_requests_ordered = self.action_requests_ordered.saturating_add(1);
                 Ok(LiveOrderedWmActionAdmission::Admitted)
             }
             LiveWmRequestAdmission::RejectedCapacity => {
+                self.request_rejections = self.request_rejections.saturating_add(1);
                 Ok(LiveOrderedWmActionAdmission::RejectedCapacity {
                     report: report_wm_rejection_diagnostic(self.request_rejections),
                 })
@@ -904,56 +478,16 @@ impl LiveWmSession {
 
     fn enqueue_pointer_gesture(
         &mut self,
-        mut gesture: sophia_protocol::WmPointerGestureCompleted,
+        gesture: sophia_protocol::WmPointerGestureCompleted,
         layout: &PersistentLiveLayout,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         if !layout.is_policy_managed(gesture.surface) {
             return Ok(LiveWmRequestAdmission::Duplicate);
         }
-        let source = LiveWmProposalSource::PointerGesture {
-            surface: gesture.surface,
-            mode: gesture.mode,
-        };
-        if self.has_request_source(source) {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        if self.public.is_some() {
-            // The public path receives Begin/Update/End observations above;
-            // this legacy completion is retained only for API-v7 adapters.
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let workspace = self
-            .workspace_state
-            .surface_workspace(gesture.surface)
-            .ok_or("pointer gesture targeted an unmanaged WM surface")?;
-        let output = self
-            .workspace_state
-            .output_at_point(gesture.start.x, gesture.start.y)
-            .ok_or("pointer gesture started outside every configured WM output")?;
-        let output_state = self
-            .workspace_state
-            .output(output)
-            .ok_or("pointer gesture output is not configured")?;
-        if workspace != output_state.workspace {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        gesture.output = output;
-        gesture.workspace = workspace;
-        let packet = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::PointerGestureCompleted(gesture),
-        };
-        let fingerprint = LiveWmLayoutFingerprint::capture(layout, &self.workspace_state);
-        Ok(self.enqueue_request(LiveWmQueuedRequest {
-            packet,
-            kind: LiveWmQueuedKind::Proposal {
-                base_state: self.workspace_state.clone(),
-                fingerprint,
-                source,
-            },
-            ordered_action: None,
-            queued_at: Instant::now(),
-        })?)
+        // Public policy receives Begin/Update/End above. The completed gesture
+        // is an Engine-side compatibility notification and carries no second
+        // policy request.
+        Ok(LiveWmRequestAdmission::Duplicate)
     }
 
     fn enqueue_focus(
@@ -962,88 +496,31 @@ impl LiveWmSession {
         layout: &PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if let Some(public) = self.public.as_mut() {
-            if !layout.layers.contains_key(&surface) {
-                return Err("pointer focus target is missing from the live layout".into());
-            }
-            let target_output = public
-                .reducer
-                .committed()
-                .into_iter()
-                .find(|projection| {
-                    projection
-                        .placements
-                        .iter()
-                        .any(|placement| placement.surface == surface)
-                })
-                .map_or(output.id, |projection| projection.output);
-            let affected_outputs = if target_output == public.active_output {
-                vec![target_output]
-            } else {
-                vec![public.active_output, target_output]
-            };
-            return Ok(public.queue_cause(LivePublicPolicyCause {
-                source: LiveWmProposalSource::Focus(surface),
-                cause: sophia_protocol::PolicyRequestCause::Focus { target: surface },
-                affected_outputs,
-            }));
-        }
-        let source = LiveWmProposalSource::Focus(surface);
-        if self.has_request_source(source) {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
         if !layout.layers.contains_key(&surface) {
             return Err("pointer focus target is missing from the live layout".into());
         }
-        let output_state = self
-            .workspace_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?;
-        let workspace = self
-            .workspace_state
-            .surface_workspace(surface)
-            .ok_or("pointer focus target is not registered with the WM")?;
-        if workspace != output_state.workspace {
-            return Err("pointer focus target is not on the active workspace".into());
-        }
-        let request = WmRequestPacket {
-            transaction: self.mint_transaction()?,
-            kind: WmRequestKind::FocusRequested(sophia_protocol::WmFocusRequest {
-                surface,
-                output: output.id,
-                workspace,
-            }),
+        let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
+        let target_output = public
+            .reducer
+            .committed()
+            .into_iter()
+            .find(|projection| {
+                projection
+                    .placements
+                    .iter()
+                    .any(|placement| placement.surface == surface)
+            })
+            .map_or(output.id, |projection| projection.output);
+        let affected_outputs = if target_output == public.active_output {
+            vec![target_output]
+        } else {
+            vec![public.active_output, target_output]
         };
-        self.enqueue_request(LiveWmQueuedRequest {
-            packet: request,
-            kind: LiveWmQueuedKind::Proposal {
-                base_state: self.workspace_state.clone(),
-                fingerprint: LiveWmLayoutFingerprint::capture(layout, &self.workspace_state),
-                source,
-            },
-            ordered_action: None,
-            queued_at: Instant::now(),
-        })
-    }
-
-    fn enqueue_request(
-        &mut self,
-        request: LiveWmQueuedRequest,
-    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
-        if self
-            .queued_requests
-            .try_push_back(request, self.in_flight_request.is_some())
-            .is_err()
-        {
-            self.request_rejections = self.request_rejections.saturating_add(1);
-            return Ok(LiveWmRequestAdmission::RejectedCapacity);
-        }
-        self.request_peak_depth = self.request_peak_depth.max(
-            self.queued_requests
-                .len()
-                .saturating_add(usize::from(self.in_flight_request.is_some())),
-        );
-        Ok(LiveWmRequestAdmission::Admitted)
+        Ok(public.queue_cause(LivePublicPolicyCause {
+            source: LiveWmProposalSource::Focus(surface),
+            cause: sophia_protocol::PolicyRequestCause::Focus { target: surface },
+            affected_outputs,
+        }))
     }
 
     fn poll_request(
@@ -1072,377 +549,11 @@ impl LiveWmSession {
                 }
             }
         }
-        if self.public.is_some() {
-            return self.poll_public_request(layout, output, allow_new_cycle);
-        }
-        self.pump_transport(layout, output)?;
-        let completion = match self
-            .transport
-            .as_ref()
-            .ok_or("WM transport is unavailable")?
-            .try_complete()
-        {
-            Ok(Some(completion)) => completion,
-            Ok(None) => return Ok(None),
-            Err(WmTransportSubmitError::Disconnected) => {
-                self.request_transport_restart("request_completion_disconnected", None);
-                return Ok(None);
-            }
-            Err(WmTransportSubmitError::Busy) => {
-                return Err("WM transport worker returned an invalid busy completion".into());
-            }
-        };
-        let queued = self
-            .in_flight_request
-            .take()
-            .ok_or("WM transport completed without an in-flight request")?;
-        if completion.transaction != queued.packet.transaction {
-            return Err(format!(
-                "WM transport completion mismatch: expected={} actual={}",
-                queued.packet.transaction.raw(),
-                completion.transaction.raw(),
-            )
-            .into());
-        }
-        self.max_request = self.max_request.max(completion.elapsed);
-        self.requests = self.requests.saturating_add(1);
-        let response = match completion.result {
-            Ok(response) => response,
-            Err(error) => {
-                // The peer may have applied a request before its response was
-                // lost. Restart and reseed from committed state before asking
-                // it to plan another transaction.
-                self.request_transport_restart("request_failed", Some(&error));
-                return Ok(None);
-            }
-        };
-        if response.commands.len() > 8_192 {
-            return Err("WM response exceeds the live command limit".into());
-        }
-        let proposal = match queued.kind {
-            LiveWmQueuedKind::SurfaceRemoved { surface } => {
-                self.workspace_state.remove_surface(surface);
-                match self.enqueue_relayout(layout, output)? {
-                    LiveWmRequestAdmission::Admitted | LiveWmRequestAdmission::Duplicate => {}
-                    LiveWmRequestAdmission::RejectedCapacity => {
-                        return Err(
-                            "WM removal relayout exceeded the owner request capacity".into()
-                        );
-                    }
-                }
-                None
-            }
-            LiveWmQueuedKind::Proposal {
-                fingerprint,
-                source,
-                ..
-            } => match fingerprint.reconcile_response_lifetime(layout, &mut self.workspace_state) {
-                LiveWmResponseLifetime::RestartAndReseed {
-                    removed_registered_surfaces,
-                } => {
-                    self.stale_responses = self.stale_responses.saturating_add(1);
-                    println!(
-                        "sophia_live_wm schema=3 status=response_rejected reason=stale_layout transaction={} source={} removed_registered_surfaces={removed_registered_surfaces}",
-                        completion.transaction.raw(),
-                        source.reduced_name(),
-                    );
-                    // The peer applied this request to its private model before
-                    // the response became stale. Do not send later work until
-                    // a fresh process is seeded from committed state.
-                    self.request_transport_restart("stale_response", None);
-                    None
-                }
-                LiveWmResponseLifetime::Current => {
-                    let planning_state =
-                        planning_state_for_response(&self.workspace_state, &queued.packet)?;
-                    Some(self.proposal_from_response(
-                        response,
-                        planning_state,
-                        source,
-                        layout,
-                        output,
-                    )?)
-                }
-            },
-        };
-        if proposal.is_none() && !self.force_transport_restart {
-            self.pump_transport(layout, output)?;
-        }
-        Ok(proposal)
-    }
-
-    fn proposal_from_response(
-        &self,
-        response: WmResponsePacket,
-        planning_state: WmWorkspaceState,
-        source: LiveWmProposalSource,
-        layout: &mut PersistentLiveLayout,
-        output: sophia_engine::HeadlessOutput,
-    ) -> Result<LiveWmProposal, Box<dyn std::error::Error>> {
-        if let LiveWmProposalSource::Manage(surface) = source {
-            layout.prime_admission_extent(surface);
-        }
-        let bounds = planning_state
-            .output(output.id)
-            .ok_or("WM output is not configured")?
-            .bounds;
-        let chrome = self.candidate_chrome_style();
-        let content_bounds = sophia_engine::content_surface_geometry(bounds, chrome)?;
-        let plan = planning_state.plan_response(&response, &self.session_actions)?;
-        let transaction = sophia_engine::apply_surface_chrome_clearance(&plan.layout, chrome)?;
-        let standing_targets = transaction
-            .requested_sizes
-            .iter()
-            .filter_map(|request| {
-                layout
-                    .layout_epochs
-                    .recovery_extent(request.surface)
-                    .filter(|extent| *extent != request.size)
-                    .map(|_| (request.surface, request.size))
-            })
-            .collect::<Vec<_>>();
-        let reconciliation = layout
-            .layout_epochs
-            .reconcile_transaction(&transaction, content_bounds)?;
-        let transaction = reconciliation.transaction;
-        if !reconciliation.adjusted_surfaces.is_empty() {
-            println!(
-                "sophia_live_wm schema=1 status=constraints_reconciled transaction={} adjusted_surfaces={}",
-                transaction.transaction.raw(),
-                reconciliation.adjusted_surfaces.len(),
-            );
-        }
-        validate_live_wm_transaction(&transaction, layout, content_bounds)?;
-        // A WM response may only introduce planning surfaces represented by
-        // its own candidate workspace state. This matters when restart reseed
-        // queues a committed relayout ahead of a pending ManageSurface: the
-        // first response must not consume the pending surface's quarantined
-        // pixels before the second request owns that admission.
-        let mut proposed = layout.planning_layers_for_workspace_state(&plan.candidate);
-        let engine = HeadlessEngine::new(output);
-        let commit = engine.commit_layout_transaction(&transaction, &mut proposed);
-        if commit.outcome != TransactionOutcome::Committed {
-            return Err(format!("Engine rejected live WM proposal: {:?}", commit.outcome).into());
-        }
-        for (surface, target) in standing_targets {
-            layout.layout_epochs.set_pending_target(surface, target);
-        }
-        let requested_sizes = transaction
-            .requested_sizes
-            .iter()
-            .map(|request| (request.surface, request.size))
-            .collect();
-        let moved_surfaces = proposed
-            .iter()
-            .filter(|layer| {
-                layout
-                    .layers
-                    .get(&layer.surface)
-                    .is_some_and(|current| current.geometry != layer.geometry)
-            })
-            .count();
-        let timeout = Duration::from_millis(u64::from(
-            transaction
-                .timeout_msec
-                .clamp(100, SESSION_WM_TRANSACTION_TIMEOUT_MAX_MSEC),
-        ));
-        Ok(LiveWmProposal {
-            transaction: transaction.transaction,
-            layers: proposed,
-            requested_sizes,
-            presentation_states: BTreeMap::new(),
-            configure_deliveries: 0,
-            focus: transaction.focus,
-            timeout,
-            update: WmTransactionUpdate {
-                commit,
-                ipc_error: None,
-            },
-            moved_surfaces,
-            source: Some(source),
-            effects: Some(LiveWmCommitEffects {
-                workspace_state: plan.candidate,
-                transaction: transaction.transaction,
-                session_action: plan.session_action,
-            }),
-            policy_settlement: None,
-        })
-    }
-
-    fn pump_transport(
-        &mut self,
-        layout: &PersistentLiveLayout,
-        output: sophia_engine::HeadlessOutput,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if self.in_flight_request.is_some() {
-            return Ok(());
-        }
-        let Some(mut request) = self.queued_requests.pop_front() else {
-            return Ok(());
-        };
-        if let Some(action) = request.ordered_action {
-            let (packet, kind) = ordered_wm_action_request(
-                request.packet.transaction,
-                action,
-                layout,
-                &self.workspace_state,
-                output,
-                self.candidate_chrome_style(),
-            )?;
-            request.packet = packet;
-            request.kind = kind;
-        }
-        let queue_dwell = request.queued_at.elapsed();
-        self.max_queue_dwell = self.max_queue_dwell.max(queue_dwell);
-        if queue_dwell >= Duration::from_millis(500) {
-            println!(
-                "sophia_live_wm schema=2 status=request_delayed transaction={} queue_dwell_msec={}",
-                request.packet.transaction.raw(),
-                queue_dwell.as_millis(),
-            );
-        }
-        let packet = request.packet.clone();
-        match self
-            .transport
-            .as_ref()
-            .ok_or("WM transport is unavailable")?
-            .try_submit(packet)
-        {
-            Ok(()) => {
-                self.in_flight_request = Some(request);
-                Ok(())
-            }
-            Err(WmTransportSubmitError::Busy) => {
-                self.queued_requests.push_front(request);
-                Ok(())
-            }
-            Err(WmTransportSubmitError::Disconnected) => {
-                self.queued_requests.push_front(request);
-                self.request_transport_restart("request_submit_disconnected", None);
-                Ok(())
-            }
-        }
-    }
-
-    fn has_request_source(&self, source: LiveWmProposalSource) -> bool {
-        self.in_flight_request
-            .iter()
-            .chain(self.queued_requests.iter())
-            .any(|request| {
-                matches!(
-                    &request.kind,
-                    LiveWmQueuedKind::Proposal {
-                        source: pending,
-                        ..
-                    } if *pending == source
-                )
-            })
-    }
-
-    fn has_surface_removal(&self, surface: SurfaceId) -> bool {
-        self.in_flight_request
-            .iter()
-            .chain(self.queued_requests.iter())
-            .any(|request| {
-                matches!(
-                    &request.kind,
-                    LiveWmQueuedKind::SurfaceRemoved { surface: pending }
-                        if *pending == surface
-                )
-            })
-    }
-
-    fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or("WM transaction ID space exhausted")?;
-        Ok(transaction)
+        self.poll_public_request(layout, output, allow_new_cycle)
     }
 
     fn mark_committed(&mut self) {
         self.committed = self.committed.saturating_add(1);
         self.last_committed_at = Some(Instant::now());
     }
-}
-
-fn ordered_wm_action_request(
-    transaction: TransactionId,
-    action: WmActionId,
-    layout: &PersistentLiveLayout,
-    workspace_state: &WmWorkspaceState,
-    output: sophia_engine::HeadlessOutput,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<(WmRequestPacket, LiveWmQueuedKind), Box<dyn std::error::Error>> {
-    let output_state = workspace_state
-        .output(output.id)
-        .ok_or("WM output is not configured")?;
-    let nodes = layout
-        .layers
-        .values()
-        .filter_map(|layer| {
-            if !layout.is_policy_managed(layer.surface) {
-                return None;
-            }
-            let workspace = workspace_state.surface_workspace(layer.surface)?;
-            (workspace == output_state.workspace).then_some((layer, workspace))
-        })
-        .map(|(layer, workspace)| {
-            persisted_layout_node(layout, workspace_state, layer.surface, workspace, chrome)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let packet = WmRequestPacket {
-        transaction,
-        kind: WmRequestKind::ActionActivated(WmActionActivation {
-            action,
-            output: output.id,
-            workspace: output_state.workspace,
-            // Presented admission may defer the Engine focus handoff. Actions
-            // still belong to the latest committed WM snapshot, so do not mix
-            // in the temporarily older physical-focus state.
-            focused_surface: output_state.focus,
-            nodes,
-        }),
-    };
-    let kind = LiveWmQueuedKind::Proposal {
-        base_state: workspace_state.clone(),
-        fingerprint: LiveWmLayoutFingerprint::capture(layout, workspace_state),
-        source: LiveWmProposalSource::Action(action),
-    };
-    Ok((packet, kind))
-}
-
-fn committed_relayout_nodes(
-    layout: &PersistentLiveLayout,
-    workspace_state: &WmWorkspaceState,
-    workspace: WorkspaceId,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<Vec<LayoutNodeSnapshot>, sophia_engine::ChromeLayoutError> {
-    layout
-        .layers
-        .values()
-        .filter(|layer| {
-            layout.is_policy_managed(layer.surface)
-                && workspace_state.surface_workspace(layer.surface) == Some(workspace)
-        })
-        .map(|layer| {
-            persisted_layout_node(layout, workspace_state, layer.surface, workspace, chrome)
-        })
-        .collect()
-}
-
-fn persisted_layout_node(
-    layout: &PersistentLiveLayout,
-    workspace_state: &WmWorkspaceState,
-    surface: SurfaceId,
-    workspace: WorkspaceId,
-    chrome: sophia_engine::SurfaceChromeStyle,
-) -> Result<LayoutNodeSnapshot, sophia_engine::ChromeLayoutError> {
-    let facts = layout
-        .layout_facts(surface)
-        .expect("known committed surface has layout facts");
-    let mut node = live_layout_node_from_facts(facts, workspace, &layout.layout_epochs, chrome)?;
-    node.state.floating = workspace_state.surface_floating(surface);
-    Ok(node)
 }

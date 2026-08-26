@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
 
-use sophia_engine::{WmWorkspaceState, adapt_v7_policy_plan};
 use sophia_protocol::{
     LayoutNodeKind, LayoutNodeSnapshot, LayoutNodeState, OutputId, PolicyActionRegistration,
     PolicyProjectionOutcome, PolicyProjectionProposal, PolicyProjectionRequest, PolicyRequestCause,
@@ -14,13 +13,14 @@ use sophia_protocol::{
 use sophia_wm_demo::PolicyV1Client;
 
 use crate::{
-    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, XMONAD_ACTION_APPLICATION_1,
-    XMONAD_ACTION_CLOSE, XMONAD_ACTION_DECREASE_MASTER_COUNT, XMONAD_ACTION_EXPAND,
-    XMONAD_ACTION_FOCUS_MASTER, XMONAD_ACTION_FOCUS_NEXT, XMONAD_ACTION_FOCUS_PREVIOUS,
-    XMONAD_ACTION_INCREASE_MASTER_COUNT, XMONAD_ACTION_MOVE_WORKSPACE_BASE,
-    XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT, XMONAD_ACTION_SHRINK,
-    XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER, XMONAD_ACTION_SWAP_UP,
-    XMONAD_ACTION_TOGGLE_FLOATING, XMONAD_ACTION_VIEW_WORKSPACE_BASE,
+    LegacyWmLaunchSpec, LegacyWmProfile, LegacyX11WmBridgeRuntime, WmWorkspaceState,
+    XMONAD_ACTION_APPLICATION_1, XMONAD_ACTION_CLOSE, XMONAD_ACTION_DECREASE_MASTER_COUNT,
+    XMONAD_ACTION_EXPAND, XMONAD_ACTION_FOCUS_MASTER, XMONAD_ACTION_FOCUS_NEXT,
+    XMONAD_ACTION_FOCUS_PREVIOUS, XMONAD_ACTION_INCREASE_MASTER_COUNT,
+    XMONAD_ACTION_MOVE_WORKSPACE_BASE, XMONAD_ACTION_NEXT_LAYOUT, XMONAD_ACTION_RESET_LAYOUT,
+    XMONAD_ACTION_SHRINK, XMONAD_ACTION_SINK, XMONAD_ACTION_SWAP_DOWN, XMONAD_ACTION_SWAP_MASTER,
+    XMONAD_ACTION_SWAP_UP, XMONAD_ACTION_TOGGLE_FLOATING, XMONAD_ACTION_VIEW_WORKSPACE_BASE,
+    adapt_legacy_policy_plan,
 };
 
 const PUBLIC_POLICY_TIMEOUT: Duration = Duration::from_secs(8);
@@ -195,7 +195,7 @@ impl PublicXmonadPolicyAdapter {
         let plan = self
             .workspace_state
             .plan_response(&response, &session_actions)?;
-        let proposal = adapt_v7_policy_plan(request, scene, &plan)?;
+        let proposal = adapt_legacy_policy_plan(request, scene, &plan)?;
         let session_operation = plan
             .session_action
             .and_then(|(action, target)| operation_slot(action).map(|slot| (slot, target)))

@@ -319,17 +319,12 @@ A clearance change is prepared through the ordinary atomic resize path; the
 old complete style and client geometry remain visible until every matching
 client buffer is ready.
 
-WM API version 6 carries a generation and bounded focus-ring/frame policy during
-negotiation. Versioned policy-update and acknowledgement frames reject stale
-generations; Engine's policy reducer defers replacement until shortcut state
-is idle. The supervised transport delivers updates without requiring an
-existing binding or layout request. Its worker performs socket I/O only; the
-Engine owner validates and swaps the immutable policy, then returns the exact
-generation acknowledgement. The WM does not service action or layout requests
-under the new snapshot until that acknowledgement arrives. A request already
-in flight is held across the exchange and answered afterward, so bindings,
-action behavior, workspace/layout policy, and active chrome cross one
-generation boundary.
+The prepared desktop profile carries one generation and bounded
+focus-ring/frame policy. Shortcut and policy authorities prepare that
+generation before activation; Engine swaps the immutable chrome and shortcut
+state only with the coordinated profile activation. Public policy snapshots
+then carry the active configuration without a private reload frame or
+Engine-owned workspace reducer.
 
 ## Commands
 

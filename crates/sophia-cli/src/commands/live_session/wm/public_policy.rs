@@ -2043,32 +2043,14 @@ impl LiveWmSession {
             cause: sophia_protocol::PolicyRequestCause::SceneChanged,
             affected_outputs: public.all_outputs(active),
         });
-        let workspace_state = WmWorkspaceState::new(
-            outputs
-                .iter()
-                .map(|output| {
-                    public
-                        .work_areas
-                        .get(&output.id)
-                        .copied()
-                        .map(|work| (output.id, work))
-                        .ok_or("public WM initial work-area projection is incomplete")
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-            WM_DEFAULT_WORKSPACES,
-        )?;
         let session = Self {
             supervisor,
             supervisor_state,
             restart_policy,
             socket_path,
-            transport: None,
             public: Some(public),
             _shell_profile: Some(shell_profile),
             _broker_profile: Some(broker_profile),
-            queued_requests: LiveWmOwnerQueue::with_capacity(WM_OWNER_REQUEST_CAPACITY),
-            in_flight_request: None,
-            next_transaction: 1,
             requests: 0,
             request_peak_depth: 0,
             request_rejections: 0,
@@ -2082,10 +2064,7 @@ impl LiveWmSession {
             fallback_chrome: config.surface_chrome_style,
             visual_chrome: config.surface_chrome_style,
             pending_visual_chrome: None,
-            pending_policy_update: None,
             force_transport_restart: false,
-            workspace_state,
-            session_actions: Vec::new(),
             committed: 0,
             last_committed_at: None,
             max_request: Duration::ZERO,

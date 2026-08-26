@@ -7,7 +7,6 @@ mod portal;
 mod primitives;
 mod shell_v1;
 mod types;
-mod wm;
 mod wm_v1;
 mod wm_v1_profile;
 mod wm_v1_records;
@@ -23,12 +22,6 @@ pub use portal::{
 };
 pub use shell_v1::*;
 pub use types::*;
-pub use wm::{
-    decode_wm_hello_frame, decode_wm_policy_ack_frame, decode_wm_policy_update_frame,
-    decode_wm_request_frame, decode_wm_response_frame, decode_wm_session_descriptor_frame,
-    encode_wm_hello_frame, encode_wm_policy_ack_frame, encode_wm_policy_update_frame,
-    encode_wm_request_frame, encode_wm_response_frame, encode_wm_session_descriptor_frame,
-};
 pub use wm_v1::*;
 pub use wm_v1_profile::*;
 pub use wm_v1_records::*;

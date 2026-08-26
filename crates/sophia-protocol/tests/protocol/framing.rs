@@ -140,114 +140,7 @@ fn routed_input_decision_carries_authority_rejection() {
     );
 }
 
-#[test]
-fn wm_request_frame_roundtrips() {
-    let request = WmRequestPacket {
-        transaction: TransactionId::from_raw(42),
-        kind: WmRequestKind::RelayoutWorkspace(WmRelayoutWorkspace {
-            output: OutputId::from_raw(7),
-            workspace: WorkspaceId::from_raw(3),
-            bounds: Rect {
-                x: 0,
-                y: 0,
-                width: 1280,
-                height: 720,
-            },
-            nodes: vec![node(1), node(2)],
-        }),
-    };
-
-    let frame = encode_wm_request_frame(&request).unwrap();
-    assert_eq!(
-        frame.len(),
-        SOPHIA_IPC_HEADER_LEN + frame_payload_len(&frame)
-    );
-    assert_eq!(decode_wm_request_frame(&frame), Ok(request));
-}
-
-#[test]
-fn wm_focus_request_frame_roundtrips_without_client_metadata() {
-    let request = WmRequestPacket {
-        transaction: TransactionId::from_raw(43),
-        kind: WmRequestKind::FocusRequested(WmFocusRequest {
-            surface: SurfaceId::new(17, 2),
-            output: OutputId::from_raw(7),
-            workspace: WorkspaceId::from_raw(3),
-        }),
-    };
-
-    let frame = encode_wm_request_frame(&request).unwrap();
-
-    assert_eq!(decode_wm_request_frame(&frame), Ok(request));
-}
-
-#[test]
-fn wm_pointer_gesture_frame_roundtrips_without_client_metadata() {
-    let request = WmRequestPacket {
-        transaction: TransactionId::from_raw(44),
-        kind: WmRequestKind::PointerGestureCompleted(WmPointerGestureCompleted {
-            surface: SurfaceId::new(17, 2),
-            output: OutputId::from_raw(7),
-            workspace: WorkspaceId::from_raw(3),
-            mode: WmPointerGestureMode::Resize,
-            start: WmPointerPosition { x: 90, y: 70 },
-            end: WmPointerPosition { x: 760, y: 540 },
-        }),
-    };
-
-    let frame = encode_wm_request_frame(&request).unwrap();
-
-    assert_eq!(decode_wm_request_frame(&frame), Ok(request));
-}
-
-#[test]
-fn wm_response_frame_roundtrips() {
-    let surface = SurfaceId::new(4, 9);
-    let response = WmResponsePacket {
-        transaction: TransactionId::from_raw(77),
-        timeout_msec: 250,
-        commands: vec![
-            WmCommand::AssignWorkspace {
-                surface,
-                workspace: WorkspaceId::from_raw(5),
-            },
-            WmCommand::SetFloating {
-                surface,
-                floating: true,
-            },
-            WmCommand::ConfigureSurface(SurfaceSizeRequest {
-                surface,
-                size: Size {
-                    width: 640,
-                    height: 480,
-                },
-            }),
-            WmCommand::FocusSurface(surface),
-            WmCommand::RenderSurface(SurfacePlacement {
-                surface,
-                geometry: Rect {
-                    x: 10,
-                    y: 20,
-                    width: 640,
-                    height: 480,
-                },
-                z_index: 2,
-                crop: Some(Rect {
-                    x: 0,
-                    y: 0,
-                    width: 320,
-                    height: 240,
-                }),
-                transform: Transform::IDENTITY,
-            }),
-        ],
-    };
-
-    let frame = encode_wm_response_frame(&response).unwrap();
-    assert_eq!(decode_wm_response_frame(&frame), Ok(response));
-}
-
-#[test]
+ #[test]
 fn broker_health_frame_roundtrips() {
     let packet = BrokerHealthPacket::new(
         BrokerKind::Portal,
@@ -357,7 +250,7 @@ fn oversized_payload_is_rejected_before_allocation() {
     let mut frame = Vec::new();
     push_u32(&mut frame, SOPHIA_IPC_MAGIC);
     push_u16(&mut frame, SOPHIA_IPC_VERSION);
-    push_u16(&mut frame, IpcMessageKind::WmRequest as u16);
+    push_u16(&mut frame, IpcMessageKind::BrokerHealth as u16);
     push_u64(&mut frame, 1);
     push_u32(&mut frame, (SOPHIA_IPC_MAX_PAYLOAD_LEN as u32) + 1);
     push_u32(&mut frame, 0);
@@ -374,62 +267,23 @@ fn oversized_payload_is_rejected_before_allocation() {
 fn malformed_frames_fail_closed() {
     assert_eq!(decode_frame(&[]), Err(IpcCodecError::Truncated));
 
-    let mut frame = encode_wm_request_frame(&WmRequestPacket {
-        transaction: TransactionId::from_raw(1),
-        kind: WmRequestKind::SurfaceRemoved {
-            surface: SurfaceId::new(1, 1),
-            workspace: WorkspaceId::from_raw(1),
-        },
-    })
+    let packet = BrokerHealthPacket::new(
+        BrokerKind::Portal,
+        BrokerHealthState::Ready,
+        1,
+        None,
+    )
     .unwrap();
+    let mut frame = encode_broker_health_frame(&packet).unwrap();
     frame[0] = 0;
     assert_eq!(decode_frame(&frame), Err(IpcCodecError::BadMagic));
 
-    let mut frame = encode_wm_request_frame(&WmRequestPacket {
-        transaction: TransactionId::from_raw(1),
-        kind: WmRequestKind::SurfaceRemoved {
-            surface: SurfaceId::new(1, 1),
-            workspace: WorkspaceId::from_raw(1),
-        },
-    })
-    .unwrap();
+    let mut frame = encode_broker_health_frame(&packet).unwrap();
     frame.push(0);
     assert_eq!(decode_frame(&frame), Err(IpcCodecError::TrailingBytes(1)));
 }
 
-#[test]
-fn excessive_item_count_is_rejected() {
-    let mut payload = Vec::new();
-    push_u16(&mut payload, 2);
-    push_u64(&mut payload, 1);
-    push_u64(&mut payload, 1);
-    encode_rect(
-        Rect {
-            x: 0,
-            y: 0,
-            width: 1,
-            height: 1,
-        },
-        &mut payload,
-    );
-    push_u32(&mut payload, (SOPHIA_IPC_MAX_ITEMS as u32) + 1);
-    let frame = encode_frame(
-        IpcMessageKind::WmRequest,
-        TransactionId::from_raw(9),
-        &payload,
-    )
-    .unwrap();
-
-    assert_eq!(
-        decode_wm_request_frame(&frame),
-        Err(IpcCodecError::CountTooLarge {
-            count: SOPHIA_IPC_MAX_ITEMS + 1,
-            max: SOPHIA_IPC_MAX_ITEMS,
-        })
-    );
-}
-
-fn layout_node(surface: SurfaceId, workspace: WorkspaceId) -> LayoutNodeSnapshot {
+ fn layout_node(surface: SurfaceId, workspace: WorkspaceId) -> LayoutNodeSnapshot {
     LayoutNodeSnapshot {
         surface,
         workspace,
@@ -452,41 +306,8 @@ fn layout_node(surface: SurfaceId, workspace: WorkspaceId) -> LayoutNodeSnapshot
     }
 }
 
-fn node(index: u32) -> LayoutNodeSnapshot {
-    LayoutNodeSnapshot {
-        surface: SurfaceId::new(index, 1),
-        workspace: WorkspaceId::from_raw(3),
-        kind: LayoutNodeKind::Toplevel,
-        placement_preference: SurfacePlacementPreference::Default,
-        transient_owner: None,
-        capabilities: LayoutNodeCapabilities::STANDARD_TOPLEVEL,
-        state: LayoutNodeState::NORMAL,
-        constraints: SurfaceConstraints {
-            min_size: Some(Size {
-                width: 100,
-                height: 80,
-            }),
-            max_size: None,
-        },
-        geometry: Rect {
-            x: (index as i32) * 10,
-            y: 0,
-            width: 320,
-            height: 200,
-        },
-        generation: 11,
-    }
-}
-
 fn frame_payload_len(frame: &[u8]) -> usize {
     u32::from_le_bytes(frame[16..20].try_into().unwrap()) as usize
-}
-
-fn encode_rect(rect: Rect, out: &mut Vec<u8>) {
-    push_i32(out, rect.x);
-    push_i32(out, rect.y);
-    push_i32(out, rect.width);
-    push_i32(out, rect.height);
 }
 
 fn push_u8(out: &mut Vec<u8>, value: u8) {
@@ -502,9 +323,5 @@ fn push_u32(out: &mut Vec<u8>, value: u32) {
 }
 
 fn push_u64(out: &mut Vec<u8>, value: u64) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_i32(out: &mut Vec<u8>, value: i32) {
     out.extend_from_slice(&value.to_le_bytes());
 }

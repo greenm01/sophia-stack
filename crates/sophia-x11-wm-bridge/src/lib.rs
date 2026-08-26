@@ -7,17 +7,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_protocol::{
     LayoutNodeKind, LayoutNodeSnapshot, Rect, SessionApplicationId, Size, SurfaceConstraints,
-    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WM_API_VERSION,
-    WmActionId, WmBindingRegistration, WmCapabilities, WmCommand, WmHello, WmModifierMask,
-    WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction, WmSessionDescriptor,
-    WorkspaceId,
+    SurfaceId, SurfacePlacement, SurfaceSizeRequest, TransactionId, Transform, WmCommand,
+    WmRequestKind, WmRequestPacket, WmResponsePacket, WmSessionAction, WorkspaceId,
 };
+
+mod legacy_policy;
 
 #[cfg(unix)]
 mod public_policy;
 #[cfg(unix)]
 mod runtime;
 
+pub use legacy_policy::*;
 #[cfg(unix)]
 pub use public_policy::*;
 #[cfg(unix)]
@@ -57,90 +58,6 @@ pub enum LegacyWmProfile {
     Xmonad,
 }
 
-impl LegacyWmProfile {
-    pub fn hello(self) -> WmHello {
-        let bindings = match self {
-            Self::LayoutOnly => Vec::new(),
-            Self::Xmonad => xmonad_bindings(),
-        };
-        WmHello {
-            api_version: WM_API_VERSION,
-            capabilities: WmCapabilities {
-                bits: WmCapabilities::BINDINGS
-                    | WmCapabilities::WORKSPACES
-                    | WmCapabilities::SESSION_ACTIONS,
-            },
-            policy_generation: 2,
-            bindings,
-            chrome: sophia_protocol::WmChromePolicy::default(),
-        }
-    }
-}
-
-fn xmonad_bindings() -> Vec<WmBindingRegistration> {
-    let super_only = WmModifierMask {
-        bits: WmModifierMask::SUPER,
-    };
-    let super_shift = WmModifierMask {
-        bits: WmModifierMask::SUPER | WmModifierMask::SHIFT,
-    };
-    let super_control = WmModifierMask {
-        bits: WmModifierMask::SUPER | WmModifierMask::CONTROL,
-    };
-    let mut bindings = vec![
-        binding(XMONAD_ACTION_FOCUS_NEXT, 36, super_only),
-        binding(XMONAD_ACTION_FOCUS_PREVIOUS, 37, super_only),
-        binding(XMONAD_ACTION_FOCUS_MASTER, 50, super_only),
-        binding(XMONAD_ACTION_SWAP_MASTER, 50, super_shift),
-        binding(XMONAD_ACTION_SWAP_DOWN, 36, super_shift),
-        binding(XMONAD_ACTION_SWAP_UP, 37, super_shift),
-        binding(XMONAD_ACTION_SHRINK, 35, super_only),
-        binding(XMONAD_ACTION_EXPAND, 38, super_only),
-        binding(XMONAD_ACTION_INCREASE_MASTER_COUNT, 51, super_only),
-        binding(XMONAD_ACTION_DECREASE_MASTER_COUNT, 52, super_only),
-        binding(XMONAD_ACTION_NEXT_LAYOUT, 57, super_only),
-        binding(XMONAD_ACTION_RESET_LAYOUT, 57, super_shift),
-        binding(XMONAD_ACTION_TOGGLE_FLOATING, 57, super_control),
-        binding(XMONAD_ACTION_SINK, 20, super_only),
-        binding(XMONAD_ACTION_APPLICATION_1, 28, super_only),
-        binding(XMONAD_ACTION_CLOSE, 46, super_shift),
-        binding(XMONAD_ACTION_APPLICATION_3, 33, super_only),
-        binding(XMONAD_ACTION_LOGOUT, 16, super_shift),
-    ];
-    for slot in 1..=9_u64 {
-        let keycode = match slot {
-            1 => 2,
-            2 => 3,
-            3 => 4,
-            4 => 5,
-            5 => 6,
-            6 => 7,
-            7 => 8,
-            8 => 9,
-            9 => 10,
-            _ => unreachable!(),
-        };
-        bindings.push(binding(
-            XMONAD_ACTION_VIEW_WORKSPACE_BASE + slot,
-            keycode,
-            super_only,
-        ));
-        bindings.push(binding(
-            XMONAD_ACTION_MOVE_WORKSPACE_BASE + slot,
-            keycode,
-            super_shift,
-        ));
-    }
-    bindings
-}
-
-fn binding(action: u64, keycode: u32, modifiers: WmModifierMask) -> WmBindingRegistration {
-    WmBindingRegistration {
-        action: WmActionId::from_raw(action),
-        keycode,
-        modifiers,
-    }
-}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SyntheticXWindowId(u32);
 
@@ -243,7 +160,7 @@ pub enum X11WmBridgeError {
 }
 pub fn translate_xmonad_profile_action(
     request: &WmRequestPacket,
-    session: &WmSessionDescriptor,
+    session: &LegacySessionDescriptor,
 ) -> Result<Option<WmResponsePacket>, X11WmBridgeError> {
     let WmRequestKind::ActionActivated(activation) = &request.kind else {
         return Ok(None);
