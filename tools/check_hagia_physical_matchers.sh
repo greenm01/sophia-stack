@@ -64,6 +64,7 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=physical_action_committed action=33' \
     'sophia_live_wm schema=1 status=physical_action_committed action=34' \
     'hagia_policy_projection schema=1 status=active_output_changed' \
+    'sophia_live_wm schema=1 status=physical_action_committed action=30' \
     'sophia_live_wm schema=1 status=session_action_committed transaction=17 action=LaunchBrowser' \
     'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=2 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
     'sophia_session_app schema=2 status=admitted source=action transaction=17 surface=8' \
