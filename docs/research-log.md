@@ -15447,3 +15447,13 @@ recorder refuses a duplicate evidence pair. Synthetic fixtures remove every
 required event and mutate identities, forbidden rollback events, signed profile
 selection, and checksum closure. The harness is complete offline. The real TTY4
 run remains explicitly authorized work and is not claimed by these fixtures.
+
+The first authorized TTY4 attempt reached a passing schema-5 atomic scanout
+preflight with two openable primary nodes, two atomic-capable nodes, and one
+scanout target. Sophia then exited before the success phase completed. The gate
+had already written the live stream into its private run directory, but its
+top-level `ERR` trap deleted that directory, leaving only the preflight record;
+there is therefore no honest basis for classifying the runtime exit yet. Failed
+runs now remain in `/tmp/sophia-frame-fed-output/`, and the trap prints the exact
+directory and exit status. The physical pair remains open until a clean signed
+successor either passes or retains enough evidence to diagnose the exit.

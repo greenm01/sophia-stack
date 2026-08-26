@@ -326,8 +326,11 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    a one-shot proof control at the exact boundary after every KMS card accepts
    the startup candidate but before installation or publication. Its TTY4
    runner, paired evidence/archive verifiers, reference profile, and mutation
-   fixtures pass offline. Commit and push that harness, then archive its
-   explicitly authorized physical success/rollback run.
+   fixtures pass offline. The first explicitly authorized run passed the atomic
+   hardware preflight, then Sophia exited before either phase could be archived;
+   the runner's error trap incorrectly erased that phase log. Its signed
+   successor must retain and print the diagnostic directory on every failure,
+   then rerun and archive the physical success/rollback pair.
    Generic switcher archive `0006`, Tier-0 indicator archive `0005`, and
    reservation archive `0007` already close their retained slices. MRU policy,
    filters, previews, icons, persistent panels, Janet, broad portals, watched

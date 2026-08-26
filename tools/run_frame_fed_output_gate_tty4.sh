@@ -86,7 +86,14 @@ check_reference_connectors() {
 mkdir -p "$EVIDENCE_ROOT"
 run_dir="$EVIDENCE_ROOT/${sophia_commit:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -m 700 "$run_dir"
-trap 'rm -rf -- "$run_dir"' ERR HUP INT TERM
+preserve_failed_run() {
+    local status=$?
+    trap - ERR HUP INT TERM
+    printf 'Frame-fed output gate failed (exit %s); diagnostic evidence remains at %s\n' \
+        "$status" "$run_dir" >&2
+    exit "$status"
+}
+trap preserve_failed_run ERR HUP INT TERM
 connectors="$run_dir/connectors.txt"
 check_reference_connectors "$connectors"
 
