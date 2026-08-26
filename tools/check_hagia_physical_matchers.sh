@@ -15,7 +15,10 @@ grep -Fq 'bind "Super+Shift+Right" "policy:move-to-output-next"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq 'bind "Super+Shift+Left" "policy:move-to-output-prev"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
-grep -Fq 'shell { enabled #true; }' \
+# The compiled profile must enable the shell and ask for the panel the guide
+# proves. Without the panel the session raises no claim and every reservation
+# wait below would hang on the rig.
+grep -Fq 'shell { enabled #true; panel 28; }' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq 'bind "Super+p" "session:window-switcher"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
@@ -71,19 +74,30 @@ printf '%s\n' \
     'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=8 content=redacted' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:02Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=10 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(94), transaction: TransactionId(62), nonzero_rgb_pixels: 1800 }) frame=94' \
+    'sophia_live_metadata_shell schema=1 status=reservation_admitted candidate_generation=1 output=1 depth=28' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=1 presentation_epoch=10 output=1 visible=true' \
+    'sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation=1 output=1 depth=28' \
+    'sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1' \
+    'sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1412_0_0' \
     'sophia_live_metadata_broker schema=1 status=issuer_validated activation=1 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=activation_admitted activation=1 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=2 presentation_epoch=11 output=1 visible=false' \
+    'sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0' \
+    'sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1440_0_0' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:03Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=11 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(95), transaction: TransactionId(63), nonzero_rgb_pixels: 1800 }) frame=95' \
+    'sophia_live_metadata_shell schema=1 status=reservation_admitted candidate_generation=3 output=1 depth=28' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=3 presentation_epoch=12 output=1 visible=true' \
+    'sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation=3 output=1 depth=28' \
+    'sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1' \
     'sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation=2 retained_pixels=true' \
     'sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid=4323 revision=1 connection_epoch=2 reason=proof_visible_restart' \
     'sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:04Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=12 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(96), transaction: TransactionId(64), nonzero_rgb_pixels: 1800 }) frame=96' \
+    'sophia_live_metadata_shell schema=1 status=reservation_admitted candidate_generation=1 output=1 depth=28' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=4 presentation_epoch=13 output=1 visible=true' \
+    'sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation=1 output=1 depth=28' \
     'sophia_live_metadata_broker schema=1 status=issuer_validated activation=2 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=activation_duplicate activation=2 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=5 presentation_epoch=14 output=1 visible=false' \
@@ -150,6 +164,9 @@ for missing in \
     'sophia_live_indicator_input schema=1 status=activated output=1 action=11' \
     'nonzero_rgb_pixels: 2246' \
     'nonzero_rgb_pixels: 1800' \
+    'status=reservation_presented candidate_generation=1' \
+    'status=reservation_reduced bands=1' \
+    'status=reservation_reduced bands=0' \
     'sophia_hagia_policy_identity schema=2 status=bound'; do
     rejected="$temp_dir/rejected.log"
     grep -vF "$missing" "$evidence" >"$rejected"
@@ -168,6 +185,30 @@ printf '%s\n' \
 if "$root_dir/tools/verify_hagia_policy_physical.sh" \
     "$failed" hagiapolicyproof >/dev/null 2>&1; then
     echo "Hagia physical verifier accepted a broker shutdown failure" >&2
+    exit 1
+fi
+
+released="$temp_dir/released.log"
+awk '
+    { print }
+    /^sophia_live_metadata_shell schema=1 status=proof_restart_triggered / {
+        print "sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0"
+    }
+' "$evidence" >"$released"
+if "$root_dir/tools/verify_hagia_policy_physical.sh" \
+    "$released" hagiapolicyproof >/dev/null 2>&1; then
+    echo "Hagia physical verifier accepted a work area released while the shell was dead" >&2
+    exit 1
+fi
+
+refused="$temp_dir/refused.log"
+cp "$evidence" "$refused"
+printf '%s\n' \
+    'sophia_live_metadata_shell schema=1 status=reservation_refused candidate_generation=9 output=1 reason=stale_epoch' \
+    >>"$refused"
+if "$root_dir/tools/verify_hagia_policy_physical.sh" \
+    "$refused" hagiapolicyproof >/dev/null 2>&1; then
+    echo "Hagia physical verifier accepted a refused work-area reservation" >&2
     exit 1
 fi
 

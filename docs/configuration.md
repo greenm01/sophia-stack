@@ -125,6 +125,25 @@ domain. It receives sanitized descriptors and opaque actions, never
 application identities or raw input. Packaging records separate hashes for
 `hagia` and `hagia-shell` and rejects a Hagia release that lacks either
 executable.
+
+`shell { panel N; }` reserves an exclusive strip of work area, `N` pixels deep,
+along the bottom edge of the output the shell presents on. The session and not
+the shell decides the depth, so a shell cannot take more of the desktop than
+its configuration allows. Absent or zero means no reservation, which is what
+every profile written before the key existed says. A depth beyond the
+`sophia_shell_v1` reservation maximum is refused when the profile is read
+rather than when the shell first claims, and a panel with no enabled shell is
+refused outright rather than ignored. The compiled profile asks for 28.
+
+The claim rides on the shell's candidate rather than a request of its own:
+Engine admits it against the realized output topology, and it reduces the work
+area only when the candidate's pixels present, so the strip and the windows
+that clear it commit together. Withdrawal is a later candidate that reserves
+nothing, through the same path. Losing the shell connection retains the
+presented claim beside the retained pixels — the work area does not grow while
+nothing can present into the strip — and a reconnected shell re-claims at its
+fresh epoch. Today the claim lives for as long as the switcher is visible; a
+panel that persists independently of it needs a second shell role.
 The desktop-profile form of `config check` runs the same typed shortcut,
 session, input, and output preparation used by graphical startup; it performs
 no device discovery or activation.

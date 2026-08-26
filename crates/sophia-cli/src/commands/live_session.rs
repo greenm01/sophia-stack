@@ -588,7 +588,7 @@ pub(crate) fn run_persistent_xterm_session(
     let mut metadata_shell = config
         .shell_process
         .as_deref()
-        .map(LiveMetadataShell::start)
+        .map(|process| LiveMetadataShell::start(process, config.shell_panel_thickness))
         .transpose()?;
 
     let input_proof_result = (config.input_proof_requested() && config.client.is_none())

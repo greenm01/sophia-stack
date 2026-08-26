@@ -177,19 +177,40 @@ wait_for_shell_line '^sophia_session_app schema=2 status=admitted source=action 
 wait_for_shell_line_bounded '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$'
 wait_for_shell_count '^sophia_live_metadata_broker schema=1 status=descriptor_committed surface=[0-9]+ content=redacted$' 2
 
-show_step 'Press Super+P once. When the switcher appears, click its first row to focus this terminal.'
+show_step 'Press Super+P once. The switcher claims a strip of work area while it
+is visible: confirm the windows behind it move clear of that strip rather than
+staying underneath. Then click its first row to focus this terminal.'
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=true$' 1
+# The claim reaches the reduction only after its bundle presents; a band that
+# reduced at admission would look identical on screen and be wrong in exactly
+# the window the coordination model forbids.
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_presented .*$' 1
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1$' 1
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=activation_admitted .* target=redacted$' 1
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=false$' 1
+# Withdrawal is a candidate that reserves nothing, committed through the same
+# path, so the work area returns without a release message of its own.
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0$' 1
 
 show_step 'Press Super+P again. Sophia will restart Hagia Shell after the switcher is visibly presented.'
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_presented .*$' 2
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1$' 2
 wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=proof_restart_triggered visible_presentation=2 retained_pixels=true$'
 wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid=[1-9][0-9]* revision=1 connection_epoch=2 reason=proof_visible_restart$'
 
-show_step 'The old switcher pixels are retained but inert. Click its first row once.'
+show_step 'The old switcher pixels are retained but inert, and so is its claim:
+the work area stays reduced while no shell is alive to reproject it. Confirm the
+windows have NOT expanded into the strip, then click the first row once.'
+# No reservation line is expected here, and that is the assertion: losing the
+# connection must not move the work area. Growing it while nothing can present
+# into the strip is the half-new desktop the model rules out.
 wait_for_shell_line '^sophia_live_metadata_shell schema=1 status=proof_inert_click observed=true activation=false$'
 
 show_step 'Press Super+P once more. Click the first row when the fresh switcher appears.'
+# The fresh epoch re-claims through a new candidate rather than resurrecting the
+# old one. Its band is identical, so nothing reprojects and no reduced line
+# follows -- an unchanged claim must not relayout the desktop.
+wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=reservation_presented .*$' 3
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=true$' 3
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=activation_(admitted|duplicate) .* target=redacted$' 2
 wait_for_shell_count '^sophia_live_metadata_shell schema=1 status=presented .* visible=false$' 2

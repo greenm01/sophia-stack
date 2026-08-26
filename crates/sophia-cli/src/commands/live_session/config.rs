@@ -66,6 +66,7 @@ struct PersistentXtermSessionConfig {
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
     shell_process: Option<String>,
+    shell_panel_thickness: Option<u16>,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
@@ -571,6 +572,19 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
+        // A panel with no shell to draw it would reserve work area nothing
+        // fills, so it is refused rather than dropped: a profile that asks for
+        // a desktop it cannot get should say so at startup.
+        let shell_panel_thickness =
+            sophia_config::desktop_profile_shell_panel_thickness(&desktop_profile);
+        if shell_panel_thickness.is_some() && shell_process.is_none() {
+            return Err(if shell_enabled {
+                "shell { panel } requires --session-mode=normal"
+            } else {
+                "shell { panel } requires shell { enabled #true; }"
+            }
+            .into());
+        }
         let shell_proof_restart_after_visible = arg_value(
             args,
             "--shell-proof-restart-after-visible",
@@ -739,6 +753,7 @@ impl PersistentXtermSessionConfig {
             wm_process,
             wm_process_args,
             shell_process,
+            shell_panel_thickness,
             shell_proof_restart_after_visible,
             wm_interface,
             wm_public_fault_after,

@@ -8,7 +8,8 @@ use sophia_config::{
     DesktopMirrorFit, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
     DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
-    DesktopShortcutModifiers, DesktopShortcutTarget, desktop_profile_shell_enabled,
+    DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_PANEL_MAX_THICKNESS_PX,
+    desktop_profile_shell_enabled, desktop_profile_shell_panel_thickness,
     discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
     load_prepared_desktop_profile, prepare_desktop_input_candidate,
     prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
@@ -775,4 +776,74 @@ fn desktop_profile_discovery_prefers_explicit_then_xdg() {
         Some(user.as_path())
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_compiled_profile_reserves_a_panel_and_reports_its_thickness() {
+    let profile = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+
+    assert!(desktop_profile_shell_enabled(&profile));
+    assert_eq!(desktop_profile_shell_panel_thickness(&profile), Some(28));
+}
+
+#[test]
+fn a_profile_without_a_panel_reserves_nothing() {
+    let root = temporary_directory("shell-panel-absent");
+    let path = root.join("config.kdl");
+    write_profile(&path, "schema 1\nshell { enabled #true; }\n");
+
+    let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+
+    // Every profile written before the key existed says this, and it has to
+    // keep meaning what it meant: an enabled shell that claims no work area.
+    assert!(desktop_profile_shell_enabled(&profile));
+    assert_eq!(desktop_profile_shell_panel_thickness(&profile), None);
+}
+
+#[test]
+fn a_zero_panel_is_not_a_claim() {
+    let root = temporary_directory("shell-panel-zero");
+    let path = root.join("config.kdl");
+    write_profile(&path, "schema 1\nshell { enabled #true; panel 0; }\n");
+
+    let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+
+    // Zero is admitted by validation and means no reservation, rather than a
+    // strip of no height that the coordinator would have to special-case.
+    assert_eq!(desktop_profile_shell_panel_thickness(&profile), None);
+}
+
+#[test]
+fn a_panel_beyond_the_reservation_maximum_is_refused_at_validation() {
+    let root = temporary_directory("shell-panel-oversized");
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        &format!(
+            "schema 1\nshell {{ enabled #true; panel {}; }}\n",
+            u32::from(SHELL_PANEL_MAX_THICKNESS_PX) + 1
+        ),
+    );
+
+    // Refused when the profile is read, not when the shell first claims: a
+    // session that cannot honour its own configuration should not start.
+    assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+}
+
+#[test]
+fn a_panel_that_is_not_one_integer_is_refused() {
+    for source in [
+        "schema 1\nshell { enabled #true; panel; }\n",
+        "schema 1\nshell { enabled #true; panel \"28\"; }\n",
+        "schema 1\nshell { enabled #true; panel 28 32; }\n",
+        "schema 1\nshell { enabled #true; panel -1; }\n",
+    ] {
+        let root = temporary_directory("shell-panel-shape");
+        let path = root.join("config.kdl");
+        write_profile(&path, source);
+        assert!(
+            load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "accepted a malformed panel: {source}"
+        );
+    }
 }

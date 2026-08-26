@@ -116,6 +116,20 @@ for shell_evidence in \
     pattern="${shell_evidence#*:}"
     require_line "$description" "$pattern"
 done
+# The reservation half of the switcher proof. A run that raised a claim, lost
+# it, and archived anyway would read as a passing desktop with a work area
+# nobody reserved, so the counts are exact rather than lower bounds.
+reservation_presented="$(grep -Ec '^sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation=[1-9][0-9]* output=[1-9][0-9]* depth=[1-9][0-9]*$' "$evidence" || true)"
+reservation_claimed="$(grep -Ec '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1$' "$evidence" || true)"
+reservation_released="$(grep -Ec '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0$' "$evidence" || true)"
+if (( reservation_presented < 3 || reservation_claimed < 2 || reservation_released < 1 )); then
+    echo "Hagia physical policy evidence lacks the complete work-area reservation sequence" >&2
+    exit 1
+fi
+if grep -Eq '^sophia_live_metadata_shell schema=1 status=reservation_refused ' "$evidence"; then
+    echo "Hagia physical policy evidence refused a work-area reservation" >&2
+    exit 1
+fi
 if (( $(grep -Ec '^sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher$' "$evidence" || true) < 3 \
     || $(grep -Ec '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=true$' "$evidence" || true) < 3 \
     || $(grep -Ec '^sophia_live_metadata_shell schema=1 status=presented .* output=[1-9][0-9]* visible=false$' "$evidence" || true) < 2 \
@@ -151,6 +165,16 @@ shell_reconnected_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 statu
 shell_inert_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=proof_inert_click ' "$evidence" | cut -d: -f1)"
 shell_stopped_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=stopped ' "$evidence" | cut -d: -f1)"
 first_shell_admitted_line="$(grep -nEm1 '^sophia_live_metadata_shell schema=1 status=activation_admitted ' "$evidence" | cut -d: -f1)"
+# The claim must survive the shell's death. A release between the restart and
+# the reconnect would mean the work area grew while nothing could present into
+# the strip, which is the incoherent desktop the coordination model forbids.
+# Anchored on the shell's own restart, not the WM policy restart much earlier.
+while read -r released_line; do
+    if (( released_line > shell_restart_line && released_line < shell_reconnected_line )); then
+        echo "Hagia physical policy evidence released the work area while the shell was dead" >&2
+        exit 1
+    fi
+done < <(grep -nE '^sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0$' "$evidence" | cut -d: -f1)
 browser_launch_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchBrowser$' "$evidence" | cut -d: -f1)"
 browser_admitted_line="$(grep -nEm1 '^sophia_session_app schema=2 status=admitted source=action transaction=[1-9][0-9]* surface=[1-9][0-9]*$' "$evidence" | cut -d: -f1)"
 browser_layout_line="$(grep -nEm1 '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=2 moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$' "$evidence" | cut -d: -f1)"

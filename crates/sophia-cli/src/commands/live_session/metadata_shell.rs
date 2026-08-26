@@ -57,7 +57,10 @@ pub(super) struct LiveMetadataShell {
 }
 
 impl LiveMetadataShell {
-    pub(super) fn start(executable: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn start(
+        executable: &str,
+        panel_thickness: Option<u16>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
             "sophia-live-metadata-shell-{}-{}",
             std::process::id(),
@@ -76,11 +79,17 @@ impl LiveMetadataShell {
                 .parent()
                 .expect("metadata shell socket always has a parent"),
         ))?;
-        let spec = ProcessLaunchSpec::new(executable)
+        let mut spec = ProcessLaunchSpec::new(executable)
             .arg("--serve")
             .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
             .process_group()
             .protection_domain(domain);
+        // The session decides how much desktop a panel may claim, so the
+        // thickness crosses into the protected domain the same way the socket
+        // does. Absent, the shell reserves nothing.
+        if let Some(thickness) = panel_thickness {
+            spec = spec.env("SOPHIA_SHELL_BAR_THICKNESS", thickness.to_string());
+        }
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
         let mut shell = Self {
             supervisor,

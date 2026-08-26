@@ -287,13 +287,27 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    coordinator, admits each candidate's claim against the realized topology
    before the candidate is prepared, commits it in the same step its pixels
    present, and retains it across disconnect; the WM session mirrors the
-   committed bands and reprojects only when they change. `SOPHIA_SHELL_BAR_THICKNESS`
-   selects the strip, so the session and not the shell decides how much of the
-   desktop a panel may claim; unset, the shell reserves nothing and behaves as
-   the switcher-only shell did.
-   What remains is a signed physical archive covering bar-visible relayout,
-   shell crash with the work area restored in one visible step, and reconnect
-   at a fresh epoch. That archive is the production gate.
+   committed bands and reprojects only when they change.
+   The depth is a configuration decision: `shell { panel 28; }` in the compiled
+   profile, validated against the wire's own reservation maximum and refused
+   outright when no shell is enabled. An earlier entry here named an
+   environment variable instead; that variable existed only in the offline
+   conformance host, so no session could set it and no session could raise a
+   claim. The profile key is what makes the coordinator reachable.
+   Two corrections to what this row previously claimed. The claim is not a
+   persistent bar: one shell connection carries one candidate stream and one
+   visible state, so the strip lives exactly as long as the switcher is
+   visible. A panel that persists independently needs a second shell role and
+   is separate work. And losing the shell does not restore the work area --
+   the presented claim is retained beside the retained pixels, because growing
+   the area while nothing can present into the strip is the incoherent desktop
+   `ShellWorkAreaCoordination.tla` forbids. The guide and verifier now prove
+   the retention rather than a restore.
+   What remains is a signed physical archive: the switcher claiming and
+   releasing the strip, the claim surviving the shell's death, and a re-claim
+   at the fresh epoch. The guide, matcher fixture, and verifier all carry that
+   evidence, with negative cases proving each check fires. That archive is the
+   production gate.
 2. **Close the remaining retained-ledger rows.** The switcher moved
    Recent-window switcher to partial, not complete: recency policy, scope,
    filtering, and debounce are still open, and `docs/triad-port-ledger.md` in

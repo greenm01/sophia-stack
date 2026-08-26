@@ -12,6 +12,14 @@ use crate::{
 };
 
 pub const DESKTOP_PROFILE_MAX_DEPTH: usize = 10;
+/// The largest panel a profile may ask for, in pixels.
+///
+/// This crate depends on nothing else in the stack, so it cannot read the
+/// wire's own ceiling. The value is `sophia_protocol`'s
+/// `SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX`, and a test in `sophia-cli` --
+/// which sees both crates -- fails if they ever drift apart.
+pub const SHELL_PANEL_MAX_THICKNESS_PX: u16 = 512;
+
 pub const DESKTOP_PROFILE_MAX_FILES: usize = 64;
 pub const DESKTOP_PROFILE_MAX_BYTES: usize = 1024 * 1024;
 
@@ -23,7 +31,7 @@ policy {
   outer-gap 0
   inner-gap 0
 }
-shell { enabled #true; }
+shell { enabled #true; panel 28; }
 shortcut {
   profile "compiled"
   bind "Ctrl+Alt+Delete" "session:logout"
@@ -847,6 +855,19 @@ fn validate_setting(
             "shell enabled requires one boolean argument".to_owned(),
         ));
     }
+    // `shell.panel` is the bottom-edge work-area strip, in pixels. It was an
+    // allowlisted name with no validation and no reader, so a profile could
+    // ask for a panel and be silently ignored; it now means exactly one thing
+    // and is refused where it cannot be honoured. The ceiling is the wire's,
+    // so a profile cannot promise a claim `sophia_shell_v1` would reject.
+    if authority == DesktopAuthority::Shell && name == "panel" {
+        let value = exact_integer_argument(node, "shell panel")?;
+        if !(0..=i128::from(SHELL_PANEL_MAX_THICKNESS_PX)).contains(&value) {
+            return Err(DesktopProfileError::Schema(
+                "shell panel must be a pixel thickness within the reservation maximum".to_owned(),
+            ));
+        }
+    }
     if authority == DesktopAuthority::Broker
         && name == "enabled"
         && node.get(0).and_then(|value| value.as_bool()) != Some(false)
@@ -880,6 +901,36 @@ pub fn desktop_profile_shell_enabled(profile: &DesktopProfileGeneration) -> bool
                 .flatten()
         })
         .unwrap_or(false)
+}
+
+/// Returns the prepared shell panel thickness in pixels, if the profile asks
+/// for one.
+///
+/// `None` means this session reserves no work area for a panel, which is what
+/// every profile written before the key existed says, and what a profile that
+/// asks for zero says too: a zero-thickness strip is not a claim.
+pub fn desktop_profile_shell_panel_thickness(profile: &DesktopProfileGeneration) -> Option<u16> {
+    profile
+        .candidates
+        .get(&DesktopAuthority::Shell)
+        .and_then(|candidate| {
+            candidate
+                .values
+                .iter()
+                .find(|value| value.key == "shell.panel")
+        })
+        .and_then(|value| KdlDocument::parse_v2(&value.encoded).ok())
+        .and_then(|document| {
+            (document.nodes().len() == 1)
+                .then(|| {
+                    document.nodes()[0]
+                        .get(0)
+                        .and_then(|value| value.as_integer())
+                })
+                .flatten()
+        })
+        .and_then(|thickness| u16::try_from(thickness).ok())
+        .filter(|thickness| *thickness > 0)
 }
 
 fn validate_policy_layout(layout: &str) -> Result<(), DesktopProfileError> {
