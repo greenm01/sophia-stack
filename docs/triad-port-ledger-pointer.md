@@ -43,13 +43,19 @@ Twenty-eight retained rows across four authority tables:
 | Table | Rows | Complete | Partial | Open |
 | --- | --- | --- | --- | --- |
 | Spatial Policy — Hagia | 12 | 3 | 7 | 2 |
-| Visible Desktop — Hagia Shell | 5 | 0 | 0 | **5** |
+| Visible Desktop — Hagia Shell | 5 | 0 | 2 | **3** |
 | Session And Dedicated Sophia Authorities | 7 | 0 | 4 | 3 |
-| Brokers And Portals | 4 | 0 | 0 | **4** |
+| Brokers And Portals | 4 | 0 | 1 | **3** |
 
-The shell and broker/portal tables are entirely open, and they are inside the
-gate. A reader who assumes the freeze waits only on WM-side rows will
-underestimate it by nine rows. `hagia-shell` does not exist as source.
+Totals: 3 complete, 14 partial, 11 open. The shell and broker/portal tables
+hold no complete row, and they are inside the gate. A reader who assumes the
+freeze waits only on WM-side rows will underestimate it by nine rows.
+
+`hagia-shell` now exists as source: Hagia commits `216fb87`, `3795dce`,
+`c33a1f4`, and `a76528f` add the experimental client, the live shell service,
+the protected switcher, and unlabeled descriptor decoding. That moved
+Recent-window switcher and Panels/status to partial; it closed no row, and the
+28-row headline is unchanged.
 
 ## Consequences For Work In This Repository
 

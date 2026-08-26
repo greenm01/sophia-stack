@@ -228,10 +228,21 @@ promotion gate.
    refusing one. The probe harness that should have caught this first is fixed:
    its accept had no deadline and it joined a server thread no client had reached,
    so it hung silently; it now reproduces the physical failure offline in seconds.
-   The GLX 1.3 surface is complete apart from the withdrawn pixmap requests. One
-   identified cause remains, DRI3 minor 8 `BuffersFromPixmap`, which needs plane
-   descriptors the frontend does not retain. The corrected signed physical rerun
-   remains open. Reservations are deliberately still absent.
+   The GLX 1.3 surface is complete apart from the withdrawn pixmap requests, and
+   both identified causes are now closed. DRI3 minor 8 `BuffersFromPixmap`
+   answers from retained plane descriptors, and its server-owned half originates
+   a buffer for whatever drawable a GL client names, since a client asking the
+   server to own its storage names a GLX drawable rather than a core pixmap. GLX
+   advertises the ES profiles a translating client's fallback asks for. The
+   offline pbuffer smoke drives real Mesa through a GLX pbuffer and exits zero.
+   It requires `--features atomic-scanout-live`: without it the allocator that
+   originates the buffer is compiled out, the server-owned half never runs, and
+   the recovery refuses a pbuffer it should have backed. The browser stall is
+   reproduced offline by `x-authority-browser-smoke`, but only at partial
+   fidelity -- it stops after negotiating the GLX and DRI3 versions, where the
+   rig brings a GL context up before going quiet, so it does not yet stand in
+   for the rig. The corrected signed physical rerun remains open. Reservations
+   are deliberately still absent.
    The authoritative retained-behavior ledger still has 28 rows: 3 complete,
    14 partial, and 11 open.
 7. Only after the retained ledger closes, run the complete cross-client
@@ -259,6 +270,9 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    output-local pixels, and tear down cleanly. Only after that archive passes
    should the work-area reservation coordinator enter production. Previews,
    icons, MRU policy, and generic textures remain out of this gate.
+   Offline proof is exhausted at this identity: the repo checks, the full
+   suite, the shell protocol and physical-matcher checks, and the real-Mesa
+   pbuffer smoke all pass. Only the physical archive is missing.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
