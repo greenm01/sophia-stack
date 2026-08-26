@@ -78,12 +78,10 @@ printf '%s\n' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=1 presentation_epoch=10 output=1 visible=true' \
     'sophia_live_metadata_shell schema=1 status=reservation_presented candidate_generation=1 output=1 depth=28' \
     'sophia_live_metadata_shell schema=1 status=reservation_reduced bands=1' \
-    'sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1412_0_0' \
     'sophia_live_metadata_broker schema=1 status=issuer_validated activation=1 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=activation_admitted activation=1 target=redacted' \
     'sophia_live_metadata_shell schema=1 status=presented candidate_generation=2 presentation_epoch=11 output=1 visible=false' \
     'sophia_live_metadata_shell schema=1 status=reservation_reduced bands=0' \
-    'sophia_live_work_area schema=1 status=applied output=1 full=2560x1440_0_0 work=2560x1440_0_0' \
     'sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher' \
     '2026-08-09T00:00:03Z INFO sophia_live_native_head_page_flip schema=2 status=submitted output=1 head=1 submission=11 content=Some(HeadComposition { frame: LiveProductionNativeFrameId(95), transaction: TransactionId(63), nonzero_rgb_pixels: 1800 }) frame=95' \
     'sophia_live_metadata_shell schema=1 status=reservation_admitted candidate_generation=3 output=1 depth=28' \

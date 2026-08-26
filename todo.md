@@ -268,11 +268,14 @@ promotes one of them.
 Ordering for the next few sessions. Each row points at where its detail already
 lives rather than restating it; this is a priority index, not a second roadmap.
 
-1. **Bring the work-area reservation coordinator into production.** Signed
-   Hagia archive `0006` proved the live no-reservation switcher, which was that
-   work's gate. Reservations were deliberately absent from it: the switcher
-   presents over the work area rather than claiming one. Previews, icons, MRU
-   policy, and generic textures remain out of scope until this lands.
+1. **Complete.** The work-area reservation coordinator is in production.
+   Signed Hagia archive `0007` closed it on signed source
+   `4e54dfc886d0a96737f3a1fcd3d0bbe4a8ca9edd` and signed Hagia source
+   `8a38033aae2bd4470f66e474dcf4447f482df87f`: three claims admitted and
+   presented, two reductions and two releases, no refusal, the claim retained
+   across the shell's death and re-made at connection epoch 2, zero protocol
+   errors, and clean teardown. Previews, icons, MRU policy, and generic
+   textures remain out of scope.
    The substrate is complete and proven offline. `sophia_shell_v1` candidates
    carry an optional edge claim in bytes the pre-reservation encoder already
    wrote as reserved zeroes, so older frames decode unchanged; Rust, C, and Nim
@@ -303,11 +306,12 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    the area while nothing can present into the strip is the incoherent desktop
    `ShellWorkAreaCoordination.tla` forbids. The guide and verifier now prove
    the retention rather than a restore.
-   What remains is a signed physical archive: the switcher claiming and
-   releasing the strip, the claim surviving the shell's death, and a re-claim
-   at the fresh epoch. The guide, matcher fixture, and verifier all carry that
-   evidence, with negative cases proving each check fires. That archive is the
-   production gate.
+   The guide, matcher fixture, and verifier carry that evidence, with negative
+   cases proving each check fires. One fidelity note from the archived run: a
+   public-policy session emits no `sophia_live_work_area status=applied` lines
+   at all, so the reduction is evidenced by the shell's own
+   `reservation_reduced` records rather than by a work-area line the fixture
+   had briefly invented.
 2. **Close the remaining retained-ledger rows.** The switcher moved
    Recent-window switcher to partial, not complete: recency policy, scope,
    filtering, and debounce are still open, and `docs/triad-port-ledger.md` in
