@@ -38,7 +38,6 @@ release_id="$(sed -n 's/^release_id=//p' "$artifact/manifest" | head -n 1)"
     cd "$artifact"
     sha256sum -c SHA256SUMS
 )
-"$artifact/tools/verify_packaged_policy.sh" "$artifact"
 
 releases="$PREFIX/releases"
 target="$releases/$release_id"
@@ -50,6 +49,14 @@ install -d -m 755 "$releases"
 staging="$releases/.install-$release_id-$$"
 trap '[[ ! -d "$staging" ]] || mv "$staging" "$staging.failed"' EXIT
 cp -a "$artifact" "$staging"
+if [[ "$(id -u)" == 0 ]]; then
+    chown -R 0:0 -- "$staging"
+fi
+(
+    cd "$staging"
+    sha256sum -c SHA256SUMS
+)
+"$staging/tools/verify_packaged_policy.sh" "$staging"
 mv "$staging" "$target"
 "$ROOT_DIR/tools/activate_live_session_release.sh" "$target"
 trap - EXIT

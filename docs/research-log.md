@@ -31,6 +31,15 @@ Completed evidence is archived in `research-log-archive.md`.
   breaks its command link, and proves both are restored without losing
   rollback. It also rejects activation from the artifact tree. A physical
   greetd refresh and packaged-default run remain the promotion boundary.
+- The first privileged retry then stopped before copying: running the packaged
+  verifier as root against the build user's artifact made Hagia correctly
+  reject its default profile as having an unsafe owner. Installation now checks
+  the artifact ledger, copies into a private staging directory, makes that tree
+  root-owned for a system install, rechecks its complete ledger, and runs the
+  packaged-policy check there before the immutable rename. Non-root isolated
+  installs retain their invoking owner. The profile ownership rule remains
+  strict; the installer now verifies the ownership the final release will
+  actually have.
 
 ## 2026-08-26: the frozen public policy boundary is the only WM transport
 

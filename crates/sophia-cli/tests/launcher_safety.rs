@@ -158,3 +158,23 @@ fn installer_preserves_a_rollback_pointer_before_activation() {
     assert!(INSTALLER.contains("sha256sum -c SHA256SUMS"));
     assert!(INSTALLER.contains("activate_live_session_release.sh"));
 }
+
+#[test]
+fn installer_verifies_root_owned_staging_before_immutable_promotion() {
+    let copy = INSTALLER.find("cp -a \"$artifact\" \"$staging\"").unwrap();
+    let ownership = INSTALLER.find("chown -R 0:0 -- \"$staging\"").unwrap();
+    let staged_ledger = ownership
+        + INSTALLER[ownership..]
+            .find("sha256sum -c SHA256SUMS")
+            .unwrap();
+    let verify = INSTALLER
+        .find("\"$staging/tools/verify_packaged_policy.sh\" \"$staging\"")
+        .unwrap();
+    let promote = INSTALLER.find("mv \"$staging\" \"$target\"").unwrap();
+
+    assert!(copy < ownership);
+    assert!(ownership < staged_ledger);
+    assert!(staged_ledger < verify);
+    assert!(verify < promote);
+    assert!(!INSTALLER.contains("\"$artifact/tools/verify_packaged_policy.sh\""));
+}
