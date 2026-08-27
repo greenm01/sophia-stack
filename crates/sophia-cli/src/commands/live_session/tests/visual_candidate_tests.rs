@@ -1,10 +1,10 @@
 use super::*;
-use crate::commands::live_session::PersistentLiveLayout;
+use crate::commands::live_session::{PendingLiveWmLayout, PersistentLiveLayout};
 use sophia_protocol::{
     BufferHandle, SurfaceConstraints, SurfacePresentationIntent, SurfacePresentationIntentKind,
-    TransactionId,
+    TransactionCommit, TransactionId, TransactionOutcome,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn rect(width: i32, height: i32) -> Rect {
     Rect {
@@ -593,5 +593,170 @@ fn a_selected_pre_admission_candidate_queues_the_relayout_that_arms_it() {
     assert!(
         layout.constraint_relayout_required(),
         "the selection must queue the relayout whose commit arms the admission",
+    );
+    assert_eq!(
+        layout.layout_epochs.recovery_extent(surface),
+        Some(Size {
+            width: geometry.width,
+            height: geometry.height,
+        }),
+        "candidate selection must prime the measured admission extent",
+    );
+}
+
+#[test]
+fn a_first_candidate_deferred_from_an_in_flight_layout_queues_recovery() {
+    // A physical GLX launch produced its 300x300 first Present after policy had
+    // already staged a 1278x1424 placement. Pixel-silent launches are removed
+    // from that epoch's requested-size gate, so `pending` existed but could not
+    // consume the candidate. Treating any pending epoch as sufficient stranded
+    // the candidate permanently: no admission commit and no visible glxgears.
+    let surface = SurfaceId::new(82, 1);
+    let frame_transaction = TransactionId::from_raw(2319);
+    let layout_transaction = TransactionId::from_raw(22);
+    let initial = rect(300, 300);
+    let target = rect(1278, 1424);
+    let dma_buffer = BufferHandle::from_raw(17);
+    let frame = SurfaceTransaction {
+        transaction: frame_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: initial,
+        presentation_extent: Size {
+            width: initial.width,
+            height: initial.height,
+        },
+        content: sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::DmaBuf {
+                handle: dma_buffer.raw(),
+            },
+            Size {
+                width: initial.width,
+                height: initial.height,
+            },
+        ),
+        damage: Region::single(initial),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let mut batch = crate::commands::live_session::wm_update_coordinator_batch(frame_transaction);
+    batch.transactions.push(frame);
+    batch
+        .present_submissions
+        .push(sophia_x_authority::XAuthorityPresentSubmission {
+            transaction: frame_transaction,
+            surface,
+            buffer: dma_buffer,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+        });
+
+    let mut layout = PersistentLiveLayout::default();
+    layout.dma_buf_sizes.insert(
+        dma_buffer,
+        Size {
+            width: initial.width,
+            height: initial.height,
+        },
+    );
+    layout.presentation_roles.insert(
+        surface,
+        sophia_protocol::SurfacePresentationRole::PolicyManaged,
+    );
+    layout
+        .admissions
+        .observe_intent(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry: initial,
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        });
+    layout.layout_epochs.set_pending_target(
+        surface,
+        Size {
+            width: target.width,
+            height: target.height,
+        },
+    );
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction: layout_transaction,
+        layers: vec![LayerSnapshot {
+            surface,
+            authority_local_id: None,
+            namespace: None,
+            stack_rank: 0,
+            geometry: target,
+            source_size: Size {
+                width: target.width,
+                height: target.height,
+            },
+            source: BufferSource::None,
+            damage: Region::empty(),
+            opacity: 1.0,
+            crop: None,
+            transform: Transform::IDENTITY,
+            generation: 1,
+            resize_sync: ResizeSyncCapability::ImplicitOnly,
+        }],
+        // Staging deferred this surface because it had no safe pixels yet.
+        requested_sizes: BTreeMap::new(),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::from([surface]),
+        configure_deliveries: 1,
+        focus: Some(surface),
+        deadline: Instant::now() + Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction: layout_transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+        },
+        moved_surfaces: 1,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::from([surface]),
+        source: Some(crate::commands::live_session::LiveWmProposalSource::Manage(
+            surface,
+        )),
+        policy_settlement: None,
+    });
+    assert!(!layout.constraint_relayout_required());
+
+    layout.observe_authority_batch(&batch);
+
+    assert_eq!(
+        layout.layout_epochs.recovery_extent(surface),
+        Some(Size {
+            width: initial.width,
+            height: initial.height,
+        }),
+        "the late candidate must become the bounded admission extent",
+    );
+    assert!(
+        layout.constraint_relayout_required(),
+        "the deferred candidate needs a successor layout after the live epoch settles",
+    );
+    assert!(
+        layout
+            .pending
+            .as_ref()
+            .unwrap()
+            .staged_transactions
+            .get(&surface)
+            .is_none(),
+        "a candidate at 300x300 cannot be smuggled into the older 1278x1424 layout",
     );
 }

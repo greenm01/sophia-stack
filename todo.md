@@ -355,15 +355,23 @@ lives rather than restating it; this is a priority index, not a second roadmap.
 3. **Complete.** API v7 and Engine-owned workspace policy are removed. The
    public Hagia, xmonad adapter, archived-client, and protocol gates remain
    green. Package a new installed candidate next.
-4. **In progress.** Promote schema-5 release `0.1.0-50c7cb2d2d54` through
-   `Sophia Hagia Promotion (Packaged Default)`. The first intended login instead
-   archived attempt `0006` from old schema-3 release
-   `0.1.0-66a279286bdd`; its emergency exit is recovery evidence, not a
-   promotion result. Installation recovery now verifies and re-activates an
-   already-present immutable release, repairs operator links and greetd entries,
-   and preserves rollback. Refresh greetd from that activation, complete the
-   packaged-default physical run, then verify and archive it before beginning
-   Milestone 14.
+4. **In progress.** Promote the next schema-5 successor through `Sophia Hagia
+   Promotion (Packaged Default)`. The first intended login instead archived
+   attempt `0006` from old schema-3 release `0.1.0-66a279286bdd`; its emergency
+   exit is recovery evidence, not a promotion result. Installation recovery now
+   verifies and re-activates an already-present immutable release, repairs
+   operator links and greetd entries, and preserves rollback. That repair
+   activated `0.1.0-50c7cb2d2d54`, and its packaged-default attempt `0001`
+   completed one normal Logout with clean lifecycle health, but the operator's
+   `glxgears` window did not present. Its 300-by-300 first DMA-BUF arrived after
+   policy had staged a 1278-by-1424 launch layout; the pixel-silent surface was
+   correctly deferred from that epoch, but candidate selection neither primed
+   its admission extent nor queued a successor while any epoch was pending.
+   Candidate selection now primes its measured safe extent and queues recovery
+   unless the current epoch owns that exact surface and size. Package and
+   activate the signed successor, then require the GLX candidate to stage, arm,
+   retire visibly, and reach the standing policy target before normal logout.
+   Verify and archive that installed run before beginning Milestone 14.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)

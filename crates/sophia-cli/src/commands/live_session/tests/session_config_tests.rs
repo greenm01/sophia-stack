@@ -1,5 +1,12 @@
 use super::*;
 
+fn isolated_desktop_profile_argument() -> String {
+    let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("tools/fixtures/mixed_output_probe.kdl");
+    format!("--desktop-profile={}", profile.display())
+}
+
 #[test]
 fn firefox_m10_kitty_proof_requires_only_retention_checkpoints() {
     let mut proof = FirefoxM10KittyProof::default();
@@ -120,6 +127,7 @@ fn firefox_physical_slices_are_mutually_exclusive() {
         "--session-mode=normal".to_owned(),
         "--session-app=firefox=/usr/bin/firefox".to_owned(),
         "--session-action-app=browser=firefox".to_owned(),
+        isolated_desktop_profile_argument(),
     ];
     for proof in [
         "--firefox-m10-rendering-proof",
@@ -773,6 +781,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
         "--session-app-arg=terminal=-cm".to_owned(),
         "--session-start=terminal".to_owned(),
         "--session-action-app=terminal=terminal".to_owned(),
+        isolated_desktop_profile_argument(),
     ])
     .unwrap();
     assert!(config.normal_session);
@@ -791,6 +800,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-action-app=terminal=terminal".to_owned(),
+        isolated_desktop_profile_argument(),
     ])
     .unwrap();
     assert!(blank.applications.startup.is_empty());
@@ -809,6 +819,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
         "--session-start=terminal".to_owned(),
         "--session-start=terminal-secondary".to_owned(),
         "--session-action-app=terminal=terminal".to_owned(),
+        isolated_desktop_profile_argument(),
     ])
     .unwrap();
     assert_eq!(
@@ -922,6 +933,7 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
         "--session-app-arg=terminal=--single-instance".to_owned(),
         "--session-start=terminal".to_owned(),
         "--session-action-app=terminal=terminal".to_owned(),
+        isolated_desktop_profile_argument(),
     ];
     let first = PersistentXtermSessionConfig::from_args(&args).unwrap();
     let second = PersistentXtermSessionConfig::from_args(&args).unwrap();
@@ -996,6 +1008,7 @@ fn kitty_only_session_can_exit_with_its_single_startup_app() {
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-start=terminal".to_owned(),
         "--exit-when-startup-exits".to_owned(),
+        isolated_desktop_profile_argument(),
     ])
     .unwrap();
     assert!(config.exit_when_startup_exits);
@@ -1020,6 +1033,7 @@ fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-start=terminal".to_owned(),
         "--startup-ready-timeout-ms=8000".to_owned(),
+        isolated_desktop_profile_argument(),
     ])
     .unwrap();
     assert_eq!(

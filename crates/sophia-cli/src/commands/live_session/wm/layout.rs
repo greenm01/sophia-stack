@@ -325,16 +325,25 @@ impl PersistentLiveLayout {
                     transaction.transaction.raw(),
                     transaction.surface.index(),
                 );
+                // The first safe pixels can race the layout that admitted the
+                // surface. Prime from the measurement at the point it becomes
+                // authoritative, not only while reducing the earlier Manage
+                // response: that response may already have been staged while
+                // the surface was pixel-silent.
+                self.prime_admission_extent(transaction.surface);
                 // Arming happens inside a layout commit, and a first frame
                 // usually arrives seconds after its launch layout committed.
-                // With no pending layout there is nothing scheduled that would
-                // ever stage this candidate, so the admitted window sits
-                // selected and empty until some unrelated event forces a
-                // relayout -- on the rig, the operator pressing the launch key
-                // again. Queue the one relayout the commit needs. Selection
-                // reports true only when the candidate is new, so this fires
-                // once per frame identity, not per observation.
-                if self.pending.is_none() {
+                // A pending layout can be just as unable to stage it: a
+                // pixel-silent launch is deliberately removed from that
+                // epoch's requested-size gate and retained as a standing
+                // target. Queue recovery unless the live epoch owns this exact
+                // measured extent. Selection reports true only when the
+                // candidate is new, so this fires once per frame identity, not
+                // per observation.
+                let candidate_owned_by_pending = self.pending.as_ref().is_some_and(|pending| {
+                    pending.requested_sizes.get(&transaction.surface) == Some(&observed_size)
+                });
+                if !candidate_owned_by_pending {
                     self.constraint_relayout_required = true;
                 }
             }
