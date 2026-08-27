@@ -6,6 +6,7 @@ release="${1:-}"
     echo "usage: tools/verify_packaged_policy.sh RELEASE_DIR" >&2
     exit 1
 }
+release="$(cd "$release" && pwd)"
 manifest="$release/manifest"
 [[ -f "$manifest" ]] || {
     echo "Packaged policy manifest is missing: $manifest" >&2
