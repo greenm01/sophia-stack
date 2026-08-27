@@ -113,8 +113,10 @@ commands=(
 if [[ "$hagia_included" == true ]]; then
     commands+=(
         sophia-hagia-session
+        sophia-hagia-promotion-session
         sophia-record-hagia-run
         sophia-verify-hagia
+        sophia-verify-hagia-promotion
     )
 fi
 for command in "${commands[@]}"; do
@@ -129,7 +131,7 @@ desktops=(
     sophia-native-chrome-proof sophia-cycle-proof
 )
 if [[ "$hagia_included" == true ]]; then
-    desktops+=(sophia-hagia)
+    desktops+=(sophia-hagia sophia-hagia-promotion)
 fi
 for desktop in "${desktops[@]}"; do
     install -m 644 "$target/share/wayland-sessions/$desktop.desktop" \

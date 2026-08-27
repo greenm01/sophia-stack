@@ -258,6 +258,30 @@ pub(crate) fn run_persistent_xterm_session(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
+    if let Ok(profile_mode) = std::env::var("SOPHIA_HAGIA_PROFILE_MODE") {
+        if !matches!(
+            profile_mode.as_str(),
+            "user" | "system" | "explicit" | "packaged-fallback" | "packaged-promotion"
+        ) {
+            return Err("SOPHIA_HAGIA_PROFILE_MODE has an invalid value".into());
+        }
+        let profile_sha256 = std::env::var("SOPHIA_DESKTOP_PROFILE_SHA256")?;
+        if profile_sha256.len() != 64
+            || !profile_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err("SOPHIA_DESKTOP_PROFILE_SHA256 must be lowercase SHA-256".into());
+        }
+        println!(
+            "sophia_live_desktop_profile schema=1 status=loaded mode={} generation={} digest={} root_sha256={} sources={}",
+            profile_mode,
+            config.desktop_profile.generation.raw(),
+            config.desktop_profile.digest,
+            profile_sha256,
+            config.desktop_profile.sources.len()
+        );
+    }
     let prepared_public_launch = LiveWmSession::prepare_public_launch(&mut config)?;
     let public_policy_launch =
         LiveWmSession::activate_public_launch(&mut config, prepared_public_launch)?;

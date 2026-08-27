@@ -58,7 +58,10 @@ leaves Kitty, xmonad, and the previous immutable release available for
 recovery. The retained Triad behavior port is complete and `sophia_wm_v1`
 interface major 1, wire revision 3 is frozen. API v7 and its Engine-owned
 workspace policy are removed. The next Milestone 13 critical path is a new
-packaged installed candidate.
+packaged installed candidate. That successor packages Hagia's signed generic
+default rather than mutable personal configuration, keeps XDG profiles in the
+ordinary dogfooding entry, and uses a separate packaged-default promotion
+entry with profile-aware immutable evidence.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an

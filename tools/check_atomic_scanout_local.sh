@@ -337,6 +337,8 @@ bash -n tools/installed/sophia-native-chrome-proof
 bash -n tools/installed/sophia-stop
 bash -n tools/installed/capture-runtime-identity.sh
 bash -n tools/installed/sophia-hagia-session \
+    tools/installed/sophia-hagia-promotion-session \
+    tools/check_hagia_profile_selection.sh \
     tools/start_sophia_hagia_policy_tty4.sh \
     tools/record_installed_hagia_run.sh \
     tools/verify_installed_hagia_session.sh \
@@ -350,6 +352,7 @@ bash -n tools/installed/sophia-hagia-session \
     tools/run_current_hagia_policy_gate_tty4.sh \
     tools/run_current_critical_path_tty4.sh
 tools/check_installed_hagia_ledger.sh
+tools/check_hagia_profile_selection.sh
 grep -Fq 'hagia-policy) tools/hagia_policy_physical_gate.sh' \
     tools/start_sophia_tty3.sh
 grep -Fq 'export SOPHIA_TTY_NUMBER=4' \

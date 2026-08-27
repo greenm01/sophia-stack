@@ -17,7 +17,7 @@ export SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
 export SOPHIA_HAGIA_SHELL_BIN="$RELEASE_DIR/target/release/hagia-shell"
 export SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"
 export SOPHIA_CORE_CONFIG="$RELEASE_DIR/share/sophia-policy/xmonad/core.kdl"
-export SOPHIA_DESKTOP_PROFILE="$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl"
+export SOPHIA_DESKTOP_PROFILE="${SOPHIA_DESKTOP_PROFILE:-$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl}"
 export SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"
 export SOPHIA_XMOBAR_CONFIG="$RELEASE_DIR/tools/fixtures/xmobar_sophia.config"
 export SOPHIA_ENABLE_XMOBAR=true
@@ -35,9 +35,13 @@ sophia_session_rotate_log "$identity_log"
 runtime_identity_log="$state_dir/runtime-identity.log"
 sophia_session_rotate_log "$runtime_identity_log"
 launch_id="$(date -u +%Y%m%dT%H%M%S%NZ)"
-printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s commit=%s release=%s started_at_utc=%s launch_id=%s\n' \
+profile_identity=""
+if [[ "$SOPHIA_TTY_PROFILE" == hagia ]]; then
+    profile_identity=" desktop_profile_mode=${SOPHIA_HAGIA_PROFILE_MODE:?} desktop_profile_sha256=${SOPHIA_DESKTOP_PROFILE_SHA256:?}"
+fi
+printf 'sophia_installed_session schema=1 status=starting profile=%s version=%s commit=%s release=%s started_at_utc=%s launch_id=%s%s\n' \
     "$SOPHIA_TTY_PROFILE" "${version:-unknown}" "${commit:-unknown}" "$RELEASE_DIR" \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$launch_id" | tee "$identity_log"
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$launch_id" "$profile_identity" | tee "$identity_log"
 chmod 600 "$identity_log"
 "$RELEASE_DIR/bin/capture-runtime-identity" "$runtime_identity_log" "$RELEASE_DIR"
 
@@ -77,6 +81,10 @@ case "$attempt_mode" in
     hagia)
         attempt_record="$RELEASE_DIR/bin/sophia-record-hagia-run"
         attempt_result_record=sophia_installed_hagia
+        ;;
+    hagia-promotion)
+        attempt_record="$RELEASE_DIR/bin/sophia-record-hagia-run"
+        attempt_result_record=sophia_installed_hagia_promotion
         ;;
 esac
 # Reserve the ledger slot before takeover. A crash or interrupted handoff then

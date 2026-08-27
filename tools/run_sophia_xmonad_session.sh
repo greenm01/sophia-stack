@@ -227,11 +227,11 @@ if [[ "$SESSION_PROFILE" == hagia && ! -x "$SOPHIA_HAGIA_BIN" ]]; then
     echo "Hagia policy executable is not executable: ${SOPHIA_HAGIA_BIN:-unavailable}" >&2
     exit 1
 fi
-hagia_firefox_bin=""
+hagia_browser_bin=""
 if [[ "$SESSION_PROFILE" == hagia ]]; then
-    hagia_firefox_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
-    if [[ -z "$hagia_firefox_bin" || ! -x "$hagia_firefox_bin" ]]; then
-        echo "The retained Hagia revision-1 profile requires Firefox." >&2
+    hagia_browser_bin="${SOPHIA_HAGIA_BROWSER_BIN:-$(command -v helium || command -v firefox || true)}"
+    if [[ -z "$hagia_browser_bin" || ! -x "$hagia_browser_bin" ]]; then
+        echo "The Hagia profile requires Helium, Firefox, or SOPHIA_HAGIA_BROWSER_BIN." >&2
         exit 1
     fi
 fi
@@ -419,7 +419,7 @@ elif [[ "$SESSION_PROFILE" == native ]]; then
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 elif [[ "$SESSION_PROFILE" == hagia ]]; then
     echo "Starting Sophia with Hagia's native policy on $DISPLAY_NAME."
-    echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
+    echo "Use Super+Enter for Kitty or Ctrl+Alt+Delete to log out."
 else
     echo "Starting the supported Kitty-only Sophia input session on $DISPLAY_NAME."
     echo "xmonad and Super+Enter are intentionally disabled for this input gate."
@@ -677,12 +677,18 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         )
     fi
 elif [[ "$SESSION_PROFILE" == hagia ]]; then
+    desktop_profile="${SOPHIA_DESKTOP_PROFILE:-}"
+    [[ "$desktop_profile" == /* && -f "$desktop_profile" ]] || {
+        echo "Sophia's Hagia desktop profile must be an absolute existing path: ${desktop_profile:-unset}" >&2
+        exit 1
+    }
     session_args+=(
+        "--desktop-profile=$desktop_profile"
         --wm-process="$SOPHIA_HAGIA_BIN"
         --wm-interface=sophia_wm_v1
     )
     session_args+=(
-        "--session-app=browser=$hagia_firefox_bin"
+        "--session-app=browser=$hagia_browser_bin"
         --session-app-arg=browser=--no-remote
         --session-app-arg=browser=--new-instance
     )

@@ -52,9 +52,10 @@ The command builds before requesting privilege, verifies every artifact
 digest, installs a new immutable directory below `/opt/sophia/releases`, and
 atomically updates `current` while retaining the former release as `previous`.
 The artifact manifest records the configured xmonad and xmobar source
-identities plus their configuration and executable digests. Installation
-rejects a missing path, wrong version, dirty xmobar source, or digest mismatch.
-It installs six greetd entries:
+identities plus their configuration and executable digests. A schema-5 Hagia
+artifact also records the signed Hagia source commit and canonical default
+profile digest. Installation rejects a missing path, wrong version, dirty
+source profile, or digest mismatch. It installs six base greetd entries:
 
 - `Sophia xmonad (Experimental)` is the frozen classical-WM compatibility
   fallback. Its blind bridge is a `sophia_wm_v1` client.
@@ -69,14 +70,16 @@ It installs six greetd entries:
   the ordinary desktop.
 
 An artifact packaged with explicit `SOPHIA_HAGIA_BIN` and
-`SOPHIA_HAGIA_SHELL_BIN` paths also installs `Sophia Hagia (Native Policy)`.
+`SOPHIA_HAGIA_SHELL_BIN` paths also installs two Hagia entries. `Sophia Hagia
+(Native Policy)` selects the user's XDG profile, then `/etc/hagia/config.kdl`,
+then the packaged default. `Sophia Hagia Promotion (Packaged Default)` ignores
+both mutable locations and selects only the immutable packaged default.
 If the shell path is omitted, packaging looks for `hagia-shell` and then
 Nimble's `hagia_shell` beside `hagia`. Both executable digests are retained in
-the manifest, and installation rejects a missing shell. The entry never falls
-back to xmonad. After
-bounded deterministic preflight, select it once to make it the remembered
-ordinary session; packaging alone does not freeze either protocol or remove
-recovery paths.
+the manifest, and installation rejects a missing shell. Neither entry falls
+back to xmonad. After bounded deterministic preflight, select the ordinary
+entry once to make it the remembered session; use the promotion entry only for
+release evidence.
 
 Before installing a Hagia candidate, a development checkout can exercise the
 owner's exact public-policy settlement boundaries:
@@ -126,11 +129,14 @@ The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}
 | automatic xterm proof attempts | `sophia/promotion/xterm-runs/` |
 | automatic TrueColor proof attempts | `sophia/promotion/truecolor-runs/` |
 | automatic Hagia attempts and coverage | `sophia/promotion/hagia-runs/` |
+| packaged-default Hagia promotion attempts | `sophia/promotion/hagia-promotion-runs/` |
 
 Every active launch, runtime-identity, session, input-guard, recovery, and
 lifecycle log keeps at most one `.previous` generation. Promotion attempts are
 separate immutable archives; each records the exact Sophia executable digest
-in both its schema-2 runtime identity and schema-4 manifest. Archive
+in both its schema-2 runtime identity and profile-aware attempt manifest. Hagia
+records the selected mode, root-file hash, and activated effective digest;
+daily archives never copy personal configuration bytes. Archive
 verification compares those copies, so installing another release does not
 weaken the older record. The logs contain reduced state and identity evidence;
 they must not contain typed text, clipboard data, window titles, or application
@@ -138,9 +144,11 @@ content.
 
 ## Normal Stop
 
-Use `Super+Shift+Q` for an ordinary logout. It commits the policy logout action,
-drains presentation and application ownership, restores the VT, and returns to
-greetd.
+Use `Ctrl+Alt+Delete` for an ordinary Hagia logout. The packaged default and the
+current personal daily-driver profile both bind that chord. A customized
+profile may choose another nonreserved binding. Recovery xmonad profiles retain
+`Super+Shift+Q`. Normal logout commits the policy action, drains presentation
+and application ownership, restores the VT, and returns to greetd.
 
 If the graphical session cannot accept the shortcut, log in as the same user
 on an independent text VT or through SSH and run:
@@ -334,6 +342,18 @@ archive and inspect aggregate status with:
 sophia-verify-hagia
 sophia-status
 ```
+
+The daily verifier accepts profile-aware user, system, explicit, or packaged
+fallback identities but never archives their source bytes. To qualify a release,
+select `Sophia Hagia Promotion (Packaged Default)` and verify its separate
+archive:
+
+```sh
+sophia-verify-hagia-promotion
+```
+
+That verifier requires schema 5, `packaged-promotion` mode, and an archived
+generic profile whose SHA-256 matches the release manifest.
 
 The verifier requires startup readiness, settled policy and native work,
 normal cleanup or exact emergency recovery, and exact installed identities. It

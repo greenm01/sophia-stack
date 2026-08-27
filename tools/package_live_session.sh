@@ -5,6 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${SOPHIA_ARTIFACT_ROOT:-$ROOT_DIR/.artifacts}"
 hagia_bin="${SOPHIA_HAGIA_BIN:-}"
 hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-}"
+hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+hagia_default_profile=""
+hagia_default_profile_sha256=""
+hagia_source_commit=""
 
 cd "$ROOT_DIR"
 [[ -z "$(git status --short)" ]] || {
@@ -53,6 +57,39 @@ if [[ -n "$hagia_bin" && ! -x "$hagia_shell_bin" ]]; then
     echo "SOPHIA_HAGIA_SHELL_BIN is not executable: $hagia_shell_bin" >&2
     exit 1
 fi
+if [[ -n "$hagia_bin" ]]; then
+    [[ -d "$hagia_root/.git" ]] || {
+        echo "SOPHIA_HAGIA_ROOT must name the canonical Hagia checkout: $hagia_root" >&2
+        exit 1
+    }
+    hagia_default_profile="$hagia_root/examples/config/default.kdl"
+    [[ -f "$hagia_default_profile" && ! -L "$hagia_default_profile" ]] || {
+        echo "Hagia's canonical default profile is missing: $hagia_default_profile" >&2
+        exit 1
+    }
+    git -C "$hagia_root" diff --quiet HEAD -- examples/config/default.kdl || {
+        echo "Hagia's canonical default profile differs from its commit." >&2
+        exit 1
+    }
+    hagia_source_commit="$(git -C "$hagia_root" rev-parse HEAD)"
+    [[ "$hagia_source_commit" =~ ^[0-9a-f]{40}$ ]] || {
+        echo "Hagia has no exact source commit." >&2
+        exit 1
+    }
+    git -C "$hagia_root" verify-commit "$hagia_source_commit" >/dev/null 2>&1 || {
+        echo "Hagia's source commit does not have a valid signature." >&2
+        exit 1
+    }
+    hagia_upstream="$(git -C "$hagia_root" rev-parse --verify refs/remotes/origin/master 2>/dev/null || true)"
+    [[ "$hagia_source_commit" == "$hagia_upstream" ]] || {
+        echo "Hagia HEAD must equal the locally known origin/master before packaging." >&2
+        exit 1
+    }
+    "$hagia_bin" config check --config="$hagia_default_profile" >/dev/null
+    target/release/sophia config check \
+        --desktop-profile="$hagia_default_profile" >/dev/null
+    hagia_default_profile_sha256="$(sha256sum "$hagia_default_profile" | awk '{ print $1 }')"
+fi
 
 install -d -m 755 \
     "$artifact/bin" \
@@ -61,6 +98,7 @@ install -d -m 755 \
     "$artifact/tools/lib" \
     "$artifact/tools/probes" \
     "$artifact/share/doc/sophia" \
+    "$artifact/share/sophia-policy/hagia" \
     "$artifact/share/sophia-policy/xmonad" \
     "$artifact/share/wayland-sessions"
 install -m 755 target/release/sophia "$artifact/target/release/sophia"
@@ -76,6 +114,10 @@ if [[ -n "$hagia_bin" ]]; then
     install -m 755 "$hagia_shell_bin" "$artifact/target/release/hagia-shell"
     install -m 755 tools/installed/sophia-hagia-session \
         "$artifact/bin/sophia-hagia-session"
+    install -m 755 tools/installed/sophia-hagia-promotion-session \
+        "$artifact/bin/sophia-hagia-promotion-session"
+    install -m 644 "$hagia_default_profile" \
+        "$artifact/share/sophia-policy/hagia/default.kdl"
 fi
 install -m 755 tools/installed/sophia-kitty-session \
     "$artifact/bin/sophia-kitty-session"
@@ -156,6 +198,8 @@ install -m 755 tools/verify_installed_hagia_recovery.sh \
     "$artifact/bin/sophia-verify-hagia-recovery"
 install -m 755 tools/verify_installed_hagia_archive.sh \
     "$artifact/bin/sophia-verify-hagia"
+install -m 755 tools/verify_installed_hagia_archive.sh \
+    "$artifact/bin/sophia-verify-hagia-promotion"
 install -m 755 tools/verify_installed_session_lifecycle.sh \
     "$artifact/bin/sophia-verify-lifecycle"
 install -m 755 tools/verify_installed_watchdog_recovery.sh \
@@ -239,6 +283,14 @@ if [[ -n "$hagia_bin" ]]; then
         'Type=Application' \
         'DesktopNames=Sophia' \
         >"$artifact/share/wayland-sessions/sophia-hagia.desktop"
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Name=Sophia Hagia Promotion (Packaged Default)' \
+        'Comment=Immutable Hagia packaged-default promotion profile' \
+        'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-promotion-session' \
+        'Type=Application' \
+        'DesktopNames=Sophia' \
+        >"$artifact/share/wayland-sessions/sophia-hagia-promotion.desktop"
 fi
 printf '%s\n' \
     '[Desktop Entry]' \
@@ -280,7 +332,7 @@ printf '%s\n' \
     'Type=Application' \
     'DesktopNames=Sophia' \
     >"$artifact/share/wayland-sessions/sophia-cycle-proof.desktop"
-printf 'schema=4\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_version=%s\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_desktop_profile_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=%s\nxmobar_source_commit=%s\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
+printf 'schema=5\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_version=%s\nxmonad_source_version=0.18.1\nxmonad_contrib_source_version=0.18.2\nxmonad_config_sha256=%s\nxmonad_cabal_sha256=%s\nxmonad_project_sha256=%s\nxmonad_core_config_sha256=%s\nxmonad_desktop_profile_sha256=%s\nxmonad_binary_sha256=%s\nxmobar_version=%s\nxmobar_source_commit=%s\nxmobar_config_sha256=%s\nxmobar_binary_sha256=%s\n' \
     "$version" "$commit" "$release_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$xmonad_version" "$xmonad_config_sha256" "$xmonad_cabal_sha256" \
     "$xmonad_project_sha256" "$xmonad_core_config_sha256" \
@@ -290,7 +342,8 @@ printf 'schema=4\nversion=%s\ncommit=%s\nrelease_id=%s\nbuilt_at_utc=%s\nxmonad_
     "$(sha256sum "$xmobar_bin" | awk '{print $1}')" \
     >"$artifact/manifest"
 if [[ -n "$hagia_bin" ]]; then
-    printf 'hagia_included=true\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
+    printf 'hagia_included=true\nhagia_source_commit=%s\nhagia_default_profile_sha256=%s\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
+        "$hagia_source_commit" "$hagia_default_profile_sha256" \
         "$(sha256sum "$hagia_bin" | awk '{print $1}')" \
         "$(sha256sum "$hagia_shell_bin" | awk '{print $1}')" \
         >>"$artifact/manifest"

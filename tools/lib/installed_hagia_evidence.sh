@@ -27,3 +27,25 @@ sophia_hagia_write_coverage() {
     chmod 600 "$temporary"
     mv -f "$temporary" "$output"
 }
+
+sophia_hagia_emit_profile_identity() {
+    local log="$1"
+    local -a lines=()
+    mapfile -t lines < <(
+        grep -E '^sophia_live_desktop_profile schema=1 status=loaded mode=(user|system|explicit|packaged-fallback|packaged-promotion) generation=[1-9][0-9]* digest=[0-9a-f]{64} root_sha256=[0-9a-f]{64} sources=[1-9][0-9]*$' \
+            "$log" 2>/dev/null || true
+    )
+    (( ${#lines[@]} == 1 )) || {
+        echo "installed Hagia session requires one exact desktop-profile identity" >&2
+        return 1
+    }
+    printf '%s\n' "${lines[0]}"
+}
+
+sophia_hagia_write_profile_identity() {
+    local log="$1" output="$2" temporary
+    temporary="${output}.tmp.$$"
+    sophia_hagia_emit_profile_identity "$log" >"$temporary"
+    chmod 600 "$temporary"
+    mv -f "$temporary" "$output"
+}

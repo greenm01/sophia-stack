@@ -15,11 +15,12 @@ grep -Fq 'bind "Super+Shift+Right" "policy:move-to-output-next"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq 'bind "Super+Shift+Left" "policy:move-to-output-prev"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
-# The compiled profile must enable the shell and ask for the panel the guide
-# proves. Without the panel the session raises no claim and every reservation
-# wait below would hang on the rig.
-grep -Fq 'shell { enabled #true; panel 28; }' \
-    "$root_dir/crates/sophia-config/src/desktop_profile.rs"
+# The physical gate must select Hagia's tracked default explicitly. Hagia owns
+# the 28 px panel claim; Sophia's no-file fallback remains profile-neutral.
+grep -Fq 'desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"' \
+    "$root_dir/tools/run_current_hagia_policy_gate_tty4.sh"
+grep -Fq -- '--desktop-profile="$desktop_profile"' \
+    "$root_dir/tools/run_current_hagia_policy_gate_tty4.sh"
 grep -Fq 'bind "Super+p" "session:window-switcher"' \
     "$root_dir/crates/sophia-config/src/desktop_profile.rs"
 grep -Fq "show_step 'Press Super+Shift+F once." \

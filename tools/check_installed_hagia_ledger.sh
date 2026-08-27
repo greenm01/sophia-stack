@@ -9,24 +9,30 @@ release="$prefix/releases/test"
 state="$fixture/state"
 session="$state/sophia/hagia-session"
 identity_dir="$state/sophia/installed-session"
-install -d -m 700 "$release/target/release" "$session" "$identity_dir"
+install -d -m 700 "$release/target/release" \
+    "$release/share/sophia-policy/hagia" "$session" "$identity_dir"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$release/target/release/sophia"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$release/target/release/hagia"
 chmod 755 "$release/target/release/sophia" "$release/target/release/hagia"
 sophia_digest="$(sha256sum "$release/target/release/sophia" | awk '{print $1}')"
 hagia_digest="$(sha256sum "$release/target/release/hagia" | awk '{print $1}')"
-printf 'schema=3\nversion=0.1.0\ncommit=0123456789abcdef\nrelease_id=test\nhagia_included=true\nhagia_binary_sha256=%s\n' \
-    "$hagia_digest" >"$release/manifest"
+printf 'schema 1\nshell { enabled #true; panel 28; }\n' \
+    >"$release/share/sophia-policy/hagia/default.kdl"
+profile_sha256="$(sha256sum "$release/share/sophia-policy/hagia/default.kdl" | awk '{ print $1 }')"
+printf 'schema=5\nversion=0.1.0\ncommit=0123456789abcdef\nrelease_id=test\nhagia_included=true\nhagia_source_commit=%040d\nhagia_default_profile_sha256=%s\nhagia_binary_sha256=%s\n' \
+    1 "$profile_sha256" "$hagia_digest" >"$release/manifest"
 (
     cd "$release"
-    sha256sum target/release/sophia target/release/hagia >SHA256SUMS
+    sha256sum target/release/sophia target/release/hagia \
+        share/sophia-policy/hagia/default.kdl >SHA256SUMS
 )
 ln -s releases/test "$prefix/current"
 
 write_identity() {
-    local launch_id="$1"
-    printf 'sophia_installed_session schema=1 status=starting profile=hagia version=0.1.0 commit=0123456789abcdef release=%s started_at_utc=2026-08-09T12:00:00Z launch_id=%s\n' \
-        "$release" "$launch_id" >"$identity_dir/launch.log"
+    local launch_id="$1" mode="${2:-explicit}"
+    printf 'sophia_installed_session schema=1 status=starting profile=hagia version=0.1.0 commit=0123456789abcdef release=%s started_at_utc=2026-08-09T12:00:00Z launch_id=%s desktop_profile_mode=%s desktop_profile_sha256=%s\n' \
+        "$release" "$launch_id" "$mode" "$profile_sha256" \
+        >"$identity_dir/launch.log"
     {
         printf 'sophia_runtime_identity schema=2 kind=system kernel=test mesa=test\n'
         printf 'sophia_runtime_identity schema=2 kind=application name=sophia version=0.1.0 digest=%s\n' "$sophia_digest"
@@ -55,7 +61,10 @@ write_lifecycle() {
 }
 
 write_normal_session() {
+    local mode="${1:-explicit}"
     {
+        printf 'sophia_live_desktop_profile schema=1 status=loaded mode=%s generation=1 digest=%064d root_sha256=%s sources=1\n' \
+            "$mode" 2 "$profile_sha256"
         printf 'sophia_session_app schema=1 status=started id=terminal source=startup\n'
         printf 'sophia_live_session_startup schema=2 status=ready outputs_ready=1/1 elapsed_msec=10\n'
         printf 'sophia_live_wm schema=1 status=physical_action_committed action=33\n'
@@ -74,6 +83,9 @@ write_normal_session() {
 }
 
 record=(env XDG_STATE_HOME="$state" SOPHIA_INSTALL_PREFIX="$prefix" \
+    SOPHIA_HAGIA_PROFILE_MODE=explicit \
+    SOPHIA_DESKTOP_PROFILE="$release/share/sophia-policy/hagia/default.kdl" \
+    SOPHIA_DESKTOP_PROFILE_SHA256="$profile_sha256" \
     SOPHIA_VERIFY_HAGIA_SESSION_BIN="$ROOT_DIR/tools/verify_installed_hagia_session.sh" \
     SOPHIA_VERIFY_HAGIA_RECOVERY_BIN="$ROOT_DIR/tools/verify_installed_hagia_recovery.sh" \
     SOPHIA_VERIFY_IDENTITY_BIN="$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
@@ -92,6 +104,25 @@ env XDG_STATE_HOME="$state" SOPHIA_HAGIA_RUN_ROOT="$state/sophia/promotion/hagia
     SOPHIA_VERIFY_IDENTITY_BIN="$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
     SOPHIA_VERIFY_LIFECYCLE_BIN="$ROOT_DIR/tools/verify_installed_session_lifecycle.sh" \
     "$ROOT_DIR/tools/verify_installed_hagia_archive.sh" "$clean_run"
+
+write_identity promotion packaged-promotion
+write_normal_session packaged-promotion
+promotion_record=(env XDG_STATE_HOME="$state" SOPHIA_INSTALL_PREFIX="$prefix" \
+    SOPHIA_HAGIA_PROFILE_MODE=packaged-promotion \
+    SOPHIA_DESKTOP_PROFILE="$release/share/sophia-policy/hagia/default.kdl" \
+    SOPHIA_DESKTOP_PROFILE_SHA256="$profile_sha256" \
+    SOPHIA_VERIFY_HAGIA_SESSION_BIN="$ROOT_DIR/tools/verify_installed_hagia_session.sh" \
+    SOPHIA_VERIFY_IDENTITY_BIN="$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
+    SOPHIA_VERIFY_LIFECYCLE_BIN="$ROOT_DIR/tools/verify_installed_session_lifecycle.sh" \
+    "$ROOT_DIR/tools/record_installed_hagia_run.sh")
+promotion_run="$("${promotion_record[@]}" begin)"
+"${promotion_record[@]}" finish "$promotion_run" 0
+env XDG_STATE_HOME="$state" SOPHIA_VERIFY_HAGIA_PROMOTION=true \
+    SOPHIA_HAGIA_PROMOTION_RUN_ROOT="$state/sophia/promotion/hagia-promotion-runs" \
+    SOPHIA_VERIFY_IDENTITY_BIN="$ROOT_DIR/tools/verify_installed_runtime_identity.sh" \
+    SOPHIA_VERIFY_LIFECYCLE_BIN="$ROOT_DIR/tools/verify_installed_session_lifecycle.sh" \
+    "$ROOT_DIR/tools/verify_installed_hagia_archive.sh" "$promotion_run"
+[[ -f "$promotion_run/desktop-profile.kdl" ]]
 
 write_identity recovery
 write_normal_session

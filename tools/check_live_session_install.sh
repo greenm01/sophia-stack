@@ -130,21 +130,31 @@ first="$(make_artifact 0001)"
 second="$(make_artifact 0002)"
 hagia_artifact="$TEMP_DIR/artifact-hagia"
 cp -a "$first" "$hagia_artifact"
-for command in sophia-hagia-session sophia-record-hagia-run sophia-verify-hagia; do
+for command in sophia-hagia-session sophia-hagia-promotion-session \
+    sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/bin/$command"
     chmod 755 "$hagia_artifact/bin/$command"
 done
 printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/hagia"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/hagia-shell"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$hagia_artifact/target/release/sophia"
 chmod 755 "$hagia_artifact/target/release/hagia" \
-    "$hagia_artifact/target/release/hagia-shell"
+    "$hagia_artifact/target/release/hagia-shell" \
+    "$hagia_artifact/target/release/sophia"
+install -d -m 755 "$hagia_artifact/share/sophia-policy/hagia"
+printf 'schema 1\nshell { enabled #true; panel 28; }\n' \
+    >"$hagia_artifact/share/sophia-policy/hagia/default.kdl"
 printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-session\n' \
     >"$hagia_artifact/share/wayland-sessions/sophia-hagia.desktop"
+printf '[Desktop Entry]\nExec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-promotion-session\n' \
+    >"$hagia_artifact/share/wayland-sessions/sophia-hagia-promotion.desktop"
 hagia_digest="$(sha256sum "$hagia_artifact/target/release/hagia" | awk '{print $1}')"
 hagia_shell_digest="$(sha256sum "$hagia_artifact/target/release/hagia-shell" | awk '{print $1}')"
+hagia_profile_digest="$(sha256sum "$hagia_artifact/share/sophia-policy/hagia/default.kdl" | awk '{print $1}')"
+sed -i 's/^schema=4$/schema=5/' "$hagia_artifact/manifest"
 sed -i 's/^hagia_included=false$/hagia_included=true/' "$hagia_artifact/manifest"
-printf 'hagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
-    "$hagia_digest" "$hagia_shell_digest" \
+printf 'hagia_source_commit=%040d\nhagia_default_profile_sha256=%s\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
+    1 "$hagia_profile_digest" "$hagia_digest" "$hagia_shell_digest" \
     >>"$hagia_artifact/manifest"
 (
     cd "$hagia_artifact"
@@ -162,6 +172,12 @@ invalid_hagia_shell="$TEMP_DIR/invalid-hagia-shell"
 cp -a "$hagia_artifact" "$invalid_hagia_shell"
 chmod 644 "$invalid_hagia_shell/target/release/hagia-shell"
 expect_policy_rejection "$invalid_hagia_shell" "a missing executable Hagia Shell"
+
+invalid_hagia_profile="$TEMP_DIR/invalid-hagia-profile"
+cp -a "$hagia_artifact" "$invalid_hagia_profile"
+printf 'policy { view-count 3; }\n' \
+    >>"$invalid_hagia_profile/share/sophia-policy/hagia/default.kdl"
+expect_policy_rejection "$invalid_hagia_profile" "a mutated Hagia default profile"
 
 invalid_cabal="$TEMP_DIR/invalid-cabal"
 cp -a "$first" "$invalid_cabal"
@@ -228,7 +244,10 @@ env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
     "$ROOT_DIR/tools/install_live_session.sh" "$hagia_artifact"
 grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-session" \
     "$hagia_sessions/sophia-hagia.desktop"
-for command in sophia-hagia-session sophia-record-hagia-run sophia-verify-hagia; do
+grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-promotion-session" \
+    "$hagia_sessions/sophia-hagia-promotion.desktop"
+for command in sophia-hagia-session sophia-hagia-promotion-session \
+    sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
     [[ "$(readlink "$hagia_commands/$command")" == "$hagia_prefix/current/bin/$command" ]]
 done
 operator_state="$TEMP_DIR/operator-state"

@@ -13,8 +13,13 @@ declare -p SOPHIA_ATTEMPT_SESSION_EVIDENCE >/dev/null 2>&1 ||
 SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME:-}"
 SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH="${SOPHIA_ATTEMPT_AUXILIARY_BINARY_PATH:-}"
 SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME="${SOPHIA_ATTEMPT_AUXILIARY_IDENTITY_NAME:-}"
+SOPHIA_ATTEMPT_RECORD_SCHEMA="${SOPHIA_ATTEMPT_RECORD_SCHEMA:-4}"
 
 sophia_installed_attempt_validate_evidence_contract() {
+    [[ "$SOPHIA_ATTEMPT_RECORD_SCHEMA" =~ ^(4|5)$ ]] || {
+        echo "installed attempt has an unsupported record schema" >&2
+        return 1
+    }
     (( ${#SOPHIA_ATTEMPT_EXTRA_EVIDENCE_SOURCES[@]} ==
         ${#SOPHIA_ATTEMPT_EXTRA_EVIDENCE_TARGETS[@]} )) || {
         echo "installed attempt extra-evidence arrays have different lengths" >&2
@@ -207,8 +212,8 @@ sophia_installed_attempt_begin() {
     install -m 600 "$SOPHIA_ATTEMPT_RUNTIME_IDENTITY_LOG" \
         "$run_dir/runtime-identity.log"
     install -m 600 "$SOPHIA_ATTEMPT_PREFIX/current/manifest" "$run_dir/manifest"
-    printf 'record_schema=4\nrecord_kind=%s\nlifecycle_mode=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\nsophia_binary_sha256=%s\n' \
-        "$SOPHIA_ATTEMPT_KIND" "$lifecycle_mode" "$sophia_attempt_started_at_utc" \
+    printf 'record_schema=%s\nrecord_kind=%s\nlifecycle_mode=%s\nsession_started_at_utc=%s\nlaunch_identity_sha256=%s\nsophia_binary_sha256=%s\n' \
+        "$SOPHIA_ATTEMPT_RECORD_SCHEMA" "$SOPHIA_ATTEMPT_KIND" "$lifecycle_mode" "$sophia_attempt_started_at_utc" \
         "$sophia_attempt_identity_sha256" "$sophia_attempt_binary_sha256" \
         >>"$run_dir/manifest"
     if [[ -n "$SOPHIA_ATTEMPT_AUXILIARY_BINARY_NAME" \

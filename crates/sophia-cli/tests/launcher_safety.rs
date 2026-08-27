@@ -1,6 +1,9 @@
 const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_session.sh");
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
+const INSTALLED_HAGIA: &str = include_str!("../../../tools/installed/sophia-hagia-session");
+const INSTALLED_HAGIA_PROMOTION: &str =
+    include_str!("../../../tools/installed/sophia-hagia-promotion-session");
 const INSTALLED_RECOVERY: &str = include_str!("../../../tools/installed/sophia-recovery-proof");
 const INSTALLED_TRUECOLOR: &str = include_str!("../../../tools/installed/sophia-truecolor-proof");
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
@@ -120,6 +123,17 @@ fn installed_session_uses_only_versioned_release_artifacts() {
     assert!(INSTALLED_SESSION.contains("$RELEASE_DIR/target/release/sophia"));
     assert!(!INSTALLED_SESSION.contains("cargo "));
     assert!(!INSTALLED_SESSION.contains("sudo "));
+}
+
+#[test]
+fn installed_hagia_separates_personal_and_packaged_promotion_profiles() {
+    assert!(INSTALLED_HAGIA.contains("$config_home/hagia/config.kdl"));
+    assert!(INSTALLED_HAGIA.contains("/etc/hagia/config.kdl"));
+    assert!(INSTALLED_HAGIA.contains("packaged-fallback"));
+    assert!(INSTALLED_HAGIA_PROMOTION.contains("packaged-promotion"));
+    assert!(INSTALLED_HAGIA_PROMOTION.contains("unset SOPHIA_DESKTOP_PROFILE"));
+    assert!(SESSION_LAUNCHER.contains("--desktop-profile=$desktop_profile"));
+    assert!(SESSION_LAUNCHER.contains("Ctrl+Alt+Delete to log out"));
 }
 
 #[test]

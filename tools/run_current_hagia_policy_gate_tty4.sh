@@ -60,7 +60,14 @@ echo "Hagia:  $hagia_commit"
     cargo build --quiet --release --offline -p sophia-cli \
         --features atomic-scanout-live
 )
-"$hagia_bin" config check
+desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"
+[[ -f "$desktop_profile" ]] || {
+    echo "Hagia's canonical default profile is missing: $desktop_profile" >&2
+    exit 1
+}
+"$hagia_bin" config check --config="$desktop_profile"
+"$ROOT_DIR/target/release/sophia" config check \
+    --desktop-profile="$desktop_profile"
 
 if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
     || -n "$(git -C "$HAGIA_ROOT" status --short)" \
@@ -88,6 +95,9 @@ echo "Hagia Shell:   $hagia_shell_sha256"
 
 export SOPHIA_HAGIA_BIN="$hagia_bin"
 export SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin"
+export SOPHIA_DESKTOP_PROFILE="$desktop_profile"
+export SOPHIA_DESKTOP_PROFILE_SHA256="$(sha256sum "$desktop_profile" | awk '{ print $1 }')"
+export SOPHIA_HAGIA_PROFILE_MODE=packaged-promotion
 export SOPHIA_HAGIA_ROOT="$HAGIA_ROOT"
 export SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT="$sophia_commit"
 export SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT="$hagia_commit"

@@ -25,8 +25,8 @@ require_sha256() {
 }
 
 manifest_schema="$(field schema)"
-[[ "$manifest_schema" =~ ^(2|3|4)$ ]] || {
-    echo "Packaged policy requires release manifest schema 2, 3, or 4." >&2
+[[ "$manifest_schema" =~ ^(2|3|4|5)$ ]] || {
+    echo "Packaged policy requires release manifest schema 2, 3, 4, or 5." >&2
     exit 1
 }
 [[ "$(field xmonad_version)" == xmonad_0.18.1 \
@@ -64,7 +64,7 @@ for config in "$xmonad_config" "$xmonad_cabal" "$xmonad_project" "$xmobar_config
         exit 1
     }
 done
-if [[ "$manifest_schema" =~ ^(3|4)$ ]]; then
+if [[ "$manifest_schema" =~ ^(3|4|5)$ ]]; then
     [[ -f "$xmonad_core_config" ]] || {
         echo "Packaged Engine theme configuration is missing: $xmonad_core_config" >&2
         exit 1
@@ -72,7 +72,7 @@ if [[ "$manifest_schema" =~ ^(3|4)$ ]]; then
     require_sha256 xmonad_core_config_sha256 \
         "$(sha256sum "$xmonad_core_config" | awk '{print $1}')"
 fi
-if [[ "$manifest_schema" == 4 ]]; then
+if [[ "$manifest_schema" =~ ^(4|5)$ ]]; then
     [[ -f "$xmonad_desktop_profile" ]] || {
         echo "Packaged xmonad desktop profile is missing: $xmonad_desktop_profile" >&2
         exit 1
@@ -101,6 +101,22 @@ case "$(field hagia_included)" in
             "$(sha256sum "$hagia" | awk '{print $1}')"
         require_sha256 hagia_shell_binary_sha256 \
             "$(sha256sum "$hagia_shell" | awk '{print $1}')"
+        if [[ "$manifest_schema" == 5 ]]; then
+            hagia_profile="$release/share/sophia-policy/hagia/default.kdl"
+            [[ -f "$hagia_profile" && ! -L "$hagia_profile" ]] || {
+                echo "Packaged Hagia default profile is missing: $hagia_profile" >&2
+                exit 1
+            }
+            [[ "$(field hagia_source_commit)" =~ ^[0-9a-f]{40}$ ]] || {
+                echo "Packaged Hagia source commit is invalid." >&2
+                exit 1
+            }
+            require_sha256 hagia_default_profile_sha256 \
+                "$(sha256sum "$hagia_profile" | awk '{print $1}')"
+            "$hagia" config check --config="$hagia_profile" >/dev/null
+            "$release/target/release/sophia" config check \
+                --desktop-profile="$hagia_profile" >/dev/null
+        fi
         ;;
     false) ;;
     *)

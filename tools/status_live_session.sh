@@ -76,6 +76,8 @@ print_latest_attempt installed_native_chrome \
     "$STATE_HOME/sophia/promotion/native-chrome-runs"
 print_latest_attempt installed_hagia \
     "$STATE_HOME/sophia/promotion/hagia-runs"
+print_latest_attempt installed_hagia_promotion \
+    "$STATE_HOME/sophia/promotion/hagia-promotion-runs"
 
 hagia_root="$STATE_HOME/sophia/promotion/hagia-runs"
 printf 'hagia_coverage_root=%s\n' "$hagia_root"

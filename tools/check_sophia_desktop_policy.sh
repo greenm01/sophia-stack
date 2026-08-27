@@ -58,7 +58,7 @@ grep -Fq 'SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"' \
     "$ROOT_DIR/tools/installed/sophia-session"
 grep -Fq 'SOPHIA_CORE_CONFIG="$RELEASE_DIR/share/sophia-policy/xmonad/core.kdl"' \
     "$ROOT_DIR/tools/installed/sophia-session"
-grep -Fq 'SOPHIA_DESKTOP_PROFILE="$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl"' \
+grep -Fq 'SOPHIA_DESKTOP_PROFILE="${SOPHIA_DESKTOP_PROFILE:-$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl}"' \
     "$ROOT_DIR/tools/installed/sophia-session"
 grep -Fq -- '--wm-interface=sophia_wm_v1' \
     "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
