@@ -38,10 +38,18 @@ artifact_commit="$(sed -n 's/^commit=//p' "$artifact/manifest" | head -n 1)"
 
 echo "Installing current Sophia commit: $commit"
 echo "Release artifact: $artifact"
+installed_release="$PREFIX/releases/$release_id"
+installer="$ROOT_DIR/tools/install_live_session.sh"
+installer_argument="$artifact"
+if [[ -d "$installed_release" ]]; then
+    echo "Immutable release already exists; verifying and re-activating it."
+    installer="$ROOT_DIR/tools/activate_live_session_release.sh"
+    installer_argument="$installed_release"
+fi
 if [[ "$(id -u)" == 0 ]]; then
-    exec "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
+    exec "$installer" "$installer_argument"
 fi
 if [[ "$PREFIX" != /opt/sophia ]]; then
-    exec "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
+    exec "$installer" "$installer_argument"
 fi
-exec sudo "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
+exec sudo "$installer" "$installer_argument"

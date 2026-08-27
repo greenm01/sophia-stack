@@ -51,6 +51,12 @@ tools/install_live_session.sh
 The command builds before requesting privilege, verifies every artifact
 digest, installs a new immutable directory below `/opt/sophia/releases`, and
 atomically updates `current` while retaining the former release as `previous`.
+If the exact immutable directory already exists but is not current, the same
+command verifies it in place, restores its operator-command links and greetd
+desktop entries, and re-activates it without overwriting release content. The
+explicit recovery form is
+`tools/activate_live_session_release.sh /opt/sophia/releases/RELEASE_ID`; it
+refuses artifacts and any directory outside that exact installed-release path.
 The artifact manifest records the configured xmonad and xmobar source
 identities plus their configuration and executable digests. A schema-5 Hagia
 artifact also records the signed Hagia source commit and canonical default

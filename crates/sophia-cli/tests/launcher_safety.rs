@@ -7,6 +7,7 @@ const INSTALLED_HAGIA_PROMOTION: &str =
 const INSTALLED_RECOVERY: &str = include_str!("../../../tools/installed/sophia-recovery-proof");
 const INSTALLED_TRUECOLOR: &str = include_str!("../../../tools/installed/sophia-truecolor-proof");
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
+const ACTIVATOR: &str = include_str!("../../../tools/activate_live_session_release.sh");
 const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
 
 fn offset(needle: &str) -> usize {
@@ -145,12 +146,15 @@ fn installed_watchdog_is_fixed_and_opt_in() {
 
 #[test]
 fn installer_preserves_a_rollback_pointer_before_activation() {
-    let preserve = INSTALLER
-        .find("ln -sfn \"$old_current\" \"$PREFIX/previous\"")
+    let verify = ACTIVATOR.find("sha256sum -c SHA256SUMS").unwrap();
+    let preserve = ACTIVATOR
+        .find("mv -Tf \"$previous_temp\" \"$PREFIX/previous\"")
         .unwrap();
-    let activate = INSTALLER
-        .find("ln -sfn \"releases/$release_id\" \"$PREFIX/current\"")
+    let activate = ACTIVATOR
+        .find("mv -Tf \"$current_temp\" \"$PREFIX/current\"")
         .unwrap();
+    assert!(verify < preserve);
     assert!(preserve < activate);
     assert!(INSTALLER.contains("sha256sum -c SHA256SUMS"));
+    assert!(INSTALLER.contains("activate_live_session_release.sh"));
 }

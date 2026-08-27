@@ -308,6 +308,7 @@ bash -n tools/build_sophia_xmonad.sh tools/build_sophia_xmobar.sh \
     tools/verify_packaged_policy.sh tools/check_sophia_desktop_policy.sh
 tools/check_sophia_desktop_policy.sh
 bash -n tools/package_live_session.sh tools/install_live_session.sh \
+    tools/activate_live_session_release.sh \
     tools/install_current_live_session.sh tools/run_installed_cycle_gate_tty3.sh
 tools/run_installed_cycle_gate_tty3.sh --self-test
 grep -Fq 'exec {SESSION_INPUT_FD}<&0' tools/run_installed_cycle_gate_tty3.sh

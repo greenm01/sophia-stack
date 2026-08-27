@@ -152,6 +152,7 @@ hagia_digest="$(sha256sum "$hagia_artifact/target/release/hagia" | awk '{print $
 hagia_shell_digest="$(sha256sum "$hagia_artifact/target/release/hagia-shell" | awk '{print $1}')"
 hagia_profile_digest="$(sha256sum "$hagia_artifact/share/sophia-policy/hagia/default.kdl" | awk '{print $1}')"
 sed -i 's/^schema=4$/schema=5/' "$hagia_artifact/manifest"
+sed -i 's/^release_id=0001$/release_id=0003/' "$hagia_artifact/manifest"
 sed -i 's/^hagia_included=false$/hagia_included=true/' "$hagia_artifact/manifest"
 printf 'hagia_source_commit=%040d\nhagia_default_profile_sha256=%s\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
     1 "$hagia_profile_digest" "$hagia_digest" "$hagia_shell_digest" \
@@ -241,7 +242,11 @@ hagia_sessions="$TEMP_DIR/hagia/sessions"
 hagia_commands="$TEMP_DIR/hagia/commands"
 env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
     SOPHIA_COMMAND_DIR="$hagia_commands" \
+    "$ROOT_DIR/tools/install_live_session.sh" "$first"
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" \
     "$ROOT_DIR/tools/install_live_session.sh" "$hagia_artifact"
+[[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
 grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-session" \
     "$hagia_sessions/sophia-hagia.desktop"
 grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-promotion-session" \
@@ -250,6 +255,34 @@ for command in sophia-hagia-session sophia-hagia-promotion-session \
     sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
     [[ "$(readlink "$hagia_commands/$command")" == "$hagia_prefix/current/bin/$command" ]]
 done
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" "$hagia_commands/sophia-rollback"
+[[ "$(readlink "$hagia_prefix/current")" == releases/0001 ]]
+[[ "$(readlink "$hagia_prefix/previous")" == releases/0003 ]]
+rm -f "$hagia_sessions/sophia-hagia-promotion.desktop"
+ln -sfn /missing "$hagia_commands/sophia-hagia-promotion-session"
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" \
+    "$ROOT_DIR/tools/activate_live_session_release.sh" \
+    "$hagia_prefix/releases/0003"
+[[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
+[[ "$(readlink "$hagia_prefix/previous")" == releases/0001 ]]
+grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-promotion-session" \
+    "$hagia_sessions/sophia-hagia-promotion.desktop"
+[[ "$(readlink "$hagia_commands/sophia-hagia-promotion-session")" == \
+    "$hagia_prefix/current/bin/sophia-hagia-promotion-session" ]]
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" \
+    "$ROOT_DIR/tools/activate_live_session_release.sh" \
+    "$hagia_prefix/releases/0003"
+[[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
+[[ "$(readlink "$hagia_prefix/previous")" == releases/0001 ]]
+if env SOPHIA_INSTALL_PREFIX="$hagia_prefix" \
+    SOPHIA_SESSION_DIR="$hagia_sessions" SOPHIA_COMMAND_DIR="$hagia_commands" \
+    "$ROOT_DIR/tools/activate_live_session_release.sh" "$hagia_artifact" \
+    >/dev/null 2>&1; then
+    echo "activation accepted an artifact outside the immutable install prefix" >&2
+    exit 1
+fi
 operator_state="$TEMP_DIR/operator-state"
 install -d -m 700 "$operator_state/sophia/promotion/runs/0001"
 install -d -m 700 "$operator_state/sophia/promotion/xterm-runs/0001"
@@ -356,6 +389,10 @@ sed -i \
     cd "$current_artifact"
     find bin share target tools -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
 )
+env SOPHIA_INSTALL_PREFIX="$current_prefix" \
+    SOPHIA_SESSION_DIR="$current_session_dir" \
+    SOPHIA_COMMAND_DIR="$current_command_dir" \
+    "$ROOT_DIR/tools/install_live_session.sh" "$first"
 env \
     SOPHIA_ARTIFACT_ROOT="$current_artifact_root" \
     SOPHIA_INSTALL_PREFIX="$current_prefix" \
@@ -365,5 +402,15 @@ env \
 [[ "$(readlink "$current_prefix/current")" == "releases/$current_release" ]]
 grep -Fxq "commit=$current_commit" "$current_prefix/current/manifest"
 [[ -f "$current_prefix/current/share/doc/sophia/operations.md" ]]
+env SOPHIA_INSTALL_PREFIX="$current_prefix" "$current_command_dir/sophia-rollback"
+[[ "$(readlink "$current_prefix/current")" == releases/0001 ]]
+env \
+    SOPHIA_ARTIFACT_ROOT="$current_artifact_root" \
+    SOPHIA_INSTALL_PREFIX="$current_prefix" \
+    SOPHIA_SESSION_DIR="$current_session_dir" \
+    SOPHIA_COMMAND_DIR="$current_command_dir" \
+    "$ROOT_DIR/tools/install_live_session.sh"
+[[ "$(readlink "$current_prefix/current")" == "releases/$current_release" ]]
+[[ "$(readlink "$current_prefix/previous")" == releases/0001 ]]
 
 echo "live-session staged install and rollback checks passed"

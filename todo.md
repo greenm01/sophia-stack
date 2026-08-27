@@ -355,6 +355,15 @@ lives rather than restating it; this is a priority index, not a second roadmap.
 3. **Complete.** API v7 and Engine-owned workspace policy are removed. The
    public Hagia, xmonad adapter, archived-client, and protocol gates remain
    green. Package a new installed candidate next.
+4. **In progress.** Promote schema-5 release `0.1.0-50c7cb2d2d54` through
+   `Sophia Hagia Promotion (Packaged Default)`. The first intended login instead
+   archived attempt `0006` from old schema-3 release
+   `0.1.0-66a279286bdd`; its emergency exit is recovery evidence, not a
+   promotion result. Installation recovery now verifies and re-activates an
+   already-present immutable release, repairs operator links and greetd entries,
+   and preserves rollback. Refresh greetd from that activation, complete the
+   packaged-default physical run, then verify and archive it before beginning
+   Milestone 14.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
