@@ -51,17 +51,18 @@ Milestones 9 through 12 are complete historical evidence for the xmonad
 compatibility profile and are archived in `docs/roadmap-history.md`. Their
 bounded lifecycle, recovery, color, work-area, and soak artifacts remain
 reproducible regressions, but elapsed wall time is not a current promotion
-criterion. Milestone 13 owns the active product path. Hagia is already the
-ordinary remembered installed session: it passed bounded deterministic
-preflight as attempt `0004`, records every real session automatically, and
-leaves Kitty, xmonad, and the previous immutable release available for
-recovery. The retained Triad behavior port is complete and `sophia_wm_v1`
-interface major 1, wire revision 3 is frozen. API v7 and its Engine-owned
-workspace policy are removed. The next Milestone 13 critical path is a new
-packaged installed candidate. That successor packages Hagia's signed generic
-default rather than mutable personal configuration, keeps XDG profiles in the
-ordinary dogfooding entry, and uses a separate packaged-default promotion
-entry with profile-aware immutable evidence.
+criterion. Milestone 13's installed product path is complete. Hagia is the
+ordinary remembered installed session, records every real session
+automatically, and leaves Kitty, xmonad, and the previous immutable release
+available for recovery. The retained Triad behavior port is complete;
+`sophia_wm_v1` interface major 1, wire revision 3 is frozen; and API v7 plus its
+Engine-owned workspace policy are removed. Schema-5 packaged-promotion archive
+`0002` binds signed Sophia source `66792329d90d64e26af839dfe494c74d94323c6a`
+to Hagia's signed generic default, proves the repaired GLX first-pixel admission
+through sustained final-extent presentation, and ends with normal Logout and
+clean health. Mutable XDG policy remains confined to the ordinary dogfooding
+entry. Milestone 14's bounded visual-retirement model is now the active product
+step.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -354,8 +355,8 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    reload, and other excluded behavior remain explicit post-freeze work.
 3. **Complete.** API v7 and Engine-owned workspace policy are removed. The
    public Hagia, xmonad adapter, archived-client, and protocol gates remain
-   green. Package a new installed candidate next.
-4. **In progress.** Promote the next schema-5 successor through `Sophia Hagia
+   green. Row 4 promotes their schema-5 installed successor.
+4. **Complete.** Promote the next schema-5 successor through `Sophia Hagia
    Promotion (Packaged Default)`. The first intended login instead archived
    attempt `0006` from old schema-3 release `0.1.0-66a279286bdd`; its emergency
    exit is recovery evidence, not a promotion result. Installation recovery now
@@ -368,10 +369,16 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    correctly deferred from that epoch, but candidate selection neither primed
    its admission extent nor queued a successor while any epoch was pending.
    Candidate selection now primes its measured safe extent and queues recovery
-   unless the current epoch owns that exact surface and size. Package and
-   activate the signed successor, then require the GLX candidate to stage, arm,
-   retire visibly, and reach the standing policy target before normal logout.
-   Verify and archive that installed run before beginning Milestone 14.
+   unless the current epoch owns that exact surface and size. Signed successor
+   `66792329d90d64e26af839dfe494c74d94323c6a` produced independently verified
+   packaged-promotion archive `0002`: the 300-by-300 first GLX candidate primed,
+   armed, committed, and retired, its 1278-by-1424 standing target committed,
+   772 GLX presentations retired, and normal Logout finished with zero protocol
+   errors and clean lifecycle health.
+5. **Next.** Begin Milestone 14 with its model-first boundary: extend the bounded
+   visual-retirement model for out-of-order output retirement, supersession,
+   fallback, and release safety before changing frame slots, coalescing,
+   multi-output workers, direct scanout, or buffer lifetimes.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
