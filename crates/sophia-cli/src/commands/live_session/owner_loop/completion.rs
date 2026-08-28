@@ -394,7 +394,7 @@
     // millisecond-rounded percentile cannot be compared against it honestly.
     if let Some(summary) = input_latency_samples.summary() {
         println!(
-            "sophia_live_input_latency_distribution schema=1 status=complete source=libinput_to_kernel_page_flip samples={} evicted={} abandoned={} unsettled={} min_usec={} p50_usec={} p95_usec={} p99_usec={} max_usec={} max_queue_dwell_usec={} max_submit_to_page_flip_usec={}",
+            "sophia_live_input_latency_distribution schema=2 status=complete source=libinput_to_kernel_page_flip samples={} evicted={} abandoned={} unsettled={} min_usec={} p50_usec={} p95_usec={} p99_usec={} max_usec={} max_queue_dwell_usec={} max_submit_to_page_flip_usec={} p99_submit_to_page_flip_usec={} p99_dwell_to_submit_usec={} max_dwell_to_submit_usec={}",
             summary.samples,
             summary.evicted,
             summary.abandoned,
@@ -406,6 +406,9 @@
             summary.max_usec,
             summary.max_queue_dwell_usec,
             summary.max_submit_to_page_flip_usec,
+            summary.p99_submit_to_page_flip_usec,
+            summary.p99_dwell_to_submit_usec,
+            summary.max_dwell_to_submit_usec,
         );
         std::io::stdout().flush()?;
     }

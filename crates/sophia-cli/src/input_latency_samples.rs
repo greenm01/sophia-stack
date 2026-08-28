@@ -129,6 +129,26 @@ impl InputLatencySamples {
             .map(|sample| sample.full_chain_usec)
             .collect();
         full_chain.sort_unstable();
+        // Stage populations, for the stage contract at p99. Dwell-to-submit
+        // is derived per press: what remains of the chain after queue dwell
+        // and the vblank wait is the pipeline's own share.
+        let mut submit_to_page_flip: Vec<u64> = self
+            .settled
+            .iter()
+            .map(|sample| sample.submit_to_page_flip_usec)
+            .collect();
+        submit_to_page_flip.sort_unstable();
+        let mut dwell_to_submit: Vec<u64> = self
+            .settled
+            .iter()
+            .map(|sample| {
+                sample
+                    .full_chain_usec
+                    .saturating_sub(sample.queue_dwell_usec)
+                    .saturating_sub(sample.submit_to_page_flip_usec)
+            })
+            .collect();
+        dwell_to_submit.sort_unstable();
         Some(InputLatencySummary {
             samples: full_chain.len(),
             evicted: self.evicted,
@@ -145,12 +165,10 @@ impl InputLatencySamples {
                 .map(|sample| sample.queue_dwell_usec)
                 .max()
                 .unwrap_or(0),
-            max_submit_to_page_flip_usec: self
-                .settled
-                .iter()
-                .map(|sample| sample.submit_to_page_flip_usec)
-                .max()
-                .unwrap_or(0),
+            max_submit_to_page_flip_usec: *submit_to_page_flip.last().expect("nonempty"),
+            p99_submit_to_page_flip_usec: percentile_usec(&submit_to_page_flip, 99),
+            p99_dwell_to_submit_usec: percentile_usec(&dwell_to_submit, 99),
+            max_dwell_to_submit_usec: *dwell_to_submit.last().expect("nonempty"),
         })
     }
 }
@@ -168,6 +186,9 @@ pub struct InputLatencySummary {
     pub p99_usec: u64,
     pub max_queue_dwell_usec: u64,
     pub max_submit_to_page_flip_usec: u64,
+    pub p99_submit_to_page_flip_usec: u64,
+    pub p99_dwell_to_submit_usec: u64,
+    pub max_dwell_to_submit_usec: u64,
 }
 
 /// Nearest-rank percentile over an ascending slice, matching the ceil-rank

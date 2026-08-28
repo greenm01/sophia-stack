@@ -2071,7 +2071,14 @@ other mature compositors are references rather than Sophia runtime components.
 - [ ] Keep one latest pending frame and one KMS submission in flight per head,
   and prove the 2026-07-31 stage contract at p99 against the measured refresh:
   full chain below two refresh periods, queue dwell within 1 ms,
-  dwell-to-submit and submit-to-page-flip each within one refresh.
+  dwell-to-submit within one refresh, and submit-to-page-flip within one
+  refresh plus one millisecond of commit-and-completion jitter -- a press
+  arriving just after a vblank waits the full period, and the atomic commit
+  and completion event add time no pipeline can remove, so the flip stage's
+  bound carries the allowance explicitly rather than pretending the period
+  alone is achievable. Stage percentiles come from the pooled in-session
+  press distributions, never from the one-shot correlation, whose stage
+  split measures gap phase once presses are spaced.
   This row originally said "half a refresh period at p99" for the full chain.
   That is stricter than the one-refresh bound the 2026-07-31 entry already
   rejected on physical evidence -- a randomly phased input can spend nearly a

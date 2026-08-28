@@ -60,6 +60,9 @@ distribution_p99_worst_usec=0
 distribution_max_worst_usec=0
 distribution_dwell_worst_usec=0
 distribution_flip_worst_usec=0
+distribution_stage_p99s=0
+distribution_p99_flip_worst_usec=0
+distribution_p99_dwell_worst_usec=0
 observed_refresh_msec=0
 max_queue_dwell=0
 max_dwell_to_submit=0
@@ -102,8 +105,8 @@ for session_log in "$@"; do
     # A session that sampled repeatedly carries its own population. Prefer it:
     # one full-chain value per session cannot describe a tail, and a p99 over
     # a handful of sessions is just their maximum wearing a percentile's name.
-    distribution_line="$(grep -F \
-        'sophia_live_input_latency_distribution schema=1 status=complete ' \
+    distribution_line="$(grep -E \
+        '^sophia_live_input_latency_distribution schema=[12] status=complete ' \
         "$session_log" || true)"
     if [[ -n "$distribution_line" ]]; then
         [[ "$(field "$distribution_line" source)" == libinput_to_kernel_page_flip ]] ||
@@ -128,6 +131,18 @@ for session_log in "$@"; do
             distribution_dwell_worst_usec=$distribution_dwell_usec
         ((distribution_flip_usec > distribution_flip_worst_usec)) &&
             distribution_flip_worst_usec=$distribution_flip_usec
+        # Schema 2 carries per-stage percentiles, which is what the stage
+        # contract is gated on. Schema-1 evidence predates them and falls
+        # back to the maxima below.
+        p99_flip="$(field "$distribution_line" p99_submit_to_page_flip_usec || true)"
+        p99_dwell="$(field "$distribution_line" p99_dwell_to_submit_usec || true)"
+        if [[ "$p99_flip" =~ ^[0-9]+$ && "$p99_dwell" =~ ^[0-9]+$ ]]; then
+            distribution_stage_p99s=1
+            ((p99_flip > distribution_p99_flip_worst_usec)) &&
+                distribution_p99_flip_worst_usec=$p99_flip
+            ((p99_dwell > distribution_p99_dwell_worst_usec)) &&
+                distribution_p99_dwell_worst_usec=$p99_dwell
+        fi
     fi
 
     # Refresh is a property of the display, not of the harness. Take it from
@@ -199,11 +214,30 @@ fi
 if ((max_queue_dwell > MAX_QUEUE_DWELL_MSEC)); then
     failed_gates+=(queue_dwell)
 fi
-if ((max_dwell_to_submit > MAX_DWELL_TO_SUBMIT_MSEC)); then
-    failed_gates+=(dwell_to_submit)
-fi
-if ((max_submit_to_flip > MAX_SUBMIT_TO_FLIP_MSEC)); then
-    failed_gates+=(submit_to_page_flip)
+# The stage contract holds at p99, and its populations come from the
+# in-session distributions when the evidence carries them. The one-shot
+# stage maxima remain printed as diagnostics but stop failing the run: with
+# spaced presses the one-shot correlates only after the whole sequence
+# delivered, so its stage split measures the gap phase, not the pipeline.
+# The flip stage carries a one-millisecond allowance over the refresh,
+# because a press arriving just after a vblank waits the full period and
+# the commit and completion add real time no pipeline can remove.
+if ((distribution_stage_p99s == 1)); then
+    stage_dwell_msec=$(((distribution_p99_dwell_worst_usec + 999) / 1000))
+    stage_flip_msec=$(((distribution_p99_flip_worst_usec + 999) / 1000))
+    if ((stage_dwell_msec > MAX_DWELL_TO_SUBMIT_MSEC)); then
+        failed_gates+=(dwell_to_submit_p99)
+    fi
+    if ((stage_flip_msec > MAX_SUBMIT_TO_FLIP_MSEC + 1)); then
+        failed_gates+=(submit_to_page_flip_p99)
+    fi
+else
+    if ((max_dwell_to_submit > MAX_DWELL_TO_SUBMIT_MSEC)); then
+        failed_gates+=(dwell_to_submit)
+    fi
+    if ((max_submit_to_flip > MAX_SUBMIT_TO_FLIP_MSEC)); then
+        failed_gates+=(submit_to_page_flip)
+    fi
 fi
 if ((${#failed_gates[@]} > 0)); then
     status=failed
@@ -214,11 +248,19 @@ if ((${#failed_gates[@]} > 0)); then
     printf -v failed_gate_summary '%s,' "${failed_gates[@]}"
     failed_gate_summary="${failed_gate_summary%,}"
 fi
-printf 'sophia_input_latency_report schema=3 status=%s failed_gates=%s samples=%s percentile_source=%s refresh_source=%s p99_msec=%s max_msec=%s refresh_msec=%s end_to_end_budget_refreshes=%s end_to_end_budget_msec=%s max_queue_dwell_msec=%s queue_dwell_budget_msec=%s max_dwell_to_submit_msec=%s dwell_to_submit_budget_msec=%s max_submit_to_page_flip_msec=%s submit_to_page_flip_budget_msec=%s\n' \
+stage_source=one_shot_max
+p99_dwell_to_submit_msec=$max_dwell_to_submit
+p99_submit_to_page_flip_msec=$max_submit_to_flip
+if ((distribution_stage_p99s == 1)); then
+    stage_source=distribution_p99
+    p99_dwell_to_submit_msec=$(((distribution_p99_dwell_worst_usec + 999) / 1000))
+    p99_submit_to_page_flip_msec=$(((distribution_p99_flip_worst_usec + 999) / 1000))
+fi
+printf 'sophia_input_latency_report schema=4 status=%s failed_gates=%s samples=%s percentile_source=%s stage_source=%s refresh_source=%s p99_msec=%s max_msec=%s refresh_msec=%s end_to_end_budget_refreshes=%s end_to_end_budget_msec=%s max_queue_dwell_msec=%s queue_dwell_budget_msec=%s p99_dwell_to_submit_msec=%s max_dwell_to_submit_msec=%s dwell_to_submit_budget_msec=%s p99_submit_to_page_flip_msec=%s max_submit_to_page_flip_msec=%s submit_to_page_flip_budget_msec=%s submit_to_page_flip_jitter_msec=1\n' \
     "$status" "$failed_gate_summary" "$samples" "$percentile_source" \
-    "$refresh_source" "$p99_msec" "$maximum" \
+    "$stage_source" "$refresh_source" "$p99_msec" "$maximum" \
     "$REFRESH_MSEC" "$END_TO_END_REFRESHES" "$END_TO_END_BUDGET_MSEC" \
     "$max_queue_dwell" "$MAX_QUEUE_DWELL_MSEC" \
-    "$max_dwell_to_submit" "$MAX_DWELL_TO_SUBMIT_MSEC" \
-    "$max_submit_to_flip" "$MAX_SUBMIT_TO_FLIP_MSEC"
+    "$p99_dwell_to_submit_msec" "$max_dwell_to_submit" "$MAX_DWELL_TO_SUBMIT_MSEC" \
+    "$p99_submit_to_page_flip_msec" "$max_submit_to_flip" "$MAX_SUBMIT_TO_FLIP_MSEC"
 exit "$exit_status"

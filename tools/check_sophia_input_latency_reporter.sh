@@ -11,6 +11,8 @@ DISTRIBUTION_SAMPLES="${DISTRIBUTION_SAMPLES:-400}"
 DISTRIBUTION_P99_USEC="${DISTRIBUTION_P99_USEC:-9000}"
 DISTRIBUTION_DWELL_USEC="${DISTRIBUTION_DWELL_USEC:-1000}"
 DISTRIBUTION_FLIP_USEC="${DISTRIBUTION_FLIP_USEC:-5000}"
+DISTRIBUTION_P99_FLIP_USEC="${DISTRIBUTION_P99_FLIP_USEC:-4000}"
+DISTRIBUTION_P99_DWELL_TO_SUBMIT_USEC="${DISTRIBUTION_P99_DWELL_TO_SUBMIT_USEC:-4000}"
 REFRESH_MILLIHZ="${REFRESH_MILLIHZ:-60000}"
 
 write_sample() {
@@ -27,7 +29,7 @@ write_distribution_sample() {
     write_sample "$path" "$latency"
     printf '%s\n' \
         "sophia_live_native_head schema=2 status=ready output=1 head=1 connector=DP-1 connector_id=1 mode=2560x1440 refresh_millihz=$REFRESH_MILLIHZ mirrored=false" \
-        "sophia_live_input_latency_distribution schema=1 status=complete source=libinput_to_kernel_page_flip samples=$DISTRIBUTION_SAMPLES evicted=0 abandoned=0 unsettled=0 min_usec=2000 p50_usec=4000 p95_usec=6000 p99_usec=$DISTRIBUTION_P99_USEC max_usec=12000 max_queue_dwell_usec=$DISTRIBUTION_DWELL_USEC max_submit_to_page_flip_usec=$DISTRIBUTION_FLIP_USEC" \
+        "sophia_live_input_latency_distribution schema=2 status=complete source=libinput_to_kernel_page_flip samples=$DISTRIBUTION_SAMPLES evicted=0 abandoned=0 unsettled=0 min_usec=2000 p50_usec=4000 p95_usec=6000 p99_usec=$DISTRIBUTION_P99_USEC max_usec=12000 max_queue_dwell_usec=$DISTRIBUTION_DWELL_USEC max_submit_to_page_flip_usec=$DISTRIBUTION_FLIP_USEC p99_submit_to_page_flip_usec=$DISTRIBUTION_P99_FLIP_USEC p99_dwell_to_submit_usec=$DISTRIBUTION_P99_DWELL_TO_SUBMIT_USEC max_dwell_to_submit_usec=8000" \
         >>"$path"
 }
 
@@ -42,7 +44,7 @@ done
 # environment; the percentile comes from the sessions' own distributions.
 report="$("$ROOT_DIR/tools/report_sophia_input_latency.sh" "${logs[@]}")"
 grep -Fq \
-    'sophia_input_latency_report schema=3 status=passed failed_gates=none samples=8000 percentile_source=distribution refresh_source=measured p99_msec=9 max_msec=12 refresh_msec=17 end_to_end_budget_refreshes=2 end_to_end_budget_msec=34 max_queue_dwell_msec=1 queue_dwell_budget_msec=1 max_dwell_to_submit_msec=2 dwell_to_submit_budget_msec=17 max_submit_to_page_flip_msec=5 submit_to_page_flip_budget_msec=17' \
+    'sophia_input_latency_report schema=4 status=passed failed_gates=none samples=8000 percentile_source=distribution stage_source=distribution_p99 refresh_source=measured p99_msec=9 max_msec=12 refresh_msec=17 end_to_end_budget_refreshes=2 end_to_end_budget_msec=34 max_queue_dwell_msec=1 queue_dwell_budget_msec=1 p99_dwell_to_submit_msec=4 max_dwell_to_submit_msec=2 dwell_to_submit_budget_msec=17 p99_submit_to_page_flip_msec=4 max_submit_to_page_flip_msec=5 submit_to_page_flip_budget_msec=17 submit_to_page_flip_jitter_msec=1' \
     <<<"$report"
 
 # Rebuild the fixture with one distribution parameter changed, so each control
@@ -84,8 +86,34 @@ reject "a p99 over too few samples" "insufficient_samples"
 DISTRIBUTION_DWELL_USEC=2000 rebuild
 reject "excessive queue dwell" "failed_gates=queue_dwell"
 
+# A stage maximum is one press's worst; with stage percentiles present it
+# informs but does not gate. A press just after a vblank waits the full
+# refresh, so a max above it is expected physics.
 DISTRIBUTION_FLIP_USEC=18000 rebuild
-reject "excessive submit-to-flip latency" "submit_to_page_flip"
+report="$("$ROOT_DIR/tools/report_sophia_input_latency.sh" "${logs[@]}")"
+grep -Fq 'status=passed' <<<"$report" || {
+    echo "a stage maximum failed a run despite stage percentiles" >&2
+    echo "  observed: $report" >&2
+    exit 1
+}
+
+# The stage contract bites at p99: dwell-to-submit within one refresh, and
+# submit-to-flip within one refresh plus a millisecond of commit and
+# completion jitter.
+DISTRIBUTION_P99_DWELL_TO_SUBMIT_USEC=18000 rebuild
+reject "a dwell-to-submit p99 above one refresh" "dwell_to_submit_p99"
+
+DISTRIBUTION_P99_FLIP_USEC=19000 rebuild
+reject "a submit-to-flip p99 above one refresh plus jitter" "submit_to_page_flip_p99"
+
+# Exactly at the jitter allowance is within the contract.
+DISTRIBUTION_P99_FLIP_USEC=18000 rebuild
+report="$("$ROOT_DIR/tools/report_sophia_input_latency.sh" "${logs[@]}")"
+grep -Fq 'status=passed' <<<"$report" || {
+    echo "a flip p99 at the jitter allowance was refused" >&2
+    echo "  observed: $report" >&2
+    exit 1
+}
 
 # A faster display tightens every derived budget: at 144 Hz two refreshes are
 # 14 ms, so a 9 ms p99 passes but the 17 ms-derived budget no longer applies.

@@ -172,4 +172,35 @@ fn a_summary_orders_its_percentiles() {
     // The tail is what a p99 exists to see: a p95 would miss these three.
     assert_eq!(summary.p95_usec, 4_000);
     assert_eq!(summary.p99_usec, 40_000);
+    // The stage populations carry their own percentiles, because the stage
+    // contract is gated at p99 and a stage maximum is one press's worst.
+    assert!(summary.p99_submit_to_page_flip_usec <= summary.max_submit_to_page_flip_usec);
+    assert!(summary.p99_dwell_to_submit_usec <= summary.max_dwell_to_submit_usec);
+}
+
+#[test]
+fn stage_percentiles_come_from_their_own_populations() {
+    // One straggler in each stage: the maxima see it, the p99 over a large
+    // population does not. Press latencies are dwell 500 + submit-to-flip,
+    // with dwell-to-submit as the derived remainder.
+    let mut samples = InputLatencySamples::new();
+    for index in 0..200_u64 {
+        let baseline = index as usize;
+        let flip_wait = if index == 0 { 30_000 } else { 2_000 };
+        let dwell_to_submit = if index == 1 { 25_000 } else { 4_000 };
+        let submit_ust = index * 100_000 + 500 + dwell_to_submit;
+        samples.observe_press(press(index, index * 100_000, baseline));
+        samples.observe_page_flip(
+            baseline + 1,
+            1_000 + index,
+            submit_ust,
+            submit_ust + flip_wait,
+        );
+    }
+    let summary = samples.summary().expect("settled samples");
+    assert_eq!(summary.samples, 200);
+    assert_eq!(summary.max_submit_to_page_flip_usec, 30_000);
+    assert_eq!(summary.p99_submit_to_page_flip_usec, 2_000);
+    assert_eq!(summary.max_dwell_to_submit_usec, 25_000);
+    assert_eq!(summary.p99_dwell_to_submit_usec, 4_000);
 }
