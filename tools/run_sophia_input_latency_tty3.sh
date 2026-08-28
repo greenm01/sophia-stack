@@ -19,6 +19,14 @@ MAX_DWELL_TO_SUBMIT_MSEC="${SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC:-}"
 MAX_SUBMIT_TO_FLIP_MSEC="${SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC:-}"
 KEY_INTERVAL_MSEC=0
 MAX_SESSION_START_ATTEMPTS=3
+# How long one sample's session may run after injection is triggered.
+#
+# `SOPHIA_LIVE_SESSION_RUNTIME_MSEC` does not bound this: with an input proof
+# requested, the global runtime deadline only bounds startup and never ends the
+# session (`global_runtime_deadline_ends_session`). So a proof that never
+# completes leaves the session running and this script waiting on it forever,
+# which is what a hung run looks like from the outside.
+PROOF_TIMEOUT_SECONDS="${SOPHIA_INPUT_LATENCY_PROOF_TIMEOUT_SECONDS:-90}"
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 ARCHIVE_ROOT="$STATE_HOME/sophia/rendering-benchmarks/$COMMIT/input-latency"
@@ -121,9 +129,67 @@ environment variables.
 EOF
     exit 0
 fi
+terminate_proof() {
+    local pid="$1"
+    [[ -n "$pid" ]] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    local deadline=$((SECONDS + 5))
+    while kill -0 "$pid" 2>/dev/null && ((SECONDS < deadline)); do
+        sleep 0.05
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        pkill -KILL -P "$pid" 2>/dev/null || true
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+}
+
+check_proof_termination() {
+    # The failure this bounds is a session that will not exit on its own, so
+    # the tree must ignore TERM at every level. An earlier version of this
+    # check had only the parent ignore it: its child `sleep` died on TERM and
+    # took the parent down with it, so the escalation never ran and the check
+    # passed even with the KILL path removed.
+    local parent child
+    bash -c 'trap "" TERM
+             bash -c '"'"'trap "" TERM; echo $$ >"$1"; while :; do sleep 1; done'"'"' _ "$1" &
+             wait' _ "$PROOF_TEST_CHILD_FILE" &
+    parent=$!
+    local ready=$((SECONDS + 5))
+    while [[ ! -s "$PROOF_TEST_CHILD_FILE" ]] && ((SECONDS < ready)); do
+        sleep 0.05
+    done
+    child="$(<"$PROOF_TEST_CHILD_FILE")"
+    [[ -n "$child" ]] || fail "self-test child never started"
+
+    terminate_proof "$parent"
+    # Bounded, because an unbounded wait here is the very defect under test: a
+    # terminator that fails to kill leaves this check hanging instead of
+    # reporting, which is how a broken escalation would look like a slow pass.
+    local settled=$((SECONDS + 5))
+    while kill -0 "$parent" 2>/dev/null && ((SECONDS < settled)); do
+        sleep 0.05
+    done
+
+    if kill -0 "$parent" 2>/dev/null; then
+        kill -KILL "$parent" 2>/dev/null || true
+        kill -KILL "$child" 2>/dev/null || true
+        fail "terminate_proof left a TERM-ignoring session running"
+    fi
+    if kill -0 "$child" 2>/dev/null; then
+        kill -KILL "$child" 2>/dev/null || true
+        fail "terminate_proof left the session's child running"
+    fi
+    printf 'sophia_input_latency_runner schema=1 status=self_test_passed check=proof_termination\n'
+}
+
 if [[ "${1:-}" == --self-test ]]; then
     [[ $# -eq 1 ]] || fail "--self-test does not accept additional arguments"
     check_retry_classifier
+    PROOF_TEST_CHILD_FILE="$(mktemp)"
+    trap 'rm -f -- "$PROOF_TEST_CHILD_FILE"' EXIT
+    check_proof_termination
     exit 0
 fi
 [[ $# -eq 0 ]] || fail "unexpected arguments (use --help)"
@@ -156,7 +222,9 @@ done
 mkdir -p "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
-trap 'preserve_pending $?' EXIT
+# A run interrupted at the console must not leave a session holding the GPU.
+trap 'terminate_proof "${PROOF_PID:-}"; kill "${INJECTOR_PID:-}" 2>/dev/null || true; preserve_pending $?' EXIT
+
 printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_MSEC" \
     "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
@@ -249,6 +317,22 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
 
     : >"$trigger_file"
     chmod 600 "$trigger_file"
+
+    proof_deadline=$((SECONDS + PROOF_TIMEOUT_SECONDS))
+    while kill -0 "$PROOF_PID" 2>/dev/null; do
+        if ((SECONDS >= proof_deadline)); then
+            terminate_proof "$PROOF_PID"
+            set +e
+            wait "$PROOF_PID"
+            set -e
+            PROOF_PID=
+            kill "$INJECTOR_PID" 2>/dev/null || true
+            wait "$INJECTOR_PID" 2>/dev/null || true
+            INJECTOR_PID=
+            fail "Sophia did not complete the input proof for sample $sample within ${PROOF_TIMEOUT_SECONDS}s"
+        fi
+        sleep 0.05
+    done
 
     set +e
     wait "$PROOF_PID"
