@@ -50,7 +50,8 @@ where
             self.destroy_persistent_composition_target(persistent);
         }
         if let Some(persistent) = self.composition_target.as_mut() {
-            let capture_pixels = native_composition_pixel_proof_capture(
+            let capture_pixels = self.capture_pixels_always
+                || native_composition_pixel_proof_capture(
                 self.composition_pixel_proof_attempts,
                 frame.layers.len(),
             );
@@ -141,7 +142,8 @@ where
             };
             self.stats.composition_target_creations =
                 self.stats.composition_target_creations.saturating_add(1);
-            let capture_pixels = native_composition_pixel_proof_capture(
+            let capture_pixels = self.capture_pixels_always
+                || native_composition_pixel_proof_capture(
                 self.composition_pixel_proof_attempts,
                 frame.layers.len(),
             );

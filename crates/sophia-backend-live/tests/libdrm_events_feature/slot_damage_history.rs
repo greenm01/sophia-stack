@@ -290,3 +290,79 @@ fn slot_damage_history_owes_nothing_for_a_scene_its_buffer_already_holds() {
 }
 
 
+
+#[test]
+fn worker_slot_damage_disabled_offers_no_table() {
+    let mut damage = WorkerSlotDamage::with_enabled(false);
+    let snapshot = slot_damage_snapshot([1, 1, 1, 1]);
+    damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
+
+    assert!(
+        damage
+            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .is_none()
+    );
+}
+
+#[test]
+fn worker_slot_damage_offers_a_table_only_with_history() {
+    let mut damage = WorkerSlotDamage::with_enabled(true);
+    let first = slot_damage_snapshot([1, 1, 1, 1]);
+    let second = slot_damage_snapshot([2, 1, 1, 1]);
+
+    assert!(
+        damage
+            .repaint_table(slot(0), Some(&first), SLOT_DAMAGE_OUTPUT)
+            .is_none()
+    );
+
+    damage.settle(slot(0), true, Some(7), Some(first.clone()));
+    let table = damage
+        .repaint_table(slot(0), Some(&second), SLOT_DAMAGE_OUTPUT)
+        .expect("one recorded write yields an age-one plan");
+    assert!(table.damage_for_age(1).is_some());
+    assert!(table.damage_for_age(2).is_none());
+}
+
+#[test]
+fn worker_slot_damage_forgets_a_rebuilt_bundle() {
+    let mut damage = WorkerSlotDamage::with_enabled(true);
+    let snapshot = slot_damage_snapshot([1, 1, 1, 1]);
+    damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
+    assert!(
+        damage
+            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .is_some()
+    );
+
+    // Same slot, new bundle generation: the buffers the history describes are
+    // gone, so the settle records the new write against an invalidated slot.
+    damage.settle(slot(0), true, Some(8), Some(snapshot.clone()));
+    assert_eq!(damage.metrics().invalidations, 1);
+    assert!(
+        damage
+            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .is_some(),
+        "the new write itself is recorded after the invalidation"
+    );
+
+    // A render that named no bundle says nothing about the buffers.
+    damage.settle(slot(0), true, None, Some(snapshot.clone()));
+    assert_eq!(damage.metrics().invalidations, 2);
+}
+
+#[test]
+fn worker_slot_damage_invalidates_a_failed_write() {
+    let mut damage = WorkerSlotDamage::with_enabled(true);
+    let snapshot = slot_damage_snapshot([1, 1, 1, 1]);
+    damage.settle(slot(0), true, Some(7), Some(snapshot.clone()));
+
+    damage.settle(slot(0), false, Some(7), Some(snapshot.clone()));
+
+    assert!(
+        damage
+            .repaint_table(slot(0), Some(&snapshot), SLOT_DAMAGE_OUTPUT)
+            .is_none(),
+        "a write that did not complete leaves nothing to repaint against"
+    );
+}

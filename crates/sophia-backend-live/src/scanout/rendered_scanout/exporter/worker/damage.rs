@@ -42,7 +42,7 @@ fn reusable_cpu_buffer_damage(
 /// and nothing here crosses threads. It owns the history, the bundle identity
 /// each slot last rendered against, and whether damage-limited repaint is
 /// switched on at all.
-struct WorkerSlotDamage {
+pub struct WorkerSlotDamage {
     history: LiveRendererSlotDamageHistory,
     target_generations: [Option<u64>; LIVE_RENDERER_FRAME_SLOT_CAPACITY],
     enabled: bool,
@@ -50,19 +50,27 @@ struct WorkerSlotDamage {
 
 impl WorkerSlotDamage {
     fn new() -> Self {
+        // Opt-in until a captured-pixel proof shows a damage-limited render is
+        // byte-identical to a full one. The failure mode is a frame that is
+        // presentable, self-consistent, and stale in one region, which no
+        // health check would catch and an operator would read as a rendering
+        // glitch. Off by default costs a repaint; wrong by default costs trust
+        // in the evidence.
+        Self::with_enabled(
+            std::env::var("SOPHIA_ENABLE_BUFFER_AGE_DAMAGE").is_ok_and(|value| value == "1"),
+        )
+    }
+
+    /// Deterministic constructor: the environment decides only in production.
+    pub fn with_enabled(enabled: bool) -> Self {
         Self {
             history: LiveRendererSlotDamageHistory::new(),
             target_generations: [None; LIVE_RENDERER_FRAME_SLOT_CAPACITY],
-            // Damage-limited repaint can be switched off without a rebuild, so
-            // a visual artifact on a real session bisects to this feature in
-            // seconds and the session stays usable meanwhile.
-            enabled: std::env::var("SOPHIA_DISABLE_BUFFER_AGE_DAMAGE")
-                .ok()
-                .is_none_or(|value| value != "1"),
+            enabled,
         }
     }
 
-    fn repaint_table(
+    pub fn repaint_table(
         &mut self,
         slot: LiveRendererFrameSlotId,
         snapshot: Option<&sophia_engine::OutputFrameDamageSnapshot>,
@@ -75,7 +83,7 @@ impl WorkerSlotDamage {
     }
 
     /// Settle what a completed export means for the slot's retained content.
-    fn settle(
+    pub fn settle(
         &mut self,
         slot: LiveRendererFrameSlotId,
         exported: bool,
@@ -97,8 +105,13 @@ impl WorkerSlotDamage {
         }
     }
 
-    fn invalidate(&mut self, slot: LiveRendererFrameSlotId) {
+    pub fn invalidate(&mut self, slot: LiveRendererFrameSlotId) {
         self.history.invalidate(slot);
+    }
+
+    /// The history's own counters, for assertions and telemetry.
+    pub fn metrics(&self) -> LiveRendererSlotDamageMetrics {
+        self.history.metrics()
     }
 }
 

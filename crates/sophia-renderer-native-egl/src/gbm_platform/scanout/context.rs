@@ -53,6 +53,10 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     last_render_buffer_age: Option<u32>,
     last_render_repaint: NativeCompositionRepaintOutcome,
     last_render_target_generation: Option<u64>,
+    /// Capture pixels on every composed render, past the bounded startup
+    /// proof budget. For equivalence smokes only: per-frame `glReadPixels` on
+    /// a session hot path is exactly what the budget exists to prevent.
+    capture_pixels_always: bool,
     import_cache_capacity: usize,
     renderer_images: std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
     renderer_image_bytes: u64,
@@ -193,6 +197,7 @@ where
             last_render_buffer_age: None,
             last_render_repaint: NativeCompositionRepaintOutcome::Full,
             last_render_target_generation: None,
+            capture_pixels_always: false,
         })
     }
 
@@ -224,6 +229,13 @@ where
 
     pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
         self.last_composition_pixel_metrics
+    }
+
+    /// Capture pixels on every composed render. Smoke-test instrumentation:
+    /// the equivalence proof must read frames after the startup budget would
+    /// have stopped capturing.
+    pub fn force_composition_pixel_capture(&mut self) {
+        self.capture_pixels_always = true;
     }
 
     pub const fn composition_nonzero_rgb_pixels(&self) -> usize {

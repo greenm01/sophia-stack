@@ -379,6 +379,19 @@ where
         self.inner.composition_nonzero_rgb_pixels()
     }
 
+    /// Capture pixels on every composed render. Smoke-test instrumentation.
+    pub fn force_composition_pixel_capture(&mut self) {
+        self.inner.force_composition_pixel_capture();
+    }
+
+    /// The most recent composed render's captured pixel metrics, when capture
+    /// ran for that render.
+    pub fn composition_pixel_metrics(
+        &self,
+    ) -> Option<sophia_renderer_native_egl::NativeCompositionPixelMetrics> {
+        self.inner.composition_pixel_metrics()
+    }
+
     pub fn from_backend_device_result(
         device: std::io::Result<T>,
     ) -> NativeGbmRenderedScanoutContextReport<T> {
