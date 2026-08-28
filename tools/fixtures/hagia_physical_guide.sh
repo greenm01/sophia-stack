@@ -34,13 +34,30 @@ action_count() {
 wait_for_action_count() {
     action="$1"
     expected="$2"
+    attempts=6000
     while [ "$(action_count "$action")" -lt "$expected" ]; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort "$(action_pattern "$action") (x$expected)"
+        fi
         sleep 0.1
     done
 }
 
-# Waits that depend on the session rather than on the operator get a bound, so a
-# session that will never satisfy them fails legibly instead of hanging.
+# Every wait is bounded. An operator step gets a long bound because a person is
+# reading a screen; a session step gets a shorter one because nobody is. This
+# guide previously looped forever on session facts, and when the compiled
+# profile stopped reserving a panel the switcher step stopped being reachable at
+# all: the run hung on a line no session could produce instead of saying which
+# expectation the profile could no longer satisfy.
+abort() {
+    printf '\033[2J\033[H'
+    echo 'Physical proof aborted: the session never produced' >&2
+    echo "  $1" >&2
+    echo 'Log out with Ctrl+Alt+Delete and inspect the session log.' >&2
+    exit 2
+}
+
 wait_for_shell_line_bounded() {
     pattern="$1"
     attempts=1200
@@ -61,12 +78,18 @@ wait_for_shell_line_bounded() {
 
 wait_for_restart() {
     pattern='^sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch=2 restarts=1 preserved_layout=true$'
+    attempts=1200
     while ! grep -Eq "$pattern" "$evidence" 2>/dev/null; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort "$pattern"
+        fi
         sleep 0.1
     done
 }
 
 wait_for_nonempty_restore() {
+    attempts=1200
     while ! awk '
         /^sophia_live_wm schema=1 status=physical_action_committed action=40$/ {
             restore = 1
@@ -76,11 +99,16 @@ wait_for_nonempty_restore() {
         }
         END { exit restored ? 0 : 1 }
     ' "$evidence" 2>/dev/null; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort 'a nonempty checkpoint saved after action 40'
+        fi
         sleep 0.1
     done
 }
 
 wait_for_secondary_nonzero_submission() {
+    attempts=1200
     while ! awk '
         /^sophia_live_wm schema=1 status=physical_action_committed action=5$/ {
             moved = 1
@@ -90,6 +118,10 @@ wait_for_secondary_nonzero_submission() {
         }
         END { exit presented ? 0 : 1 }
     ' "$evidence" 2>/dev/null; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort 'a nonzero secondary-head submission after action 5'
+        fi
         sleep 0.1
     done
 }
@@ -102,14 +134,24 @@ shell_count() {
 wait_for_shell_count() {
     pattern="$1"
     expected="$2"
+    attempts="${3:-1200}"
     while [ "$(shell_count "$pattern")" -lt "$expected" ]; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort "$pattern (x$expected)"
+        fi
         sleep 0.1
     done
 }
 
 wait_for_shell_line() {
     pattern="$1"
+    attempts="${2:-1200}"
     while ! grep -Eq "$pattern" "$evidence" 2>/dev/null; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -le 0 ]; then
+            abort "$pattern"
+        fi
         sleep 0.1
     done
 }

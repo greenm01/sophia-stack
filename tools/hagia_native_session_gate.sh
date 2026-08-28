@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The native Hagia session gate. It proves the bounded product workflow --
+# three terminal launches, a visible focus-next, one close, and a normal logout
+# -- across Sophia's own WM and shell protocols, with no xmonad compatibility
+# bridge in the session. A passing run promotes the three native frame slots.
+#
+# Unlike the switcher gate, this one runs the session through the ordinary
+# `hagia` runner profile rather than launching `sophia-live-session` itself.
+# That runner already owns TTY mode save/restore, keyd, the Ctrl-Alt-Backspace
+# input guard, and the `sophia_tty_recovery` record. Exact TTY recovery is one
+# of this gate's exit criteria, so the gate uses the component that produces it
+# instead of standing up a second session lifecycle beside it.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v hagia-shell || true)}"
+kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
+seat="${SOPHIA_HAGIA_NATIVE_SEAT:-}"
+display="${SOPHIA_HAGIA_NATIVE_DISPLAY:-:292}"
+sequence_timeout_msec="${SOPHIA_HAGIA_NATIVE_SEQUENCE_TIMEOUT_MSEC:-600000}"
+evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-native-session.log}"
+proof_text="${SOPHIA_HAGIA_NATIVE_TEXT:-hagianativeproof}"
+guide="${SOPHIA_HAGIA_NATIVE_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_native_session_guide.sh}"
+hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+desktop_profile="${SOPHIA_DESKTOP_PROFILE:-}"
+source_commit="${SOPHIA_HAGIA_NATIVE_SOURCE_COMMIT:-}"
+hagia_commit="${SOPHIA_HAGIA_NATIVE_HAGIA_COMMIT:-}"
+recorded_sophia_sha256="${SOPHIA_HAGIA_NATIVE_SOPHIA_SHA256:-}"
+recorded_hagia_sha256="${SOPHIA_HAGIA_NATIVE_HAGIA_SHA256:-}"
+recorded_hagia_shell_sha256="${SOPHIA_HAGIA_NATIVE_HAGIA_SHELL_SHA256:-}"
+recorded_profile_sha256="${SOPHIA_DESKTOP_PROFILE_SHA256:-}"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+session_log="$state_home/sophia/hagia-session/session.log"
+recovery_log="$state_home/sophia/hagia-session/recovery.log"
+
+if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
+    echo "SOPHIA_HAGIA_NATIVE_TEXT must contain 1-24 lowercase ASCII letters" >&2
+    exit 2
+fi
+if [[ "${SOPHIA_HAGIA_NATIVE_ARM:-0}" != "1" ]]; then
+    echo "set SOPHIA_HAGIA_NATIVE_ARM=1 to acknowledge exclusive DRM/input use" >&2
+    exit 2
+fi
+if [[ -z "$seat" ]]; then
+    echo "set SOPHIA_HAGIA_NATIVE_SEAT to the libinput seat (normally seat0)" >&2
+    exit 2
+fi
+if [[ -z "$hagia_bin" || ! -x "$hagia_bin" ]]; then
+    echo "set SOPHIA_HAGIA_BIN to a built Hagia executable" >&2
+    exit 2
+fi
+if [[ -z "$hagia_shell_bin" || ! -x "$hagia_shell_bin" ]]; then
+    echo "set SOPHIA_HAGIA_SHELL_BIN to a built Hagia Shell executable" >&2
+    exit 2
+fi
+if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
+    echo "set SOPHIA_TERMINAL_BIN to real Kitty" >&2
+    exit 2
+fi
+if [[ ! -x "$guide" ]]; then
+    echo "set SOPHIA_HAGIA_NATIVE_GUIDE to the executable proof guide" >&2
+    exit 2
+fi
+# The profile is passed explicitly rather than left to discovery. A session
+# started with --no-config runs the compiled profile while an exported digest
+# still names a file, and the resulting identity line describes a profile that
+# did not run.
+if [[ "$desktop_profile" != /* || ! -f "$desktop_profile" ]]; then
+    echo "set SOPHIA_DESKTOP_PROFILE to the absolute Hagia profile this run should load" >&2
+    exit 2
+fi
+if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
+    || ! "$hagia_commit" =~ ^[0-9a-f]{40}$ \
+    || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_hagia_shell_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_profile_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "run tools/run_current_hagia_native_gate_tty4.sh to bind both signed commits, all three binary identities, and the profile digest" >&2
+    exit 2
+fi
+if [[ "$(sha256sum "$desktop_profile" | awk '{ print $1 }')" != "$recorded_profile_sha256" ]]; then
+    echo "The desktop profile does not match its bound digest." >&2
+    exit 2
+fi
+if [[ ! -d "$hagia_root/.git" ]]; then
+    echo "Hagia checkout not found at $hagia_root" >&2
+    exit 2
+fi
+if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
+    || (( sequence_timeout_msec < 1000 || sequence_timeout_msec > 600000 )); then
+    echo "SOPHIA_HAGIA_NATIVE_SEQUENCE_TIMEOUT_MSEC must be 1000-600000" >&2
+    exit 2
+fi
+# The runner's Hagia profile registers a browser application even when the
+# workflow never launches one. Refusing here names the missing dependency
+# before the display manager is stopped rather than after.
+browser_bin="${SOPHIA_HAGIA_BROWSER_BIN:-$(command -v helium || command -v firefox || true)}"
+if [[ -z "$browser_bin" || ! -x "$browser_bin" ]]; then
+    echo "The Hagia profile requires Helium, Firefox, or SOPHIA_HAGIA_BROWSER_BIN." >&2
+    exit 2
+fi
+
+verify_bound_identity() {
+    if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
+        || -n "$(git -C "$hagia_root" status --short)" \
+        || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" \
+        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" ]]; then
+        echo "Sophia or Hagia source identity changed during the physical proof." >&2
+        exit 1
+    fi
+    git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
+        echo "Sophia physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
+    git -C "$hagia_root" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
+        echo "Hagia physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
+    sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
+    hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
+    hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
+    if [[ "$sophia_sha256" != "$recorded_sophia_sha256" \
+        || "$hagia_sha256" != "$recorded_hagia_sha256" \
+        || "$hagia_shell_sha256" != "$recorded_hagia_shell_sha256" ]]; then
+        echo "Sophia, Hagia, or Hagia Shell does not match its bound physical-proof identity." >&2
+        exit 1
+    fi
+}
+
+verify_bound_identity
+
+echo "Hagia native session gate"
+echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
+echo "After the startup terminal appears, follow the on-screen guide:"
+echo "  1. Type '$proof_text' and press Enter."
+echo "  2. Press Super+Return three times, waiting for each new terminal."
+echo "  3. Press Super+J once and confirm focus visibly moves."
+echo "  4. Press Super+q once to close the focused terminal."
+echo "  5. Press Ctrl+Alt+Delete once for a normal logout."
+echo "Do not use Ctrl+Alt+Backspace during the normal proof."
+
+# The runner skips its own preflight when it is not building, and this gate
+# deliberately does not let it build: a rebuild between binding the digests and
+# running the session would invalidate the identity the archive rests on. The
+# preflight is a debug-profile check that does not touch target/release/sophia,
+# so it runs here instead of being lost.
+"$ROOT_DIR/tools/atomic_scanout_preflight.sh"
+
+status=0
+SOPHIA_TTY_PROFILE=hagia \
+SOPHIA_HAGIA_BIN="$hagia_bin" \
+SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
+SOPHIA_TERMINAL_BIN="$kitty_bin" \
+SOPHIA_DESKTOP_PROFILE="$desktop_profile" \
+SOPHIA_DESKTOP_PROFILE_SHA256="$recorded_profile_sha256" \
+SOPHIA_LIVE_SESSION_DISPLAY="$display" \
+SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$session_log" \
+SOPHIA_OPERATOR_INPUT_SEAT="$seat" \
+SOPHIA_HAGIA_NATIVE_TEXT="$proof_text" \
+SOPHIA_BUILD_SESSION=false \
+    "$ROOT_DIR/tools/start_sophia_tty3.sh" \
+    "--shell-process=$hagia_shell_bin" \
+    "--session-app-arg=terminal=$guide" \
+    "--expect-physical-text=$proof_text" \
+    "--physical-sequence-timeout-ms=$sequence_timeout_msec" || status=$?
+
+if (( status != 0 )); then
+    echo "The native session did not return cleanly (exit $status); evidence is not archived." >&2
+    exit "$status"
+fi
+
+[[ -s "$session_log" ]] || {
+    echo "The native session produced no evidence: $session_log" >&2
+    exit 1
+}
+
+verify_bound_identity
+
+# One evidence artifact carries the whole run. The session log, the runner's TTY
+# restoration record, and the bound identity live in three places while the
+# session is running; the archive keeps one file, so they are joined here rather
+# than left for the verifier to correlate across the filesystem.
+install -m 600 "$session_log" "$evidence"
+recovery_record="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$recovery_log" | tail -n 1 || true)"
+[[ -n "$recovery_record" ]] || {
+    echo "The runner recorded no TTY recovery for this session: $recovery_log" >&2
+    exit 1
+}
+printf '%s\n' "$recovery_record" >>"$evidence"
+printf 'sophia_hagia_native_identity schema=1 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s hagia_shell_sha256=%s desktop_profile_sha256=%s\n' \
+    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" \
+    "$hagia_shell_sha256" "$recorded_profile_sha256" >>"$evidence"
+
+SOPHIA_HAGIA_NATIVE_GUIDE="$guide" \
+    "$ROOT_DIR/tools/verify_hagia_native_session.sh" "$evidence" "$proof_text"
+SOPHIA_HAGIA_BIN="$hagia_bin" \
+SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
+SOPHIA_HAGIA_ROOT="$hagia_root" \
+SOPHIA_HAGIA_NATIVE_GUIDE="$guide" \
+    "$ROOT_DIR/tools/archive_hagia_native_session_run.sh" "$evidence" "$proof_text"
+echo "Hagia native session gate passed"

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Binds the exact source and binary identity of a native Hagia session proof
+# before any DRM takeover, then hands off to the gate. Both repositories must be
+# clean, signed, and at the locally known origin/master: the archive this run
+# produces is only as good as the identity bound here.
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 
 if [[ ! -t 0 || "$(tty)" != /dev/tty4 ]]; then
     echo "Switch to tty4 with Ctrl+Alt+F4, log in, and run:" >&2
-    echo "  $ROOT_DIR/tools/run_current_hagia_policy_gate_tty4.sh" >&2
+    echo "  $ROOT_DIR/tools/run_current_hagia_native_gate_tty4.sh" >&2
     exit 1
 fi
 if [[ ! -d "$HAGIA_ROOT/.git" ]]; then
@@ -40,10 +45,10 @@ for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; d
         exit 1
     fi
 done
-hagia_bin="${TMPDIR:-/tmp}/hagia-policy-${hagia_commit:0:12}"
-hagia_shell_bin="${TMPDIR:-/tmp}/hagia-shell-${hagia_commit:0:12}"
-hagia_nimcache="${TMPDIR:-/tmp}/hagia-policy-nimcache-${hagia_commit:0:12}"
-hagia_shell_nimcache="${TMPDIR:-/tmp}/hagia-shell-nimcache-${hagia_commit:0:12}"
+hagia_bin="${TMPDIR:-/tmp}/hagia-native-${hagia_commit:0:12}"
+hagia_shell_bin="${TMPDIR:-/tmp}/hagia-native-shell-${hagia_commit:0:12}"
+hagia_nimcache="${TMPDIR:-/tmp}/hagia-native-nimcache-${hagia_commit:0:12}"
+hagia_shell_nimcache="${TMPDIR:-/tmp}/hagia-native-shell-nimcache-${hagia_commit:0:12}"
 
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
@@ -89,24 +94,26 @@ sophia_bin="$ROOT_DIR/target/release/sophia"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
 hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
-echo "Sophia binary: $sophia_sha256"
-echo "Hagia binary:  $hagia_sha256"
-echo "Hagia Shell:   $hagia_shell_sha256"
+profile_sha256="$(sha256sum "$desktop_profile" | awk '{ print $1 }')"
+echo "Sophia binary:  $sophia_sha256"
+echo "Hagia binary:   $hagia_sha256"
+echo "Hagia Shell:    $hagia_shell_sha256"
+echo "Desktop profile: $profile_sha256"
 
+export SOPHIA_TTY_NUMBER=4
+export SOPHIA_HAGIA_NATIVE_ARM=1
+export SOPHIA_HAGIA_NATIVE_SEAT="${SOPHIA_HAGIA_NATIVE_SEAT:-seat0}"
 export SOPHIA_HAGIA_BIN="$hagia_bin"
 export SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin"
+# The profile is handed to the session explicitly and its digest is bound here,
+# so the identity Sophia prints names the profile that actually ran.
 export SOPHIA_DESKTOP_PROFILE="$desktop_profile"
-# No profile identity is exported here. This gate's session runs with
-# `--no-config`, which loads the compiled profile, so exporting a mode and the
-# digest of a file on disk made Sophia print an identity for a profile it never
-# loaded. The profile above is still checked by both `config check` calls, which
-# is what it is for. `tools/run_current_hagia_native_gate_tty4.sh` binds a
-# profile it actually passes to the session and keeps its identity.
+export SOPHIA_DESKTOP_PROFILE_SHA256="$profile_sha256"
+export SOPHIA_HAGIA_PROFILE_MODE=packaged-promotion
 export SOPHIA_HAGIA_ROOT="$HAGIA_ROOT"
-export SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT="$sophia_commit"
-export SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT="$hagia_commit"
-export SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256="$sophia_sha256"
-export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256="$hagia_sha256"
-export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHELL_SHA256="$hagia_shell_sha256"
-export SOPHIA_LIVE_SESSION_SKIP_BUILD=1
-exec "$ROOT_DIR/tools/start_sophia_hagia_policy_tty4.sh"
+export SOPHIA_HAGIA_NATIVE_SOURCE_COMMIT="$sophia_commit"
+export SOPHIA_HAGIA_NATIVE_HAGIA_COMMIT="$hagia_commit"
+export SOPHIA_HAGIA_NATIVE_SOPHIA_SHA256="$sophia_sha256"
+export SOPHIA_HAGIA_NATIVE_HAGIA_SHA256="$hagia_sha256"
+export SOPHIA_HAGIA_NATIVE_HAGIA_SHELL_SHA256="$hagia_shell_sha256"
+exec "$ROOT_DIR/tools/hagia_native_session_gate.sh"

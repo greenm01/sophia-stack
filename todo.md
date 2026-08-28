@@ -391,6 +391,21 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    exact TTY recovery. Fix only failures that reproduce on this native path.
    Promote the three-slot boundary when it passes, then begin bounded
    buffer-age damage history.
+   The gate for that run exists and is offline-proven; the physical run does
+   not. `tools/hagia-native-proof` binds both signed commits, all three
+   executable digests, and the profile the session loads, then runs the
+   workflow through the ordinary `hagia` runner profile so exact TTY recovery
+   is recorded by the component that performs it.
+   `tools/check_hagia_native_matchers.sh` drives the real guide across
+   synthesized evidence and requires every deletion and injected failure to be
+   rejected for its own reason. The verifier adds the one three-slot check
+   nothing else performs, `frame_slots_leased == 0`, beside the mirror gate's
+   request/completion/deferral balance.
+   The switcher gate is off this path and was left as it was, except that its
+   guide's waits are now bounded: the compiled profile no longer reserves a
+   panel, so its switcher step waited forever on a line no session could
+   produce. Its launch wrapper also stopped exporting a profile identity the
+   session never loaded.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)

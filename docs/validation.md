@@ -1553,6 +1553,36 @@ switcher lifecycle on both sides of its fresh-epoch restart.
 `tools/archive_hagia_policy_physical_run.sh` rejects a duplicate evidence digest
 instead of creating a second proof record.
 
+The native session proof runs the bounded product workflow -- three terminal
+launches, a visible focus-next, one close, and a normal logout -- with no xmonad
+compatibility bridge in the session. It also runs from a logged-in TTY 4:
+
+```sh
+tools/hagia-native-proof
+```
+
+Unlike the switcher proof above, this one ends with a normal logout rather than
+the proof phrase: type the phrase when the first screen asks, then follow the
+remaining steps. The command must print `Hagia native session gate passed`.
+
+The gate runs its session through the ordinary `hagia` runner profile, so exact
+TTY restoration is recorded by the same component that performs it. Evidence is
+rechecked by `tools/verify_hagia_native_session.sh` and archived under
+`${XDG_STATE_HOME:-$HOME/.local/state}/sophia/promotion/hagia-native-runs` with
+both source commits, all three executable digests, the digest of the desktop
+profile the session actually loaded, the raw log, and checksums. Beyond ordered
+projection commits, shell-role separation, bounded session-control latency,
+clean health, and exact TTY recovery, the verifier requires the schema-7
+frame-slot block to balance and to report no slot still leased at completion --
+the evidence that promotes the three native frame slots.
+
+Run `tools/check_hagia_native_matchers.sh` before any physical attempt. It
+drives the real guide across synthesized passing evidence, deletes each required
+line in turn, injects a leaked lease, a stale release, an unbalanced worker
+ledger, a latency overrun, a reordered workflow, bridge activity, a misreported
+profile, and an emergency exit, and requires each to be rejected for its own
+stated reason.
+
 Use `Sophia Hagia (Native Policy)` for ordinary development after its bounded
 preflight passes. Every launch reserves a Hagia ledger entry before takeover;
 normal logout passes, operator emergency return is marked recovered, and

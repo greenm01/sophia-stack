@@ -3,6 +3,68 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-08-27: the native session proof gets its own gate, not the switcher's
+
+- The bounded native workflow on the critical path -- three terminal launches, a
+  visible focus-next, one close, and a normal logout -- now has a complete
+  offline-proven harness: `tools/fixtures/hagia_native_session_guide.sh`,
+  `tools/verify_hagia_native_session.sh`, `tools/hagia_native_session_gate.sh`,
+  its `run_current_hagia_native_gate_tty4.sh` identity wrapper, an archiver and
+  independent archive verifier over `hagia-native-runs/`, and
+  `tools/check_hagia_native_matchers.sh`. The operator entry is
+  `tools/hagia-native-proof`. No physical run has happened yet.
+- The gate runs its session through the ordinary `hagia` runner profile rather
+  than launching `sophia-live-session` itself. Exact TTY recovery is one of the
+  row's exit criteria and only `run_sophia_xmonad_session.sh` produces
+  `sophia_tty_recovery`; it also owns TTY mode save/restore, keyd, and the
+  Ctrl-Alt-Backspace input guard. Routing keeps one session-lifecycle owner
+  instead of standing a second one beside it and copying the record out.
+- The proof phrase is typed first, while the startup terminal is the session's
+  only window. Sophia matches the routed key events and the guide writes the
+  received phrase to `SOPHIA_INPUT_PROOF_RESULT`; both halves need the
+  keystrokes to land in that terminal, which is only guaranteed before any other
+  window exists. The close may later land on the guide's own window, so the
+  guide prints the close and logout steps together and the verifier reads its
+  expected action totals from the guide source rather than from what the guide
+  lived long enough to execute.
+- The verifier adds one check nothing else in the tree performs:
+  `frame_slots_leased == 0` at completion. A slot still leased after the session
+  drained is a page flip that retired without releasing its buffer, which is the
+  failure the three-slot ledger exists to make impossible. It keeps the mirror
+  gate's balance assertion beside it -- every renderer-worker request settles as
+  a completion or a bounded deferral -- and refuses a high-watermark above three.
+- Each negative case in the matchers states the reason it expects to be rejected
+  for. A mutation rejected for an unrelated reason proves nothing about the check
+  it was written for, and a `sed` that silently stopped matching would otherwise
+  still read as a passing negative case.
+
+## 2026-08-27: an unbounded guide wait turns a stale expectation into a hang
+
+- Re-running `tools/hagia-proof` unchanged would have hung rather than failed.
+  Commit `edef9d3a` removed `panel 28` from `COMPILED_DESKTOP_PROFILE`, and that
+  gate's session runs with `--no-config`, so it loads the compiled profile. With
+  no panel, `desktop_profile_shell_panel_thickness` returns `None`, no
+  reservation is ever registered, and the switcher step's `reservation_presented`
+  and `reservation_reduced` waits could not be satisfied by any session. The
+  guide looped on them forever. Archive `0007` predates the removal and remains
+  valid evidence.
+- Every wait in `hagia_physical_guide.sh` is now bounded, using the
+  `wait_for_shell_line_bounded` idiom the file already had for one browser step.
+  Operator steps get a long bound because a person is reading a screen; session
+  steps get a shorter one because nobody is. The aborted run now names the
+  expectation the profile could not satisfy.
+- The same wrapper also exported `SOPHIA_HAGIA_PROFILE_MODE` and the digest of
+  Hagia's `default.kdl` while the session ran the compiled profile, so
+  `sophia_live_desktop_profile` described a profile that never loaded. Those
+  exports are gone; the profile is still checked by both `config check` calls,
+  which is what it was for. The native gate binds a profile it actually passes to
+  the session, and its verifier requires the loaded `root_sha256` to equal the
+  digest in the run's bound identity.
+- The switcher workflow itself is deliberately not re-aligned to the panel-less
+  profile. It is off the critical path, and archives `0006` and `0007` remain its
+  retained evidence. What was fixed is that a stale expectation now fails
+  legibly.
+
 ## 2026-08-27: Sophia's WM and shell protocols are the product critical path
 
 - The xmonad bridge was retained as a mature behavior oracle, compatibility
