@@ -7,6 +7,19 @@ pub const X_FIXED_6X13_DESCENT: i32 = 2;
 pub const X_FIXED_6X13_HEIGHT: i32 = X_FIXED_6X13_ASCENT + X_FIXED_6X13_DESCENT;
 pub const X_FIXED_6X13_CANONICAL_NAME: &str =
     "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1";
+/// The same face under the Unicode registry.
+///
+/// An XLFD's last two fields are its charset registry and encoding, not a
+/// different typeface: `iso8859-1` and `iso10646-1` name one 6x13 bitmap
+/// indexed two ways. xterm asks for this spelling whenever it is in UTF-8
+/// mode, which on a UTF-8 locale is by default, so refusing it refuses the
+/// terminal rather than the encoding.
+///
+/// Accepting it is not a claim to cover the Unicode repertoire. Sophia
+/// rasterizes one fixed face either way, and a glyph outside it falls back
+/// exactly as it already does under the Latin-1 name.
+pub const X_FIXED_6X13_UNICODE_NAME: &str =
+    "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum XFontFace {
@@ -33,6 +46,10 @@ impl XFontFace {
             .or_else(|| name.eq_ignore_ascii_case("6x13").then_some(Self::Fixed6x13))
             .or_else(|| {
                 name.eq_ignore_ascii_case(X_FIXED_6X13_CANONICAL_NAME)
+                    .then_some(Self::Fixed6x13)
+            })
+            .or_else(|| {
+                name.eq_ignore_ascii_case(X_FIXED_6X13_UNICODE_NAME)
                     .then_some(Self::Fixed6x13)
             })
     }

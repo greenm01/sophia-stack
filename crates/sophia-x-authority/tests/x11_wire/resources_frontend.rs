@@ -944,3 +944,102 @@ fn x_server_frontend_rejects_bad_cookie_then_accepts_the_configured_cookie() {
     assert_eq!(policy.revoked.lock().unwrap().len(), 1);
     std::fs::remove_file(&socket_path).unwrap();
 }
+
+#[test]
+fn x11_dispatch_opens_the_fixed_face_under_either_charset_registry() {
+    // An XLFD's trailing fields are its charset registry and encoding, not a
+    // different typeface. xterm asks for the iso10646-1 spelling whenever it is
+    // in UTF-8 mode, which on a UTF-8 locale is by default; refusing it refused
+    // the terminal, which then never presented a frame for an input proof to
+    // type into.
+    let accepted = [
+        "fixed",
+        "6x13",
+        "nil2",
+        "cursor",
+        sophia_x_authority::X_FIXED_6X13_CANONICAL_NAME,
+        sophia_x_authority::X_FIXED_6X13_UNICODE_NAME,
+    ];
+
+    for (index, name) in accepted.iter().enumerate() {
+        let namespace = NamespaceId::from_raw(46);
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        let font = 0x22_0200 + u32::try_from(index).expect("font index");
+
+        let open = decode_x11_core_request(
+            context(namespace, 700, XByteOrder::LittleEndian),
+            &open_font_request(XByteOrder::LittleEndian, font, name),
+        )
+        .unwrap();
+        let open = dispatch_x11_wire_request(
+            dispatch_context(namespace, 1, XByteOrder::LittleEndian, 45),
+            open,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(
+            open.outputs.is_empty(),
+            "OpenFont refused an accepted face name: {name}"
+        );
+
+        // The font is only usable if it also answers QueryFont: a name that
+        // opened but could not be queried would fail the client one request
+        // later, which is how this defect presented.
+        let query = decode_x11_core_request(
+            context(namespace, 701, XByteOrder::LittleEndian),
+            &resource_request(XByteOrder::LittleEndian, 47, font),
+        )
+        .unwrap();
+        let query = dispatch_x11_wire_request(
+            dispatch_context(namespace, 2, XByteOrder::LittleEndian, 47),
+            query,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(
+            matches!(
+                query.outputs.first(),
+                Some(sophia_x_authority::XClientOutput::Reply(
+                    sophia_x_authority::XClientReply::QueryFont { .. }
+                ))
+            ),
+            "QueryFont did not answer for an accepted face name: {name}"
+        );
+    }
+}
+
+#[test]
+fn x11_dispatch_still_refuses_a_face_it_cannot_rasterize() {
+    // Accepting a second registry for the one face Sophia rasterizes must not
+    // become accepting any name at all.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let open = decode_x11_core_request(
+        context(namespace, 710, XByteOrder::LittleEndian),
+        &open_font_request(XByteOrder::LittleEndian, 0x22_0300, "10x20"),
+    )
+    .unwrap();
+    let open = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 45),
+        open,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(
+        matches!(
+            open.outputs.first(),
+            Some(sophia_x_authority::XClientOutput::Error(error))
+                if error.code == sophia_x_authority::XErrorCode::BadName
+        ),
+        "a face Sophia cannot rasterize must still be refused by name"
+    );
+}
