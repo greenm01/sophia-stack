@@ -61,8 +61,10 @@ Engine-owned workspace policy are removed. Schema-5 packaged-promotion archive
 to Hagia's signed generic default, proves the repaired GLX first-pixel admission
 through sustained final-extent presentation, and ends with normal Logout and
 clean health. Mutable XDG policy remains confined to the ordinary dogfooding
-entry. Milestone 14's bounded visual-retirement model is now the active product
-step.
+entry. Milestone 14's three-slot boundary is promoted on signed native archive
+`0001`, which also made Hagia the first proof client of the Sophia WM and shell
+protocols with no compatibility bridge in the session. Bounded buffer-age damage
+history is the active product step.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -375,37 +377,35 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    armed, committed, and retired, its 1278-by-1424 standing target committed,
    772 GLX presentations retired, and normal Logout finished with zero protocol
    errors and clean lifecycle health.
-5. **In progress.** Milestone 14's bounded visual-retirement model and the
-   retirement-fed three-slot implementation are complete. Public snapshots now
-   source surface state from X-authority lifecycle facts rather than raster
-   generations; signed source `c681f762` confirmed that ordinary repaint no
-   longer causes the stale/rebuild storm. The remaining failure in that run is
-   confined to the xmonad compatibility bridge's synthetic ConfigureRequest
-   fence and is not a Sophia WM protocol, shell protocol, or Engine promotion
-   blocker. Use Hagia as the first proof client to re-run the bounded
-   three-launch, `Super+J`, close, and normal-logout workflow without the
-   xmonad bridge. Require ordered WM projection commits, correct shell-role
-   separation, visibly correct Engine focus and layout, balanced
-   schema-7 slot acquisition/release with no stale release or leaked lease,
-   bounded input/WM latency, native drain, clean protocol/frontend health, and
-   exact TTY recovery. Fix only failures that reproduce on this native path.
-   Promote the three-slot boundary when it passes, then begin bounded
-   buffer-age damage history.
-   The gate for that run exists and is offline-proven; the physical run does
-   not. `tools/hagia-native-proof` binds both signed commits, all three
-   executable digests, and the profile the session loads, then runs the
-   workflow through the ordinary `hagia` runner profile so exact TTY recovery
-   is recorded by the component that performs it.
-   `tools/check_hagia_native_matchers.sh` drives the real guide across
-   synthesized evidence and requires every deletion and injected failure to be
-   rejected for its own reason. The verifier adds the one three-slot check
-   nothing else performs, `frame_slots_leased == 0`, beside the mirror gate's
-   request/completion/deferral balance.
-   The switcher gate is off this path and was left as it was, except that its
-   guide's waits are now bounded: the compiled profile no longer reserves a
-   panel, so its switcher step waited forever on a line no session could
-   produce. Its launch wrapper also stopped exporting a profile identity the
-   session never loaded.
+5. **Complete.** Milestone 14's bounded visual-retirement model and the
+   retirement-fed three-slot implementation are complete, and the three-slot
+   boundary is promoted. Public snapshots source surface state from
+   X-authority lifecycle facts rather than raster generations; signed source
+   `c681f762` confirmed that ordinary repaint no longer causes the
+   stale/rebuild storm.
+   Signed native archive `0001` closed the row on signed Sophia source
+   `05d98e44981f5086fc8d2bd3ee4580944029a952` and signed Hagia source
+   `9c9a59061fd0d8e88310b764f7dd240e729fb035`, against Hagia's tracked default
+   profile. Hagia was the first proof client of the Sophia WM and shell
+   protocols with no xmonad bridge in the session. The bounded workflow ran in
+   order: three terminal launches, each committing its layout before the next
+   was requested and reaching an admitted surface; one visible `Super+J`
+   committing focus to a surface; one close; and a normal logout. Committed
+   layouts moved 0 to 1 to 4 surfaces and back to 3 after the close.
+   The three-slot evidence is exact. Renderer-worker requests settled as
+   `worker_requests=263 == worker_completions=263 + frame_slot_deferrals=0`,
+   with `frame_slot_stale_releases=0` and `frame_slots_leased=0` at
+   completion: no stale release and no leaked lease. The aggregate watermark
+   of 6 is three slots on each of two presented heads, both reaching full
+   occupancy.
+   Everything else the row required is in the archive: separate protected
+   broker and shell admissions with clean ready-to-stopped lifecycles, the
+   34-event physical text proof, 2 ms session-control queue dwell and 1 ms
+   ack against a 100 ms budget, drained native scanout with no abandoned
+   scanouts, clean session/topology/cleanup health, zero unexpected protocol
+   errors, and exact TTY recovery with `emergency=false`. Four stale policy
+   responses were ordinary scene races; every one re-armed and committed.
+   Bounded buffer-age damage history is now the active step.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)
@@ -2042,7 +2042,9 @@ other mature compositors are references rather than Sophia runtime components.
   implementation-relevant counterexample.
 - [x] Recycle three generational frame-surface slots per output through
   explicit page-flip retirement, with bounded deferral when all slots are
-  leased.
+  leased. Promoted on signed native archive `0001`: requests settled as
+  completions plus bounded deferrals with no stale release and no slot leased
+  at completion, and both presented heads reached full three-slot occupancy.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only
   accumulated damage. Fall back to a full repaint whenever history is
   incomplete.
