@@ -96,6 +96,9 @@ impl core::fmt::Display for PhysicalTextProofBuildError {
 
 impl std::error::Error for PhysicalTextProofBuildError {}
 
+/// The X core Mod2 bit, conventionally NumLock.
+const PHYSICAL_TEXT_PROOF_TOLERATED_LOCKS: u16 = 1 << 4;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PhysicalTextProof {
     expected: Vec<PhysicalTextProofEvent>,
@@ -150,10 +153,19 @@ impl PhysicalTextProof {
             .get(expected_press_index)
             .copied()
             .unwrap_or(observed);
+        // A session legitimately starts with NumLock latched when the desktop
+        // configuration says so, and Mod2 changes the interpretation of none
+        // of the keys this proof can expect: lowercase letters and Return read
+        // the same either way. CapsLock is not tolerated, because a latched
+        // Lock would deliver uppercase and falsify the text the proof claims,
+        // and held modifiers are exactly what a routing proof must refuse.
+        let observed_state = observed.state & !PHYSICAL_TEXT_PROOF_TOLERATED_LOCKS;
         let matches = if observed.pressed {
-            observed == expected && !self.pressed_keycodes.contains(&observed.keycode)
+            observed.keycode == expected.keycode
+                && observed_state == expected.state
+                && !self.pressed_keycodes.contains(&observed.keycode)
         } else {
-            observed.state == 0 && self.pressed_keycodes.contains(&observed.keycode)
+            observed_state == 0 && self.pressed_keycodes.contains(&observed.keycode)
         };
         if !matches {
             return Err(PhysicalTextProofMismatch {

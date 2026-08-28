@@ -111,6 +111,38 @@ fn application_text_completes_without_a_submit_key() {
 }
 
 #[test]
+fn a_numlock_latched_session_still_proves_its_text() {
+    // The desktop configuration may start the session with NumLock on, and
+    // Mod2 changes the interpretation of no lowercase letter and not Return.
+    // This exact state refused the first physical latency run.
+    let mut proof = PhysicalTextProof::new("sophia").expect("proof should build");
+    for observed in sophia_events() {
+        let latched = PhysicalTextProofEvent {
+            state: 16,
+            ..observed
+        };
+        proof.observe(latched).expect("Mod2 alone must not refuse");
+    }
+    assert!(proof.is_complete());
+
+    // CapsLock would deliver uppercase, and a held Shift is exactly what the
+    // proof exists to refuse -- with or without NumLock beside it.
+    for state in [1, 2, 16 | 1, 16 | 2] {
+        let mut proof = PhysicalTextProof::new("sophia").expect("proof should build");
+        assert!(
+            proof
+                .observe(PhysicalTextProofEvent {
+                    keycode: 39,
+                    pressed: true,
+                    state,
+                })
+                .is_err(),
+            "state {state} must refuse"
+        );
+    }
+}
+
+#[test]
 fn rejects_wrong_key_modifier_unmatched_release_and_repeat() {
     for wrong in [
         event(40, true),
