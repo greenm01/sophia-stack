@@ -1870,6 +1870,9 @@ fn public_policy_launch_spec(
                 .expect("an output authority socket always has a parent"),
         ))?;
     }
+    for executable in &config.wm_process_executable_grants {
+        domain = domain.path(sophia_runtime::ProtectionPath::read_only(executable))?;
+    }
     Ok(spec.protection_domain(domain))
 }
 

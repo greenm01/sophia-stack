@@ -194,6 +194,54 @@ fn public_policy_profile_activation_is_mandatory() {
 }
 
 #[test]
+fn public_policy_child_executable_grant_is_explicit_and_read_only() {
+    let config = PersistentXtermSessionConfig::from_args(&[
+        "--wm-process=/usr/bin/true".to_owned(),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        "--wm-process-executable-grant=/usr/bin/true".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(
+        config.wm_process_executable_grants,
+        [std::path::PathBuf::from("/usr/bin/true")]
+    );
+
+    let spec = public_policy_launch_spec(
+        &config,
+        "/usr/bin/true",
+        std::path::Path::new("/run/user/1000/sophia/policy/endpoint/wm.sock"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/policy.checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
+        false,
+        None,
+    )
+    .unwrap();
+    let domain = spec.protection_domain.as_ref().unwrap();
+    assert_eq!(
+        domain.paths().last(),
+        Some(&sophia_runtime::ProtectionPath::read_only("/usr/bin/true"))
+    );
+
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--wm-process-executable-grant=/opt/sophia/xmonad".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("requires --wm-process")
+    );
+    assert!(
+        PersistentXtermSessionConfig::from_args(&[
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-process-executable-grant=relative/xmonad".to_owned(),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("requires an absolute path")
+    );
+}
+
+#[test]
 fn normal_hagia_session_resolves_one_separate_shell_executable() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};

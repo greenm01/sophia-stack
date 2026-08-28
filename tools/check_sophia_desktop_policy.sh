@@ -64,6 +64,8 @@ grep -Fq -- '--wm-interface=sophia_wm_v1' \
     "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
 grep -Fq -- '--wm-process-arg=serve-policy' \
     "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
+grep -Fq -- '"--wm-process-executable-grant=$xmonad_bin"' \
+    "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"
 if grep -Fq -- '--profile=xmonad' "$ROOT_DIR/tools/run_sophia_xmonad_session.sh"; then
     echo "Sophia's xmonad runner still selects the private API-v7 profile." >&2
     exit 1

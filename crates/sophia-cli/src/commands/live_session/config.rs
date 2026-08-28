@@ -71,6 +71,7 @@ struct PersistentXtermSessionConfig {
     software_client_rendering: bool,
     wm_process: Option<String>,
     wm_process_args: Vec<String>,
+    wm_process_executable_grants: Vec<std::path::PathBuf>,
     shell_process: Option<String>,
     shell_panel_thickness: Option<u16>,
     shell_proof_restart_after_visible: Option<u32>,
@@ -521,8 +522,37 @@ impl PersistentXtermSessionConfig {
             .filter_map(|arg| arg.strip_prefix("--wm-process-arg="))
             .map(ToOwned::to_owned)
         );
+        let wm_process_executable_grants = args
+            .iter()
+            .filter_map(|arg| arg.strip_prefix("--wm-process-executable-grant="))
+            .map(std::path::PathBuf::from)
+            .collect::<Vec<_>>();
         if wm_process.is_none() && !wm_process_args.is_empty() {
             return Err("--wm-process-arg requires --wm-process".into());
+        }
+        if wm_process.is_none() && !wm_process_executable_grants.is_empty() {
+            return Err("--wm-process-executable-grant requires --wm-process".into());
+        }
+        if wm_process_executable_grants
+            .iter()
+            .any(|path| !path.is_absolute())
+        {
+            return Err("--wm-process-executable-grant requires an absolute path".into());
+        }
+        for executable in &wm_process_executable_grants {
+            let metadata = std::fs::metadata(executable).map_err(|error| {
+                format!(
+                    "--wm-process-executable-grant cannot inspect {}: {error}",
+                    executable.display()
+                )
+            })?;
+            if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+                return Err(format!(
+                    "--wm-process-executable-grant is not an executable file: {}",
+                    executable.display()
+                )
+                .into());
+            }
         }
         let wm_interface = match arg_value(args, "--wm-interface").as_deref() {
             Some("sophia_wm_v1") => sophia_config::ExternalWmInterface::SophiaWmV1,
@@ -761,6 +791,7 @@ impl PersistentXtermSessionConfig {
             software_client_rendering,
             wm_process,
             wm_process_args,
+            wm_process_executable_grants,
             shell_process,
             shell_panel_thickness,
             shell_proof_restart_after_visible,

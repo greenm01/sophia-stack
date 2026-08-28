@@ -623,6 +623,7 @@ if [[ "$SESSION_PROFILE" == xmonad ]]; then
         --wm-process-arg=serve-policy
         --wm-process-arg="--wm=$xmonad_bin"
         --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
+        "--wm-process-executable-grant=$xmonad_bin"
     )
     if [[ -n "$xmobar_bin" ]]; then
         xmobar_config="${SOPHIA_XMOBAR_CONFIG:-$ROOT_DIR/tools/fixtures/xmobar_sophia.config}"
