@@ -110,7 +110,7 @@ use process_supervision::{
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use startup_readiness::{
-    StartupSurfacePresentationEvidence, all_startup_outputs_presented,
+    StartupHeadRequirement, StartupSurfacePresentationEvidence, all_startup_outputs_presented,
     independent_native_output_presented, logical_startup_output_progress,
     logical_synchronous_modeset_records, native_session_exported_pixels, rects_intersect,
     startup_native_recovery_reason, startup_output_evidence, startup_submission_requirement,

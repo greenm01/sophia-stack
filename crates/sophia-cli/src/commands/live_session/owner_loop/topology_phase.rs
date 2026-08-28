@@ -213,11 +213,25 @@
                                         });
                                     (
                                         head.head,
-                                        startup_submission_requirement(
-                                            head.submissions,
-                                            head.presented_submissions,
-                                            intersects,
-                                        ),
+                                        StartupHeadRequirement {
+                                            submission: startup_submission_requirement(
+                                                head.submissions,
+                                                head.presented_submissions,
+                                                intersects,
+                                            ),
+                                            content_frame: newest_head_composition_frame(
+                                                [
+                                                    head.pending_content,
+                                                    head.rendering_content,
+                                                    head.submitted_content,
+                                                    head.presented_content,
+                                                ]
+                                                .map(|content| {
+                                                    content
+                                                        .map(|content| content.frame().raw())
+                                                }),
+                                            ),
+                                        },
                                     )
                                 })
                                 .collect(),

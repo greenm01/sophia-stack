@@ -21,7 +21,13 @@ REFRESH_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
 MAX_QUEUE_DWELL_MSEC="${SOPHIA_INPUT_LATENCY_MAX_QUEUE_DWELL_MSEC:-1}"
 MAX_DWELL_TO_SUBMIT_MSEC="${SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC:-}"
 MAX_SUBMIT_TO_FLIP_MSEC="${SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC:-}"
-KEY_INTERVAL_MSEC=0
+# Fifty milliseconds, not zero. Zero (c8bfc781) coalesced the burst into one
+# visual transaction to hide the wait behind an earlier state's page flip --
+# a wait the readiness barrier's content-newness requirement has since
+# removed. Spaced presses each get their own frame and vsync phase, so the
+# distribution's population is real presses rather than one burst measured
+# seven times.
+KEY_INTERVAL_MSEC=50
 MAX_SESSION_START_ATTEMPTS=3
 # How long one sample's session may run after injection is triggered.
 #

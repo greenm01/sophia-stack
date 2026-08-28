@@ -330,11 +330,30 @@
                                         });
                                     (
                                         head.head,
-                                        startup_submission_requirement(
-                                            head.submissions,
-                                            head.presented_submissions,
-                                            intersects,
-                                        ),
+                                        StartupHeadRequirement {
+                                            submission: startup_submission_requirement(
+                                                head.submissions,
+                                                head.presented_submissions,
+                                                intersects,
+                                            ),
+                                            // The newest composition anywhere in
+                                            // this head's pipeline right now was
+                                            // planned before the focused surface
+                                            // had content; presentation must
+                                            // exceed it.
+                                            content_frame: newest_head_composition_frame(
+                                                [
+                                                    head.pending_content,
+                                                    head.rendering_content,
+                                                    head.submitted_content,
+                                                    head.presented_content,
+                                                ]
+                                                .map(|content| {
+                                                    content
+                                                        .map(|content| content.frame().raw())
+                                                }),
+                                            ),
+                                        },
                                     )
                                 })
                                 .collect()

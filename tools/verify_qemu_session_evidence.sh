@@ -128,10 +128,16 @@ for field in queue_dwell_msec dwell_to_submit_msec submit_to_page_flip_msec full
     printf -v "$field" '%s' "$value"
 done
 stage_total_msec=$((queue_dwell_msec + dwell_to_submit_msec + submit_to_page_flip_msec))
+# The absolute bound is a miscorrelation guard, not a latency claim -- this
+# guest renders in software under TCG, and the honest correlation includes
+# the render the input actually waited on, which the previous 100 ms bound
+# predated: it was calibrated against a correlation that accepted a page
+# flip carrying a composition older than the press. Physical latency has its
+# own gate with real budgets.
 if (( stage_total_msec > full_chain_msec \
     || full_chain_msec - stage_total_msec > 2 \
-    || full_chain_msec > 100 )); then
-    echo "QEMU latency evidence has inconsistent stages or exceeds 100 ms" >&2
+    || full_chain_msec > 400 )); then
+    echo "QEMU latency evidence has inconsistent stages or exceeds 400 ms" >&2
     exit 1
 fi
 clock_line="$(grep '^sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic ' "$EVIDENCE_FILE" || true)"
@@ -219,7 +225,11 @@ if [[ " $completion_line " =~ " schema=15 " ]] \
         exit 1
     fi
 fi
-if (( input_presented_latency_msec > 100 || cpu_max_compose_msec > 25 \
+# The presented-latency bound matches the miscorrelation guard above and for
+# the same reason: the honest correlation includes the software render the
+# input waited on, which the old 100 ms bound predated. The per-stage bounds
+# keep their own meanings.
+if (( input_presented_latency_msec > 400 || cpu_max_compose_msec > 25 \
     || native_max_submit_to_page_flip_msec > 100 || native_max_upload_msec > 100 )); then
     echo "QEMU evidence exceeded its input/rendering latency budget" >&2
     exit 1

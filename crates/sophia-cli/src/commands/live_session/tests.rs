@@ -3,9 +3,9 @@ use super::metadata_broker::resolve_live_broker_toplevel_action;
 use super::metadata_shell::live_shell_activation_surfaces;
 use super::startup_readiness::startup_required_submission_for_head;
 use super::startup_readiness::{
-    StartupNativeRecoveryReason, StartupOutputEvidence, StartupSurfacePresentationEvidence,
-    all_startup_outputs_presented, startup_native_recovery_reason, startup_surface_visual_detail,
-    synchronous_modeset_record,
+    StartupHeadRequirement, StartupNativeRecoveryReason, StartupOutputEvidence,
+    StartupSurfacePresentationEvidence, all_startup_outputs_presented,
+    startup_native_recovery_reason, startup_surface_visual_detail, synchronous_modeset_record,
 };
 use super::wm_update_coordinator_batch;
 use super::{
@@ -336,6 +336,8 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
     let healthy = StartupOutputEvidence {
         required_submission: 2,
         presented_submissions: 2,
+        required_content_frame: 3,
+        presented_content_frame: 5,
         callbacks: 1,
         synchronous_modeset: false,
     };
@@ -345,6 +347,8 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
         StartupOutputEvidence {
             required_submission: 2,
             presented_submissions: 1,
+            required_content_frame: 3,
+            presented_content_frame: 5,
             callbacks: 0,
             synchronous_modeset: false,
         },
@@ -352,6 +356,8 @@ fn startup_readiness_requires_every_output_callback_and_submission() {
     assert!(all_startup_outputs_presented(&[StartupOutputEvidence {
         required_submission: 1,
         presented_submissions: 1,
+        required_content_frame: 0,
+        presented_content_frame: 1,
         callbacks: 0,
         synchronous_modeset: true,
     }]));

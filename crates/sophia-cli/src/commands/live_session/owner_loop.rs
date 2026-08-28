@@ -519,7 +519,7 @@ fn run_session_loop_inner(
         .startup_ready_timeout
         .map(|timeout| started + timeout);
     let mut startup_required_submissions: Option<
-        BTreeMap<sophia_engine::RenderHeadId, usize>,
+        BTreeMap<sophia_engine::RenderHeadId, StartupHeadRequirement>,
     > = None;
     let mut retired_present_surfaces = BTreeMap::new();
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
