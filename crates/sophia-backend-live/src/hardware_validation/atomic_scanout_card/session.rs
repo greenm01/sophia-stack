@@ -460,6 +460,17 @@ impl RealAtomicScanoutPageFlipSession {
     ) -> Vec<LibdrmKernelPageFlipTimestamp> {
         self.poller.drain_emitted_kernel_timestamps()
     }
+
+    /// What the event poller holds and last saw, for stall attribution.
+    ///
+    /// A hard stall has two possible authors: an event the kernel never
+    /// delivered, and an event delivered but stuck or dropped on the way
+    /// through. The poller's pending depth, route count, and last read status
+    /// are what separate them at the moment the stall is declared.
+    #[cfg(feature = "libdrm-events")]
+    pub fn page_flip_poller_diagnostics(&self) -> LibdrmNativePollerDiagnostics {
+        self.poller.diagnostics()
+    }
 }
 
 impl Drop for RealAtomicScanoutPageFlipSession {

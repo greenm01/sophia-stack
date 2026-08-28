@@ -876,8 +876,16 @@ mod persistent_native_scanout {
                 })
                 .collect::<Vec<_>>()
                 .join(",");
+            // The poller's state at the moment of the stall is what attributes
+            // it. An event stuck or dropped inside Sophia leaves pending depth
+            // or a rejected count behind; a poller that is empty, routed, and
+            // last read clean means the completion event never crossed the
+            // card descriptor, and the fault is below this process.
+            let diagnostics = self.groups[head.group]
+                .session
+                .page_flip_poller_diagnostics();
             tracing::error!(
-                "sophia_live_native_page_flip_stall schema=1 status=hard_stall output={} head={} index={} group={} age_ms={} generation={} submissions={} retirements={} callbacks={} ever_retired={} callback_serial={} in_flight_ticks={} submitted_sequence={} peer_age_ms=[{}] action=terminate_session",
+                "sophia_live_native_page_flip_stall schema=2 status=hard_stall output={} head={} index={} group={} age_ms={} generation={} submissions={} retirements={} callbacks={} ever_retired={} callback_serial={} in_flight_ticks={} submitted_sequence={} peer_age_ms=[{}] poller_pending={} poller_routes={} poller_last_read={:?} poller_last_decoded={} poller_last_rejected={} action=terminate_session",
                 head.output.id.raw(),
                 head.head.raw(),
                 index,
@@ -894,6 +902,11 @@ mod persistent_native_scanout {
                 head.submitted_sequence
                     .map_or_else(|| "none".to_owned(), |sequence| sequence.to_string()),
                 peers,
+                diagnostics.pending_callbacks,
+                diagnostics.route_count,
+                diagnostics.last_read_loop.status,
+                diagnostics.last_read_loop.decoded_callbacks,
+                diagnostics.last_read_loop.rejected_callbacks,
             );
             Err(format!(
                 "native page flip exceeded the {} ms hard-stall boundary on head {} after {} retirements",
