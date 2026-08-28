@@ -375,10 +375,19 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    armed, committed, and retired, its 1278-by-1424 standing target committed,
    772 GLX presentations retired, and normal Logout finished with zero protocol
    errors and clean lifecycle health.
-5. **Next.** Begin Milestone 14 with its model-first boundary: extend the bounded
-   visual-retirement model for out-of-order output retirement, supersession,
-   fallback, and release safety before changing frame slots, coalescing,
-   multi-output workers, direct scanout, or buffer lifetimes.
+5. **In progress.** Milestone 14's bounded visual-retirement model and the
+   retirement-fed three-slot implementation are complete. Physical promotion
+   exposed two integration defects outside slot ownership: the xmonad child
+   executable was absent from its protected domain, then recoverable stale
+   proposals exhausted the outer supervisor. Both are repaired. The next run
+   stayed alive but was unusably slow because public policy snapshots treated
+   every Kitty raster generation as window-state generation, producing 19
+   stale responses, 17 private-adapter rebuilds, and two outer restarts in 56
+   seconds. Public snapshots now source state generation from retained
+   X-authority lifecycle facts, with a regression proving raster-only progress
+   cannot invalidate layout. Re-run the signed four-Kitty launch/focus/close
+   gate and require no repaint-led stale/rebuild storm before beginning bounded
+   buffer-age damage history.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
 was submitted upstream as [mikedanese/pnut#3](https://github.com/mikedanese/pnut/pull/3)

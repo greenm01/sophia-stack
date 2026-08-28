@@ -388,6 +388,24 @@ fn public_policy_snapshot_retains_an_admitted_surface_while_it_is_hidden() {
         .unwrap()
     );
 
+    // Pixel identity is not policy state. Once admission has a retained
+    // raster layer, its content generation may advance independently of the X
+    // authority's window-lifecycle generation and must not stale a public WM
+    // request that depends on the latter.
+    let mut repainted = test_layer(surface, geometry);
+    repainted.generation = 91;
+    layout.layers.insert(surface, repainted);
+    let repainted_surfaces = public_policy_surface_snapshots(
+        &layout,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        sophia_engine::SurfaceChromeStyle::default(),
+    )
+    .unwrap();
+    assert_eq!(repainted_surfaces[0].generation, 7);
+    layout.layers.remove(&surface);
+
     let mut withdrawn =
         crate::commands::live_session::wm_update_coordinator_batch(TransactionId::from_raw(3));
     withdrawn.surface_presentations.push(

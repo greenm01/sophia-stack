@@ -1524,6 +1524,17 @@ fn public_policy_surface_snapshots(
         let facts = layout
             .layout_facts(surface)
             .ok_or("public WM scene lost a known surface")?;
+        // `LayerSnapshot::generation` identifies committed raster content. It
+        // may advance on every client repaint without changing a single fact
+        // the spatial policy can act on. The public protocol field is instead
+        // the authority's window-state generation: using the raster identity
+        // here made ordinary Kitty drawing retire an in-flight layout as stale
+        // and forced a stateful xmonad adapter rebuild for nearly every frame.
+        let state_generation = layout
+            .authority_surface_facts
+            .get(&surface)
+            .map(|facts| facts.generation)
+            .unwrap_or(facts.generation);
         let kind = match facts.kind {
             sophia_protocol::LayoutNodeKind::Toplevel => {
                 sophia_protocol::PolicySurfaceKind::Toplevel
@@ -1541,7 +1552,7 @@ fn public_policy_surface_snapshots(
         };
         surfaces.push(sophia_protocol::PolicySurfaceSnapshot {
             surface,
-            generation: facts.generation.max(1),
+            generation: state_generation.max(1),
             current_output: current_output.get(&surface).copied(),
             kind,
             capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
