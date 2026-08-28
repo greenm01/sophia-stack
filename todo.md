@@ -2047,7 +2047,13 @@ other mature compositors are references rather than Sophia runtime components.
   at completion, and both presented heads reached full three-slot occupancy.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only
   accumulated damage. Fall back to a full repaint whenever history is
-  incomplete.
+  incomplete. The model boundary is done: `VisualDamageHistory.tla` proves that
+  a slot brought up to the current scene holds what a full repaint would have
+  produced, with negative controls for under-computed damage and for a rebuilt
+  bundle that kept its recorded generation. Before implementing, settle where a
+  slot's content age comes from: its frame surface swaps through more than one
+  back buffer, so keying history by slot alone under-computes damage. See
+  `validation/specula/buffer-age-damage-history-modeling-brief.md`.
 - [ ] Keep one latest pending frame and one KMS submission in flight per
   output; prove physical input remains within half a refresh period at p99.
 - [ ] Coalesce all outputs in the same DRM/render-device group onto one shared

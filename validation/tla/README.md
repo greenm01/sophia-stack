@@ -67,6 +67,38 @@ The bounded safety configuration explores 4,149,619 generated states and
 allowed acquisition of an occupied slot and let a stale return clear a reused
 slot; both violated `ActiveGenerationOwnsSlot`, at depths 5 and 8 respectively.
 
+`VisualDamageHistory.tla` is the successor model for bounded buffer-age damage
+history over that promoted pool. It abstracts the output as a region partition
+and content as a generation mark per region, never pixels. A scene generation
+damages a nonempty set of regions whether or not it is ever rendered, so a
+deferred generation that is superseded still contributes the work a later slot
+write owes. A slot may be written fully, or partially against the damage
+accumulated since the generation its content was written for; a rebuilt bundle
+and an incomplete write both leave it with no usable history and force the next
+write to be full. The property is that a slot brought up to the current scene
+holds what a full repaint would have produced, stated once over the result and
+once over the damage so a counterexample names the region that was owed.
+
+The model carries neither a lease incarnation nor a second head. A slot's buffer
+keeps its content across release and reacquisition, and that persistence is what
+makes buffer age worth anything, so history dies with the bundle rather than
+with the lease; `VisualRetirementSlots` owns the lease identity that rejects a
+stale release. Per-head history is the same indexing property applied twice. An
+earlier configuration carrying the incarnation dimension passed 14 million
+distinct states at depth 12 without exhausting its queue, which bought state
+space rather than a distinct failure mode.
+
+The checked configuration explores 3,643,747 generated states and 415,585
+distinct states to depth 12. Temporary negative controls independently narrowed
+a partial write to the current generation's damage alone, and let a rebuilt
+bundle keep the generation its lost pixels were written for; both violated
+`RepaintMatchesFullRepaint`, at depths 6 and 4 respectively. A third control
+checked `PartialWriteIsReachable` and found it violated at depth 4, confirming
+the optimization is admissible in the model rather than vacuously safe.
+Scenario correspondence, the implementation-only checks, and the open question
+of where a slot's content age actually comes from are recorded in
+`validation/specula/buffer-age-damage-history-modeling-brief.md`.
+
 Fairness is per action rather than over the whole progress disjunction, and
 `Settle` is outside it. That distinction is the difference between a settlement
 property and a tautology: `Settle` is enabled in every non-terminal state, so a
