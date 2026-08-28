@@ -70,22 +70,22 @@ if grep -Fq -- '--expect-physical-text' "$root_dir/tools/hagia_native_session_ga
     echo "the native gate requests an input proof without a bounded runtime" >&2
     exit 1
 fi
-# The guide belongs to the startup terminal alone. One application id carries
-# one argument list, so pointing the launch action at the same id gives every
-# new window its own copy of the guide -- which finds its waits already
-# satisfied, exits, and takes the window with it. A physical attempt spent two
-# Super+Return presses discovering that, with both terminals reaching
-# `surface_observed` and then `normal_exit_after_surface`.
-grep -Fq -- '--session-action-app=terminal=workflow-terminal' \
-    "$root_dir/tools/hagia_native_session_gate.sh" || {
-    echo "the native gate launches its workflow terminals from the guide's application" >&2
-    exit 1
-}
-if grep -Fq -- '--session-app-arg=workflow-terminal=$guide' \
-    "$root_dir/tools/hagia_native_session_gate.sh"; then
-    echo "the native gate gives its workflow terminals a copy of the guide" >&2
+# With a physical text proof requested, a normal session requires the terminal
+# action to name its single startup application and refuses the proof otherwise.
+# Splitting the guide's terminal from the workflow's terminal therefore cannot
+# work, however tempting it looks: that split cost one physical attempt, which
+# ended at argument validation before any window appeared.
+if grep -v '^[[:space:]]*#' "$root_dir/tools/hagia_native_session_gate.sh" \
+    | grep -Fq -- '--session-action-app='; then
+    echo "the native gate overrides the terminal action while requesting a physical text proof" >&2
     exit 1
 fi
+# So the guide stands down instead. The gate must give it something to claim.
+grep -Fq 'SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM="$guide_claim"' \
+    "$root_dir/tools/hagia_native_session_gate.sh" || {
+    echo "the native gate does not give the guide a claim to stand down against" >&2
+    exit 1
+}
 for step in \
     'Press Super+Return once.' \
     'Press Super+J once.' \
@@ -143,6 +143,32 @@ printf '%s\n' \
     "sophia_hagia_native_identity schema=1 status=bound sophia_commit=1111111111111111111111111111111111111111 hagia_commit=2222222222222222222222222222222222222222 sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb hagia_shell_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc desktop_profile_sha256=$profile_sha256" \
     >"$evidence"
 
+# A terminal launched by the workflow runs this same script and must stand down
+# rather than drive the proof. The evidence here is empty, so a guide that kept
+# going would abort on its first wait; standing down runs the replacement shell
+# instead, which this test makes `true`. Exit 0 therefore means it stood down.
+claim="$temp_dir/startup.claim"
+: >"$claim"
+set +e
+timeout 30s env \
+    SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$temp_dir/empty.log" \
+    SOPHIA_INPUT_PROOF_RESULT="$temp_dir/unused.result" \
+    SOPHIA_HAGIA_NATIVE_TEXT="$proof_text" \
+    SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM="$claim" \
+    SHELL=/usr/bin/true \
+    "$guide" </dev/null >/dev/null 2>&1
+standdown_status=$?
+set -e
+if [ "$standdown_status" -ne 0 ]; then
+    echo "a workflow terminal did not stand down into a shell: $standdown_status" >&2
+    exit 1
+fi
+if [ -e "$temp_dir/unused.result" ]; then
+    echo "a workflow terminal wrote the proof result it should never reach" >&2
+    exit 1
+fi
+rm -f "$claim"
+
 # The guide drives this evidence to completion: every step it waits for is
 # present, so it must finish rather than stall. A guide that cannot cross its own
 # passing log would hang an operator in front of a working session.
@@ -151,9 +177,14 @@ printf '%s\n' "$proof_text" | timeout 30s env \
     SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$evidence" \
     SOPHIA_INPUT_PROOF_RESULT="$proof_result" \
     SOPHIA_HAGIA_NATIVE_TEXT="$proof_text" \
+    SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM="$claim" \
     "$guide" >/dev/null
 guide_status=$?
 set -e
+if [ ! -e "$claim" ]; then
+    echo "the startup guide did not claim its terminal" >&2
+    exit 1
+fi
 if [ "$guide_status" -ne 0 ]; then
     echo "the native guide did not cross its own passing evidence: $guide_status" >&2
     exit 1

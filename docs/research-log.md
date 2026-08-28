@@ -38,7 +38,7 @@ Completed evidence is archived in `research-log-archive.md`.
   it was written for, and a `sed` that silently stopped matching would otherwise
   still read as a passing negative case.
 
-## 2026-08-27: one application id carries one argument list
+## 2026-08-27: the proof terminal and the launch terminal are one application
 
 - The second native attempt reached the session, presented, and accepted the
   typed phrase at 34 of 34 events. Both `Super+Return` presses then worked
@@ -46,23 +46,31 @@ Completed evidence is archived in `research-log-archive.md`.
   surface observed -- and each new window vanished immediately. The operator saw
   a shortcut that did nothing; the evidence shows two terminals reaching
   `surface_observed` and then `normal_exit_after_surface` with exit status 0.
-- The startup terminal runs the guide as its command, and the guide was bound to
-  the `terminal` application. `session:spawn-terminal` launches that same
-  application, so every workflow terminal ran its own copy of the guide. Each
-  copy found an evidence file that already satisfied every wait it had -- the
-  phrase completes before the first launch, by the guide's own ordering -- ran
-  to the end, and exited. A terminal exits when its command does, so the window
-  closed as soon as it opened.
-- The launch action now points at a separate `workflow-terminal` application:
-  the same Kitty with the same rendering-relevant arguments and no guide.
-  `--session-action-app=terminal=` is the mechanism for this and leaves the
-  profile's own `session { terminal }` binding alone, so the startup terminal
-  keeps the guide and the workflow terminals are ordinary shells.
-- This is worth stating as a rule rather than a fix: an application id owns one
-  argument list, so a startup application and an action-launched application
-  that must differ are two ids, not one id used twice. The matchers now refuse a
-  gate that launches its workflow terminals from the guide's application, or
-  that hands the guide to the workflow terminal.
+- The startup terminal runs the guide as its command, and one application id
+  carries one argument list, so every terminal the workflow launched ran its own
+  copy of the guide. Each copy found an evidence file that already satisfied
+  every wait it had -- the phrase completes before the first launch, by the
+  guide's own ordering -- ran to the end, and exited. A terminal exits when its
+  command does.
+- Splitting them into two applications is the obvious repair and Sophia refuses
+  it. A normal session with a physical text proof requires the terminal action
+  to name its single startup application (`startup_terminal` in
+  `PersistentXtermSessionConfig::from_args`) and otherwise rejects the whole
+  argument set as proof-only. The third attempt ended there, before any window
+  appeared. The rule is deliberate: the proof types into the session's terminal,
+  so the terminal it proves must be the terminal the session actually launches.
+- The differentiation therefore belongs inside the command, not in the session
+  model. The gate creates a claim file per run; the guide claims it with
+  `set -C` and any instance that cannot claim it `exec`s an ordinary shell. One
+  application, one argument list, and only the startup terminal drives the
+  proof.
+- Three argument-validation failures in a row cost three physical attempts, and
+  nothing offline reaches the real parser: `sophia-live-session` validates its
+  arguments only on the way to taking DRM, and there is no check-only entry
+  point. The matchers now restate the two rules that were violated -- an input
+  proof needs a bounded runtime, and the terminal action must not be overridden
+  -- and test the stand-down behaviourally. A check-only argument mode would
+  retire those restatements and is worth considering on its own merits.
 - The run ended by VT switch rather than logout and is not promotion evidence.
   Nothing in the WM, shell, frame-slot, or presentation path was implicated:
   layout committed eighteen times, focus reconciled fourteen, and the two stale

@@ -13,6 +13,19 @@ set -eu
 evidence="${SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE:-}"
 proof_text="${SOPHIA_HAGIA_NATIVE_TEXT:-hagianativeproof}"
 proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"
+guide_claim="${SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM:-}"
+
+# Only the startup terminal is the guide. One application id carries one
+# argument list, and the terminal the launch action spawns must be that same
+# application -- a normal session refuses a physical text proof whose terminal
+# action names anything but its single startup application. So every terminal
+# this workflow launches also runs this script, and every instance after the
+# first stands down into an ordinary shell. Without this, each new window ran a
+# second guide, found its waits already satisfied, exited, and took the window
+# with it, because a terminal exits when its command does.
+if [ -n "$guide_claim" ] && ! (set -C; : >"$guide_claim") 2>/dev/null; then
+    exec "${SHELL:-/bin/sh}"
+fi
 
 case "$proof_text" in
     *[!a-z]*|'')

@@ -160,14 +160,16 @@ echo "Do not use Ctrl+Alt+Backspace during the normal proof."
 "$ROOT_DIR/tools/atomic_scanout_preflight.sh"
 
 # The startup terminal runs the guide; every terminal the workflow launches must
-# not. Sophia gives one application id one argument list, so pointing
-# `session:spawn-terminal` at the same `terminal` id hands each new window a
-# second copy of the guide. That copy finds every wait already satisfied, runs
-# to the end, and exits -- and a terminal exits when its command does, so the
-# window appears and vanishes. `workflow-terminal` is the same Kitty with the
-# same rendering-relevant arguments and no guide, and
-# `--session-action-app=terminal=` is the mechanism that separates the two
-# without disturbing the profile's own `session { terminal }` binding.
+# not. The two cannot be separate applications: with a physical text proof
+# requested, a normal session requires the terminal action to name the single
+# startup application, and refuses the proof otherwise. So one application runs
+# the guide in every terminal, and the guide itself stands down in all but the
+# first -- it claims this file, and an instance that cannot claim it becomes an
+# ordinary shell.
+guide_claim_dir="$(mktemp -d "${TMPDIR:-/tmp}/sophia-hagia-native-guide.XXXXXX")"
+trap 'rm -rf -- "$guide_claim_dir"' EXIT HUP INT TERM
+guide_claim="$guide_claim_dir/startup.claim"
+
 status=0
 SOPHIA_TTY_PROFILE=hagia \
 SOPHIA_HAGIA_BIN="$hagia_bin" \
@@ -179,20 +181,11 @@ SOPHIA_LIVE_SESSION_DISPLAY="$display" \
 SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE="$session_log" \
 SOPHIA_OPERATOR_INPUT_SEAT="$seat" \
 SOPHIA_HAGIA_NATIVE_TEXT="$proof_text" \
+SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM="$guide_claim" \
 SOPHIA_BUILD_SESSION=false \
     "$ROOT_DIR/tools/start_sophia_tty3.sh" \
     "--shell-process=$hagia_shell_bin" \
     "--session-app-arg=terminal=$guide" \
-    "--session-app=workflow-terminal=$kitty_bin" \
-    --session-app-arg=workflow-terminal=--config \
-    --session-app-arg=workflow-terminal=NONE \
-    --session-app-arg=workflow-terminal=--override \
-    --session-app-arg=workflow-terminal=linux_display_server=x11 \
-    --session-app-arg=workflow-terminal=--override \
-    --session-app-arg=workflow-terminal=background_opacity=1 \
-    --session-app-arg=workflow-terminal=--override \
-    --session-app-arg=workflow-terminal=remember_window_size=no \
-    --session-action-app=terminal=workflow-terminal \
     "--expect-physical-text=$proof_text" \
     "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
     "--max-runtime-ms=$startup_budget_msec" || status=$?
