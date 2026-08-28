@@ -642,6 +642,15 @@ where
                     None,
                 );
             }
+            WorkerPoll::Deferred(frame) => {
+                self.worker_frame_kind = None;
+                if self.pending_frame.is_none() {
+                    self.pending_frame = Some(frame);
+                }
+                self.context_status = worker.context_status();
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
+                return worker_pending_export();
+            }
             WorkerPoll::HardStalled(age) => {
                 self.worker_frame_kind = None;
                 self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);

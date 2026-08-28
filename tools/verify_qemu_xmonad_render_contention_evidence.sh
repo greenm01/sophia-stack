@@ -143,7 +143,7 @@ for key in cpu_updates cpu_replacements cpu_patch_updates cpu_payload_bytes comp
     [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$key did not prove active CPU-bar composition"
 done
 
-resources="$(grep -E '^sophia_live_native_resources schema=5 status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resource completion lacks import_cache_imports"
 hits="$(field "$resources" import_cache_hits)" || fail "resource completion lacks import_cache_hits"
@@ -155,7 +155,12 @@ evictions="$(field "$resources" import_cache_evictions)" || fail "resource compl
 requests="$(field "$resources" worker_requests)" || fail "resource completion lacks worker_requests"
 completions="$(field "$resources" worker_completions)" || fail "resource completion lacks worker_completions"
 max_worker="$(field "$resources" max_worker_request_msec)" || fail "resource completion lacks max_worker_request_msec"
-[[ "$requests" =~ ^[1-9][0-9]*$ && "$requests" == "$completions" ]] ||
+deferrals=0
+if [[ "$(field "$resources" schema)" == 7 ]]; then
+    deferrals="$(field "$resources" frame_slot_deferrals)" || fail "schema-7 resources lack frame_slot_deferrals"
+    [[ "$(field "$resources" frame_slot_stale_releases)" == 0 ]] || fail "native frame-slot release was stale"
+fi
+[[ "$requests" =~ ^[1-9][0-9]*$ ]] && (( requests == completions + deferrals )) ||
     fail "renderer-worker requests did not retire exactly once"
 [[ "$max_worker" =~ ^[0-9]+$ ]] && (( max_worker <= 100 )) ||
     fail "renderer-worker request latency exceeded 100 ms"

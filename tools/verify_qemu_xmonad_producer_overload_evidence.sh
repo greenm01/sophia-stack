@@ -187,7 +187,7 @@ max_presentations="$(field "$scheduler" max_live_presentations)" ||
 [[ "$max_presentations" =~ ^[0-9]+$ ]] && (( max_presentations <= 2 )) ||
     fail "more than one in-flight plus one pending Present was owned"
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resources lack import_cache_imports"
 evictions="$(field "$resources" import_cache_evictions)" || fail "resources lack import_cache_evictions"
@@ -196,7 +196,12 @@ evictions="$(field "$resources" import_cache_evictions)" || fail "resources lack
 requests="$(field "$resources" worker_requests)" || fail "resources lack worker_requests"
 completions="$(field "$resources" worker_completions)" || fail "resources lack worker_completions"
 max_worker="$(field "$resources" max_worker_request_msec)" || fail "resources lack max_worker_request_msec"
-[[ "$requests" =~ ^[1-9][0-9]*$ && "$requests" == "$completions" ]] ||
+deferrals=0
+if [[ "$(field "$resources" schema)" == 7 ]]; then
+    deferrals="$(field "$resources" frame_slot_deferrals)" || fail "schema-7 resources lack frame_slot_deferrals"
+    [[ "$(field "$resources" frame_slot_stale_releases)" == 0 ]] || fail "native frame-slot release was stale"
+fi
+[[ "$requests" =~ ^[1-9][0-9]*$ ]] && (( requests == completions + deferrals )) ||
     fail "renderer-worker ownership did not balance"
 [[ "$max_worker" =~ ^[0-9]+$ ]] && (( max_worker <= 100 )) ||
     fail "renderer-worker request latency exceeded 100 ms"

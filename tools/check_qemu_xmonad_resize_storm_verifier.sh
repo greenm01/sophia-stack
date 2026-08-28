@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY="$ROOT_DIR/tools/verify_qemu_xmonad_resize_storm_evidence.sh"
 FIXTURE="$(mktemp)"
 MUTATION="$(mktemp)"
-trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
+trap 'rm -f -- "$FIXTURE" "$MUTATION" "$MUTATION.stale"' EXIT
 
 {
     echo 'sophia_live_session_mode schema=1 mode=normal configured_apps=1 startup_apps=1'
@@ -35,6 +35,21 @@ trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
 } >"$FIXTURE"
 
 "$VERIFY" "$FIXTURE" >/dev/null
+
+sed -E '/^sophia_live_native_resources / {
+    s/schema=5/schema=7/
+    s/worker_completions=12/worker_completions=11/
+    s/ max_worker_request_msec=/ frame_slot_acquisitions=11 frame_slot_reuses=8 frame_slot_deferrals=1 frame_slot_stale_releases=0 frame_slots_leased=1 frame_slots_high_watermark=3 max_worker_request_msec=/
+}' "$FIXTURE" >"$MUTATION"
+"$VERIFY" "$MUTATION" >/dev/null
+
+sed 's/frame_slot_stale_releases=0/frame_slot_stale_releases=1/' \
+    "$MUTATION" >"$MUTATION.stale"
+if "$VERIFY" "$MUTATION.stale" >/dev/null 2>&1; then
+    echo "resize-storm verifier accepted a stale native frame-slot release" >&2
+    exit 1
+fi
+rm -f -- "$MUTATION.stale"
 
 awk '!removed && /status=committed transaction=2000005 surface=3/ { removed=1; next } { print }' \
     "$FIXTURE" >"$MUTATION"

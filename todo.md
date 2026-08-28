@@ -2008,12 +2008,12 @@ the revision-1 compatibility gate passes. It does not wait on elapsed dogfood
 time. It optimizes the same native-X product; XLibre, Xorg, niri, river, and
 other mature compositors are references rather than Sophia runtime components.
 
-- [ ] Extend the bounded visual-retirement model before changing frame-slot,
+- [x] Extend the bounded visual-retirement model before changing frame-slot,
   coalescing, multi-output, shared-worker, direct-scanout, or buffer-lifetime
   semantics. Check out-of-order output retirement, supersession, fallback, and
   release safety. Retain a deterministic Rust regression for every
   implementation-relevant counterexample.
-- [ ] Recycle three generational frame-surface slots per output through
+- [x] Recycle three generational frame-surface slots per output through
   explicit page-flip retirement, with bounded deferral when all slots are
   leased.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only

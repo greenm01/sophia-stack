@@ -734,7 +734,7 @@
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
     println!(
-        "sophia_live_native_resources schema=6 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} exact_nearest_draws={} sharp_downscale_draws={} sharp_upscale_draws={} linear_fallback_draws={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} max_worker_request_msec={}",
+        "sophia_live_native_resources schema=7 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} exact_nearest_draws={} sharp_downscale_draws={} sharp_upscale_draws={} linear_fallback_draws={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} frame_slot_acquisitions={} frame_slot_reuses={} frame_slot_deferrals={} frame_slot_stale_releases={} frame_slots_leased={} frame_slots_high_watermark={} max_worker_request_msec={}",
         native_resources.target_creations,
         native_resources.pipeline_creations,
         native_resources.frame_surface_creations,
@@ -766,6 +766,12 @@
         native_resources.worker_soft_stalls,
         native_resources.worker_hard_stalls,
         native_resources.worker_release_enqueue_failures,
+        native_resources.frame_slot_acquisitions,
+        native_resources.frame_slot_reuses,
+        native_resources.frame_slot_deferrals,
+        native_resources.frame_slot_stale_releases,
+        native_resources.frame_slots_leased,
+        native_resources.frame_slots_high_watermark,
         native_resources.max_worker_request.as_millis(),
     );
     if let Some(native_scanout) = native_scanout.as_ref() {

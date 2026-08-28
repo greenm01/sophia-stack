@@ -499,6 +499,36 @@ where
         )
     }
 
+    pub fn export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
+        &mut self,
+        frame_slot: usize,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: &crate::LiveCpuComposedFrame,
+        preferred_modifiers: &[u64],
+    ) -> NativeGbmOwnedScanoutBufferExportReport {
+        if !target.is_valid_scanout_target()
+            || frame.size != target.size
+            || frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+        {
+            return NativeGbmOwnedScanoutBufferExportReport::new(
+                LiveRendererScanoutBufferExportStatus::InvalidTarget,
+                LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                None,
+            );
+        }
+        reduced_native_owned_scanout_buffer_export_report(
+            self.inner
+                .export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    frame_slot,
+                    target.size.width as u32,
+                    target.size.height as u32,
+                    frame.stride,
+                    &frame.bytes,
+                    preferred_modifiers,
+                ),
+        )
+    }
+
     pub fn rewrite_xrgb8888_owned_scanout_buffer_damage(
         &mut self,
         buffer: &mut NativeGbmOwnedScanoutBuffer,
@@ -561,6 +591,41 @@ where
         )
     }
 
+    pub fn export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
+        &mut self,
+        frame_slot: usize,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: LiveDmaBufFrame<'_>,
+        preferred_modifiers: &[u64],
+    ) -> NativeGbmOwnedScanoutBufferExportReport {
+        if !target.is_valid_scanout_target()
+            || target.size.width != i32::try_from(frame.width).unwrap_or(i32::MAX)
+            || target.size.height != i32::try_from(frame.height).unwrap_or(i32::MAX)
+        {
+            return NativeGbmOwnedScanoutBufferExportReport::new(
+                LiveRendererScanoutBufferExportStatus::InvalidTarget,
+                LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                None,
+            );
+        }
+        reduced_native_owned_scanout_buffer_export_report(
+            self.inner
+                .export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    frame_slot,
+                    sophia_renderer_native_egl::NativeDmaBufFrame {
+                        width: frame.width,
+                        height: frame.height,
+                        format: frame.format,
+                        modifier: frame.modifier,
+                        fd: frame.fd,
+                        offset: frame.offset,
+                        stride: frame.stride,
+                    },
+                    preferred_modifiers,
+                ),
+        )
+    }
+
     pub fn export_mixed_owned_scanout_buffer_with_modifiers(
         &mut self,
         target: LiveGbmEglFrameTargetRecord,
@@ -572,6 +637,7 @@ where
             layers,
             preferred_modifiers,
             None,
+            None,
         )
     }
 
@@ -581,6 +647,7 @@ where
         layers: &[LiveMixedCompositionLayer<'_>],
         preferred_modifiers: &[u64],
         trace: Option<LiveCompositionTrace>,
+        frame_slot: Option<usize>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !target.is_valid_scanout_target() {
             return Err(LiveMixedCompositionError::InvalidOutput);
@@ -689,24 +756,32 @@ where
                 }
             })
             .collect::<Result<Vec<_>, LiveMixedCompositionError>>()?;
-        Ok(reduced_native_owned_scanout_buffer_export_report(
-            self.inner
-                .export_composed_owned_scanout_buffer_with_modifiers(
-                    sophia_renderer_native_egl::NativeCompositionFrame {
-                        width: target.size.width as u32,
-                        height: target.size.height as u32,
-                        layers: &native_layers,
-                        trace: trace.map(|trace| {
-                            sophia_renderer_native_egl::NativeCompositionTrace {
-                                output: trace.output.raw(),
-                                head: trace.head.raw(),
-                                scene_generation: trace.scene_generation,
-                            }
-                        }),
-                    },
+        let native_frame = sophia_renderer_native_egl::NativeCompositionFrame {
+            width: target.size.width as u32,
+            height: target.size.height as u32,
+            layers: &native_layers,
+            trace: trace.map(|trace| sophia_renderer_native_egl::NativeCompositionTrace {
+                output: trace.output.raw(),
+                head: trace.head.raw(),
+                scene_generation: trace.scene_generation,
+            }),
+        };
+        let report = match frame_slot {
+            Some(frame_slot) => self
+                .inner
+                .export_composed_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    frame_slot,
+                    native_frame,
                     preferred_modifiers,
                 ),
-        ))
+            None => self
+                .inner
+                .export_composed_owned_scanout_buffer_with_modifiers(
+                    native_frame,
+                    preferred_modifiers,
+                ),
+        };
+        Ok(reduced_native_owned_scanout_buffer_export_report(report))
     }
 
     pub fn export_owned_mixed_frame_with_modifiers(
@@ -714,6 +789,36 @@ where
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
         preferred_modifiers: &[u64],
+    ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
+        self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
+            target,
+            frame,
+            preferred_modifiers,
+            None,
+        )
+    }
+
+    pub fn export_owned_mixed_frame_with_modifiers_in_frame_slot(
+        &mut self,
+        frame_slot: usize,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: &LiveOwnedMixedCompositionFrame,
+        preferred_modifiers: &[u64],
+    ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
+        self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
+            target,
+            frame,
+            preferred_modifiers,
+            Some(frame_slot),
+        )
+    }
+
+    fn export_owned_mixed_frame_with_modifiers_and_frame_slot(
+        &mut self,
+        target: LiveGbmEglFrameTargetRecord,
+        frame: &LiveOwnedMixedCompositionFrame,
+        preferred_modifiers: &[u64],
+        frame_slot: Option<usize>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         // Capture client DMA-BUFs before assembling the output frame. Retained
         // scene state below then refers only to compositor-owned images.
@@ -797,6 +902,7 @@ where
             &layers,
             preferred_modifiers,
             frame.trace,
+            frame_slot,
         )
     }
 

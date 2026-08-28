@@ -1,4 +1,8 @@
 use super::discovery::PendingRenderedFrame;
+use super::frame_slots::{
+    LiveRendererFrameSlotAcquire, LiveRendererFrameSlotMetrics, LiveRendererFrameSlotMetricsHandle,
+    LiveRendererFrameSlotPool, LiveRendererFrameSlotToken,
+};
 use crate::api::*;
 use sophia_renderer_live::{
     LiveMixedCompositionError, LiveNativePersistentRenderStats, LiveRendererImageId,
@@ -20,7 +24,6 @@ use std::time::{Duration, Instant};
 
 const WORKER_COMMAND_CAPACITY: usize = 32;
 const WORKER_RESULT_CAPACITY: usize = 2;
-const WORKER_LEASE_CAPACITY: usize = 16;
 const WORKER_FREE_CPU_BUFFER_CAPACITY: usize = 3;
 pub const LIVE_RENDERER_WORKER_SOFT_STALL: Duration = Duration::from_millis(100);
 pub const LIVE_RENDERER_WORKER_HARD_STALL: Duration = Duration::from_secs(1);
@@ -41,12 +44,14 @@ pub struct LiveRendererWorkerMetrics {
     pub hard_stalls: usize,
     pub release_enqueue_failures: usize,
     pub max_request_age: Duration,
+    pub frame_slots: LiveRendererFrameSlotMetrics,
 }
 
 #[derive(Debug)]
 pub struct NativeGbmRendererWorkerScanoutLease {
     descriptor: LiveRendererScanoutBufferDescriptor,
     lease_id: LiveRendererWorkerLeaseId,
+    slot_token: LiveRendererFrameSlotToken,
     command_sender: SyncSender<WorkerCommand>,
     release_enqueue_failures: Arc<AtomicUsize>,
 }
@@ -60,6 +65,10 @@ impl NativeGbmRendererWorkerScanoutLease {
         self.lease_id
     }
 
+    pub const fn slot_token(&self) -> LiveRendererFrameSlotToken {
+        self.slot_token
+    }
+
     pub fn export_scanout_dma_buf_fds(
         &self,
     ) -> io::Result<Option<(u8, [Option<std::os::fd::OwnedFd>; 4])>> {
@@ -71,7 +80,10 @@ impl Drop for NativeGbmRendererWorkerScanoutLease {
     fn drop(&mut self) {
         if self
             .command_sender
-            .try_send(WorkerCommand::Release(self.lease_id))
+            .try_send(WorkerCommand::Release {
+                lease_id: self.lease_id,
+                slot_token: self.slot_token,
+            })
             .is_err()
         {
             self.release_enqueue_failures
@@ -90,6 +102,7 @@ pub(super) struct NativeGbmRendererWorker {
     persistent_render_stats: LiveNativePersistentRenderStats,
     composition_nonzero_rgb_pixels: usize,
     release_enqueue_failures: Arc<AtomicUsize>,
+    frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
     metrics: LiveRendererWorkerMetrics,
     quarantined: bool,
 }
@@ -101,9 +114,18 @@ impl NativeGbmRendererWorker {
     {
         let (command_sender, command_receiver) = sync_channel(WORKER_COMMAND_CAPACITY);
         let (result_sender, result_receiver) = sync_channel(WORKER_RESULT_CAPACITY);
+        let frame_slot_metrics = LiveRendererFrameSlotMetricsHandle::default();
+        let worker_frame_slot_metrics = frame_slot_metrics.clone();
         let thread = thread::Builder::new()
             .name("sophia-render-gpu".to_owned())
-            .spawn(move || run_worker(device, command_receiver, result_sender))?;
+            .spawn(move || {
+                run_worker(
+                    device,
+                    command_receiver,
+                    result_sender,
+                    worker_frame_slot_metrics,
+                )
+            })?;
         Ok(Self {
             command_sender,
             result_receiver,
@@ -114,6 +136,7 @@ impl NativeGbmRendererWorker {
             persistent_render_stats: LiveNativePersistentRenderStats::default(),
             composition_nonzero_rgb_pixels: 0,
             release_enqueue_failures: Arc::new(AtomicUsize::new(0)),
+            frame_slot_metrics,
             metrics: LiveRendererWorkerMetrics::default(),
             quarantined: false,
         })
@@ -138,6 +161,7 @@ impl NativeGbmRendererWorker {
     pub fn metrics(&self) -> LiveRendererWorkerMetrics {
         LiveRendererWorkerMetrics {
             release_enqueue_failures: self.release_enqueue_failures.load(Ordering::Relaxed),
+            frame_slots: self.frame_slot_metrics.snapshot(),
             ..self.metrics
         }
     }
@@ -214,11 +238,13 @@ impl NativeGbmRendererWorker {
                     WorkerOutcome::Exported {
                         descriptor,
                         lease_id,
+                        slot_token,
                     } => {
                         self.metrics.completions = self.metrics.completions.saturating_add(1);
                         WorkerPoll::Exported(NativeGbmRendererWorkerScanoutLease {
                             descriptor,
                             lease_id,
+                            slot_token,
                             command_sender: self.command_sender.clone(),
                             release_enqueue_failures: Arc::clone(&self.release_enqueue_failures),
                         })
@@ -227,6 +253,7 @@ impl NativeGbmRendererWorker {
                         self.metrics.failures = self.metrics.failures.saturating_add(1);
                         WorkerPoll::Failed(detail)
                     }
+                    WorkerOutcome::Deferred(frame) => WorkerPoll::Deferred(frame),
                 }
             }
             Err(TryRecvError::Disconnected) => {
@@ -370,6 +397,7 @@ impl NativeGbmRendererWorker {
                     drop(lease);
                     return Ok(true);
                 }
+                WorkerPoll::Deferred(_) => return Ok(true),
                 WorkerPoll::Failed(detail) => return Err(detail),
                 WorkerPoll::HardStalled(_) => {
                     return Err(LiveRendererScanoutBufferExportDetail::WorkerStalled);
@@ -442,6 +470,7 @@ pub(super) enum WorkerPoll {
         soft_stall_started: bool,
     },
     Exported(NativeGbmRendererWorkerScanoutLease),
+    Deferred(PendingRenderedFrame),
     Failed(LiveRendererScanoutBufferExportDetail),
     HardStalled(Duration),
 }
@@ -484,7 +513,10 @@ enum WorkerCommand {
     ClearImages {
         completion_sender: SyncSender<WorkerMaintenanceResult>,
     },
-    Release(LiveRendererWorkerLeaseId),
+    Release {
+        lease_id: LiveRendererWorkerLeaseId,
+        slot_token: LiveRendererFrameSlotToken,
+    },
     Shutdown,
 }
 
@@ -510,7 +542,9 @@ enum WorkerOutcome {
     Exported {
         descriptor: LiveRendererScanoutBufferDescriptor,
         lease_id: LiveRendererWorkerLeaseId,
+        slot_token: LiveRendererFrameSlotToken,
     },
+    Deferred(PendingRenderedFrame),
     Failed(LiveRendererScanoutBufferExportDetail),
 }
 
@@ -518,6 +552,7 @@ fn run_worker<D>(
     device: io::Result<D>,
     command_receiver: Receiver<WorkerCommand>,
     result_sender: SyncSender<WorkerResult>,
+    frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
 ) where
     D: AsFd + Send + 'static,
 {
@@ -527,6 +562,7 @@ fn run_worker<D>(
     let mut leases = BTreeMap::<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>::new();
     let mut free_cpu_buffers = Vec::<ReusableCpuBuffer>::new();
     let mut next_lease_id = 1_u64;
+    let mut frame_slots = LiveRendererFrameSlotPool::with_metrics(frame_slot_metrics);
 
     while let Ok(command) = command_receiver.recv() {
         match command {
@@ -558,6 +594,7 @@ fn run_worker<D>(
                             &mut leases,
                             &mut free_cpu_buffers,
                             &mut next_lease_id,
+                            &mut frame_slots,
                         )
                     },
                 );
@@ -656,17 +693,32 @@ fn run_worker<D>(
                     persistent_render_stats,
                 });
             }
-            WorkerCommand::Release(lease_id) => {
-                if let Some(lease) = leases.remove(&lease_id)
-                    && let Some(metadata) = lease.cpu
-                    && free_cpu_buffers.len() < WORKER_FREE_CPU_BUFFER_CAPACITY
+            WorkerCommand::Release {
+                lease_id,
+                slot_token,
+            } => {
+                if leases
+                    .get(&lease_id)
+                    .is_none_or(|lease| lease.slot_token != slot_token)
                 {
-                    free_cpu_buffers.push(ReusableCpuBuffer {
-                        buffer: lease.buffer,
-                        checksum: metadata.checksum,
-                        damage_snapshot: metadata.damage_snapshot,
-                    });
+                    frame_slots.refuse_stale_release();
+                    continue;
                 }
+                let lease = leases
+                    .remove(&lease_id)
+                    .expect("worker lease identity checked above");
+                let WorkerLeaseBuffer { buffer, cpu, .. } = lease;
+                match cpu {
+                    Some(metadata) if free_cpu_buffers.len() < WORKER_FREE_CPU_BUFFER_CAPACITY => {
+                        free_cpu_buffers.push(ReusableCpuBuffer {
+                            buffer,
+                            checksum: metadata.checksum,
+                            damage_snapshot: metadata.damage_snapshot,
+                        });
+                    }
+                    Some(_) | None => drop(buffer),
+                }
+                let _ = frame_slots.release(slot_token);
             }
             WorkerCommand::Shutdown => break,
         }
@@ -715,6 +767,7 @@ fn trace_worker_request(request: LiveRendererWorkerRequestId) -> bool {
 fn worker_outcome_name(outcome: &WorkerOutcome) -> &'static str {
     match outcome {
         WorkerOutcome::Exported { .. } => "exported",
+        WorkerOutcome::Deferred(_) => "deferred",
         WorkerOutcome::Failed(_) => "failed",
     }
 }
@@ -727,6 +780,7 @@ struct WorkerCpuBufferMetadata {
 struct WorkerLeaseBuffer {
     buffer: NativeGbmOwnedScanoutBuffer,
     cpu: Option<WorkerCpuBufferMetadata>,
+    slot_token: LiveRendererFrameSlotToken,
 }
 
 struct ReusableCpuBuffer {
@@ -743,13 +797,51 @@ fn render_frame<D>(
     leases: &mut BTreeMap<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>,
     free_cpu_buffers: &mut Vec<ReusableCpuBuffer>,
     next_lease_id: &mut u64,
+    frame_slots: &mut LiveRendererFrameSlotPool,
 ) -> WorkerOutcome
 where
     D: AsFd,
 {
-    if leases.len() >= WORKER_LEASE_CAPACITY {
-        return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+    let slot_token = match frame_slots.try_acquire() {
+        LiveRendererFrameSlotAcquire::Acquired(token) => token,
+        LiveRendererFrameSlotAcquire::Deferred => return WorkerOutcome::Deferred(frame),
+        LiveRendererFrameSlotAcquire::IncarnationExhausted => {
+            return WorkerOutcome::Failed(
+                LiveRendererScanoutBufferExportDetail::RetainedBufferMissing,
+            );
+        }
+    };
+    let outcome = render_frame_in_slot(
+        context,
+        target,
+        frame,
+        preferred_modifiers,
+        leases,
+        free_cpu_buffers,
+        next_lease_id,
+        slot_token,
+    );
+    if matches!(outcome, WorkerOutcome::Failed(_)) {
+        let _ = frame_slots.release(slot_token);
     }
+    outcome
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_frame_in_slot<D>(
+    context: &mut NativeGbmRenderedScanoutContext<D>,
+    target: LiveGbmEglFrameTargetRecord,
+    frame: PendingRenderedFrame,
+    preferred_modifiers: &[u64],
+    leases: &mut BTreeMap<LiveRendererWorkerLeaseId, WorkerLeaseBuffer>,
+    free_cpu_buffers: &mut Vec<ReusableCpuBuffer>,
+    next_lease_id: &mut u64,
+    slot_token: LiveRendererFrameSlotToken,
+) -> WorkerOutcome
+where
+    D: AsFd,
+{
+    let frame_slot = slot_token.slot_id().index();
     let (report, cpu) = match frame {
         PendingRenderedFrame::Cpu {
             frame,
@@ -800,7 +892,8 @@ where
                     }
                 });
             let report = reused.unwrap_or_else(|| {
-                context.export_xrgb8888_owned_scanout_buffer_with_modifiers(
+                context.export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    frame_slot,
                     target,
                     &frame,
                     preferred_modifiers,
@@ -815,7 +908,8 @@ where
             )
         }
         PendingRenderedFrame::DmaBuf(frame) => (
-            context.export_dmabuf_owned_scanout_buffer_with_modifiers(
+            context.export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                frame_slot,
                 target,
                 frame.as_frame(),
                 preferred_modifiers,
@@ -823,7 +917,8 @@ where
             None,
         ),
         PendingRenderedFrame::Mixed(frame) => {
-            let report = match context.export_owned_mixed_frame_with_modifiers(
+            let report = match context.export_owned_mixed_frame_with_modifiers_in_frame_slot(
+                frame_slot,
                 target,
                 &frame,
                 preferred_modifiers,
@@ -848,51 +943,25 @@ where
         return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
     };
     let descriptor = buffer.descriptor();
+    let Some(next_id) = next_lease_id.checked_add(1) else {
+        return WorkerOutcome::Failed(LiveRendererScanoutBufferExportDetail::RetainedBufferMissing);
+    };
     let lease_id = LiveRendererWorkerLeaseId(*next_lease_id);
-    *next_lease_id = next_lease_id.saturating_add(1);
-    leases.insert(lease_id, WorkerLeaseBuffer { buffer, cpu });
+    *next_lease_id = next_id;
+    leases.insert(
+        lease_id,
+        WorkerLeaseBuffer {
+            buffer,
+            cpu,
+            slot_token,
+        },
+    );
     WorkerOutcome::Exported {
         descriptor,
         lease_id,
+        slot_token,
     }
 }
 
-fn reusable_cpu_buffer_damage(
-    previous_checksum: u64,
-    previous: Option<&sophia_engine::OutputFrameDamageSnapshot>,
-    checksum: u64,
-    current: Option<&sophia_engine::OutputFrameDamageSnapshot>,
-    size: sophia_protocol::Size,
-) -> Vec<sophia_protocol::Rect> {
-    if previous_checksum == checksum {
-        return Vec::new();
-    }
-    let damage = previous
-        .zip(current)
-        .and_then(|(previous, current)| {
-            sophia_engine::output_frame_damage(Some(previous), current).ok()
-        })
-        .and_then(|damage| {
-            sophia_engine::plan_output_repaint(
-                size,
-                &damage,
-                sophia_engine::OutputRepaintPolicy::default(),
-            )
-            .ok()
-        })
-        .map(|repaint| match repaint {
-            sophia_engine::OutputRepaintPlan::Skip => Vec::new(),
-            sophia_engine::OutputRepaintPlan::Partial { damage, .. }
-            | sophia_engine::OutputRepaintPlan::Full { damage, .. } => damage.rects,
-        });
-    damage.unwrap_or_else(|| {
-        vec![sophia_protocol::Rect {
-            x: 0,
-            y: 0,
-            width: size.width,
-            height: size.height,
-        }]
-    })
-}
-
+include!("worker/damage.rs");
 mod tests;

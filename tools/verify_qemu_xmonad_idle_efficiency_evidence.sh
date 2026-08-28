@@ -145,7 +145,7 @@ awk -v start="$idle_start_line" -v complete="$idle_complete_line" '
     END { if (work != 0) exit 1 }
 ' "$EVIDENCE_FILE" || fail "the idle window performed rendering or client-present work"
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resources lack import_cache_imports"
 hits="$(field "$resources" import_cache_hits)" || fail "resources lack import_cache_hits"
@@ -160,7 +160,12 @@ composition_reuses="$(field "$resources" composition_target_reuses)" ||
 requests="$(field "$resources" worker_requests)" || fail "resources lack worker_requests"
 completions="$(field "$resources" worker_completions)" || fail "resources lack worker_completions"
 max_worker="$(field "$resources" max_worker_request_msec)" || fail "resources lack max_worker_request_msec"
-[[ "$requests" =~ ^[1-9][0-9]*$ && "$requests" == "$completions" ]] ||
+deferrals=0
+if [[ "$(field "$resources" schema)" == 7 ]]; then
+    deferrals="$(field "$resources" frame_slot_deferrals)" || fail "schema-7 resources lack frame_slot_deferrals"
+    [[ "$(field "$resources" frame_slot_stale_releases)" == 0 ]] || fail "native frame-slot release was stale"
+fi
+[[ "$requests" =~ ^[1-9][0-9]*$ ]] && (( requests == completions + deferrals )) ||
     fail "renderer-worker requests did not retire exactly once"
 [[ "$max_worker" =~ ^[0-9]+$ ]] && (( max_worker <= 100 )) ||
     fail "renderer-worker request latency exceeded 100 ms"

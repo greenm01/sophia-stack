@@ -42,6 +42,7 @@ where
             .is_some_and(|persistent| {
                 persistent.target.width != frame.width
                     || persistent.target.height != frame.height
+                    || persistent.preferred_modifiers != reduced
             })
             && let Some(persistent) = self.composition_target.take()
         {
@@ -65,7 +66,6 @@ where
                 capture_pixels,
                 false,
             );
-            self.stats.import_cache = persistent.import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             let render_evidence = rendered
                 .as_ref()
@@ -144,7 +144,7 @@ where
             let render_started = Instant::now();
             let mut import_cache = NativeDmaBufImportCache::with_capacity_and_stats(
                 self.import_cache_capacity,
-                self.stats.import_cache,
+                NativeDmaBufImportCacheStats::default(),
             );
             let rendered = render_native_target_composition(
                 &self.egl,
@@ -157,7 +157,6 @@ where
                 capture_pixels,
                 false,
             );
-            self.stats.import_cache = import_cache.stats();
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             let render_evidence = rendered
                 .as_ref()
@@ -188,6 +187,7 @@ where
                         target,
                         surface,
                         import_cache,
+                        preferred_modifiers: reduced.clone(),
                     });
                     return Ok(buffer);
                 }
@@ -196,6 +196,7 @@ where
                         target,
                         surface,
                         import_cache,
+                        preferred_modifiers: reduced.clone(),
                     });
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
@@ -204,6 +205,7 @@ where
                         target,
                         surface,
                         import_cache,
+                        preferred_modifiers: reduced.clone(),
                     });
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
@@ -246,6 +248,47 @@ where
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
         let reduced = reduced_gbm_scanout_modifiers(&preferred_modifiers);
         let mut last_detail = NativeGbmScanoutBufferExportDetail::EglConfigUnavailable;
+        if self
+            .composition_target
+            .as_ref()
+            .is_some_and(|persistent| {
+                persistent.target.width != frame.width
+                    || persistent.target.height != frame.height
+                    || persistent.preferred_modifiers != reduced
+            })
+            && let Some(persistent) = self.composition_target.take()
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+        }
+        if let Some(persistent) = self.composition_target.as_mut() {
+            let render_started = Instant::now();
+            let rendered = render_native_target_dmabuf(
+                &self.egl,
+                self.display,
+                &mut persistent.target,
+                persistent.surface.clone(),
+                frame,
+            );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            match rendered {
+                Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
+                    return Ok(buffer);
+                }
+                Ok(_) => {
+                    last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
+                }
+                Err(detail) => {
+                    last_detail = preferred_scanout_failure_detail(last_detail, detail);
+                }
+            }
+            let persistent = self
+                .composition_target
+                .take()
+                .expect("persistent DMA-BUF target checked above");
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+        }
         for candidate in rendered_scanout_candidates(&reduced) {
             let Some(config) = choose_scanout_config_for_format(
                 &self.egl,
@@ -275,15 +318,21 @@ where
                 &self.egl,
                 self.display,
                 &mut target,
-                surface,
+                surface.clone(),
                 frame,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
-                    self.stats.target_recreations =
-                        self.stats.target_recreations.saturating_add(1);
-                    self.destroy_native_render_target(target);
+                    self.composition_target = Some(PersistentCompositionTarget {
+                        target,
+                        surface,
+                        import_cache: NativeDmaBufImportCache::with_capacity_and_stats(
+                            self.import_cache_capacity,
+                            NativeDmaBufImportCacheStats::default(),
+                        ),
+                        preferred_modifiers: reduced.clone(),
+                    });
                     return Ok(buffer);
                 }
                 Ok(_) => {
@@ -355,6 +404,47 @@ where
             .map_err(|_| NativeGbmScanoutBufferExportDetail::EglBindApiFailed)?;
         let reduced = reduced_gbm_scanout_modifiers(&preferred_modifiers);
         let mut last_detail = NativeGbmScanoutBufferExportDetail::EglConfigUnavailable;
+        if self
+            .composition_target
+            .as_ref()
+            .is_some_and(|persistent| {
+                persistent.target.width != width || persistent.target.height != height
+                    || persistent.preferred_modifiers != reduced
+            })
+            && let Some(persistent) = self.composition_target.take()
+        {
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+        }
+        if let Some(persistent) = self.composition_target.as_mut() {
+            let render_started = Instant::now();
+            let rendered = render_native_target_frame(
+                &self.egl,
+                self.display,
+                &mut persistent.target,
+                persistent.surface.clone(),
+                pixels,
+            );
+            self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            match rendered {
+                Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
+                    self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
+                    return Ok(buffer);
+                }
+                Ok(_) => {
+                    last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
+                }
+                Err(detail) => {
+                    last_detail = preferred_scanout_failure_detail(last_detail, detail);
+                }
+            }
+            let persistent = self
+                .composition_target
+                .take()
+                .expect("persistent CPU target checked above");
+            self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
+            self.destroy_persistent_composition_target(persistent);
+        }
         for candidate in rendered_scanout_candidates(&reduced) {
             let Some(config) = choose_scanout_config_for_format(
                 &self.egl,
@@ -384,16 +474,22 @@ where
                 &self.egl,
                 self.display,
                 &mut target,
-                surface,
+                surface.clone(),
                 pixels,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
-                    self.stats.target_recreations =
-                        self.stats.target_recreations.saturating_add(1);
-                    self.destroy_native_render_target(target);
+                    self.composition_target = Some(PersistentCompositionTarget {
+                        target,
+                        surface,
+                        import_cache: NativeDmaBufImportCache::with_capacity_and_stats(
+                            self.import_cache_capacity,
+                            NativeDmaBufImportCacheStats::default(),
+                        ),
+                        preferred_modifiers: reduced.clone(),
+                    });
                     return Ok(buffer);
                 }
                 Ok(_) => {

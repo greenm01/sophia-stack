@@ -669,7 +669,14 @@ render-node worker is the opposite typed mode: PRIME FDs are mandatory and its
 renderer-local handles are never submitted directly. `Pending` is an ordinary
 deferred scanout state, not a failed frame. KMS page-flip retirement drops the
 lease token; only then does the worker release the locked GBM buffer on the
-thread that owns its native context.
+thread that owns its native context. Each physical-head worker owns exactly
+three complete target slots. A slot retains its EGL context, GL pipeline,
+GBM/EGL frame surface, and import cache together and carries a typed slot ID
+plus monotonically increasing incarnation. The worker accepts a release only
+when its lease ID and complete slot token match the retained buffer. A stale or
+duplicate return cannot free a reused slot. Direct CPU GBM buffers remain a
+separate bounded cache beneath this target lifetime; renderer-image capture
+targets remain temporary and outside it.
 
 ```text
  session/input owner                 renderer worker
@@ -685,7 +692,8 @@ thread that owns its native context.
 ```
 
 The worker has one request in flight per output, bounded command and lease
-storage, a 100 ms soft-stall observation, and a 1 s hard-stall quarantine. A
+storage, three live generation slots per physical head, a 100 ms soft-stall
+observation, and a 1 s hard-stall quarantine. A
 hard stall cannot block physical input or invent presentation feedback. It
 fails the pending frame closed and preserves the last committed scanout.
 The output slot retains its mixed-frame identity and damage snapshot through
@@ -705,6 +713,13 @@ queued Present → rendering worker → KMS submitted → page-flip retired
 Worker deferral is a state transition, not a rejection. Newer Presents remain
 bounded in the queue until the in-flight record retires, so a later client
 frame cannot relabel the KMS callback or consume the admission candidate.
+When displayed, KMS-submitted, and renderer-prepared generations occupy all
+three target slots, the worker returns the immutable frame to the exporter's
+one latest-wins pending cell. This increments slot-deferral telemetry but not
+renderer failure or completion counts. Exact page-flip release makes one slot
+available, and only a compatible free slot may render the retained latest
+frame. VT quiescence, partial mirror failure, and normal teardown all drain the
+same lease tokens; none infer availability from reference counts.
 An accepted page flip has a 500 ms hard watchdog. Crossing it terminates the
 graphical session and restores the display manager instead of retaining an
 unbounded black or frozen seat.

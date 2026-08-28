@@ -354,11 +354,12 @@ for key in native_mixed_exports native_target_recreations \
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
 resources="${resource_lines[0]}"
+resource_schema="$(field "$resources" schema)"
 for key in target_creations pipeline_creations frame_surface_creations cpu_target_creations \
     dmabuf_target_creations composition_target_creations composition_target_reuses \
     generation_replacements recovery_replacements snapshot_captures snapshot_promotions \
@@ -373,6 +374,23 @@ for key in target_creations pipeline_creations frame_surface_creations cpu_targe
     [[ "$value" =~ ^[0-9]+$ ]] ||
         fail "resource-lifetime record has nonnumeric $key=$value"
 done
+frame_slot_deferrals=0
+if [[ "$resource_schema" == 7 ]]; then
+    for key in frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals \
+        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark; do
+        value="$(field "$resources" "$key")" ||
+            fail "schema-7 resource-lifetime record is missing $key"
+        [[ "$value" =~ ^[0-9]+$ ]] ||
+            fail "schema-7 resource-lifetime record has nonnumeric $key=$value"
+    done
+    frame_slot_deferrals="$(field "$resources" frame_slot_deferrals)"
+    (( $(field "$resources" frame_slot_acquisitions) > 0 )) ||
+        fail "native frame-slot pool was never acquired"
+    (( $(field "$resources" frame_slots_high_watermark) > 0 )) ||
+        fail "native frame-slot pool reported no live ownership"
+    (( $(field "$resources" frame_slot_stale_releases) == 0 )) ||
+        fail "native frame-slot pool rejected a stale release"
+fi
 target_creations="$(field "$resources" target_creations)"
 pipeline_creations="$(field "$resources" pipeline_creations)"
 frame_surface_creations="$(field "$resources" frame_surface_creations)"
@@ -428,7 +446,7 @@ completion_frame_surfaces="$(field "$completion" native_frame_surface_creations)
     fail "import-cache resources did not drain completely"
 (( import_cache_descriptor_mismatches == 0 && import_cache_capacity_rejections == 0 )) ||
     fail "import-cache validation or capacity rejected an export"
-(( worker_requests > 0 && worker_requests == worker_completions )) ||
+(( worker_requests > 0 && worker_requests == worker_completions + frame_slot_deferrals )) ||
     fail "renderer-worker requests did not complete"
 (( worker_failures == 0 && worker_soft_stalls == 0 && worker_hard_stalls == 0 &&
     worker_release_enqueue_failures == 0 )) ||

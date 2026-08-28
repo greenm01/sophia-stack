@@ -1321,6 +1321,24 @@ impl LiveProductionNativeScanout {
                     metrics.worker_release_enqueue_failures = metrics
                         .worker_release_enqueue_failures
                         .saturating_add(worker.release_enqueue_failures);
+                    metrics.frame_slot_acquisitions = metrics
+                        .frame_slot_acquisitions
+                        .saturating_add(worker.frame_slots.acquisitions);
+                    metrics.frame_slot_reuses = metrics
+                        .frame_slot_reuses
+                        .saturating_add(worker.frame_slots.reuses);
+                    metrics.frame_slot_deferrals = metrics
+                        .frame_slot_deferrals
+                        .saturating_add(worker.frame_slots.deferrals);
+                    metrics.frame_slot_stale_releases = metrics
+                        .frame_slot_stale_releases
+                        .saturating_add(worker.frame_slots.stale_releases);
+                    metrics.frame_slots_leased = metrics
+                        .frame_slots_leased
+                        .saturating_add(worker.frame_slots.leased);
+                    metrics.frame_slots_high_watermark = metrics
+                        .frame_slots_high_watermark
+                        .saturating_add(worker.frame_slots.high_watermark);
                     metrics.max_worker_request =
                         metrics.max_worker_request.max(worker.max_request_age);
                 }

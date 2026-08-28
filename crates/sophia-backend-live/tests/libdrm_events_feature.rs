@@ -109,6 +109,7 @@ use sophia_backend_live::{
     LiveProductionMirrorGenerationQueue, LiveProductionMirrorGroupBegin,
     LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
     LiveProductionNativeFrameId, LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
+    LiveRendererFrameSlotAcquire, LiveRendererFrameSlotPool, LiveRendererFrameSlotRelease,
     NativeGbmRenderedScanoutBufferDiscoveryExporter, NativeGbmRenderedScanoutContextStatus,
     RealAtomicScanoutSmokeConfig, RenderDeviceDiscoveryBackend,
     finish_live_production_native_initialization, live_production_mirror_head_work_frame,
@@ -151,6 +152,8 @@ include!("libdrm_events_feature/scanout_retirement.rs");
 include!("libdrm_events_feature/runtime_ticks.rs");
 include!("libdrm_events_feature/session_loop.rs");
 include!("libdrm_events_feature/native_gbm.rs");
+#[cfg(feature = "gbm-probe")]
+include!("libdrm_events_feature/frame_slots.rs");
 include!("libdrm_events_feature/resource_lifetime.rs");
 include!("libdrm_events_feature/builders.rs");
 include!("libdrm_events_feature/multi_head_request.rs");

@@ -49,6 +49,24 @@ The model checks that:
 The checked configuration explores 2,432,103 generated states and 968,679
 distinct states to depth 28.
 
+`VisualRetirementSlots.tla` is the focused Milestone 14 extension. It retains
+one two-head mirror output and orders four generations through three complete
+native target slots, allowing displayed, submitted, and prepared work to fill
+the pool while a fourth generation defers. Slot tokens combine a stable slot
+identity with a monotonically increasing incarnation. Exact release after
+replacement frees a slot; reuse advances its incarnation; and one delayed old
+release is explored after reuse without changing the current owner. Failure is
+not release, and the first mirror callback cannot free a generation. The
+default four-generation configuration checks the new safety boundary; the
+parent model retains the admitted-work liveness proof, while `FairSpec` and the
+focused progress formulas remain available for smaller diagnostic runs.
+Scenario correspondence and implementation-only checks are recorded in
+`validation/specula/native-frame-slot-retirement-modeling-brief.md`.
+The bounded safety configuration explores 4,149,619 generated states and
+1,100,230 distinct states to depth 34. Temporary negative controls independently
+allowed acquisition of an occupied slot and let a stale return clear a reused
+slot; both violated `ActiveGenerationOwnsSlot`, at depths 5 and 8 respectively.
+
 Fairness is per action rather than over the whole progress disjunction, and
 `Settle` is outside it. That distinction is the difference between a settlement
 property and a tautology: `Settle` is enabled in every non-terminal state, so a

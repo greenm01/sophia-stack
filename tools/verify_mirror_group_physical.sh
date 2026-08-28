@@ -428,18 +428,18 @@ require_positive_field "$session" cpu_checksum
 # the Engine's logical scene plan. Their domains differ; the plan, queue,
 # submission, page-flip, and retirement checks above bind the latter to both
 # heads.
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6) status=complete ' "$evidence")"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
 require_positive_field "$resources" worker_completions
 require_positive_field "$resources" exact_nearest_draws
 require_positive_field "$resources" sharp_downscale_draws
-# Schema 5 counted degraded draws as `sharp_downscale_fallbacks`; schema 6 calls
-# them `linear_fallback_draws`, because the count now covers either direction and
-# no longer double-counts as an upscale. Either name must read zero, and one of
-# them must be present -- a record carrying neither is a record that stopped
-# reporting whether the reconstruction shader ran at all.
+# Schema 5 counted degraded draws as `sharp_downscale_fallbacks`; later schemas
+# call them `linear_fallback_draws`, because the count covers either direction
+# and no longer double-counts as an upscale. Either name must read zero, and one
+# must be present -- a record carrying neither stopped reporting whether the
+# reconstruction shader ran at all.
 if field "$resources" linear_fallback_draws >/dev/null; then
     require_field "$resources" linear_fallback_draws 0
 elif field "$resources" sharp_downscale_fallbacks >/dev/null; then
@@ -450,7 +450,22 @@ fi
 for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; do
     require_field "$resources" "$key" 0
 done
-require_field "$resources" worker_completions "$(field "$resources" worker_requests)"
+resource_schema="$(field "$resources" schema)"
+if [[ "$resource_schema" == 7 ]]; then
+    for key in frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals \
+        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark; do
+        value="$(field "$resources" "$key")" || fail "record is missing $key"
+        [[ "$value" =~ ^[0-9]+$ ]] || fail "$key must be numeric: $value"
+    done
+    require_field "$resources" frame_slot_stale_releases 0
+    requests="$(field "$resources" worker_requests)"
+    completions="$(field "$resources" worker_completions)"
+    deferrals="$(field "$resources" frame_slot_deferrals)"
+    (( requests == completions + deferrals )) ||
+        fail "renderer-worker requests did not settle as completion or bounded deferral"
+else
+    require_field "$resources" worker_completions "$(field "$resources" worker_requests)"
+fi
 keys="$(grep -E '^sophia_live_session_keys schema=2 status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$keys" | wc -l)" == 1 ]] || fail "expected one key-state completion"
 require_field "$keys" pending 0
