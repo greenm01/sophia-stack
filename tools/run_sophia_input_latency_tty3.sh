@@ -31,6 +31,10 @@ MAX_SESSION_START_ATTEMPTS=3
 # completes leaves the session running and this script waiting on it forever,
 # which is what a hung run looks like from the outside.
 PROOF_TIMEOUT_SECONDS="${SOPHIA_INPUT_LATENCY_PROOF_TIMEOUT_SECONDS:-90}"
+# How many samples across the whole run may be redone after a post-proof page
+# flip stall. One kernel-withheld vblank during teardown is a transient; the
+# same stall recurring is a pattern the run must fail on.
+MAX_PAGE_FLIP_STALL_RETRIES="${SOPHIA_INPUT_LATENCY_MAX_STALL_RETRIES:-2}"
 # The seat the emergency guard listens on. Sophia is given only the virtual
 # injector device, so it never reacts to the real keyboard; but it does take
 # DRM master, so the console is behind its output and an operator has no way
@@ -67,6 +71,23 @@ is_retryable_pre_input_cursor_failure() {
             "$session_log"
 }
 
+# The measurement finished and the display stalled on the way out. The
+# latency data was already taken when the session's hard-stall detector
+# terminated it during the completion drain, so redoing the sample loses
+# nothing and asserts nothing; a stall BEFORE proof completion stays fatal,
+# because a session that stalls while measuring may be measuring the defect.
+is_retryable_post_proof_flip_stall() {
+    local session_log="$1"
+
+    grep -Fq \
+        'sophia_live_session_input schema=2 status=complete source=physical' \
+        "$session_log" 2>/dev/null &&
+        grep -Fq \
+            'sophia_live_native_page_flip_stall schema=1 status=hard_stall' \
+            "$session_log" &&
+        grep -Fq 'native completion drain failed' "$session_log"
+}
+
 check_retry_classifier() {
     local fixture status
     fixture="$(mktemp -d)"
@@ -96,6 +117,33 @@ check_retry_classifier() {
     if is_retryable_pre_input_cursor_failure \
         "$fixture/session.log" "$fixture/inject" "$fixture/result"; then
         echo "cursor EACCES after physical-input readiness was classified as retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' \
+        'sophia_live_session_input schema=2 status=complete source=physical text=sophia expected_events=14 matched_events=14 pixel_change=true' \
+        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
+        'Error: "native completion drain failed: native scanout drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
+        >"$fixture/stall.log"
+    if ! is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
+        echo "a post-proof completion-drain stall was not classified as retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' \
+        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
+        'Error: "native completion drain failed: native scanout drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
+        >"$fixture/stall.log"
+    if is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
+        echo "a stall before proof completion was classified as retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' \
+        'sophia_live_session_input schema=2 status=complete source=physical text=sophia expected_events=14 matched_events=14 pixel_change=true' \
+        >"$fixture/stall.log"
+    if is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
+        echo "a clean completion was classified as a retryable stall" >&2
         status=1
     fi
 
@@ -208,6 +256,8 @@ fi
     fail "SOPHIA_INPUT_LATENCY_SAMPLES must be an integer from 1 through 100"
 [[ "$REFRESH_MSEC" =~ ^[1-9][0-9]*$ ]] ||
     fail "SOPHIA_INPUT_LATENCY_REFRESH_MSEC must be a positive integer"
+[[ "$MAX_PAGE_FLIP_STALL_RETRIES" =~ ^[0-9]+$ ]] ||
+    fail "SOPHIA_INPUT_LATENCY_MAX_STALL_RETRIES must be a nonnegative integer"
 if [[ -z "$MAX_DWELL_TO_SUBMIT_MSEC" ]]; then
     MAX_DWELL_TO_SUBMIT_MSEC="$REFRESH_MSEC"
 fi
@@ -274,6 +324,7 @@ done
     fail "input guard was not armed within 30 seconds; refusing graphics takeover"
 echo "Emergency input guard armed."
 
+stall_retries=0
 for ((sample = 1; sample <= SAMPLES; sample++)); do
     sample_dir="$PENDING/sample-$(printf '%03d' "$sample")"
     mkdir "$sample_dir"
@@ -386,8 +437,20 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
     kill "$INJECTOR_PID" 2>/dev/null || true
     wait "$INJECTOR_PID" 2>/dev/null || true
     INJECTOR_PID=
-    ((proof_status == 0)) ||
+    if ((proof_status != 0)); then
+        if ((stall_retries < MAX_PAGE_FLIP_STALL_RETRIES)) &&
+            is_retryable_post_proof_flip_stall "$session_log"; then
+            stall_retries=$((stall_retries + 1))
+            stalled_dir="$PENDING/sample-$(printf '%03d' "$sample").stall-$stall_retries"
+            mv "$sample_dir" "$stalled_dir"
+            printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s stall_retry=%s/%s reason=post_proof_page_flip_stall evidence=%s\n' \
+                "$sample" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" \
+                "$(basename "$stalled_dir")" | tee -a "$PENDING/stall-retries.log"
+            sample=$((sample - 1))
+            continue
+        fi
         fail "Sophia proof failed for sample $sample with status $proof_status"
+    fi
     [[ -s "$result_file" ]] ||
         fail "injector did not record sample $sample"
 done
