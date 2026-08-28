@@ -1339,6 +1339,18 @@ impl LiveProductionNativeScanout {
                     metrics.frame_slots_high_watermark = metrics
                         .frame_slots_high_watermark
                         .saturating_add(worker.frame_slots.high_watermark);
+                    metrics.frame_slot_partial_repaints = metrics
+                        .frame_slot_partial_repaints
+                        .saturating_add(worker.frame_slots.partial_repaints);
+                    metrics.frame_slot_full_repaints = metrics
+                        .frame_slot_full_repaints
+                        .saturating_add(worker.frame_slots.full_repaints);
+                    metrics.frame_slot_history_invalidations = metrics
+                        .frame_slot_history_invalidations
+                        .saturating_add(worker.frame_slots.history_invalidations);
+                    metrics.frame_slot_history_records = metrics
+                        .frame_slot_history_records
+                        .saturating_add(worker.frame_slots.history_records);
                     metrics.max_worker_request =
                         metrics.max_worker_request.max(worker.max_request_age);
                 }

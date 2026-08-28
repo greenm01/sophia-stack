@@ -265,22 +265,37 @@ done
 (( $(field "$completion" native_nonzero_exports) > 0 )) ||
     fail "the session presented no nonzero content"
 
-# The three-slot promotion evidence.
+# The three-slot promotion evidence. Schema 7 remains accepted because archive
+# 0001 is schema-7 evidence and must stay independently verifiable; schema 8
+# additionally carries the buffer-age damage outcomes.
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=7 status=complete ' "$evidence"
+    grep -E '^sophia_live_native_resources schema=(7|8) status=complete ' "$evidence"
 )
 (( ${#resource_lines[@]} == 1 )) ||
-    fail "expected one schema-7 native resource-lifetime record"
+    fail "expected one schema-7 or schema-8 native resource-lifetime record"
 resources="${resource_lines[0]}"
-for key in frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals \
-    frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark \
-    worker_requests worker_completions worker_failures worker_hard_stalls \
-    worker_release_enqueue_failures; do
+resource_schema="$(field "$resources" schema)"
+slot_keys=(frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals
+    frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark
+    worker_requests worker_completions worker_failures worker_hard_stalls
+    worker_release_enqueue_failures)
+if [[ "$resource_schema" == 8 ]]; then
+    slot_keys+=(frame_slot_partial_repaints frame_slot_full_repaints
+        frame_slot_history_invalidations frame_slot_history_records)
+fi
+for key in "${slot_keys[@]}"; do
     value="$(field "$resources" "$key")" ||
-        fail "schema-7 resource record is missing $key"
+        fail "resource record is missing $key"
     [[ "$value" =~ ^[0-9]+$ ]] ||
-        fail "schema-7 resource record has nonnumeric $key=$value"
+        fail "resource record has nonnumeric $key=$value"
 done
+# Schema-8 evidence exists to promote damage-limited repaint, and the gate
+# enables the feature, so a run in which it never fired is not the run being
+# promoted. Schema-7 evidence predates the feature and owes nothing here.
+if [[ "$resource_schema" == 8 ]]; then
+    (( $(field "$resources" frame_slot_partial_repaints) >= 1 )) ||
+        fail "no frame rendered partially, so the buffer-age boundary was not exercised"
+fi
 for key in worker_failures worker_hard_stalls worker_release_enqueue_failures \
     frame_slot_stale_releases; do
     (( $(field "$resources" "$key") == 0 )) || fail "$key must be zero"

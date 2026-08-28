@@ -2047,13 +2047,21 @@ other mature compositors are references rather than Sophia runtime components.
   at completion, and both presented heads reached full three-slot occupancy.
 - [ ] Carry bounded buffer-age damage history per slot and repaint only
   accumulated damage. Fall back to a full repaint whenever history is
-  incomplete. The model boundary is done: `VisualDamageHistory.tla` proves that
-  a slot brought up to the current scene holds what a full repaint would have
-  produced, with negative controls for under-computed damage and for a rebuilt
-  bundle that kept its recorded generation. Before implementing, settle where a
-  slot's content age comes from: its frame surface swaps through more than one
-  back buffer, so keying history by slot alone under-computes damage. See
-  `validation/specula/buffer-age-damage-history-modeling-brief.md`.
+  incomplete. Implementation is complete and offline-proven; only the physical
+  promotion run remains. The model boundary came first
+  (`VisualDamageHistory.tla`, negative controls for under-computed damage and
+  a rebuilt bundle keeping its recorded generation). The content age comes
+  from `EGL_BUFFER_AGE_EXT` per acquired back buffer, answering the brief's
+  open question; a monotonic bundle generation catches every rebuild path; and
+  every path that cannot prove an age falls back to a full repaint with a
+  named reason. `tools/check_buffer_age_equivalence.sh` proves on this host's
+  GPU, through a render node only, that a damage-limited render is
+  byte-identical to a full one across a twelve-frame sequence with real
+  partial repaints, and that a lying damage table is caught by the same
+  comparison. The feature is opt-in via `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=1`;
+  the native gate exports it as the promotion step, and its verifier requires
+  schema-8 evidence in which at least one frame rendered partially. Tick this
+  box when that gate passes.
 - [ ] Keep one latest pending frame and one KMS submission in flight per
   output; prove physical input remains within half a refresh period at p99.
 - [ ] Coalesce all outputs in the same DRM/render-device group onto one shared

@@ -428,7 +428,7 @@ require_positive_field "$session" cpu_checksum
 # the Engine's logical scene plan. Their domains differ; the plan, queue,
 # submission, page-flip, and retirement checks above bind the latter to both
 # heads.
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$evidence")"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
@@ -451,9 +451,14 @@ for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; d
     require_field "$resources" "$key" 0
 done
 resource_schema="$(field "$resources" schema)"
-if [[ "$resource_schema" == 7 ]]; then
-    for key in frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals \
-        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark; do
+if [[ "$resource_schema" == 7 || "$resource_schema" == 8 ]]; then
+    slot_keys=(frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals
+        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark)
+    if [[ "$resource_schema" == 8 ]]; then
+        slot_keys+=(frame_slot_partial_repaints frame_slot_full_repaints
+            frame_slot_history_invalidations frame_slot_history_records)
+    fi
+    for key in "${slot_keys[@]}"; do
         value="$(field "$resources" "$key")" || fail "record is missing $key"
         [[ "$value" =~ ^[0-9]+$ ]] || fail "$key must be numeric: $value"
     done

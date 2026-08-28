@@ -354,7 +354,7 @@ for key in native_mixed_exports native_target_recreations \
 done
 
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$SESSION_LOG"
+    grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$SESSION_LOG"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one native resource-lifetime record"
@@ -375,9 +375,14 @@ for key in target_creations pipeline_creations frame_surface_creations cpu_targe
         fail "resource-lifetime record has nonnumeric $key=$value"
 done
 frame_slot_deferrals=0
-if [[ "$resource_schema" == 7 ]]; then
-    for key in frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals \
-        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark; do
+if [[ "$resource_schema" == 7 || "$resource_schema" == 8 ]]; then
+    slot_keys=(frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals
+        frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark)
+    if [[ "$resource_schema" == 8 ]]; then
+        slot_keys+=(frame_slot_partial_repaints frame_slot_full_repaints
+            frame_slot_history_invalidations frame_slot_history_records)
+    fi
+    for key in "${slot_keys[@]}"; do
         value="$(field "$resources" "$key")" ||
             fail "schema-7 resource-lifetime record is missing $key"
         [[ "$value" =~ ^[0-9]+$ ]] ||

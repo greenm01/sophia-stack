@@ -2020,6 +2020,20 @@ It runs formatting, the GBM/EGL renderer checks, the backend-live
 libdrm/libinput scanout feature checks, and the reduced verifier fixture
 checks. It does not request DRM master or modeset hardware.
 
+The buffer-age damage boundary has its own captured-pixel proof:
+
+```sh
+tools/check_buffer_age_equivalence.sh
+```
+
+It renders an identical twelve-frame mixed sequence damage-limited and
+forced-full on this host's real GPU through a render node -- no DRM master, no
+display takeover, safe inside a live desktop session -- and requires identical
+captured checksums frame by frame, with at least one real partial repaint and
+a negative control proving a lying damage table is caught. It refuses rather
+than skips when no render node is writable, because the gated tests skip
+silently and a skipped proof is indistinguishable from a passing one.
+
 The two-head mirror gate is a separate destructive TTY4 proof:
 
 ```sh

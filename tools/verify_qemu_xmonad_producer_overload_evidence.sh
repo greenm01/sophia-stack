@@ -187,7 +187,7 @@ max_presentations="$(field "$scheduler" max_live_presentations)" ||
 [[ "$max_presentations" =~ ^[0-9]+$ ]] && (( max_presentations <= 2 )) ||
     fail "more than one in-flight plus one pending Present was owned"
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resources lack import_cache_imports"
 evictions="$(field "$resources" import_cache_evictions)" || fail "resources lack import_cache_evictions"

@@ -600,6 +600,9 @@ fn run_worker<D>(
                         )
                     },
                 );
+                frame_slots
+                    .metrics_handle()
+                    .store_damage(slot_damage.metrics());
                 if trace_worker_request(request_id) {
                     tracing::debug!(
                         "sophia_renderer_worker schema=2 status=render_finished request={} frame_kind={frame_kind} outcome={}",

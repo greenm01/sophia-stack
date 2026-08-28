@@ -1,4 +1,6 @@
 use std::sync::Arc;
+
+use super::slot_damage_history::LiveRendererSlotDamageMetrics;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const LIVE_RENDERER_FRAME_SLOT_CAPACITY: usize = 3;
@@ -61,6 +63,13 @@ pub struct LiveRendererFrameSlotMetrics {
     pub stale_releases: usize,
     pub leased: usize,
     pub high_watermark: usize,
+    /// Buffer-age damage outcomes for renders into these slots. Carried in the
+    /// same snapshot because they are per-worker slot telemetry with the same
+    /// reader; a second handle would double the plumbing to say less.
+    pub partial_repaints: usize,
+    pub full_repaints: usize,
+    pub history_invalidations: usize,
+    pub history_records: usize,
 }
 
 #[derive(Default)]
@@ -71,6 +80,10 @@ struct LiveRendererFrameSlotMetricCounters {
     stale_releases: AtomicUsize,
     leased: AtomicUsize,
     high_watermark: AtomicUsize,
+    partial_repaints: AtomicUsize,
+    full_repaints: AtomicUsize,
+    history_invalidations: AtomicUsize,
+    history_records: AtomicUsize,
 }
 
 #[derive(Clone, Default)]
@@ -87,7 +100,28 @@ impl LiveRendererFrameSlotMetricsHandle {
             stale_releases: self.counters.stale_releases.load(Ordering::Relaxed),
             leased: self.counters.leased.load(Ordering::Relaxed),
             high_watermark: self.counters.high_watermark.load(Ordering::Relaxed),
+            partial_repaints: self.counters.partial_repaints.load(Ordering::Relaxed),
+            full_repaints: self.counters.full_repaints.load(Ordering::Relaxed),
+            history_invalidations: self.counters.history_invalidations.load(Ordering::Relaxed),
+            history_records: self.counters.history_records.load(Ordering::Relaxed),
         }
+    }
+
+    /// Publish the damage history's counters. They are cumulative in the
+    /// history itself, so this stores rather than adds.
+    pub(super) fn store_damage(&self, metrics: LiveRendererSlotDamageMetrics) {
+        self.counters
+            .partial_repaints
+            .store(metrics.partial_repaints, Ordering::Relaxed);
+        self.counters
+            .full_repaints
+            .store(metrics.full_repaints, Ordering::Relaxed);
+        self.counters
+            .history_invalidations
+            .store(metrics.invalidations, Ordering::Relaxed);
+        self.counters
+            .history_records
+            .store(metrics.records, Ordering::Relaxed);
     }
 
     fn acquired(&self, reused: bool, leased: usize) {
@@ -131,6 +165,10 @@ impl Default for LiveRendererFrameSlotPool {
 impl LiveRendererFrameSlotPool {
     pub fn new() -> Self {
         Self::with_metrics(LiveRendererFrameSlotMetricsHandle::default())
+    }
+
+    pub(super) fn metrics_handle(&self) -> &LiveRendererFrameSlotMetricsHandle {
+        &self.metrics
     }
 
     pub(super) fn with_metrics(metrics: LiveRendererFrameSlotMetricsHandle) -> Self {

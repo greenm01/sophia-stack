@@ -171,6 +171,10 @@ trap 'rm -rf -- "$guide_claim_dir"' EXIT HUP INT TERM
 guide_claim="$guide_claim_dir/startup.claim"
 
 status=0
+# The buffer-age damage boundary is opt-in until promoted, and this run is the
+# promotion: the verifier requires schema-8 evidence in which at least one
+# frame actually rendered partially.
+SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=1 \
 SOPHIA_TTY_PROFILE=hagia \
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \

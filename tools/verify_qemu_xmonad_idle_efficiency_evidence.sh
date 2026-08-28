@@ -145,7 +145,7 @@ awk -v start="$idle_start_line" -v complete="$idle_complete_line" '
     END { if (work != 0) exit 1 }
 ' "$EVIDENCE_FILE" || fail "the idle window performed rendering or client-present work"
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resources lack import_cache_imports"
 hits="$(field "$resources" import_cache_hits)" || fail "resources lack import_cache_hits"
