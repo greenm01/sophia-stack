@@ -89,6 +89,7 @@ pub(super) fn correlate_physical_input_page_flip(
     input_pixel_change: bool,
     input_raw_ingress_msec: Option<u64>,
     input_change_submission_baseline: Option<usize>,
+    input_change_frame_baseline: Option<u64>,
     native_scanout: &LiveProductionNativeScanout,
     input_presented_ust_usec: &mut Option<u64>,
     input_submit_to_page_flip: &mut Option<Duration>,
@@ -96,9 +97,10 @@ pub(super) fn correlate_physical_input_page_flip(
     if input_presented_ust_usec.is_some() {
         return;
     }
-    let (Some(ingress_ust_usec), Some(baseline_submission), Some(head)) = (
+    let (Some(ingress_ust_usec), Some(baseline_submission), Some(baseline_frame), Some(head)) = (
         input_raw_ingress_msec.and_then(|msec| msec.checked_mul(1_000)),
         input_change_submission_baseline,
+        input_change_frame_baseline,
         native_scanout.heads.first(),
     ) else {
         return;
@@ -109,6 +111,9 @@ pub(super) fn correlate_physical_input_page_flip(
         ingress_ust_usec,
         baseline_submission,
         head.presented_submissions,
+        baseline_frame,
+        head.presented_content
+            .map_or(0, |content| content.frame().raw()),
         head.presented_submission_ust_usec,
         head.presented_page_flip_ust_usec,
     ) {

@@ -11,9 +11,13 @@ fn press(
         serial,
         ingress_ust_usec,
         baseline_submission,
+        baseline_frame: 0,
         queue_dwell_usec: 500,
     }
 }
+
+/// A flip carrying a composition newer than any baseline these tests use.
+const FRESH: u64 = 1_000;
 
 #[test]
 fn a_session_without_a_flip_reports_no_summary() {
@@ -35,7 +39,7 @@ fn one_flip_settles_every_press_it_showed() {
     samples.observe_press(press(2, 3_000, 10));
     samples.observe_press(press(3, 5_000, 10));
 
-    samples.observe_page_flip(11, 6_000, 9_000);
+    samples.observe_page_flip(11, FRESH, 6_000, 9_000);
 
     let summary = samples.summary().expect("three settled samples");
     assert_eq!(summary.samples, 3);
@@ -46,12 +50,42 @@ fn one_flip_settles_every_press_it_showed() {
 }
 
 #[test]
+fn a_render_already_under_way_when_the_press_arrives_settles_nothing() {
+    // Every session of the first full physical run measured exactly this. A
+    // render carrying scene generation 6 was already in flight when the keys
+    // were routed; it finished into submission 4, which outranks the press's
+    // baseline of 3 and orders correctly in time, while showing none of the
+    // typed text. The generations that carried the text were queued behind it
+    // and never reached scanout before the session exited.
+    let mut samples = InputLatencySamples::new();
+    samples.observe_press(PendingInputLatencySample {
+        serial: 1,
+        ingress_ust_usec: 1_000,
+        baseline_submission: 3,
+        baseline_frame: 11,
+        queue_dwell_usec: 0,
+    });
+
+    samples.observe_page_flip(4, 11, 2_000, 3_000);
+    assert!(
+        samples.summary().is_none(),
+        "a later submission carrying an older composition is not a measurement"
+    );
+
+    // The flip that actually carries newer content settles it.
+    samples.observe_page_flip(5, 13, 4_000, 5_000);
+    let summary = samples.summary().expect("the newer composition settles it");
+    assert_eq!(summary.samples, 1);
+    assert_eq!(summary.max_usec, 4_000);
+}
+
+#[test]
 fn a_flip_that_predates_a_press_settles_nothing() {
     let mut samples = InputLatencySamples::new();
     samples.observe_press(press(1, 5_000, 20));
 
     // The flip's submission did not advance past the press's baseline.
-    samples.observe_page_flip(20, 6_000, 9_000);
+    samples.observe_page_flip(20, FRESH, 6_000, 9_000);
 
     assert!(samples.summary().is_none());
 }
@@ -62,7 +96,7 @@ fn clocks_that_disagree_about_order_produce_no_sample() {
     samples.observe_press(press(1, 9_000, 10));
 
     // Submission timestamped before the press it supposedly carries.
-    samples.observe_page_flip(11, 5_000, 12_000);
+    samples.observe_page_flip(11, FRESH, 5_000, 12_000);
 
     assert!(
         samples.summary().is_none(),
@@ -76,7 +110,7 @@ fn presses_that_outran_presentation_are_counted_not_lost() {
     for serial in 0..(INPUT_LATENCY_SAMPLE_CAPACITY as u64 + 5) {
         samples.observe_press(press(serial, 1_000 + serial, 10));
     }
-    samples.observe_page_flip(11, 100_000, 200_000);
+    samples.observe_page_flip(11, FRESH, 100_000, 200_000);
 
     let summary = samples.summary().expect("settled samples");
     assert_eq!(
@@ -93,7 +127,7 @@ fn the_retained_window_reports_what_it_dropped() {
     for index in 0..(INPUT_LATENCY_SAMPLE_CAPACITY as u64 + 10) {
         let baseline = index as usize;
         samples.observe_press(press(index, index * 10, baseline));
-        samples.observe_page_flip(baseline + 1, index * 10 + 1, index * 10 + 2_000);
+        samples.observe_page_flip(baseline + 1, FRESH, index * 10 + 1, index * 10 + 2_000);
     }
 
     let summary = samples.summary().expect("settled samples");
@@ -122,7 +156,12 @@ fn a_summary_orders_its_percentiles() {
         let baseline = index as usize;
         let latency = if index >= 97 { 40_000 } else { 4_000 };
         samples.observe_press(press(index, index * 100_000, baseline));
-        samples.observe_page_flip(baseline + 1, index * 100_000 + 1, index * 100_000 + latency);
+        samples.observe_page_flip(
+            baseline + 1,
+            FRESH,
+            index * 100_000 + 1,
+            index * 100_000 + latency,
+        );
     }
 
     let summary = samples.summary().expect("settled samples");

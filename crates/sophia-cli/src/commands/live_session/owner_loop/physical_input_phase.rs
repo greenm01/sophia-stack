@@ -171,6 +171,22 @@ macro_rules! drain_physical_input {
                                 .as_ref()
                                 .and_then(|native| native.heads.first())
                                 .map_or(0, |head| head.presented_submissions),
+                            baseline_frame: native_scanout
+                                .as_ref()
+                                .and_then(|native| native.heads.first())
+                                .map_or(0, |head| {
+                                    newest_head_composition_frame(
+                                        [
+                                            head.pending_content,
+                                            head.rendering_content,
+                                            head.submitted_content,
+                                            head.presented_content,
+                                        ]
+                                        .map(|content| {
+                                            content.map(|content| content.frame().raw())
+                                        }),
+                                    )
+                                }),
                             queue_dwell_usec: u64::try_from(timing.queue_dwell_msec)
                                 .unwrap_or(u64::MAX)
                                 .saturating_mul(1_000),

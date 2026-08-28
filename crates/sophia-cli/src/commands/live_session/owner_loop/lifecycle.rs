@@ -659,6 +659,7 @@
                 input_pixel_change,
                 input_raw_ingress_msec,
                 input_change_submission_baseline,
+                input_change_frame_baseline,
                 native_scanout,
                 &mut input_presented_ust_usec,
                 &mut input_submit_to_page_flip,
@@ -666,6 +667,8 @@
             if let Some(head) = native_scanout.heads.first() {
                 input_latency_samples.observe_page_flip(
                     head.presented_submissions,
+                    head.presented_content
+                        .map_or(0, |content| content.frame().raw()),
                     head.presented_submission_ust_usec,
                     head.presented_page_flip_ust_usec,
                 );

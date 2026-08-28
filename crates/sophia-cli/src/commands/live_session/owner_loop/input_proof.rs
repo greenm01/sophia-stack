@@ -64,6 +64,18 @@
                 .as_ref()
                 .and_then(|native| native.heads.first())
                 .map(|head| head.presented_submissions);
+            input_change_frame_baseline = native_scanout
+                .as_ref()
+                .and_then(|native| native.heads.first())
+                .map(|head| {
+                    newest_head_composition_frame([
+                        head.pending_content,
+                        head.rendering_content,
+                        head.submitted_content,
+                        head.presented_content,
+                    ]
+                    .map(|content| content.map(|content| content.frame().raw())))
+                });
             input_surface = focus.focused_surface(seat);
             input_surface_generation = input_surface.and_then(|surface| {
                 runtime.as_ref().and_then(|runtime| {

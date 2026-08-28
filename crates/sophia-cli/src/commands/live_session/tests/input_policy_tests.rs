@@ -1388,21 +1388,40 @@ fn stable_focused_gpu_frame_proves_post_input_pixels() {
 #[test]
 fn physical_input_page_flip_requires_a_changed_post_ingress_submission() {
     assert!(physical_input_page_flip_correlates(
-        true, true, 10_000, 4, 5, 11_000, 16_000,
+        true, true, 10_000, 4, 5, 11, 13, 11_000, 16_000,
     ));
     assert!(!physical_input_page_flip_correlates(
-        false, true, 10_000, 4, 5, 11_000, 16_000,
+        false, true, 10_000, 4, 5, 11, 13, 11_000, 16_000,
     ));
     assert!(!physical_input_page_flip_correlates(
-        true, false, 10_000, 4, 5, 11_000, 16_000,
+        true, false, 10_000, 4, 5, 11, 13, 11_000, 16_000,
     ));
     assert!(!physical_input_page_flip_correlates(
-        true, true, 10_000, 5, 5, 11_000, 16_000,
+        true, true, 10_000, 5, 5, 11, 13, 11_000, 16_000,
     ));
     assert!(!physical_input_page_flip_correlates(
-        true, true, 10_000, 4, 5, 9_999, 16_000,
+        true, true, 10_000, 4, 5, 11, 13, 9_999, 16_000,
     ));
     assert!(!physical_input_page_flip_correlates(
-        true, true, 10_000, 4, 5, 11_000, 10_999,
+        true, true, 10_000, 4, 5, 11, 13, 11_000, 10_999,
     ));
+    // A later submission carrying a composition built before the input is
+    // the shape every session of the first full physical run reported as a
+    // measurement. The flip is real; the picture is older than the press.
+    assert!(!physical_input_page_flip_correlates(
+        true, true, 10_000, 4, 5, 11, 11, 11_000, 16_000,
+    ));
+}
+
+#[test]
+fn the_newest_head_composition_spans_every_pipeline_stage() {
+    // Rendering one frame, holding another submitted, displaying a third:
+    // input has to beat all of them, so the baseline is the maximum.
+    assert_eq!(
+        newest_head_composition_frame([Some(7), Some(11), Some(9), Some(5)]),
+        11
+    );
+    assert_eq!(newest_head_composition_frame([None, Some(3), None]), 3);
+    assert_eq!(newest_head_composition_frame([None, None]), 0);
+    assert_eq!(newest_head_composition_frame([]), 0);
 }

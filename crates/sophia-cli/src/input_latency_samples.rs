@@ -25,6 +25,16 @@ pub struct PendingInputLatencySample {
     /// Submissions the head had presented when the press was routed. The flip
     /// that shows this press is the first one past it.
     pub baseline_submission: usize,
+    /// The newest composition the head held anywhere in its pipeline when the
+    /// press was routed -- pending, rendering, submitted, or presented.
+    ///
+    /// A later submission is not by itself a later picture. A render already
+    /// under way when the press arrives carries content composed before it,
+    /// and finishes into a flip that satisfies every ordering test while
+    /// showing none of the press. Requiring the presented composition to be
+    /// newer than this is what makes the measurement input-to-photon rather
+    /// than input-to-next-flip.
+    pub baseline_frame: u64,
     pub queue_dwell_usec: u64,
 }
 
@@ -76,16 +86,19 @@ impl InputLatencySamples {
     pub fn observe_page_flip(
         &mut self,
         presented_submission: usize,
+        presented_frame: u64,
         submission_ust_usec: u64,
         page_flip_ust_usec: u64,
     ) {
         while let Some(pending) = self.pending.front().copied() {
             if presented_submission <= pending.baseline_submission
+                || presented_frame <= pending.baseline_frame
                 || submission_ust_usec < pending.ingress_ust_usec
                 || page_flip_ust_usec < submission_ust_usec
             {
-                // Either this flip predates the press, or the clocks disagree
-                // about their order. Neither is a measurement.
+                // Either this flip predates the press, carries a composition
+                // built before it, or the clocks disagree about their order.
+                // None of those is a measurement.
                 break;
             }
             self.pending.pop_front();

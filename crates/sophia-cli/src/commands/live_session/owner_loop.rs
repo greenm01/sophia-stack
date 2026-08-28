@@ -402,6 +402,7 @@ fn run_session_loop_inner(
     let mut input_surface_pixel_change = false;
     let mut input_proof_started_at = None;
     let mut input_change_submission_baseline = None;
+    let mut input_change_frame_baseline = None;
     let mut input_presented_latency = None;
     let mut input_raw_ingress_msec: Option<u64> = None;
     // Repeatable sampling beside the one-shot proof: the proof answers whether

@@ -364,20 +364,42 @@ fn stable_gpu_frame_proves_post_input_pixels(
     input_delivery_complete && stable && input_surface == Some(retired_surface)
 }
 
+/// Whether this page flip is the one that showed the physical input.
+///
+/// The submission counter alone cannot answer that. A render already under
+/// way when the input arrives carries a composition built before it, and
+/// completes into a submission that outranks the baseline while showing none
+/// of the input -- which is what every session of the first full physical run
+/// actually measured. The presented composition must therefore be newer than
+/// the newest one the head held when the input was routed.
 fn physical_input_page_flip_correlates(
     input_delivery_complete: bool,
     input_pixel_change: bool,
     ingress_ust_usec: u64,
     baseline_submission: usize,
     presented_submission: usize,
+    baseline_frame: u64,
+    presented_frame: u64,
     submission_ust_usec: u64,
     page_flip_ust_usec: u64,
 ) -> bool {
     input_delivery_complete
         && input_pixel_change
         && presented_submission > baseline_submission
+        && presented_frame > baseline_frame
         && submission_ust_usec >= ingress_ust_usec
         && page_flip_ust_usec >= submission_ust_usec
+}
+
+/// The newest composition a head holds anywhere in its pipeline.
+///
+/// A head may be rendering one frame, holding another submitted, and
+/// displaying a third. Input must be shown by something newer than all of
+/// them, so the baseline is the maximum rather than any single stage.
+pub(super) fn newest_head_composition_frame(
+    contents: impl IntoIterator<Item = Option<u64>>,
+) -> u64 {
+    contents.into_iter().flatten().max().unwrap_or(0)
 }
 
 fn software_batch_may_coalesce(batch: &XAuthorityObservedTransactionBatch) -> bool {
