@@ -2066,8 +2066,25 @@ other mature compositors are references rather than Sophia runtime components.
   the native gate exports it as the promotion step, and its verifier requires
   schema-8 evidence in which at least one frame rendered partially. Tick this
   box when that gate passes.
-- [ ] Keep one latest pending frame and one KMS submission in flight per
-  output; prove physical input remains within half a refresh period at p99.
+- [ ] Keep one latest pending frame and one KMS submission in flight per head,
+  and prove the 2026-07-31 stage contract at p99 against the measured refresh:
+  full chain below two refresh periods, queue dwell within 1 ms,
+  dwell-to-submit and submit-to-page-flip each within one refresh.
+  This row originally said "half a refresh period at p99" for the full chain.
+  That is stricter than the one-refresh bound the 2026-07-31 entry already
+  rejected on physical evidence -- a randomly phased input can spend nearly a
+  whole refresh waiting for the next synchronized flip -- so the sentence is
+  superseded rather than reinstated. It also said per output; a mirror output
+  holds one submission per head by design, which is what `MirrorHeadPacing`
+  authorizes.
+  The mechanism was already enforced and model-checked
+  (`FrameServiceArbitration`'s `OneSubmissionInFlight`); what was missing was
+  evidence, now `max_in_flight_per_output` and `pending_frame_supersessions`
+  in `sophia_live_native_resources` schema 9. Input-to-photon sampling no
+  longer latches after one correlation, so a session carries its own
+  distribution, and the reporter takes p99 over that population against the
+  refresh the session recorded, refusing below two hundred samples. Remaining:
+  the physical run at TTY3.
 - [ ] Coalesce all outputs in the same DRM/render-device group onto one shared
   renderer worker. Preserve one latest pending request per output, bounded
   response demultiplexing, explicit per-output retirement tokens, and bounded

@@ -67,6 +67,17 @@ The bounded safety configuration explores 4,149,619 generated states and
 allowed acquisition of an occupied slot and let a stale return clear a reused
 slot; both violated `ActiveGenerationOwnsSlot`, at depths 5 and 8 respectively.
 
+No model expresses a timing or deadline property, and the input-latency row
+does not add one. `FrameServiceArbitration` already checks the structural half
+of that row -- `OneSubmissionInFlight` over a boolean `kmsInFlight`, with the
+latest-wins pending frame as a boolean beside it -- so what remains is
+empirical: how long input takes to reach a photon on a particular display
+under a particular workload. A deadline model would introduce a clock variable
+to restate a bound that only hardware can answer, and would then need its own
+argument that the modelled clock resembles the one being measured. The
+physical gate is the proof; this paragraph is here so the absence reads as a
+decision rather than an omission.
+
 `VisualDamageHistory.tla` is the successor model for bounded buffer-age damage
 history over that promoted pool. It abstracts the output as a region partition
 and content as a generation mark per region, never pixels. A scene generation
