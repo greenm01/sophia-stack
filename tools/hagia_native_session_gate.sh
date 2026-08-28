@@ -20,6 +20,13 @@ kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 seat="${SOPHIA_HAGIA_NATIVE_SEAT:-}"
 display="${SOPHIA_HAGIA_NATIVE_DISPLAY:-:292}"
 sequence_timeout_msec="${SOPHIA_HAGIA_NATIVE_SEQUENCE_TIMEOUT_MSEC:-600000}"
+# A startup budget, not a session lifetime. With an input proof requested the
+# global runtime deadline deliberately does not end the session
+# (`global_runtime_deadline_ends_session`); it bounds the wait for the first
+# focused terminal frame the proof types into, and narrower stage deadlines own
+# everything after. The session still ends by the operator's normal logout, so
+# this value covers startup rather than the whole workflow.
+startup_budget_msec="${SOPHIA_HAGIA_NATIVE_STARTUP_BUDGET_MSEC:-660000}"
 evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-native-session.log}"
 proof_text="${SOPHIA_HAGIA_NATIVE_TEXT:-hagianativeproof}"
 guide="${SOPHIA_HAGIA_NATIVE_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_native_session_guide.sh}"
@@ -93,6 +100,10 @@ if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
     echo "SOPHIA_HAGIA_NATIVE_SEQUENCE_TIMEOUT_MSEC must be 1000-600000" >&2
     exit 2
 fi
+if [[ ! "$startup_budget_msec" =~ ^[0-9]+$ ]] || (( startup_budget_msec < 30000 )); then
+    echo "SOPHIA_HAGIA_NATIVE_STARTUP_BUDGET_MSEC must be at least 30000" >&2
+    exit 2
+fi
 # The runner's Hagia profile registers a browser application even when the
 # workflow never launches one. Refusing here names the missing dependency
 # before the display manager is stopped rather than after.
@@ -164,7 +175,8 @@ SOPHIA_BUILD_SESSION=false \
     "--shell-process=$hagia_shell_bin" \
     "--session-app-arg=terminal=$guide" \
     "--expect-physical-text=$proof_text" \
-    "--physical-sequence-timeout-ms=$sequence_timeout_msec" || status=$?
+    "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
+    "--max-runtime-ms=$startup_budget_msec" || status=$?
 
 if (( status != 0 )); then
     echo "The native session did not return cleanly (exit $status); evidence is not archived." >&2

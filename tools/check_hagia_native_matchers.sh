@@ -58,6 +58,18 @@ grep -Fq 'SOPHIA_TTY_PROFILE=hagia' "$root_dir/tools/hagia_native_session_gate.s
     echo "the native gate does not route through the hagia runner profile" >&2
     exit 1
 }
+# `--expect-physical-text` without `--max-runtime-ms` or `--max-ticks` is
+# refused during argument validation, before any window appears. The runner
+# passes no runtime bound of its own because ordinary sessions have no
+# lifetime, so the gate must supply one. This restates a rule that lives in
+# `PersistentXtermSessionConfig::from_args`, which is duplication worth its
+# keep: nothing else here reaches the real parser, and the omission already
+# cost one physical attempt that ended before Kitty appeared.
+if grep -Fq -- '--expect-physical-text' "$root_dir/tools/hagia_native_session_gate.sh" \
+    && ! grep -Eq -- '--(max-runtime-ms|max-ticks)' "$root_dir/tools/hagia_native_session_gate.sh"; then
+    echo "the native gate requests an input proof without a bounded runtime" >&2
+    exit 1
+fi
 for step in \
     'Press Super+Return once.' \
     'Press Super+J once.' \
