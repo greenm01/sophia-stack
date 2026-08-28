@@ -7,7 +7,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+# Sessions, not samples: each session now carries its own latency
+# distribution, so the p99 population is the presses within these runs rather
+# than one value per run.
 SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-20}"
+# The reporter now reads refresh from each session's own head record; this
+# remains only as the fallback for evidence that predates that record.
 REFRESH_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
 MAX_QUEUE_DWELL_MSEC="${SOPHIA_INPUT_LATENCY_MAX_QUEUE_DWELL_MSEC:-1}"
 MAX_DWELL_TO_SUBMIT_MSEC="${SOPHIA_INPUT_LATENCY_MAX_DWELL_TO_SUBMIT_MSEC:-}"
