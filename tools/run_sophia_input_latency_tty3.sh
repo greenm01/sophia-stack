@@ -27,6 +27,11 @@ MAX_SESSION_START_ATTEMPTS=3
 # completes leaves the session running and this script waiting on it forever,
 # which is what a hung run looks like from the outside.
 PROOF_TIMEOUT_SECONDS="${SOPHIA_INPUT_LATENCY_PROOF_TIMEOUT_SECONDS:-90}"
+# The seat the emergency guard listens on. Sophia is given only the virtual
+# injector device, so it never reacts to the real keyboard; but it does take
+# DRM master, so the console is behind its output and an operator has no way
+# to interrupt a wedged run. The guard is that way.
+GUARD_SEAT="${SOPHIA_INPUT_LATENCY_GUARD_SEAT:-seat0}"
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 ARCHIVE_ROOT="$STATE_HOME/sophia/rendering-benchmarks/$COMMIT/input-latency"
@@ -223,7 +228,7 @@ mkdir -p "$ARCHIVE_ROOT"
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 # A run interrupted at the console must not leave a session holding the GPU.
-trap 'terminate_proof "${PROOF_PID:-}"; kill "${INJECTOR_PID:-}" 2>/dev/null || true; preserve_pending $?' EXIT
+trap 'terminate_proof "${PROOF_PID:-}"; kill "${INJECTOR_PID:-}" 2>/dev/null || true; kill "${GUARD_PID:-}" 2>/dev/null || true; preserve_pending $?' EXIT
 
 printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_MSEC" \
@@ -240,6 +245,28 @@ tools/probes/uinput_text_injector.py \
 cargo build --quiet --release --offline -p sophia-cli \
     --features atomic-scanout-live
 tools/atomic_scanout_preflight.sh | tee "$PENDING/preflight.log"
+
+GUARD_ARMED_FILE="$PENDING/input-guard.armed"
+GUARD_TRIGGERED_FILE="$PENDING/input-guard.triggered"
+rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
+"$ROOT_DIR/target/release/sophia" sophia-session-input-guard \
+    "--input-seat=$GUARD_SEAT" \
+    --armed-file="$GUARD_ARMED_FILE" \
+    --triggered-file="$GUARD_TRIGGERED_FILE" \
+    --owner-pid="$$" >>"$PENDING/input-guard.log" 2>&1 &
+GUARD_PID=$!
+echo "Safety check: press and release Ctrl-Alt-Backspace once to arm recovery."
+echo "During a sample, press Ctrl-Alt-Backspace again to abort the run."
+for _ in {1..600}; do
+    [[ ! -s "$GUARD_ARMED_FILE" ]] || break
+    kill -0 "$GUARD_PID" 2>/dev/null || {
+        fail "input guard exited before arming; see $PENDING/input-guard.log"
+    }
+    sleep 0.05
+done
+[[ -s "$GUARD_ARMED_FILE" ]] ||
+    fail "input guard was not armed within 30 seconds; refusing graphics takeover"
+echo "Emergency input guard armed."
 
 for ((sample = 1; sample <= SAMPLES; sample++)); do
     sample_dir="$PENDING/sample-$(printf '%03d' "$sample")"
@@ -320,6 +347,17 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
 
     proof_deadline=$((SECONDS + PROOF_TIMEOUT_SECONDS))
     while kill -0 "$PROOF_PID" 2>/dev/null; do
+        if [[ -s "$GUARD_TRIGGERED_FILE" ]]; then
+            terminate_proof "$PROOF_PID"
+            set +e
+            wait "$PROOF_PID"
+            set -e
+            PROOF_PID=
+            kill "$INJECTOR_PID" 2>/dev/null || true
+            wait "$INJECTOR_PID" 2>/dev/null || true
+            INJECTOR_PID=
+            fail "operator requested emergency recovery during sample $sample"
+        fi
         if ((SECONDS >= proof_deadline)); then
             terminate_proof "$PROOF_PID"
             set +e
