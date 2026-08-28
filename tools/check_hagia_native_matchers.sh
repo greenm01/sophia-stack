@@ -70,6 +70,22 @@ if grep -Fq -- '--expect-physical-text' "$root_dir/tools/hagia_native_session_ga
     echo "the native gate requests an input proof without a bounded runtime" >&2
     exit 1
 fi
+# The guide belongs to the startup terminal alone. One application id carries
+# one argument list, so pointing the launch action at the same id gives every
+# new window its own copy of the guide -- which finds its waits already
+# satisfied, exits, and takes the window with it. A physical attempt spent two
+# Super+Return presses discovering that, with both terminals reaching
+# `surface_observed` and then `normal_exit_after_surface`.
+grep -Fq -- '--session-action-app=terminal=workflow-terminal' \
+    "$root_dir/tools/hagia_native_session_gate.sh" || {
+    echo "the native gate launches its workflow terminals from the guide's application" >&2
+    exit 1
+}
+if grep -Fq -- '--session-app-arg=workflow-terminal=$guide' \
+    "$root_dir/tools/hagia_native_session_gate.sh"; then
+    echo "the native gate gives its workflow terminals a copy of the guide" >&2
+    exit 1
+fi
 for step in \
     'Press Super+Return once.' \
     'Press Super+J once.' \

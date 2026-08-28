@@ -159,6 +159,15 @@ echo "Do not use Ctrl+Alt+Backspace during the normal proof."
 # so it runs here instead of being lost.
 "$ROOT_DIR/tools/atomic_scanout_preflight.sh"
 
+# The startup terminal runs the guide; every terminal the workflow launches must
+# not. Sophia gives one application id one argument list, so pointing
+# `session:spawn-terminal` at the same `terminal` id hands each new window a
+# second copy of the guide. That copy finds every wait already satisfied, runs
+# to the end, and exits -- and a terminal exits when its command does, so the
+# window appears and vanishes. `workflow-terminal` is the same Kitty with the
+# same rendering-relevant arguments and no guide, and
+# `--session-action-app=terminal=` is the mechanism that separates the two
+# without disturbing the profile's own `session { terminal }` binding.
 status=0
 SOPHIA_TTY_PROFILE=hagia \
 SOPHIA_HAGIA_BIN="$hagia_bin" \
@@ -174,6 +183,16 @@ SOPHIA_BUILD_SESSION=false \
     "$ROOT_DIR/tools/start_sophia_tty3.sh" \
     "--shell-process=$hagia_shell_bin" \
     "--session-app-arg=terminal=$guide" \
+    "--session-app=workflow-terminal=$kitty_bin" \
+    --session-app-arg=workflow-terminal=--config \
+    --session-app-arg=workflow-terminal=NONE \
+    --session-app-arg=workflow-terminal=--override \
+    --session-app-arg=workflow-terminal=linux_display_server=x11 \
+    --session-app-arg=workflow-terminal=--override \
+    --session-app-arg=workflow-terminal=background_opacity=1 \
+    --session-app-arg=workflow-terminal=--override \
+    --session-app-arg=workflow-terminal=remember_window_size=no \
+    --session-action-app=terminal=workflow-terminal \
     "--expect-physical-text=$proof_text" \
     "--physical-sequence-timeout-ms=$sequence_timeout_msec" \
     "--max-runtime-ms=$startup_budget_msec" || status=$?

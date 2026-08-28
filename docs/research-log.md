@@ -38,6 +38,36 @@ Completed evidence is archived in `research-log-archive.md`.
   it was written for, and a `sed` that silently stopped matching would otherwise
   still read as a passing negative case.
 
+## 2026-08-27: one application id carries one argument list
+
+- The second native attempt reached the session, presented, and accepted the
+  typed phrase at 34 of 34 events. Both `Super+Return` presses then worked
+  exactly as specified -- admitted, committed, `LaunchTerminal`, started,
+  surface observed -- and each new window vanished immediately. The operator saw
+  a shortcut that did nothing; the evidence shows two terminals reaching
+  `surface_observed` and then `normal_exit_after_surface` with exit status 0.
+- The startup terminal runs the guide as its command, and the guide was bound to
+  the `terminal` application. `session:spawn-terminal` launches that same
+  application, so every workflow terminal ran its own copy of the guide. Each
+  copy found an evidence file that already satisfied every wait it had -- the
+  phrase completes before the first launch, by the guide's own ordering -- ran
+  to the end, and exited. A terminal exits when its command does, so the window
+  closed as soon as it opened.
+- The launch action now points at a separate `workflow-terminal` application:
+  the same Kitty with the same rendering-relevant arguments and no guide.
+  `--session-action-app=terminal=` is the mechanism for this and leaves the
+  profile's own `session { terminal }` binding alone, so the startup terminal
+  keeps the guide and the workflow terminals are ordinary shells.
+- This is worth stating as a rule rather than a fix: an application id owns one
+  argument list, so a startup application and an action-launched application
+  that must differ are two ids, not one id used twice. The matchers now refuse a
+  gate that launches its workflow terminals from the guide's application, or
+  that hands the guide to the workflow terminal.
+- The run ended by VT switch rather than logout and is not promotion evidence.
+  Nothing in the WM, shell, frame-slot, or presentation path was implicated:
+  layout committed eighteen times, focus reconciled fourteen, and the two stale
+  responses recovered.
+
 ## 2026-08-27: an input proof needs a startup budget, not a session lifetime
 
 - The first native gate attempt never reached a window. Sophia refused its
