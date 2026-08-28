@@ -64,7 +64,9 @@ clean health. Mutable XDG policy remains confined to the ordinary dogfooding
 entry. Milestone 14's three-slot boundary is promoted on signed native archive
 `0001`, which also made Hagia the first proof client of the Sophia WM and shell
 protocols with no compatibility bridge in the session. Bounded buffer-age damage
-history is the active product step.
+history is promoted on signed native archive `0002`. Keeping one latest pending
+frame and one KMS submission in flight per output, with physical input inside
+half a refresh period at p99, is the active product step.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -2045,10 +2047,12 @@ other mature compositors are references rather than Sophia runtime components.
   leased. Promoted on signed native archive `0001`: requests settled as
   completions plus bounded deferrals with no stale release and no slot leased
   at completion, and both presented heads reached full three-slot occupancy.
-- [ ] Carry bounded buffer-age damage history per slot and repaint only
+- [x] Carry bounded buffer-age damage history per slot and repaint only
   accumulated damage. Fall back to a full repaint whenever history is
-  incomplete. Implementation is complete and offline-proven; only the physical
-  promotion run remains. The model boundary came first
+  incomplete. Promoted on signed native archive `0002`: 129 partial repaints
+  beside 627 full fallbacks, 201 history records with zero invalidations, and
+  the slot ledger still exact at 201 requests settling as 201 completions with
+  no stale release and no slot leased at completion. The model boundary came first
   (`VisualDamageHistory.tla`, negative controls for under-computed damage and
   a rebuilt bundle keeping its recorded generation). The content age comes
   from `EGL_BUFFER_AGE_EXT` per acquired back buffer, answering the brief's
