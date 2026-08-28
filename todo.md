@@ -65,8 +65,10 @@ entry. Milestone 14's three-slot boundary is promoted on signed native archive
 `0001`, which also made Hagia the first proof client of the Sophia WM and shell
 protocols with no compatibility bridge in the session. Bounded buffer-age damage
 history is promoted on signed native archive `0002`. Keeping one latest pending
-frame and one KMS submission in flight per output, with physical input inside
-half a refresh period at p99, is the active product step.
+frame and one KMS submission in flight per head, and proving the 2026-07-31
+stage contract at p99 against the measured refresh, is the active product step.
+The mechanism and its evidence are in place; the physical run at TTY3 is what
+remains.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
