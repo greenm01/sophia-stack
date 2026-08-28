@@ -169,18 +169,36 @@ pub(super) fn logical_synchronous_modeset_records(
         .collect()
 }
 
+/// Whether one head drove its own submit, callback, and retire lifecycle.
+///
+/// This asks about transport only. Pixel content is a separate question,
+/// answered once for the session by [`native_session_exported_pixels`],
+/// because an output holding no windows composes an all-black frame and that
+/// is the correct picture for it: demanding nonzero pixels of every head
+/// refuses a legitimately empty second monitor forever.
 pub(super) const fn independent_native_output_presented(
     submissions: usize,
     retirements: usize,
     callbacks: usize,
     synchronous_modeset: bool,
-    nonzero_exports: usize,
 ) -> bool {
     let asynchronous_lifecycle =
         retirements > 0 && callbacks == retirements && submissions == retirements + 1;
     let synchronous_lifecycle =
         synchronous_modeset && submissions == 1 && retirements == 0 && callbacks == 0;
-    nonzero_exports > 0 && (asynchronous_lifecycle || synchronous_lifecycle)
+    asynchronous_lifecycle || synchronous_lifecycle
+}
+
+/// Whether the session put real pixels on any screen at all.
+///
+/// A desktop where every head exported nothing rendered nothing, however
+/// healthy each head's transport looked.
+pub(super) fn native_session_exported_pixels(
+    head_nonzero_exports: impl IntoIterator<Item = usize>,
+) -> bool {
+    head_nonzero_exports
+        .into_iter()
+        .any(|nonzero_exports| nonzero_exports > 0)
 }
 
 pub(super) const fn startup_submission_requirement(

@@ -8,15 +8,23 @@
         let focused_gpu_presented = focus
             .focused_surface(seat)
             .is_some_and(|surface| startup_surface_presentations.visual_detail(surface));
+        // The same barrier startup uses: one flip strictly after the focused
+        // surface first had visual detail, on every head it occupies. Without
+        // native scanout there is no head to wait for.
+        let focused_content_reached_scanout = native_scanout.as_ref().is_none_or(|native| {
+            startup_required_submissions
+                .as_ref()
+                .and_then(|required| startup_output_evidence(native, Some(required)))
+                .is_some_and(|outputs| all_startup_outputs_presented(&outputs))
+        });
         let cpu_baseline_presented = current_cpu_frame_is_presented(
-            scene
-                .last_report()
-                .map(|report| (report.checksum, report.nonzero_pixel_bytes)),
-            native_scanout.as_ref().and_then(|native| {
-                native
-                    .heads
-                    .first()
-                    .map(|head| (head.presented_logical_checksum, head.nonzero_exports))
+            scene.last_report().map(|report| report.nonzero_pixel_bytes),
+            focused_content_reached_scanout,
+            native_scanout.as_ref().map(|native| {
+                native.heads.iter().map(|head| CpuScanoutHeadEvidence {
+                    submissions: head.submissions,
+                    presented_submissions: head.presented_submissions,
+                })
             }),
         );
         let input_baseline_presented =

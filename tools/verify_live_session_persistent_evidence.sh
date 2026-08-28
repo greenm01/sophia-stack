@@ -91,7 +91,10 @@ if [[ "${observed[schema]:-}" =~ ^(14|15|16)$ ]]; then
     )
 fi
 if [[ "${observed[schema]:-}" == "16" ]]; then
-    expected_keys+=(present_complete_copy)
+    expected_keys+=(
+        present_complete_copy present_complete_routed present_idle_routed
+        present_route_failures
+    )
 fi
 if [[ "${#observed[@]}" -ne "${#expected_keys[@]}" ]]; then
     echo "persistent live-session evidence has an unknown or missing field" >&2

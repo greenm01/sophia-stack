@@ -1228,13 +1228,18 @@
                 head.retirements,
                 head.callback_accepted,
                 head.initial_modeset_submission.is_some(),
-                head.nonzero_exports,
             )
         });
         if incomplete_independent_head && !physical_output_topology_replaced {
             return Err(
                 "one or more native outputs did not present and retire independently".into(),
             );
+        }
+        if !native_session_exported_pixels(
+            native_scanout.heads.iter().map(|head| head.nonzero_exports),
+        ) && !physical_output_topology_replaced
+        {
+            return Err("no native output exported nonzero pixels".into());
         }
         println!(
             "sophia_live_native_completion schema=1 status=verified profile={} publication_generation={} initial_generation={} heads={}",

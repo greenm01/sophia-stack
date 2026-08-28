@@ -23,6 +23,24 @@ expect_fail() {
     fi
 }
 
+# A refusal that fires for the wrong reason proves nothing about the clause
+# under test, so these controls name the message they must produce.
+expect_fail_reason() {
+    local verifier="$1"
+    local fixture="$2"
+    local reason="$3"
+    local output
+
+    if output="$("$ROOT_DIR/$verifier" "$FIXTURE_DIR/$fixture" 2>&1 >/dev/null)"; then
+        echo "verifier unexpectedly accepted fixture: $fixture" >&2
+        exit 1
+    fi
+    if [[ "$output" != *"$reason"* ]]; then
+        echo "fixture $fixture was refused for the wrong reason: $output" >&2
+        exit 1
+    fi
+}
+
 expect_pass tools/verify_atomic_scanout_preflight.sh atomic_scanout_preflight_pass.log
 expect_fail tools/verify_atomic_scanout_preflight.sh atomic_scanout_preflight_unavailable.log
 expect_fail tools/verify_atomic_scanout_preflight.sh atomic_scanout_preflight_impossible_counts.log
@@ -123,6 +141,23 @@ if "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" \
     exit 1
 fi
 expect_fail tools/verify_qemu_session_evidence.sh qemu_session_evidence_vsync_overlap.log
+
+# The per-head composition shape, taken from a real green QEMU run rather than
+# written by hand. Its second output holds no windows and therefore exports no
+# nonzero pixels, which is the case the older per-output pixel demand refused.
+expect_pass tools/verify_qemu_session_evidence.sh qemu_session_evidence_per_head_pass.log
+expect_fail_reason tools/verify_qemu_session_evidence.sh \
+    qemu_session_evidence_per_head_no_pixels.log \
+    "no nonzero exports on any output"
+expect_fail_reason tools/verify_qemu_session_evidence.sh \
+    qemu_session_evidence_per_head_pipeline_mismatch.log \
+    "inconsistent direct-write/persistent-GL resource counters"
+expect_fail_reason tools/verify_qemu_session_evidence.sh \
+    qemu_session_evidence_per_head_target_recreation.log \
+    "did not preserve bounded native upload resources"
+expect_fail_reason tools/verify_qemu_session_evidence.sh \
+    qemu_session_evidence_per_head_missing_present_routing.log \
+    "unknown or missing field"
 expect_pass tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_pass.log
 expect_fail tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_missing_guard_trigger.log
 

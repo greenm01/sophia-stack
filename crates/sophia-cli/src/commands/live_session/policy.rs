@@ -321,16 +321,38 @@ fn input_baseline_is_presented(
     focused_gpu_presented || cpu_baseline_presented
 }
 
+/// One head's scanout progress, as the CPU input baseline reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CpuScanoutHeadEvidence {
+    submissions: usize,
+    presented_submissions: usize,
+}
+
+/// Answers whether what the CPU scene composed is what a camera would see.
+///
+/// Arming input while a frame is still in flight would let the post-input
+/// correlation latch onto a page flip that was carrying pre-input content, so
+/// this asks two things: the focused surface's content already crossed a flip
+/// on every head it occupies, which is the startup barrier the caller passes
+/// in, and that no submission is outstanding behind it on any head.
+///
+/// It compares submission counts, never checksums. A head records the logical
+/// scene it presented; the CPU report carries a composition evidence hash over
+/// output size and composited elements. Those are different quantities that
+/// never compare equal, and requiring them to match wedged every CPU-backed
+/// input proof from the day per-head composition replaced the CPU queue path.
 fn current_cpu_frame_is_presented(
-    scene_frame: Option<(u64, usize)>,
-    native_frame: Option<(u64, usize)>,
+    scene_nonzero_pixel_bytes: Option<usize>,
+    focused_content_reached_scanout: bool,
+    native_heads: Option<impl IntoIterator<Item = CpuScanoutHeadEvidence>>,
 ) -> bool {
-    scene_frame.is_some_and(|(checksum, nonzero_pixel_bytes)| {
-        nonzero_pixel_bytes > 0
-            && native_frame.is_none_or(|(presented_logical_checksum, nonzero_exports)| {
-                presented_logical_checksum == checksum && nonzero_exports > 0
-            })
-    })
+    scene_nonzero_pixel_bytes.is_some_and(|nonzero_pixel_bytes| nonzero_pixel_bytes > 0)
+        && focused_content_reached_scanout
+        && native_heads.is_none_or(|heads| {
+            let mut heads = heads.into_iter().peekable();
+            heads.peek().is_some()
+                && heads.all(|head| head.presented_submissions >= head.submissions)
+        })
 }
 
 fn stable_gpu_frame_proves_post_input_pixels(

@@ -40,6 +40,7 @@ fi
 declare -A output_ids=()
 total_retirements=0
 total_callbacks=0
+total_nonzero_exports=0
 for output_line in "${output_lines[@]}"; do
     output_id="$(sed -n 's/.* output=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
     if [[ -z "$output_id" ]]; then
@@ -47,13 +48,21 @@ for output_line in "${output_lines[@]}"; do
         exit 1
     fi
     output_ids[$output_id]=1
-    for field in submissions nonzero_exports; do
-        value="$(sed -n "s/.* ${field}=\([0-9][0-9]*\).*/\1/p" <<< "$output_line")"
-        if [[ -z "$value" ]] || (( value == 0 )); then
-            echo "QEMU output evidence has no $field: $output_line" >&2
-            exit 1
-        fi
-    done
+    submissions="$(sed -n 's/.* submissions=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
+    if [[ -z "$submissions" ]] || (( submissions == 0 )); then
+        echo "QEMU output evidence has no submissions: $output_line" >&2
+        exit 1
+    fi
+    # Exported pixels are counted across the desktop rather than demanded of
+    # every output. An output holding no windows composes an all-black frame,
+    # which is the correct picture for it and reports zero nonzero pixels; the
+    # session still has to have rendered something somewhere.
+    nonzero_exports="$(sed -n 's/.* nonzero_exports=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
+    if [[ -z "$nonzero_exports" ]]; then
+        echo "QEMU output evidence is missing its nonzero export counter: $output_line" >&2
+        exit 1
+    fi
+    total_nonzero_exports=$((total_nonzero_exports + nonzero_exports))
     retirements="$(sed -n 's/.* retirements=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
     callbacks="$(sed -n 's/.* callbacks=\([0-9][0-9]*\).*/\1/p' <<< "$output_line")"
     if [[ -z "$retirements" || -z "$callbacks" ]]; then
@@ -79,6 +88,10 @@ if (( ${#output_ids[@]} != 2 )); then
 fi
 if (( total_retirements == 0 || total_callbacks == 0 )); then
     echo "QEMU evidence has no asynchronous page-flip retirement" >&2
+    exit 1
+fi
+if (( total_nonzero_exports == 0 )); then
+    echo "QEMU evidence has no nonzero exports on any output" >&2
     exit 1
 fi
 if [[ "$(grep -c '^sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
@@ -211,12 +224,19 @@ if (( input_presented_latency_msec > 100 || cpu_max_compose_msec > 25 \
     echo "QEMU evidence exceeded its input/rendering latency budget" >&2
     exit 1
 fi
-if (( native_target_recreations != 0 || native_frame_uploads < 2 )); then
+# Whole-frame CPU uploads belong to the retired queue_frame path: per-head
+# composition renders into each head's own target, so native_frame_uploads is
+# legitimately zero here and in both promoted native archives. What still has
+# to hold is that targets were not rebuilt behind the session's back.
+if (( native_target_recreations != 0 )); then
     echo "QEMU evidence did not preserve bounded native upload resources" >&2
     exit 1
 fi
-if ! (( (native_target_creations == 0 && native_pipeline_creations == 0) \
-    || (native_target_creations == 2 && native_pipeline_creations == 2) )); then
+# Direct write creates neither resource; the persistent-GL path creates one
+# pipeline per target, however many targets a session's heads and frame slots
+# ask for. Pinning that count to one-target-per-output predates both per-head
+# composition and the three-slot pool, so consistency is what is checked here.
+if (( native_target_creations != native_pipeline_creations )); then
     echo "QEMU evidence has inconsistent direct-write/persistent-GL resource counters" >&2
     exit 1
 fi

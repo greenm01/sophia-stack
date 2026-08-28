@@ -10,12 +10,12 @@ use super::startup_readiness::{
 use super::wm_update_coordinator_batch;
 use super::{
     AUTHORITY_MERGE_RUN_LIMIT, AUTHORITY_MERGE_TRANSACTION_LIMIT, BufferSource,
-    CommittedSurfaceState, FirefoxM8StageProof, FirefoxM10DialogProof, FirefoxM10KittyProof,
-    FirefoxM10PrimaryProof, FirefoxM10SelectionKittyProof, FloatingPointerGestureState,
-    FloatingPointerOutline, FloatingPointerOutlineUpdate, LayerSnapshot, LiveClientStdoutCapture,
-    LiveProductionCpuScene, LiveProductionVisualRuntime, LiveWmSession, LiveXAuthorityFile,
-    PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig, PhysicalInputRoutingMode,
-    PhysicalTextProof, PolicyCheckpointIdentity, PolicySessionDirectory,
+    CommittedSurfaceState, CpuScanoutHeadEvidence, FirefoxM8StageProof, FirefoxM10DialogProof,
+    FirefoxM10KittyProof, FirefoxM10PrimaryProof, FirefoxM10SelectionKittyProof,
+    FloatingPointerGestureState, FloatingPointerOutline, FloatingPointerOutlineUpdate,
+    LayerSnapshot, LiveClientStdoutCapture, LiveProductionCpuScene, LiveProductionVisualRuntime,
+    LiveWmSession, LiveXAuthorityFile, PRIMARY_INPUT_PROOF_SCRIPT, PersistentXtermSessionConfig,
+    PhysicalInputRoutingMode, PhysicalTextProof, PolicyCheckpointIdentity, PolicySessionDirectory,
     PreparedPublicPolicyLaunch, ProductionCycleNativeOwnerPolicy, PublicPolicyFaultPoint,
     PublicPolicyRestartDecision, PublicProfilePreparationExecutor, Rect, Region,
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
@@ -32,16 +32,17 @@ use super::{
     live_transaction_raster_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
-    native_frame_service_should_preempt_authority, observe_floating_pointer_gesture,
-    observe_public_output_generations, observe_public_output_topology,
-    pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
-    physical_input_pixels_already_changed, physical_input_routing_mode,
-    place_pointer_event_for_routing, pointer_press_starts_focus_handoff,
-    policy_checkpoint_replaced, policy_profile_identity, policy_projections_place_surface,
-    production_cycle_native_owner_policy, public_policy_launch_spec,
-    public_policy_restart_decision, public_policy_restart_settlement_pending,
-    public_session_operations, record_runtime_commits, rects_intersect, resolve_public_shortcuts,
-    route_input_events, session_failure_with_refused_requests, session_protocol_errors_are_fatal,
+    native_frame_service_should_preempt_authority, native_session_exported_pixels,
+    observe_floating_pointer_gesture, observe_public_output_generations,
+    observe_public_output_topology, pending_wm_focus_after_engine_decision,
+    physical_input_page_flip_correlates, physical_input_pixels_already_changed,
+    physical_input_routing_mode, place_pointer_event_for_routing,
+    pointer_press_starts_focus_handoff, policy_checkpoint_replaced, policy_profile_identity,
+    policy_projections_place_surface, production_cycle_native_owner_policy,
+    public_policy_launch_spec, public_policy_restart_decision,
+    public_policy_restart_settlement_pending, public_session_operations, record_runtime_commits,
+    rects_intersect, resolve_public_shortcuts, route_input_events,
+    session_failure_with_refused_requests, session_protocol_errors_are_fatal,
     settle_session_fatal_error, stable_gpu_frame_proves_post_input_pixels,
     startup_submission_requirement, successful_primary_exit_ends_session,
     synchronize_runtime_surface_chrome_style, take_settled_input_delivery_wait,
@@ -470,12 +471,24 @@ fn present_cadence_keeps_measuring_past_its_window() {
 
 #[test]
 fn independent_output_accepts_exact_synchronous_or_asynchronous_lifecycle() {
-    assert!(independent_native_output_presented(1, 0, 0, true, 1));
-    assert!(independent_native_output_presented(8, 7, 7, true, 1));
-    assert!(!independent_native_output_presented(1, 0, 0, false, 1));
-    assert!(!independent_native_output_presented(2, 0, 0, true, 1));
-    assert!(!independent_native_output_presented(8, 7, 6, true, 1));
-    assert!(!independent_native_output_presented(1, 0, 0, true, 0));
+    assert!(independent_native_output_presented(1, 0, 0, true));
+    assert!(independent_native_output_presented(8, 7, 7, true));
+    assert!(!independent_native_output_presented(1, 0, 0, false));
+    assert!(!independent_native_output_presented(2, 0, 0, true));
+    assert!(!independent_native_output_presented(8, 7, 6, true));
+}
+
+#[test]
+fn a_head_showing_an_empty_desktop_still_completes() {
+    // An output holding no windows composes black, and black is the right
+    // picture for it. The pixels the session did render are what must exist,
+    // and they can come from any head.
+    assert!(independent_native_output_presented(8, 7, 7, true));
+    assert!(native_session_exported_pixels([17, 0]));
+    assert!(native_session_exported_pixels([0, 17]));
+    // Nothing anywhere is a session that rendered nothing.
+    assert!(!native_session_exported_pixels([0, 0]));
+    assert!(!native_session_exported_pixels([]));
 }
 
 #[test]
@@ -1023,19 +1036,63 @@ fn stable_focused_gpu_content_arms_input_without_cpu_scene_pixels() {
 
 #[test]
 fn cpu_input_waits_for_the_current_scene_frame_to_reach_scanout() {
-    assert!(current_cpu_frame_is_presented(Some((41, 1)), None));
-    assert!(current_cpu_frame_is_presented(Some((41, 1)), Some((41, 1))));
-    assert!(!current_cpu_frame_is_presented(
-        Some((41, 1)),
-        Some((40, 1))
+    // The counts a settled two-head session actually reports: every
+    // submission retired, nothing queued behind it.
+    let caught_up = [
+        CpuScanoutHeadEvidence {
+            submissions: 4,
+            presented_submissions: 4,
+        },
+        CpuScanoutHeadEvidence {
+            submissions: 3,
+            presented_submissions: 3,
+        },
+    ];
+    assert!(current_cpu_frame_is_presented(
+        Some(1),
+        true,
+        Some(caught_up)
     ));
-    assert!(!current_cpu_frame_is_presented(
-        Some((41, 0)),
-        Some((41, 1))
+    // Without native scanout there is no head to wait for.
+    assert!(current_cpu_frame_is_presented(
+        Some(1),
+        true,
+        None::<[CpuScanoutHeadEvidence; 0]>
     ));
+    // A frame still in flight on any head would let the post-input
+    // correlation latch onto a flip that was carrying pre-input pixels.
     assert!(!current_cpu_frame_is_presented(
-        Some((41, 1)),
-        Some((41, 0))
+        Some(1),
+        true,
+        Some([
+            CpuScanoutHeadEvidence {
+                submissions: 4,
+                presented_submissions: 4,
+            },
+            CpuScanoutHeadEvidence {
+                submissions: 4,
+                presented_submissions: 3,
+            },
+        ])
+    ));
+    // The focused surface's content has not crossed a flip yet.
+    assert!(!current_cpu_frame_is_presented(
+        Some(1),
+        false,
+        Some(caught_up)
+    ));
+    // A blank scene is not a baseline, and neither is no scene at all.
+    assert!(!current_cpu_frame_is_presented(
+        Some(0),
+        true,
+        Some(caught_up)
+    ));
+    assert!(!current_cpu_frame_is_presented(None, true, Some(caught_up)));
+    // Native scanout that owns no head proves nothing.
+    assert!(!current_cpu_frame_is_presented(
+        Some(1),
+        true,
+        Some([] as [CpuScanoutHeadEvidence; 0])
     ));
 }
 
