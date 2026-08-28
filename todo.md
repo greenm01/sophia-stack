@@ -376,17 +376,20 @@ lives rather than restating it; this is a priority index, not a second roadmap.
    772 GLX presentations retired, and normal Logout finished with zero protocol
    errors and clean lifecycle health.
 5. **In progress.** Milestone 14's bounded visual-retirement model and the
-   retirement-fed three-slot implementation are complete. Physical promotion
-   exposed two integration defects outside slot ownership: the xmonad child
-   executable was absent from its protected domain, then recoverable stale
-   proposals exhausted the outer supervisor. Both are repaired. The next run
-   stayed alive but was unusably slow because public policy snapshots treated
-   every Kitty raster generation as window-state generation, producing 19
-   stale responses, 17 private-adapter rebuilds, and two outer restarts in 56
-   seconds. Public snapshots now source state generation from retained
-   X-authority lifecycle facts, with a regression proving raster-only progress
-   cannot invalidate layout. Re-run the signed four-Kitty launch/focus/close
-   gate and require no repaint-led stale/rebuild storm before beginning bounded
+   retirement-fed three-slot implementation are complete. Public snapshots now
+   source surface state from X-authority lifecycle facts rather than raster
+   generations; signed source `c681f762` confirmed that ordinary repaint no
+   longer causes the stale/rebuild storm. The remaining failure in that run is
+   confined to the xmonad compatibility bridge's synthetic ConfigureRequest
+   fence and is not a Sophia WM protocol, shell protocol, or Engine promotion
+   blocker. Use Hagia as the first proof client to re-run the bounded
+   three-launch, `Super+J`, close, and normal-logout workflow without the
+   xmonad bridge. Require ordered WM projection commits, correct shell-role
+   separation, visibly correct Engine focus and layout, balanced
+   schema-7 slot acquisition/release with no stale release or leaked lease,
+   bounded input/WM latency, native drain, clean protocol/frontend health, and
+   exact TTY recovery. Fix only failures that reproduce on this native path.
+   Promote the three-slot boundary when it passes, then begin bounded
    buffer-age damage history.
 
 Completed since this ordering was written. The Pnut Landlock empty-allowlist fix
@@ -2291,6 +2294,13 @@ Launcher, And Shell Integration are pre-freeze port requirements.
 
 ### Rendering And Compatibility Follow-Ups
 
+- [ ] Fix stable-relayout silence in the xmonad compatibility bridge. Signed
+  source `c681f762` reached one through four retained synthetic windows, but
+  unchanged `SceneChanged` cycles waited for ConfigureRequest replies that real
+  xmonad did not emit and exhausted the outer supervisor. Add a quiet-boundary
+  regression for stable retained geometry while preserving strict manage and
+  resize response fences. This is retained compatibility work, not a native
+  Sophia WM protocol, shell protocol, or Milestone 14 promotion blocker.
 - [ ] Retain the bounded physical `glxgears` proof with visible animation,
   advancing Present/KMS cadence, matching reference provider, clean retirement,
   and zero protocol or renderer debt.
