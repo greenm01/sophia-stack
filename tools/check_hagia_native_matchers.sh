@@ -101,42 +101,81 @@ evidence="$temp_dir/evidence.log"
 proof_result="$temp_dir/proof.result"
 profile_sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 
+# The evidence below is a real session, not an invented one. It is the record
+# set of the run that completed the workflow on hardware, reduced to the lines
+# this verifier reads and with its identity and profile digest replaced. An
+# earlier fixture was written from what the verifier expected rather than from
+# what a session emits, so it agreed with the verifier about a record that no
+# native session produces and both were wrong together.
 printf '%s\n' \
-    "sophia_live_desktop_profile schema=1 status=loaded mode=packaged-promotion generation=1 digest=7 root_sha256=$profile_sha256 sources=1" \
+    "sophia_live_desktop_profile schema=1 status=loaded mode=packaged-promotion generation=1 digest=93db9214 root_sha256=$profile_sha256 sources=1" \
     'sophia_live_wm schema=4 status=ready adapter=sophia_wm_v1 socket=session_owned epoch=1 restarts=0' \
+    'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=30552 revision=2' \
+    'sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=30555 revision=1 connection_epoch=1' \
     'sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1' \
-    'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=4321 revision=1' \
-    'sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=4322 revision=1 connection_epoch=1' \
-    'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=1 content=redacted' \
-    "sophia_live_session_input schema=2 status=complete source=physical text=$proof_text expected_events=34 matched_events=34 pixel_change=true" \
+    'sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=2 surfaces=0 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=3 surfaces=0 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=2097166 content=redacted' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=4 surfaces=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
+    'sophia_live_wm schema=1 status=focus_committed transaction=4 target=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=5 surfaces=1 moved_surfaces=1 configure_deliveries=1 outcome=Committed' \
+    'sophia_live_session_input schema=2 status=complete source=physical text=hagianativeproof expected_events=34 matched_events=34 pixel_change=true' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=6 surfaces=1 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=29' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=11 action=LaunchTerminal' \
-    'sophia_session_app schema=2 status=admitted source=action transaction=11 surface=2' \
-    'sophia_live_wm schema=2 status=workspace_projection_committed transaction=11 output=1 workspace=1 visible_surfaces=2 focus=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=7 surfaces=1 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=7 action=LaunchTerminal' \
+    'sophia_live_wm schema=1 status=stale_response_rejected transaction=8 reason=scene_advanced rearmed=true' \
+    'sophia_live_metadata_broker schema=1 status=descriptor_committed surface=4194318 content=redacted' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=9 surfaces=2 moved_surfaces=2 configure_deliveries=2 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=10 surfaces=2 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=11 surfaces=2 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=7 surface=4194318' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=12 surfaces=2 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=13 surfaces=2 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=29' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=12 action=LaunchTerminal' \
-    'sophia_session_app schema=2 status=admitted source=action transaction=12 surface=3' \
-    'sophia_live_wm schema=2 status=workspace_projection_committed transaction=12 output=1 workspace=1 visible_surfaces=3 focus=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=14 surfaces=2 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=14 action=LaunchTerminal' \
+    'sophia_live_wm schema=1 status=stale_response_rejected transaction=15 reason=scene_advanced rearmed=true' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=16 surfaces=3 moved_surfaces=3 configure_deliveries=3 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=17 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=18 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=14 surface=6291470' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=19 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=20 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=29' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=13 action=LaunchTerminal' \
-    'sophia_session_app schema=2 status=admitted source=action transaction=13 surface=4' \
-    'sophia_live_wm schema=2 status=workspace_projection_committed transaction=13 output=1 workspace=1 visible_surfaces=4 focus=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=21 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=21 action=LaunchTerminal' \
+    'sophia_live_wm schema=1 status=stale_response_rejected transaction=22 reason=scene_advanced rearmed=true' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=23 surfaces=4 moved_surfaces=4 configure_deliveries=4 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=24 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=25 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=21 surface=8388622' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=26 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=27 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=1' \
-    'sophia_live_wm schema=2 status=workspace_projection_committed transaction=14 output=1 workspace=1 visible_surfaces=4 focus=surface' \
+    'sophia_live_wm schema=1 status=focus_committed transaction=27 target=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=28 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=31' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=15 action=CloseFocused' \
-    'sophia_live_wm schema=2 status=workspace_projection_committed transaction=15 output=1 workspace=1 visible_surfaces=3 focus=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=29 surfaces=4 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=29 action=CloseFocused' \
+    'sophia_live_wm schema=1 status=stale_response_rejected transaction=30 reason=scene_advanced rearmed=true' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=31 surfaces=3 moved_surfaces=3 configure_deliveries=3 outcome=Committed' \
+    'sophia_live_wm schema=1 status=focus_committed transaction=31 target=surface' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=32 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=33 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=physical_action_committed action=32' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=16 action=Logout' \
-    'sophia_live_session_control schema=2 status=complete enqueued=9 dispatched=9 delivered=9 stale_retired=0 rejected=0 timed_out=0 unexpected=0 pending=0 max_queue_dwell_msec=4 max_ack_msec=7' \
+    'sophia_live_wm schema=1 status=layout_committed transaction=34 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=34 action=Logout' \
     'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none' \
-    'sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=2 synthetic_releases=0 state_only_releases=0 orphan_releases_suppressed=0 removed_surface_keys=0 repeat_active_seats=0 repeat_armed=0 repeat_routed=0 repeat_pulses=0 repeat_coalesced=0 repeat_cancelled=0 repeat_capacity_exhausted=0' \
-    'sophia_live_session schema=16 status=bounded_complete display=:292 elapsed_msec=91000 input_pixel_change=true input_text_match=true input_queue_dwell_max_msec=3 native_submit_failures=0 native_retire_failures=0 native_callback_rejected=0 native_callback_queue_saturated=0 native_max_submit_to_page_flip_msec=9 native_max_upload_msec=4 native_max_render_msec=6 native_nonzero_exports=612 native_mixed_exports=612 native_in_flight=false native_cleanup_pending=false wm_restarts=0 wm_degraded=false present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0' \
-    'sophia_live_native_resources schema=7 status=complete worker_requests=640 worker_completions=612 worker_failures=0 worker_soft_stalls=0 worker_hard_stalls=0 worker_release_enqueue_failures=0 frame_slot_acquisitions=612 frame_slot_reuses=609 frame_slot_deferrals=28 frame_slot_stale_releases=0 frame_slots_leased=0 frame_slots_high_watermark=3 max_worker_request_msec=8' \
+    'sophia_live_native_resources schema=7 status=complete target_creations=237 pipeline_creations=237 frame_surface_creations=237 cpu_target_creations=0 dmabuf_target_creations=231 composition_target_creations=6 composition_target_reuses=257 generation_replacements=0 recovery_replacements=0 snapshot_captures=231 snapshot_promotions=231 snapshot_rollbacks=0 snapshot_evictions=231 snapshot_live_entries=0 snapshot_live_bytes=0 import_cache_imports=410 import_cache_hits=244 import_cache_evictions=410 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0 exact_nearest_draws=1148 sharp_downscale_draws=0 sharp_upscale_draws=0 linear_fallback_draws=0 worker_requests=263 worker_completions=263 worker_failures=0 worker_soft_stalls=0 worker_hard_stalls=0 worker_release_enqueue_failures=0 frame_slot_acquisitions=263 frame_slot_reuses=257 frame_slot_deferrals=0 frame_slot_stale_releases=0 frame_slots_leased=0 frame_slots_high_watermark=6 max_worker_request_msec=61' \
     'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false' \
     'sophia_live_output_topology_health schema=1 status=clean quarantined=false' \
-    'sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed' \
     'sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0' \
+    'sophia_live_session schema=16 status=bounded_complete display=:292 elapsed_msec=41802 startup_ready_msec=602 session_ticks=32549 authority_batches=392 authority_transactions=235 authority_queue_capacity=256 authority_batches_dropped=0 backend_ticks=1153 runtime_committed=228 runtime_surfaces=3 cpu_layers=0 cpu_nonzero_pixel_bytes=13 cpu_max_nonzero_pixel_bytes=143628 cpu_nonzero_frames=245 cpu_checksum=17049933347202034697 cpu_max_compose_msec=5 injected_input=false input_events_expected=45 input_events_flushed=45 input_flush_latency_msec=1 input_pixel_change=true input_text_match=true input_presented_latency_msec=34 input_dispatch_max_gap_msec=1 input_queue_max_depth=3 input_queue_dwell_max_msec=1 physical_events=57 physical_keys_routed=44 pointer_pixel_change=false physical_pointer_events=0 physical_pointer_routed=0 pointer_proof=disabled native_presentation=enabled native_submissions=259 native_submit_deferred=1383 native_submit_failures=0 native_retirements=257 native_retire_failures=0 native_max_in_flight_ticks=0 native_max_submit_to_page_flip_msec=17 native_max_upload_msec=0 native_max_target_create_msec=9 native_max_frame_surface_create_msec=0 native_max_render_msec=28 native_target_creations=237 native_target_recreations=0 native_pipeline_creations=237 native_frame_surface_creations=237 native_frame_uploads=0 native_callback_accepted=257 native_callback_rejected=0 native_callback_queue_saturated=0 native_nonzero_exports=259 native_mixed_exports=263 native_export_attempts=263 native_in_flight=false native_cleanup_pending=false physical_input=enabled wm_policy=external wm_requests=28 wm_committed=24 wm_restarts=0 wm_degraded=false namespace_profile=classic_shared output_update=disabled output_notifications=0 surface_resize=disabled present_complete_copy=231 present_complete_flip=0 present_complete_skip=4 present_idle=235 present_complete_routed=235 present_idle_routed=235 present_route_failures=0 present_idle_fence_triggers=235 present_disconnect_sources=6 present_disconnect_fences=6 present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 present_acquire_waits=0 present_controlled_rejections=0' \
+    'sophia_live_session_control schema=2 status=complete enqueued=26 dispatched=26 delivered=26 stale_retired=0 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=5 max_queue_dwell_msec=2 max_ack_msec=1' \
+    'sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=2 synthetic_releases=3 state_only_releases=1 orphan_releases_suppressed=2 removed_surface_keys=0 repeat_active_seats=0 repeat_armed=17 repeat_routed=0 repeat_pulses=0 repeat_coalesced=0 repeat_cancelled=15 repeat_capacity_exhausted=0' \
+    'sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed' \
     'sophia_live_metadata_shell schema=1 status=stopped transport=disconnected process=terminated' \
     'sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated' \
     'sophia_tty_recovery schema=3 profile=hagia kd_mode_before=0 kd_mode_after=0 termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none' \
@@ -215,10 +254,10 @@ for missing in \
     'sophia_live_metadata_shell schema=1 status=stopped' \
     'sophia_live_metadata_broker schema=1 status=stopped' \
     'sophia_live_session_input schema=2 status=complete' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=13 action=LaunchTerminal' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=15 action=CloseFocused' \
-    'sophia_live_wm schema=1 status=session_action_committed transaction=16 action=Logout' \
-    'sophia_session_app schema=2 status=admitted source=action transaction=13' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=21 action=LaunchTerminal' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=29 action=CloseFocused' \
+    'sophia_live_wm schema=1 status=session_action_committed transaction=34 action=Logout' \
+    'sophia_session_app schema=2 status=admitted source=action transaction=21' \
     'sophia_live_wm schema=1 status=physical_action_committed action=1' \
     'sophia_live_session_control schema=2 status=complete' \
     'sophia_live_session_native_suspend schema=2' \
@@ -278,22 +317,22 @@ reject_mutation "a refused stale slot release" "$stale" \
 # Requests must settle as completions or bounded deferrals. A request that did
 # neither is a frame the renderer silently dropped.
 unbalanced="$temp_dir/unbalanced.log"
-sed 's/frame_slot_deferrals=28/frame_slot_deferrals=27/' "$evidence" >"$unbalanced"
+sed 's/worker_completions=263/worker_completions=262/' "$evidence" >"$unbalanced"
 reject_mutation "an unbalanced renderer-worker ledger" "$unbalanced" \
     "did not settle as completion or bounded deferral"
 
 overcapacity="$temp_dir/overcapacity.log"
-sed 's/frame_slots_high_watermark=3/frame_slots_high_watermark=4/' "$evidence" >"$overcapacity"
-reject_mutation "a frame-slot pool above its three-slot capacity" "$overcapacity" \
-    "exceeded its three-slot capacity"
+sed 's/frame_slots_high_watermark=6/frame_slots_high_watermark=7/' "$evidence" >"$overcapacity"
+reject_mutation "a frame-slot pool above three slots per head" "$overcapacity" \
+    "exceeded three slots per presented head"
 
 slow="$temp_dir/slow.log"
-sed 's/max_ack_msec=7/max_ack_msec=140/' "$evidence" >"$slow"
+sed 's/max_ack_msec=1$/max_ack_msec=140/' "$evidence" >"$slow"
 reject_mutation "session-control latency above its budget" "$slow" \
     "session-control latency exceeded 100ms"
 
 diverged="$temp_dir/diverged.log"
-sed 's/delivered=9 stale_retired=0/delivered=8 stale_retired=0/' "$evidence" >"$diverged"
+sed 's/delivered=26 stale_retired=0/delivered=25 stale_retired=0/' "$evidence" >"$diverged"
 reject_mutation "a session-control ledger that did not balance" "$diverged" \
     "enqueue, dispatch, and delivery counts diverged"
 
@@ -309,6 +348,35 @@ grep -vF 'sophia_live_wm schema=1 status=physical_action_committed action=1' "$e
     ' >"$reordered"
 reject_mutation "a focus change committed before its launches" "$reordered" \
     "focus-next was committed before the third terminal launch"
+
+# The checks that read this run's real shape. A launch whose layout never
+# committed, a focus-next that changed no committed focus, and a stale response
+# that did not re-arm are each a different failure from the recovered scene
+# races this workload legitimately produces.
+unsettled="$temp_dir/unsettled.log"
+awk '
+    /^sophia_live_wm schema=1 status=session_action_committed transaction=21 action=LaunchTerminal$/ { third = 1 }
+    third && /^sophia_live_wm schema=1 status=layout_committed / { next }
+    { print }
+' "$evidence" >"$unsettled"
+reject_mutation "a launch whose layout never committed" "$unsettled" \
+    "terminal launch 3 never reached a committed layout"
+
+unfocused="$temp_dir/unfocused.log"
+awk '
+    /^sophia_live_wm schema=1 status=physical_action_committed action=1$/ { focusing = 1 }
+    /^sophia_live_wm schema=1 status=session_action_committed transaction=29 action=CloseFocused$/ { focusing = 0 }
+    focusing && /^sophia_live_wm schema=1 status=focus_committed / { next }
+    { print }
+' "$evidence" >"$unfocused"
+reject_mutation "a focus-next that changed no committed focus" "$unfocused" \
+    "focus-next committed no visible focus change"
+
+unarmed="$temp_dir/unarmed.log"
+sed 's/status=stale_response_rejected transaction=8 reason=scene_advanced rearmed=true/status=stale_response_rejected transaction=8 reason=scene_advanced rearmed=false/' \
+    "$evidence" >"$unarmed"
+reject_mutation "a stale response that did not re-arm" "$unarmed" \
+    "rejected without re-arming"
 
 # A restarted or degraded WM is a different run than the one being promoted.
 restarted="$temp_dir/restarted.log"

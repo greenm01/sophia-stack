@@ -103,31 +103,36 @@ launch_admissions="$(count '^sophia_session_app schema=2 status=admitted source=
 (( launch_admissions >= 3 )) ||
     fail "expected three admitted launch surfaces, found $launch_admissions"
 
-# Ordering. Each launch must project before the next is requested, so the
-# projections are read as a sequence rather than as a set: a run that committed
-# three launches and projected them in one late batch is not the ordered commit
+# Ordering. Each launch must commit its layout before the next is requested, so
+# the commits are read as a sequence rather than as a set: a run that committed
+# three launches and laid them out in one late batch is not the ordered commit
 # path this gate promotes.
+#
+# `layout_committed` is the record this path produces. Workspace projections
+# belong to the compatibility bridge's flattened active-workspace view; a native
+# session emits none at all, so requiring them would describe a session that
+# cannot exist here.
 mapfile -t launch_lines < <(
     grep -nE '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchTerminal$' \
         "$evidence" | cut -d: -f1
 )
-mapfile -t projection_lines < <(
-    grep -nE '^sophia_live_wm schema=2 status=workspace_projection_committed transaction=[1-9][0-9]* output=[0-9]+ workspace=[0-9]+ visible_surfaces=[0-9]+ focus=surface$' \
+mapfile -t layout_lines < <(
+    grep -nE '^sophia_live_wm schema=1 status=layout_committed transaction=[1-9][0-9]* surfaces=[0-9]+ moved_surfaces=[0-9]+ configure_deliveries=[0-9]+ outcome=Committed$' \
         "$evidence" | cut -d: -f1
 )
-(( ${#projection_lines[@]} >= 4 )) ||
-    fail "expected at least four focused workspace projections, found ${#projection_lines[@]}"
+(( ${#layout_lines[@]} >= 4 )) ||
+    fail "expected at least four committed layouts, found ${#layout_lines[@]}"
 for index in 0 1 2; do
     launch="${launch_lines[$index]}"
     settled=false
-    for projection in "${projection_lines[@]}"; do
-        if (( projection > launch )); then
+    for layout in "${layout_lines[@]}"; do
+        if (( layout > launch )); then
             settled=true
             break
         fi
     done
     [[ "$settled" == true ]] ||
-        fail "terminal launch $((index + 1)) never reached a focused projection"
+        fail "terminal launch $((index + 1)) never reached a committed layout"
 done
 
 focus_next_line="$(first_line '^sophia_live_wm schema=1 status=physical_action_committed action=1$')"
@@ -142,16 +147,25 @@ logout_line="$(first_line '^sophia_live_wm schema=1 status=session_action_commit
     fail "logout was committed before the close"
 
 # A focus change nobody could see is not the proof this step asks for, so the
-# focus-next must be followed by its own committed projection.
-focus_projection=false
-for projection in "${projection_lines[@]}"; do
-    if (( projection > focus_next_line && projection < close_line )); then
-        focus_projection=true
+# focus-next must be followed by Engine committing focus to a surface.
+focus_committed=false
+while read -r committed; do
+    if (( committed > focus_next_line && committed < close_line )); then
+        focus_committed=true
         break
     fi
-done
-[[ "$focus_projection" == true ]] ||
-    fail "focus-next committed no visible workspace projection"
+done < <(grep -nE '^sophia_live_wm schema=1 status=focus_committed transaction=[1-9][0-9]* target=surface$' \
+    "$evidence" | cut -d: -f1)
+[[ "$focus_committed" == true ]] ||
+    fail "focus-next committed no visible focus change"
+
+# A stale policy response is an ordinary scene race and must re-arm. One that
+# did not is a policy proposal silently dropped, which is a different failure
+# from the recovered races this workload legitimately produces.
+if grep -qE '^sophia_live_wm schema=1 status=stale_response_rejected transaction=[1-9][0-9]* reason=[a-z_]+ rearmed=false$' \
+    "$evidence"; then
+    fail "a stale policy response was rejected without re-arming"
+fi
 
 # Shell-role separation. No switcher runs in this workflow, so what is checked
 # is the boundary rather than the feature: the broker and the shell are separate
@@ -275,8 +289,15 @@ done
     fail "the native frame-slot pool was never acquired"
 (( $(field "$resources" frame_slots_high_watermark) > 0 )) ||
     fail "the native frame-slot pool reported no live ownership"
-(( $(field "$resources" frame_slots_high_watermark) <= 3 )) ||
-    fail "the native frame-slot pool exceeded its three-slot capacity"
+# Three slots are owned per physical head, and the record sums its watermark
+# across the per-head workers, so the session-wide ceiling is three per head
+# that presented. Comparing the aggregate against three would fail every
+# two-output run on hardware that has two outputs.
+heads="$(grep -oE '^sophia_live_native_startup_output schema=1 status=presented output=[0-9]+ ' "$evidence" \
+    | grep -oE 'output=[0-9]+' | sort -u | wc -l)"
+(( heads > 0 )) || fail "no presented startup output identifies a physical head"
+(( $(field "$resources" frame_slots_high_watermark) <= heads * 3 )) ||
+    fail "the native frame-slot pool exceeded three slots per presented head"
 # No leaked lease. A slot still leased after the session drained means a page
 # flip retired without releasing its buffer, which is exactly the failure the
 # three-slot ledger exists to make impossible. Nothing else checks this today.
