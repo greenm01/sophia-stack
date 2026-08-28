@@ -102,7 +102,7 @@ for key in cpu_patch_updates cpu_payload_bytes; do
     [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$key did not prove active CPU rendering"
 done
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 requests="$(field "$resources" worker_requests)" || fail "resource completion lacks worker_requests"
 completions="$(field "$resources" worker_completions)" || fail "resource completion lacks worker_completions"

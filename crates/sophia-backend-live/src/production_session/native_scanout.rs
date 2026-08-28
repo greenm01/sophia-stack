@@ -39,6 +39,16 @@ mod persistent_native_scanout {
         pub retirements: usize,
         pub retire_failures: usize,
         pub max_in_flight_ticks: u64,
+        /// The most KMS submissions this output ever had in flight at once.
+        ///
+        /// `max_in_flight_ticks` measures how *long* a submission was in
+        /// flight, which cannot tell one long submission from two overlapping
+        /// ones. This measures depth, so the one-submission rule becomes
+        /// evidence instead of a claim. A mirror output holds one per head by
+        /// design, so the bound this proves is per head rather than per output.
+        pub max_in_flight_per_output: usize,
+        /// Frames the latest-wins pending cell dropped without rendering.
+        pub pending_frame_supersessions: usize,
         pub max_submit_to_page_flip: Duration,
         pub callback_accepted: usize,
         pub callback_rejected: usize,
@@ -653,6 +663,8 @@ mod persistent_native_scanout {
                 retirements: 0,
                 retire_failures: 0,
                 max_in_flight_ticks: 0,
+                max_in_flight_per_output: 0,
+                pending_frame_supersessions: 0,
                 max_submit_to_page_flip: Duration::ZERO,
                 callback_accepted: 0,
                 callback_rejected: 0,
@@ -1007,6 +1019,10 @@ mod persistent_native_scanout {
                 if self.mirror_poison_drained(output) {
                     return Err("mirror generation failed after physical ownership drained".into());
                 }
+                // Sampled here too: a mirror output is where concurrent depth
+                // is expected to exceed one, so omitting it would leave the
+                // measurement blind to the case it exists to describe.
+                self.observe_in_flight_depth();
                 return Ok(report);
             }
             let index = self.primary_head(output)?;
@@ -1199,7 +1215,24 @@ mod persistent_native_scanout {
             self.max_in_flight_ticks = self
                 .max_in_flight_ticks
                 .max(report.rendered_primary_plane_scanout_in_flight_ticks);
+            self.observe_in_flight_depth();
             Ok(report)
+        }
+
+        /// Record how many submissions this output holds right now.
+        ///
+        /// Sampled per tick rather than incremented at submit: the property is
+        /// concurrent depth, and only a reading taken while submissions are
+        /// live can observe it.
+        fn observe_in_flight_depth(&mut self) {
+            let depth = self.head_scanout_in_flight_count();
+            self.max_in_flight_per_output = self.max_in_flight_per_output.max(depth);
+            let supersessions: usize = self
+                .exporters
+                .iter()
+                .map(|exporter| exporter.pending_frame_supersessions())
+                .sum();
+            self.pending_frame_supersessions = self.pending_frame_supersessions.max(supersessions);
         }
 
         fn service_mirror_group_retirement(

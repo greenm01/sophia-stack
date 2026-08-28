@@ -143,7 +143,7 @@ for key in cpu_updates cpu_replacements cpu_patch_updates cpu_payload_bytes comp
     [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$key did not prove active CPU-bar composition"
 done
 
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$resources" ]] || fail "native resource completion is missing"
 imports="$(field "$resources" import_cache_imports)" || fail "resource completion lacks import_cache_imports"
 hits="$(field "$resources" import_cache_hits)" || fail "resource completion lacks import_cache_hits"

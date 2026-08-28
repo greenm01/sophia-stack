@@ -49,6 +49,15 @@ where
     mixed_frame_exports: usize,
     last_cpu_frame_checksum: Option<u64>,
     last_cpu_frame_export_status: Option<LiveRendererScanoutBufferExportStatus>,
+    /// Frames the latest-wins cell dropped without rendering them.
+    ///
+    /// Holding one newest frame is the point, so a supersession is ordinary
+    /// backpressure rather than a fault. It was invisible: the cell is an
+    /// `Option`, so a newer frame overwrote an older one silently and a
+    /// returned deferred frame was discarded silently. Counting it is what
+    /// distinguishes a session that kept one frame pending from one that never
+    /// had a second frame to keep.
+    pending_frame_supersessions: usize,
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -95,6 +104,7 @@ where
             mixed_frame_exports: 0,
             last_cpu_frame_checksum: None,
             last_cpu_frame_export_status: None,
+            pending_frame_supersessions: 0,
         }
     }
 
@@ -226,11 +236,23 @@ where
         checksum: u64,
         damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     ) {
-        self.pending_frame = Some(PendingRenderedFrame::Cpu {
+        self.replace_pending_frame(PendingRenderedFrame::Cpu {
             frame,
             checksum,
             damage_snapshot,
         });
+    }
+
+    /// Install the newest frame, counting whatever it displaced.
+    fn replace_pending_frame(&mut self, frame: PendingRenderedFrame) {
+        if self.pending_frame.is_some() {
+            self.pending_frame_supersessions = self.pending_frame_supersessions.saturating_add(1);
+        }
+        self.pending_frame = Some(frame);
+    }
+
+    pub const fn pending_frame_supersessions(&self) -> usize {
+        self.pending_frame_supersessions
     }
 
     pub const fn pending_cpu_frame(&self) -> bool {
@@ -238,7 +260,7 @@ where
     }
 
     pub fn set_pending_dmabuf_frame(&mut self, frame: sophia_renderer_live::LiveOwnedDmaBufFrame) {
-        self.pending_frame = Some(PendingRenderedFrame::DmaBuf(frame));
+        self.replace_pending_frame(PendingRenderedFrame::DmaBuf(frame));
     }
 
     pub const fn pending_dmabuf_frame(&self) -> bool {
@@ -249,7 +271,7 @@ where
         &mut self,
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame,
     ) {
-        self.pending_frame = Some(PendingRenderedFrame::Mixed(frame));
+        self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
     }
 
     pub const fn pending_mixed_frame(&self) -> bool {
@@ -646,6 +668,12 @@ where
                 self.worker_frame_kind = None;
                 if self.pending_frame.is_none() {
                     self.pending_frame = Some(frame);
+                } else {
+                    // A newer frame arrived while this one waited for a slot.
+                    // Latest-wins discards the returned one; it is the same
+                    // supersession as an overwrite and is counted as one.
+                    self.pending_frame_supersessions =
+                        self.pending_frame_supersessions.saturating_add(1);
                 }
                 self.context_status = worker.context_status();
                 self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);

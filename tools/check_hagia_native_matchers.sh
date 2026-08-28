@@ -175,7 +175,7 @@ printf '%s\n' \
     'sophia_live_wm schema=1 status=layout_committed transaction=34 surfaces=3 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
     'sophia_live_wm schema=1 status=session_action_committed transaction=34 action=Logout' \
     'sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none' \
-    'sophia_live_native_resources schema=8 status=complete target_creations=237 pipeline_creations=237 frame_surface_creations=237 cpu_target_creations=0 dmabuf_target_creations=231 composition_target_creations=6 composition_target_reuses=257 generation_replacements=0 recovery_replacements=0 snapshot_captures=231 snapshot_promotions=231 snapshot_rollbacks=0 snapshot_evictions=231 snapshot_live_entries=0 snapshot_live_bytes=0 import_cache_imports=410 import_cache_hits=244 import_cache_evictions=410 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0 exact_nearest_draws=1148 sharp_downscale_draws=0 sharp_upscale_draws=0 linear_fallback_draws=0 worker_requests=263 worker_completions=263 worker_failures=0 worker_soft_stalls=0 worker_hard_stalls=0 worker_release_enqueue_failures=0 frame_slot_acquisitions=263 frame_slot_reuses=257 frame_slot_deferrals=0 frame_slot_stale_releases=0 frame_slots_leased=0 frame_slots_high_watermark=6 frame_slot_partial_repaints=118 frame_slot_full_repaints=145 frame_slot_history_invalidations=2 frame_slot_history_records=261 max_worker_request_msec=61' \
+    'sophia_live_native_resources schema=9 status=complete target_creations=237 pipeline_creations=237 frame_surface_creations=237 cpu_target_creations=0 dmabuf_target_creations=231 composition_target_creations=6 composition_target_reuses=257 generation_replacements=0 recovery_replacements=0 snapshot_captures=231 snapshot_promotions=231 snapshot_rollbacks=0 snapshot_evictions=231 snapshot_live_entries=0 snapshot_live_bytes=0 import_cache_imports=410 import_cache_hits=244 import_cache_evictions=410 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0 exact_nearest_draws=1148 sharp_downscale_draws=0 sharp_upscale_draws=0 linear_fallback_draws=0 worker_requests=263 worker_completions=263 worker_failures=0 worker_soft_stalls=0 worker_hard_stalls=0 worker_release_enqueue_failures=0 frame_slot_acquisitions=263 frame_slot_reuses=257 frame_slot_deferrals=0 frame_slot_stale_releases=0 frame_slots_leased=0 frame_slots_high_watermark=6 max_in_flight_per_output=2 pending_frame_supersessions=41 frame_slot_partial_repaints=118 frame_slot_full_repaints=145 frame_slot_history_invalidations=2 frame_slot_history_records=261 max_worker_request_msec=61' \
     'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false' \
     'sophia_live_output_topology_health schema=1 status=clean quarantined=false' \
     'sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0' \
@@ -270,7 +270,7 @@ for missing in \
     'sophia_live_session_native_suspend schema=2' \
     'sophia_live_session_keys schema=2 status=complete' \
     'sophia_live_session schema=16 status=bounded_complete' \
-    'sophia_live_native_resources schema=8 status=complete' \
+    'sophia_live_native_resources schema=9 status=complete' \
     'sophia_live_session_health schema=1 status=clean' \
     'sophia_live_output_topology_health schema=1 status=clean' \
     'sophia_live_session_cleanup schema=1 status=clean' \
@@ -398,13 +398,41 @@ sed 's/frame_slot_partial_repaints=118/frame_slot_partial_repaints=0/' "$evidenc
 reject_mutation "a promotion run in which no frame rendered partially" "$unfired" \
     "the buffer-age boundary was not exercised"
 
+# The one-in-flight bound. Two presented heads may hold two submissions; three
+# would mean an output outran its own heads.
+overdepth="$temp_dir/overdepth.log"
+sed 's/max_in_flight_per_output=2/max_in_flight_per_output=3/' "$evidence" >"$overdepth"
+reject_mutation "an output holding more submissions than it has heads" "$overdepth" \
+    "concurrent KMS submissions across 2 presented heads"
+
+idle="$temp_dir/idle.log"
+sed 's/max_in_flight_per_output=2/max_in_flight_per_output=0/' "$evidence" >"$idle"
+reject_mutation "a session that never had a submission in flight" "$idle" \
+    "no KMS submission was ever in flight"
+
+undepth="$temp_dir/undepth.log"
+sed 's/ max_in_flight_per_output=2 pending_frame_supersessions=41//' "$evidence" >"$undepth"
+reject_mutation "schema-9 evidence without the in-flight depth" "$undepth" \
+    "resource record is missing max_in_flight_per_output"
+
 # Archive 0001 predates the feature; its schema-7 record must stay acceptable.
 legacy="$temp_dir/legacy.log"
-sed -e 's/sophia_live_native_resources schema=8 status=complete/sophia_live_native_resources schema=7 status=complete/' \
+sed -e 's/sophia_live_native_resources schema=9 status=complete/sophia_live_native_resources schema=7 status=complete/' \
+    -e 's/ max_in_flight_per_output=2 pending_frame_supersessions=41//' \
     -e 's/ frame_slot_partial_repaints=118 frame_slot_full_repaints=145 frame_slot_history_invalidations=2 frame_slot_history_records=261//' \
     "$evidence" >"$legacy"
 "$verifier" "$legacy" "$proof_text" >/dev/null 2>&1 || {
     echo "the native verifier rejected schema-7 evidence, which orphans archive 0001" >&2
+    exit 1
+}
+
+# Archive 0002 is schema-8 evidence and must stay verifiable by the same rule.
+previous="$temp_dir/previous.log"
+sed -e 's/sophia_live_native_resources schema=9 status=complete/sophia_live_native_resources schema=8 status=complete/' \
+    -e 's/ max_in_flight_per_output=2 pending_frame_supersessions=41//' \
+    "$evidence" >"$previous"
+"$verifier" "$previous" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier rejected schema-8 evidence, which orphans archive 0002" >&2
     exit 1
 }
 

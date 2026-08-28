@@ -172,7 +172,7 @@ native_max_submit_to_page_flip_msec="$(
     rendering_performance_field "$completion" native_max_submit_to_page_flip_msec
 )" || fail "completion lacks native_max_submit_to_page_flip_msec"
 native_resources="$(
-    grep -E '^sophia_live_native_resources schema=(5|6|7|8) status=complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_native_resources schema=(5|6|7|8|9) status=complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$native_resources" ]] || fail "missing native import-cache metrics"

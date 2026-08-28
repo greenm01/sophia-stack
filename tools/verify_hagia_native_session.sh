@@ -269,7 +269,7 @@ done
 # 0001 is schema-7 evidence and must stay independently verifiable; schema 8
 # additionally carries the buffer-age damage outcomes.
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=(7|8) status=complete ' "$evidence"
+    grep -E '^sophia_live_native_resources schema=(7|8|9) status=complete ' "$evidence"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one schema-7 or schema-8 native resource-lifetime record"
@@ -279,9 +279,12 @@ slot_keys=(frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals
     frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark
     worker_requests worker_completions worker_failures worker_hard_stalls
     worker_release_enqueue_failures)
-if [[ "$resource_schema" == 8 ]]; then
+if [[ "$resource_schema" == 8 || "$resource_schema" == 9 ]]; then
     slot_keys+=(frame_slot_partial_repaints frame_slot_full_repaints
         frame_slot_history_invalidations frame_slot_history_records)
+fi
+if [[ "$resource_schema" == 9 ]]; then
+    slot_keys+=(max_in_flight_per_output pending_frame_supersessions)
 fi
 for key in "${slot_keys[@]}"; do
     value="$(field "$resources" "$key")" ||
@@ -292,7 +295,7 @@ done
 # Schema-8 evidence exists to promote damage-limited repaint, and the gate
 # enables the feature, so a run in which it never fired is not the run being
 # promoted. Schema-7 evidence predates the feature and owes nothing here.
-if [[ "$resource_schema" == 8 ]]; then
+if [[ "$resource_schema" == 8 || "$resource_schema" == 9 ]]; then
     (( $(field "$resources" frame_slot_partial_repaints) >= 1 )) ||
         fail "no frame rendered partially, so the buffer-age boundary was not exercised"
 fi
@@ -313,6 +316,18 @@ heads="$(grep -oE '^sophia_live_native_startup_output schema=1 status=presented 
 (( heads > 0 )) || fail "no presented startup output identifies a physical head"
 (( $(field "$resources" frame_slots_high_watermark) <= heads * 3 )) ||
     fail "the native frame-slot pool exceeded three slots per presented head"
+
+# One KMS submission in flight per head. A mirror output holds one per head by
+# design, so the bound is the presented head count rather than one: asserting
+# one per output would fail every mirror session and would be wrong, not
+# strict. `heads` is counted from the presented startup outputs above.
+if [[ "$resource_schema" == 9 ]]; then
+    depth="$(field "$resources" max_in_flight_per_output)"
+    (( depth >= 1 )) ||
+        fail "no KMS submission was ever in flight, so the session presented nothing"
+    (( depth <= heads )) ||
+        fail "an output held $depth concurrent KMS submissions across $heads presented heads"
+fi
 # No leaked lease. A slot still leased after the session drained means a page
 # flip retired without releasing its buffer, which is exactly the failure the
 # three-slot ledger exists to make impossible. Nothing else checks this today.
