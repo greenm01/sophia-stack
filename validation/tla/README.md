@@ -403,6 +403,49 @@ change. A proposal must now answer an outstanding, server-issued request for
 the current generation. These are protocol requirements, not model-only
 restrictions.
 
+`SharedWorkerService.tla` states what one renderer worker owes several outputs
+of a DRM device group, and is written before the code that will implement it.
+Each physical head owns its own worker thread today, so a result could be
+identified by position: the next message on the channel answered the only
+request outstanding, and a request id that did not match was a fault. Sharing
+the thread destroys that, and the three things the row asks for are exactly
+what position used to provide for free. A result must name its output; an
+output must not occupy the worker twice while its slots are still leased; and
+neither output may be passed over indefinitely because the other keeps drawing.
+The bounded configuration explores 5,095 generated states and 2,135 distinct
+states to depth 16.
+
+Slot incarnations and stale releases stay in `VisualRetirementSlots.tla`, which
+already owns them and which this change does not alter; the pools simply become
+per output within one worker rather than per worker. No timing property appears
+here either. Skew is stated structurally, as the number of times an output that
+already has a submitted request may be passed over -- one per sibling, which is
+what taking the queue in order gives -- rather than as any bound in
+milliseconds.
+
+Two of the invariants earned their place by failing first. `ServiceSkewBounded`
+originally compared service counts directly, and TLC refuted it in fifteen
+steps with a run where one output simply had nothing to draw: an idle head
+falls arbitrarily behind, and calling that skew fires the invariant on healthy
+behaviour. It now counts pass-overs against an output that is actually waiting.
+The environment was wrong in the opposite direction: `Compose` refused to offer
+a generation while that output had a render in flight, which is not what the
+code does -- the pending cell is filled without consulting the worker, and that
+is the whole reason supersession exists. With the environment corrected the
+state space doubled, and the submission gate's negative control became able to
+fail at all.
+
+Three temporary negative controls independently route every result to one fixed
+output, drop the per-output in-flight gate from submission, and let the worker
+take any queued entry instead of the head. TLC then violates
+`ResponsesRouteToTheirOutput` at depth 5 (with `OneInFlightPerOutput` unlisted,
+since misdelivery breaks both in the same state), `OneInFlightPerOutput` at
+depth 5, and `ServiceSkewBounded` at depth 11 respectively. The third is the
+one worth keeping in mind while implementing: nothing about a shared worker
+forces fair service, and a scheduler that picked its next render by scanning
+outputs in a fixed order would starve the second screen while satisfying every
+other invariant here.
+
 The policy models intentionally omit wire offsets, KDL schema machinery, tags,
 Hagia `ViewId` values, rendering, and physical output retirement. Golden-vector
 tests own byte layouts. Hagia owns tags and views. The existing visual models
@@ -438,6 +481,12 @@ the current owning Rust boundaries as follows:
 | `DeliverControl` | `XAuthorityRuntime::configure_window_from_engine` followed by Present ConfigureNotify and core ConfigureNotify for a real change |
 | `CommitMove`, `CommitResize` | logical layout commit, with only the resize path gated by exact candidate retirement |
 | `Timeout` | layout recovery queuing the complete last-committed rectangle behind any late target control |
+| `Compose`, `Supersede` | `LiveProductionNativeScanoutExporter::replace_pending_frame` and its three content entry points |
+| `Submit` | `export_from_worker` taking the pending cell once `WorkerPoll::Idle`, then `NativeGbmRendererWorker::submit` |
+| `BeginRender`, `FinishRender` | `run_worker`'s command loop and its `WorkerResult` reply for one `WorkerCommand::Render` |
+| `Collect` | `NativeGbmRendererWorker::poll` matching a result against the requesting output's in-flight record |
+| `reply` per output | the per-output bounded reply channel this row introduces; today one `Receiver` per per-head worker |
+| `passedOver` | service order of the shared command queue; no Rust counterpart until the shared worker exists |
 | `PrimeAdmission` | `PersistentLiveLayout::prime_admission_extent` selecting complete safe pixels before the first blind-WM target |
 | `IssueConfigure`, `IssueFocus` | delayed synthetic requests emitted by the legacy WM process |
 | `ReplaceProjection` | `X11WmBridgeState::replace_active_workspace_projection` replacing cached membership and the complete mapped-window projection |
