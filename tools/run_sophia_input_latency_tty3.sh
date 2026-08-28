@@ -200,6 +200,10 @@ preserve_pending() {
     stop_children
     if ((status != 0)) && [[ -d "$PENDING" ]]; then
         echo "Incomplete evidence retained in $PENDING" >&2
+        if grep -rlq 'sophia_live_native_page_flip_stall' "$PENDING" 2>/dev/null; then
+            echo "Page-flip stalls recorded. Capture the kernel's side with:" >&2
+            echo "  tools/collect_sophia_kernel_stall_log.sh" >&2
+        fi
     fi
 }
 
@@ -501,4 +505,8 @@ set -e
 mv "$PENDING" "$FINAL"
 trap - EXIT
 echo "Evidence retained in $FINAL"
+if [[ -s "$FINAL/stall-retries.log" ]]; then
+    echo "This run recorded page-flip stalls. Capture the kernel's side with:"
+    echo "  tools/collect_sophia_kernel_stall_log.sh"
+fi
 exit "$report_status"
