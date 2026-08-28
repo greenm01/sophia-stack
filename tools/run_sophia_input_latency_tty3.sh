@@ -32,9 +32,12 @@ MAX_SESSION_START_ATTEMPTS=3
 # which is what a hung run looks like from the outside.
 PROOF_TIMEOUT_SECONDS="${SOPHIA_INPUT_LATENCY_PROOF_TIMEOUT_SECONDS:-90}"
 # How many samples across the whole run may be redone after a post-proof page
-# flip stall. One kernel-withheld vblank during teardown is a transient; the
-# same stall recurring is a pattern the run must fail on.
-MAX_PAGE_FLIP_STALL_RETRIES="${SOPHIA_INPUT_LATENCY_MAX_STALL_RETRIES:-2}"
+# flip stall. A kernel-withheld vblank during teardown is a transient; a run
+# that exceeds this budget is seeing a pattern and must fail.
+# The first full run consumed exactly two on DP-2 across thirty-five
+# sessions, so two would fail about a third of runs at that observed rate;
+# four keeps the budget bounded while still failing on a genuine pattern.
+MAX_PAGE_FLIP_STALL_RETRIES="${SOPHIA_INPUT_LATENCY_MAX_STALL_RETRIES:-4}"
 # The seat the emergency guard listens on. Sophia is given only the virtual
 # injector device, so it never reacts to the real keyboard; but it does take
 # DRM master, so the console is behind its output and an operator has no way
@@ -441,7 +444,10 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
         if ((stall_retries < MAX_PAGE_FLIP_STALL_RETRIES)) &&
             is_retryable_post_proof_flip_stall "$session_log"; then
             stall_retries=$((stall_retries + 1))
-            stalled_dir="$PENDING/sample-$(printf '%03d' "$sample").stall-$stall_retries"
+            # Outside the sample-* namespace: the reporter globs
+            # sample-*/session.log, and feeding it a terminated session's log
+            # is what emptied the first full run's report.
+            stalled_dir="$PENDING/stalled-sample-$(printf '%03d' "$sample").attempt-$stall_retries"
             mv "$sample_dir" "$stalled_dir"
             printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s stall_retry=%s/%s reason=post_proof_page_flip_stall evidence=%s\n' \
                 "$sample" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" \
