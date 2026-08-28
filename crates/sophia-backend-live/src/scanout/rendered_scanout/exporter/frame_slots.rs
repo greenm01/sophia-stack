@@ -7,6 +7,18 @@ pub const LIVE_RENDERER_FRAME_SLOT_CAPACITY: usize = 3;
 pub struct LiveRendererFrameSlotId(u8);
 
 impl LiveRendererFrameSlotId {
+    /// Name a slot by position. Only the pool hands out tokens; this exists so
+    /// passive state keyed by slot can iterate the pool's fixed positions
+    /// without inventing an ownership claim.
+    pub const fn from_index(index: usize) -> Option<Self> {
+        if index < LIVE_RENDERER_FRAME_SLOT_CAPACITY {
+            #[allow(clippy::cast_possible_truncation)]
+            Some(Self(index as u8))
+        } else {
+            None
+        }
+    }
+
     pub const fn index(self) -> usize {
         self.0 as usize
     }

@@ -105,16 +105,18 @@ use sophia_backend_live::{
 };
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
-    LiveCpuComposedFrame, LiveGbmEglFrameTargetStatus, LiveProductionCursorPresentation,
-    LiveProductionMirrorGenerationQueue, LiveProductionMirrorGroupBegin,
-    LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
-    LiveProductionNativeFrameId, LiveProductionOutputRuntimeSet, LiveProductionScanoutContent,
-    LiveRendererFrameSlotAcquire, LiveRendererFrameSlotPool, LiveRendererFrameSlotRelease,
-    NativeGbmRenderedScanoutBufferDiscoveryExporter, NativeGbmRenderedScanoutContextStatus,
-    RealAtomicScanoutSmokeConfig, RenderDeviceDiscoveryBackend,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, reduce_live_production_mirror_generation_queue,
-    reduce_output_native_frame_phase,
+    LIVE_RENDERER_SLOT_DAMAGE_HISTORY_DEPTH, LiveCpuComposedFrame, LiveGbmEglFrameTargetStatus,
+    LiveProductionCursorPresentation, LiveProductionMirrorGenerationQueue,
+    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
+    LiveProductionOutputRuntimeSet, LiveProductionScanoutContent, LiveRendererFrameSlotAcquire,
+    LiveRendererFrameSlotId, LiveRendererFrameSlotPool, LiveRendererFrameSlotRelease,
+    LiveRendererSlotBufferAge, LiveRendererSlotDamageHistory, LiveRendererSlotFullRepaintReason,
+    LiveRendererSlotRepaint, NativeGbmRenderedScanoutBufferDiscoveryExporter,
+    NativeGbmRenderedScanoutContextStatus, RealAtomicScanoutSmokeConfig,
+    RenderDeviceDiscoveryBackend, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    reduce_live_production_mirror_generation_queue, reduce_output_native_frame_phase,
 };
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{
@@ -154,6 +156,8 @@ include!("libdrm_events_feature/session_loop.rs");
 include!("libdrm_events_feature/native_gbm.rs");
 #[cfg(feature = "gbm-probe")]
 include!("libdrm_events_feature/frame_slots.rs");
+#[cfg(feature = "gbm-probe")]
+include!("libdrm_events_feature/slot_damage_history.rs");
 include!("libdrm_events_feature/resource_lifetime.rs");
 include!("libdrm_events_feature/builders.rs");
 include!("libdrm_events_feature/multi_head_request.rs");
