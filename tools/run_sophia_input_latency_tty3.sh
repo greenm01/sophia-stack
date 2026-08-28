@@ -10,7 +10,11 @@ STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 # Sessions, not samples: each session now carries its own latency
 # distribution, so the p99 population is the presses within these runs rather
 # than one value per run.
-SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-20}"
+# Thirty-five, not twenty, because the reporter needs two hundred presses
+# before it will call a number a ninety-ninth percentile. A session settles
+# about seven, so twenty sessions pool roughly a hundred and forty and refuse
+# as insufficient_samples after the whole run is already spent.
+SAMPLES="${SOPHIA_INPUT_LATENCY_SAMPLES:-35}"
 # The reporter now reads refresh from each session's own head record; this
 # remains only as the fallback for evidence that predates that record.
 REFRESH_MSEC="${SOPHIA_INPUT_LATENCY_REFRESH_MSEC:-17}"
@@ -126,11 +130,13 @@ if [[ "${1:-}" == --help ]]; then
 Usage: tools/run_sophia_input_latency_tty3.sh
 
 Run from a logged-in local TTY3 with DRM released and /dev/uinput writable.
-The default gate collects 20 independent samples and requires p95 below
-two 17 ms refresh periods. It separately caps queue dwell at 1 ms,
-dwell-to-submit at 17 ms, and submit-to-flip at 17 ms. Override the sample
-count, refresh period, or stage budgets with the SOPHIA_INPUT_LATENCY_*
-environment variables.
+The default gate collects 35 independent sessions. Their presses pool into
+one population, and the reporter refuses to call anything a ninety-ninth
+percentile below two hundred of them. It requires p99 below two refresh
+periods against the refresh each session recorded, and separately caps queue
+dwell at 1 ms with dwell-to-submit and submit-to-flip each within one
+refresh. Override the session count, refresh period, or stage budgets with
+the SOPHIA_INPUT_LATENCY_* environment variables.
 EOF
     exit 0
 fi
