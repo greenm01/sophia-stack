@@ -13,11 +13,11 @@ pub use import_cache::*;
 pub use types::*;
 
 use crate::gbm_platform::{
-    EGL_PLATFORM_GBM_KHR,
+    EGL_BUFFER_AGE_EXT, EGL_EXT_BUFFER_AGE_NAME, EGL_PLATFORM_GBM_KHR,
     config::{window_config_attributes, xrgb_window_config_attributes},
 };
 use crate::gl::{
-    GlCpuLayer, PersistentXrgb8888GlPipeline, context_attributes,
+    GlCompositionRect, GlCpuLayer, PersistentXrgb8888GlPipeline, context_attributes,
     draw_xrgb8888_current_gl_context_with_loader, smoke_current_gl_context_with_loader,
 };
 use crate::{

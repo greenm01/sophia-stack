@@ -54,6 +54,24 @@ pub struct NativeGbmOwnedScanoutBufferExportReport {
     pub status: LiveRendererScanoutBufferExportStatus,
     pub detail: LiveRendererScanoutBufferExportDetail,
     pub buffer: Option<NativeGbmOwnedScanoutBuffer>,
+    /// The age the surface reported for the buffer this export rendered into.
+    pub buffer_age: Option<u32>,
+    /// Which target bundle served the export. A caller keying retained state to
+    /// a slot compares this to notice a rebuild, whose new buffers hold nothing
+    /// it remembers.
+    pub target_generation: Option<u64>,
+    /// Whether the render repainted the whole target or only its damage.
+    pub repaint: LiveNativeCompositionRepaintOutcome,
+}
+
+/// What a completed render painted, mirrored for consumers above the renderer.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LiveNativeCompositionRepaintOutcome {
+    #[default]
+    Full,
+    Partial {
+        rects: usize,
+    },
 }
 
 impl NativeGbmOwnedScanoutBufferExportReport {
@@ -75,16 +93,25 @@ impl NativeGbmOwnedScanoutBufferExportReport {
                     LiveRendererScanoutBufferExportDetail::RetainedBufferMissing
                 },
                 buffer,
+                buffer_age: None,
+                target_generation: None,
+                repaint: LiveNativeCompositionRepaintOutcome::Full,
             },
             LiveRendererScanoutBufferExportStatus::Pending => Self {
                 status,
                 detail,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: LiveNativeCompositionRepaintOutcome::Full,
             },
             status => Self {
                 status,
                 detail,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: LiveNativeCompositionRepaintOutcome::Full,
             },
         }
     }
@@ -638,6 +665,7 @@ where
             preferred_modifiers,
             None,
             None,
+            None,
         )
     }
 
@@ -648,6 +676,7 @@ where
         preferred_modifiers: &[u64],
         trace: Option<LiveCompositionTrace>,
         frame_slot: Option<usize>,
+        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !target.is_valid_scanout_target() {
             return Err(LiveMixedCompositionError::InvalidOutput);
@@ -765,6 +794,7 @@ where
                 head: trace.head.raw(),
                 scene_generation: trace.scene_generation,
             }),
+            repaint,
         };
         let report = match frame_slot {
             Some(frame_slot) => self
@@ -795,21 +825,26 @@ where
             frame,
             preferred_modifiers,
             None,
+            None,
         )
     }
 
+    /// Export into a frame slot, optionally limiting the repaint to the damage
+    /// the caller's history says the slot's buffer owes at each possible age.
     pub fn export_owned_mixed_frame_with_modifiers_in_frame_slot(
         &mut self,
         frame_slot: usize,
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
         preferred_modifiers: &[u64],
+        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         self.export_owned_mixed_frame_with_modifiers_and_frame_slot(
             target,
             frame,
             preferred_modifiers,
             Some(frame_slot),
+            repaint,
         )
     }
 
@@ -819,6 +854,7 @@ where
         frame: &LiveOwnedMixedCompositionFrame,
         preferred_modifiers: &[u64],
         frame_slot: Option<usize>,
+        repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         // Capture client DMA-BUFs before assembling the output frame. Retained
         // scene state below then refers only to compositor-owned images.
@@ -903,6 +939,7 @@ where
             preferred_modifiers,
             frame.trace,
             frame_slot,
+            repaint,
         )
     }
 
@@ -1097,11 +1134,22 @@ fn reduced_native_owned_scanout_buffer_export_report(
                 _buffer: buffer,
             })
     });
-    NativeGbmOwnedScanoutBufferExportReport::new(
+    let mut reduced = NativeGbmOwnedScanoutBufferExportReport::new(
         status,
         reduced_native_owned_scanout_buffer_export_detail(report.detail),
         buffer,
-    )
+    );
+    reduced.buffer_age = report.buffer_age;
+    reduced.target_generation = report.target_generation;
+    reduced.repaint = match report.repaint {
+        sophia_renderer_native_egl::NativeCompositionRepaintOutcome::Full => {
+            LiveNativeCompositionRepaintOutcome::Full
+        }
+        sophia_renderer_native_egl::NativeCompositionRepaintOutcome::Partial { rects } => {
+            LiveNativeCompositionRepaintOutcome::Partial { rects }
+        }
+    };
+    reduced
 }
 
 fn reduced_native_owned_scanout_buffer_export_detail(

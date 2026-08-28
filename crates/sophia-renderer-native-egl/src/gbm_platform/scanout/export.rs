@@ -13,6 +13,9 @@ pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd
             status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
             detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     }
 
@@ -21,6 +24,9 @@ pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd
             status: NativeGbmScanoutBufferExportStatus::Unavailable,
             detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     };
     let Ok(device) = gbm::Device::new(device) else {
@@ -28,6 +34,9 @@ pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd
             status: NativeGbmScanoutBufferExportStatus::Unavailable,
             detail: NativeGbmScanoutBufferExportDetail::GbmDeviceUnavailable,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     };
     let Ok(buffer) = device.create_buffer_object::<()>(
@@ -40,6 +49,9 @@ pub fn export_gbm_scanout_buffer_from_backend_device_result<T: std::os::fd::AsFd
             status: NativeGbmScanoutBufferExportStatus::Unavailable,
             detail: NativeGbmScanoutBufferExportDetail::GbmSurfaceUnavailable,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     };
 
@@ -79,6 +91,9 @@ pub fn export_direct_cpu_xrgb8888_gbm_scanout_buffer_from_backend_device_result<
             status: NativeGbmScanoutBufferExportStatus::Unavailable,
             detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     };
     let gbm_device = match gbm::Device::new(device) {
@@ -121,6 +136,9 @@ pub fn export_rendered_gbm_scanout_buffer_with_modifiers_from_backend_device_res
             status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
             detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     }
 
@@ -129,6 +147,9 @@ pub fn export_rendered_gbm_scanout_buffer_with_modifiers_from_backend_device_res
             status: NativeGbmScanoutBufferExportStatus::Unavailable,
             detail: NativeGbmScanoutBufferExportDetail::BackendDeviceUnavailable,
             buffer: None,
+            buffer_age: None,
+            target_generation: None,
+            repaint: NativeCompositionRepaintOutcome::Full,
         };
     };
 

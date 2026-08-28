@@ -157,6 +157,9 @@ fn exported_scanout_buffer_report(
         status: NativeGbmScanoutBufferExportStatus::Exported,
         detail: NativeGbmScanoutBufferExportDetail::Exported,
         buffer: Some(buffer),
+        buffer_age: None,
+        target_generation: None,
+        repaint: NativeCompositionRepaintOutcome::Full,
     }
 }
 
@@ -167,6 +170,9 @@ fn failed_scanout_buffer_report(
         status: detail.status(),
         detail,
         buffer: None,
+        buffer_age: None,
+        target_generation: None,
+        repaint: NativeCompositionRepaintOutcome::Full,
     }
 }
 

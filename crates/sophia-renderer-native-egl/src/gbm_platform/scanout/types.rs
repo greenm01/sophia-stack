@@ -173,6 +173,55 @@ pub struct NativeCompositionFrame<'a> {
     pub height: u32,
     pub layers: &'a [NativeCompositionLayer<'a>],
     pub trace: Option<NativeCompositionTrace>,
+    /// What this frame may repaint instead of the whole target, indexed by the
+    /// age its surface reports. The caller cannot select the entry itself: the
+    /// age is only knowable after the context is current, which happens here.
+    pub repaint: Option<&'a NativeCompositionRepaintTable>,
+}
+
+/// How much a render owes for each buffer age its surface might report.
+///
+/// A bounded table rather than a callback: the age is discovered inside the
+/// render, the damage is reduced by the caller's Engine, and neither side may
+/// reach into the other. The caller fills in what it can prove and everything
+/// else stays full.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NativeCompositionRepaintTable {
+    /// `by_age[n - 1]` is the damage owed by a buffer of age `n`. `None` means
+    /// a full repaint, which is also what any age past the end selects.
+    by_age: Vec<Option<Vec<NativeCompositionDamageRect>>>,
+}
+
+/// A damage rectangle in top-left output coordinates, as Engine reduces them.
+/// The Y flip into GL's bottom-left space happens where the scissor is set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeCompositionDamageRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl NativeCompositionRepaintTable {
+    /// Build from per-age damage, oldest entry last. An entry of `None` is a
+    /// full repaint for that age.
+    pub fn from_ages(by_age: Vec<Option<Vec<NativeCompositionDamageRect>>>) -> Self {
+        Self { by_age }
+    }
+
+    /// The damage a buffer of this age owes, or `None` for a full repaint.
+    /// Age zero is not a buffer age -- it is the driver declining to answer --
+    /// so it selects a full repaint like any age the table does not cover.
+    pub fn damage_for_age(&self, age: u32) -> Option<&[NativeCompositionDamageRect]> {
+        if age == 0 {
+            return None;
+        }
+        self.by_age.get((age as usize) - 1)?.as_deref()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_age.is_empty()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -402,6 +402,32 @@ fn render_native_target_dmabuf(
 struct NativeCompositionRenderEvidence {
     captured_pixels: Option<NativeCompositionPixelMetrics>,
     traced_nonzero_rgb_pixels: usize,
+    /// The age the surface reported for the buffer this render drew into.
+    buffer_age: Option<u32>,
+    /// Whether this render repainted the whole target or only its damage.
+    repaint: NativeCompositionRepaintOutcome,
+}
+
+/// Ask the surface how old the buffer it just handed back is, in renders into
+/// this same surface.
+///
+/// Anything the driver will not vouch for reads as `None`, and `None` means a
+/// full repaint: an age of zero is defined as "contents undefined", and a
+/// negative or absurd value is a driver disagreeing with itself. Guessing here
+/// would produce a frame that looks right and is stale in one corner.
+fn query_native_surface_buffer_age(
+    egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
+    display: khronos_egl::Display,
+    surface: khronos_egl::Surface,
+    supported: bool,
+) -> Option<u32> {
+    if !supported {
+        return None;
+    }
+    match egl.query_surface(display, surface, EGL_BUFFER_AGE_EXT) {
+        Ok(age) if age > 0 => u32::try_from(age).ok(),
+        _ => None,
+    }
 }
 
 fn render_native_target_composition(
@@ -414,6 +440,7 @@ fn render_native_target_composition(
     frame: NativeCompositionFrame<'_>,
     capture_pixels: bool,
     preserve_target_alpha: bool,
+    buffer_age_supported: bool,
 ) -> Result<
     (NativeGbmOwnedScanoutBuffer, NativeCompositionRenderEvidence),
     NativeGbmScanoutBufferExportDetail,
@@ -432,14 +459,33 @@ fn render_native_target_composition(
     }
 
     trace_native_lifecycle("composition_surface_current");
-    if preserve_target_alpha {
-        // A snapshot is a source image, not an opaque output frame. Clearing
-        // alpha to zero preserves ARGB content through premultiplied blending.
-        target.pipeline.begin_composition_with_clear_alpha(0.0);
-    } else {
-        target.pipeline.begin_composition();
-    }
-    trace_native_lifecycle("composition_started");
+    // The age belongs to the buffer this context just made current, so it can
+    // only be read here -- and only before anything is drawn into it.
+    let buffer_age = query_native_surface_buffer_age(egl, display, egl_surface, buffer_age_supported);
+    let damage = frame
+        .repaint
+        .and_then(|table| table.damage_for_age(buffer_age.unwrap_or(0)));
+    // A full repaint is one unconfined pass. A damage-limited repaint is one
+    // pass per rectangle, each clearing and redrawing only inside itself, so
+    // the pixels the buffer is being reused for survive between them.
+    let passes: Vec<Option<GlCompositionRect>> = match damage {
+        None => vec![None],
+        Some(rects) => rects
+            .iter()
+            .map(|rect| {
+                Some(GlCompositionRect {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                })
+            })
+            .collect(),
+    };
+    let repaint = match damage {
+        None => NativeCompositionRepaintOutcome::Full,
+        Some(rects) => NativeCompositionRepaintOutcome::Partial { rects: rects.len() },
+    };
     static PIXEL_TRACE_CLAIMED: AtomicBool = AtomicBool::new(false);
     let pixel_trace = std::env::var("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").ok();
     let final_regions_only = pixel_trace.as_deref() == Some("final-regions");
@@ -459,6 +505,20 @@ fn render_native_target_composition(
         );
     }
     let mut draw_result = Ok(());
+    for pass in &passes {
+        if draw_result.is_err() {
+            break;
+        }
+        target.pipeline.set_ambient_clip(*pass);
+        if preserve_target_alpha {
+            // A snapshot is a source image, not an opaque output frame.
+            // Clearing alpha to zero preserves ARGB content through
+            // premultiplied blending.
+            target.pipeline.begin_composition_with_clear_alpha(0.0);
+        } else {
+            target.pipeline.begin_composition();
+        }
+        trace_native_lifecycle("composition_started");
     for (layer_index, layer) in frame.layers.iter().enumerate() {
         if draw_result.is_err() {
             break;
@@ -622,7 +682,15 @@ fn render_native_target_composition(
             }
         };
     }
-    let mut evidence = NativeCompositionRenderEvidence::default();
+    }
+    // Validation and pixel capture read the whole target, so the confinement
+    // ends with the last pass rather than with the render.
+    target.pipeline.set_ambient_clip(None);
+    let mut evidence = NativeCompositionRenderEvidence {
+        buffer_age,
+        repaint,
+        ..NativeCompositionRenderEvidence::default()
+    };
     let result = draw_result
         .and_then(|()| {
             target

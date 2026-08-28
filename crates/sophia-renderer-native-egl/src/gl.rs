@@ -49,6 +49,14 @@ pub(crate) struct PersistentXrgb8888GlPipeline {
     sharp_upscale_draws: Cell<usize>,
     sharp_mixed_draws: Cell<usize>,
     linear_fallback_draws: Cell<usize>,
+    /// The output-space rectangle the current repaint pass is confined to.
+    ///
+    /// Damage-limited repaint cannot be a scissor set once around the layer
+    /// loop: the clear disables scissor, an unclipped texture layer disables
+    /// it, and a solid layer sets its own. So the confinement lives here and
+    /// every one of those sites goes through `apply_scissor`, which intersects
+    /// its own clip with this one. `None` is an unconfined full repaint.
+    ambient_clip: Cell<Option<GlCompositionRect>>,
     width: u32,
     height: u32,
 }
@@ -60,6 +68,26 @@ pub(crate) struct GlCompositionRect {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+/// Intersect two output-space rectangles. A disjoint pair yields a zero-area
+/// rectangle at the first one's origin, which suppresses the draw.
+#[cfg(feature = "gbm-platform")]
+fn intersect_composition_rects(
+    left: GlCompositionRect,
+    right: GlCompositionRect,
+) -> GlCompositionRect {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = (left.x.saturating_add(left.width)).min(right.x.saturating_add(right.width));
+    let bottom_edge =
+        (left.y.saturating_add(left.height)).min(right.y.saturating_add(right.height));
+    GlCompositionRect {
+        x,
+        y,
+        width: right_edge.saturating_sub(x).max(0),
+        height: bottom_edge.saturating_sub(y).max(0),
+    }
 }
 
 #[cfg(feature = "gbm-platform")]
@@ -213,6 +241,7 @@ impl PersistentXrgb8888GlPipeline {
             sharp_upscale_draws: Cell::new(0),
             sharp_mixed_draws: Cell::new(0),
             linear_fallback_draws: Cell::new(0),
+            ambient_clip: Cell::new(None),
             width,
             height,
         })
@@ -286,6 +315,51 @@ impl PersistentXrgb8888GlPipeline {
         Ok(())
     }
 
+    /// Confine every subsequent draw to this output-space rectangle until it is
+    /// cleared. Set once per damage rectangle by a damage-limited repaint.
+    pub(crate) fn set_ambient_clip(&self, clip: Option<GlCompositionRect>) {
+        self.ambient_clip.set(clip);
+    }
+
+    /// Apply a layer's own clip together with the ambient repaint confinement.
+    ///
+    /// One place converts output space to GL's bottom-left space, so the flip
+    /// cannot disagree between call sites. An intersection that comes out empty
+    /// still enables a zero-area scissor rather than disabling the test: the
+    /// draw must be suppressed, and disabling would paint the whole target.
+    fn apply_scissor(&self, clip: Option<GlCompositionRect>) {
+        let combined = match (clip, self.ambient_clip.get()) {
+            (None, None) => {
+                unsafe { self.gl.disable(glow::SCISSOR_TEST) };
+                return;
+            }
+            (Some(rect), None) | (None, Some(rect)) => rect,
+            (Some(left), Some(right)) => intersect_composition_rects(left, right),
+        };
+        let left = i64::from(combined.x).max(0);
+        let top = i64::from(combined.y).max(0);
+        let right = i64::from(combined.x)
+            .saturating_add(i64::from(combined.width))
+            .min(i64::from(self.width));
+        let bottom = i64::from(combined.y)
+            .saturating_add(i64::from(combined.height))
+            .min(i64::from(self.height));
+        let (x, y, width, height) = if left >= right || top >= bottom {
+            (0, 0, 0, 0)
+        } else {
+            (
+                i32::try_from(left).unwrap_or(0),
+                i32::try_from(i64::from(self.height).saturating_sub(bottom)).unwrap_or(0),
+                i32::try_from(right.saturating_sub(left)).unwrap_or(0),
+                i32::try_from(bottom.saturating_sub(top)).unwrap_or(0),
+            )
+        };
+        unsafe {
+            self.gl.enable(glow::SCISSOR_TEST);
+            self.gl.scissor(x, y, width, height);
+        }
+    }
+
     pub(crate) fn begin_composition(&self) {
         self.begin_composition_with_clear_alpha(1.0);
     }
@@ -295,7 +369,12 @@ impl PersistentXrgb8888GlPipeline {
             self.gl
                 .viewport(0, 0, self.width as i32, self.height as i32);
             self.gl.disable(glow::BLEND);
-            self.gl.disable(glow::SCISSOR_TEST);
+        }
+        // A damage-limited pass must clear only the region it is about to
+        // repaint; clearing the whole target would erase the pixels the buffer
+        // is being reused for.
+        self.apply_scissor(None);
+        unsafe {
             self.gl.clear_color(0.0, 0.0, 0.0, alpha);
             self.gl.clear(glow::COLOR_BUFFER_BIT);
         }
@@ -403,17 +482,22 @@ impl PersistentXrgb8888GlPipeline {
         if left >= right || top >= bottom {
             return Ok(());
         }
-        let x = i32::try_from(left).map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
-        let y = i32::try_from(i64::from(self.height).saturating_sub(bottom))
-            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
-        let width = i32::try_from(right.saturating_sub(left))
-            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
-        let height = i32::try_from(bottom.saturating_sub(top))
-            .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?;
+        let clip = GlCompositionRect {
+            x: i32::try_from(left).map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?,
+            y: i32::try_from(top).map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?,
+            width: i32::try_from(right.saturating_sub(left))
+                .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?,
+            height: i32::try_from(bottom.saturating_sub(top))
+                .map_err(|_| NativeEglDrawSmokeStatus::GlUnavailable)?,
+        };
         unsafe {
             self.gl.disable(glow::BLEND);
-            self.gl.enable(glow::SCISSOR_TEST);
-            self.gl.scissor(x, y, width, height);
+        }
+        // The solid rect is itself expressed as a scissored clear, so it has to
+        // intersect the repaint confinement rather than replace it. The Y flip
+        // it used to do inline now happens once, inside `apply_scissor`.
+        self.apply_scissor(Some(clip));
+        unsafe {
             self.gl.clear_color(
                 f32::from(color[0]) / 255.0,
                 f32::from(color[1]) / 255.0,
@@ -707,17 +791,9 @@ impl PersistentXrgb8888GlPipeline {
             } else {
                 self.gl.disable(glow::BLEND);
             }
-            if let Some(clip) = clip {
-                self.gl.enable(glow::SCISSOR_TEST);
-                self.gl.scissor(
-                    clip.x,
-                    self.height as i32 - clip.y - clip.height,
-                    clip.width.max(0),
-                    clip.height.max(0),
-                );
-            } else {
-                self.gl.disable(glow::SCISSOR_TEST);
-            }
+        }
+        self.apply_scissor(clip);
+        unsafe {
             self.gl
                 .bind_buffer(glow::ARRAY_BUFFER, Some(self.vertex_buffer));
             self.gl

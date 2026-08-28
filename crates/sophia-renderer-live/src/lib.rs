@@ -7,6 +7,11 @@
 
 pub use sophia_engine::BufferImportPath;
 pub use sophia_protocol::{BufferSource, Size};
+/// Passive damage records the worker fills in and the renderer consumes.
+/// Re-exported here so backend-live keeps a single renderer dependency. Gated
+/// with the renderer itself, which is optional.
+#[cfg(feature = "gbm-probe")]
+pub use sophia_renderer_native_egl::{NativeCompositionDamageRect, NativeCompositionRepaintTable};
 
 mod buffer_registry;
 mod cpu_buffer_registry;

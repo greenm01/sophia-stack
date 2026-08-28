@@ -3,6 +3,28 @@ pub struct NativeGbmOwnedScanoutBufferExportReport {
     pub status: NativeGbmScanoutBufferExportStatus,
     pub detail: NativeGbmScanoutBufferExportDetail,
     pub buffer: Option<NativeGbmOwnedScanoutBuffer>,
+    /// The age the surface reported for the buffer this export rendered into,
+    /// in renders into the same slot. `None` means the driver would not say,
+    /// which is not the same as fresh.
+    pub buffer_age: Option<u32>,
+    /// Which target bundle served this export. A caller keying retained state
+    /// to a slot needs this: a rebuilt bundle is a new GBM surface with new
+    /// buffers, so anything it remembered about the old one is void. Reporting
+    /// the generation lets the caller notice every rebuild, including the ones
+    /// that happen inside a single export call.
+    pub target_generation: Option<u64>,
+    /// What the render actually painted.
+    pub repaint: NativeCompositionRepaintOutcome,
+}
+
+/// What a completed render painted into its target.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NativeCompositionRepaintOutcome {
+    /// Everything, because no damage plan applied or none was offered.
+    #[default]
+    Full,
+    /// Only the planned damage, in this many rectangles.
+    Partial { rects: usize },
 }
 
 pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
@@ -15,6 +37,22 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     composition_pixel_proof_attempts: usize,
     composition_target: Option<PersistentCompositionTarget>,
     frame_targets: [Option<PersistentCompositionTarget>; NATIVE_FRAME_TARGET_SLOT_CAPACITY],
+    /// Whether this display reports `EGL_BUFFER_AGE_EXT`. Queried once: the
+    /// extension set does not change under a live display, and a per-frame
+    /// string search on the render path would cost more than the damage saves.
+    buffer_age_supported: bool,
+    /// Monotonic identity for target bundles. Never reused, so a caller can
+    /// compare the generation it last saw against the one an export reports
+    /// and know whether the buffers it remembers still exist.
+    next_target_generation: u64,
+    /// Facts from the most recent composed render, stashed here for the export
+    /// to report. The render returns a buffer and the report is built two
+    /// frames up the call stack; widening every signature between them to carry
+    /// three values would be worse than the pattern `last_composition_pixel_
+    /// metrics` already set.
+    last_render_buffer_age: Option<u32>,
+    last_render_repaint: NativeCompositionRepaintOutcome,
+    last_render_target_generation: Option<u64>,
     import_cache_capacity: usize,
     renderer_images: std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
     renderer_image_bytes: u64,
@@ -44,6 +82,9 @@ struct PersistentCompositionTarget {
     surface: std::sync::Arc<NativeFrameSurface>,
     import_cache: NativeDmaBufImportCache,
     preferred_modifiers: Vec<gbm::Modifier>,
+    /// Identifies this bundle for the lifetime of the context. A rebuild takes
+    /// a fresh generation because it takes fresh buffers.
+    generation: u64,
 }
 
 pub const DEFAULT_NATIVE_DMA_BUF_IMPORT_CACHE_CAPACITY: usize = 256;
@@ -121,6 +162,19 @@ where
         egl.initialize(display)
             .map_err(|_error| NativeGbmRenderedScanoutContextStatus::Degraded)?;
 
+        // Buffer age is what makes damage-limited repaint safe: without it a
+        // reused slot's content age is a guess. Absence is not a failure, it
+        // just means every repaint is full.
+        let buffer_age_supported = egl
+            .query_string(Some(display), khronos_egl::EXTENSIONS)
+            .ok()
+            .and_then(|extensions| extensions.to_str().ok())
+            .is_some_and(|extensions| {
+                extensions
+                    .split_whitespace()
+                    .any(|extension| extension == EGL_EXT_BUFFER_AGE_NAME)
+            });
+
         Ok(Self {
             egl,
             display,
@@ -134,7 +188,21 @@ where
             import_cache_capacity,
             renderer_images: std::collections::BTreeMap::new(),
             renderer_image_bytes: 0,
+            buffer_age_supported,
+            next_target_generation: 1,
+            last_render_buffer_age: None,
+            last_render_repaint: NativeCompositionRepaintOutcome::Full,
+            last_render_target_generation: None,
         })
+    }
+
+    /// Take the next bundle identity. Generations are never reused, so a
+    /// caller that remembers a slot's buffers can tell a surviving bundle from
+    /// a rebuilt one by comparing this alone.
+    fn allocate_target_generation(&mut self) -> u64 {
+        let generation = self.next_target_generation;
+        self.next_target_generation = self.next_target_generation.saturating_add(1);
+        generation
     }
 
     pub fn persistent_render_stats(&self) -> NativeGbmPersistentRenderStats {
@@ -385,6 +453,9 @@ where
                 status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
                 detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
 
@@ -415,6 +486,9 @@ where
                 status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
                 detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
 
@@ -427,6 +501,9 @@ where
                 status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
                 detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
         let started = Instant::now();
@@ -493,6 +570,9 @@ where
                 status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
                 detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
         let result = self.render_one_shot_dmabuf_with_recovery(frame, preferred_modifiers);
@@ -555,12 +635,23 @@ where
                 status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
                 detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
                 buffer: None,
+                buffer_age: None,
+                target_generation: None,
+                repaint: NativeCompositionRepaintOutcome::Full,
             };
         }
-        match self.render_one_shot_composition_with_recovery(frame, preferred_modifiers) {
+        self.last_render_buffer_age = None;
+        self.last_render_repaint = NativeCompositionRepaintOutcome::Full;
+        self.last_render_target_generation = None;
+        let mut report = match self.render_one_shot_composition_with_recovery(frame, preferred_modifiers)
+        {
             Ok(buffer) => exported_scanout_buffer_report(buffer),
             Err(detail) => failed_scanout_buffer_report(detail),
-        }
+        };
+        report.buffer_age = self.last_render_buffer_age;
+        report.repaint = self.last_render_repaint;
+        report.target_generation = self.last_render_target_generation;
+        report
     }
 
     pub fn export_composed_owned_scanout_buffer_with_modifiers_in_frame_slot(
@@ -671,6 +762,7 @@ where
             height: source.height,
             layers: &layers,
             trace: None,
+            repaint: None,
         };
         let mut last_detail = NativeGbmScanoutBufferExportDetail::EglConfigUnavailable;
         for candidate in rendered_scanout_candidates(&[])
@@ -714,12 +806,15 @@ where
                 frame,
                 false,
                 true,
+                            self.buffer_age_supported,
             );
+            let generation = self.allocate_target_generation();
             let persistent = PersistentCompositionTarget {
                 target,
                 surface,
                 import_cache,
                 preferred_modifiers: Vec::new(),
+                generation,
             };
             match rendered {
                 Ok((buffer, _)) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
@@ -861,6 +956,9 @@ fn invalid_frame_slot_report() -> NativeGbmOwnedScanoutBufferExportReport {
         status: NativeGbmScanoutBufferExportStatus::InvalidTarget,
         detail: NativeGbmScanoutBufferExportDetail::InvalidTarget,
         buffer: None,
+        buffer_age: None,
+        target_generation: None,
+        repaint: NativeCompositionRepaintOutcome::Full,
     }
 }
 

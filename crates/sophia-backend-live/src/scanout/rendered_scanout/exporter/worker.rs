@@ -563,6 +563,7 @@ fn run_worker<D>(
     let mut free_cpu_buffers = Vec::<ReusableCpuBuffer>::new();
     let mut next_lease_id = 1_u64;
     let mut frame_slots = LiveRendererFrameSlotPool::with_metrics(frame_slot_metrics);
+    let mut slot_damage = WorkerSlotDamage::new();
 
     while let Ok(command) = command_receiver.recv() {
         match command {
@@ -595,6 +596,7 @@ fn run_worker<D>(
                             &mut free_cpu_buffers,
                             &mut next_lease_id,
                             &mut frame_slots,
+                            &mut slot_damage,
                         )
                     },
                 );
@@ -798,6 +800,7 @@ fn render_frame<D>(
     free_cpu_buffers: &mut Vec<ReusableCpuBuffer>,
     next_lease_id: &mut u64,
     frame_slots: &mut LiveRendererFrameSlotPool,
+    slot_damage: &mut WorkerSlotDamage,
 ) -> WorkerOutcome
 where
     D: AsFd,
@@ -820,8 +823,12 @@ where
         free_cpu_buffers,
         next_lease_id,
         slot_token,
+        slot_damage,
     );
     if matches!(outcome, WorkerOutcome::Failed(_)) {
+        // A render that failed may have written part of its damage, so the
+        // slot holds neither its old content nor its new one.
+        slot_damage.invalidate(slot_token.slot_id());
         let _ = frame_slots.release(slot_token);
     }
     outcome
@@ -837,6 +844,7 @@ fn render_frame_in_slot<D>(
     free_cpu_buffers: &mut Vec<ReusableCpuBuffer>,
     next_lease_id: &mut u64,
     slot_token: LiveRendererFrameSlotToken,
+    slot_damage: &mut WorkerSlotDamage,
 ) -> WorkerOutcome
 where
     D: AsFd,
@@ -917,11 +925,20 @@ where
             None,
         ),
         PendingRenderedFrame::Mixed(frame) => {
+            // What the slot's buffer would owe at each age it might report. The
+            // age is only knowable inside the render, so every answer travels
+            // with the frame and the renderer picks the one that applies.
+            let repaint = slot_damage.repaint_table(
+                slot_token.slot_id(),
+                frame.output_damage_snapshot.as_ref(),
+                target.size,
+            );
             let report = match context.export_owned_mixed_frame_with_modifiers_in_frame_slot(
                 frame_slot,
                 target,
                 &frame,
                 preferred_modifiers,
+                repaint.as_ref(),
             ) {
                 Ok(report) => report,
                 Err(LiveMixedCompositionError::Renderer(detail)) => {
@@ -933,6 +950,15 @@ where
                     );
                 }
             };
+            slot_damage.settle(
+                slot_token.slot_id(),
+                matches!(
+                    report.status,
+                    LiveRendererScanoutBufferExportStatus::Exported
+                ),
+                report.target_generation,
+                frame.output_damage_snapshot.clone(),
+            );
             (report, None)
         }
     };

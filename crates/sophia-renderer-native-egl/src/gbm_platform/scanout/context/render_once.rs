@@ -65,6 +65,7 @@ where
                 frame,
                 capture_pixels,
                 false,
+                            self.buffer_age_supported,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
             let render_evidence = rendered
@@ -73,6 +74,9 @@ where
                 .map(|(_, evidence)| *evidence)
                 .unwrap_or_default();
             let pixel_metrics = render_evidence.captured_pixels;
+            self.last_render_buffer_age = render_evidence.buffer_age;
+            self.last_render_repaint = render_evidence.repaint;
+            self.last_render_target_generation = Some(persistent.generation);
             self.proven_composition_nonzero_rgb_pixels =
                 retain_native_composition_nonzero_proof(
                     self.proven_composition_nonzero_rgb_pixels,
@@ -156,14 +160,19 @@ where
                 frame,
                 capture_pixels,
                 false,
+                            self.buffer_age_supported,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            let generation = self.allocate_target_generation();
             let render_evidence = rendered
                 .as_ref()
                 .ok()
                 .map(|(_, evidence)| *evidence)
                 .unwrap_or_default();
             let pixel_metrics = render_evidence.captured_pixels;
+            self.last_render_buffer_age = render_evidence.buffer_age;
+            self.last_render_repaint = render_evidence.repaint;
+            self.last_render_target_generation = Some(generation);
             self.proven_composition_nonzero_rgb_pixels =
                 retain_native_composition_nonzero_proof(
                     self.proven_composition_nonzero_rgb_pixels,
@@ -188,6 +197,7 @@ where
                         surface,
                         import_cache,
                         preferred_modifiers: reduced.clone(),
+                                            generation,
                     });
                     return Ok(buffer);
                 }
@@ -197,6 +207,7 @@ where
                         surface,
                         import_cache,
                         preferred_modifiers: reduced.clone(),
+                                            generation,
                     });
                     last_detail = NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor;
                 }
@@ -206,6 +217,7 @@ where
                         surface,
                         import_cache,
                         preferred_modifiers: reduced.clone(),
+                                            generation,
                     });
                     last_detail = preferred_scanout_failure_detail(last_detail, detail);
                 }
@@ -322,6 +334,7 @@ where
                 frame,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            let generation = self.allocate_target_generation();
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.composition_target = Some(PersistentCompositionTarget {
@@ -332,6 +345,7 @@ where
                             NativeDmaBufImportCacheStats::default(),
                         ),
                         preferred_modifiers: reduced.clone(),
+                                            generation,
                     });
                     return Ok(buffer);
                 }
@@ -478,6 +492,7 @@ where
                 pixels,
             );
             self.stats.max_render = self.stats.max_render.max(render_started.elapsed());
+            let generation = self.allocate_target_generation();
             match rendered {
                 Ok(buffer) if is_supported_rendered_scanout_candidate_buffer(&buffer) => {
                     self.stats.frame_uploads = self.stats.frame_uploads.saturating_add(1);
@@ -489,6 +504,7 @@ where
                             NativeDmaBufImportCacheStats::default(),
                         ),
                         preferred_modifiers: reduced.clone(),
+                                            generation,
                     });
                     return Ok(buffer);
                 }
