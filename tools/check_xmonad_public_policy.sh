@@ -19,4 +19,4 @@ env \
         serve-policy
 
 printf '%s\n' \
-    'sophia_xmonad_public_policy schema=1 status=complete revision=3 scenarios=11 processes=5 connection_epochs=5 normal_restart=true timeout_recovery=true stale_recovery=true invalid_recovery=true preserved_commit=true'
+    'sophia_xmonad_public_policy schema=1 status=complete revision=3 scenarios=11 processes=3 connection_epochs=3 normal_restart=true timeout_recovery=true stale_recovery=true invalid_recovery=true preserved_commit=true'

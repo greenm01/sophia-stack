@@ -113,9 +113,11 @@ fn run_restart_host(
     let phases = if configured {
         vec![
             &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[..RESTART_AFTER],
-            &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[RESTART_AFTER..6],
-            &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[6..8],
-            &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[8..10],
+            // The configured xmonad bridge rebuilds only its subordinate
+            // stateful adapter after timeout or stale rejection. Keep one
+            // authenticated public connection across both recovery pairs;
+            // the deliberately invalid proposal remains the fatal boundary.
+            &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[RESTART_AFTER..10],
             &SOPHIA_WM_V1_BEHAVIOR_SCENARIOS[10..],
         ]
     } else {

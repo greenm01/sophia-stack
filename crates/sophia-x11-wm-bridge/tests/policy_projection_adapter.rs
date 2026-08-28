@@ -8,8 +8,35 @@ use sophia_protocol::{
     sophia_wm_v1_behavior_scene,
 };
 use sophia_x11_wm_bridge::{
-    LegacyWmRequest, WmWorkspaceState, X11WmBridgeState, adapt_legacy_policy_plan,
+    LegacyWmRequest, WmWorkspaceState, X11WmBridgeState, XmonadProjectionDecision,
+    adapt_legacy_policy_plan, xmonad_projection_decision,
 };
+
+#[test]
+fn recoverable_projection_outcomes_rebuild_only_the_private_xmonad_adapter() {
+    for outcome in [
+        PolicyProjectionOutcome::RejectedStale,
+        PolicyProjectionOutcome::TimedOut,
+    ] {
+        assert_eq!(
+            xmonad_projection_decision(outcome),
+            XmonadProjectionDecision::RebuildPrivateAdapter
+        );
+    }
+    assert_eq!(
+        xmonad_projection_decision(PolicyProjectionOutcome::Committed),
+        XmonadProjectionDecision::Commit
+    );
+    for outcome in [
+        PolicyProjectionOutcome::RejectedInvalid,
+        PolicyProjectionOutcome::Disconnected,
+    ] {
+        assert_eq!(
+            xmonad_projection_decision(outcome),
+            XmonadProjectionDecision::Fatal
+        );
+    }
+}
 
 #[test]
 fn legacy_x11_geometry_commits_through_the_canonical_projection_reducer() {

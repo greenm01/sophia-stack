@@ -192,16 +192,16 @@ layout transaction, and applies workspace and session effects only after the
 atomic layout commit. The worker owns no scene, focus, workspace, application,
 or protocol state.
 
-A stale reply is also a transport-lifetime boundary. The external WM may have
-already applied that request to its private model, so the owner reconciles any
-removed committed surfaces, stops the peer before sending later queued work,
-and reseeds a fresh process from committed Engine state. It never tries to
-continue against the speculative peer state represented by the rejected reply.
-The bundled Rust proof policy is the narrow exception: it is a stateless pure
-projection of each received snapshot and therefore has no speculative model to
-discard. It may consume a fresh snapshot on the same connection after
-`RejectedStale`; this does not relax restart semantics for Hagia, xmonad, or any
-other stateful policy peer.
+A stale reply is also a private-model lifetime boundary. The external WM may
+have already applied that request to speculative state, so later work must not
+continue against the same model. A monolithic stateful policy such as Hagia is
+stopped and reseeded from committed Engine state. The xmonad compatibility
+process has a narrower boundary: it drops and rebuilds its subordinate private
+synthetic-X adapter from the fresh snapshot while retaining the authenticated
+public connection. The bundled Rust proof policy is a stateless pure projection
+of each received snapshot and therefore needs no private-model rebuild. In all
+three cases, no speculative policy state survives `RejectedStale` or `TimedOut`.
+`RejectedInvalid` and `Disconnected` remain fatal transport outcomes.
 
 Owner completion evidence separates child-reap and physical-input phase maxima
 from WM transport round-trip and queue-dwell measurements. A slow policy

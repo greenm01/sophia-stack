@@ -81,9 +81,34 @@ fn session_action(id: u64, name: &str, slot: u16) -> PolicyActionRegistration {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XmonadProjectionDecision {
+    Commit,
+    RebuildPrivateAdapter,
+    Fatal,
+}
+
+/// A recoverable rejection invalidates xmonad's speculative private model but
+/// not the public policy connection. Rebuilding the private adapter from the
+/// fresh committed snapshot preserves the stateful-peer discard rule without
+/// spending the session supervisor's crash budget on an ordinary scene race.
+pub const fn xmonad_projection_decision(
+    outcome: PolicyProjectionOutcome,
+) -> XmonadProjectionDecision {
+    match outcome {
+        PolicyProjectionOutcome::Committed => XmonadProjectionDecision::Commit,
+        PolicyProjectionOutcome::RejectedStale | PolicyProjectionOutcome::TimedOut => {
+            XmonadProjectionDecision::RebuildPrivateAdapter
+        }
+        PolicyProjectionOutcome::RejectedInvalid | PolicyProjectionOutcome::Disconnected => {
+            XmonadProjectionDecision::Fatal
+        }
+    }
+}
+
 /// Runs xmonad as a blind compatibility policy peer on the public revision-3
-/// socket. Any non-committed proposal ends this process; the session supervisor
-/// then starts a new bridge from the last committed public scene.
+/// socket. Recoverable noncommitted proposals rebuild the private xmonad model;
+/// invalid or disconnected outcomes end the supervised policy process.
 pub fn run_public_xmonad_policy(
     socket: impl AsRef<Path>,
     launch: LegacyWmLaunchSpec,
@@ -107,8 +132,9 @@ pub fn run_public_xmonad_policy_cycles(
         WmChromePolicy::default(),
     )?;
     let mut snapshot = client.receive_snapshot()?;
-    let mut adapter = PublicXmonadPolicyAdapter::start(launch, &snapshot.scene)?;
+    let mut adapter = PublicXmonadPolicyAdapter::start(launch.clone(), &snapshot.scene)?;
     let mut completed_cycles = 0;
+    let mut adapter_rebuilds = 0_u64;
 
     loop {
         let request = client.receive_projection_request()?;
@@ -116,8 +142,23 @@ pub fn run_public_xmonad_policy_cycles(
         let pending = adapter.plan(&snapshot.scene, &request, transaction)?;
         client.send_projection(&pending.proposal)?;
         let outcome = client.receive_projection_outcome(&pending.proposal)?;
-        if outcome != PolicyProjectionOutcome::Committed {
-            return Err(format!("public xmonad projection was not committed: {outcome:?}").into());
+        match xmonad_projection_decision(outcome) {
+            XmonadProjectionDecision::Commit => {}
+            XmonadProjectionDecision::RebuildPrivateAdapter => {
+                drop(adapter);
+                snapshot = client.receive_snapshot()?;
+                adapter = PublicXmonadPolicyAdapter::start(launch.clone(), &snapshot.scene)?;
+                adapter_rebuilds = adapter_rebuilds.saturating_add(1);
+                println!(
+                    "sophia_xmonad_policy schema=1 status=adapter_rebuilt outcome={outcome:?} rebuilds={adapter_rebuilds}"
+                );
+                continue;
+            }
+            XmonadProjectionDecision::Fatal => {
+                return Err(
+                    format!("public xmonad projection was not committed: {outcome:?}").into(),
+                );
+            }
         }
         let operation = pending.session_operation;
         adapter.commit(pending);
