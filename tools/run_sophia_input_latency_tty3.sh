@@ -74,21 +74,32 @@ is_retryable_pre_input_cursor_failure() {
             "$session_log"
 }
 
-# The measurement finished and the display stalled on the way out. The
-# latency data was already taken when the session's hard-stall detector
-# terminated it during the completion drain, so redoing the sample loses
-# nothing and asserts nothing; a stall BEFORE proof completion stays fatal,
-# because a session that stalls while measuring may be measuring the defect.
-is_retryable_post_proof_flip_stall() {
+# A page flip the kernel never completed, at a point in the session where no
+# measurement was in flight. Exactly one window is dangerous: armed but not
+# finished, where the stall may be the very thing the sample was measuring.
+# Before arming nothing has been measured yet, and after completion the
+# measurement is already taken -- a stall in either window costs the sample
+# and asserts nothing, so redoing it loses nothing.
+#
+# Keyed on the stall record and the terminal error rather than one wrapper
+# message: the same fault surfaces through the completion drain after a proof
+# and through bounded cleanup before one.
+is_retryable_page_flip_stall() {
     local session_log="$1"
 
     grep -Fq \
-        'sophia_live_session_input schema=2 status=complete source=physical' \
-        "$session_log" 2>/dev/null &&
-        grep -Fq \
-            'sophia_live_native_page_flip_stall schema=1 status=hard_stall' \
-            "$session_log" &&
-        grep -Fq 'native completion drain failed' "$session_log"
+        'sophia_live_native_page_flip_stall schema=1 status=hard_stall' \
+        "$session_log" 2>/dev/null || return 1
+    grep -Eq '^Error: .*hard-stall boundary' "$session_log" || return 1
+    if grep -Fq \
+        'sophia_live_session_input schema=1 status=ready source=physical' \
+        "$session_log" &&
+        ! grep -Fq \
+            'sophia_live_session_input schema=2 status=complete source=physical' \
+            "$session_log"; then
+        return 1
+    fi
+    return 0
 }
 
 check_retry_classifier() {
@@ -124,28 +135,42 @@ check_retry_classifier() {
     fi
 
     printf '%s\n' \
+        'sophia_live_session_input schema=1 status=ready source=physical text=sophia' \
         'sophia_live_session_input schema=2 status=complete source=physical text=sophia expected_events=14 matched_events=14 pixel_change=true' \
         'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
         'Error: "native completion drain failed: native scanout drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
         >"$fixture/stall.log"
-    if ! is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
-        echo "a post-proof completion-drain stall was not classified as retryable" >&2
+    if ! is_retryable_page_flip_stall "$fixture/stall.log"; then
+        echo "a stall after proof completion was not classified as retryable" >&2
         status=1
     fi
 
+    # The shape that ended a run: head 1 never retired its first flip, so the
+    # session never armed and nothing was measured.
     printf '%s\n' \
-        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
-        'Error: "native completion drain failed: native scanout drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
+        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=1 head=1 index=0 group=0 age_ms=500 retirements=0 action=terminate_session' \
+        'Error: "native page flip exceeded the 500 ms hard-stall boundary on head 1 after 0 retirements; bounded session cleanup failed"' \
         >"$fixture/stall.log"
-    if is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
-        echo "a stall before proof completion was classified as retryable" >&2
+    if ! is_retryable_page_flip_stall "$fixture/stall.log"; then
+        echo "a stall before the proof armed was not classified as retryable" >&2
+        status=1
+    fi
+
+    # Armed and unfinished is the one fatal window.
+    printf '%s\n' \
+        'sophia_live_session_input schema=1 status=ready source=physical text=sophia' \
+        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
+        'Error: "native completion drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
+        >"$fixture/stall.log"
+    if is_retryable_page_flip_stall "$fixture/stall.log"; then
+        echo "a stall while a proof was armed was classified as retryable" >&2
         status=1
     fi
 
     printf '%s\n' \
         'sophia_live_session_input schema=2 status=complete source=physical text=sophia expected_events=14 matched_events=14 pixel_change=true' \
         >"$fixture/stall.log"
-    if is_retryable_post_proof_flip_stall "$fixture/stall.log"; then
+    if is_retryable_page_flip_stall "$fixture/stall.log"; then
         echo "a clean completion was classified as a retryable stall" >&2
         status=1
     fi
@@ -442,14 +467,14 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
     INJECTOR_PID=
     if ((proof_status != 0)); then
         if ((stall_retries < MAX_PAGE_FLIP_STALL_RETRIES)) &&
-            is_retryable_post_proof_flip_stall "$session_log"; then
+            is_retryable_page_flip_stall "$session_log"; then
             stall_retries=$((stall_retries + 1))
             # Outside the sample-* namespace: the reporter globs
             # sample-*/session.log, and feeding it a terminated session's log
             # is what emptied the first full run's report.
             stalled_dir="$PENDING/stalled-sample-$(printf '%03d' "$sample").attempt-$stall_retries"
             mv "$sample_dir" "$stalled_dir"
-            printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s stall_retry=%s/%s reason=post_proof_page_flip_stall evidence=%s\n' \
+            printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s stall_retry=%s/%s reason=page_flip_stall evidence=%s\n' \
                 "$sample" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" \
                 "$(basename "$stalled_dir")" | tee -a "$PENDING/stall-retries.log"
             sample=$((sample - 1))
