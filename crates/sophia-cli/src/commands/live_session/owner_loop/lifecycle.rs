@@ -663,6 +663,13 @@
                 &mut input_presented_ust_usec,
                 &mut input_submit_to_page_flip,
             );
+            if let Some(head) = native_scanout.heads.first() {
+                input_latency_samples.observe_page_flip(
+                    head.presented_submissions,
+                    head.presented_submission_ust_usec,
+                    head.presented_page_flip_ust_usec,
+                );
+            }
             metrics.runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
             reconcile_initial_session_focus(InitialSessionFocusContext {

@@ -148,6 +148,36 @@ macro_rules! drain_physical_input {
                     rejects.report(deferred_physical_key_timings.len());
                 }
             }
+            // Every routed press is a latency sample, not only the one the
+            // proof latched. The proof needs one correlation; a percentile
+            // needs a population, and the presses are already timestamped.
+            if physical_input_ready_at.is_some() {
+                for (serial, event_time_msec) in report.routed_key_presses.iter().copied() {
+                    let Some(timing) = event_timings
+                        .iter()
+                        .find(|timing| timing.serial == serial)
+                        .copied()
+                    else {
+                        continue;
+                    };
+                    let Some(ingress_ust_usec) = event_time_msec.checked_mul(1_000) else {
+                        continue;
+                    };
+                    input_latency_samples.observe_press(
+                        sophia_cli::input_latency_samples::PendingInputLatencySample {
+                            serial,
+                            ingress_ust_usec,
+                            baseline_submission: native_scanout
+                                .as_ref()
+                                .and_then(|native| native.heads.first())
+                                .map_or(0, |head| head.presented_submissions),
+                            queue_dwell_usec: u64::try_from(timing.queue_dwell_msec)
+                                .unwrap_or(u64::MAX)
+                                .saturating_mul(1_000),
+                        },
+                    );
+                }
+            }
             if physical_input_ready_at.is_some()
                 && input_proof_started_at.is_none()
                 && let Some((serial, event_time_msec)) = report.routed_key_presses.last().copied()

@@ -696,6 +696,13 @@
                         &mut input_presented_ust_usec,
                         &mut input_submit_to_page_flip,
                     );
+                    if let Some(head) = native_scanout.heads.first() {
+                        input_latency_samples.observe_page_flip(
+                            head.presented_submissions,
+                            head.presented_submission_ust_usec,
+                            head.presented_page_flip_ust_usec,
+                        );
+                    }
                     metrics.backend_ticks = metrics
                         .backend_ticks
                         .saturating_add(service.ticks.len());

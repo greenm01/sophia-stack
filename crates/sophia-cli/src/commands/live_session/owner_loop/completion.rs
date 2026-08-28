@@ -389,6 +389,27 @@
         );
     }
 
+    // The distribution beside the single correlation above. Microseconds, not
+    // milliseconds: a threshold of half a 60 Hz refresh is 8.3 ms, and a
+    // millisecond-rounded percentile cannot be compared against it honestly.
+    if let Some(summary) = input_latency_samples.summary() {
+        println!(
+            "sophia_live_input_latency_distribution schema=1 status=complete source=libinput_to_kernel_page_flip samples={} evicted={} abandoned={} unsettled={} min_usec={} p50_usec={} p95_usec={} p99_usec={} max_usec={} max_queue_dwell_usec={} max_submit_to_page_flip_usec={}",
+            summary.samples,
+            summary.evicted,
+            summary.abandoned,
+            summary.pending,
+            summary.min_usec,
+            summary.p50_usec,
+            summary.p95_usec,
+            summary.p99_usec,
+            summary.max_usec,
+            summary.max_queue_dwell_usec,
+            summary.max_submit_to_page_flip_usec,
+        );
+        std::io::stdout().flush()?;
+    }
+
     let report = scene
         .last_report()
         .ok_or("persistent live session received no composable X pixels")?;

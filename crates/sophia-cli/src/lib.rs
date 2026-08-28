@@ -12,6 +12,7 @@ pub mod desktop_output_heads;
 pub mod desktop_output_topology;
 pub mod desktop_profile_activation;
 pub mod emergency_input;
+pub mod input_latency_samples;
 pub mod input_proof;
 #[cfg(feature = "atomic-scanout-live")]
 pub mod live_output_authority;

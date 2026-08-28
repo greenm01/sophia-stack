@@ -404,6 +404,9 @@ fn run_session_loop_inner(
     let mut input_change_submission_baseline = None;
     let mut input_presented_latency = None;
     let mut input_raw_ingress_msec: Option<u64> = None;
+    // Repeatable sampling beside the one-shot proof: the proof answers whether
+    // input reached a page flip, this answers how long that took, many times.
+    let mut input_latency_samples = sophia_cli::input_latency_samples::InputLatencySamples::new();
     let mut deferred_physical_key_timings = BTreeMap::new();
     let mut routed_input_saturation = RoutedInputIngressSaturation::default();
     let mut routed_input_saturation_ledger = sophia_protocol::CapacityReportLedger::default();
