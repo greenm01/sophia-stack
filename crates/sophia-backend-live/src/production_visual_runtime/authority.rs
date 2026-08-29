@@ -389,6 +389,13 @@ impl LiveProductionVisualRuntime {
     pub fn shutdown_presentations(
         &mut self,
     ) -> Result<crate::LivePresentationDisconnectReport, Box<dyn std::error::Error>> {
+        // A directly scanned buffer is held until a successor flip retires it,
+        // and at shutdown there is no successor. Releasing it here is the only
+        // release it will ever get; holding it instead left the session unable
+        // to shut down after the first frame that ever reached a plane
+        // directly. See `PresentFlipOwnership.tla`, `ReleasedOnlyBySuccessor`:
+        // the screen is going away, which retires it as surely as a flip does.
+        self.release_displayed_direct_presents();
         let mut shutdown_rejections = self.reject_software_presents();
         let queued = self.present_scheduler.drain_transactions();
         for transaction in queued {

@@ -881,7 +881,15 @@ impl LiveProductionVisualRuntime {
         // The page flip is the commit point for the compositor copy. Promote
         // its staged image before releasing the client source or emitting any
         // protocol feedback.
-        if native_scanout.promote_renderer_image(submitted.displayed_layer.image_id)? == 0 {
+        //
+        // A direct frame has no such image. Nothing was composed, so nothing
+        // was staged: the buffer on the plane is the client's own, and the
+        // renderer never saw it. Demanding a snapshot here failed the first
+        // frame that ever reached a plane directly -- after it had already
+        // been displayed, which made a working flip look like a lost one.
+        if !retirement.direct
+            && native_scanout.promote_renderer_image(submitted.displayed_layer.image_id)? == 0
+        {
             return Err("retired Present lost its staged renderer snapshot".into());
         }
         let direct = retirement.direct;
@@ -925,6 +933,9 @@ impl LiveProductionVisualRuntime {
             );
         }
         if completion.commit.outcome != TransactionOutcome::Committed {
+            // Nothing to evict for a direct frame, for the same reason nothing
+            // was promoted; eviction of an image no exporter staged is a
+            // no-op, so this is stated rather than branched.
             native_scanout.evict_renderer_image(submitted.displayed_layer.image_id)?;
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),

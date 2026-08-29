@@ -867,3 +867,58 @@ fn a_retained_completion_is_not_a_direct_flip() {
         }]
     );
 }
+
+/// A directly flipped buffer is released when the session ends, because the
+/// successor that would retire it is not coming.
+///
+/// The first frame that ever reached a plane directly could not be shut down
+/// after: it was correctly held until a successor retired it, and at teardown
+/// there is no successor, so presentation shutdown refused with retained
+/// surface content ownership. The screen going away retires it as surely as a
+/// flip does.
+///
+/// Model: `validation/tla/PresentFlipOwnership.tla`, `ReleasedOnlyBySuccessor`.
+#[test]
+fn a_directly_flipped_buffer_is_released_when_the_session_ends() {
+    let handle = BufferHandle::from_raw(51);
+    let transaction = TransactionId::from_raw(52);
+    let idle_handle = FenceHandle::from_raw(53);
+    let idle_fence = sophia_xshmfence::allocate().unwrap();
+    let idle_query = idle_fence.try_clone().unwrap();
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    coordinator
+        .resources_mut()
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .register_fence(idle_handle, false, idle_fence)
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction,
+            buffer: handle,
+            acquire_fence: None,
+            idle_fence: Some(idle_handle),
+        })
+        .unwrap();
+    coordinator.resources_mut().mark_submitted(transaction).unwrap();
+    coordinator
+        .complete_flip_without_idle(transaction, 7, 8)
+        .unwrap();
+
+    // Still on glass, still owed to the client.
+    assert!(!sophia_xshmfence::query(&idle_query).unwrap());
+    assert_eq!(
+        coordinator.resources().state(transaction),
+        Some(LiveBufferState::Submitted)
+    );
+
+    // The session ends. Nothing will flip after this, so this is the release.
+    let released = coordinator.idle_displayed(transaction).unwrap();
+
+    assert!(released.idle_fence_triggered);
+    assert!(sophia_xshmfence::query(&idle_query).unwrap());
+    assert_eq!(coordinator.resources().presentation_count(), 0);
+}

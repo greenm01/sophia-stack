@@ -359,6 +359,22 @@ impl LiveProductionVisualRuntime {
     /// already released along some other path -- is not an error here: the
     /// obligation this discharges is "do not release too early", and a buffer
     /// that is already gone cannot be released too early.
+    /// Release every directly displayed buffer, because the session is ending.
+    ///
+    /// The successor that would normally retire one is not coming. Errors are
+    /// swallowed deliberately: shutdown reports its own outcome, and a Present
+    /// the registry has already forgotten is not a reason to fail a teardown.
+    pub(super) fn release_displayed_direct_presents(&mut self) {
+        let outputs = self
+            .displayed_direct_presents
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for output in outputs {
+            let _ = self.idle_superseded_direct_present(output);
+        }
+    }
+
     pub(super) fn idle_superseded_direct_present(
         &mut self,
         output: OutputId,
