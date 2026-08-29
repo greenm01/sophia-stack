@@ -193,6 +193,7 @@ set +e
     # output topology, not portals.
     DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/sophia-gate-no-session-bus \
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
+        SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1 \
         SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions \
         ./target/release/sophia sophia-live-session \
         --display="$DISPLAY_NAME" \

@@ -428,7 +428,7 @@ require_positive_field "$session" cpu_checksum
 # the Engine's logical scene plan. Their domains differ; the plan, queue,
 # submission, page-flip, and retirement checks above bind the latter to both
 # heads.
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9) status=complete ' "$evidence")"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9|10) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
@@ -446,6 +446,13 @@ elif field "$resources" sharp_downscale_fallbacks >/dev/null; then
     require_field "$resources" sharp_downscale_fallbacks 0
 else
     fail "the resource completion reports no reconstruction fallback count"
+fi
+# A mirror group's heads share a card, so they share its renderer thread once
+# coalescing is on: the same result stream serves both, and a result reaching
+# the wrong head would attach one screen's buffer to the other's scanout lease.
+# Schema 10 is the first evidence that says which happened.
+if field "$resources" worker_result_misroutes >/dev/null; then
+    require_field "$resources" worker_result_misroutes 0
 fi
 for key in worker_failures worker_hard_stalls worker_release_enqueue_failures; do
     require_field "$resources" "$key" 0
