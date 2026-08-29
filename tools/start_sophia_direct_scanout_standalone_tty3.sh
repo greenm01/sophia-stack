@@ -5,12 +5,17 @@ set -euo pipefail
 # in which a frame can be one opaque client DMA-BUF, which is what direct
 # scanout requires.
 #
-# It differs from the vkcube isolation proof in two ways, both eligibility
-# requirements rather than taste: a columns layout, so the single client covers
-# the output exactly instead of sitting centred at its natural size with a
-# background painted around it; and no focus ring, because a focus ring lowers
-# to a Border command and any command that paints means the composed image is
-# not the client's buffer. See `tools/fixtures/direct_scanout_sophia_wm.kdl`.
+# It runs no window manager. It cannot -- `sophia-wm-demo` lost its serving
+# mode in 83596bfc with the experimental WM API v7, and every session naming it
+# as `--wm-process` now dies at startup with a usage string -- and it does not
+# need one: a session without a WM honours the client's own geometry, so a
+# client asked for the head's size fills it, and no WM means no focus ring and
+# no border over the frame.
+#
+# The client is bounded and sized, so the run needs no operator beyond starting
+# it: vkcube draws its frames and exits, and `--exit-when-startup-exits` ends
+# the session with it. Ctrl+Alt+Delete logs out early if you want it back
+# sooner; Ctrl+Alt+Backspace is emergency recovery as always.
 #
 # The input-latency harness cannot answer this question: it proves input
 # reaches a terminal, so it needs an input proof, and the session refuses
@@ -22,17 +27,26 @@ export SOPHIA_TTY_PROFILE=standalone
 export SOPHIA_SESSION_VERBOSE_TRACE=true
 export SOPHIA_ENABLE_DIRECT_SCANOUT=1
 : "${SOPHIA_STANDALONE_WORKLOAD:=vkcube}"
-export SOPHIA_STANDALONE_WORKLOAD
+: "${SOPHIA_STANDALONE_WIDTH:=2560}"
+: "${SOPHIA_STANDALONE_HEIGHT:=1440}"
+: "${SOPHIA_STANDALONE_FRAME_COUNT:=600}"
+export SOPHIA_STANDALONE_WORKLOAD SOPHIA_STANDALONE_WIDTH \
+    SOPHIA_STANDALONE_HEIGHT SOPHIA_STANDALONE_FRAME_COUNT
 
 printf '%s\n' \
     'Direct scanout probe:' \
-    "  Client: $SOPHIA_STANDALONE_WORKLOAD, filling the output, no chrome." \
-    '  1. Confirm the client fills the screen edge to edge.' \
-    '  2. Leave it running for a few seconds so frames accumulate.' \
-    '  3. Press Super+Shift+Q for normal logout.' \
-    '  4. Press Ctrl+Alt+Backspace only for emergency recovery.' \
-    '  5. Back at tty3, run:' \
+    "  Client: $SOPHIA_STANDALONE_WORKLOAD at ${SOPHIA_STANDALONE_WIDTH}x${SOPHIA_STANDALONE_HEIGHT}," \
+    "  ${SOPHIA_STANDALONE_FRAME_COUNT} frames, no window manager, no chrome." \
+    '' \
+    '  1. Confirm the cube fills the screen edge to edge.' \
+    '  2. It exits on its own; the session ends with it.' \
+    '  3. Ctrl+Alt+Delete logs out early. Ctrl+Alt+Backspace is emergency only.' \
+    '  4. Back at tty3, run:' \
     '     tools/verify_direct_scanout_standalone.sh' \
+    '' \
+    'If the client does not fill the screen, its size does not match the mode:' \
+    'set SOPHIA_STANDALONE_WIDTH and SOPHIA_STANDALONE_HEIGHT to the head it' \
+    'landed on. The verifier reports that as layer_not_full_head.' \
     '' \
     'A run in which nothing was eligible is a result, not a failure of the' \
     'run: the verifier prints which verdict every frame received.'

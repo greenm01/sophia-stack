@@ -14,9 +14,9 @@ schema 1
 // with exactly one layer. So the profile binds only what this session can
 // actually do.
 //
-// Logout stays on Ctrl+Alt+Delete. Super+Shift+Q is left alone because the
-// native WM policy owns it -- see `direct_scanout_sophia_wm.kdl` -- and
-// binding it in both places would be two owners for one key.
+// Logout is on Ctrl+Alt+Delete, which is a session-level binding and needs no
+// policy client to deliver it. That matters here: the probe runs no window
+// manager, so a policy-delivered shortcut would never arrive.
 //
 // The shell is off: there is no shell process, and `session:window-switcher`
 // would be another unavailable capability.

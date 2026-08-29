@@ -526,22 +526,31 @@ session_args=(
     --startup-ready-timeout-ms=8000
 )
 if [[ "$SESSION_PROFILE" == standalone ]]; then
-    standalone_wm_template="$ROOT_DIR/tools/fixtures/standalone_sophia_wm.kdl"
-    # Direct scanout needs a frame that is one client buffer covering the head
-    # and nothing else, which the standalone policy's centred layout and focus
-    # ring both prevent. Switching the policy with the flag keeps the two from
-    # drifting apart: a session asked for direct scanout under a policy that
-    # cannot produce an eligible frame would report zeros and prove nothing.
+    standalone_direct_scanout=0
     if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
-        standalone_wm_template="$ROOT_DIR/tools/fixtures/direct_scanout_sophia_wm.kdl"
+        standalone_direct_scanout=1
     fi
-    standalone_wm_template="${SOPHIA_STANDALONE_WM_CONFIG:-$standalone_wm_template}"
-    standalone_wm_config="$STATE_DIR/standalone-wm.kdl"
-    if [[ ! -f "$standalone_wm_template" ]]; then
-        echo "The standalone WM policy is missing: $standalone_wm_template" >&2
-        exit 1
+    # The direct-scanout probe runs no window manager.
+    #
+    # It cannot: `sophia-wm-demo` lost its serving mode in 83596bfc with the
+    # experimental WM API v7, so the only subcommands left are proof clients
+    # and every session naming it as `--wm-process` dies at startup with a
+    # usage string. It also does not need one. A session without a WM honours
+    # the client's own geometry, so a client asked for exactly the head's size
+    # fills it, and no WM means no focus ring and no border -- the two things
+    # the standalone policy would have drawn over the frame anyway.
+    #
+    # Logout is Ctrl+Alt+Delete from the desktop profile, which is a
+    # session-level binding and needs no policy client to deliver it.
+    if (( standalone_direct_scanout == 0 )); then
+        standalone_wm_template="${SOPHIA_STANDALONE_WM_CONFIG:-$ROOT_DIR/tools/fixtures/standalone_sophia_wm.kdl}"
+        standalone_wm_config="$STATE_DIR/standalone-wm.kdl"
+        if [[ ! -f "$standalone_wm_template" ]]; then
+            echo "The standalone WM policy is missing: $standalone_wm_template" >&2
+            exit 1
+        fi
+        install -m 600 "$standalone_wm_template" "$standalone_wm_config"
     fi
-    install -m 600 "$standalone_wm_template" "$standalone_wm_config"
     # `--no-config` loads the compiled desktop profile, whose shortcuts bind
     # spawn-terminal and spawn-browser. A session running one application
     # declares neither, so it is refused before it starts with
@@ -549,7 +558,7 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     # unstartable since 29b9424b. The direct-scanout probe supplies a profile
     # binding only what this session can do; the two are mutually exclusive,
     # so the flag chooses between them.
-    if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
+    if (( standalone_direct_scanout == 1 )); then
         standalone_desktop_template="$ROOT_DIR/tools/fixtures/direct_scanout_desktop.kdl"
         standalone_desktop_profile="$STATE_DIR/standalone-desktop.kdl"
         if [[ ! -f "$standalone_desktop_template" ]]; then
@@ -565,14 +574,28 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone
         --exit-when-startup-exits
-        --wm-process="$SOPHIA_NATIVE_WM_BIN"
-        "--wm-process-arg=--wm-config=$standalone_wm_config"
     )
+    if (( standalone_direct_scanout == 0 )); then
+        session_args+=(
+            --wm-process="$SOPHIA_NATIVE_WM_BIN"
+            "--wm-process-arg=--wm-config=$standalone_wm_config"
+        )
+    fi
     if [[ "$standalone_workload" == vkcube ]]; then
         session_args+=(
             --session-app-arg=standalone=--wsi
             --session-app-arg=standalone=xcb
         )
+    fi
+    if (( standalone_direct_scanout == 1 )) && [[ "$standalone_workload" == vkcube ]]; then
+        # Sized to the head and bounded, so the probe needs no operator beyond
+        # starting it. A client that is not exactly the head's size is not
+        # eligible, and the verdict histogram says `layer_not_full_head` when
+        # these do not match the mode -- which is the answer, not a failure of
+        # the run.
+        : "${SOPHIA_STANDALONE_FRAME_COUNT:=600}"
+        : "${SOPHIA_STANDALONE_WIDTH:=2560}"
+        : "${SOPHIA_STANDALONE_HEIGHT:=1440}"
     fi
     if [[ -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
         [[ "$standalone_workload" == vkcube ]] || {

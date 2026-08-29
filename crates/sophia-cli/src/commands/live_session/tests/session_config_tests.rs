@@ -1342,15 +1342,33 @@ fn the_standalone_single_application_argument_set_still_starts() {
         std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
 
-    // What the direct-scanout probe passes: a profile binding only what a
-    // one-application session can do.
+    // The argument vector the direct-scanout probe actually builds, including
+    // the client arguments and the absence of `--wm-process`: two physical
+    // runs died here, once on shortcut validation and once on a window manager
+    // that no longer has a serving mode, and neither was described anywhere a
+    // test could see it.
     let accepted = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),
+        "--display=:77".to_owned(),
+        // `--native-scanout` is deliberately absent: it is gated on an
+        // environment variable the runner exports, and setting one from a test
+        // races every other test in the process. Its own gate refused this
+        // vector when it was included, which is the check working.
+        "--startup-ready-timeout-ms=8000".to_owned(),
         format!("--desktop-profile={}", profile.display()),
         "--session-app=standalone=/usr/bin/true".to_owned(),
         "--session-start=standalone".to_owned(),
         "--exit-when-startup-exits".to_owned(),
-        "--wm-process=/usr/bin/true".to_owned(),
+        "--session-app-arg=standalone=--wsi".to_owned(),
+        "--session-app-arg=standalone=xcb".to_owned(),
+        "--session-app-arg=standalone=--c".to_owned(),
+        "--session-app-arg=standalone=600".to_owned(),
+        "--session-app-arg=standalone=--width".to_owned(),
+        "--session-app-arg=standalone=2560".to_owned(),
+        "--session-app-arg=standalone=--height".to_owned(),
+        "--session-app-arg=standalone=1440".to_owned(),
+        "--session-app-arg=standalone=--present_mode".to_owned(),
+        "--session-app-arg=standalone=2".to_owned(),
     ]);
     assert!(
         accepted.is_ok(),
@@ -1367,7 +1385,6 @@ fn the_standalone_single_application_argument_set_still_starts() {
         "--session-app=standalone=/usr/bin/true".to_owned(),
         "--session-start=standalone".to_owned(),
         "--exit-when-startup-exits".to_owned(),
-        "--wm-process=/usr/bin/true".to_owned(),
     ]);
     assert!(
         refused.is_err(),

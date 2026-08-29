@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verifies a direct-scanout standalone probe: the right policy ran, one surface
-# was laid out, and the direct path engaged lawfully.
+# Verifies a direct-scanout standalone probe: the session had the shape that
+# can produce an eligible frame, and the direct path engaged lawfully.
 #
-# Separate from `verify_sophia_standalone_vkcube.sh` because that one asserts
-# the natural-size reference policy, which this run deliberately does not use.
+# The shape is one client and no window manager. No WM is not a shortcut here:
+# `sophia-wm-demo` lost its serving mode in 83596bfc, and a session without one
+# honours the client's own geometry and draws no focus ring or border -- which
+# is what a frame of exactly one client layer requires anyway.
+#
+# Separate from `verify_sophia_standalone_vkcube.sh`, which asserts the
+# natural-size reference policy and a WM this run deliberately does not have.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -18,14 +23,20 @@ fail() {
 
 [[ -s "$SESSION_LOG" ]] || fail "no session evidence at $SESSION_LOG"
 
-# The policy that can produce an eligible frame. A run under the natural-size
-# policy would report zeros for a reason that has nothing to do with the row.
-grep -Eq '^sophia_wm_demo schema=1 status=ready generation=[0-9]+ layout_policy=columns$' \
-    "$SESSION_LOG" ||
-    fail "the filling layout policy did not start; this run cannot produce an eligible frame"
-grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* surfaces=1 .* outcome=Committed$' \
-    "$SESSION_LOG" ||
-    fail "a single-surface layout did not commit"
+session="$(grep -E '^sophia_live_session schema=16 ' "$SESSION_LOG" | tail -n1 || true)"
+[[ -n "$session" ]] || fail "the session did not reach a bounded completion"
+
+# A window manager would draw a focus ring or a border over the client, and
+# every command that paints means the composed image is not the client's
+# buffer. Checked rather than assumed, because a session that quietly acquired
+# one would report zeros for a reason unrelated to this row.
+grep -qE '(^| )wm_policy=disabled( |$)' <<<"$session" ||
+    fail "a window manager ran; its chrome makes every frame ineligible"
+
+# One client. A second surface is a second layer, and the frame is then
+# something the compositor has to combine rather than hand over.
+grep -qE '(^| )runtime_surfaces=1( |$)' <<<"$session" ||
+    fail "the session did not run exactly one client surface"
 
 "$ROOT_DIR/tools/verify_direct_scanout_sessions.sh" "$SESSION_LOG"
 echo "direct scanout standalone probe passed: $SESSION_LOG"
