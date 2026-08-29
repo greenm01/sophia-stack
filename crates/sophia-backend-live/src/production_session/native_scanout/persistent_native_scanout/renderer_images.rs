@@ -400,7 +400,7 @@ impl LiveProductionNativeScanout {
             // exporter at all -- whatever that exporter was enabled with, and
             // whichever order a head joined the group in.
             let mut frame = queued.frame;
-            frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+            frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("mirror_cohort");
             exporter.set_pending_mixed_frame(frame);
         }
         tracing::info!(

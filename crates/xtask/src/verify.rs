@@ -162,7 +162,7 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
                 per_head.push(head.trim().to_owned());
             }
             if let Some(measured) =
-                line.strip_prefix("sophia_live_direct_scanout_geometry schema=1 ")
+                line.strip_prefix("sophia_live_direct_scanout_geometry schema=2 ")
             {
                 geometry.push(measured.trim().to_owned());
             }

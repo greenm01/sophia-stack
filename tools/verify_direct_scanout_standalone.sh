@@ -33,10 +33,14 @@ session="$(grep -E '^sophia_live_session schema=16 ' "$SESSION_LOG" | tail -n1 |
 grep -qE '(^| )wm_policy=disabled( |$)' <<<"$session" ||
     fail "a window manager ran; its chrome makes every frame ineligible"
 
-# One client. A second surface is a second layer, and the frame is then
-# something the compositor has to combine rather than hand over.
-grep -qE '(^| )runtime_surfaces=1( |$)' <<<"$session" ||
-    fail "the session did not run exactly one client surface"
+# The client presented something. `runtime_surfaces` is the count still live at
+# the end, which is zero for a bounded client that exits on purpose -- checking
+# it for one was this verifier failing a run in which everything worked.
+#
+# One client is what the direct-scanout verdicts prove instead: a second
+# surface is a second layer, and every frame would report `layer_count`.
+grep -qE '^sophia_live_session_present schema=2 status=retired ' "$SESSION_LOG" ||
+    fail "the client never presented a frame"
 
 "$ROOT_DIR/tools/verify_direct_scanout_sessions.sh" "$SESSION_LOG"
 echo "direct scanout standalone probe passed: $SESSION_LOG"

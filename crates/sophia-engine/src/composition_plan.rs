@@ -194,7 +194,7 @@ pub struct HeadCompositionPlan {
 /// as "compose", never as "eligible". This is what makes it safe to carry the
 /// verdict on a lowered frame whose other construction sites -- tests,
 /// fixtures -- say nothing about it.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DirectScanoutVerdict {
     /// One opaque client layer fills the head and nothing else draws.
     Eligible,
@@ -218,12 +218,25 @@ pub enum DirectScanoutVerdict {
     /// The layer is translucent, so what is behind it is part of the image.
     LayerTranslucent,
     /// Chrome, an overlay, or a resolved effect changes the composed image.
+    /// Carries the command that disqualified the frame, because "something
+    /// painted" is not an answer: a letterbox that should have been empty and
+    /// an indicator strip drawn on purpose need different work.
+    ///
     /// Also the default, so an unproven frame composes.
-    #[default]
-    CompositionRequired,
+    CompositionRequired(&'static str),
     /// A composed cursor is part of the image. The hardware cursor rides its
     /// own plane and does not appear here.
     ComposedCursor,
+}
+
+impl Default for DirectScanoutVerdict {
+    /// A verdict that arrived without a plan behind it has proven nothing, and
+    /// the absence of a proof must read as "compose". Named `unproven` rather
+    /// than after a command, because no command disqualified it -- nothing
+    /// examined it at all.
+    fn default() -> Self {
+        Self::CompositionRequired("unproven")
+    }
 }
 
 impl DirectScanoutVerdict {
@@ -252,7 +265,7 @@ impl DirectScanoutVerdict {
         Self::LayerClipped,
         Self::LayerNotDmaBuf,
         Self::LayerTranslucent,
-        Self::CompositionRequired,
+        Self::CompositionRequired(""),
         Self::ComposedCursor,
     ];
 
@@ -268,7 +281,7 @@ impl DirectScanoutVerdict {
             Self::LayerClipped => 6,
             Self::LayerNotDmaBuf => 7,
             Self::LayerTranslucent => 8,
-            Self::CompositionRequired => 9,
+            Self::CompositionRequired(_) => 9,
             Self::ComposedCursor => 10,
         }
     }
@@ -285,7 +298,7 @@ impl DirectScanoutVerdict {
             Self::LayerClipped => "layer_clipped",
             Self::LayerNotDmaBuf => "layer_not_dma_buf",
             Self::LayerTranslucent => "layer_translucent",
-            Self::CompositionRequired => "composition_required",
+            Self::CompositionRequired(_) => "composition_required",
             Self::ComposedCursor => "composed_cursor",
         }
     }
@@ -300,7 +313,11 @@ impl DirectScanoutVerdict {
 /// on someone's screen. This follows the rule scanout cloning already states
 /// for plan fields -- unconsidered state disables the optimization rather
 /// than wrongly preserving it.
-fn command_requires_composition(command: &HeadCompositorCommand) -> bool {
+/// The command's name when it disqualifies the frame, or `None` when it is
+/// neutral. A name rather than a boolean because "composition required" covers
+/// every painting primitive, and which one it was is the difference between a
+/// letterbox that should not be there and chrome that should.
+fn command_requires_composition(command: &HeadCompositorCommand) -> Option<&'static str> {
     match command {
         // The letterbox fill, emitted unconditionally and empty exactly when
         // the projected scene already covers the framebuffer.
@@ -312,14 +329,14 @@ fn command_requires_composition(command: &HeadCompositorCommand) -> bool {
         // paints is composition whatever else is true of the frame, and a
         // later reordering must not make an empty-looking plan eligible.
         HeadCompositorCommand::Background(rect) => {
-            rect.geometry.width != 0 && rect.geometry.height != 0
+            (rect.geometry.width != 0 && rect.geometry.height != 0).then_some("background")
         }
         // The client's own content, which the plane will scan out directly.
-        HeadCompositorCommand::Surface { .. } => false,
-        HeadCompositorCommand::Border(_)
-        | HeadCompositorCommand::Rect(_)
-        | HeadCompositorCommand::Text(_)
-        | HeadCompositorCommand::IndicatorStrip(_) => true,
+        HeadCompositorCommand::Surface { .. } => None,
+        HeadCompositorCommand::Border(_) => Some("border"),
+        HeadCompositorCommand::Rect(_) => Some("rect"),
+        HeadCompositorCommand::Text(_) => Some("text"),
+        HeadCompositorCommand::IndicatorStrip(_) => Some("indicator_strip"),
     }
 }
 
@@ -368,8 +385,8 @@ pub fn direct_scanout_verdict(plan: &HeadCompositionPlan) -> DirectScanoutVerdic
     if plan.cursor.is_some() {
         return DirectScanoutVerdict::ComposedCursor;
     }
-    if plan.compositor.iter().any(command_requires_composition) {
-        return DirectScanoutVerdict::CompositionRequired;
+    if let Some(command) = plan.compositor.iter().find_map(command_requires_composition) {
+        return DirectScanoutVerdict::CompositionRequired(command);
     }
     DirectScanoutVerdict::Eligible
 }

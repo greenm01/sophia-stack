@@ -81,7 +81,7 @@ fn plan() -> HeadCompositionPlan {
         logical_content_checksum: 0x55,
         // This fixture is a composed multi-layer plan; the renderer's own
         // tests do not exercise eligibility, which Engine decides.
-        direct_scanout: DirectScanoutVerdict::CompositionRequired,
+        direct_scanout: DirectScanoutVerdict::default(),
     }
 }
 
@@ -611,11 +611,11 @@ fn an_unproven_frame_is_refused_however_it_is_shaped() {
     // so this is exactly the claim that the backend does not decide
     // eligibility for itself.
     let mut frame = direct_frame();
-    frame.direct_scanout = DirectScanoutVerdict::CompositionRequired;
+    frame.direct_scanout = DirectScanoutVerdict::default();
     assert_eq!(
         frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
         sophia_renderer_live::LiveDirectScanoutRefusal::NotProven(
-            DirectScanoutVerdict::CompositionRequired
+            DirectScanoutVerdict::default()
         )
     );
 }
@@ -761,6 +761,6 @@ fn lowering_carries_the_plans_verdict_onto_the_frame_it_produces() {
     // frame built anywhere else cannot be mistaken for a proven one.
     assert_eq!(
         sophia_renderer_live::LiveOwnedMixedCompositionFrame::default().direct_scanout,
-        DirectScanoutVerdict::CompositionRequired
+        DirectScanoutVerdict::default()
     );
 }

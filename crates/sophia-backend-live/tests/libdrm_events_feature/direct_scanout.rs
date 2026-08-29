@@ -203,7 +203,7 @@ fn one_composed_frame_between_direct_ones_costs_a_fresh_validating_commit() {
     // when the scene was something else.
     // `PresentFlipOwnership.tla`, `ReProveAfterEpisodeChange`.
     let mut composed = proven_direct_frame();
-    composed.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+    composed.direct_scanout = sophia_engine::DirectScanoutVerdict::default();
     exporter.set_pending_mixed_frame(composed);
     let _ = exporter.export_rendered_scanout_buffer(target);
 

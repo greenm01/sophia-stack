@@ -1870,7 +1870,7 @@ impl LiveProductionNativeScanout {
             // client's buffer would be scanned out under a mode nobody has
             // validated it for, so a candidate frame carries no proof
             // regardless of the plan it came from.
-            frame.frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+            frame.frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("topology_commit");
             self.exporters[index].set_pending_mixed_frame(frame.frame);
         }
 
@@ -2585,7 +2585,7 @@ impl LiveProductionNativeScanout {
                         // for, so a candidate or rollback frame carries no
                         // proof regardless of the plan it came from.
                         frame.frame.direct_scanout =
-                            sophia_engine::DirectScanoutVerdict::CompositionRequired;
+                            sophia_engine::DirectScanoutVerdict::CompositionRequired("topology_commit");
                         self.exporters[index].set_pending_mixed_frame(frame.frame);
                     }
                     state.phase = LiveProductionNativeTopologyPreparationPhase::PreparingRollback;

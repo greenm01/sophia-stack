@@ -67,7 +67,7 @@ reject "a run in which direct scanout never engaged" "$quiet" \
 measured="$temp_dir/measured.log"
 {
     cat "$quiet"
-    printf 'sophia_live_direct_scanout_geometry schema=1 status=layer_not_head_sized output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1428\n'
+    printf 'sophia_live_direct_scanout_geometry schema=2 status=layer_not_head_sized command=none output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1428\n'
 } >"$measured"
 if output="$("$verifier" "$measured" 2>&1)"; then
     echo "the verifier accepted a run that never engaged" >&2
@@ -173,7 +173,8 @@ printf '%s\n' "$output" | grep -Fq "missing layer_not_dma_buf" || {
 standalone="$ROOT_DIR/tools/verify_direct_scanout_standalone.sh"
 probe="$temp_dir/probe.log"
 {
-    printf 'sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=1 wm_policy=disabled wm_restarts=0\n'
+    printf 'sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0\n'
+    printf 'sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true\n'
     cat "$pass"
 } >"$probe"
 "$standalone" "$probe" >/dev/null || {
@@ -199,10 +200,10 @@ sed 's/ wm_policy=disabled / wm_policy=external /' "$probe" >"$managed"
 probe_reject "a probe that acquired a window manager" "$managed" \
     "its chrome makes every frame ineligible"
 
-crowded="$temp_dir/crowded.log"
-sed 's/ runtime_surfaces=1 / runtime_surfaces=2 /' "$probe" >"$crowded"
-probe_reject "a probe with more than one client surface" "$crowded" \
-    "exactly one client surface"
+silent="$temp_dir/silent.log"
+grep -v '^sophia_live_session_present schema=2 ' "$probe" >"$silent"
+probe_reject "a probe whose client never presented" "$silent" \
+    "never presented a frame"
 
 unfinished="$temp_dir/unfinished.log"
 grep -v '^sophia_live_session schema=16 ' "$probe" >"$unfinished"

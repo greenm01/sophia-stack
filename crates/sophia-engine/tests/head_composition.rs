@@ -732,7 +732,10 @@ fn chrome_over_a_fullscreen_client_requires_composition() {
 
     assert_eq!(
         direct_scanout_plan(&scene).direct_scanout,
-        DirectScanoutVerdict::CompositionRequired
+        // Named, not merely "something painted". Writing this test the name
+        // corrected the guess: the chrome here is a border, and a border and
+        // an indicator strip are different problems to go and look at.
+        DirectScanoutVerdict::CompositionRequired("border")
     );
 }
 

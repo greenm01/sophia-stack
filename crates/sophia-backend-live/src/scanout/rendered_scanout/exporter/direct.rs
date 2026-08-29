@@ -95,7 +95,7 @@ where
                     // Clear the proof before reinstalling, so the frame that
                     // falls through composes rather than arriving here again
                     // and being refused for the same reason every frame.
-                    frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+                    frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
                     self.pending_frame = Some(PendingRenderedFrame::Mixed(frame));
                 }
             }
@@ -119,7 +119,10 @@ where
         if self.direct_scanout_geometry_reported
             || !matches!(
                 frame.direct_scanout,
-                Verdict::LayerOffset | Verdict::LayerNotHeadSized | Verdict::LayerClipped
+                Verdict::LayerOffset
+                    | Verdict::LayerNotHeadSized
+                    | Verdict::LayerClipped
+                    | Verdict::CompositionRequired(_)
             )
         {
             return;
@@ -134,8 +137,15 @@ where
             return;
         };
         self.direct_scanout_geometry_reported = true;
+        // Which command painted, when one did. "Composition required" covers
+        // every painting primitive, and a letterbox that should have been
+        // empty and an indicator strip drawn on purpose need different work.
+        let command = match frame.direct_scanout {
+            Verdict::CompositionRequired(command) => command,
+            _ => "none",
+        };
         tracing::info!(
-            "sophia_live_direct_scanout_geometry schema=1 status={} output={} head_width={} head_height={} layer_x={} layer_y={} layer_width={} layer_height={}",
+            "sophia_live_direct_scanout_geometry schema=2 status={} command={command} output={} head_width={} head_height={} layer_x={} layer_y={} layer_width={} layer_height={}",
             frame.direct_scanout.reduced_name(),
             self.output.raw(),
             target.size.width,
@@ -254,7 +264,7 @@ where
         let Some(mut frame) = self.direct_fallback.take() else {
             return false;
         };
-        frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+        frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
         self.direct_scanout_fallbacks = self.direct_scanout_fallbacks.saturating_add(1);
         self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
         true
