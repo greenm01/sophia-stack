@@ -793,6 +793,16 @@ else
     )
 fi
 session_args+=("$@")
+# The whole vector this run will use, asked of the session before it is spawned.
+# The profile-shape check in the launcher runs while the display manager is
+# still up; this one covers what that cannot know -- the client arguments this
+# particular run assembled.
+if ! "$ROOT_DIR/target/release/sophia" sophia-live-session --validate-session-args \
+    "${session_args[@]:1}" >/dev/null 2>"$STATE_DIR/session-args-check.log"; then
+    echo "The assembled session arguments would be refused:" >&2
+    cat "$STATE_DIR/session-args-check.log" >&2
+    exit 1
+fi
 session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null

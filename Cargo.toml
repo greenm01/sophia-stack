@@ -16,6 +16,7 @@ members = [
     "crates/sophia-xshmfence",
     "crates/sophia-x11-wm-bridge",
     "tools/sophia-policy-protocol-gen",
+    "crates/xtask",
 ]
 default-members = [
     "crates/sophia-cli",

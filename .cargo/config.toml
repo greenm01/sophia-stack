@@ -1,0 +1,10 @@
+# `cargo xtask` runs the workspace's development tooling.
+#
+# It exists because the failures worth preventing live at the boundary between
+# Rust and shell: session arguments assembled in bash and consumed by
+# `from_args`, and evidence records emitted by Rust structs and parsed by
+# `grep`. Both directions were untyped, and each cost a physical run with the
+# display manager already down. Shell keeps what it is good at -- `sudo sv`,
+# `chvt`, traps, process waits -- and the seams move here.
+[alias]
+xtask = "run --package xtask --"

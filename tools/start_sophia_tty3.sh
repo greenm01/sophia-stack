@@ -90,6 +90,19 @@ restore_display_manager() {
 }
 trap restore_display_manager EXIT
 
+# Ask whether every profile's session shape is still acceptable, while the
+# display manager is still up and a failure costs a second rather than a TTY.
+#
+# Three physical runs died in argument validation with greetd already down:
+# a desktop default the session could not satisfy, a window manager that could
+# not serve, and a client override that would not parse. This is the check none
+# of them had.
+if ! cargo xtask check-profiles >/dev/null 2>"${TMPDIR:-/tmp}/sophia-profile-check.log"; then
+    echo "A session profile would be refused; not taking the display." >&2
+    cat "${TMPDIR:-/tmp}/sophia-profile-check.log" >&2
+    exit 1
+fi
+
 if [[ -n "$display_manager" ]]; then
     echo "Stopping $display_manager so Sophia can own DRM..."
     sudo sv down "$display_manager"

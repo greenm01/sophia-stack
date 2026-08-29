@@ -258,7 +258,30 @@ fn open_session_physical_input(
 pub(crate) fn run_persistent_xterm_session(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Answer whether these arguments would be accepted, and stop.
+    //
+    // Every check `from_args` performs runs, and nothing else does: no DRM, no
+    // input seat, no display manager stopped. Three physical runs died in this
+    // function's first line with the display manager already down, because
+    // nothing asked the question while it was still cheap to ask.
+    let validate_only = args.iter().any(|arg| arg == "--validate-session-args");
+    let args = if validate_only {
+        args.iter()
+            .filter(|arg| *arg != "--validate-session-args")
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        args.to_vec()
+    };
+    let args = args.as_slice();
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
+    if validate_only {
+        println!(
+            "sophia_live_session_args schema=1 status=accepted arguments={}",
+            args.len(),
+        );
+        return Ok(());
+    }
     if let Ok(profile_mode) = std::env::var("SOPHIA_HAGIA_PROFILE_MODE") {
         if !matches!(
             profile_mode.as_str(),
