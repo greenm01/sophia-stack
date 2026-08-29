@@ -730,7 +730,7 @@ compatibility machinery is excluded; retained product behavior is not.
 
 - [x] Create Hagia as a standalone Nim repository with no Triad history,
   River/Wayland dependency, inherited binary, or shared build scaffolding. Its
-  independent envelope and record decoder passes Sophia's retained corpus.
+  independent envelope and record decoder pass Sophia's retained corpus.
 - [x] Complete Hagia's first socket proof: strict snapshot assembly, exact
   affected-output request, projection encoding, committed outcome, and
   canonical Engine reduction without generated Sophia or Triad protocol types.
@@ -2341,6 +2341,27 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   a generated golden/malformed corpus, an independent C proof client, and a
   23,582,243-state lifecycle check. Permanent compatibility, broader display
   lists, reservation coordination, and signed installed evidence remain open.
+- [x] Ratify one developer-facing Sophia native protocol family rather than a
+  collection of role-specific transports or language tooling. The common
+  contract now owns the envelope, negotiation, capabilities, epochs, bounded
+  complete transfers, explicit outcomes, recovery, extension discipline,
+  source hierarchy, and independent-implementation requirement. WM, shell, and
+  output retain separate endpoints, disclosures, schemas, and stability status;
+  see `docs/sophia-policy-ipc.md`.
+- [ ] Audit `sophia_wm_v1`, `sophia_shell_v1`, and `sophia_output_v1` against
+  the common family lifecycle. Align hello/welcome negotiation, effective
+  bounds, capabilities, epochs, transaction identity, complete-transfer
+  behavior, outcomes, recovery, and extension handling. Every intentional
+  difference must be role-specific and documented rather than an accidental
+  transport fork. This audit does not block the active Milestone 14 direct-
+  scanout proof, but it gates broad shell vocabulary and shell stabilization.
+- [ ] Add one family-level conformance entry point that invokes each role's
+  retained valid, malformed, codec, and lifecycle corpus. Every stable role
+  must retain a complete independently implemented non-Rust lifecycle proof;
+  shell stabilization specifically requires the existing C proof plus Hagia's
+  independent Nim client. The proof must be implementable from normative prose
+  and the checked-in schema without Sophia Rust crates, generated bindings,
+  generators, or implementation-source inspection.
 - [x] Ratify visual styling and compositor-effect extensibility without moving
   compositor authority out of Engine. WM and shell authors own role-appropriate
   visual policy; public protocols carry bounded semantic intent rather than
@@ -2365,7 +2386,8 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   Only then admit capability-gated semantic effect intents to the experimental
   shell contract or a future outbound-gated WM extension; do not reopen frozen
   `sophia_wm_v1` revision 3. Require the Rust and independent C/Hagia corpora and
-  one independently packaged provider proof before considering a stable SDK.
+  one independently packaged provider proof before considering a stable
+  provider interface.
 - [ ] Settle the remaining display-list vocabulary before schema work. Admit
   generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget

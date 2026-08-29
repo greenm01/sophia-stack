@@ -35,11 +35,17 @@ wins when prose disagrees.
 
 Normative documents describe both current and target contracts. They must label
 unimplemented target behavior explicitly.
+
+A developer implementing a native replaceable role starts with the [Sophia
+Native Protocol Family](sophia-policy-ipc.md) for the common wire and lifecycle
+contract, then reads the role-specific specification for the facts and
+candidates that role may exchange.
+
 - [Sophia WM API](sophia-wm-api.md) defines the versioned, metadata-blind native
   policy contract shared by Sophia WMs and legacy compatibility profiles.
-- [Sophia Policy IPC](sophia-policy-ipc.md) defines the target language-neutral
-  framing, endpoint, versioning, transfer, and stability rules shared by public
-  WM and later shell interfaces.
+- [Sophia Native Protocol Family](sophia-policy-ipc.md) is the developer entry
+  point for the shared language-neutral envelope, negotiation, lifecycle,
+  source hierarchy, evolution rules, and per-role stability discipline.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.

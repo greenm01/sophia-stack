@@ -10,9 +10,11 @@ classical X11 WM speaks only to the private synthetic X server inside
 interface. Neither path is an application authority or an alternate
 compositor.
 
-The language-neutral endpoint, framing, versioning, and stability rules are in
-[Sophia Policy IPC](sophia-policy-ipc.md). This document defines the policy
-facts allowed across that connection.
+The common endpoint, framing, negotiation, transaction, versioning, recovery,
+and stability rules are in the [Sophia Native Protocol
+Family](sophia-policy-ipc.md). This document is the `sophia_wm_v1`
+specialization: it defines the policy facts and proposals allowed across that
+connection without creating alternate transport or lifecycle semantics.
 
 ## Ownership
 
@@ -132,6 +134,27 @@ queue may reject new activations under pressure, but it must not merge repeated
 focus, movement, view, or layout actions. Replaceable scene refreshes and
 continuous interaction geometry may coalesce to their latest state.
 
+### Logical Output Contract
+
+`SnapshotOutput` carries only opaque output identity and generation, visible
+focus, full logical bounds, and policy work area. It carries no scale,
+transform, mode, connector identity, enabled flag, or reserved expansion
+space. That omission is permanent for stable revision 3:
+
+- **Scale never crosses.** Engine hands policy a logical space already expressed
+  in the applicable scale.
+- **Transform never crosses.** Rotation is absorbed into the logical bounds.
+- **Mode and timing never cross.** Refresh, pixel clock, and connector timing
+  remain output-authority facts.
+- **Enablement is expressed by omission.** A disabled output is absent from the
+  complete snapshot.
+- **Mirroring is invisible.** One logical output backed by several connectors is
+  still exactly one `SnapshotOutput`.
+
+A policy needing connector mode or head identity has been handed the wrong
+abstraction. Output authority may use those facts through its separate role,
+but it cannot publish them through `sophia_wm_v1`.
+
 ## Projection Proposal
 
 A request repeats the latest strictly admitted private policy generation. A
@@ -220,6 +243,11 @@ epochs, WM recipient epoch, operation class, and optional target generation.
 It is not interchangeable with a broker, shell, or policy action carrying the
 same integer representation. Activation identities are ordered and deduplicated
 inside the recipient epoch; reconnect does not replay an ambiguous request.
+A committed binding may name one advertised operation slot. The numeric action
+ID itself has no operation meaning, and execution occurs only after the
+projection transaction commits. Stale, expired, revoked, wrong-recipient,
+wrong-generation, and duplicate activations fail closed.
+
 
 An unmodified primary press on an unfocused visible surface may produce a
 reduced focus request. Engine retains the ordered input handoff until Engine
@@ -233,6 +261,22 @@ Move, resize, drag, and scrolling interactions remain Engine-owned grabs.
 Policy receives only the target, operation kind, and bounded geometry update
 and returns an ordinary projection proposal. It never receives raw motion,
 button payloads, device identity, or cursor authority.
+
+### Continuous Interaction Vocabulary
+
+Revision 3 permanently defines `Move`, `Resize`, `Drag`, and `Scroll`.
+`Begin`, `Update`, `End`, and `Cancel` are the complete phase vocabulary.
+Move, resize, and drag carry output-local geometry with no axis. Scroll carries
+a signed delta pair, leaves width and height zero, and identifies a horizontal
+or vertical source axis. A non-cancelled zero scroll is invalid; cancellation
+may carry zero because it terminates authority rather than motion.
+
+Replaceable `Update` values may coalesce only for the same exact target, kind,
+axis, capture, and authority epoch. Begin, End, and ordinary cancellation remain
+ordered. A security transition clears capture, discards queued updates, and
+prioritizes one `Cancel`; policy restart advances the observed capture epoch
+before physical input resumes. Drag and scroll have stable wire meanings but no
+live Engine producers yet.
 
 A policy whose private state or validated configuration changes may request a
 fresh cycle with a strictly increasing private generation. The request contains
@@ -253,6 +297,13 @@ Disconnect, malformed transfer, timeout, and crash discard incomplete work and
 leave applications and committed visuals alive. A replacement negotiates from
 the beginning and receives a complete current snapshot. Engine does not store
 or interpret the predecessor's workspaces, tags, views, or layout history.
+
+The owner re-offers a cycle after stale rejection or timeout because those
+outcomes mean the scene may have moved and recovery begins by reading a fresh
+snapshot. Invalid rejection and disconnect are terminal for that connection;
+repeating the same candidate would spin rather than recover. A client waits for
+the owner to send the replacement snapshot instead of polling or retrying on a
+timer.
 
 A WM may maintain a private session-local checkpoint. It must reconcile that
 checkpoint against the new snapshot and discard stale opaque IDs. Switching to
@@ -283,13 +334,14 @@ or fake-server drawing are rejected rather than widening Engine or the bridge.
 
 ## Stability Gate
 
-`sophia_wm_v1` remains experimental until the retained Triad desktop behavior
-has been ported through Hagia's correctly separated policy, shell, session,
-broker, and portal authorities. Only after that product port stops exposing
-missing WM facts or operations do the independently implemented Hagia client,
-X11 WM bridge, and C conformance client run identical negotiation, snapshot,
+The revision-3 freeze required retained Triad behavior to stop exposing missing
+WM facts or operations and required the independently implemented Hagia client,
+X11 WM bridge, and C conformance client to pass identical negotiation, snapshot,
 projection, action, focus, multi-output, rejection, timeout, restart, and
-last-layout freeze tests. Those offline tests now pass, including an immutable
-archived C99 client. Stability still waits for the retained physical output
-apply/rollback archive recorded by the port ledger. Stable revisions remain
-supported according to [Sophia Policy IPC](sophia-policy-ipc.md).
+last-layout tests. Those gates passed, including the retained physical-output
+apply/rollback evidence and an immutable archived C99 client.
+
+`sophia_wm_v1` major 1 revision 3 is therefore stable. Later shell, broker,
+portal, and output work remains separately gated and cannot reopen its frozen
+records. Stable revisions remain supported according to the [Sophia Native
+Protocol Family](sophia-policy-ipc.md).

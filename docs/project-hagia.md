@@ -436,14 +436,14 @@ process. Implement the public Sophia wire independently in Nim. During early
 Sophia protocol development, keep the bootstrap client narrow: complete
 snapshots, output projections, registered actions, placement, sizing, focus,
 removal, and restart. That profile proves the boundary but does not define the
-revision-3 feature ceiling. Revision 3 remains experimental until the retained
-Triad behavior is ported across Hagia policy, Hagia Shell, Sophia services, and
-the required brokers/portals. Additional retained layouts,
-candidate-validated configuration, and bounded Janet behavior therefore remain
-on the freeze path even though they need not block daily use of the bootstrap
-profile.
+revision-3 feature ceiling. The retained WM behavior used to freeze that
+ceiling has now passed its cross-client and physical-output gates, so
+`sophia_wm_v1` major 1 revision 3 is stable. Remaining Hagia Shell, service,
+broker, portal, layout, configuration, and bounded Janet work belongs to
+separately authorized roles or private policy evolution; it cannot reopen the
+frozen WM records.
 
-The standalone repository's independent Nim envelope and record decoder passes
+The standalone repository's independent Nim envelope and record decoder pass
 Sophia's retained valid and malformed corpus. Its proof client also passes
 authenticated multi-cycle snapshot/request/projection/outcome exchanges
 through the canonical Engine reducer. Hagia now has private nine-view policy,

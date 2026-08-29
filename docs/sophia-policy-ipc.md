@@ -1,14 +1,85 @@
-# Sophia Policy IPC
+# Sophia Native Protocol Family
 
-**Role:** normative target contract for external policy and shell interfaces.
-**Status:** implemented and stable at interface major 1, wire revision 3. The
-codecs, session-owned transport, transfer reducers, canonical Engine projection
-reducer, and supervised Hagia session path are production contracts.
+**Role:** normative common wire, lifecycle, and evolution contract for
+replaceable native desktop roles.
+**Status:** the 24-byte frame envelope and `sophia_wm_v1` major 1 revision 3
+are stable. Other interfaces retain the individual status recorded below; this
+document does not promote an experimental role by grouping it into the family.
 
-Sophia exposes replaceable desktop policy through local, language-neutral IPC.
-The protocol is the extension point. Hagia, the X11 WM bridge, and later shells
-are ordinary clients of separately authorized interfaces; none has a private
-Engine entry point.
+Sophia exposes replaceable desktop components through local, language-neutral
+IPC. The protocol family is the public extension point. Hagia, the X11 WM
+bridge, shells, and later authorities are ordinary clients of separately
+authorized interfaces; none has a private Engine entry point.
+
+This is the developer entry point for the shared protocol contract. A role
+specification defines which facts and proposals may cross one authority
+boundary. It inherits the envelope, negotiation, identity, transaction,
+transfer, outcome, recovery, and evolution rules here instead of inventing a
+parallel transport model. One family does not mean one socket: roles retain
+separate endpoints, capabilities, disclosure budgets, and protection domains.
+
+## Interface Status
+
+| Interface | Authorized role | Current status | Role specification |
+| --- | --- | --- | --- |
+| `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
+| `sophia_shell_v1` major 1 revision 1 | metadata-bearing shell | experimental title-only descriptor switcher | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
+| `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
+| later broker, portal, and session families | separately authorized services | not specified | future role specifications |
+
+A shared envelope or implementation crate does not give one interface the
+status or compatibility promise of another. Every stable role names its own
+major, revision, capability set, retained corpus, and independent implementation
+evidence.
+
+## Contract And Source Of Truth
+
+Authority and disclosure rules come from Sophia's normative architecture. This
+document owns the common transport and lifecycle semantics. A role specification
+owns that interface's permitted facts, proposals, state machine, and recovery
+behavior. The checked-in KDL schema for a role owns its binary layouts, message
+kinds, fixed limits, and wire-level enum values.
+
+Golden and malformed corpora pin the schema's bytes and rejection surface; they
+are evidence, not an alternate specification. Generated codecs, headers, wire
+tables, reference clients, generators, and check scripts are conveniences and
+conformance tools. They cannot add behavior or authority absent from the
+normative prose and role schema. Any disagreement among those sources is a
+release-blocking specification defect rather than permission for an
+implementation to choose whichever form it prefers.
+
+## Common Developer Lifecycle
+
+Role interfaces use the same conceptual lifecycle even when their frozen
+message names differ:
+
+1. The session creates the role-specific owner-only endpoint and supervises the
+   separately authorized peer.
+2. The client sends `ClientHello` with its supported revision range and required
+   or requested capabilities. `ServerWelcome` selects the revision, capability
+   subset, connection epoch, and effective bounds.
+3. The session sends one complete immutable fact set or snapshot for the
+   transaction and applicable authority generations.
+4. The client returns one bounded complete candidate or proposal tied to those
+   exact identities. It never mutates Engine state directly.
+5. The owning authority validates the whole candidate and reports an explicit
+   prepared, presented, committed, stale, rejected, superseded, timed-out, or
+   role-specific failure outcome. A role admits only the subset its schema
+   defines.
+6. Disconnect or replacement advances the connection epoch, discards incomplete
+   old-epoch work, and preserves the last coherent committed or presented state.
+   A replacement begins again from a complete current fact set.
+
+“Candidate” is the common prose term, not a wire rename: the stable WM family
+uses projection messages, while the experimental shell family uses candidate
+messages. Role specifications map their exact messages onto this lifecycle.
+
+A conforming client must be implementable from the published normative
+documents, checked-in role schema, and ordinary Unix IPC using fixed-width
+primitives. It must not require Sophia's Rust crates, a generator, generated
+bindings, implementation-source inspection, or knowledge of which crate handles
+a message. Independent bindings and clients prove this property; they do not
+create it.
 
 ## Ownership
 
@@ -37,7 +108,7 @@ payloads, tags, or policy-private view identities. A shell interface may later
 receive broker-approved presentation data, but that grant cannot confer focus
 or placement authority.
 
-## Dependency And Wire Policy
+## Language Neutrality And Wire Authority
 
 The wire specification is independently implementable. A client does not need
 to link a Sophia library, use Rust, run a generator, or adopt Wayland, CBOR, or
@@ -60,32 +131,34 @@ interface family and revision inside bounded handshake packets. Unknown frame
 versions, message kinds, enum values, nonzero reserved fields, excessive
 counts, truncated frames, and trailing bytes fail closed.
 
-Stable layouts have one checked-in declarative schema. Repository tooling may
-generate Rust and C codecs, documentation tables, and golden vectors, but the
-generated outputs are checked in and normal builds do not run the generator.
-The schema supports only fixed integers, opaque IDs, strict booleans, enums,
-flags, bounded vectors, bounded bytes or UTF-8 text, optionals, records, and
-tagged unions. It has no maps, recursion, floats, implicit defaults, or
-unbounded fields.
+Every published interface layout has one checked-in declarative schema.
+Repository tooling may generate Rust and C codecs, documentation tables, and
+golden vectors, but generated outputs are checked in and normal builds do not
+run the generator. The schema vocabulary contains only fixed integers, opaque
+IDs, strict booleans, enums, flags, bounded vectors, bounded bytes or UTF-8
+text, optionals, records, and tagged unions. It has no maps, recursion, floats,
+implicit defaults, or unbounded fields.
 
-The current draft schema is `protocol/sophia-wm-v1.kdl`. Its retained
-[wire tables](generated/sophia-wm-v1-wire.md), Rust codec, allocation-free C99
-codec, and valid and malformed corpora are one generated unit. Run
-`tools/check_policy_protocol.sh` to reject generator drift and exercise both
-language implementations against the shared bytes.
+The current public role schemas are:
 
-Snapshot output, surface, and binding records and projection output and
-placement records are fixed-width schema entries. Output-record order carries
-stacking order indirectly through each output's following placement count.
-Revision 1 admits only the identity transform; later additive revisions may
-name more transforms without introducing floating-point wire values.
+- `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3; and
+- `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
+  revision 1.
 
-Each snapshot surface names its current committed output; zero means hidden.
-Each snapshot output names its visible focused surface, if any. Each projection
-request carries the complete ordered set of affected output IDs, not merely a
-count. These fields let a newly connected policy distinguish hidden surfaces,
-reconstruct output membership and focus, and answer the exact atomic scope
-selected by Engine.
+`sophia_output_v1` does not yet have a checked-in declarative schema. Its
+handwritten experimental codec is implementation evidence, not a wire
+authority or compatibility promise. The family audit must extract and validate
+that role schema before output stabilization; until then, the output chapter
+below remains a target contract rather than an independently implementable
+public layout.
+
+The WM [wire tables](generated/sophia-wm-v1-wire.md), Rust and C99 codecs, and
+valid and malformed corpora are one generated unit. The shell schema has the
+same generated-codec and corpus discipline. `tools/check_policy_protocol.sh`
+and `tools/check_shell_protocol.sh` exercise the current role implementations
+against their shared bytes. A single family-level conformance entry point
+remains a roadmap gate; the separate scripts do not define separate protocol
+semantics.
 
 ## Endpoints And Admission
 
@@ -237,173 +310,38 @@ compatibility surface.
 
 ## Bounded Transfers
 
-One frame remains limited to 64 KiB. Complete snapshots and projections may
-therefore use strict begin/chunk/end transfers. Every chunk repeats the
-transaction and connection identity and carries an exact ordinal. The begin
-record declares all category counts; the end is accepted only after those
-counts and ordinals match exactly.
+One frame remains limited to 64 KiB. Complete role fact sets and candidates
+may therefore use strict begin/chunk/end transfers. A role specification maps
+its frozen message names onto those phases. Every chunk repeats the transaction
+and connection identity and carries an exact ordinal. The begin record declares
+all category counts; the end is accepted only after those counts and ordinals
+match exactly.
 
 Each direction permits one transfer in flight and one coalesced latest pending
-snapshot. Partial, duplicate, reordered, excessive, or timed-out transfers are
-discarded without changing committed state. The first WM interface supports at
-most 16 outputs, 1,024 manageable surfaces, and 256 binding registrations.
+fact set. Partial, duplicate, reordered, excessive, or timed-out transfers are
+discarded without changing committed or presented state. Each role schema
+publishes hard ceilings, and the welcome packet may select tighter effective
+bounds. Stable `sophia_wm_v1` currently permits at most 16 outputs, 1,024
+manageable surfaces, and 256 binding registrations; those values are not
+automatically shell or output limits.
 
 Coalescing applies only to replaceable scene refreshes and continuous reduced
 interaction geometry. Non-idempotent action activations use a bounded ordered
 queue and are never merged merely because they carry the same opaque action
 token.
 
-The Rust boundary is split deliberately. `sophia-runtime` hosts the
-owner-only socket, authenticates the exact supervised peer, negotiates a
-connection epoch, and assembles transfers. `sophia-protocol` owns generated
-records and semantic conversion. `sophia-engine` owns the canonical atomic
-projection reducer. The session accepts only this path.
-`--wm-interface=sophia_wm_v1` may make the choice explicit; the removed
-`api_v7` value is rejected.
+## WM Interface
 
-The public session binds the endpoint before spawning its one policy process,
-authorizes the exact child PID, and keeps blocking wire I/O in a bounded
-worker. Each cycle sends a complete Engine snapshot and one exact projection
-request. A validated proposal remains staged while frontend configure and
-renderable-content obligations settle. Only the owner-loop commit promotes
-that staged reducer successor and returns `committed`; timeout, invalidation,
-disconnect, or replacement retains the previous complete projection.
+Stable `sophia_wm_v1` specializes this family for metadata-blind spatial
+policy. Its complete snapshot, projection, logical-output, action, interaction,
+settlement, and recovery semantics live in the [Sophia Window Manager
+API](sophia-wm-api.md). Those rules are not common shell or output semantics and
+are not duplicated here.
 
-The X frontend refines this generic settlement with protocol-visible
-presentation state. Fullscreen, maximized, minimized, and restored candidates
-do not promote until the corresponding `_NET_WM_STATE` and `WM_STATE` update
-has been flushed and acknowledged. Rejection restores the prior frontend value.
-No X atom or ICCCM/EWMH rule enters the public policy schema.
-
-The Rust reference client completes a full authenticated snapshot, request,
-proposal, configuration, and session-operation cycle over this transport. The
-generic X11 bridge now runs xmonad as a configured public revision-3 peer and
-translates only complete metadata-free scenes through a private synthetic X
-server. A standalone C99 client, linked only to the retained C codec and the
-system C library, completes the same session cycle and commits through the same
-reducer. An immutable copy of that C codec and client is retained below
-`protocol/archive/sophia-wm-v1-r3` and must continue to pass unchanged.
-
-## Stable Spatial Semantics
-
-`sophia_wm_v1` uses complete scene snapshots and complete affected-output
-projections as its semantic baseline. Transport implementations may coalesce
-or later encode equivalent deltas, but they must preserve that behavior.
-
-A snapshot contains one explicit active output, output geometry, and all live
-manageable surfaces. Surface
-records carry opaque identity, generation, capabilities, constraints, reduced
-transient relationships, frontend presentation requests, and current committed
-geometry and state. They contain no workspace, tag, view, layout-tree, or
-application identity.
-
-A request carries the latest admitted policy-private generation. A proposal
-names its base snapshot generation, explicitly selects one live active output,
-and completely replaces each
-listed output's ordered projection. Order defines stacking. Each placement may
-request content size, outer geometry, crop, and transform. Visibility follows
-projection membership; a live surface absent from every output is hidden.
-Moving a surface between outputs requires both outputs in one proposal.
-
-Engine validates the complete candidate before mutation. The active connection
-epoch, transaction, snapshot generation, output and surface generations,
-counts, capabilities, constraints, geometry, uniqueness, and focus must all be
-valid. A surface may appear on at most one output, and focus must name a visible
-focusable surface. One surface shared by two logical outputs stays inexpressible
-and raises `DuplicateSurface`; mirroring does not work that way, as the output
-logical-space contract below records.
-
-### The Output Logical Space Is The Whole Contract
-
-`SnapshotOutput` carries `output`, `generation`, `focus`, `bounds`, and
-`work_area`. It carries no scale, transform, mode, connector identity, or enabled
-flag, and it has no reserved space. That is deliberate and, once the revision
-freezes, permanent: widening the record is a layout change, so every fact below
-must reach policy through the logical rectangle or not at all.
-
-- **Scale never crosses.** Engine owns display scaling and hands policy a logical
-  space already expressed in it. A policy-side scale, such as Hagia's fixed-point
-  column-width ratio, is a private layout parameter that happens to share the name.
-- **Transform never crosses.** Rotation is absorbed by Engine presenting
-  pre-rotated logical bounds. A rotated output is an output with different bounds.
-- **Mode and timing never cross.** Refresh, pixel clock, and connector timing are
-  output-authority concerns with no policy meaning.
-- **Enablement is expressed by omission.** A disabled output is absent from the
-  complete snapshot rather than present with a flag, which the permanent 16-output
-  maximum keeps bounded.
-- **Mirroring is invisible.** One logical output backed by N connectors projects as
-  exactly one `SnapshotOutput`; no connector identity or head count crosses.
-
-The pressure on this contract comes from the output authority, which handles every
-one of those facts and will be tempted to publish them. It must not. A policy that
-needs to know an output's mode has been handed the wrong abstraction.
-
-An active-output change is valid only when the affected set contains both the
-old and new output. Fullscreen placements equal full output bounds; all other
-presentation states remain within the work area; minimized placements cannot
-hold focus and do not enter the render-layer candidate. `PolicyDirty` admits
-only a newer private generation and coalesces its nonempty live-output scope
-without dropping a refresh that arrives during older in-flight work.
-
-Commit, stale rejection, invalid rejection, and timeout are explicit terminal
-outcomes. Rejection, malformed input, transport failure, or policy restart
-preserves the last committed projection. A replacement policy receives a full
-Engine snapshot; it never receives its predecessor's private state.
-
-The owner re-offers a cycle for exactly the outcomes a stateless policy client
-recovers from by re-reading a snapshot: a stale rejection and a timeout. Both
-mean the scene moved rather than that the proposal was wrong, and the owner is
-the party that observed the move, so the obligation to re-arm is the owner's
-and not a client's to work around. An invalid rejection and a disconnection are
-terminal in the other direction: the scene did not move, so re-offering the
-cycle would spin on the same faulty proposal, and ending the connection lets
-the supervisor install a replacement. These two halves are one contract — a
-client that recovers by waiting for a snapshot the owner never sends blocks
-until its socket deadline and dies, and repeated deaths exhaust the supervisor
-restart budget.
-
-Registered shortcuts and session operations use advertised opaque tokens.
-Engine matches physical input and sends only the action token plus reduced
-policy context. A client cannot provide executable paths, arguments, signals,
-protocol handles, or raw input.
-
-### Continuous Policy Interactions
-
-Revision 3's interaction vocabulary is permanently `Move`, `Resize`, `Drag`,
-and `Scroll`. `Begin`, `Update`, `End`, and `Cancel` are the complete phase
-vocabulary. Move, resize, and drag carry output-local geometry and use axis zero.
-Scroll carries a signed delta pair in `interaction_x`/`interaction_y`, leaves
-width and height zero, and identifies a horizontal or vertical source axis in
-`interaction_axis`. A non-cancelled zero scroll is invalid; cancellation may
-carry a zero delta because it terminates authority rather than motion.
-
-This consumes the `u16` formerly named `reserved_cause` without changing the
-fixed `ProjectionRequest` layout. The Rust semantic packet exposes the axis so
-independent clients do not have to retain wire-only state. It is still reduced
-policy input: Engine owns physical events, capture, pacing, and cancellation.
-Replaceable `Update` values may coalesce only for the same exact target, kind,
-axis, capture, and authority epoch. Ordered begin/end and ordinary cancellation
-never coalesce. The live owner now applies that rule to Engine-captured move and
-resize: it retains at most one latest queued update behind the in-flight request.
-A security transition clears local capture, discards queued values for that
-interaction, and prioritizes one `Cancel`; Hagia treats cancellation as a no-op on
-spatial state rather than applying its payload as a final delta. A policy restart
-also advances the locally observed capture epoch before physical input resumes.
-Drag and scroll have fixed wire meanings but do not yet have live Engine producers.
-
-An opaque action token is not a global `u64` authority. Acceptance is scoped by
-issuer role and authority, issuer connection and revocation epochs, recipient
-role and authority epoch, operation class, and—when the operation names
-something—its opaque slot and generation. Each physical activation also has a
-recipient-epoch-local identity for duplicate rejection. A broker-issued
-toplevel action cannot be reinterpreted as a policy or session action; stale,
-expired, revoked, wrong-recipient, wrong-generation, and duplicate activations
-fail closed. The experimental public session mints fresh session-local tokens.
-A committed binding explicitly names an optional operation slot; no numeric
-action range has operation semantics. The session validates connection epoch,
-the bound and advertised slot, opaque token, target permission, and exact
-request identity, and executes the corresponding session-owned operation only
-after the projection transaction commits. No alternate token encoding exists.
+The production session, Rust reference client, generic X11 bridge, independent
+Hagia implementation, and immutable archived C99 client all enter through the
+same revision-3 role socket and canonical Engine reducer. None is a privileged
+alternative to the public protocol.
 
 ## Output Authority Interface
 
@@ -446,6 +384,11 @@ is now modeled and specified for the smallest title-only descriptor-switcher
 workflow. It is a falsifiable pre-stability contract, not the complete shell
 display-list, reservation, or service vocabulary.
 
+The [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) specializes
+the common negotiation, complete-fact-set, bounded-candidate, explicit-outcome,
+epoch, and recovery lifecycle here. It does not define a shell-only transport
+or an alternate route into Engine.
+
 Its minimum boundary is already fixed: Engine retains rendering and hit-testing;
 brokers retain metadata sanitization; the shell receives only authorized
 presentation facts and emits bounded shell proposals or opaque actions. Shell
@@ -470,25 +413,31 @@ preemptive authority path and do not wait for an optional desktop shell or WM.
 
 ## Evidence Before Stability
 
-Wire conformance requires identical golden vectors in generated Rust and C,
-malformed-frame mutation coverage, and an independently compiled C client.
-Semantic conformance runs the same black-box corpus against the Rust reference
-WM, Hagia, and the X11 WM bridge.
+Each role earns stability independently. Before a role freezes, its normative
+prose, checked-in schema, generated outputs, and valid and malformed corpora
+must agree. Rust and at least one independently implemented non-Rust client
+must decode the same bytes, and a black-box client must complete the role's
+minimum negotiate/facts/candidate/outcome/recovery lifecycle through the
+canonical owning authority. A stable role retains an immutable old client as a
+compatibility gate for every release.
 
-Hagia is a standalone Nim repository with no Triad history or River/Wayland
-runtime dependency. Its independent envelope and record decoder passes the
-same retained valid and malformed corpus, and its proof client completes one
-authenticated snapshot/request/projection/outcome cycle through the canonical
-reducer. Hagia is the eventual Sophia-native port of Triad's useful policy and
-desktop experience. It now also runs as the explicitly selected experimental
-live policy client; broader product migration and protocol stability remain
-deferred.
+`sophia_wm_v1` revision 3 has met that gate. The Rust reference client, generic
+X11 WM bridge, standalone Nim Hagia client, and archived C99 client exercise
+the same role socket and reducer. Their retained coverage includes negotiation,
+capabilities, complete and chunked transfers, actions, interactions, geometry,
+constraints, visibility, multi-output moves, focus, stale rejection, atomic
+failure, timeout, crash, restart, and last-layout preservation.
 
-The first public revision is declared stable only after the retained Triad
-desktop behavior has been ported through its correctly separated authorities
-and no open retained workflow can still falsify the WM contract. All three WM
-paths then prove negotiation, capabilities, complete and chunked transfers,
-actions, geometry, constraints, visibility, multi-output moves, focus, stale
-rejection, atomic failure, timeout, crash, restart, and last-layout
-preservation. Thereafter an archived v1 client remains a compatibility gate for
-every release.
+Hagia has no Triad history or River/Wayland runtime dependency. Its independent
+envelope and record decoder pass the retained valid and malformed corpus, and
+its proof client completes an authenticated snapshot/request/projection/outcome
+cycle without linking Sophia's Rust protocol implementation. That proves the
+stable WM role's language neutrality; it does not promote the experimental
+shell or output roles.
+
+Every later stable role owes the same kind of independent full-lifecycle proof,
+adapted to that role's vocabulary and authority boundary. The repository's
+current per-role conformance scripts must converge behind one family-level
+entry point before shell stabilization so a contributor can validate the
+common contract and all stable role specializations without discovering a
+tool-specific protocol.

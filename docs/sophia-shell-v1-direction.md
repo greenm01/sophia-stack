@@ -3,12 +3,18 @@
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
 **Status:** revision 1 descriptor-switcher experiment; not stable.
 
-The experimental wire contract is `protocol/sophia-shell-v1.kdl`. This note
+The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
 records how broader shell vocabulary will be derived, the external evidence
 that method draws on, and where the work sits in the roadmap. Revision 1 is a
 falsifiable title-only slice, not a compatibility promise. `docs/architecture.md`,
 `docs/sophia-policy-ipc.md`, and `docs/compositor-graphics.md` remain
 authoritative wherever this note appears to disagree with them.
+
+The [Sophia Native Protocol Family](sophia-policy-ipc.md) supplies the common
+frame, negotiation, epochs, complete-transfer discipline, explicit outcomes,
+recovery, and evolution rules. This note derives only the shell-specific facts,
+candidates, and authority constraints. It does not define a shell-only
+transport, library requirement, or alternate Engine entry point.
 
 ## The Decision
 
@@ -233,6 +239,15 @@ native handles, and arbitrary uniform blocks do not cross. Specialized
 renderer implementations are trusted build-linked providers selected as
 packaged desktop-profile inputs; their private Rust interface evolves with the
 renderer and is not frozen with `sophia_shell_v1`.
+
+The semantic capability names and bounded parameters are part of the public,
+language-neutral role schema. A shell author can choose an admitted effect and
+fallback from any language using ordinary IPC without implementing, linking,
+or even knowing the renderer provider that lowers it. The private Rust provider
+trait is an Engine implementation seam, not an SDK and not a second public
+contract. Most visual identity remains ordinary shell policy, display-list
+content, cached artwork, and semantic intents; authoring provider code is only
+for a genuinely new trusted renderer operation.
 
 This also preserves the WM/shell separation. `WmChromePolicy` remains the
 frozen revision-3 WM's narrow metadata-blind styling surface. A desktop family

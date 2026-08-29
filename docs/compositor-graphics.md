@@ -175,6 +175,16 @@ libraries and a sandboxed effect host remain possible later designs, but neither
 is promised until multiple provider implementations demonstrate the required
 ABI, isolation, synchronization, and failure behavior.
 
+That private implementation seam does not weaken the language neutrality of
+the [Sophia Native Protocol Family](sophia-policy-ipc.md). WM and shell
+authors select semantic capabilities through their role IPC and never link the
+provider trait. Ordinary visual identity—
+layout, color, artwork, cached content, and admitted transitions—must remain
+expressible without provider code. A family that needs a genuinely new
+scene-sampling or renderer-specialized operation may maintain a separately
+packaged provider, but that is renderer integration rather than a requirement
+for implementing the WM or shell protocol.
+
 A provider is implementation, not authority. It receives only the bounded
 renderer-private input needed to lower an already validated effect. It does not
 receive protocol objects, raw metadata, physical input, policy state, DRM/KMS

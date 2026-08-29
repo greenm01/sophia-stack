@@ -40,6 +40,13 @@ native WM and shell family, not the definition of either interface. A stable
 policy-interface revision remains accepted by later Sophia releases unless an
 explicit security amendment records its retirement.
 
+Those replaceable roles form one coherent native protocol family. They share a
+wire envelope, negotiation and capability discipline, transaction and epoch
+model, explicit outcomes, recovery rules, and extension policy while retaining
+separate sockets and authority-specific facts. A role may specialize that
+lifecycle; it may not grow a private transport or require Sophia's Rust
+implementation.
+
 A future Sophia-native compositor/Engine protocol, if product evidence calls
 for one, would be another bounded route to the same Engine mechanisms. It would
 not dictate one shell, layout, or application model.
@@ -83,6 +90,15 @@ violates one is not a Sophia design.
    language-neutral IPC interface and receives only its separately authorized
    projection. Sharing a binary, repository, protocol library, or language
    cannot create a private path into Engine or combine WM and shell authority.
+9. **One native protocol family.** Public replaceable-role interfaces inherit
+   one envelope, negotiation and capability model, epoch and transaction
+   discipline, bounded complete-transfer rules, explicit outcomes, recovery
+   behavior, and extension policy. Role separation changes endpoints,
+   disclosures, and vocabulary; it does not create alternate transports or
+   tool-specific contracts. An independent implementation must be possible
+   from the normative prose and checked-in role schema using ordinary Unix IPC.
+   Bindings, generators, reference clients, and conformance tools are evidence
+   and convenience, not protocol authority.
 
 ## Hard Architectural Non-Goals
 
@@ -215,6 +231,7 @@ does not mean “cannot fail.”
 | [dod.md](dod.md) | Data boundaries, typed IDs, bounded records, private state |
 | [namespaces-and-portals.md](namespaces-and-portals.md) | Admission, profiles, capabilities, grant lifecycle |
 | [sophia-wm-api.md](sophia-wm-api.md) | Versioned blind-WM policy contract |
+| [sophia-policy-ipc.md](sophia-policy-ipc.md) | Common native-role wire, lifecycle, evolution, and source hierarchy |
 | [sophia-x-authority.md](sophia-x-authority.md) | X11 frontend contract and current coverage |
 | [x11-compatibility-matrix.md](x11-compatibility-matrix.md) | Evidence-admitted X11 results |
 

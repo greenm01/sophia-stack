@@ -1160,8 +1160,10 @@ specification decision admits a bounded provider.
   fail-closed visual integrity.
 
 The former Rust WM API v7 transport is removed. The durable public boundary is
-the independently versioned `sophia_wm_v1` interface described in
-[Sophia Policy IPC](sophia-policy-ipc.md). Engine owns physical shortcut
-matching, projection validation, visibility, focus authority, and opaque
+the independently versioned `sophia_wm_v1` interface described in the
+[Sophia Window Manager API](sophia-wm-api.md), inheriting the common contract
+from the [Sophia Native Protocol Family](sophia-policy-ipc.md). Engine
+owns physical shortcut matching, projection validation, visibility, focus
+authority, and opaque
 session actions. Native Sophia WMs consume this contract directly; legacy X11
 WMs require the metadata-blind compatibility bridge and a bounded profile.
