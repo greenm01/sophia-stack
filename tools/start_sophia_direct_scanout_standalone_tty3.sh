@@ -20,8 +20,11 @@ set -euo pipefail
 #
 # It is bounded and sized, so the run needs no operator beyond starting it: the
 # shell inside it exits and `--exit-when-startup-exits` ends the session with
-# it. Ctrl+Alt+Delete logs out early; Ctrl+Alt+Backspace is emergency recovery
-# as always.
+# it. That is the only ordinary exit. A session without a window manager has no
+# shortcuts at all -- they are resolved against a policy client's configuration
+# (`wm/public_policy.rs:2136-2145`) and there is no policy client here -- so
+# Ctrl+Alt+Delete does nothing and Ctrl+Alt+Backspace is the only way out
+# early.
 #
 # The input-latency harness cannot answer this question: it proves input
 # reaches a terminal, so it needs an input proof, and the session refuses
@@ -45,8 +48,10 @@ printf '%s\n' \
     "  holding ${SOPHIA_STANDALONE_HOLD_SECONDS}s, no window manager, no chrome." \
     '' \
     '  1. Confirm the client fills the screen edge to edge.' \
-    '  2. It exits on its own; the session ends with it.' \
-    '  3. Ctrl+Alt+Delete logs out early. Ctrl+Alt+Backspace is emergency only.' \
+    '  2. Wait; it exits on its own and the session ends with it.' \
+    '  3. There is no logout shortcut: no window manager means no shortcuts.' \
+    '     Ctrl+Alt+Backspace is the only way out early, and it is recorded' \
+    '     as emergency recovery.' \
     '  4. Back at tty3, run:' \
     '     tools/verify_direct_scanout_standalone.sh' \
     '' \

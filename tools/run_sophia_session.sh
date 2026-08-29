@@ -46,12 +46,12 @@ case "$wm" in
         )
         ;;
     native)
-        native_wm="$(resolve_program "${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/debug/sophia-wm-demo}" sophia-wm-demo)"
-        if [[ -z "$native_wm" ]]; then
-            echo "The native selection requires sophia-wm-demo." >&2
-            exit 1
-        fi
-        wm_args=("--wm-process=$native_wm")
+        # No window manager. `sophia-wm-demo` lost its serving mode in
+        # 83596bfc with the experimental WM API v7, so naming it here made
+        # every native session exit on a usage string. Hagia is Sophia's
+        # native WM; this selection proves the session and its action
+        # mappings, which are session-level and need no policy client.
+        wm_args=()
         ;;
     hagia)
         hagia="$(resolve_program "${SOPHIA_HAGIA_BIN:-}" hagia)"

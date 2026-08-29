@@ -6,7 +6,6 @@ source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
 source "$ROOT_DIR/tools/lib/session_terminal.sh"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 SOPHIA_WM_BRIDGE_BIN="${SOPHIA_X11_WM_BRIDGE_BIN:-$ROOT_DIR/target/release/sophia-x11-wm-bridge}"
-SOPHIA_NATIVE_WM_BIN="${SOPHIA_NATIVE_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
 SOPHIA_HAGIA_BIN="${SOPHIA_HAGIA_BIN:-$(command -v hagia 2>/dev/null || true)}"
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
@@ -218,11 +217,6 @@ if [[ "$SESSION_PROFILE" == xmonad && ! -x "$SOPHIA_WM_BRIDGE_BIN" ]]; then
     echo "Sophia WM bridge is not executable: $SOPHIA_WM_BRIDGE_BIN" >&2
     exit 1
 fi
-if [[ ( "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone )
-    && ! -x "$SOPHIA_NATIVE_WM_BIN" ]]; then
-    echo "Sophia native WM is not executable: $SOPHIA_NATIVE_WM_BIN" >&2
-    exit 1
-fi
 if [[ "$SESSION_PROFILE" == hagia && ! -x "$SOPHIA_HAGIA_BIN" ]]; then
     echo "Hagia policy executable is not executable: ${SOPHIA_HAGIA_BIN:-unavailable}" >&2
     exit 1
@@ -404,19 +398,20 @@ echo "Emergency input guard armed."
 lifecycle_phase complete input_guard
 
 if [[ "$SESSION_PROFILE" == standalone ]]; then
-    echo "Starting Sophia's standalone natural-size application proof on $DISPLAY_NAME."
-    echo "No terminal, xmonad bridge, or status bar will run."
-    if [[ "${SOPHIA_STANDALONE_WORKLOAD:-}" == xterm ]]; then
-        echo "Let the bounded xterm exit automatically; do not use the logout shortcut."
-    else
-        echo "Use Super+Shift+Q to log out after inspecting the application."
-    fi
+    echo "Starting Sophia's standalone single-application proof on $DISPLAY_NAME."
+    echo "No terminal, window manager, xmonad bridge, or status bar will run."
+    echo "There are no shortcuts: they need a policy client and none runs here."
+    echo "Quit the application to end the session; Ctrl+Alt+Backspace is the"
+    echo "emergency path and is recorded as one."
 elif [[ "$SESSION_PROFILE" == xmonad ]]; then
     echo "Starting Sophia with experimental xmonad layout policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
 elif [[ "$SESSION_PROFILE" == native ]]; then
-    echo "Starting Sophia with its native WM policy on $DISPLAY_NAME."
-    echo "Use Super+Enter for Kitty or Super+Shift+Q to log out."
+    echo "Starting Sophia's session-lifecycle proof on $DISPLAY_NAME."
+    echo "No window manager runs; Hagia is Sophia's native WM."
+    echo "There are no shortcuts: they need a policy client and none runs here."
+    echo "Exit the terminal to end the session; Ctrl+Alt+Backspace is the"
+    echo "emergency path and is recorded as one."
 elif [[ "$SESSION_PROFILE" == hagia ]]; then
     echo "Starting Sophia with Hagia's native policy on $DISPLAY_NAME."
     echo "Use Super+Enter for Kitty or Ctrl+Alt+Delete to log out."
@@ -540,39 +535,27 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
         standalone_direct_scanout=1
     fi
-    # The direct-scanout probe runs no window manager.
+    # This profile runs no window manager.
     #
     # It cannot: `sophia-wm-demo` lost its serving mode in 83596bfc with the
     # experimental WM API v7, so the only subcommands left are proof clients
     # and every session naming it as `--wm-process` dies at startup with a
-    # usage string. It also does not need one. A session without a WM honours
-    # the client's own geometry, so a client asked for exactly the head's size
-    # fills it, and no WM means no focus ring and no border -- the two things
-    # the standalone policy would have drawn over the frame anyway.
+    # usage string. It does not need one either. A single-application proof
+    # has nothing to arrange, a session without a WM honours the client's own
+    # geometry, and no WM means no focus ring and no border over the frame --
+    # which is what direct scanout requires anyway.
     #
-    # Logout is Ctrl+Alt+Delete from the desktop profile, which is a
-    # session-level binding and needs no policy client to deliver it.
-    if (( standalone_direct_scanout == 0 )); then
-        standalone_wm_template="${SOPHIA_STANDALONE_WM_CONFIG:-$ROOT_DIR/tools/fixtures/standalone_sophia_wm.kdl}"
-        standalone_wm_config="$STATE_DIR/standalone-wm.kdl"
-        if [[ ! -f "$standalone_wm_template" ]]; then
-            echo "The standalone WM policy is missing: $standalone_wm_template" >&2
-            exit 1
-        fi
-        install -m 600 "$standalone_wm_template" "$standalone_wm_config"
-    fi
+    # There is no logout shortcut either. Shortcuts are resolved against a
+    # policy client's configuration (`wm/public_policy.rs:2136-2145`), so a
+    # session without one registers none at all. The ordinary exit is the
+    # application exiting, which `--exit-when-startup-exits` turns into the
+    # session exiting.
     session_args+=(--no-config)
     session_args+=(
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone
         --exit-when-startup-exits
     )
-    if (( standalone_direct_scanout == 0 )); then
-        session_args+=(
-            --wm-process="$SOPHIA_NATIVE_WM_BIN"
-            "--wm-process-arg=--wm-config=$standalone_wm_config"
-        )
-    fi
     if [[ "$standalone_workload" == vkcube ]]; then
         session_args+=(
             --session-app-arg=standalone=--wsi
@@ -797,9 +780,12 @@ elif [[ "$SESSION_PROFILE" == hagia ]]; then
         --session-app-arg=browser=--new-instance
     )
 elif [[ "$SESSION_PROFILE" == native ]]; then
+    # No `--wm-process` for the same reason the standalone profile has none:
+    # `sophia-wm-demo` cannot serve a session since 83596bfc. The session
+    # action mapping below is session-level and needs no policy client, so
+    # Super+Enter still launches a terminal.
     session_args+=(
         --session-action-app=terminal=terminal
-        --wm-process="$SOPHIA_NATIVE_WM_BIN"
     )
 else
     session_args+=(

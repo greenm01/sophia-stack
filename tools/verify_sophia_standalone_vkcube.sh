@@ -37,15 +37,17 @@ if grep -Eqi \
     fail "session contains an error, invalid admission group, or degraded status"
 fi
 
-grep -Eq '^sophia_wm_demo schema=1 status=ready generation=[0-9]+ layout_policy=natural$' \
-    "$SESSION_LOG" ||
-    fail "natural-size reference policy did not start"
-grep -Eq '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
-    "$SESSION_LOG" || fail "external reference policy did not connect"
+# This profile runs no window manager: `sophia-wm-demo` lost its serving mode
+# in 83596bfc, and a single-application proof has nothing to arrange anyway.
+# The two checks that stood here asserted a reference policy started and
+# committed a layout, which only a WM can produce. What a WM-less session can
+# show in their place is that none ran and that exactly one client did.
+# Schema-agnostic: these fixtures are schema-15 evidence and must keep
+# verifying, the same way the promoted archives do.
+grep -Eq '^sophia_live_session schema=[0-9]+ .*(^| )wm_policy=disabled( |$)' "$SESSION_LOG" ||
+    fail "a window manager ran; this profile has none to run"
 grep -Eq '^sophia_session_app schema=1 status=started id=standalone source=startup$' \
     "$SESSION_LOG" || fail "standalone startup application did not launch"
-grep -Eq '^sophia_live_wm schema=1 status=layout_committed .* surfaces=1 .* outcome=Committed$' \
-    "$SESSION_LOG" || fail "one-surface natural layout did not commit"
 grep -Eq '^sophia_live_session_startup schema=2 status=ready ' "$SESSION_LOG" ||
     fail "standalone startup did not become ready"
 
@@ -108,8 +110,17 @@ else
     fail "expected at most one retirement-gated admission, observed ${#armed[@]}"
 fi
 
-grep -Eq '^sophia_live_wm schema=1 status=session_action_committed .* action=Logout$' \
-    "$SESSION_LOG" || fail "normal Super-Shift-Q logout was not committed"
+# Not a logout shortcut. Shortcuts are resolved against a policy client's
+# configuration (`wm/public_policy.rs:2136-2145`), so a session without a
+# window manager registers none at all -- there is no Super+Shift+Q here to
+# press. The clean exit is the client exiting and `--exit-when-startup-exits`
+# ending the session with it, which is what these records show.
+grep -Eq '^sophia_live_session_health schema=1 status=clean ' "$SESSION_LOG" ||
+    fail "the session did not finish healthy"
+grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
+    fail "the session did not release its resources cleanly"
+grep -Eq '^sophia_live_session schema=[0-9]+ status=bounded_complete ' "$SESSION_LOG" ||
+    fail "the session did not end when its application did"
 grep -Eq '^sophia_live_session_health schema=1 status=clean .*wm_degraded=false$' \
     "$SESSION_LOG" || fail "session health did not drain"
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
@@ -119,7 +130,7 @@ grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
 
 for assignment in \
     native_presentation=enabled \
-    wm_policy=external \
+    wm_policy=disabled \
     wm_restarts=0 \
     wm_degraded=false \
     native_submit_failures=0 \

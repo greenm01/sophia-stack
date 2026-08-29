@@ -32,6 +32,14 @@ active compositor-chrome preference. It cannot change input admission,
 outputs, namespaces, executable registry entries, renderer or scanout policy,
 or Engine hard limits.
 
+No in-tree WM reads it. `sophia-wm-demo` lost its serving mode with the
+experimental WM API v7, and its remaining subcommands are protocol proof
+clients; Hagia is Sophia's native WM and speaks `sophia_wm_v1`. The `native`
+and `standalone` tool profiles consequently run no window manager at all, and
+a session without one registers no shortcuts, because shortcuts are resolved
+against a policy client's configuration. Those sessions end when their
+application does.
+
 Native layout selection currently accepts:
 
 - `layout "columns"` to divide the active work area among visible nodes and

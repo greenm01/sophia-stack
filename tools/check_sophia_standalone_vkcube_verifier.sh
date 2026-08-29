@@ -21,7 +21,13 @@ reject_mutation() {
     fi
 }
 
-reject_mutation policy 'layout_policy=natural' 'layout_policy=columns'
+# This profile runs no window manager, so a session reporting one is not the
+# session this proof describes.
+reject_mutation managed 'wm_policy=disabled' 'wm_policy=external'
+# The exit is the client exiting, not an operator shortcut: without a policy
+# client there are no shortcuts to press.
+reject_mutation unclean 'sophia_live_session_cleanup schema=1 status=clean' 'sophia_live_session_cleanup schema=1 status=leaked'
+reject_mutation unfinished 'status=bounded_complete' 'status=timed_out'
 reject_mutation app 'id=standalone' 'id=terminal'
 reject_mutation evidence 'evidence=PresentedBuffer' 'evidence=BackingSnapshot'
 reject_mutation retirement 'status=retired transaction=42' 'status=retired transaction=43'

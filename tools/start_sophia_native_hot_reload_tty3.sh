@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This proof has no subject any more.
+#
+# It hot-reloads a native WM's `wm.kdl` and asserts the WM negotiates chrome
+# ownership (`verify_sophia_native_chrome.sh:19-20`, `source=wm_policy`).
+# `sophia-wm-demo` lost its serving mode in 83596bfc with the experimental WM
+# API v7, so there is no in-tree WM to reload or to negotiate with; Hagia is
+# Sophia's native WM and speaks `sophia_wm_v1`.
+#
+# Refused here rather than left to fail on a stray `--wm-process-arg`, because
+# the argument error would describe a symptom and this describes what happened.
+# Set SOPHIA_NATIVE_CHROME_ACKNOWLEDGE_NO_WM=1 to run it anyway.
+if [[ "${SOPHIA_NATIVE_CHROME_ACKNOWLEDGE_NO_WM:-0}" != 1 ]]; then
+    echo "The native chrome proof needs a WM that serves a session." >&2
+    echo "sophia-wm-demo lost that in 83596bfc; porting this proof to Hagia is an open decision." >&2
+    exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/tmp}"
 PROOF_DIR="$RUNTIME_ROOT/sophia-native-hot-reload-${UID}"
