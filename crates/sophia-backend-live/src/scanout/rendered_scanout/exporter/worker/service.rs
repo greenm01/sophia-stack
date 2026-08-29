@@ -436,18 +436,19 @@ where
                     return WorkerOutcome::Failed(detail);
                 }
                 Err(error) => {
-                    // The outcome's detail vocabulary has no slot for a plan
-                    // fault, so the reduced answer is InvalidTarget -- but the
-                    // real error goes on record first. Flattening it silently
-                    // cost a diagnosis a step: a compose refusing a layer the
-                    // renderer never imported reported "invalid target", and
-                    // the target was fine.
+                    // A plan fault, not a target fault: the layers, output, or
+                    // transform this compose was handed are ones the renderer
+                    // cannot serve. The reduced detail says exactly that now,
+                    // and the real error still goes on record beside it --
+                    // reporting these as InvalidTarget pointed one diagnosis
+                    // at the render target while the actual fault was a layer
+                    // naming an image nobody had imported.
                     tracing::warn!(
                         ?error,
                         "sophia_renderer_worker schema=1 status=compose_refused"
                     );
                     return WorkerOutcome::Failed(
-                        LiveRendererScanoutBufferExportDetail::InvalidTarget,
+                        LiveRendererScanoutBufferExportDetail::ComposeRefused,
                     );
                 }
             };

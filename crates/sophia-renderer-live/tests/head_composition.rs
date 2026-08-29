@@ -889,3 +889,33 @@ fn a_format_refusal_is_not_a_proof_defect() {
         );
     }
 }
+
+/// A compose refusal is reported as a plan fault, not a target fault.
+///
+/// `ComposeRefused` reduces to `Degraded` -- the honest answer for "this
+/// frame could not be built" -- where `InvalidTarget` claims the render
+/// target is wrong. That claim sent one diagnosis at the target while the
+/// real fault was a layer naming a renderer image nobody had imported.
+#[test]
+fn a_compose_refusal_does_not_claim_the_target_is_invalid() {
+    use sophia_renderer_live::{
+        LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
+    };
+
+    assert_eq!(
+        LiveRendererScanoutBufferExportDetail::ComposeRefused.status(),
+        LiveRendererScanoutBufferExportStatus::Degraded
+    );
+    assert_ne!(
+        LiveRendererScanoutBufferExportDetail::ComposeRefused.status(),
+        LiveRendererScanoutBufferExportStatus::InvalidTarget
+    );
+    // The name reaches the evidence, where a reader can tell the two apart.
+    assert_eq!(
+        format!(
+            "{:?}",
+            LiveRendererScanoutBufferExportDetail::ComposeRefused
+        ),
+        "ComposeRefused"
+    );
+}

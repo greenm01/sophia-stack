@@ -233,6 +233,15 @@ pub enum LiveRendererScanoutBufferExportDetail {
     WorkerDisconnected,
     WorkerStalled,
     InvalidTarget,
+    /// A compose refused the frame it was handed -- a layer the renderer
+    /// cannot source, an output it does not know, a transform it does not
+    /// implement.
+    ///
+    /// Distinct from `InvalidTarget`, which says the render target is wrong.
+    /// Reporting a layer fault as a target fault sent one diagnosis after the
+    /// wrong half of the system: the target was fine, and the frame named a
+    /// renderer image that had never been imported.
+    ComposeRefused,
     BackendDeviceUnavailable,
     GbmDeviceUnavailable,
     EglUnavailable,
