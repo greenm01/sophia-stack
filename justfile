@@ -84,6 +84,17 @@ direct-scanout-probe width='2560' height='1440' hold='20' workload='kitty':
     export SOPHIA_STANDALONE_HOLD_SECONDS='{{ hold }}'
     exec tools/start_sophia_tty3.sh
 
+# Binds a signed identity, runs the probe, verifies and archives it. Run from
+# tty3. The probe recipe above is the same session without the archive.
+
+# Promote a direct-scanout run as immutable evidence. Run from tty3.
+direct-scanout-gate:
+    @tools/direct_scanout_gate.sh
+
+# Re-verify an archived direct-scanout run, newest by default.
+direct-scanout-archive run='':
+    @tools/verify_direct_scanout_archive.sh {{ run }}
+
 # Read what the last direct-scanout probe measured.
 direct-scanout-verify log='':
     @tools/verify_direct_scanout_standalone.sh {{ log }}
@@ -119,6 +130,7 @@ check:
     just check-profiles
     just check-layout
     tools/check_direct_scanout_verifier.sh
+    tools/check_direct_scanout_archive_verifier.sh
     tools/check_sophia_standalone_vkcube_verifier.sh
     tools/check_hagia_native_matchers.sh
     tools/check_mirror_group_physical_verifier.sh

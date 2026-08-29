@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Proves the direct-scanout archive verifier rejects what it claims to.
+#
+# An archive is a claim that a specific commit and a specific binary produced a
+# specific result. Each mutation below breaks one link in that chain and must
+# be refused, because an archive nobody has watched fail is an archive that
+# accepts anything.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+verifier="$ROOT_DIR/tools/verify_direct_scanout_archive.sh"
+archiver="$ROOT_DIR/tools/archive_direct_scanout_run.sh"
+temp_dir="$(mktemp -d)"
+trap 'rm -rf -- "$temp_dir"' EXIT
+
+# A passing session, synthesised rather than borrowed: the checks here are
+# about the archive's identity chain, and the evidence verifier has its own
+# controls in check_direct_scanout_verifier.sh.
+evidence="$temp_dir/session.log"
+{
+    printf 'sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0\n'
+    printf 'sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true\n'
+    printf 'sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=1 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0\n'
+    printf 'sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=0 composed_cursor=0\n'
+    printf 'sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=299 reason=none\n'
+    printf 'sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=299 reason=none\n'
+    printf 'sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=299 reason=none\n'
+} >"$evidence"
+
+commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+sophia_bin="$ROOT_DIR/target/release/sophia"
+client_bin="${SOPHIA_DIRECT_SCANOUT_CLIENT_BIN:-$(command -v kitty || command -v true)}"
+printf 'sophia_direct_scanout_identity schema=1 status=bound source_commit=%s sophia_sha256=%s client=%s client_sha256=%s core_sha256=%s desktop_sha256=%s\n' \
+    "$commit" "$(sha256sum "$sophia_bin" | awk '{ print $1 }')" \
+    "$(basename "$client_bin")" "$(sha256sum "$client_bin" | awk '{ print $1 }')" \
+    "$(sha256sum "$ROOT_DIR/tools/fixtures/direct_scanout_core.kdl" | awk '{ print $1 }')" \
+    "$(sha256sum "$ROOT_DIR/tools/fixtures/direct_scanout_desktop.kdl" | awk '{ print $1 }')" \
+    >>"$evidence"
+
+run_root="$temp_dir/runs"
+SOPHIA_DIRECT_SCANOUT_RUN_ROOT="$run_root" \
+    SOPHIA_DIRECT_SCANOUT_CLIENT_BIN="$client_bin" \
+    "$archiver" "$evidence" >/dev/null
+archive="$run_root/0001"
+"$verifier" "$archive" >/dev/null || {
+    echo "the archive verifier rejected an archive it just wrote" >&2
+    exit 1
+}
+
+reject() {
+    local name="$1" candidate="$2" expected="$3" output
+    if output="$("$verifier" "$candidate" 2>&1)"; then
+        echo "the archive verifier accepted $name" >&2
+        exit 1
+    fi
+    printf '%s\n' "$output" | grep -Fq "$expected" || {
+        echo "the archive verifier refused $name for the wrong reason:" >&2
+        printf '%s\n' "$output" >&2
+        exit 1
+    }
+}
+
+# Evidence edited after the fact. The checksums exist for this.
+tampered="$temp_dir/tampered"
+cp -r "$archive" "$tampered"
+printf 'sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=999 reason=none\n' \
+    >>"$tampered/session.log"
+reject "an archive whose evidence was edited" "$tampered" "checksum verification failed"
+
+# A manifest describing a different run than the one beside it.
+mismatched="$temp_dir/mismatched"
+cp -r "$archive" "$mismatched"
+sed -i 's/^evidence_sha256=.*/evidence_sha256=0000000000000000000000000000000000000000000000000000000000000000/' \
+    "$mismatched/manifest"
+(cd "$mismatched" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "a manifest that does not describe its own evidence" "$mismatched" \
+    "does not describe its own evidence"
+
+# A commit this checkout has never seen.
+unknown="$temp_dir/unknown"
+cp -r "$archive" "$unknown"
+sed -i 's/^source_commit=.*/source_commit=0123456789012345678901234567890123456789/' \
+    "$unknown/manifest"
+(cd "$unknown" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "an archive naming a commit this checkout does not have" "$unknown" \
+    "does not have"
+
+# A manifest and its evidence disagreeing about which commit ran.
+disagreed="$temp_dir/disagreed"
+cp -r "$archive" "$disagreed"
+other="$(git -C "$ROOT_DIR" rev-parse HEAD~1)"
+sed -i "s/^source_commit=.*/source_commit=$other/" "$disagreed/manifest"
+(cd "$disagreed" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "a manifest and evidence that disagree on the commit" "$disagreed" \
+    "disagree on the source commit"
+
+# An unsigned commit, in a scratch clone. Every commit in this repository is
+# signed, so the only way to exercise the signature guard is to build a history
+# that has one that is not -- and doing that here rather than in the working
+# tree keeps the check from depending on a commit someone might later sign.
+unsigned_repo="$temp_dir/unsigned"
+git init -q "$unsigned_repo"
+git -C "$unsigned_repo" -c user.email=check@example.invalid -c user.name=check \
+    -c commit.gpgsign=false commit -q --allow-empty -m 'unsigned'
+unsigned_commit="$(git -C "$unsigned_repo" rev-parse HEAD)"
+if git -C "$ROOT_DIR" cat-file -e "$unsigned_commit^{commit}" 2>/dev/null; then
+    echo "the scratch commit collided with this repository's history" >&2
+    exit 1
+fi
+# Fetched in so the commit exists here but carries no signature.
+git -C "$ROOT_DIR" fetch -q "$unsigned_repo" HEAD
+unsigned="$temp_dir/unsigned-archive"
+cp -r "$archive" "$unsigned"
+sed -i "s/^source_commit=.*/source_commit=$unsigned_commit/" "$unsigned/manifest"
+sed -i "s/source_commit=$commit /source_commit=$unsigned_commit /" "$unsigned/session.log"
+(cd "$unsigned" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+sed -i "s/^evidence_sha256=.*/evidence_sha256=$(sha256sum "$unsigned/session.log" | awk '{ print $1 }')/" \
+    "$unsigned/manifest"
+(cd "$unsigned" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "an archive naming an unsigned commit" "$unsigned" "without a valid signature"
+
+# A run that recorded a different kind of proof.
+wrong_kind="$temp_dir/wrong-kind"
+cp -r "$archive" "$wrong_kind"
+sed -i 's/^record_kind=.*/record_kind=hagia_native_session/' "$wrong_kind/manifest"
+(cd "$wrong_kind" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "an archive recording another kind of run" "$wrong_kind" "another kind of run"
+
+echo "direct scanout archive verifier checks passed"

@@ -71,7 +71,12 @@ two hundred forty-five independent presses with clean stage percentiles.
 Native archive `0003` promotes one shared renderer worker per DRM device
 group, with both heads of one card on one thread and no result reaching an
 output that did not ask for it. Atomic-test-gated direct scanout for one
-compatible opaque DMA-BUF layer is the active product step.
+compatible opaque DMA-BUF layer works on this hardware: thirty client buffers
+reached the plane from one validating commit, with no rejections, refusals, or
+fallbacks, and a clean retirement and session end. Promoting that run under the
+archive discipline is the active product step; returning a directly scanned
+output to composition on effect activation, and the hardware cursor plane,
+follow it.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -2139,13 +2144,37 @@ other mature compositors are references rather than Sophia runtime components.
   desktop. And the output key was unique only by an argument about scope,
   which a two-card guest reporting `head=1` twice disproved; it composes group
   with head now, and duplicate registration is refused rather than trusted.
-- [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
-  layer, followed by a hardware cursor plane. Engine must prove the exact frame
-  has no overlay or active effect that samples the scene, uses an offscreen
-  group, or otherwise requires composition. Effect activation returns cleanly
-  to mixed composition, and later removal may restore eligibility only through
-  a fresh Engine proof and backend atomic test. Retain mixed composition as the
-  fail-closed fallback.
+- [x] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
+  layer. Engine proves the exact frame has no overlay or active effect that
+  samples the scene, uses an offscreen group, or otherwise requires
+  composition; the backend re-derives the same structure from the lowered
+  layers and refuses on any disagreement. `PresentFlipOwnership.tla` owns the
+  ownership half: the displayed buffer is released only by a successor's
+  retirement, and the successor may be a composed frame. Mixed composition is
+  the fail-closed fallback, and a refused validating commit, a rejected real
+  commit, or any prepare failure re-queues the same content composed rather
+  than reaching the terminal submit-failure path. ARGB8888 is offered where the
+  layer covers the whole head, because nothing is behind it there and the
+  atomic test still decides.
+- [ ] Promote the direct-scanout run under the archive discipline. The path
+  works on this hardware -- thirty client buffers on the plane from one
+  validating commit, no rejections, refusals, or fallbacks, a clean retirement
+  and session end -- but that run was produced by the probe, which binds no
+  identity. `just direct-scanout-gate` binds a signed commit and the binary,
+  client, and configuration digests, then verifies and archives.
+- [ ] Prove that effect or overlay activation returns a directly scanned output
+  to composition without a lost or stale frame, and that later removal restores
+  eligibility only through a fresh Engine proof and a fresh backend atomic
+  test. The model covers both and the episode counters record them; no physical
+  run has yet opened an overlay over a directly scanned frame.
+- [ ] Measure whether a direct frame costs less than a composed one. It skips a
+  whole composition pass, so dwell-to-submit should not regress and may
+  improve, but the input-latency harness cannot answer it: that harness needs
+  an input proof, and a session with one always runs xterm, which never
+  presents a DMA-BUF.
+- [ ] Add the hardware cursor plane, with the per-output KMS transaction owner
+  the next row introduces. The legacy cursor continues over directly scanned
+  frames on its own ioctl.
 - [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
   transaction owner can combine primary and cursor-plane state in the same
   atomic request. Retain bounded cursor-only idle work and the pointer-motion
