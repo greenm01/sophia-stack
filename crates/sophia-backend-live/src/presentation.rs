@@ -236,6 +236,59 @@ impl LivePresentationResourceSession {
         self.registry.submit(transaction)
     }
 
+    /// The DMA-BUF frame of a presentation this registry still holds, with
+    /// freshly duplicated plane descriptors.
+    ///
+    /// Exists for the composition boundary out of direct scanout: a directly
+    /// displayed buffer was never composed, so the renderer holds no snapshot
+    /// of it, and the composed successor that retires it must be built from
+    /// the client's still-held planes instead. It works for `Submitted` as
+    /// well as `Ready` presentations, because the buffer being asked about is
+    /// on glass -- submitted is exactly its state.
+    pub fn try_clone_submitted_dma_buf(
+        &self,
+        transaction: TransactionId,
+    ) -> Result<LiveOwnedMultiPlaneDmaBufFrame, LiveBufferRegistryError> {
+        if !matches!(
+            self.registry.state(transaction),
+            Some(LiveBufferState::Ready | LiveBufferState::Submitted)
+        ) {
+            return Err(LiveBufferRegistryError::UnknownPresentation);
+        }
+        let handle = self
+            .registry
+            .source_for_presentation(transaction)
+            .ok_or(LiveBufferRegistryError::UnknownPresentation)?;
+        let descriptor = self
+            .registry
+            .descriptor(handle)
+            .ok_or(LiveBufferRegistryError::UnknownHandle)?;
+        let mut planes: [Option<LiveOwnedDmaBufPlane>; 4] = std::array::from_fn(|_| None);
+        for (index, target_plane) in planes
+            .iter_mut()
+            .enumerate()
+            .take(usize::from(descriptor.plane_count))
+        {
+            let plane =
+                descriptor.planes[index].ok_or(LiveBufferRegistryError::PlaneFdCountMismatch)?;
+            *target_plane = Some(LiveOwnedDmaBufPlane {
+                fd: self
+                    .registry
+                    .try_clone_presentation_plane_fd(transaction, index)?,
+                offset: plane.offset,
+                stride: plane.stride,
+            });
+        }
+        Ok(LiveOwnedMultiPlaneDmaBufFrame {
+            width: descriptor.size.width as u32,
+            height: descriptor.size.height as u32,
+            format: descriptor.format,
+            modifier: descriptor.modifier,
+            plane_count: descriptor.plane_count,
+            planes,
+        })
+    }
+
     pub fn build_mixed_frame(
         &self,
         transaction: TransactionId,

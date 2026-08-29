@@ -43,9 +43,16 @@ fn in_flight_renderer_source_keeps_cpu_content_variants() {
         },
     };
 
-    let sources =
-        retained_surface_sources(surface, dma_source, &cpu_layers, Some(&displayed), None)
-            .expect("mixed retained source set");
+    let sources = retained_surface_sources(
+        surface,
+        dma_source,
+        &cpu_layers,
+        Some(&displayed),
+        None,
+        None,
+        None,
+    )
+    .expect("mixed retained source set");
 
     assert_eq!(sources.len(), 2);
     assert!(sources.iter().any(|source| {
@@ -62,4 +69,138 @@ fn in_flight_renderer_source_keeps_cpu_content_variants() {
                 sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::Cpu(_)
             )
     }));
+}
+
+fn direct_test_layer(image_raw: u64) -> crate::LiveRetainedRendererImageLayer {
+    crate::LiveRetainedRendererImageLayer {
+        image_id: sophia_renderer_live::LiveRendererImageId::from_raw(image_raw),
+        size: Size {
+            width: 2560,
+            height: 1440,
+        },
+        format: sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+        placement: sophia_renderer_live::LiveCompositionPlacement {
+            target: Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+            clip: None,
+            transform: Transform::IDENTITY,
+            alpha: 1.0,
+            sampling: sophia_engine::HeadSamplingClass::Exact,
+        },
+    }
+}
+
+fn direct_test_frame() -> sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
+    let fd: std::os::fd::OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+    sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame {
+        width: 2560,
+        height: 1440,
+        format: sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+        modifier: 0,
+        plane_count: 1,
+        planes: [
+            Some(sophia_renderer_live::LiveOwnedDmaBufPlane {
+                fd,
+                offset: 0,
+                stride: 2560 * 4,
+            }),
+            None,
+            None,
+            None,
+        ],
+    }
+}
+
+/// A directly displayed surface composes from the client's still-held planes,
+/// never from a renderer image nobody imported.
+///
+/// The renderer's store holds snapshots of frames it composed; a direct frame
+/// was deliberately never composed -- that copy is what direct scanout skips.
+/// Emitting `RendererImage` for one asked the renderer for a picture nobody
+/// took: the first overlay ever opened over a direct frame failed its compose
+/// with `InvalidLayer` (reported as `InvalidTarget`) and the session died with
+/// the client on glass.
+#[test]
+fn a_displayed_direct_frame_sources_the_clients_planes() {
+    let surface = SurfaceId::new(7, 1);
+    let dma_source = BufferSource::DmaBuf { handle: 3 };
+    let displayed = direct_test_layer(437);
+
+    let sources = retained_surface_sources(
+        surface,
+        dma_source,
+        &[],
+        None,
+        None,
+        Some(&displayed),
+        Some(direct_test_frame()),
+    )
+    .expect("direct retained source set");
+
+    let [source] = sources.as_slice() else {
+        panic!("one displayed layer produces one source")
+    };
+    let sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::DmaBuf { image_id, frame } =
+        &source.kind
+    else {
+        panic!(
+            "a direct frame must not claim a renderer image: {:?}",
+            source.kind
+        )
+    };
+    // The identity survives, so the compose captures the snapshot under the
+    // same id the layer carries and later retained frames can use it.
+    assert_eq!(image_id.raw(), 437);
+    assert_eq!(frame.plane_count, 1);
+}
+
+/// The same for a direct submission still in flight: an activation can land
+/// between its submit and its retirement, and the requeue that follows must
+/// not name its never-imported image either.
+#[test]
+fn an_in_flight_direct_frame_sources_the_clients_planes() {
+    let surface = SurfaceId::new(7, 1);
+    let dma_source = BufferSource::DmaBuf { handle: 3 };
+    let in_flight = direct_test_layer(441);
+
+    let sources = retained_surface_sources(
+        surface,
+        dma_source,
+        &[],
+        Some(&in_flight),
+        Some(direct_test_frame()),
+        None,
+        None,
+    )
+    .expect("in-flight direct source set");
+
+    assert!(sources.iter().any(|source| matches!(
+        &source.kind,
+        sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::DmaBuf { image_id, .. }
+            if image_id.raw() == 441
+    )));
+}
+
+/// A composed frame's retained image is real -- the flip that displayed it
+/// promoted a snapshot -- so without a direct override the arms keep naming
+/// the renderer image, and the ordinary retained path is unchanged.
+#[test]
+fn a_composed_frame_still_sources_its_renderer_image() {
+    let surface = SurfaceId::new(7, 1);
+    let dma_source = BufferSource::DmaBuf { handle: 3 };
+    let displayed = direct_test_layer(299);
+
+    let sources =
+        retained_surface_sources(surface, dma_source, &[], None, None, Some(&displayed), None)
+            .expect("composed retained source set");
+
+    assert!(matches!(
+        sources[0].kind,
+        sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage { image_id, .. }
+            if image_id.raw() == 299
+    ));
 }

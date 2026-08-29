@@ -197,6 +197,14 @@ impl LiveProductionVisualRuntime {
                     .get(&surface)
                     .map(|displayed| &displayed.layer)
             },
+            // A neighbouring surface still displayed by a direct flip has no
+            // renderer image to compose from; its source is the client's
+            // still-held planes, exactly as on the retained requeue path.
+            |surface| {
+                self.displayed_surfaces
+                    .get(&surface)
+                    .and_then(|displayed| self.displayed_direct_frame(displayed.layer.image_id))
+            },
         )?;
         self.record_focus_ring_observation(&border_candidate, false)?;
         let mut output_head_frames = applicable_outputs
@@ -371,17 +379,36 @@ impl LiveProductionVisualRuntime {
             .copied()
             .collect::<Vec<_>>();
         for output in outputs {
-            let _ = self.idle_superseded_direct_present(output);
+            // Shutdown has no successor and nothing left to compose from a
+            // snapshot, so there is nothing to promote.
+            let _ = self.idle_superseded_direct_present(output, None);
         }
     }
 
     pub(super) fn idle_superseded_direct_present(
         &mut self,
         output: OutputId,
+        native_scanout: Option<&mut crate::LiveProductionNativeScanout>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(transaction) = self.displayed_direct_presents.remove(&output) else {
             return Ok(());
         };
+        // If a composed successor sampled this buffer, its compose captured a
+        // compositor-owned snapshot under this id; promoting it now, before
+        // the release, is what lets every later retained frame show these
+        // pixels after the client has its buffer back. A direct successor
+        // captured nothing -- the surface's newest content is that successor
+        // itself -- so a promotion that finds nothing is ordinary.
+        if let Some(native_scanout) = native_scanout {
+            let image = sophia_renderer_live::LiveRendererImageId::from_raw(transaction.raw());
+            if let Err(error) = native_scanout.promote_renderer_image(image) {
+                tracing::warn!(
+                    transaction = transaction.raw(),
+                    ?error,
+                    "a superseded direct present could not promote its captured snapshot"
+                );
+            }
+        }
         match self.presentation_feedback.idle_displayed(transaction) {
             Ok(outcome) => self.route_present_feedback(outcome),
             // The only way this can fail is that the registry no longer knows

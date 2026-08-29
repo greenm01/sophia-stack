@@ -435,7 +435,17 @@ where
                 Err(LiveMixedCompositionError::Renderer(detail)) => {
                     return WorkerOutcome::Failed(detail);
                 }
-                Err(_) => {
+                Err(error) => {
+                    // The outcome's detail vocabulary has no slot for a plan
+                    // fault, so the reduced answer is InvalidTarget -- but the
+                    // real error goes on record first. Flattening it silently
+                    // cost a diagnosis a step: a compose refusing a layer the
+                    // renderer never imported reported "invalid target", and
+                    // the target was fine.
+                    tracing::warn!(
+                        ?error,
+                        "sophia_renderer_worker schema=1 status=compose_refused"
+                    );
                     return WorkerOutcome::Failed(
                         LiveRendererScanoutBufferExportDetail::InvalidTarget,
                     );

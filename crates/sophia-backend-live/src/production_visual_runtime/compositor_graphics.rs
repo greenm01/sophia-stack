@@ -28,24 +28,56 @@ fn cpu_variant_sources(
         .collect()
 }
 
-fn retained_surface_sources(
+/// One retained layer as a composition source.
+///
+/// A composed frame's layer names a renderer image, because the flip that
+/// displayed it promoted a compositor-owned snapshot. A *directly* scanned
+/// frame has no snapshot -- the renderer never saw its buffer; that copy is
+/// what direct scanout skips -- so its source must be the client's still-held
+/// planes, which the compose then imports and captures. Emitting the image id
+/// anyway asked the renderer for a picture nobody ever took, and the first
+/// overlay over a direct frame died on it.
+fn retained_layer_source(
+    surface: SurfaceId,
+    committed_source: BufferSource,
+    displayed: &crate::LiveRetainedRendererImageLayer,
+    direct: Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame>,
+) -> sophia_renderer_live::LiveOwnedHeadCompositionSource {
+    let kind = match direct {
+        Some(frame) => sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::DmaBuf {
+            image_id: displayed.image_id,
+            frame,
+        },
+        None => sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+            image_id: displayed.image_id,
+            size: displayed.size,
+            format: displayed.format,
+        },
+    };
+    sophia_renderer_live::LiveOwnedHeadCompositionSource {
+        surface,
+        source: committed_source,
+        kind,
+    }
+}
+
+pub(crate) fn retained_surface_sources(
     surface: SurfaceId,
     committed_source: BufferSource,
     cpu_layers: &[LiveCpuPresentationLayer],
     in_flight: Option<&crate::LiveRetainedRendererImageLayer>,
+    in_flight_direct: Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame>,
     retained: Option<&crate::LiveRetainedRendererImageLayer>,
+    retained_direct: Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame>,
 ) -> Result<Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>, &'static str> {
     let mut sources = Vec::new();
     if let Some(displayed) = in_flight {
-        sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+        sources.push(retained_layer_source(
             surface,
-            source: committed_source,
-            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
-                image_id: displayed.image_id,
-                size: displayed.size,
-                format: displayed.format,
-            },
-        });
+            committed_source,
+            displayed,
+            in_flight_direct,
+        ));
     }
     sources.extend(cpu_variant_sources(surface, cpu_layers));
     if !sources.is_empty() {
@@ -55,15 +87,12 @@ fn retained_surface_sources(
         if !matches!(committed_source, BufferSource::DmaBuf { .. }) {
             return Err("retained renderer image lost its DMA-BUF identity");
         }
-        sources.push(sophia_renderer_live::LiveOwnedHeadCompositionSource {
+        sources.push(retained_layer_source(
             surface,
-            source: committed_source,
-            kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
-                image_id: displayed.image_id,
-                size: displayed.size,
-                format: displayed.format,
-            },
-        });
+            committed_source,
+            displayed,
+            retained_direct,
+        ));
         return Ok(sources);
     }
     Err("retained head plan has no authority-owned source")
@@ -88,6 +117,7 @@ pub fn live_present_head_composition_sources<'a>(
     display_list: &CompositorDisplayList,
     cpu_layers: &[LiveCpuPresentationLayer],
     retained: impl Fn(SurfaceId) -> Option<&'a crate::LiveRetainedRendererImageLayer>,
+    retained_direct: impl Fn(SurfaceId) -> Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame>,
 ) -> Result<Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>, Box<dyn std::error::Error>> {
     let mut current_source = Some(current_source);
     let mut sources = Vec::new();
@@ -121,7 +151,9 @@ pub fn live_present_head_composition_sources<'a>(
             // A Present reaches submission only while no other one is in flight, so
             // this candidate is the only one that can own a renderer image here.
             None,
+            None,
             retained(*surface),
+            retained_direct(*surface),
         )?);
     }
     if current_source.is_some() {
@@ -228,9 +260,71 @@ impl LiveProductionVisualRuntime {
             .collect()
     }
 
+    /// The in-flight submission's transaction, when that submission put a
+    /// client's buffer on the plane directly.
+    fn in_flight_direct(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+    ) -> Option<TransactionId> {
+        native_scanout
+            .heads
+            .iter()
+            .any(|head| head.submitted_direct)
+            .then(|| self.present_scheduler.in_flight_transaction())
+            .flatten()
+    }
+
+    /// The client's still-held planes for a *displayed* direct present, keyed
+    /// by the image id its retained layer carries.
+    ///
+    /// `None` for every composed frame, whose retained image the renderer
+    /// really holds. A direct frame's image was never imported -- the copy is
+    /// what direct scanout skips -- so composing over it must source the
+    /// client's buffer, which is still owed to the client and therefore still
+    /// held here.
+    pub(super) fn displayed_direct_frame(
+        &self,
+        image_id: sophia_renderer_live::LiveRendererImageId,
+    ) -> Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame> {
+        let transaction = TransactionId::from_raw(image_id.raw());
+        if !self
+            .displayed_direct_presents
+            .values()
+            .any(|displayed| *displayed == transaction)
+        {
+            return None;
+        }
+        self.cloned_direct_frame(transaction)
+    }
+
+    fn cloned_direct_frame(
+        &self,
+        transaction: TransactionId,
+    ) -> Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame> {
+        match self
+            .presentation_feedback
+            .resources()
+            .try_clone_submitted_dma_buf(transaction)
+        {
+            Ok(frame) => Some(frame),
+            Err(error) => {
+                // The compose that follows will refuse the layer, which is the
+                // same failure this path exists to prevent -- but with the
+                // reason on record instead of an image id nobody imported.
+                tracing::warn!(
+                    transaction = transaction.raw(),
+                    ?error,
+                    "a displayed direct present could not re-offer its planes"
+                );
+                None
+            }
+        }
+    }
+
     pub(super) fn retained_composition_source_set(
         &self,
         scene: &LiveProductionCpuScene,
+        in_flight_direct_transaction: Option<TransactionId>,
     ) -> Result<LiveProductionRetainedCompositionSourceSet, Box<dyn std::error::Error>> {
         let committed = self
             .present_scheduler
@@ -259,12 +353,21 @@ impl LiveProductionVisualRuntime {
                 .displayed_surfaces
                 .get(surface)
                 .map(|displayed| &displayed.layer);
+            let in_flight_direct = in_flight
+                .filter(|_| in_flight_direct_transaction.is_some())
+                .and_then(|_| {
+                    self.cloned_direct_frame(in_flight_direct_transaction.expect("filtered above"))
+                });
+            let retained_direct =
+                retained.and_then(|displayed| self.displayed_direct_frame(displayed.image_id));
             sources.extend(retained_surface_sources(
                 *surface,
                 committed_source,
                 &cpu_layers,
                 in_flight,
+                in_flight_direct,
                 retained,
+                retained_direct,
             )?);
         }
         let scene_generation = committed
@@ -320,7 +423,8 @@ impl LiveProductionVisualRuntime {
         Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
         Box<dyn std::error::Error>,
     > {
-        let source_set = self.retained_composition_source_set(scene)?;
+        let source_set =
+            self.retained_composition_source_set(scene, self.in_flight_direct(native_scanout))?;
         self.retained_output_head_composition_frames_from_sources(native_scanout, &source_set)
     }
 
@@ -340,7 +444,9 @@ impl LiveProductionVisualRuntime {
         if scene_generation == 0 {
             return Err("topology composition requires a valid scene generation".into());
         }
-        let source_set = self.retained_composition_source_set(scene)?;
+        // No submission accompanies a provisional topology, so nothing here can
+        // be an in-flight direct frame; retained direct frames still resolve.
+        let source_set = self.retained_composition_source_set(scene, None)?;
         let targets = resolved.head_render_targets();
         if targets.len() != resolved.targets.len() {
             return Err("topology render-target projection is incomplete".into());

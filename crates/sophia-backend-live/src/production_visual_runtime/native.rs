@@ -805,7 +805,7 @@ impl LiveProductionVisualRuntime {
             // composition, and the direct frame it replaced is owed its
             // release just the same.
             // See `PresentFlipOwnership.tla`, `SuccessorComposedRetires`.
-            self.idle_superseded_direct_present(selected_output)?;
+            self.idle_superseded_direct_present(selected_output, Some(native_scanout))?;
             match reduce_live_production_native_retirement_owner(
                 retirement.frame,
                 retirement.content,

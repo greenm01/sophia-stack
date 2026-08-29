@@ -270,6 +270,7 @@ fn a_released_present_resolves_a_surface_admitted_after_it_was_queued() {
         &display_list,
         &cpu_layers,
         |_| None,
+        |_| None,
     )
     .unwrap();
 

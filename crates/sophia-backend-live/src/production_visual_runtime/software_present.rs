@@ -86,7 +86,11 @@ impl LiveProductionVisualRuntime {
         {
             return Err("production software Present frame queue overflowed".into());
         }
-        let source_set = self.retained_composition_source_set(scene)?;
+        // The software Present path shares the scheduler, so a direct GPU
+        // submission can be in flight while a CPU frame queues; it has no
+        // native handle here, so only the *displayed* direct frames resolve.
+        // The in-flight one keeps its prior behaviour on this path.
+        let source_set = self.retained_composition_source_set(scene, None)?;
         self.software_present_frames_waiting
             .push_back(LiveProductionSoftwarePresentFrame {
                 source_set,
