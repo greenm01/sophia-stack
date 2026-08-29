@@ -38,7 +38,11 @@ fn run(arguments: &[String]) -> Result<(), String> {
                 );
             }
         }),
-        Some("verify") => verify::run(&arguments[1..]),
+        Some("verify") => verify::run(&arguments[1..]).map(|report| {
+            for line in report {
+                println!("{line}");
+            }
+        }),
         Some("--help" | "-h") | None => {
             print!("{USAGE}");
             Ok(())

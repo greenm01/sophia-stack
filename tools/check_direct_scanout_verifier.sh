@@ -125,6 +125,18 @@ orphan="$temp_dir/orphan.log"
 reject "a flip whose own scene was never exported" "$orphan" \
     "a direct flip happened for a scene never exported"
 
+# The validating commit's own guard, controlled separately: no flip follows, so
+# only the guard on `test_passed` can refuse this. Without a control of its own
+# it could be deleted and the flip guard would still catch every other case.
+premature="$temp_dir/premature.log"
+{
+    printf '%s\n' "$resources"
+    printf '%s\n' "$verdicts"
+    printf 'sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=11 reason=none\n'
+} >"$premature"
+reject "a validating commit for a scene never exported" "$premature" \
+    "a validating commit passed for a scene never exported"
+
 # Evidence from a build that predates the row.
 stale="$temp_dir/stale.log"
 sed 's/sophia_live_native_resources schema=11/sophia_live_native_resources schema=10/' "$pass" >"$stale"
@@ -137,15 +149,18 @@ grep -v 'sophia_live_direct_scanout_verdicts' "$pass" >"$blind"
 reject "a run that reported no eligibility verdicts" "$blind" \
     "no eligibility verdicts"
 
-# Two sessions must describe the same histogram, or the totals are nonsense.
-second="$temp_dir/second.log"
-sed 's/ layer_not_dma_buf=2 / layer_not_dmabuf=2 /' "$pass" >"$second"
-if output="$("$verifier" "$pass" "$second" 2>&1)"; then
-    echo "the verifier accepted sessions disagreeing on the histogram shape" >&2
+# Every verdict must be present. The columns come from the enum itself, so a
+# record missing one is named rather than compared against a sibling session:
+# a histogram narrower than the vocabulary is how a nine-slot array came to be
+# indexed with eleven verdicts.
+renamed="$temp_dir/renamed.log"
+sed 's/ layer_not_dma_buf=2 / layer_not_dmabuf=2 /' "$pass" >"$renamed"
+if output="$("$verifier" "$renamed" 2>&1)"; then
+    echo "the verifier accepted a verdict record missing a column" >&2
     exit 1
 fi
-printf '%s\n' "$output" | grep -Fq "disagree on the verdict histogram" || {
-    echo "the verifier refused mismatched histograms for the wrong reason:" >&2
+printf '%s\n' "$output" | grep -Fq "missing layer_not_dma_buf" || {
+    echo "the verifier refused an incomplete histogram for the wrong reason:" >&2
     printf '%s\n' "$output" >&2
     exit 1
 }

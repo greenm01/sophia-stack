@@ -4,13 +4,13 @@ set -euo pipefail
 # Verifies a direct-scanout standalone probe: the session had the shape that
 # can produce an eligible frame, and the direct path engaged lawfully.
 #
-# The shape is one client and no window manager. No WM is not a shortcut here:
-# `sophia-wm-demo` lost its serving mode in 83596bfc, and a session without one
-# honours the client's own geometry and draws no focus ring or border -- which
-# is what a frame of exactly one client layer requires anyway.
+# The shape is one client and no window manager -- not a shortcut, but what
+# direct scanout requires: a session without a WM honours the client's own
+# geometry and draws no focus ring or border over the frame. `sophia-wm-demo`
+# could not serve one anyway since 83596bfc.
 #
-# Separate from `verify_sophia_standalone_vkcube.sh`, which asserts the
-# natural-size reference policy and a WM this run deliberately does not have.
+# Separate from `verify_sophia_standalone_vkcube.sh`, which proves the
+# single-application session itself rather than what reached the plane.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
