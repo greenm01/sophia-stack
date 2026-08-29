@@ -2787,10 +2787,34 @@ mod persistent_native_scanout {
             )
         }
 
-        /// How many lowered frames carried each direct-scanout verdict, summed
-        /// over heads and indexed as `DirectScanoutVerdict::VERDICTS`.
-        pub fn direct_scanout_verdicts(&self) -> [usize; 9] {
-            self.exporters.iter().fold([0usize; 9], |mut totals, exporter| {
+        /// How many lowered frames carried each direct-scanout verdict, per
+        /// head, indexed as `DirectScanoutVerdict::VERDICTS`.
+        ///
+        /// Per head rather than summed, because a session's heads answer
+        /// differently and the sum hides it: a head with no client contributes
+        /// its blank frames to the same column as a head whose client is one
+        /// layer short, and reading that total sends someone to the wrong
+        /// screen.
+        pub fn direct_scanout_head_verdicts(
+            &self,
+        ) -> Vec<(
+            OutputId,
+            sophia_engine::RenderHeadId,
+            [usize; sophia_engine::DirectScanoutVerdict::COUNT],
+        )> {
+            self.exporters
+                .iter()
+                .enumerate()
+                .filter_map(|(index, exporter)| {
+                    let head = self.heads.get(index)?;
+                    Some((head.output.id, head.head, exporter.direct_scanout_verdicts()))
+                })
+                .collect()
+        }
+
+        /// The same, summed over heads.
+        pub fn direct_scanout_verdicts(&self) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
+            self.exporters.iter().fold([0usize; sophia_engine::DirectScanoutVerdict::COUNT], |mut totals, exporter| {
                 for (total, count) in
                     std::iter::zip(&mut totals, exporter.direct_scanout_verdicts())
                 {

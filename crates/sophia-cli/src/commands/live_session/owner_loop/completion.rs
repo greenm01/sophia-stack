@@ -829,13 +829,30 @@
     // cannot distinguish those, and that is the first question anyone asks of
     // a gate that measured nothing.
     {
-        let verdicts = native_scanout
-            .as_ref()
-            .map_or([0usize; 9], sophia_backend_live::LiveProductionNativeScanout::direct_scanout_verdicts);
+        let heads = native_scanout.as_ref().map_or_else(
+            Vec::new,
+            sophia_backend_live::LiveProductionNativeScanout::direct_scanout_head_verdicts,
+        );
+        let mut totals = [0usize; sophia_engine::DirectScanoutVerdict::COUNT];
+        for (output, head, verdicts) in &heads {
+            let mut record = format!(
+                "sophia_live_direct_scanout_verdicts schema=2 status=head output={} head={}",
+                output.raw(),
+                head.raw(),
+            );
+            for ((verdict, count), total) in
+                std::iter::zip(sophia_engine::DirectScanoutVerdict::VERDICTS, verdicts)
+                    .zip(&mut totals)
+            {
+                record.push_str(&format!(" {}={count}", verdict.reduced_name()));
+                *total = total.saturating_add(*count);
+            }
+            println!("{record}");
+        }
         let mut record =
-            String::from("sophia_live_direct_scanout_verdicts schema=1 status=complete");
+            String::from("sophia_live_direct_scanout_verdicts schema=2 status=complete");
         for (verdict, count) in
-            std::iter::zip(sophia_engine::DirectScanoutVerdict::VERDICTS, verdicts)
+            std::iter::zip(sophia_engine::DirectScanoutVerdict::VERDICTS, totals)
         {
             record.push_str(&format!(" {}={count}", verdict.reduced_name()));
         }

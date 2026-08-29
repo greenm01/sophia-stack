@@ -273,8 +273,10 @@ pub enum LiveDirectScanoutRefusal {
     LayerTranslucent,
     /// The layer carries a transform the plane cannot express here.
     LayerTransformed,
-    /// The layer does not cover the head exactly.
-    LayerNotFullHead,
+    /// The layer is the head's size but not at its origin.
+    LayerOffset,
+    /// The layer sits at the origin but is not the head's size.
+    LayerNotHeadSized,
     /// The layer is clipped, so part of the head shows something else.
     LayerClipped,
     /// The client buffer's own extent is not the head's.
@@ -298,7 +300,8 @@ impl LiveDirectScanoutRefusal {
             Self::LayerResampled => "layer_resampled",
             Self::LayerTranslucent => "layer_translucent",
             Self::LayerTransformed => "layer_transformed",
-            Self::LayerNotFullHead => "layer_not_full_head",
+            Self::LayerOffset => "layer_offset",
+            Self::LayerNotHeadSized => "layer_not_head_sized",
             Self::LayerClipped => "layer_clipped",
             Self::BufferSizeMismatch => "buffer_size_mismatch",
             Self::FormatNotOpaque(_) => "format_not_opaque",
@@ -387,8 +390,14 @@ impl LiveOwnedMixedCompositionFrame {
             width: head_size.width,
             height: head_size.height,
         };
-        if placement.target != head {
-            return Err(LiveDirectScanoutRefusal::LayerNotFullHead);
+        // Split for the same reason Engine's verdict is: "not the head" is
+        // true of a layer at the wrong place and a layer of the wrong size,
+        // and the two send you to different fixes.
+        if placement.target.x != 0 || placement.target.y != 0 {
+            return Err(LiveDirectScanoutRefusal::LayerOffset);
+        }
+        if placement.target.width != head.width || placement.target.height != head.height {
+            return Err(LiveDirectScanoutRefusal::LayerNotHeadSized);
         }
         if placement.clip.is_some_and(|clip| clip != head) {
             return Err(LiveDirectScanoutRefusal::LayerClipped);

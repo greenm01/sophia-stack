@@ -52,7 +52,7 @@ printf '%s\n' \
     '' \
     'If the client does not fill the screen, its size does not match the mode:' \
     'set SOPHIA_STANDALONE_WIDTH and SOPHIA_STANDALONE_HEIGHT to the head it' \
-    'landed on. The verifier reports that as layer_not_full_head.' \
+    'landed on. The verifier reports that as layer_not_head_sized.' \
     '' \
     'A run in which nothing was eligible is a result, not a failure of the' \
     'run: the verifier prints which verdict every frame received.'

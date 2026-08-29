@@ -501,3 +501,43 @@ fn a_composed_submission_never_asks_the_driver_a_question() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn a_geometry_refusal_says_what_it_measured() {
+    // The histogram gives the category; the category is not the answer. A
+    // client short of its head by a scrollbar and one short by a monitor land
+    // in the same column, and the numbers are what separate them.
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_direct_scanout_enabled(true);
+    // A target must have been seen, because the head's size comes from it.
+    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
+        direct_scanout_head(),
+    ));
+
+    let mut frame = proven_direct_frame();
+    frame.direct_scanout = sophia_engine::DirectScanoutVerdict::LayerNotHeadSized;
+    let sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. } =
+        &mut frame.layers[0]
+    else {
+        panic!("direct fixture changed layer kind")
+    };
+    placement.target.height = 468;
+    exporter.set_pending_mixed_frame(frame);
+
+    let verdicts = exporter.direct_scanout_verdicts();
+    assert_eq!(
+        verdicts[sophia_engine::DirectScanoutVerdict::LayerNotHeadSized.reduced_index()],
+        1
+    );
+    // Reported once. A second refusing frame counts but does not speak again.
+    assert!(exporter.direct_scanout_geometry_reported());
+    let mut second = proven_direct_frame();
+    second.direct_scanout = sophia_engine::DirectScanoutVerdict::LayerNotHeadSized;
+    exporter.set_pending_mixed_frame(second);
+    assert_eq!(
+        exporter.direct_scanout_verdicts()
+            [sophia_engine::DirectScanoutVerdict::LayerNotHeadSized.reduced_index()],
+        2
+    );
+}

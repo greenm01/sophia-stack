@@ -13,7 +13,7 @@ temp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$temp_dir"' EXIT
 
 resources='sophia_live_native_resources schema=11 status=complete target_creations=6 renderer_workers=1 worker_result_misroutes=0 worker_max_service_skew=0 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=1'
-verdicts='sophia_live_direct_scanout_verdicts schema=1 status=complete eligible=44 layer_count=6 layer_not_active=0 layer_resampled=0 layer_not_full_head=0 layer_not_dma_buf=2 layer_translucent=0 composition_required=0 composed_cursor=0'
+verdicts='sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=44 layer_count=6 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=2 layer_translucent=0 composition_required=0 composed_cursor=0'
 
 write_pass() {
     local path="$1"
@@ -60,6 +60,24 @@ sed -e 's/ direct_scanout_attempts=44/ direct_scanout_attempts=0/' \
     "$pass" >"$quiet"
 reject "a run in which direct scanout never engaged" "$quiet" \
     "direct scanout never engaged"
+
+# A run that measured a geometry refusal reports the numbers, not only the
+# category: "not the head's size" is true of a client short by a scrollbar and
+# one short by a monitor, and the fix differs.
+measured="$temp_dir/measured.log"
+{
+    cat "$quiet"
+    printf 'sophia_live_direct_scanout_geometry schema=1 status=layer_not_head_sized output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1428\n'
+} >"$measured"
+if output="$("$verifier" "$measured" 2>&1)"; then
+    echo "the verifier accepted a run that never engaged" >&2
+    exit 1
+fi
+printf '%s\n' "$output" | grep -Fq "layer_height=1428" || {
+    echo "the verifier hid the geometry it measured:" >&2
+    printf '%s\n' "$output" >&2
+    exit 1
+}
 
 # Engine's proof disagreeing with the pixels it was computed from.
 disagreed="$temp_dir/disagreed.log"

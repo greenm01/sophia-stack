@@ -684,7 +684,7 @@ fn translucency_scaling_clipping_and_partial_cover_each_refuse() {
     };
     assert_eq!(
         partial.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
-        Refusal::LayerNotFullHead
+        Refusal::LayerNotHeadSized
     );
 
     // A clip that names the whole head clips nothing and is not a refusal.

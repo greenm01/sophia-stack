@@ -640,7 +640,7 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     if (( standalone_direct_scanout == 1 )) && [[ "$standalone_workload" == vkcube ]]; then
         # Sized to the head and bounded, so the probe needs no operator beyond
         # starting it. A client that is not exactly the head's size is not
-        # eligible, and the verdict histogram says `layer_not_full_head` when
+        # eligible, and the verdict histogram says `layer_not_head_sized` when
         # these do not match the mode -- which is the answer, not a failure of
         # the run.
         : "${SOPHIA_STANDALONE_FRAME_COUNT:=600}"

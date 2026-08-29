@@ -739,13 +739,14 @@ fn chrome_over_a_fullscreen_client_requires_composition() {
 #[test]
 fn a_letterboxed_client_does_not_cover_its_head() {
     // The same client on a head whose aspect it does not fill. The plan does
-    // carry letterbox rects the plane would not produce, but the layer stops
-    // short of the head first, and that is the more precise thing to say.
+    // carry letterbox rects the plane would not produce, but the layer is
+    // centred inside them and so is not at the head's origin, which is the
+    // first and most precise thing to say about it.
     let scene = direct_scanout_scene();
     let plan = build_head_composition_plan(&scene, target(1, 2560, 1600, OutputHeadMapping::Fit))
         .expect("the letterboxed scene plans");
 
-    assert_eq!(plan.direct_scanout, DirectScanoutVerdict::LayerNotFullHead);
+    assert_eq!(plan.direct_scanout, DirectScanoutVerdict::LayerOffset);
     assert!(
         plan.compositor.iter().any(|command| matches!(
             command,
@@ -753,6 +754,46 @@ fn a_letterboxed_client_does_not_cover_its_head() {
                 if rect.geometry.width != 0 && rect.geometry.height != 0
         )),
         "the letterbox rects this frame would need are present in the plan"
+    );
+}
+
+#[test]
+fn a_client_at_the_origin_but_short_of_the_head_is_not_head_sized() {
+    // The other half of the split: this one starts where the head starts, so
+    // it is not offset, and stops before the head ends. Without its own test
+    // the size arm could be deleted and every other case here would still
+    // pass, because the offset arm answers first for anything centred.
+    let mut scene = direct_scanout_scene();
+    scene.surfaces[0].geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1400,
+    };
+    scene.surfaces[0].clip = scene.surfaces[0].geometry;
+    // Its buffer shrinks with it, so the layer is not resampled -- resampling
+    // answers before geometry does, and this test is about geometry.
+    let shortened = Size {
+        width: 2560,
+        height: 1400,
+    };
+    scene.surfaces[0].content = SurfaceContentSet::new(
+        shortened,
+        vec![SurfaceContentVariant {
+            variant: 1,
+            source: BufferSource::DmaBuf { handle: 77 },
+            pixel_size: shortened,
+            density_millis: 1_000,
+            transform: SurfaceRasterTransform::Normal,
+            fidelity: SurfaceContentFidelity::AuthorityRaster,
+            damage: Region::single(scene.surfaces[0].geometry),
+        }],
+    )
+    .expect("the shortened content set is well formed");
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::LayerNotHeadSized
     );
 }
 

@@ -75,14 +75,15 @@ for log in "$@"; do
             fail "a client buffer reached a plane with no validating commit: $log"
     fi
 
-    verdicts="$(grep -E '^sophia_live_direct_scanout_verdicts schema=1 status=complete ' "$log" | tail -n1 || true)"
+    verdicts="$(grep -E '^sophia_live_direct_scanout_verdicts schema=2 status=complete ' "$log" | tail -n1 || true)"
     [[ -n "$verdicts" ]] || fail "session reported no eligibility verdicts: $log"
     index=0
     for pair in $verdicts; do
         [[ "$pair" == *=* ]] || continue
         name="${pair%%=*}"
         count="${pair#*=}"
-        [[ "$name" != schema && "$name" != status ]] || continue
+        [[ "$name" != schema && "$name" != status && "$name" != output && "$name" != head ]] ||
+            continue
         [[ "$count" =~ ^[0-9]+$ ]] || fail "verdict $name is not numeric: $count"
         if (( sessions == 1 )); then
             verdict_names+=("$name")
@@ -148,7 +149,16 @@ printf 'sophia_direct_scanout_gate schema=1 sessions=%s attempts=%s flips=%s tes
 printf 'sophia_direct_scanout_verdicts schema=1 sessions=%s%s\n' "$sessions" "$histogram"
 
 if (( total_flips == 0 )); then
-    printf 'No client buffer reached a plane. The verdict histogram above says why:\n' >&2
+    printf 'No client buffer reached a plane. Per head:\n' >&2
+    for log in "$@"; do
+        grep -hE '^sophia_live_direct_scanout_verdicts schema=2 status=head ' "$log" 2>/dev/null |
+            sed 's/^sophia_live_direct_scanout_verdicts schema=2 status=head /  /' >&2 || true
+    done
+    for log in "$@"; do
+        grep -hE '^sophia_live_direct_scanout_geometry schema=1 ' "$log" 2>/dev/null |
+            sed 's/^sophia_live_direct_scanout_geometry schema=1 /  measured: /' >&2 || true
+    done
+    printf 'The totals above say why:\n' >&2
     printf '  eligible=%s of %s lowered frames across %s sessions.\n' \
         "$total_eligible" \
         "$(( $(IFS=+; echo "$(printf '%s+' "${verdict_totals[@]}")0") ))" \

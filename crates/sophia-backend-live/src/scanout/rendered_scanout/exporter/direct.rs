@@ -103,6 +103,50 @@ where
         None
     }
 
+    /// Say what a geometry refusal actually measured, once per output.
+    ///
+    /// The histogram gives the category and the category is not the answer: a
+    /// client that is not the head's size could be off by a scrollbar or by a
+    /// monitor, and knowing which is the difference between a fix and another
+    /// physical run. Once, because the same client refuses the same way every
+    /// frame and a per-frame line would bury the session log.
+    pub(super) fn report_direct_scanout_geometry_refusal(
+        &mut self,
+        frame: &sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+    ) {
+        use sophia_engine::DirectScanoutVerdict as Verdict;
+
+        if self.direct_scanout_geometry_reported
+            || !matches!(
+                frame.direct_scanout,
+                Verdict::LayerOffset | Verdict::LayerNotHeadSized | Verdict::LayerClipped
+            )
+        {
+            return;
+        }
+        let Some(target) = self.last_target else {
+            return;
+        };
+        let Some(sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf {
+            placement, ..
+        }) = frame.layers.first()
+        else {
+            return;
+        };
+        self.direct_scanout_geometry_reported = true;
+        tracing::info!(
+            "sophia_live_direct_scanout_geometry schema=1 status={} output={} head_width={} head_height={} layer_x={} layer_y={} layer_width={} layer_height={}",
+            frame.direct_scanout.reduced_name(),
+            self.output.raw(),
+            target.size.width,
+            target.size.height,
+            placement.target.x,
+            placement.target.y,
+            placement.target.width,
+            placement.target.height,
+        );
+    }
+
     /// The scene generation of the direct attempt still outstanding, so every
     /// step of one episode names the same scene rather than only its first.
     pub(super) fn outstanding_direct_generation(&self) -> u64 {

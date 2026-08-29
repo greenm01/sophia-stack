@@ -205,9 +205,13 @@ pub enum DirectScanoutVerdict {
     LayerNotActive,
     /// The client's buffer would have to be scaled to fill the head.
     LayerResampled,
-    /// The layer does not cover the head exactly, so something else would
-    /// show through.
-    LayerNotFullHead,
+    /// The layer is the head's size but not at its origin.
+    LayerOffset,
+    /// The layer sits at the origin but is not the head's size.
+    LayerNotHeadSized,
+    /// The layer is clipped to less than itself, so part of the head shows
+    /// something else.
+    LayerClipped,
     /// The layer is not a client DMA-BUF; a CPU buffer has no framebuffer to
     /// hand the plane.
     LayerNotDmaBuf,
@@ -232,12 +236,20 @@ impl DirectScanoutVerdict {
     /// Exists so evidence can report a histogram without a reader having to
     /// know the enum, and so adding a verdict without extending the histogram
     /// is a compile error rather than a silently missing column.
-    pub const VERDICTS: [Self; 9] = [
+    /// How many verdicts there are, so a histogram over them cannot be
+    /// declared at the wrong width. Sized from `VERDICTS` rather than written
+    /// out: adding a verdict without widening every array is a compile error,
+    /// where a literal would have been a panic at the index instead.
+    pub const COUNT: usize = Self::VERDICTS.len();
+
+    pub const VERDICTS: [Self; 11] = [
         Self::Eligible,
         Self::LayerCount(0),
         Self::LayerNotActive,
         Self::LayerResampled,
-        Self::LayerNotFullHead,
+        Self::LayerOffset,
+        Self::LayerNotHeadSized,
+        Self::LayerClipped,
         Self::LayerNotDmaBuf,
         Self::LayerTranslucent,
         Self::CompositionRequired,
@@ -251,11 +263,13 @@ impl DirectScanoutVerdict {
             Self::LayerCount(_) => 1,
             Self::LayerNotActive => 2,
             Self::LayerResampled => 3,
-            Self::LayerNotFullHead => 4,
-            Self::LayerNotDmaBuf => 5,
-            Self::LayerTranslucent => 6,
-            Self::CompositionRequired => 7,
-            Self::ComposedCursor => 8,
+            Self::LayerOffset => 4,
+            Self::LayerNotHeadSized => 5,
+            Self::LayerClipped => 6,
+            Self::LayerNotDmaBuf => 7,
+            Self::LayerTranslucent => 8,
+            Self::CompositionRequired => 9,
+            Self::ComposedCursor => 10,
         }
     }
 
@@ -266,7 +280,9 @@ impl DirectScanoutVerdict {
             Self::LayerCount(_) => "layer_count",
             Self::LayerNotActive => "layer_not_active",
             Self::LayerResampled => "layer_resampled",
-            Self::LayerNotFullHead => "layer_not_full_head",
+            Self::LayerOffset => "layer_offset",
+            Self::LayerNotHeadSized => "layer_not_head_sized",
+            Self::LayerClipped => "layer_clipped",
             Self::LayerNotDmaBuf => "layer_not_dma_buf",
             Self::LayerTranslucent => "layer_translucent",
             Self::CompositionRequired => "composition_required",
@@ -333,13 +349,21 @@ pub fn direct_scanout_verdict(plan: &HeadCompositionPlan) -> DirectScanoutVerdic
     if layer.opacity_millis != 1_000 {
         return DirectScanoutVerdict::LayerTranslucent;
     }
-    let covers_head = layer.native_geometry.x == 0
-        && layer.native_geometry.y == 0
-        && layer.native_geometry.width == plan.native_size.width
-        && layer.native_geometry.height == plan.native_size.height
-        && layer.native_clip == layer.native_geometry;
-    if !covers_head {
-        return DirectScanoutVerdict::LayerNotFullHead;
+    // Three separate reasons a layer might not be the head, reported apart.
+    // Conflating them cost a physical run: "does not cover the head" is true
+    // of a window at the wrong place, a window of the wrong size, and a window
+    // clipped smaller than itself, and knowing which is the difference between
+    // fixing it and guessing again.
+    if layer.native_geometry.x != 0 || layer.native_geometry.y != 0 {
+        return DirectScanoutVerdict::LayerOffset;
+    }
+    if layer.native_geometry.width != plan.native_size.width
+        || layer.native_geometry.height != plan.native_size.height
+    {
+        return DirectScanoutVerdict::LayerNotHeadSized;
+    }
+    if layer.native_clip != layer.native_geometry {
+        return DirectScanoutVerdict::LayerClipped;
     }
     if plan.cursor.is_some() {
         return DirectScanoutVerdict::ComposedCursor;

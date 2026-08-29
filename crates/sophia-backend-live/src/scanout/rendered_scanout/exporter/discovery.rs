@@ -43,7 +43,7 @@ where
     context_open_attempts: usize,
     export_attempts: usize,
     preferred_modifiers: Vec<u64>,
-    last_target: Option<LiveGbmEglFrameTargetRecord>,
+    pub(super) last_target: Option<LiveGbmEglFrameTargetRecord>,
     last_target_lifecycle: Option<LiveGbmEglFrameTargetLifecycleReport>,
     pub(super) last_export_status: Option<LiveRendererScanoutBufferExportStatus>,
     pub(super) pending_frame: Option<PendingRenderedFrame>,
@@ -64,7 +64,10 @@ where
     /// exactly, not a different path that happens to compose.
     pub(super) direct_scanout_enabled: bool,
     /// How many lowered frames carried each verdict, in `VERDICTS` order.
-    direct_scanout_verdicts: [usize; 9],
+    direct_scanout_verdicts: [usize; sophia_engine::DirectScanoutVerdict::COUNT],
+    /// Whether this output has already said what its geometry refusal
+    /// measured. One line is the diagnostic; one per frame is noise.
+    pub(super) direct_scanout_geometry_reported: bool,
     /// The composed form of a frame handed out directly, kept until the
     /// submission that took it says whether it reached a screen.
     ///
@@ -156,7 +159,8 @@ where
             last_cpu_frame_checksum: None,
             last_cpu_frame_export_status: None,
             direct_scanout_enabled: false,
-            direct_scanout_verdicts: [0; 9],
+            direct_scanout_verdicts: [0; sophia_engine::DirectScanoutVerdict::COUNT],
+            direct_scanout_geometry_reported: false,
             direct_scanout_tested: false,
             direct_fallback: None,
             direct_scanout_attempts: 0,
@@ -379,12 +383,18 @@ where
         self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()] = self
             .direct_scanout_verdicts[frame.direct_scanout.reduced_index()]
             .saturating_add(1);
+        self.report_direct_scanout_geometry_refusal(&frame);
         self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
+    }
+
+    /// Whether this output has said what its geometry refusal measured.
+    pub const fn direct_scanout_geometry_reported(&self) -> bool {
+        self.direct_scanout_geometry_reported
     }
 
     /// How many lowered frames carried each verdict, indexed as
     /// `DirectScanoutVerdict::VERDICTS`.
-    pub const fn direct_scanout_verdicts(&self) -> [usize; 9] {
+    pub const fn direct_scanout_verdicts(&self) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
         self.direct_scanout_verdicts
     }
 
