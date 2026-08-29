@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use sophia_backend_live::LiveRendererFrameSlotId;
+use sophia_renderer_live::NativeFrameTargetSetId;
 use sophia_backend_live::WorkerSlotDamage;
 use sophia_renderer_live::{
     LiveCompositionPlacement, LiveGbmEglFrameTargetRecord, LiveNativeCompositionRepaintOutcome,
@@ -249,6 +250,7 @@ fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             slot_damage.repaint_table(slot, frame.output_damage_snapshot.as_ref(), target.size);
         let report = context
             .export_owned_mixed_frame_with_modifiers_in_frame_slot(
+                NativeFrameTargetSetId::DEFAULT,
                 slot_index,
                 target,
                 &frame,
@@ -274,7 +276,7 @@ fn render_sequence(node: &std::path::Path, damage_enabled: bool) -> Run {
             frame.output_damage_snapshot.clone(),
         );
         let metrics = context
-            .composition_pixel_metrics()
+            .composition_pixel_metrics(NativeFrameTargetSetId::DEFAULT)
             .expect("forced capture reads every frame");
         checksums.push(metrics.checksum);
     }
@@ -355,6 +357,7 @@ fn a_lying_damage_table_is_caught_by_the_checksum() {
         let table = (step >= SLOTS).then_some(&lying_table);
         let report = context
             .export_owned_mixed_frame_with_modifiers_in_frame_slot(
+                NativeFrameTargetSetId::DEFAULT,
                 slot_index,
                 target,
                 &frame,
@@ -370,7 +373,7 @@ fn a_lying_damage_table_is_caught_by_the_checksum() {
             lied = true;
         }
         let metrics = context
-            .composition_pixel_metrics()
+            .composition_pixel_metrics(NativeFrameTargetSetId::DEFAULT)
             .expect("forced capture reads every frame");
         if metrics.checksum != full.checksums[step] {
             diverged = true;
