@@ -7,7 +7,7 @@ set -euo pipefail
 # bridge in the session. A passing run promotes the three native frame slots.
 #
 # Unlike the switcher gate, this one runs the session through the ordinary
-# `hagia` runner profile rather than launching `sophia-live-session` itself.
+# `hagia` runner profile rather than launching `sophia session run` itself.
 # That runner already owns TTY mode save/restore, keyd, the Ctrl-Alt-Backspace
 # input guard, and the `sophia_tty_recovery` record. Exact TTY recovery is one
 # of this gate's exit criteria, so the gate uses the component that produces it

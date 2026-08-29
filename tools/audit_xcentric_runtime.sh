@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-tree="$(cargo tree --offline -p sophia-cli --features atomic-scanout-live -e normal)"
+tree="$(cargo tree --offline -p sophia-cli --features native-session -e normal)"
 if grep -qiE 'sophia-wayland-authority|smithay|wayland-(server|backend|protocols)' <<<"$tree"; then
     echo "Production Sophia dependency graph still contains a Wayland frontend." >&2
     exit 1

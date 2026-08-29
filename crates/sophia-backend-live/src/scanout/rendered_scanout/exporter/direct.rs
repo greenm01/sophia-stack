@@ -10,8 +10,7 @@
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use super::{
     LiveRenderedScanoutBufferExport, NativeGbmRenderedScanoutBufferDiscoveryExporter,
-    NativeGbmRenderedScanoutOwner,
-    discovery::PendingRenderedFrame,
+    NativeGbmRenderedScanoutOwner, discovery::PendingRenderedFrame,
 };
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use crate::RenderDeviceDiscoveryBackend;
@@ -73,8 +72,7 @@ where
                     // this is the frame that gets composed instead.
                     self.direct_fallback = Some(frame);
                     self.direct_scanout_tested = continuing_episode;
-                    self.last_export_status =
-                        Some(LiveRendererScanoutBufferExportStatus::Exported);
+                    self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Exported);
                     return Some(LiveRenderedScanoutBufferExport::new(
                         LiveRendererScanoutBufferExportStatus::Exported,
                         LiveRendererScanoutBufferExportDetail::from_status(
@@ -105,7 +103,8 @@ where
                     // Clear the proof before reinstalling, so the frame that
                     // falls through composes rather than arriving here again
                     // and being refused for the same reason every frame.
-                    frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
+                    frame.direct_scanout =
+                        sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
                     self.pending_frame = Some(PendingRenderedFrame::Mixed(frame));
                 }
             }
@@ -181,7 +180,12 @@ where
             .map(|trace| trace.scene_generation)
     }
 
-    pub(super) fn record_direct_scanout_episode(&self, status: &str, generation: u64, reason: &str) {
+    pub(super) fn record_direct_scanout_episode(
+        &self,
+        status: &str,
+        generation: u64,
+        reason: &str,
+    ) {
         tracing::info!(
             "sophia_live_direct_scanout schema=1 status={status} output={} scene_generation={generation} reason={reason}",
             self.output.raw(),
@@ -284,4 +288,3 @@ where
         true
     }
 }
-

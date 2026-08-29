@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/sophia-conformance",
     "crates/sophia-cli",
     "crates/sophia-backend-live",
     "crates/sophia-broker",
@@ -10,6 +11,7 @@ members = [
     "crates/sophia-renderer-native-egl",
     "crates/sophia-renderer-live",
     "crates/sophia-runtime",
+    "crates/sophia-session",
     "crates/sophia-sysv-shm",
     "crates/sophia-wm-demo",
     "crates/sophia-x-authority",
@@ -29,6 +31,7 @@ default-members = [
     "crates/sophia-renderer-native-egl",
     "crates/sophia-renderer-live",
     "crates/sophia-runtime",
+    "crates/sophia-session",
     "crates/sophia-sysv-shm",
     "crates/sophia-wm-demo",
     "crates/sophia-x-authority",

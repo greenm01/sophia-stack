@@ -75,9 +75,9 @@ if [[ "$DIAGNOSTIC" == 1 ]]; then
         exit 1
     }
     env RUSTFLAGS="${RUSTFLAGS:-} -C debuginfo=2" CARGO_INCREMENTAL=0 \
-        cargo build --release --offline -p sophia-cli --features atomic-scanout-live
+        cargo build --release --offline -p sophia-cli --features native-session
 else
-    cargo build --release --offline -p sophia-cli --features atomic-scanout-live
+    cargo build --release --offline -p sophia-cli --features native-session
 fi
 tools/atomic_scanout_preflight.sh
 tools/build_wayland_dmabuf_producer.sh "$PRODUCER"

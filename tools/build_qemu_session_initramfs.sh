@@ -55,7 +55,7 @@ XMONAD_INCLUDE=()
 [[ -z "$XMONAD_BIN" ]] || XMONAD_INCLUDE=(--include "$XMONAD_BIN" /usr/bin/xmonad)
 (
     cd "$ROOT_DIR"
-    cargo build --release --offline -p sophia-cli -p sophia-x11-wm-bridge --features atomic-scanout-live
+    cargo build --release --offline -p sophia-cli -p sophia-x11-wm-bridge --features native-session
 )
 
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"

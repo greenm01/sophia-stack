@@ -35,7 +35,7 @@ if (( ${#phases[@]} == 0 )); then
 fi
 
 cd "$ROOT_DIR"
-cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
+cargo build --quiet --offline -p sophia-cli --features native-session
 
 for index in "${!phases[@]}"; do
     phase="${phases[$index]}"
@@ -53,7 +53,7 @@ for index in "${!phases[@]}"; do
     SOPHIA_HAGIA_BIN="$hagia_bin" \
     SOPHIA_HAGIA_RESTART_MARKER="$marker" \
     SOPHIA_HAGIA_FAULT_AFTER="$phase" \
-    target/debug/sophia sophia-live-session \
+    target/debug/sophia session run \
         --no-config \
         --session-mode=normal \
         "--session-app=terminal=$kitty_bin" \

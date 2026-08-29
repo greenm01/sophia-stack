@@ -23,7 +23,7 @@ supervision fails.
 The first bootstrap live session launcher is now a single command:
 
 ```sh
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- sophia-live-session --terminal=xterm
+cargo run --offline -q -p sophia-cli --features native-session -- session run --terminal=xterm
 ```
 
 This default mode binds `:77` unless `--display=:NUMBER` is supplied, launches
@@ -34,8 +34,8 @@ TTY control plane. Physical keyboard input can be enabled with one or more
 explicit comma-separated event nodes:
 
 ```sh
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- \
-  sophia-live-session --display=:77 \
+cargo run --offline -q -p sophia-cli --features native-session -- \
+  session run --display=:77 \
   --input-devices=/dev/input/by-path/platform-i8042-serio-0-event-kbd
 ```
 
@@ -47,8 +47,8 @@ routed-key counts, never device paths.
 A bounded persistence/input regression is:
 
 ```sh
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- \
-  sophia-live-session --display=:177 --max-runtime-ms=6000 --inject-text=sophia
+cargo run --offline -q -p sophia-cli --features native-session -- \
+  session run --display=:177 --max-runtime-ms=6000 --inject-text=sophia
 ```
 
 For an external libinput proof, replace `--inject-text` with

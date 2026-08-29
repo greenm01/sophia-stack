@@ -28,7 +28,7 @@ artifact="$ARTIFACT_ROOT/sophia-$release_id"
     exit 1
 }
 
-cargo build --offline --release -p sophia-cli --features atomic-scanout-live
+cargo build --offline --release -p sophia-cli --features native-session
 cargo build --offline --release -p sophia-x11-wm-bridge
 cargo build --offline --release -p sophia-wm-demo
 xmonad_bin="$(tools/build_sophia_xmonad.sh)"

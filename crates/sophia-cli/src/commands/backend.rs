@@ -3,19 +3,37 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "atomic-scanout-smoke-live")]
 use super::prelude::parse_u64;
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 use super::prelude::{BufferSource, Size, XAuthorityCpuBufferSnapshot, arg_value};
 #[cfg(feature = "atomic-scanout-smoke-live")]
-use sophia_cli::backend_args::{
+use sophia_session::backend_args::{
     atomic_scanout_smoke_child_args, atomic_scanout_smoke_child_timeout,
 };
 #[cfg(feature = "atomic-scanout-smoke-live")]
-use sophia_cli::backend_evidence::runtime_rendered_scanout_evidence_is_clean;
+use sophia_session::backend_evidence::runtime_rendered_scanout_evidence_is_clean;
 
 pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
+    if args.first().map(String::as_str) == Some("session") {
+        match args.get(1).map(String::as_str) {
+            Some("run") => run_native_session(args)?,
+            Some("input-guard") => sophia_session::run_input_guard(args)?,
+            Some(command) => {
+                return Err(format!(
+                    "unknown session command {command:?}; expected run or input-guard"
+                )
+                .into());
+            }
+            None => {
+                return Err("session requires run or input-guard".into());
+            }
+        }
+        return Ok(true);
+    }
+
+    #[cfg(feature = "native-session")]
     if args.iter().any(|arg| arg == "sophia-session-input-guard") {
-        super::live_session::input_guard::run(args)?;
+        sophia_session::run_input_guard(args)?;
         return Ok(true);
     }
 
@@ -83,13 +101,13 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if args.iter().any(|arg| arg == "native-topology-validate") {
         run_native_topology_validation(args)?;
         return Ok(true);
     }
 
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if args.iter().any(|arg| arg == "native-topology-apply") {
         if std::env::var_os("SOPHIA_NATIVE_OUTPUT_APPLY").is_none() {
             return Err(
@@ -137,7 +155,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if args
         .iter()
         .any(|arg| arg == "native-egl-vkcube-mixed-smoke")
@@ -146,7 +164,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if args
         .iter()
         .any(|arg| arg == "native-egl-vkcube-mixed-smoke-child")
@@ -154,7 +172,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         if std::env::var_os("SOPHIA_NATIVE_EGL_MIXED_CHILD").is_none() {
             return Ok(true);
         }
-        let result = super::live_session::run_persistent_xterm_session(args);
+        let result = sophia_session::run_from_args(args);
         match result {
             Err(error) => {
                 let Some(report) =
@@ -183,20 +201,9 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if args.iter().any(|arg| arg == "sophia-live-session") {
-        if args.iter().any(|arg| arg.starts_with("--client=")) {
-            super::live_session::run_persistent_xterm_session(args)?;
-        } else if args.iter().any(|arg| arg == "--proof") {
-            run_sophia_live_session_bootstrap(args)?;
-        } else if arg_value(args, "--client-backend")
-            .as_deref()
-            .is_some_and(|backend| backend != "sophia-x")
-        {
-            return Err("unsupported client backend; expected sophia-x".into());
-        } else {
-            super::live_session::run_persistent_xterm_session(args)?;
-        }
+        run_native_session(args)?;
         return Ok(true);
     }
 
@@ -332,6 +339,23 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
     Ok(false)
 }
 
+#[cfg(feature = "native-session")]
+fn run_native_session(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.iter().any(|arg| arg.starts_with("--client=")) {
+        sophia_session::run_from_args(args)?;
+    } else if args.iter().any(|arg| arg == "--proof") {
+        run_sophia_live_session_bootstrap(args)?;
+    } else if arg_value(args, "--client-backend")
+        .as_deref()
+        .is_some_and(|backend| backend != "sophia-x")
+    {
+        return Err("unsupported client backend; expected sophia-x".into());
+    } else {
+        sophia_session::run_from_args(args)?;
+    }
+    Ok(())
+}
+
 /// Runs startup's output-activation path against real hardware and changes nothing.
 ///
 /// This is the same chain a session runs: read capabilities, project a topology,
@@ -355,7 +379,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 /// would honour is the profile these commands validate. `--desktop-profile=PATH`
 /// overrides it, and `--no-config` forces the compiled default for a run that
 /// deliberately wants it.
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn topology_desktop_profile_source(args: &[String]) -> Result<Option<std::path::PathBuf>, String> {
     if args.iter().any(|arg| arg == "--no-config") {
         return Ok(None);
@@ -375,16 +399,16 @@ fn topology_desktop_profile_source(args: &[String]) -> Result<Option<std::path::
     ))
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    use sophia_cli::desktop_output_activation::{
+    use sophia_session::desktop_output_activation::{
         NativeOutputActivationSettlement, run_native_output_activation,
     };
-    use sophia_cli::desktop_output_commit::NativeOutputTopologyValidationExecutor;
-    use sophia_cli::desktop_output_heads::{
+    use sophia_session::desktop_output_commit::NativeOutputTopologyValidationExecutor;
+    use sophia_session::desktop_output_heads::{
         LiveNativeOutputTopologyHardware, resolve_native_output_topology_heads,
     };
-    use sophia_cli::desktop_output_topology::{
+    use sophia_session::desktop_output_topology::{
         prepare_native_output_activation_plan, project_native_output_topology,
     };
 
@@ -425,7 +449,7 @@ fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::er
     let outputs = plan
         .targets()
         .iter()
-        .map(sophia_cli::desktop_output_topology::NativeOutputActivationTarget::output)
+        .map(sophia_session::desktop_output_topology::NativeOutputActivationTarget::output)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let connectors = plan.targets().len();
@@ -435,7 +459,7 @@ fn run_native_topology_validation(args: &[String]) -> Result<(), Box<dyn std::er
     let resolved = resolve_native_output_topology_heads(&plan, &capabilities, &hardware)
         .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
     let heads = resolved.len();
-    let card = super::live_session::plan_validation_device(&native, &plan)
+    let card = sophia_session::plan_validation_device(&native, &plan)
         .ok_or("native topology spans more than one DRM device and cannot be validated as one")?;
 
     let mut executor = NativeOutputTopologyValidationExecutor::new(card, resolved.heads());
@@ -472,21 +496,21 @@ profile={profile}"
 ///
 /// Rollback heads are resolved before apply runs, from the topology still on screen.
 /// Sourcing them afterwards would source them from a desktop that is already wrong.
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_backend_live::LiveGbmEglFrameTargetRecord;
-    use sophia_cli::desktop_output_activation::{
+    use sophia_session::desktop_output_activation::{
         NativeOutputActivationSettlement, NativeOutputRollbackSettlement,
         run_native_output_activation,
     };
-    use sophia_cli::desktop_output_commit::{NativeOutputCommitExecutor, NativeOutputHeadSet};
-    use sophia_cli::desktop_output_frames::{
+    use sophia_session::desktop_output_commit::{NativeOutputCommitExecutor, NativeOutputHeadSet};
+    use sophia_session::desktop_output_frames::{
         NativeOutputFrameTarget, native_output_apply_admission,
     };
-    use sophia_cli::desktop_output_heads::{
+    use sophia_session::desktop_output_heads::{
         LiveNativeOutputTopologyHardware, resolve_native_output_scanout_heads,
     };
-    use sophia_cli::desktop_output_topology::{
+    use sophia_session::desktop_output_topology::{
         prepare_native_output_activation_plan, project_native_output_topology,
     };
 
@@ -570,7 +594,7 @@ fn run_native_topology_apply(args: &[String]) -> Result<(), Box<dyn std::error::
     let resolved = resolve_native_output_scanout_heads(&plan, &capabilities, &hardware)
         .map_err(|error| format!("native topology could not be resolved into heads: {error}"))?;
     let heads = resolved.len();
-    let card = super::live_session::plan_validation_device(&native, &plan)
+    let card = sophia_session::plan_validation_device(&native, &plan)
         .ok_or("native topology spans more than one DRM device and cannot be applied as one")?;
 
     let head_set = NativeOutputHeadSet {
@@ -606,7 +630,7 @@ heads={heads} generation={generation} profile={profile}"
     Ok(())
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn run_native_egl_vkcube_mixed_smoke_parent(
     args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -659,11 +683,11 @@ fn run_native_egl_vkcube_mixed_smoke_parent(
     }
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn run_sophia_live_session_bootstrap(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(display) = arg_value(args, "--display") {
         return Err(format!(
-            "sophia-live-session proof mode does not support explicit --display={display} yet; omit --display to use the generated proof display"
+            "sophia session run proof mode does not support explicit --display={display} yet; omit --display to use the generated proof display"
         )
         .into());
     }
@@ -674,7 +698,7 @@ fn run_sophia_live_session_bootstrap(args: &[String]) -> Result<(), Box<dyn std:
         .unwrap_or(terminal.as_str());
     if terminal_name != "xterm" {
         return Err(format!(
-            "sophia-live-session currently supports --terminal=xterm, got {terminal:?}"
+            "sophia session run currently supports --terminal=xterm, got {terminal:?}"
         )
         .into());
     }
@@ -739,7 +763,7 @@ fn run_sophia_live_session_bootstrap(args: &[String]) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn compose_terminal_cpu_buffers(
     proof: &super::x_authority::XAuthorityTerminalRenderProof,
     output_size: Size,

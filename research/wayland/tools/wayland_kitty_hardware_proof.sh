@@ -117,7 +117,7 @@ keyd_restored=1
 if [[ "$keyd_was_running" == 1 ]] && ! pgrep -x keyd >/dev/null 2>&1; then
     keyd_restored=0
 fi
-if pgrep -af 'target/release/sophia (sophia-wayland-session|sophia-session-input-guard)' \
+if pgrep -af 'target/release/sophia (sophia-wayland-session|session input-guard)' \
     >/dev/null 2>&1; then
     echo "Sophia Wayland session or input guard survived wrapper cleanup" >&2
     exit 1

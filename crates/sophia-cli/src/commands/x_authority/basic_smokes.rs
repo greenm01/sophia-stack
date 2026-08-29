@@ -414,7 +414,7 @@ fn run_x_authority_xmobar_smoke()
 /// Without the live scanout feature there is no GPU allocation path compiled in,
 /// and a probe that cannot originate a buffer still serves the client-allocated
 /// half exactly as before.
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn external_probe_pixmap_allocator() -> Result<
     Option<Arc<dyn sophia_x_authority::XServerFrontendPixmapAllocator>>,
     Box<dyn std::error::Error>,
@@ -424,7 +424,7 @@ fn external_probe_pixmap_allocator() -> Result<
     })))
 }
 
-#[cfg(not(feature = "atomic-scanout-live"))]
+#[cfg(not(feature = "native-session"))]
 fn external_probe_pixmap_allocator() -> Result<
     Option<Arc<dyn sophia_x_authority::XServerFrontendPixmapAllocator>>,
     Box<dyn std::error::Error>,
@@ -434,12 +434,12 @@ fn external_probe_pixmap_allocator() -> Result<
 
 /// Originates buffers for the probe, so an offline client can exercise the
 /// half of DRI3 where the server owns the storage.
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 struct ExternalProbePixmapAllocator {
     device: std::fs::File,
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 impl sophia_x_authority::XServerFrontendPixmapAllocator for ExternalProbePixmapAllocator {
     fn allocate_pixmap_buffer(
         &self,

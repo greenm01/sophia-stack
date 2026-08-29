@@ -67,7 +67,8 @@ case "$wm" in
 esac
 
 session_args=(
-    sophia-live-session
+    session
+    run
     --session-mode=normal
     "--session-app=terminal=$terminal_bin"
     --session-start=terminal

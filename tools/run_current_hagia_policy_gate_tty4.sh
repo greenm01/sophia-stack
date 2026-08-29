@@ -58,7 +58,7 @@ echo "Hagia:  $hagia_commit"
 (
     cd "$ROOT_DIR"
     cargo build --quiet --release --offline -p sophia-cli \
-        --features atomic-scanout-live
+        --features native-session
 )
 desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"
 [[ -f "$desktop_profile" ]] || {

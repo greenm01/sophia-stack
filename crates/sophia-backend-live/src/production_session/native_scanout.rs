@@ -2735,10 +2735,9 @@ mod persistent_native_scanout {
             // glass. A head enabled here would take the direct path before that
             // proof could be made, and the proof reads composed pixels.
             self.direct_scanout_admissible = Self::direct_scanout_enabled();
-            self.exporters[index]
-                .set_direct_scanout_enabled(
-                    self.direct_scanout_admitted && self.direct_scanout_admissible && !mirrored,
-                );
+            self.exporters[index].set_direct_scanout_enabled(
+                self.direct_scanout_admitted && self.direct_scanout_admissible && !mirrored,
+            );
             if Self::shared_renderer_worker_enabled() {
                 let group = self.heads[index].group;
                 if self.groups[group].renderer_core.is_none() {
@@ -2791,7 +2790,9 @@ mod persistent_native_scanout {
             self.exporters.iter().fold(
                 LiveProductionDirectScanoutTotals::default(),
                 |totals, exporter| LiveProductionDirectScanoutTotals {
-                    attempts: totals.attempts.saturating_add(exporter.direct_scanout_attempts()),
+                    attempts: totals
+                        .attempts
+                        .saturating_add(exporter.direct_scanout_attempts()),
                     flips: totals.flips.saturating_add(exporter.direct_scanout_flips()),
                     tests: totals.tests.saturating_add(exporter.direct_scanout_tests()),
                     test_rejections: totals
@@ -2830,21 +2831,30 @@ mod persistent_native_scanout {
                 .enumerate()
                 .filter_map(|(index, exporter)| {
                     let head = self.heads.get(index)?;
-                    Some((head.output.id, head.head, exporter.direct_scanout_verdicts()))
+                    Some((
+                        head.output.id,
+                        head.head,
+                        exporter.direct_scanout_verdicts(),
+                    ))
                 })
                 .collect()
         }
 
         /// The same, summed over heads.
-        pub fn direct_scanout_verdicts(&self) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
-            self.exporters.iter().fold([0usize; sophia_engine::DirectScanoutVerdict::COUNT], |mut totals, exporter| {
-                for (total, count) in
-                    std::iter::zip(&mut totals, exporter.direct_scanout_verdicts())
-                {
-                    *total = total.saturating_add(count);
-                }
-                totals
-            })
+        pub fn direct_scanout_verdicts(
+            &self,
+        ) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
+            self.exporters.iter().fold(
+                [0usize; sophia_engine::DirectScanoutVerdict::COUNT],
+                |mut totals, exporter| {
+                    for (total, count) in
+                        std::iter::zip(&mut totals, exporter.direct_scanout_verdicts())
+                    {
+                        *total = total.saturating_add(count);
+                    }
+                    totals
+                },
+            )
         }
 
         /// Let heads take the direct path, now that startup readiness has
@@ -3254,30 +3264,29 @@ mod persistent_native_scanout {
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
-    LiveProductionCpuFrameQueueStatus, LiveProductionHeadCompositionFrame,
-    LiveProductionMirrorGenerationQueue, LiveProductionMirrorGroupBegin,
-    LiveProductionMirrorGroupLifecycle, LiveProductionMirrorHeadTransition,
-    LiveProductionNativeFrameId, LiveProductionNativeFrameRetirement, LiveProductionNativeHead,
-    LiveProductionNativeScanout, LiveProductionNativeTopologyApplyCoordinator,
-    LiveProductionNativeTopologyApplyPhase, LiveProductionNativeTopologyApplyTransition,
-    LiveProductionNativeTopologyCandidateResource, LiveProductionNativeTopologyCurrentHead,
-    LiveProductionNativeTopologyDisposition, LiveProductionNativeTopologyHeadPlan,
-    LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
-    LiveProductionNativeTopologyPreparationPhase, LiveProductionNativeTopologyPreparationReport,
-    LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
-    LiveProductionNativeTopologyResourceTransition, LiveProductionDirectScanoutTotals,
-    LiveProductionPageFlipWatchdogStatus,
-    LiveProductionRendererImageHandoff, LiveProductionRetainedSceneQueueStatus,
-    LiveProductionScanoutContent, LiveProductionSemanticStartupBarrier,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, live_topology_frame_renderer_image_requirements,
-    plan_live_production_native_topology, project_live_production_published_topology,
-    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
-    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
-    reduce_live_production_mirror_generation_queue, reduce_live_production_page_flip_watchdog,
-    reduce_live_production_retained_scene_queue, reduce_live_production_semantic_startup_barrier,
-    validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
-    validate_live_production_topology_frames,
+    LiveProductionCpuFrameQueueStatus, LiveProductionDirectScanoutTotals,
+    LiveProductionHeadCompositionFrame, LiveProductionMirrorGenerationQueue,
+    LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
+    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionNativeTopologyApplyCoordinator, LiveProductionNativeTopologyApplyPhase,
+    LiveProductionNativeTopologyApplyTransition, LiveProductionNativeTopologyCandidateResource,
+    LiveProductionNativeTopologyCurrentHead, LiveProductionNativeTopologyDisposition,
+    LiveProductionNativeTopologyHeadPlan, LiveProductionNativeTopologyPlan,
+    LiveProductionNativeTopologyPlanError, LiveProductionNativeTopologyPreparationPhase,
+    LiveProductionNativeTopologyPreparationReport, LiveProductionNativeTopologyResourceCohort,
+    LiveProductionNativeTopologyResourceRejection, LiveProductionNativeTopologyResourceTransition,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRendererImageHandoff,
+    LiveProductionRetainedSceneQueueStatus, LiveProductionScanoutContent,
+    LiveProductionSemanticStartupBarrier, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
+    project_live_production_published_topology, project_mirror_output_damage_snapshot,
+    project_native_cursor_logical_viewport, reduce_live_production_cpu_frame_queue,
+    reduce_live_production_head_render_target, reduce_live_production_mirror_generation_queue,
+    reduce_live_production_page_flip_watchdog, reduce_live_production_retained_scene_queue,
+    reduce_live_production_semantic_startup_barrier, validate_live_head_composition_frame_batch,
+    validate_live_production_rollback_topology, validate_live_production_topology_frames,
 };
 
 #[derive(Debug)]

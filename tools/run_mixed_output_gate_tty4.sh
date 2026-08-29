@@ -221,7 +221,7 @@ set +e
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
     SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions \
     RUST_LOG="${RUST_LOG:-sophia=info,sophia_backend_live=info}" \
-        "$sophia_bin" sophia-live-session \
+        "$sophia_bin" session run \
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --config="$CORE_CONFIG" \

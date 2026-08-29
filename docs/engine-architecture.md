@@ -271,11 +271,13 @@ This map is transitional rather than a promise that each domain will always be
 one file or directory. Domain cohesion and ownership determine module splits;
 file length is only a warning signal.
 
-Some live-session supervision and external-socket coordination currently
-remain in `sophia-cli`. That is an implementation seam, not permission for the
-CLI to acquire visual authority. Reusable visual transition logic belongs in
-Engine; process launch, recovery, and user-facing commands belong in the
-session/runtime layer.
+Live-session supervision and external-socket coordination live in
+`sophia-session`, outside the command-line crate. Reusable visual transition
+logic belongs in Engine; process launch and recovery belong in the session
+layer; user-facing command selection and presentation belong in `sophia-cli`.
+The session library reports evidence through a host-installed callback and does
+not print directly, so extracting lifecycle ownership does not create a second
+presentation boundary.
 
 ## Data-Oriented Constraints
 

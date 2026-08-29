@@ -35,14 +35,14 @@ if (( ${#phases[@]} == 0 )); then
 fi
 
 cd "$ROOT_DIR"
-cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
+cargo build --quiet --offline -p sophia-cli --features native-session
 
 for index in "${!phases[@]}"; do
     phase="${phases[$index]}"
     display=":$((base_display_number + index))"
     evidence="$proof_dir/$phase.log"
     set +e
-    target/debug/sophia sophia-live-session \
+    target/debug/sophia session run \
         --no-config \
         --session-mode=normal \
         "--session-app=terminal=$kitty_bin" \

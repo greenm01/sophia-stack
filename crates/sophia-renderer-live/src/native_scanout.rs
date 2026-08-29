@@ -367,8 +367,7 @@ impl LiveDirectScanoutBuffer {
     /// a missing plane and refuses -- correctly, but after the syscalls.
     pub fn try_clone_plane_fds(&self) -> std::io::Result<[Option<OwnedFd>; 4]> {
         let mut cloned = std::array::from_fn(|_| None);
-        for (target, source) in
-            std::iter::zip(&mut cloned, self.planes.iter().map(Option::as_ref))
+        for (target, source) in std::iter::zip(&mut cloned, self.planes.iter().map(Option::as_ref))
         {
             if let Some(plane) = source {
                 *target = Some(plane.fd.try_clone()?);

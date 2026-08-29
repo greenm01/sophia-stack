@@ -8,7 +8,7 @@ trap 'rm -rf "$RUNTIME_DIR"' EXIT
 chmod 700 "$RUNTIME_DIR"
 
 cd "$ROOT_DIR"
-cargo build -p sophia-cli --features atomic-scanout-live
+cargo build -p sophia-cli --features native-session
 env XDG_RUNTIME_DIR="$RUNTIME_DIR" LIBGL_ALWAYS_SOFTWARE=1 \
     target/debug/sophia sophia-wayland-session \
     --client=/usr/bin/kitty \

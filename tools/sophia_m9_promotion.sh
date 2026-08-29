@@ -311,9 +311,9 @@ adopt_parent_hardware_smoke() {
 
 pre_emergency_adoption_path_allowed() {
     case "$1" in
-        crates/sophia-cli/src/commands/live_session/owner_loop_state.rs | \
-        crates/sophia-cli/src/commands/live_session/owner_loop/lifecycle.rs | \
-        crates/sophia-cli/src/commands/live_session/tests/input_policy_tests.rs | \
+        crates/sophia-session/src/live_session/owner_loop_state.rs | \
+        crates/sophia-session/src/live_session/owner_loop/lifecycle.rs | \
+        crates/sophia-session/src/live_session/tests/input_policy_tests.rs | \
         docs/research-log.md | docs/validation.md | \
         tools/sophia_m9_promotion.sh | tools/check_sophia_m9_promotion.sh)
             return 0

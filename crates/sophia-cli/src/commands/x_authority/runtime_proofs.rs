@@ -16,7 +16,7 @@ fn run_x_authority_present_pixmap_smoke()
     })
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 pub(crate) fn collect_x_authority_present_pixmap_authority_batches()
 -> Result<Vec<AuthorityTransactionIntake>, Box<dyn std::error::Error>> {
     let artifacts = run_x_authority_present_pixmap_smoke_artifacts()?;
@@ -139,7 +139,7 @@ fn authority_intakes_from_observed_batches(
         .collect()
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 fn authority_intakes_from_observed_transactions(
     transactions: &[SurfaceTransaction],
 ) -> Vec<AuthorityTransactionIntake> {

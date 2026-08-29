@@ -121,7 +121,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
     fi
     guard_armed_file="/tmp/sophia-input-guard.armed"
     rm -f "$guard_armed_file" "$guard_triggered_file"
-    /usr/bin/sophia sophia-session-input-guard \
+    /usr/bin/sophia session input-guard \
         "--input-devices=$input_devices" \
         "--armed-file=$guard_armed_file" \
         "--triggered-file=$guard_triggered_file" \
@@ -145,7 +145,7 @@ if [ "$scenario" = "emergency-recovery" ]; then
         sync
         poweroff -f
     fi
-    set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms=30000
+    set -- session run --display=:181 --native-scanout --max-runtime-ms=30000
     echo "sophia_qemu_guest_recovery schema=1 status=running chord=ctrl-alt-backspace"
 elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     profile="classic"
@@ -155,7 +155,7 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
     export GTK_A11Y=none
     expected_stdout="$(printf 'sophia\n.')"
     expected_stdout="${expected_stdout%.}"
-    set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms=30000 \
+    set -- session run --display=:181 --native-scanout --max-runtime-ms=30000 \
         --namespace-profile="$profile" --software-client-rendering \
         --client=zenity --client-arg=--entry --client-arg=--title \
         --client-arg='Sophia GTK proof' --client-arg=--text \
@@ -182,9 +182,9 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
     if [ "$scenario" = "xmonad-interactive" ]; then
         # This is an operator-owned development session, not an acceptance
         # clock. It exits only through the ordinary logout action.
-        set -- sophia-live-session --display=:181 --native-scanout
+        set -- session run --display=:181 --native-scanout
     else
-        set -- sophia-live-session --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
+        set -- session run --display=:181 --native-scanout --max-runtime-ms="$runtime_ms"
     fi
     if [ "$scenario" = "xmonad-producer-overload" ]; then
         if [ ! -x /usr/bin/sophia-present-overload-client ]; then
@@ -365,7 +365,7 @@ elif [ "$scenario" = "xmonad-m7" ] || [ "$scenario" = "xmonad-idle-efficiency" ]
     set -- "$@" --wm-process-arg=--wm=/usr/bin/xmonad
     set -- "$@" --wm-process-arg=--wm-private-alias=xmonad/xmonad-x86_64-linux
 else
-    set -- sophia-live-session --display=:181 --native-scanout --max-ticks=300 \
+    set -- session run --display=:181 --native-scanout --max-ticks=300 \
         --expect-physical-text=sophia --expect-physical-pointer
     if [ "$two_xterm" = true ]; then
         set -- "$@" --secondary-terminal

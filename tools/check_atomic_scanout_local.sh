@@ -9,8 +9,8 @@ cargo fmt --check
 tools/audit_source_layout.sh
 tools/check_github_language_visibility.sh
 cargo check --offline -p sophia-cli --features atomic-scanout-smoke-live --quiet
-cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test backend_evidence --quiet
-cargo test --offline -p sophia-cli --features atomic-scanout-smoke-live --test input_proof --quiet
+cargo test --offline -p sophia-session --features native-session --test backend_evidence --quiet
+cargo test --offline -p sophia-session --features native-session --test input_proof --quiet
 cargo test --offline -p sophia-renderer-native-egl --features gbm-platform --quiet
 cargo test --offline -p sophia-renderer-live --features "gbm-probe egl-probe" --quiet
 cargo test --offline -p sophia-backend-live --features "libdrm-events libinput-events gbm-probe egl-probe" --quiet
@@ -266,7 +266,7 @@ tools/check_sophia_xmonad_emergency_verifier.sh
 tools/check_installed_session_lifecycle_verifier.sh
 tools/check_sophia_session_watchdog.sh
 tools/check_installed_watchdog_recovery.sh
-grep -Fq 'sophia-session-input-guard' tools/run_sophia_xmonad_session.sh
+grep -Fq 'session input-guard' tools/run_sophia_xmonad_session.sh
 grep -Fq 'python3 "$TTY_MODE_HELPER" "$kd_mode"' tools/run_sophia_xmonad_session.sh
 grep -Fq -- '--session-start=terminal' tools/lib/session_terminal.sh
 grep -Fq -- '--session-start=statusbar' tools/run_sophia_xmonad_session.sh
@@ -393,9 +393,9 @@ grep -Fq 'proof_result="${SOPHIA_INPUT_PROOF_RESULT:-}"' \
 grep -Fq 'printf '\''%s'\'' "$proof_text" >"$proof_result"' \
     tools/fixtures/hagia_physical_guide.sh
 grep -Fq 'terminal_command.env("SOPHIA_INPUT_PROOF_RESULT", result.path());' \
-    crates/sophia-cli/src/commands/live_session.rs
+    crates/sophia-session/src/live_session.rs
 grep -Fq 'status=physical_action_admitted' \
-    crates/sophia-cli/src/commands/live_session/owner_loop/physical_input_phase.rs
+    crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs
 bash -n tools/hagia_live_session_smoke.sh \
     tools/hagia_client_lifecycle_fault_smoke.sh \
     tools/hagia_owner_settlement_fault_smoke.sh \
@@ -420,11 +420,11 @@ grep -Fq 'udev::MonitorBuilder::new_kernel()' \
 grep -Fq 'let info = self.get_connector(connector, true)?;' \
     crates/sophia-backend-live/src/drm/native_kms/device.rs
 grep -Fq 'sophia_live_output_topology_monitor schema=1 source=kernel status=complete' \
-    crates/sophia-cli/src/commands/live_session/owner_loop/completion.rs
+    crates/sophia-session/src/live_session/owner_loop/completion.rs
 grep -Fq 'sophia_live_native_completion schema=1 status=verified profile=' \
-    crates/sophia-cli/src/commands/live_session/owner_loop/completion.rs
+    crates/sophia-session/src/live_session/owner_loop/completion.rs
 grep -Fq 'physical_output_topology_replaced |= topology_changed;' \
-    crates/sophia-cli/src/commands/live_session/owner_loop/topology_phase.rs
+    crates/sophia-session/src/live_session/owner_loop/topology_phase.rs
 grep -Fq 'profile=topology_replacement' \
     tools/output_topology_physical_gate.sh
 grep -Fq -- '--firefox-m10-proof' tools/installed/sophia-firefox-proof

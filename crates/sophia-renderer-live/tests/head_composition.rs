@@ -584,7 +584,10 @@ fn proven_full_head_client_buffer_becomes_a_plane_descriptor() {
     // The descriptor describes the client's buffer, not a compositor one: its
     // format, its stride, and its modifier reach AddFB2 unchanged.
     assert_eq!(buffer.descriptor.size, DIRECT_HEAD);
-    assert_eq!(buffer.descriptor.format, LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888);
+    assert_eq!(
+        buffer.descriptor.format,
+        LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+    );
     assert_eq!(buffer.descriptor.pitch, 2_560);
     assert_eq!(buffer.descriptor.plane_count, 1);
     assert_eq!(buffer.descriptor.modifier, Some(0x0100_0000_0000_0001));
@@ -614,9 +617,7 @@ fn an_unproven_frame_is_refused_however_it_is_shaped() {
     frame.direct_scanout = DirectScanoutVerdict::default();
     assert_eq!(
         frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
-        sophia_renderer_live::LiveDirectScanoutRefusal::NotProven(
-            DirectScanoutVerdict::default()
-        )
+        sophia_renderer_live::LiveDirectScanoutRefusal::NotProven(DirectScanoutVerdict::default())
     );
 }
 

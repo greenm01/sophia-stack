@@ -111,7 +111,7 @@ hagia_nimcache="${TMPDIR:-/tmp}/hagia-frame-fed-nimcache-${hagia_commit:0:12}"
 )
 (
     cd "$ROOT_DIR"
-    cargo build --quiet --release --offline -p sophia-cli --features atomic-scanout-live
+    cargo build --quiet --release --offline -p sophia-cli --features native-session
 )
 sophia_bin="$ROOT_DIR/target/release/sophia"
 [[ -x "$sophia_bin" && -x "$hagia_bin" ]] || refuse "a proof binary is missing after build"

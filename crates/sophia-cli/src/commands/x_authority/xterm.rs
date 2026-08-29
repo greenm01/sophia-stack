@@ -631,20 +631,5 @@ fn wait_for_xterm_cpu_state(
 }
 
 pub(crate) fn x11_keycode_for_ascii(byte: u8) -> Option<u8> {
-    b"qwertyuiop"
-        .iter()
-        .position(|candidate| *candidate == byte)
-        .map(|index| 24 + index as u8)
-        .or_else(|| {
-            b"asdfghjkl"
-                .iter()
-                .position(|candidate| *candidate == byte)
-                .map(|index| 38 + index as u8)
-        })
-        .or_else(|| {
-            b"zxcvbnm"
-                .iter()
-                .position(|candidate| *candidate == byte)
-                .map(|index| 52 + index as u8)
-        })
+    sophia_session::support::x11_keycode_for_ascii(byte)
 }

@@ -1,6 +1,5 @@
 use super::prelude::*;
 
-use sophia_cli::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_engine::{
     FocusedInputRoute, InputFocusState, NonBlockingInputPoller, hit_test_scene_surface_for_input,
     routed_input_request_from_physical_event,
@@ -9,6 +8,7 @@ use sophia_protocol::{
     AuthorityFeedback, BufferSource, CpuBufferFormat, CpuBufferRegistration, DeviceId,
     InputEventKind, Point, RoutedInputRequest, SeatId, SurfacePresentationFeedback,
 };
+use sophia_session::emergency_input::{EmergencyChordAction, EmergencyChordState};
 use sophia_wayland_authority::{
     DmaBufRegistration, WaylandAuthorityAction, WaylandFrontend, WaylandFrontendEvent,
 };

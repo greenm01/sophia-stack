@@ -110,3 +110,31 @@ fn desktop_profile_check_rejects_ambiguous_or_relative_selection() {
     assert!(!ambiguous.status.success());
     assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("rejects option"));
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn canonical_session_command_validates_without_entering_hardware() {
+    let output = sophia()
+        .args([
+            "session",
+            "run",
+            "--validate-session-args",
+            "--session-mode=normal",
+            "--display=:77",
+            "--native-scanout",
+            "--startup-ready-timeout-ms=8000",
+            "--no-config",
+            "--session-app=standalone=/usr/bin/true",
+            "--session-start=standalone",
+            "--exit-when-startup-exits",
+        ])
+        .env("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE", "1")
+        .output()
+        .expect("validate canonical Sophia session command");
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("sophia_live_session_args schema=1 status=accepted")
+    );
+}

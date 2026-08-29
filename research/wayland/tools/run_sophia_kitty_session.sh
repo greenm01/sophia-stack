@@ -92,7 +92,7 @@ done
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
 
 cd "$ROOT_DIR"
-cargo build --release --offline -p sophia-cli --features atomic-scanout-live
+cargo build --release --offline -p sophia-cli --features native-session
 tools/atomic_scanout_preflight.sh
 
 tty_state="$(stty -g)"
@@ -156,7 +156,7 @@ if pgrep -x keyd >/dev/null 2>&1; then
     keyd_was_running=true
 fi
 
-target/release/sophia sophia-session-input-guard \
+target/release/sophia session input-guard \
     --input-devices="$keyboard" \
     --armed-file="$GUARD_ARMED_FILE" \
     --triggered-file="$GUARD_TRIGGERED_FILE" \

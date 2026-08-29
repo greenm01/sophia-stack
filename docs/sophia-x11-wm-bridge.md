@@ -184,7 +184,7 @@ button event solely to the supervised WM on this isolated connection.
 the bridge rejects absolute paths and parent traversal.
 
 The Engine and live X Authority do not know whether this process is xmonad,
-dwm, i3, qtile, or another compatible WM. `sophia-live-session` can now
+dwm, i3, qtile, or another compatible WM. `sophia session run` can now
 supervise this adapter through generic `--wm-process` arguments and apply its
 opaque placement/focus proposal to the real xterm surface. The live gate now
 admits xmonad's requested xterm size through the `SurfaceId`-only control seam

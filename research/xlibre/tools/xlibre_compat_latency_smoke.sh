@@ -73,7 +73,7 @@ EndSection
 EOF
 
 cd "$ROOT_DIR"
-cargo build --release --offline -q -p sophia-cli --features atomic-scanout-live
+cargo build --release --offline -q -p sophia-cli --features native-session
 
 xorg_extension_args=()
 if [[ "${SOPHIA_XLIBRE_DISABLE_SHM:-0}" == "1" ]]; then
@@ -119,7 +119,7 @@ if [[ "$CLIENT_KIND" == "kitty" ]]; then
     )
 fi
 set +e
-target/release/sophia sophia-live-session \
+target/release/sophia session run \
     --client-backend=xlibre-compat \
     --compat-display="$DISPLAY_NAME" \
     --client="$CLIENT_KIND" \

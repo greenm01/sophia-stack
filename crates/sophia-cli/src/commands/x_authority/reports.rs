@@ -78,13 +78,13 @@ struct XAuthorityExternalProbeSmokeReport {
     nonzero_pixel_bytes: usize,
     ascii_marker_match: bool,
     first_error: Option<String>,
-    #[cfg_attr(not(feature = "atomic-scanout-live"), allow(dead_code))]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     observed_transactions: Vec<SurfaceTransaction>,
-    #[cfg_attr(not(feature = "atomic-scanout-live"), allow(dead_code))]
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     observed_cpu_buffers: Vec<XAuthorityCpuBufferSnapshot>,
 }
 
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 #[derive(Clone, Debug)]
 pub(crate) struct XAuthorityTerminalRenderProof {
     pub display: String,

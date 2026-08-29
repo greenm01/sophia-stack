@@ -87,7 +87,7 @@ StageCompleteProposal ==
     /\ UNCHANGED <<sceneGeneration, outputLive, outputGeneration, requestBase, reducerState, layoutState, settlementLog, nextSettlement, rightEverLost, outputHeads>>
 
 \* LivePublicPolicyState installs the complete candidate in PersistentLiveLayout
-\* (crates/sophia-cli/src/commands/live_session/wm/public_policy.rs:547-584).
+\* (crates/sophia-session/src/live_session/wm/public_policy.rs:547-584).
 SubmitFrontendLayout ==
     /\ phase = "staged"
     /\ phase' = "frontend"

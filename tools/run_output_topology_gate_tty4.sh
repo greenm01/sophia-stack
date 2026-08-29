@@ -121,7 +121,7 @@ echo "Building signed Sophia source $source_commit before DRM takeover..."
 (
     cd "$ROOT_DIR"
     cargo build --quiet --release --offline -p sophia-cli \
-        --features atomic-scanout-live
+        --features native-session
 )
 if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" \
     || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" ]]; then

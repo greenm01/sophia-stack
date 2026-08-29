@@ -195,7 +195,7 @@ set +e
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1 \
         SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions \
-        ./target/release/sophia sophia-live-session \
+        ./target/release/sophia session run \
         --display="$DISPLAY_NAME" \
         --native-scanout \
         --desktop-profile="$PROFILE" \

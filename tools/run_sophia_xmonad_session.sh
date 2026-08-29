@@ -201,7 +201,7 @@ fi
 
 cd "$ROOT_DIR"
 if [[ "$BUILD_SESSION" == true ]]; then
-    cargo build --offline --release -p sophia-cli --features atomic-scanout-live
+    cargo build --offline --release -p sophia-cli --features native-session
     if [[ "$SESSION_PROFILE" == xmonad ]]; then
         cargo build --offline --release -p sophia-x11-wm-bridge
     elif [[ "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone ]]; then
@@ -374,7 +374,7 @@ fi
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
 lifecycle_current_phase=input_guard
 lifecycle_phase entering input_guard
-"$SOPHIA_BIN" sophia-session-input-guard \
+"$SOPHIA_BIN" session input-guard \
     "${input_source_args[@]}" \
     --armed-file="$GUARD_ARMED_FILE" \
     --triggered-file="$GUARD_TRIGGERED_FILE" \
@@ -523,7 +523,8 @@ else
     fi
 fi
 session_args=(
-    sophia-live-session
+    session
+    run
     --session-mode=normal
     --display="$DISPLAY_NAME"
     --native-scanout

@@ -1,0 +1,15 @@
+[package]
+name = "sophia-conformance"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+sha2.workspace = true
+sophia-engine = { path = "../sophia-engine" }
+
+[lints]
+workspace = true

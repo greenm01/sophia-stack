@@ -104,7 +104,7 @@ cleanup() {
             keyd_restored=false
         fi
         processes=0
-        if pgrep -af 'target/release/sophia (sophia-live-session|sophia-session-input-guard)' >/dev/null 2>&1; then
+        if pgrep -af 'target/release/sophia session (run|input-guard)' >/dev/null 2>&1; then
             processes=1
         fi
         recovery_status=complete
@@ -204,7 +204,7 @@ done
 rm -f "$guard_armed_file" "$guard_triggered_file"
 
 cd "$root"
-cargo build --quiet --release --offline -p sophia-cli --features atomic-scanout-live
+cargo build --quiet --release --offline -p sophia-cli --features native-session
 tools/atomic_scanout_preflight.sh
 
 tty_state="$(stty -g)"
@@ -221,7 +221,7 @@ if pgrep -x keyd >/dev/null 2>&1; then
     keyd_was_running=true
 fi
 
-target/release/sophia sophia-session-input-guard \
+target/release/sophia session input-guard \
     --input-devices="$keyboard" \
     --armed-file="$guard_armed_file" \
     --triggered-file="$guard_triggered_file" \

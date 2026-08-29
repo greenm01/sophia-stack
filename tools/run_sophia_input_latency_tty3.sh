@@ -383,13 +383,13 @@ tools/probes/uinput_text_injector.py \
     "--key-interval-ms=$KEY_INTERVAL_MSEC" --self-test |
     tee "$PENDING/injector-self-test.log"
 cargo build --quiet --release --offline -p sophia-cli \
-    --features atomic-scanout-live
+    --features native-session
 tools/atomic_scanout_preflight.sh | tee "$PENDING/preflight.log"
 
 GUARD_ARMED_FILE="$PENDING/input-guard.armed"
 GUARD_TRIGGERED_FILE="$PENDING/input-guard.triggered"
 rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE"
-"$ROOT_DIR/target/release/sophia" sophia-session-input-guard \
+"$ROOT_DIR/target/release/sophia" session input-guard \
     "--input-seat=$GUARD_SEAT" \
     --armed-file="$GUARD_ARMED_FILE" \
     --triggered-file="$GUARD_TRIGGERED_FILE" \

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-tree="$(cargo tree -p sophia-cli --features atomic-scanout-live -e normal)"
+tree="$(cargo tree -p sophia-cli --features native-session -e normal)"
 if grep -qiE 'sophia-x-bridge|xlibre' <<<"$tree"; then
     echo "Production Sophia dependency graph still contains the XLibre bridge." >&2
     exit 1

@@ -252,7 +252,7 @@ promotion gate.
    server to own its storage names a GLX drawable rather than a core pixmap. GLX
    advertises the ES profiles a translating client's fallback asks for. The
    offline pbuffer smoke drives real Mesa through a GLX pbuffer and exits zero.
-   It requires `--features atomic-scanout-live`: without it the allocator that
+   It requires `--features native-session`: without it the allocator that
    originates the buffer is compiled out, the server-owned half never runs, and
    the recovery refuses a pbuffer it should have backed. The browser stall is
    reproduced offline by `x-authority-browser-smoke`, but only at partial
@@ -434,6 +434,39 @@ as the obvious next step now that the metadata-bearing roles require one, and it
 still owes a deliberate decision about hosts that have no `bwrap` rather than
 arriving as a side effect. The blind spatial-policy and output roles are what
 that decision governs; they still admit on a supervised PID today.
+
+### Production Readiness Infrastructure
+
+This supporting tranche does not reorder the product critical path above.
+
+- [x] Extract production session lifecycle and domain integration tests from
+  `sophia-cli` into `sophia-session`. The installed binary now selects commands
+  and owns concrete stdout/stderr presentation; the passive session library
+  reports exact evidence through a host-installed callback.
+- [x] Extract typed profile, direct-scanout evidence, archive, and gate logic
+  from `xtask` into development-only `sophia-conformance`. Production crates
+  and installed artifacts have no dependency on it.
+- [x] Make `cargo xtask` the canonical offline developer/CI entry point and
+  reduce `just` to optional one-line human aliases. Direct-scanout verifier and
+  archive shell entry points are compatibility shims into the typed Rust path;
+  no repository workflow calls `just`.
+- [x] Add canonical `sophia session run` and `sophia session input-guard`
+  commands. The old flat spellings remain delegating compatibility aliases.
+- [x] Replace the numeric source-layout baseline with an exact identity ledger.
+  A moved, added, or retired violation now requires review; every recorded row
+  remains debt rather than becoming an exception.
+- [ ] Move the remaining session-private test modules out of production source
+  as visibility boundaries are made testable, and split the oversized cohesive
+  units named in `docs/source-layout-debt.txt`. Do not weaken privacy or create
+  test-only production APIs merely to move a file.
+- [ ] Reduce `tools/start_sophia_tty3.sh` to the smallest necessary TTY/display-
+  manager adapter around the production session entry point. Typed profile
+  parsing, verification, archive handling, and gate orchestration already live
+  in Rust and must not return to shell.
+
+The ownership and command contract is in
+[`docs/development-tooling.md`](docs/development-tooling.md). The next product
+row remains direct-scanout return-to-composition on overlay/effect activation.
 
 ## Installed Hagia Promotion Contract
 
@@ -706,7 +739,7 @@ compatibility machinery is excluded; retained product behavior is not.
   in `sophia-x-authority`; the `sophia-broker` crate owning trust, icon tokens,
   disclosure rules, and descriptor emission; `PolicyRole::Broker` with its own socket
   and env var; and the metadata broker health smoke reporting the real broker.
-  The chain is proven to compose end to end in `crates/sophia-cli/tests/metadata_chain.rs`
+  The chain is proven to compose end to end in `crates/sophia-session/tests/metadata_chain.rs`
   — authority reduction, broker, `ChromeDescriptorTable` — including that a title
   never reaches Engine under a `ClassOnly` rule, and that the Engine ingress needed
   no widening to accept broker output.

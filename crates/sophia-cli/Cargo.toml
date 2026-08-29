@@ -18,6 +18,7 @@ sophia-engine = { path = "../sophia-engine" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
+sophia-session = { path = "../sophia-session", default-features = false }
 sophia-wm-demo = { path = "../sophia-wm-demo" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
@@ -27,7 +28,8 @@ x11rb = "0.13.1"
 
 [features]
 default = []
-atomic-scanout-live = ["sophia-backend-live/gbm-probe", "sophia-backend-live/libdrm-events", "sophia-backend-live/drm-hotplug", "sophia-backend-live/libinput-events", "sophia-backend-live/seat-control"]
+native-session = ["sophia-session/native-session", "sophia-backend-live/gbm-probe", "sophia-backend-live/libdrm-events", "sophia-backend-live/drm-hotplug", "sophia-backend-live/libinput-events", "sophia-backend-live/seat-control"]
+atomic-scanout-live = ["native-session"]
 atomic-scanout-smoke-live = ["atomic-scanout-live"]
 
 [lints]

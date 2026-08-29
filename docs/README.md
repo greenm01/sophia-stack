@@ -30,6 +30,8 @@ wins when prose disagrees.
   private-state rules used across those boundaries.
 - [Style Guide](style-guide.md) defines source-layout and implementation
   discipline.
+- [Development Tooling](development-tooling.md) defines production/development
+  dependency direction, canonical checks, and presentation ownership.
 - [Configuration](configuration.md) defines the two KDL 2 ownership domains,
   source precedence, strict validation, and transactional hot reload.
 

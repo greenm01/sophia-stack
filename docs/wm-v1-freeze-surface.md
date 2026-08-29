@@ -31,7 +31,7 @@ first:
   capabilities and omits governed record kinds along with their declared counts
   (`crates/sophia-protocol/src/ipc/wm_v1_records.rs:609`), and the production
   caller passes what negotiation actually selected
-  (`crates/sophia-cli/src/commands/live_session/policy_transport_worker.rs:258`).
+  (`crates/sophia-session/src/live_session/policy_transport_worker.rs:258`).
 
 So the sentence "a client that never negotiates the capability never receives it"
 holds in both directions. That is what makes a server-to-client addition reversible

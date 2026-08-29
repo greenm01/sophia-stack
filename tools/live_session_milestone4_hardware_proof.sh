@@ -64,7 +64,7 @@ set +e
 (
     cd "$ROOT_DIR"
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
-        "$ROOT_DIR/target/release/sophia" sophia-live-session \
+        "$ROOT_DIR/target/release/sophia" session run \
         --display="$DISPLAY_NAME" --native-scanout \
         --max-runtime-ms="$RUNTIME_MSEC" --secondary-terminal \
         --terminal-exec="$VKCUBE" \

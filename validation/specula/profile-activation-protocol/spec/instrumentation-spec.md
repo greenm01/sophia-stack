@@ -44,8 +44,8 @@ candidate values from entering the record.
 
 | Spec action / event | Code location | Trigger point | Parameters |
 |---|---|---|---|
-| `StageDesktopProfile` | `crates/sophia-cli/src/commands/live_session/wm/public_policy.rs:89-126` | After exact fragments and local policy proxy are retained | generation, digest |
-| `PrepareLocalAuthority` | `crates/sophia-cli/src/commands/live_session/wm/profile_preparation.rs:110-177` | After one typed local prepare result is reduced | authority, identity |
+| `StageDesktopProfile` | `crates/sophia-session/src/live_session/wm/public_policy.rs:89-126` | After exact fragments and local policy proxy are retained | generation, digest |
+| `PrepareLocalAuthority` | `crates/sophia-session/src/live_session/wm/profile_preparation.rs:110-177` | After one typed local prepare result is reduced | authority, identity |
 | `BeginProfileActivation` | future startup coordinator adjacent to `wm/profile_preparation.rs:34-58` | After six local owners and external Hagia are prepared | identity, epoch |
 | `ActivateLocalAuthority` | future activation executor adjacent to `wm/profile_preparation.rs:146-177` | After one local activation result is reduced | authority, identity |
 | `RollbackLocalAuthority` | `wm/profile_preparation.rs:166-176` plus future activation executor | After one idempotent local rollback settles | authority, identity |

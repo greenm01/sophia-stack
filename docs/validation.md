@@ -342,9 +342,9 @@ backend boundaries:
 
 ```sh
 cargo test --offline -q -p sophia-backend-live --features libdrm-events live_session_composition
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- live-session-composition-smoke
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- sophia-live-session --proof --terminal=xterm
-cargo run --offline -q -p sophia-cli --features atomic-scanout-live -- sophia-live-session --display=:177 --max-runtime-ms=6000 --inject-text=sophia
+cargo run --offline -q -p sophia-cli --features native-session -- live-session-composition-smoke
+cargo run --offline -q -p sophia-cli --features native-session -- session run --proof --terminal=xterm
+cargo run --offline -q -p sophia-cli --features native-session -- session run --display=:177 --max-runtime-ms=6000 --inject-text=sophia
 # Operator TTY proof: add --input-devices=/dev/input/by-path/...-event-kbd,
 # type into xterm, and require physical_keys_routed>0 plus changed pixels.
 tools/live_session_content_hardware_proof.sh
@@ -943,7 +943,7 @@ errors, and clean frontend worker teardown. It retains evidence at
 `/tmp/sophia-xmonad-live-session.log`.
 
 The launcher shares the proven Kitty takeover and recovery lifecycle, but adds
-the generic bridge as `sophia-live-session`'s supervised WM process and uses
+the generic bridge as `sophia session run`'s supervised WM process and uses
 xmonad only as the selected policy client. Kitty remains a normal application
 in the bounded session registry; neither Engine nor X Authority contains
 Kitty-specific window-management behavior.

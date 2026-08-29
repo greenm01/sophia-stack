@@ -63,7 +63,7 @@ sync_tree() {
 build_live() {
     require_command ssh
     remote_repo \
-        "cargo build --release --offline -p sophia-cli --features atomic-scanout-live"
+        "cargo build --release --offline -p sophia-cli --features native-session"
 }
 
 fetch_evidence() {

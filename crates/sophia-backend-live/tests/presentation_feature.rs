@@ -783,7 +783,10 @@ fn a_directly_flipped_buffer_is_released_only_after_its_successor() {
             idle_fence: Some(idle_handle),
         })
         .unwrap();
-    coordinator.resources_mut().mark_submitted(displayed).unwrap();
+    coordinator
+        .resources_mut()
+        .mark_submitted(displayed)
+        .unwrap();
 
     let completed = coordinator
         .complete_flip_without_idle(displayed, 11, 12)
@@ -851,7 +854,10 @@ fn a_retained_completion_is_not_a_direct_flip() {
             idle_fence: None,
         })
         .unwrap();
-    coordinator.resources_mut().mark_submitted(transaction).unwrap();
+    coordinator
+        .resources_mut()
+        .mark_submitted(transaction)
+        .unwrap();
 
     let retained = coordinator
         .complete_retained_without_idle(transaction, 1, 2)
@@ -903,7 +909,10 @@ fn a_directly_flipped_buffer_is_released_when_the_session_ends() {
             idle_fence: Some(idle_handle),
         })
         .unwrap();
-    coordinator.resources_mut().mark_submitted(transaction).unwrap();
+    coordinator
+        .resources_mut()
+        .mark_submitted(transaction)
+        .unwrap();
     coordinator
         .complete_flip_without_idle(transaction, 7, 8)
         .unwrap();

@@ -50,7 +50,7 @@ set +e
     cd "$ROOT_DIR"
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 \
         "$ROOT_DIR/target/release/sophia" \
-        sophia-live-session --display="$DISPLAY_NAME" --native-scanout \
+        session run --display="$DISPLAY_NAME" --native-scanout \
         --max-runtime-ms="$RUNTIME_MSEC" "${input_proof_args[@]}" "$@"
 ) 2>&1 | tee "$EVIDENCE_FILE"
 proof_status="${PIPESTATUS[0]}"

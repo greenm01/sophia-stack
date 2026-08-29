@@ -385,7 +385,11 @@ pub fn direct_scanout_verdict(plan: &HeadCompositionPlan) -> DirectScanoutVerdic
     if plan.cursor.is_some() {
         return DirectScanoutVerdict::ComposedCursor;
     }
-    if let Some(command) = plan.compositor.iter().find_map(command_requires_composition) {
+    if let Some(command) = plan
+        .compositor
+        .iter()
+        .find_map(command_requires_composition)
+    {
         return DirectScanoutVerdict::CompositionRequired(command);
     }
     DirectScanoutVerdict::Eligible

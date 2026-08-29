@@ -1,15 +1,13 @@
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 mod backend;
 mod config;
 mod help;
-#[cfg(feature = "atomic-scanout-live")]
-mod live_session;
 mod runtime;
 mod x_authority;
 
 #[allow(unused_imports)]
 mod prelude {
-    pub(crate) use crate::support::*;
+    pub(crate) use sophia_session::support::*;
 
     pub(crate) use sophia_engine::{
         AuthorityTransactionInbox, AuthorityTransactionIntake, CompositorBackendTickInput,
@@ -54,7 +52,7 @@ pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::err
     if config::try_run(args)? {
         return Ok(());
     }
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     if backend::try_run(args)? {
         return Ok(());
     }

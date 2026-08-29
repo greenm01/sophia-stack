@@ -1,4 +1,4 @@
-#[cfg(feature = "atomic-scanout-live")]
+#[cfg(feature = "native-session")]
 pub(crate) fn collect_x_authority_xterm_render_authority_batches(
     terminal: &str,
 ) -> Result<XAuthorityTerminalRenderProof, Box<dyn std::error::Error>> {
@@ -42,37 +42,5 @@ pub(crate) fn resolve_external_probe_binary(
     label: &str,
     binary: &str,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let env_name = format!("SOPHIA_XAUTHORITY_{}", label.to_ascii_uppercase());
-    if let Ok(override_path) = std::env::var(&env_name) {
-        if override_path.is_empty() {
-            return Err(format!("{env_name} is set but empty").into());
-        }
-        return Ok(std::path::PathBuf::from(override_path));
-    }
-
-    if binary.contains('/') {
-        let path = std::path::PathBuf::from(binary);
-        if path.is_file() {
-            return Ok(path);
-        }
-        return Err(format!(
-            "{label} probe binary {binary:?} was not found; set {env_name} to override"
-        )
-        .into());
-    }
-
-    let Some(path_var) = std::env::var_os("PATH") else {
-        return Err(format!("{label} probe binary {binary:?} needs PATH or {env_name}").into());
-    };
-    for directory in std::env::split_paths(&path_var) {
-        let candidate = directory.join(binary);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-
-    Err(format!(
-        "{label} probe binary {binary:?} was not found in PATH; set {env_name} to override"
-    )
-    .into())
+    sophia_session::support::resolve_external_probe_binary(label, binary)
 }

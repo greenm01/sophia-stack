@@ -39,19 +39,21 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-vkcube-admission-smoke");
     println!("commands: x-authority-xmobar-smoke");
     println!("commands: x-authority-present-pixmap-smoke");
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     println!(
-        "commands: sophia-live-session [--desktop-profile=/absolute/path] [--session-mode=normal --session-app=ID=/PATH --session-app-arg=ID=ARG ... --session-start=ID ... --session-action-app=terminal|launcher|firefox=ID --exit-when-startup-exits --startup-ready-timeout-ms=8000] [--client-backend=sophia-x] [--client=PATH] [--client-arg=ARG ...] [--display=:77] [--terminal=xterm] [--terminal-exec=PATH] [--terminal-exec-arg=ARG ...] [--secondary-terminal] [--namespace-profile=classic|confined] [--input-seat=seat0|--input-devices=/dev/input/eventN,...] [--native-scanout] [--wm-process=PATH --wm-interface=sophia_wm_v1] [--wm-process-arg=ARG ...] [--wm-process-executable-grant=/absolute/path ...] [--max-runtime-ms=N] [--max-ticks=N] [--inject-text=lowercase|--expect-physical-text=lowercase] [--expect-physical-pointer] [--exit-after-input-proof] [--proof]"
+        "commands: session run [--desktop-profile=/absolute/path] [--session-mode=normal --session-app=ID=/PATH --session-app-arg=ID=ARG ... --session-start=ID ... --session-action-app=terminal|launcher|firefox=ID --exit-when-startup-exits --startup-ready-timeout-ms=8000] [--client-backend=sophia-x] [--client=PATH] [--client-arg=ARG ...] [--display=:77] [--terminal=xterm] [--terminal-exec=PATH] [--terminal-exec-arg=ARG ...] [--secondary-terminal] [--namespace-profile=classic|confined] [--input-seat=seat0|--input-devices=/dev/input/eventN,...] [--native-scanout] [--wm-process=PATH --wm-interface=sophia_wm_v1] [--wm-process-arg=ARG ...] [--wm-process-executable-grant=/absolute/path ...] [--max-runtime-ms=N] [--max-ticks=N] [--inject-text=lowercase|--expect-physical-text=lowercase] [--expect-physical-pointer] [--exit-after-input-proof] [--proof]"
     );
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
+    println!("compatibility aliases: sophia-live-session, sophia-session-input-guard");
+    #[cfg(feature = "native-session")]
     println!(
         "commands: native-egl-vkcube-mixed-smoke [--display=:184] [--terminal=xterm] [--max-runtime-ms=6000]"
     );
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     println!("commands: live-session-composition-smoke");
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     println!("commands: atomic-scanout-preflight");
-    #[cfg(feature = "atomic-scanout-live")]
+    #[cfg(feature = "native-session")]
     println!("commands: native-topology-probe (read-only; needs DRM master)");
     println!("          native-mirror-probe (validation-only; needs DRM master)");
     println!("          native-mirror-page-flip (real commit; opt-in; needs DRM master)");

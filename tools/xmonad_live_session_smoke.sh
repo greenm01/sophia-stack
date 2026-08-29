@@ -13,11 +13,11 @@ fi
 xmonad_bin="$("$ROOT_DIR/tools/resolve_sophia_xmonad.sh")"
 
 cd "$ROOT_DIR"
-cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
+cargo build --quiet --offline -p sophia-cli --features native-session
 cargo build --quiet --offline -p sophia-x11-wm-bridge
 
 set +e
-target/debug/sophia sophia-live-session \
+target/debug/sophia session run \
     --session-mode=normal \
     "--session-app=terminal=$kitty_bin" \
     --session-start=terminal \

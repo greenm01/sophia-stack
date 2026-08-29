@@ -51,7 +51,7 @@ printf '%s\n' \
     'Ctrl+Alt+Backspace remains available for emergency recovery.'
 
 cargo run --quiet --offline -p sophia-cli \
-    --features atomic-scanout-live \
+    --features native-session \
     -- x-authority-xterm-input-smoke
 "$ROOT_DIR/tools/start_sophia_tty3.sh" "$@"
 "$ROOT_DIR/tools/report_sophia_terminal_performance.sh"

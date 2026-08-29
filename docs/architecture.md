@@ -75,6 +75,14 @@ namespace allocation, client admission, authorization material, broker health,
 and recovery. It does not absorb protocol semantics, portal policy, rendering,
 or layout policy.
 
+In the Rust implementation, `sophia-session` owns that production lifecycle
+and the adapters around Engine. It is a passive library: exact evidence crosses
+a host-installed line-output boundary, and `sophia-cli` owns command selection
+and concrete stdout/stderr presentation. `xtask` and `sophia-conformance` are
+development-only and cannot enter the installed dependency graph. The complete
+repository-tooling direction is defined in
+[Development Tooling](development-tooling.md).
+
 ## Current And Target State
 
 ### Implemented
@@ -96,7 +104,7 @@ or layout policy.
   then revokes each admission after connection cleanup. The supervisor creates
   a fresh owner-only Xauthority file and cookie for every live session, passes
   only its path to clients, and removes it on teardown. Denial uses native X11
-  setup failure. `sophia-live-session` explicitly selects classic-shared or a
+  setup failure. `sophia session run` explicitly selects classic-shared or a
   confined group with zero ambient portal capabilities. A socket regression
   assigns simultaneous clients distinct confined namespaces and proves a
   cross-namespace window map, property mutation, and selection ownership return
@@ -289,9 +297,11 @@ calling narrow adapters that retain their existing authority:
 
 The coordinator owns sequencing, not foreign state. X resources remain in the
 protocol authority; imported images and fences remain in the renderer; GBM, DRM,
-and KMS objects remain in the backend; session runtime retains process and
-recovery policy. The CLI constructs these adapters, launches supervised
-processes, observes proof criteria, requests shutdown, and does no frame work.
+and KMS objects remain in the backend. `sophia-session` retains process and
+recovery policy, constructs the narrow adapters, launches supervised processes,
+observes proof criteria, and requests shutdown without acquiring frame
+authority. `sophia-cli` selects the installed command and presents returned
+errors and evidence; it owns no session state machine and does no frame work.
 
 `PreparedSurfaceCommit` remains the asynchronous Present gate. Preparation
 snapshots protocol-neutral state without changing the committed scene. Matching

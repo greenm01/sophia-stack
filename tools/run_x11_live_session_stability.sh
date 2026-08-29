@@ -57,15 +57,16 @@ cd "$ROOT_DIR"
 
 if [[ "$MODE" == diagnostic ]]; then
     env RUSTFLAGS="${RUSTFLAGS:-} -C debuginfo=2" CARGO_INCREMENTAL=0 \
-        cargo build --release --offline -p sophia-cli --features atomic-scanout-live
+        cargo build --release --offline -p sophia-cli --features native-session
 else
-    cargo build --release --offline -p sophia-cli --features atomic-scanout-live
+    cargo build --release --offline -p sophia-cli --features native-session
 fi
 tools/atomic_scanout_preflight.sh
 
 session=(
     "$ROOT_DIR/target/release/sophia"
-    sophia-live-session
+    session
+    run
     --display=:181
     --native-scanout
     --max-runtime-ms=30000

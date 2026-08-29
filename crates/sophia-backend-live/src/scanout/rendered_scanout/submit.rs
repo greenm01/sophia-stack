@@ -37,7 +37,8 @@ where
         // screen and no page-flip event arrives; the request that flips
         // afterwards is the one the driver was asked about, cloned rather than
         // rebuilt. See `PresentFlipOwnership.tla`, `TestRefuse`/`CommitRefused`.
-        if prepared.scanout_buffer.is_direct_client_buffer() && exporter.direct_scanout_test_required()
+        if prepared.scanout_buffer.is_direct_client_buffer()
+            && exporter.direct_scanout_test_required()
         {
             let (test, primary_plane) =
                 validate_prepared_native_primary_plane_scanout(device, prepared.primary_plane);
@@ -74,8 +75,7 @@ where
                 // is carried through unchanged, so the framebuffer and its
                 // imported handles are still destroyed.
                 exporter.fall_back_from_direct();
-                result.status =
-                    LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending;
+                result.status = LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending;
             }
         }
         return result;
@@ -163,11 +163,11 @@ where
         commit_flags: prepare.commit_flags,
         commit_submit: Some(test),
         submission: None,
-        cleanup: cancelled.cleanup.map(|primary_plane| {
-            LiveRenderedPrimaryPlaneScanoutCleanup {
+        cleanup: cancelled
+            .cleanup
+            .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                 scanout_buffer: prepared.scanout_buffer,
                 primary_plane,
-            }
-        }),
+            }),
     }
 }

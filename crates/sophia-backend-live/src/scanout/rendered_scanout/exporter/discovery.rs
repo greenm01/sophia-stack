@@ -385,9 +385,8 @@ where
         //
         // Frames whose verdict a mirror or topology path deliberately cleared
         // count as `composition_required`, which is what they are by then.
-        self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()] = self
-            .direct_scanout_verdicts[frame.direct_scanout.reduced_index()]
-            .saturating_add(1);
+        self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()] =
+            self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()].saturating_add(1);
         self.report_direct_scanout_geometry_refusal(&frame);
         self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
     }
@@ -399,7 +398,9 @@ where
 
     /// How many lowered frames carried each verdict, indexed as
     /// `DirectScanoutVerdict::VERDICTS`.
-    pub const fn direct_scanout_verdicts(&self) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
+    pub const fn direct_scanout_verdicts(
+        &self,
+    ) -> [usize; sophia_engine::DirectScanoutVerdict::COUNT] {
         self.direct_scanout_verdicts
     }
 
@@ -578,7 +579,11 @@ where
     fn record_direct_scanout_test(&mut self, accepted: bool) {
         self.direct_scanout_tests = self.direct_scanout_tests.saturating_add(1);
         self.record_direct_scanout_episode(
-            if accepted { "test_passed" } else { "test_rejected" },
+            if accepted {
+                "test_passed"
+            } else {
+                "test_rejected"
+            },
             self.outstanding_direct_generation(),
             "none",
         );

@@ -34,7 +34,7 @@ sentinel, and layout token are also validated on every event.
 
 | Spec action / event | Code location | Trigger point | Parameters |
 |---|---|---|---|
-| `DisconnectHagia` | `crates/sophia-cli/src/commands/live_session/wm/public_policy.rs:1029-1064`; `crates/sophia-runtime/src/policy_profile_handoff.rs:130-133` | After the dead worker is removed and per-connection admission is cleared | old epoch, active identity |
+| `DisconnectHagia` | `crates/sophia-session/src/live_session/wm/public_policy.rs:1029-1064`; `crates/sophia-runtime/src/policy_profile_handoff.rs:130-133` | After the dead worker is removed and per-connection admission is cleared | old epoch, active identity |
 | `BeginReplacement` | `public_policy.rs:1066-1106`; `crates/sophia-runtime/src/policy_transport.rs:158-200` | After authenticated negotiation records the fresh epoch and retained loaded identity | new epoch, loaded identity, attempt |
 | `SendProfilePrepare` | `policy_profile_handoff.rs:138-183`; `policy_transport.rs:412-432` | After the typed prepare frame is flushed | epoch, transaction, active identity |
 | `SophiaSettleProfilePrepared` | `policy_profile_handoff.rs:186-227`; `policy_transport.rs:312-335` | After exact completion reduction | epoch, transaction, identity, outcome |

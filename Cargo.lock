@@ -913,6 +913,7 @@ dependencies = [
  "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
+ "sophia-session",
  "sophia-wm-demo",
  "sophia-x-authority",
  "sophia-xshmfence",
@@ -927,6 +928,14 @@ dependencies = [
  "kdl",
  "rustix",
  "sha2",
+]
+
+[[package]]
+name = "sophia-conformance"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "sophia-engine",
 ]
 
 [[package]]
@@ -992,6 +1001,25 @@ dependencies = [
  "sophia-protocol",
  "sophia-wm-demo",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "sophia-session"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "sophia-backend-live",
+ "sophia-broker",
+ "sophia-config",
+ "sophia-engine",
+ "sophia-portal",
+ "sophia-protocol",
+ "sophia-runtime",
+ "sophia-wm-demo",
+ "sophia-x-authority",
+ "sophia-xshmfence",
+ "tracing",
+ "x11rb",
 ]
 
 [[package]]
@@ -1455,7 +1483,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "sophia-engine",
+ "sophia-conformance",
 ]
 
 [[package]]

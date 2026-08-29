@@ -25,7 +25,7 @@ proof_dir="$(mktemp -d)"
 trap 'rm -f "$proof_dir/restarted"; rmdir "$proof_dir"' EXIT
 
 cd "$ROOT_DIR"
-cargo build --quiet --offline -p sophia-cli --features atomic-scanout-live
+cargo build --quiet --offline -p sophia-cli --features native-session
 
 set +e
 SOPHIA_HAGIA_BIN="$hagia_bin" \
@@ -33,7 +33,7 @@ SOPHIA_HAGIA_RESTART_MARKER="$proof_dir/restarted" \
 SOPHIA_HAGIA_FAULT_AFTER=checkpoint_saved \
 SOPHIA_HAGIA_FAULT_OCCURRENCE=3 \
 SOPHIA_HAGIA_FAULT_DELAY_MSEC=200 \
-target/debug/sophia sophia-live-session \
+target/debug/sophia session run \
     --session-mode=normal \
     "--session-app=terminal=$kitty_bin" \
     --session-start=terminal \
