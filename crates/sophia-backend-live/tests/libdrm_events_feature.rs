@@ -154,6 +154,7 @@ include!("libdrm_events_feature/scanout_retirement.rs");
 include!("libdrm_events_feature/runtime_ticks.rs");
 include!("libdrm_events_feature/session_loop.rs");
 include!("libdrm_events_feature/native_gbm.rs");
+include!("libdrm_events_feature/direct_scanout.rs");
 #[cfg(feature = "gbm-probe")]
 include!("libdrm_events_feature/frame_slots.rs");
 #[cfg(feature = "gbm-probe")]

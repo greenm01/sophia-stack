@@ -224,6 +224,14 @@ pub enum LivePresentBufferDisposition {
     Copied,
     Retained,
     Skipped,
+    /// The client's own buffer reached the screen by a page flip, uncomposed.
+    ///
+    /// Distinct from `Retained`, which also reports X `Flip` but means the
+    /// previous frame stayed on glass. This one means a new client buffer is
+    /// on glass and is still owed to the client until a successor retires it,
+    /// which is why it completes without idling. `docs/validation.md:534`
+    /// reserved the X `Flip` completion for exactly this frame.
+    Flipped,
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -368,6 +376,36 @@ impl LiveProductionPresentFeedbackCoordinator {
                 ust,
                 msc,
                 disposition: LivePresentBufferDisposition::Retained,
+            }],
+            idle_fence_triggered: false,
+        })
+    }
+
+    /// Complete a Present whose own buffer is on the screen.
+    ///
+    /// The page flip is not retired here, because retiring it would release a
+    /// buffer the screen is scanning and let the client draw into displayed
+    /// pixels. The release happens in `idle_displayed` once a successor flip
+    /// has taken the plane. See `PresentFlipOwnership.tla`,
+    /// `DisplayedClientBufferIsNeverReleased` and `ReleasedOnlyBySuccessor`.
+    pub fn complete_flip_without_idle(
+        &mut self,
+        transaction: TransactionId,
+        ust: u64,
+        msc: u64,
+    ) -> Result<LivePresentFeedbackOutcome, LivePresentFeedbackError> {
+        if self.resources.state(transaction)
+            != Some(sophia_renderer_live::LiveBufferState::Submitted)
+        {
+            return Err(LivePresentFeedbackError::UnknownPresentation { transaction });
+        }
+        self.last_display_sample = Some((ust, msc));
+        Ok(LivePresentFeedbackOutcome {
+            feedback: vec![LivePresentProtocolFeedback::Complete {
+                transaction,
+                ust,
+                msc,
+                disposition: LivePresentBufferDisposition::Flipped,
             }],
             idle_fence_triggered: false,
         })

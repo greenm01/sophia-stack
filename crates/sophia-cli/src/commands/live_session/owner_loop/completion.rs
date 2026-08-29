@@ -757,8 +757,12 @@
     let native_max_frame_surface_create = native_resources.max_frame_surface_create;
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
+    let direct_scanout_totals = native_scanout.as_ref().map_or_else(
+        sophia_backend_live::LiveProductionDirectScanoutTotals::default,
+        sophia_backend_live::LiveProductionNativeScanout::direct_scanout_totals,
+    );
     println!(
-        "sophia_live_native_resources schema=10 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} exact_nearest_draws={} sharp_downscale_draws={} sharp_upscale_draws={} linear_fallback_draws={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} frame_slot_acquisitions={} frame_slot_reuses={} frame_slot_deferrals={} frame_slot_stale_releases={} frame_slots_leased={} frame_slots_high_watermark={} max_in_flight_per_output={} pending_frame_supersessions={} frame_slot_partial_repaints={} frame_slot_full_repaints={} frame_slot_history_invalidations={} frame_slot_history_records={} max_worker_request_msec={} renderer_workers={} worker_result_misroutes={} worker_max_service_skew={}",
+        "sophia_live_native_resources schema=11 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} exact_nearest_draws={} sharp_downscale_draws={} sharp_upscale_draws={} linear_fallback_draws={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} frame_slot_acquisitions={} frame_slot_reuses={} frame_slot_deferrals={} frame_slot_stale_releases={} frame_slots_leased={} frame_slots_high_watermark={} max_in_flight_per_output={} pending_frame_supersessions={} frame_slot_partial_repaints={} frame_slot_full_repaints={} frame_slot_history_invalidations={} frame_slot_history_records={} max_worker_request_msec={} renderer_workers={} worker_result_misroutes={} worker_max_service_skew={} direct_scanout_attempts={} direct_scanout_flips={} direct_scanout_tests={} direct_scanout_test_rejections={} direct_scanout_refusals={} direct_scanout_fallbacks={}",
         native_resources.target_creations,
         native_resources.pipeline_creations,
         native_resources.frame_surface_creations,
@@ -812,6 +816,12 @@
         native_scanout
             .as_ref()
             .map_or(0, |native| native.max_service_skew),
+        direct_scanout_totals.attempts,
+        direct_scanout_totals.flips,
+        direct_scanout_totals.tests,
+        direct_scanout_totals.test_rejections,
+        direct_scanout_totals.refusals,
+        direct_scanout_totals.fallbacks,
     );
     if let Some(native_scanout) = native_scanout.as_ref() {
         println!(
@@ -1119,7 +1129,7 @@
             "disabled"
         },
         present_observation.complete_copy,
-        present_observation.complete_flip,
+        present_observation.complete_flip_modes(),
         present_observation.complete_skip,
         present_observation.idle,
         present_observation.complete_routed,
@@ -1153,7 +1163,7 @@
             || present_observation.idle
                 != present_observation
                     .complete_copy
-                    .saturating_add(present_observation.complete_flip)
+                    .saturating_add(present_observation.complete_flip_modes())
                     .saturating_add(present_observation.complete_skip))
     {
         return Err("persistent Present resources did not retire exactly once".into());

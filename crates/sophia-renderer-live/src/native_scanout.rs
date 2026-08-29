@@ -238,6 +238,202 @@ pub struct LiveOwnedMixedCompositionFrame {
     pub layers: Vec<LiveOwnedMixedCompositionLayer>,
     pub output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     pub trace: Option<LiveCompositionTrace>,
+    /// Engine's verdict on the plan this frame was lowered from.
+    ///
+    /// Carried on the lowered frame rather than threaded beside it because
+    /// the frame already travels every path a verdict would have to follow,
+    /// and because a frame that arrives without one defaults to
+    /// `CompositionRequired` -- an unproven frame composes. The backend never
+    /// treats this as permission on its own: it re-derives the same structure
+    /// from the layers below and refuses if the two disagree.
+    pub direct_scanout: sophia_engine::DirectScanoutVerdict,
+}
+
+/// Why a lowered frame cannot hand its client buffer straight to the plane.
+///
+/// Engine's `DirectScanoutVerdict` answers the same question about the plan;
+/// this answers it about the pixels that plan lowered to. The two are checked
+/// independently and both must agree, so a lowering that silently added a
+/// layer, or a verdict computed from a stale plan, refuses rather than puts
+/// the wrong image on a screen. `NotProven` is the arm that fires when Engine
+/// did not prove the frame; every other arm is this module disagreeing with a
+/// verdict that said `Eligible`, which is a defect and is named as one in
+/// evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveDirectScanoutRefusal {
+    /// Engine did not prove this exact frame needs no composition.
+    NotProven(sophia_engine::DirectScanoutVerdict),
+    /// Not exactly one layer after lowering.
+    LayerCount(usize),
+    /// The single layer is not a client DMA-BUF.
+    LayerNotDmaBuf,
+    /// The layer would be filtered onto the head rather than copied.
+    LayerResampled,
+    /// The layer is translucent, so what is behind it is part of the image.
+    LayerTranslucent,
+    /// The layer carries a transform the plane cannot express here.
+    LayerTransformed,
+    /// The layer does not cover the head exactly.
+    LayerNotFullHead,
+    /// The layer is clipped, so part of the head shows something else.
+    LayerClipped,
+    /// The client buffer's own extent is not the head's.
+    BufferSizeMismatch,
+    /// Not an opaque scanout format. ARGB8888 is excluded deliberately: its
+    /// alpha is part of the image, and nothing behind it would be drawn.
+    FormatNotOpaque(u32),
+    /// A plane the frame claims is absent, or its descriptor is unusable.
+    PlaneLayoutUnusable,
+    /// The plane descriptors could not be duplicated for the plane.
+    PlaneFdCloneFailed,
+}
+
+impl LiveDirectScanoutRefusal {
+    /// A stable name for evidence records.
+    pub const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::NotProven(_) => "not_proven",
+            Self::LayerCount(_) => "layer_count",
+            Self::LayerNotDmaBuf => "layer_not_dma_buf",
+            Self::LayerResampled => "layer_resampled",
+            Self::LayerTranslucent => "layer_translucent",
+            Self::LayerTransformed => "layer_transformed",
+            Self::LayerNotFullHead => "layer_not_full_head",
+            Self::LayerClipped => "layer_clipped",
+            Self::BufferSizeMismatch => "buffer_size_mismatch",
+            Self::FormatNotOpaque(_) => "format_not_opaque",
+            Self::PlaneLayoutUnusable => "plane_layout_unusable",
+            Self::PlaneFdCloneFailed => "plane_fd_clone_failed",
+        }
+    }
+}
+
+/// A client buffer ready to be handed to a primary plane without composition.
+///
+/// It carries duplicated plane descriptors rather than borrowing the frame's,
+/// so the frame it came from stays whole and remains usable as the fallback
+/// if the driver refuses this buffer.
+#[derive(Debug)]
+pub struct LiveDirectScanoutBuffer {
+    pub descriptor: crate::LiveRendererScanoutBufferDescriptor,
+    pub planes: [Option<LiveOwnedDmaBufPlane>; 4],
+    pub image_id: LiveRendererImageId,
+}
+
+impl LiveDirectScanoutBuffer {
+    /// The plane file descriptors, in plane order, for PRIME import.
+    pub fn into_plane_fds(self) -> [Option<OwnedFd>; 4] {
+        self.planes.map(|plane| plane.map(|plane| plane.fd))
+    }
+
+    /// The same descriptors, duplicated, for a caller holding only a borrow.
+    ///
+    /// The prepare path asks an owner for its descriptors without consuming
+    /// it, because a failed prepare hands the owner back for cleanup. Every
+    /// plane must duplicate or none does: a partial set would import some
+    /// planes of a buffer and leave the rest, which the import loop reads as
+    /// a missing plane and refuses -- correctly, but after the syscalls.
+    pub fn try_clone_plane_fds(&self) -> std::io::Result<[Option<OwnedFd>; 4]> {
+        let mut cloned = std::array::from_fn(|_| None);
+        for (target, source) in
+            std::iter::zip(&mut cloned, self.planes.iter().map(Option::as_ref))
+        {
+            if let Some(plane) = source {
+                *target = Some(plane.fd.try_clone()?);
+            }
+        }
+        Ok(cloned)
+    }
+}
+
+impl LiveOwnedMixedCompositionFrame {
+    /// The client buffer this frame could scan out directly, or why it cannot.
+    ///
+    /// `head_size` is the head's own framebuffer extent. "Covers the head"
+    /// means exactly that rect, unclipped and unscaled: a direct flip has no
+    /// composition step in which anything else could be drawn, so a layer
+    /// that leaves even one row uncovered would show whatever the plane held
+    /// before.
+    pub fn direct_scanout_buffer(
+        &self,
+        head_size: Size,
+    ) -> Result<LiveDirectScanoutBuffer, LiveDirectScanoutRefusal> {
+        if !self.direct_scanout.is_eligible() {
+            return Err(LiveDirectScanoutRefusal::NotProven(self.direct_scanout));
+        }
+        if self.layers.len() != 1 {
+            return Err(LiveDirectScanoutRefusal::LayerCount(self.layers.len()));
+        }
+        let LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id,
+            frame,
+            placement,
+        } = &self.layers[0]
+        else {
+            return Err(LiveDirectScanoutRefusal::LayerNotDmaBuf);
+        };
+        if placement.transform != Transform::IDENTITY {
+            return Err(LiveDirectScanoutRefusal::LayerTransformed);
+        }
+        if placement.sampling != sophia_engine::HeadSamplingClass::Exact {
+            return Err(LiveDirectScanoutRefusal::LayerResampled);
+        }
+        if placement.alpha < 1.0 {
+            return Err(LiveDirectScanoutRefusal::LayerTranslucent);
+        }
+        let head = Rect {
+            x: 0,
+            y: 0,
+            width: head_size.width,
+            height: head_size.height,
+        };
+        if placement.target != head {
+            return Err(LiveDirectScanoutRefusal::LayerNotFullHead);
+        }
+        if placement.clip.is_some_and(|clip| clip != head) {
+            return Err(LiveDirectScanoutRefusal::LayerClipped);
+        }
+        if frame.width != head_size.width.max(0) as u32
+            || frame.height != head_size.height.max(0) as u32
+        {
+            return Err(LiveDirectScanoutRefusal::BufferSizeMismatch);
+        }
+        if frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 {
+            return Err(LiveDirectScanoutRefusal::FormatNotOpaque(frame.format));
+        }
+        let plane_count = frame.plane_count;
+        if plane_count == 0 || plane_count as usize > crate::LIVE_RENDERER_SCANOUT_MAX_PLANES {
+            return Err(LiveDirectScanoutRefusal::PlaneLayoutUnusable);
+        }
+        let mut pitches = [0u32; 4];
+        let mut offsets = [0u32; 4];
+        for index in 0..plane_count as usize {
+            let Some(plane) = frame.planes[index].as_ref() else {
+                return Err(LiveDirectScanoutRefusal::PlaneLayoutUnusable);
+            };
+            pitches[index] = plane.stride;
+            offsets[index] = plane.offset;
+        }
+        let descriptor = crate::LiveRendererScanoutBufferDescriptor::for_imported_dma_buf_planes(
+            head_size,
+            frame.format,
+            plane_count,
+            pitches,
+            offsets,
+            Some(frame.modifier),
+        );
+        if !descriptor.is_valid_scanout_buffer() {
+            return Err(LiveDirectScanoutRefusal::PlaneLayoutUnusable);
+        }
+        let cloned = frame
+            .try_clone()
+            .map_err(|_| LiveDirectScanoutRefusal::PlaneFdCloneFailed)?;
+        Ok(LiveDirectScanoutBuffer {
+            descriptor,
+            planes: cloned.planes,
+            image_id: *image_id,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

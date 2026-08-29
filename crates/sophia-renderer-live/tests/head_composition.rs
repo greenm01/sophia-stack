@@ -509,3 +509,258 @@ fn border_bands_are_clipped_individually_to_the_scene_they_belong_to() {
         "a window outside the scene still drew bands: {escaped:?}"
     );
 }
+
+/// A lowered frame that Engine proved needs no composition: one client
+/// DMA-BUF covering the head exactly, opaque, unscaled, unclipped.
+fn direct_frame() -> sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+    let fd: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+    sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+        layers: vec![LiveOwnedMixedCompositionLayer::DmaBuf {
+            image_id: LiveRendererImageId::from_raw(7),
+            frame: LiveOwnedMultiPlaneDmaBufFrame {
+                width: 640,
+                height: 480,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                modifier: 0x0100_0000_0000_0001,
+                plane_count: 1,
+                planes: [
+                    Some(LiveOwnedDmaBufPlane {
+                        fd,
+                        offset: 0,
+                        stride: 2_560,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            placement: sophia_renderer_live::LiveCompositionPlacement {
+                target: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 640,
+                    height: 480,
+                },
+                clip: None,
+                transform: sophia_protocol::Transform::IDENTITY,
+                alpha: 1.0,
+                sampling: HeadSamplingClass::Exact,
+            },
+        }],
+        output_damage_snapshot: None,
+        trace: None,
+        direct_scanout: DirectScanoutVerdict::Eligible,
+    }
+}
+
+const DIRECT_HEAD: Size = Size {
+    width: 640,
+    height: 480,
+};
+
+fn direct_layer_placement(
+    frame: &mut sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+) -> &mut sophia_renderer_live::LiveCompositionPlacement {
+    let LiveOwnedMixedCompositionLayer::DmaBuf { placement, .. } = &mut frame.layers[0] else {
+        panic!("direct fixture changed layer kind")
+    };
+    placement
+}
+
+fn direct_layer_frame(
+    frame: &mut sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+) -> &mut LiveOwnedMultiPlaneDmaBufFrame {
+    let LiveOwnedMixedCompositionLayer::DmaBuf { frame, .. } = &mut frame.layers[0] else {
+        panic!("direct fixture changed layer kind")
+    };
+    frame
+}
+
+#[test]
+fn proven_full_head_client_buffer_becomes_a_plane_descriptor() {
+    let frame = direct_frame();
+    let buffer = frame.direct_scanout_buffer(DIRECT_HEAD).unwrap();
+
+    // The descriptor describes the client's buffer, not a compositor one: its
+    // format, its stride, and its modifier reach AddFB2 unchanged.
+    assert_eq!(buffer.descriptor.size, DIRECT_HEAD);
+    assert_eq!(buffer.descriptor.format, LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888);
+    assert_eq!(buffer.descriptor.pitch, 2_560);
+    assert_eq!(buffer.descriptor.plane_count, 1);
+    assert_eq!(buffer.descriptor.modifier, Some(0x0100_0000_0000_0001));
+    assert!(buffer.descriptor.is_valid_scanout_buffer());
+    assert_eq!(buffer.image_id, LiveRendererImageId::from_raw(7));
+    assert!(buffer.planes[0].is_some());
+    assert!(buffer.planes[1].is_none());
+
+    // Duplicated, not taken: the frame it came from is still whole, which is
+    // what lets it be composed instead if the driver refuses the buffer.
+    let original = direct_layer_frame(&mut { frame }).planes[0]
+        .as_ref()
+        .map(|plane| plane.fd.as_raw_fd());
+    assert!(original.is_some());
+    assert_ne!(
+        original.unwrap(),
+        buffer.planes[0].as_ref().unwrap().fd.as_raw_fd()
+    );
+}
+
+#[test]
+fn an_unproven_frame_is_refused_however_it_is_shaped() {
+    // Structurally identical to the eligible fixture. Only the proof differs,
+    // so this is exactly the claim that the backend does not decide
+    // eligibility for itself.
+    let mut frame = direct_frame();
+    frame.direct_scanout = DirectScanoutVerdict::CompositionRequired;
+    assert_eq!(
+        frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        sophia_renderer_live::LiveDirectScanoutRefusal::NotProven(
+            DirectScanoutVerdict::CompositionRequired
+        )
+    );
+}
+
+#[test]
+fn a_proof_that_disagrees_with_the_pixels_refuses_rather_than_flips() {
+    // A verdict claiming eligibility over a frame that lowered to chrome as
+    // well. Trusting the stamp here would put a client's buffer on the plane
+    // and drop everything drawn over it.
+    let mut frame = direct_frame();
+    frame.layers.push(LiveOwnedMixedCompositionLayer::Solid {
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 24,
+        },
+        color: sophia_engine::CompositorRgb8 {
+            red: 0,
+            green: 0,
+            blue: 0,
+        },
+    });
+    assert_eq!(
+        frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        sophia_renderer_live::LiveDirectScanoutRefusal::LayerCount(2)
+    );
+}
+
+#[test]
+fn translucency_scaling_clipping_and_partial_cover_each_refuse() {
+    use sophia_renderer_live::LiveDirectScanoutRefusal as Refusal;
+
+    let mut translucent = direct_frame();
+    direct_layer_placement(&mut translucent).alpha = 0.5;
+    assert_eq!(
+        translucent.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        Refusal::LayerTranslucent
+    );
+
+    let mut resampled = direct_frame();
+    direct_layer_placement(&mut resampled).sampling = HeadSamplingClass::Upsampled;
+    assert_eq!(
+        resampled.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        Refusal::LayerResampled
+    );
+
+    let mut clipped = direct_frame();
+    direct_layer_placement(&mut clipped).clip = Some(Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 240,
+    });
+    assert_eq!(
+        clipped.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        Refusal::LayerClipped
+    );
+
+    let mut partial = direct_frame();
+    direct_layer_placement(&mut partial).target = Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 400,
+    };
+    assert_eq!(
+        partial.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        Refusal::LayerNotFullHead
+    );
+
+    // A clip that names the whole head clips nothing and is not a refusal.
+    let mut whole = direct_frame();
+    direct_layer_placement(&mut whole).clip = Some(Rect {
+        x: 0,
+        y: 0,
+        width: 640,
+        height: 480,
+    });
+    assert!(whole.direct_scanout_buffer(DIRECT_HEAD).is_ok());
+}
+
+#[test]
+fn argb_is_not_opaque_enough_to_scan_out() {
+    // ARGB8888 is an accepted scanout format for a compositor buffer, whose
+    // alpha the compositor controls. A client's alpha is part of the image,
+    // and nothing behind it would be drawn on a plane.
+    let mut frame = direct_frame();
+    direct_layer_frame(&mut frame).format =
+        sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888;
+    assert_eq!(
+        frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        sophia_renderer_live::LiveDirectScanoutRefusal::FormatNotOpaque(
+            sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
+        )
+    );
+}
+
+#[test]
+fn a_buffer_smaller_than_the_head_refuses_even_when_its_placement_covers() {
+    // The placement says the layer fills the head, but the buffer behind it
+    // does not. A plane scans the buffer, not the placement.
+    let mut frame = direct_frame();
+    direct_layer_frame(&mut frame).height = 400;
+    assert_eq!(
+        frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        sophia_renderer_live::LiveDirectScanoutRefusal::BufferSizeMismatch
+    );
+}
+
+#[test]
+fn a_cpu_layer_has_no_buffer_to_hand_the_plane() {
+    let mut frame = direct_frame();
+    frame.layers[0] = LiveOwnedMixedCompositionLayer::Solid {
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        },
+        color: sophia_engine::CompositorRgb8 {
+            red: 1,
+            green: 2,
+            blue: 3,
+        },
+    };
+    assert_eq!(
+        frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
+        sophia_renderer_live::LiveDirectScanoutRefusal::LayerNotDmaBuf
+    );
+}
+
+#[test]
+fn lowering_carries_the_plans_verdict_onto_the_frame_it_produces() {
+    // The verdict has to survive lowering, because the backend reads it from
+    // the frame and never sees the plan.
+    let mut plan = plan();
+    plan.direct_scanout = DirectScanoutVerdict::Eligible;
+    let lowered = lower_cpu_head_composition_plan(&plan, &[source(42)]).unwrap();
+    assert_eq!(lowered.direct_scanout, DirectScanoutVerdict::Eligible);
+
+    // And the default that arrives with no plan behind it composes, so a
+    // frame built anywhere else cannot be mistaken for a proven one.
+    assert_eq!(
+        sophia_renderer_live::LiveOwnedMixedCompositionFrame::default().direct_scanout,
+        DirectScanoutVerdict::CompositionRequired
+    );
+}

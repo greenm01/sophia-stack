@@ -592,6 +592,12 @@ pub struct LiveProductionNativeFrameRetirement {
     pub frame: LiveProductionNativeFrameId,
     pub submission: u64,
     pub content: LiveProductionScanoutContent,
+    /// Whether the retiring frame put the client's own buffer on the plane.
+    ///
+    /// A direct frame settles as `Flip` and keeps its buffer owed to the
+    /// client until a successor retires it; a composed one settles as `Copied`
+    /// and releases at the flip. See `PresentFlipOwnership.tla`.
+    pub direct: bool,
     pub ust: u64,
     pub msc: u64,
 }

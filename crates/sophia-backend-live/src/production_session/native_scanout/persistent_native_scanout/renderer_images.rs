@@ -394,7 +394,14 @@ impl LiveProductionNativeScanout {
             }
             head.pending_content = Some(queued.content);
             head.queue_output_damage_snapshot(queued.output_damage_snapshot);
-            exporter.set_pending_mixed_frame(queued.frame);
+            // The second mirror refusal. A verdict proven about one head's
+            // plan says nothing about a cohort that projects one scene into
+            // several modes, so it does not travel into a mirror head's
+            // exporter at all -- whatever that exporter was enabled with, and
+            // whichever order a head joined the group in.
+            let mut frame = queued.frame;
+            frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+            exporter.set_pending_mixed_frame(frame);
         }
         tracing::info!(
             "sophia_live_mirror_generation schema=2 status={} output={} frame={} source={} logical_content_checksum={}",
@@ -683,6 +690,12 @@ impl LiveProductionNativeScanout {
                         layers: vec![layer],
                         output_damage_snapshot: output_damage_snapshot.clone(),
                         trace: None,
+                        // A mirror head's CPU frame. Mirror outputs never take
+                        // the direct path -- eligibility is proven about one
+                        // head's plan, and a mirror cohort has several -- and
+                        // a CPU buffer has no framebuffer to hand a plane
+                        // anyway. Both reasons say compose.
+                        direct_scanout: sophia_engine::DirectScanoutVerdict::default(),
                     },
                     output_damage_snapshot,
                     cpu_nonzero_pixel_bytes: frame.nonzero_pixel_bytes,

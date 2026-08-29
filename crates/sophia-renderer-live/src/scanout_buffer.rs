@@ -75,6 +75,49 @@ impl LiveRendererScanoutBufferDescriptor {
         }
     }
 
+    /// A descriptor for a buffer this process holds only as DMA-BUF file
+    /// descriptors -- a client's own buffer on the direct scanout path.
+    ///
+    /// There is no local GEM handle for such a buffer until PRIME import
+    /// creates one, and import happens inside resource creation, after the
+    /// descriptor has already been validated. The handle fields therefore
+    /// carry `LIVE_RENDERER_SCANOUT_IMPORTED_PLANE_HANDLE` -- a value the
+    /// shape rules accept as nonzero and that never reaches the kernel,
+    /// because `from_descriptor_and_imported_plane_handles` replaces every
+    /// handle with the imported one before a framebuffer is created. It is a
+    /// distinguishable sentinel rather than `1` so that a handle appearing in
+    /// evidence says plainly that import owns it.
+    pub const fn for_imported_dma_buf_planes(
+        size: Size,
+        format: u32,
+        plane_count: u8,
+        plane_pitches: [u32; 4],
+        plane_offsets: [u32; 4],
+        modifier: Option<u64>,
+    ) -> Self {
+        let mut plane_handles = [0u32; 4];
+        let mut index = 0;
+        while index < LIVE_RENDERER_SCANOUT_MAX_PLANES {
+            if index < plane_count as usize {
+                plane_handles[index] = LIVE_RENDERER_SCANOUT_IMPORTED_PLANE_HANDLE;
+            }
+            index += 1;
+        }
+        Self::new_with_planes(
+            size,
+            plane_pitches[0],
+            format,
+            LIVE_RENDERER_SCANOUT_IMPORTED_PLANE_HANDLE,
+            LiveRendererScanoutBufferPlanes {
+                count: plane_count,
+                handles: plane_handles,
+                pitches: plane_pitches,
+                offsets: plane_offsets,
+                modifier,
+            },
+        )
+    }
+
     pub const fn is_valid_scanout_buffer(self) -> bool {
         matches!(self.status, LiveRendererScanoutBufferStatus::Ready)
             && is_valid_scanout_buffer_shape(
@@ -114,6 +157,11 @@ const fn is_valid_scanout_buffer_shape(
             planes.pitches,
         )
 }
+
+/// The plane handle a descriptor carries while its buffer exists only as
+/// DMA-BUF file descriptors. Replaced by the imported handle before any
+/// framebuffer is created; see `for_imported_dma_buf_planes`.
+pub const LIVE_RENDERER_SCANOUT_IMPORTED_PLANE_HANDLE: u32 = u32::MAX;
 
 const LIVE_RENDERER_SCANOUT_BYTES_PER_XRGB8888_PIXEL: u32 = 4;
 pub const LIVE_RENDERER_SCANOUT_MAX_PLANES: usize = 4;

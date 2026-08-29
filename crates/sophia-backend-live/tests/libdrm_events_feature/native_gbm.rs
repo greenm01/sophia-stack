@@ -6,6 +6,7 @@ fn pending_renderer_work_can_be_discarded_only_before_worker_ownership() {
         layers: Vec::new(),
         output_damage_snapshot: None,
         trace: None,
+        direct_scanout: Default::default(),
     });
 
     assert!(exporter.pending_frame());

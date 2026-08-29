@@ -95,7 +95,15 @@ struct XPresentSessionObserver {
     aggregate_progress: bool,
     progress_last_emit: Option<Instant>,
     complete_copy: usize,
+    /// X `Flip` completions whose predecessor stayed on glass -- the
+    /// `Retained` disposition. Never includes direct scanout; the session
+    /// line, which reports X completion modes rather than dispositions, adds
+    /// the two together.
     complete_flip: usize,
+    /// X `Flip` completions where the client's own buffer reached the plane
+    /// uncomposed. Counted apart so that a session with no direct scanout
+    /// cannot report the number that proves this row.
+    complete_direct: usize,
     complete_skip: usize,
     idle: usize,
     complete_routed: usize,
@@ -108,6 +116,21 @@ struct XPresentSessionObserver {
 }
 
 impl XPresentSessionObserver {
+    /// Completions the X client saw as `Flip`, whatever put them there.
+    ///
+    /// The session record reports X completion modes, and both `Retained` and
+    /// a direct flip are `Flip` to a client. Reporting their sum keeps
+    /// `present_idle == copy + flip + skip` true, which is the identity the
+    /// persistent-evidence verifier checks, without conflating the two
+    /// anywhere the distinction is what is being proven.
+    pub const fn complete_flip_modes(&self) -> usize {
+        self.complete_flip.saturating_add(self.complete_direct)
+    }
+
+    pub const fn complete_direct(&self) -> usize {
+        self.complete_direct
+    }
+
     fn new(router: XServerFrontendProtocolRouter) -> Self {
         let aggregate_progress =
             std::env::var_os("SOPHIA_LIVE_SESSION_PRESENT_AGGREGATE").is_some();
@@ -120,6 +143,7 @@ impl XPresentSessionObserver {
             progress_last_emit: None,
             complete_copy: 0,
             complete_flip: 0,
+            complete_direct: 0,
             complete_skip: 0,
             idle: 0,
             complete_routed: 0,
@@ -151,6 +175,15 @@ impl XPresentSessionObserver {
                         }
                         sophia_backend_live::LivePresentBufferDisposition::Retained => {
                             self.complete_flip = self.complete_flip.saturating_add(1);
+                            XPresentCompletionMode::Flip
+                        }
+                        // Counted apart from `Retained`. Both report X `Flip`,
+                        // but only this one means a client's own buffer went to
+                        // the plane uncomposed, and conflating them would let a
+                        // session with no direct scanout at all report the
+                        // number that proves this row.
+                        sophia_backend_live::LivePresentBufferDisposition::Flipped => {
+                            self.complete_direct = self.complete_direct.saturating_add(1);
                             XPresentCompletionMode::Flip
                         }
                         sophia_backend_live::LivePresentBufferDisposition::Skipped => {
@@ -231,8 +264,12 @@ impl XPresentSessionObserver {
         // Cumulative samples keep production evidence observable without making
         // synchronous serial output part of every Present feedback transition.
         eprintln!(
-            "sophia_live_present_progress schema=1 complete_copy={} complete_flip={} complete_skip={} idle={}",
-            self.complete_copy, self.complete_flip, self.complete_skip, self.idle,
+            "sophia_live_present_progress schema=2 complete_copy={} complete_flip={} complete_direct={} complete_skip={} idle={}",
+            self.complete_copy,
+            self.complete_flip,
+            self.complete_direct,
+            self.complete_skip,
+            self.idle,
         );
     }
 

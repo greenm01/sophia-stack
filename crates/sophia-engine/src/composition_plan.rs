@@ -188,7 +188,13 @@ pub struct HeadCompositionPlan {
 /// A verdict rather than a boolean, because the reason is what the evidence
 /// records and what an operator reads when a frame that looked eligible was
 /// composed instead.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// The derived default is `CompositionRequired`: a value that arrives without
+/// a plan behind it has proven nothing, and the absence of a proof must read
+/// as "compose", never as "eligible". This is what makes it safe to carry the
+/// verdict on a lowered frame whose other construction sites -- tests,
+/// fixtures -- say nothing about it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DirectScanoutVerdict {
     /// One opaque client layer fills the head and nothing else draws.
     Eligible,
@@ -208,6 +214,8 @@ pub enum DirectScanoutVerdict {
     /// The layer is translucent, so what is behind it is part of the image.
     LayerTranslucent,
     /// Chrome, an overlay, or a resolved effect changes the composed image.
+    /// Also the default, so an unproven frame composes.
+    #[default]
     CompositionRequired,
     /// A composed cursor is part of the image. The hardware cursor rides its
     /// own plane and does not appear here.

@@ -57,6 +57,37 @@ where
     mixed_frame_exports: usize,
     last_cpu_frame_checksum: Option<u64>,
     last_cpu_frame_export_status: Option<LiveRendererScanoutBufferExportStatus>,
+    /// Whether this output may hand a client buffer straight to the plane.
+    ///
+    /// Off unless the session enabled it. A disabled exporter never even
+    /// derives a candidate, so the flag's off state is the pre-row behaviour
+    /// exactly, not a different path that happens to compose.
+    direct_scanout_enabled: bool,
+    /// The composed form of a frame handed out directly, kept until the
+    /// submission that took it says whether it reached a screen.
+    ///
+    /// This is the fallback ladder's whole mechanism. A direct attempt that
+    /// the driver refuses does not lose its frame: the composed form is still
+    /// here, and `fall_back_from_direct` reinstalls it as pending with its
+    /// proof cleared, so the retry composes instead of refusing again.
+    direct_fallback: Option<sophia_renderer_live::LiveOwnedMixedCompositionFrame>,
+    /// Whether the driver has already accepted a direct commit in this
+    /// eligibility episode.
+    ///
+    /// Cleared by every export that is not direct, which is what makes the
+    /// test happen on the composition-to-direct edge rather than once per
+    /// session: an overlay opening composes one frame, and that alone means
+    /// the next direct frame is validated afresh. See
+    /// `PresentFlipOwnership.tla`, `ReProveAfterEpisodeChange`.
+    direct_scanout_tested: bool,
+    direct_scanout_attempts: usize,
+    direct_scanout_exports: usize,
+    direct_scanout_flips: usize,
+    direct_scanout_tests: usize,
+    direct_scanout_test_rejections: usize,
+    direct_scanout_refusals: usize,
+    direct_scanout_fallbacks: usize,
+    last_direct_scanout_refusal: Option<sophia_renderer_live::LiveDirectScanoutRefusal>,
     /// Frames the latest-wins cell dropped without rendering them.
     ///
     /// Holding one newest frame is the point, so a supersession is ordinary
@@ -73,6 +104,15 @@ where
 pub enum NativeGbmRenderedScanoutOwner {
     Inline(NativeGbmOwnedScanoutBuffer),
     Worker(NativeGbmRendererWorkerScanoutLease),
+    /// A client's own buffer, on its way to the plane uncomposed.
+    ///
+    /// Unlike the other two this owns no compositor memory: it holds the
+    /// duplicated plane descriptors and nothing else. It is also the only
+    /// variant whose buffer lives in another process, which is why it reports
+    /// `shares_kms_drm_file() == false` and takes the PRIME transport -- the
+    /// branch that imports descriptors into the KMS file rather than handing
+    /// over a GEM handle that only the renderer's file knows.
+    Direct(sophia_renderer_live::LiveDirectScanoutBuffer),
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -113,6 +153,17 @@ where
             mixed_frame_exports: 0,
             last_cpu_frame_checksum: None,
             last_cpu_frame_export_status: None,
+            direct_scanout_enabled: false,
+            direct_scanout_tested: false,
+            direct_fallback: None,
+            direct_scanout_attempts: 0,
+            direct_scanout_exports: 0,
+            direct_scanout_flips: 0,
+            direct_scanout_tests: 0,
+            direct_scanout_test_rejections: 0,
+            direct_scanout_refusals: 0,
+            direct_scanout_fallbacks: 0,
+            last_direct_scanout_refusal: None,
             pending_frame_supersessions: 0,
         }
     }
@@ -285,6 +336,127 @@ where
             self.pending_frame_supersessions = self.pending_frame_supersessions.saturating_add(1);
         }
         self.pending_frame = Some(frame);
+    }
+
+    /// One line per direct-scanout episode transition.
+    ///
+    /// The whole episode is observable from these: which output, which scene
+    /// generation, and every step from a proven frame through the validating
+    /// commit to a flip or a fall back. A physical gate asserts the shape of
+    /// the sequence rather than a single count, because the counts alone
+    /// cannot say whether a flip happened before its test or a fallback lost
+    /// its frame.
+    /// The scene generation of the direct attempt still outstanding, so every
+    /// step of one episode names the same scene rather than only its first.
+    fn outstanding_direct_generation(&self) -> u64 {
+        self.outstanding_direct_scene_generation().unwrap_or(0)
+    }
+
+    /// The scene a direct attempt is outstanding for, or `None` when none is.
+    pub fn outstanding_direct_scene_generation(&self) -> Option<u64> {
+        self.direct_fallback
+            .as_ref()
+            .and_then(|frame| frame.trace)
+            .map(|trace| trace.scene_generation)
+    }
+
+    fn record_direct_scanout_episode(&self, status: &str, generation: u64, reason: &str) {
+        tracing::info!(
+            "sophia_live_direct_scanout schema=1 status={status} output={} scene_generation={generation} reason={reason}",
+            self.output.raw(),
+        );
+    }
+
+    /// Whether this output may hand an eligible client buffer to the plane.
+    ///
+    /// Set rather than latched, because the answer changes: a head that joins
+    /// a mirror group must lose the direct path, and a head that leaves one
+    /// may regain it. Turning it off also ends any episode in progress, so a
+    /// head that returns to eligibility is validated again rather than
+    /// flipping on a test taken when it was somebody else's clone.
+    pub const fn set_direct_scanout_enabled(&mut self, enabled: bool) {
+        self.direct_scanout_enabled = enabled;
+        if !enabled {
+            self.direct_scanout_tested = false;
+        }
+    }
+
+    pub const fn direct_scanout_enabled(&self) -> bool {
+        self.direct_scanout_enabled
+    }
+
+    pub const fn direct_scanout_attempts(&self) -> usize {
+        self.direct_scanout_attempts
+    }
+
+    pub const fn direct_scanout_exports(&self) -> usize {
+        self.direct_scanout_exports
+    }
+
+    pub const fn direct_scanout_tests(&self) -> usize {
+        self.direct_scanout_tests
+    }
+
+    pub const fn direct_scanout_test_rejections(&self) -> usize {
+        self.direct_scanout_test_rejections
+    }
+
+    pub const fn direct_scanout_refusals(&self) -> usize {
+        self.direct_scanout_refusals
+    }
+
+    pub const fn direct_scanout_fallbacks(&self) -> usize {
+        self.direct_scanout_fallbacks
+    }
+
+    pub const fn last_direct_scanout_refusal(
+        &self,
+    ) -> Option<sophia_renderer_live::LiveDirectScanoutRefusal> {
+        self.last_direct_scanout_refusal
+    }
+
+    /// Whether a direct export is outstanding -- handed to a submission that
+    /// has not yet said whether the driver took it.
+    pub const fn direct_scanout_outstanding(&self) -> bool {
+        self.direct_fallback.is_some()
+    }
+
+    /// The driver took the direct buffer. Drop the composed form.
+    ///
+    /// The client's buffer itself is not released here and must not be: it is
+    /// what the screen is scanning until a successor flip retires it. Only the
+    /// compositor-side copy that was never used is dropped.
+    /// See `PresentFlipOwnership.tla`, `DisplayedClientBufferIsNeverReleased`.
+    pub fn commit_direct_scanout(&mut self) {
+        self.direct_fallback = None;
+        self.direct_scanout_flips = self.direct_scanout_flips.saturating_add(1);
+    }
+
+    /// How many times a client's own buffer went to this output's plane.
+    ///
+    /// Read before and after a tick to learn whether the submission that tick
+    /// produced was direct -- the same before/after idiom the pixel-proof and
+    /// export counters already use here, and the reason this is a running
+    /// count rather than a flag that a later path could forget to clear.
+    pub const fn direct_scanout_flips(&self) -> usize {
+        self.direct_scanout_flips
+    }
+
+    /// The direct attempt did not reach a screen. Compose the same content.
+    ///
+    /// Returns whether a frame was reinstated. The reinstated frame carries no
+    /// proof, so it takes the ordinary composed path and cannot be refused
+    /// again for the same reason -- which is what keeps a refusal from
+    /// becoming a loop, and what keeps it off the terminal submit-failure
+    /// path entirely. See `PresentFlipOwnership.tla`, `CommitRefused`.
+    pub fn fall_back_from_direct(&mut self) -> bool {
+        let Some(mut frame) = self.direct_fallback.take() else {
+            return false;
+        };
+        frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+        self.direct_scanout_fallbacks = self.direct_scanout_fallbacks.saturating_add(1);
+        self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
+        true
     }
 
     pub const fn pending_frame_supersessions(&self) -> usize {
@@ -478,11 +650,59 @@ where
 {
     type Owner = NativeGbmRenderedScanoutOwner;
 
+    fn direct_scanout_test_required(&self) -> bool {
+        !self.direct_scanout_tested
+    }
+
+    fn record_direct_scanout_test(&mut self, accepted: bool) {
+        self.direct_scanout_tests = self.direct_scanout_tests.saturating_add(1);
+        self.record_direct_scanout_episode(
+            if accepted { "test_passed" } else { "test_rejected" },
+            self.outstanding_direct_generation(),
+            "none",
+        );
+        if accepted {
+            self.direct_scanout_tested = true;
+        } else {
+            self.direct_scanout_test_rejections =
+                self.direct_scanout_test_rejections.saturating_add(1);
+            self.direct_scanout_tested = false;
+        }
+    }
+
+    fn commit_direct_scanout(&mut self) {
+        // Read before committing: committing drops the composed form the
+        // identity is read from.
+        let generation = self.outstanding_direct_generation();
+        Self::commit_direct_scanout(self);
+        self.record_direct_scanout_episode("flipped", generation, "none");
+    }
+
+    fn fall_back_from_direct(&mut self) -> bool {
+        // A refusal ends the episode: whatever the driver objected to, the
+        // next direct frame is a fresh question and gets a fresh test.
+        self.direct_scanout_tested = false;
+        let generation = self.outstanding_direct_generation();
+        let fell_back = Self::fall_back_from_direct(self);
+        if fell_back {
+            self.record_direct_scanout_episode("fell_back", generation, "none");
+        }
+        fell_back
+    }
+
     fn export_rendered_scanout_buffer(
         &mut self,
         target: LiveGbmEglFrameTargetRecord,
     ) -> LiveRenderedScanoutBufferExport<Self::Owner> {
         self.export_attempts = self.export_attempts.saturating_add(1);
+        // Every export ends the eligibility episode unless it is itself
+        // direct; the direct branch below restores this. Clearing first and
+        // restoring in one place means a path added later cannot forget to
+        // end the episode, only to continue it -- and forgetting to continue
+        // costs one validating commit, while forgetting to end one costs a
+        // flip the driver never agreed to.
+        let continuing_episode = self.direct_scanout_tested;
+        self.direct_scanout_tested = false;
         let target_lifecycle =
             LiveGbmEglFrameTargetLifecycleReport::from_size_update(self.last_target, target);
         self.last_target = Some(target);
@@ -542,6 +762,66 @@ where
                 descriptor,
                 report.buffer.map(NativeGbmRenderedScanoutOwner::Inline),
             );
+        }
+
+        // The direct path, ahead of both the worker and the inline context
+        // because it needs neither: no render happens, no target slot is
+        // acquired, and the buffer that reaches the plane is the client's.
+        //
+        // The Engine proof is necessary but never sufficient. The structural
+        // re-derivation below reads the lowered layers themselves, and a
+        // disagreement between the two is a refusal, not a flip: the cost of
+        // refusing wrongly is one composed frame, and the cost of flipping
+        // wrongly is the wrong image on someone's screen.
+        if self.direct_scanout_enabled
+            && matches!(
+                self.pending_frame,
+                Some(PendingRenderedFrame::Mixed(ref frame)) if frame.direct_scanout.is_eligible()
+            )
+        {
+            let Some(PendingRenderedFrame::Mixed(mut frame)) = self.pending_frame.take() else {
+                unreachable!("the match above admitted only an eligible mixed frame")
+            };
+            self.direct_scanout_attempts = self.direct_scanout_attempts.saturating_add(1);
+            // The candidate identity, so a gate can bind one episode's steps
+            // to one scene rather than to whatever happened next.
+            let generation = frame.trace.map_or(0, |trace| trace.scene_generation);
+            match frame.direct_scanout_buffer(target.size) {
+                Ok(buffer) => {
+                    self.direct_scanout_exports = self.direct_scanout_exports.saturating_add(1);
+                    self.record_direct_scanout_episode("exported", generation, "none");
+                    let descriptor = buffer.descriptor;
+                    // Keep the composed form. Nothing has reached a screen yet
+                    // -- the driver has not been asked -- and if it refuses,
+                    // this is the frame that gets composed instead.
+                    self.direct_fallback = Some(frame);
+                    self.direct_scanout_tested = continuing_episode;
+                    self.last_export_status =
+                        Some(LiveRendererScanoutBufferExportStatus::Exported);
+                    return LiveRenderedScanoutBufferExport::new(
+                        LiveRendererScanoutBufferExportStatus::Exported,
+                        LiveRendererScanoutBufferExportDetail::from_status(
+                            LiveRendererScanoutBufferExportStatus::Exported,
+                        ),
+                        Some(descriptor),
+                        Some(NativeGbmRenderedScanoutOwner::Direct(buffer)),
+                    );
+                }
+                Err(refusal) => {
+                    self.direct_scanout_refusals = self.direct_scanout_refusals.saturating_add(1);
+                    self.last_direct_scanout_refusal = Some(refusal);
+                    self.record_direct_scanout_episode(
+                        "refused",
+                        generation,
+                        refusal.reduced_name(),
+                    );
+                    // Clear the proof before reinstalling, so the frame that
+                    // falls through composes rather than arriving here again
+                    // and being refused for the same reason every frame.
+                    frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
+                    self.pending_frame = Some(PendingRenderedFrame::Mixed(frame));
+                }
+            }
         }
 
         if self.worker.is_some() {

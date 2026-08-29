@@ -480,6 +480,55 @@ sed 's/ renderer_workers=1//' "$forward" >"$truncated"
 reject_mutation "schema-10 evidence without the renderer-thread count" "$truncated" \
     "resource record is missing renderer_workers"
 
+# Schema 11 reports the direct scanout path. Real schema-11 evidence needs a
+# physical run with the path enabled; until that archive exists, this derives
+# the shape from the same real record the other schema controls mutate.
+direct="$temp_dir/direct.log"
+sed -e 's/sophia_live_native_resources schema=10 status=complete/sophia_live_native_resources schema=11 status=complete/' \
+    -e 's/ worker_max_service_skew=1/ worker_max_service_skew=1 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=1/' \
+    "$forward" >"$direct"
+"$verifier" "$direct" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier rejected schema-11 evidence" >&2
+    exit 1
+}
+
+# A session that ran with the path off reports zeros and is still a valid
+# session -- most are. The verifier must not require the row to have fired.
+quiet="$temp_dir/quiet.log"
+sed 's/ direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=1/ direct_scanout_attempts=0 direct_scanout_flips=0 direct_scanout_tests=0 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=0/' \
+    "$direct" >"$quiet"
+"$verifier" "$quiet" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier required direct scanout of a session that never used it" >&2
+    exit 1
+}
+
+# A refusal means Engine proved a frame its own lowered pixels contradict.
+# There is no benign nonzero value: an ineligible frame never becomes an
+# attempt, so this can only be the two halves of the proof disagreeing.
+disagreed="$temp_dir/disagreed.log"
+sed 's/ direct_scanout_refusals=0/ direct_scanout_refusals=1/' "$direct" >"$disagreed"
+reject_mutation "a run whose eligibility proof disagreed with its pixels" "$disagreed" \
+    "disagreed with the frame it lowered"
+
+# A client buffer may not reach a plane without the driver having been asked.
+untested="$temp_dir/untested.log"
+sed 's/ direct_scanout_tests=2/ direct_scanout_tests=0/' "$direct" >"$untested"
+reject_mutation "a direct flip with no validating commit" "$untested" \
+    "no validating commit"
+
+# Every attempt ends as a flip, a fallback, or is still outstanding. More
+# settlements than attempts means the counters describe different frames.
+overcounted="$temp_dir/overcounted.log"
+sed 's/ direct_scanout_attempts=44/ direct_scanout_attempts=43/' "$direct" >"$overcounted"
+reject_mutation "more settled direct attempts than attempts" "$overcounted" \
+    "settled more attempts than it made"
+
+# A schema-11 record owes its new fields.
+partial="$temp_dir/partial.log"
+sed 's/ direct_scanout_fallbacks=1//' "$direct" >"$partial"
+reject_mutation "schema-11 evidence without the fallback count" "$partial" \
+    "resource record is missing direct_scanout_fallbacks"
+
 # A restarted or degraded WM is a different run than the one being promoted.
 restarted="$temp_dir/restarted.log"
 sed 's/wm_restarts=0/wm_restarts=1/' "$evidence" >"$restarted"

@@ -235,6 +235,14 @@ pub struct LiveProductionVisualRuntime {
     last_chrome_set_observation: Option<LiveChromeSetObservation>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
+    /// Per output, the Present whose own buffer is on the screen right now.
+    ///
+    /// A directly scanned frame completes without idling, because the client
+    /// still owns pixels the display is reading. The entry stays here until a
+    /// successor flip retires on that output -- direct or composed, either is
+    /// a successor -- and only then is the buffer idled back to the client.
+    /// See `PresentFlipOwnership.tla`, `ReleasedOnlyBySuccessor`.
+    displayed_direct_presents: BTreeMap<OutputId, TransactionId>,
     present_rejections: usize,
     native_suspend_present_rejections: usize,
     topology_escalation_present_rejections: usize,
@@ -337,6 +345,7 @@ impl LiveProductionVisualRuntime {
             last_chrome_set_observation: None,
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
+            displayed_direct_presents: BTreeMap::new(),
             present_rejections: 0,
             native_suspend_present_rejections: 0,
             topology_escalation_present_rejections: 0,

@@ -797,6 +797,15 @@ impl LiveProductionVisualRuntime {
             native_scanout.retire_ready_and_retry_cleanup(selected_output, &mut output.runtime)?;
         }
         if let Some(retirement) = native_scanout.take_presentation_feedback(selected_output) {
+            // Any retirement on this output means a successor flip has taken
+            // the plane, so a client buffer displayed directly before it is no
+            // longer being scanned and may be idled. Done here rather than in
+            // the Present arm below because a composed successor is a
+            // successor too -- an overlay opening returns the output to
+            // composition, and the direct frame it replaced is owed its
+            // release just the same.
+            // See `PresentFlipOwnership.tla`, `SuccessorComposedRetires`.
+            self.idle_superseded_direct_present(selected_output)?;
             match reduce_live_production_native_retirement_owner(
                 retirement.frame,
                 retirement.content,
@@ -875,10 +884,17 @@ impl LiveProductionVisualRuntime {
         if native_scanout.promote_renderer_image(submitted.displayed_layer.image_id)? == 0 {
             return Err("retired Present lost its staged renderer snapshot".into());
         }
+        let direct = retirement.direct;
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
         let completion = production
             .settle_prepared_retirement(submitted.prepared, |commit| match commit.outcome {
+                // A direct frame completes without idling: the buffer the
+                // client handed over is the buffer the screen is scanning, and
+                // releasing it here would let the client draw into displayed
+                // pixels. Its successor idles it, above, on the next flip.
+                TransactionOutcome::Committed if direct => presentation_feedback
+                    .complete_flip_without_idle(submitted.transaction, ust, msc),
                 TransactionOutcome::Committed => {
                     presentation_feedback.complete_copy(submitted.transaction, ust, msc)
                 }
@@ -894,6 +910,10 @@ impl LiveProductionVisualRuntime {
         self.route_present_feedback(completion.evidence);
         if completion.commit.outcome != TransactionOutcome::Committed {
             self.present_rejections = self.present_rejections.saturating_add(1);
+        }
+        if direct && completion.commit.outcome == TransactionOutcome::Committed {
+            self.displayed_direct_presents
+                .insert(output, submitted.transaction);
         }
         let deferred_groups = self.finish_surface_content_owner(submitted.candidate)?;
         if deferred_groups != 0 {
@@ -935,6 +955,43 @@ impl LiveProductionVisualRuntime {
             ust_usec: ust,
             msc,
         }))
+    }
+
+    /// Idle the client buffer a successor flip has just replaced on `output`.
+    ///
+    /// Does nothing unless a direct frame is recorded as displayed there. The
+    /// caller is any retirement on that output, because both a direct and a
+    /// composed successor take the plane away from the displayed buffer, and
+    /// only after that has happened is releasing it lawful.
+    ///
+    /// A Present the registry no longer knows -- torn down with its client, or
+    /// already released along some other path -- is not an error here: the
+    /// obligation this discharges is "do not release too early", and a buffer
+    /// that is already gone cannot be released too early.
+    fn idle_superseded_direct_present(
+        &mut self,
+        output: OutputId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(transaction) = self.displayed_direct_presents.remove(&output) else {
+            return Ok(());
+        };
+        match self.presentation_feedback.idle_displayed(transaction) {
+            Ok(outcome) => self.route_present_feedback(outcome),
+            Err(crate::LivePresentFeedbackError::UnknownPresentation { .. }) => {
+                tracing::debug!(
+                    transaction = transaction.raw(),
+                    output = output.raw(),
+                    "directly displayed Present was released before its successor retired it"
+                );
+            }
+            Err(error) => {
+                return Err(format!(
+                    "directly displayed Present failed to idle after its successor: {error:?}"
+                )
+                .into());
+            }
+        }
+        Ok(())
     }
 
     pub fn native_scanout_in_flight(&self) -> bool {

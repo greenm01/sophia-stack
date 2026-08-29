@@ -4,14 +4,14 @@ use crate::prelude::*;
 #[cfg(feature = "libdrm-events")]
 #[derive(Debug)]
 pub struct LivePreparedRenderedPrimaryPlaneScanout<Owner> {
-    scanout_buffer: Owner,
-    primary_plane: LibdrmNativePrimaryPlanePreparedScanout,
+    pub(super) scanout_buffer: Owner,
+    pub(super) primary_plane: LibdrmNativePrimaryPlanePreparedScanout,
 }
 
 #[cfg(feature = "libdrm-events")]
 #[derive(Debug)]
 pub struct LivePreparedRenderedTopologyHead<Owner> {
-    scanout_buffer: Owner,
+    pub(super) scanout_buffer: Owner,
     primary_plane: LibdrmNativePrimaryPlanePreparedTopologyHead,
 }
 

@@ -269,7 +269,7 @@ done
 # 0001 is schema-7 evidence and must stay independently verifiable; schema 8
 # additionally carries the buffer-age damage outcomes.
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=(7|8|9|10) status=complete ' "$evidence"
+    grep -E '^sophia_live_native_resources schema=(7|8|9|10|11) status=complete ' "$evidence"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one schema-7 or schema-8 native resource-lifetime record"
@@ -279,18 +279,27 @@ slot_keys=(frame_slot_acquisitions frame_slot_reuses frame_slot_deferrals
     frame_slot_stale_releases frame_slots_leased frame_slots_high_watermark
     worker_requests worker_completions worker_failures worker_hard_stalls
     worker_release_enqueue_failures)
-if [[ "$resource_schema" == 8 || "$resource_schema" == 9 || "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 8 )); then
     slot_keys+=(frame_slot_partial_repaints frame_slot_full_repaints
         frame_slot_history_invalidations frame_slot_history_records)
 fi
-if [[ "$resource_schema" == 9 || "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 9 )); then
     slot_keys+=(max_in_flight_per_output pending_frame_supersessions)
 fi
 # Schema 10 reports how many renderer threads the session ran and whether any
 # result reached an output that did not ask for it. Both are meaningless
 # until outputs can share a worker, so earlier evidence owes neither.
-if [[ "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 10 )); then
     slot_keys+=(renderer_workers worker_result_misroutes worker_max_service_skew)
+fi
+# Schema 11 reports the direct scanout path. Every field is meaningless before
+# it existed, so earlier evidence owes none of them; the numbers are checked
+# for consistency below rather than for having fired, because an ordinary
+# session runs with the path off and must still verify.
+if (( resource_schema >= 11 )); then
+    slot_keys+=(direct_scanout_attempts direct_scanout_flips direct_scanout_tests
+        direct_scanout_test_rejections direct_scanout_refusals
+        direct_scanout_fallbacks)
 fi
 for key in "${slot_keys[@]}"; do
     value="$(field "$resources" "$key")" ||
@@ -301,7 +310,7 @@ done
 # Schema-8 evidence exists to promote damage-limited repaint, and the gate
 # enables the feature, so a run in which it never fired is not the run being
 # promoted. Schema-7 evidence predates the feature and owes nothing here.
-if [[ "$resource_schema" == 8 || "$resource_schema" == 9 || "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 8 )); then
     (( $(field "$resources" frame_slot_partial_repaints) >= 1 )) ||
         fail "no frame rendered partially, so the buffer-age boundary was not exercised"
 fi
@@ -309,6 +318,29 @@ for key in worker_failures worker_hard_stalls worker_release_enqueue_failures \
     frame_slot_stale_releases; do
     (( $(field "$resources" "$key") == 0 )) || fail "$key must be zero"
 done
+if (( resource_schema >= 11 )); then
+    # A refusal means Engine proved a frame the lowered pixels contradict.
+    # That is a defect, not ordinary ineligibility: an ineligible frame never
+    # becomes an attempt at all, so this counter has no benign nonzero value.
+    (( $(field "$resources" direct_scanout_refusals) == 0 )) ||
+        fail "Engine's direct-scanout proof disagreed with the frame it lowered"
+    direct_attempts="$(field "$resources" direct_scanout_attempts)"
+    direct_flips="$(field "$resources" direct_scanout_flips)"
+    direct_fallbacks="$(field "$resources" direct_scanout_fallbacks)"
+    # Every attempt ends exactly one of three ways, and the third -- still
+    # outstanding at session end -- is at most one per head.
+    (( direct_flips + direct_fallbacks <= direct_attempts )) ||
+        fail "direct scanout settled more attempts than it made"
+    (( $(field "$resources" direct_scanout_test_rejections) <=
+        $(field "$resources" direct_scanout_tests) )) ||
+        fail "direct scanout refused more validating commits than it issued"
+    # A flip is only lawful under a validating commit, so a session that
+    # flipped without ever asking the driver is one that skipped the question.
+    if (( direct_flips > 0 )); then
+        (( $(field "$resources" direct_scanout_tests) > 0 )) ||
+            fail "a client buffer reached a plane with no validating commit"
+    fi
+fi
 (( $(field "$resources" frame_slot_acquisitions) > 0 )) ||
     fail "the native frame-slot pool was never acquired"
 (( $(field "$resources" frame_slots_high_watermark) > 0 )) ||

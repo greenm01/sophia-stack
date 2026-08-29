@@ -211,6 +211,7 @@ fn frame_for(generations: [u64; 3]) -> LiveOwnedMixedCompositionFrame {
         layers,
         output_damage_snapshot: Some(snapshot(generations)),
         trace: None,
+        direct_scanout: Default::default(),
     }
 }
 

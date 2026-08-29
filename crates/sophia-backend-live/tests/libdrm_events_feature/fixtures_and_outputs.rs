@@ -332,6 +332,7 @@ fn pending_rendered_frame_is_a_latest_frame_wins_slot() {
         layers: Vec::new(),
         output_damage_snapshot: None,
         trace: None,
+        direct_scanout: Default::default(),
     });
     assert!(!exporter.pending_cpu_frame());
     assert!(exporter.pending_mixed_frame());

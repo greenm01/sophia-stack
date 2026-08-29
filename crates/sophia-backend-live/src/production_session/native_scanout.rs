@@ -162,6 +162,16 @@ mod persistent_native_scanout {
         pub pending_content: Option<LiveProductionScanoutContent>,
         pub rendering_content: Option<LiveProductionScanoutContent>,
         pub submitted_content: Option<LiveProductionScanoutContent>,
+        /// Whether the submission in flight put the client's own buffer on the
+        /// plane rather than a compositor copy.
+        ///
+        /// It decides how the Present settles: a copy is idle at the flip, but
+        /// a directly scanned buffer is on glass and stays owed to the client
+        /// until a successor flip retires it.
+        /// See `PresentFlipOwnership.tla`.
+        pub submitted_direct: bool,
+        /// The same, for the submission the screen is now showing.
+        pub presented_direct: bool,
         pub presented_content: Option<LiveProductionScanoutContent>,
         /// Checksum of the logical scene this head presented, never of the pixels
         /// this head scanned out. A mirror group composes one scene and projects
@@ -295,6 +305,26 @@ mod persistent_native_scanout {
             in_flight_ticks: 0,
             cleanup_pending: result.cleanup.is_some(),
         }
+    }
+
+    /// What the direct scanout path did, across every head of a session.
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+    pub struct LiveProductionDirectScanoutTotals {
+        /// Frames Engine proved and this session tried to scan out directly.
+        pub attempts: usize,
+        /// Frames whose client buffer the driver accepted onto a plane.
+        pub flips: usize,
+        /// Validating `TEST_ONLY` commits issued on an eligibility edge.
+        pub tests: usize,
+        /// Validating commits the driver refused. Each ends an episode.
+        pub test_rejections: usize,
+        /// Proven frames the backend's own re-derivation disagreed with.
+        /// Nonzero means Engine and the lowered pixels disagree, which is a
+        /// defect rather than ordinary ineligibility -- an ineligible frame
+        /// never becomes an attempt at all.
+        pub refusals: usize,
+        /// Direct attempts that composed instead, having reached no screen.
+        pub fallbacks: usize,
     }
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -583,6 +613,8 @@ mod persistent_native_scanout {
                         pending_content: None,
                         rendering_content: None,
                         submitted_content: None,
+                        submitted_direct: false,
+                        presented_direct: false,
                         presented_content: None,
                         presented_logical_checksum: 0,
                         presented_submissions: 0,
@@ -1069,7 +1101,7 @@ mod persistent_native_scanout {
             }
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
-            let (report, exported_nonzero, worker_was_in_flight) = {
+            let (report, exported_nonzero, worker_was_in_flight, submitted_direct) = {
                 let groups = &mut self.groups;
                 let head = &mut self.heads[index];
                 let exporter = self
@@ -1078,6 +1110,7 @@ mod persistent_native_scanout {
                     .ok_or_else(|| format!("native output {} has no exporter", output.raw()))?;
                 let worker_was_in_flight = exporter.worker_in_flight();
                 let export_attempts_before = exporter.cpu_frame_export_attempts();
+                let direct_flips_before = exporter.direct_scanout_flips();
                 let report = runtime
                     .run_tick_with_native_gbm_rendered_primary_plane_scanout_exporter_with(
                         input,
@@ -1087,10 +1120,22 @@ mod persistent_native_scanout {
                 let exported_nonzero = exporter.cpu_frame_export_attempts()
                     > export_attempts_before
                     && head.pending_nonzero_pixel_bytes > 0;
+                // Whether the submission this tick produced -- if it produced
+                // one -- put the client's own buffer on the plane. Read as a
+                // difference rather than a flag because the exporter is
+                // several calls away from the submit that consumed its export,
+                // and a flag would have to be cleared by whichever of those
+                // calls ran last.
+                let submitted_direct = exporter.direct_scanout_flips() > direct_flips_before;
                 if !exporter.pending_cpu_frame() {
                     head.pending_nonzero_pixel_bytes = 0;
                 }
-                (report, exported_nonzero, worker_was_in_flight)
+                (
+                    report,
+                    exported_nonzero,
+                    worker_was_in_flight,
+                    submitted_direct,
+                )
             };
             if exported_nonzero {
                 self.nonzero_exports = self.nonzero_exports.saturating_add(1);
@@ -1160,6 +1205,7 @@ mod persistent_native_scanout {
                             Some(self.heads[index].last_checksum);
                         self.heads[index].submitted_sequence = Some(self.heads[index].submissions);
                         self.heads[index].submitted_content = content;
+                        self.heads[index].submitted_direct = submitted_direct;
                         if matches!(
                             content,
                             Some(
@@ -2514,6 +2560,8 @@ mod persistent_native_scanout {
                     self.heads[index].presented_submissions = submission;
                 }
                 self.heads[index].presented_content = self.heads[index].submitted_content.take();
+                self.heads[index].presented_direct =
+                    std::mem::take(&mut self.heads[index].submitted_direct);
                 if self.heads[index].output_frames.submitted().is_some() {
                     let presented = self.heads[index]
                         .output_frames
@@ -2627,6 +2675,17 @@ mod persistent_native_scanout {
             std::env::var("SOPHIA_ENABLE_SHARED_RENDERER_WORKER").is_ok_and(|value| value == "1")
         }
 
+        /// Whether a head may hand an eligible client buffer straight to a
+        /// plane instead of composing it.
+        ///
+        /// Opt-in until the row is promoted on physical evidence. Off, the
+        /// exporter never even derives a candidate, so the session behaves
+        /// exactly as it did before this row rather than taking a different
+        /// path that happens to compose.
+        fn direct_scanout_enabled() -> bool {
+            std::env::var("SOPHIA_ENABLE_DIRECT_SCANOUT").is_ok_and(|value| value == "1")
+        }
+
         /// Give one head a renderer worker: its group's shared thread when
         /// sharing is on, a thread of its own when it is not.
         ///
@@ -2649,6 +2708,17 @@ mod persistent_native_scanout {
             self.exporters[index].set_output(crate::LiveRendererWorkerOutputKey::from_raw(
                 (group << 32) | (self.heads[index].head.raw() & 0xFFFF_FFFF),
             ));
+            // A mirror head never takes the direct path. Eligibility is proven
+            // about one head's plan; a mirror cohort projects one scene into
+            // several heads' own modes, so the buffer that would fill one head
+            // exactly does not fill its siblings, and there is no single
+            // client buffer that is the group's image. This is the first of
+            // two refusals -- the mirror queue clears the verdict on the frame
+            // itself -- because head membership can change after a head is
+            // enabled, and neither check alone covers both orders.
+            let mirrored = self.head_indices(self.heads[index].output.id).len() > 1;
+            self.exporters[index]
+                .set_direct_scanout_enabled(Self::direct_scanout_enabled() && !mirrored);
             if Self::shared_renderer_worker_enabled() {
                 let group = self.heads[index].group;
                 if self.groups[group].renderer_core.is_none() {
@@ -2691,6 +2761,32 @@ mod persistent_native_scanout {
         /// it is off. The count is evidence: it is the difference the row
         /// exists to make, and a session claiming to share while running a
         /// thread per head would look identical everywhere else.
+        /// What the direct scanout path did this session, summed over heads.
+        ///
+        /// Summed at report time rather than accumulated per tick because the
+        /// exporters own the counts and a head that comes and goes takes its
+        /// history with it; a session-level mirror would have to be kept
+        /// correct across every topology change to say the same thing.
+        pub fn direct_scanout_totals(&self) -> LiveProductionDirectScanoutTotals {
+            self.exporters.iter().fold(
+                LiveProductionDirectScanoutTotals::default(),
+                |totals, exporter| LiveProductionDirectScanoutTotals {
+                    attempts: totals.attempts.saturating_add(exporter.direct_scanout_attempts()),
+                    flips: totals.flips.saturating_add(exporter.direct_scanout_flips()),
+                    tests: totals.tests.saturating_add(exporter.direct_scanout_tests()),
+                    test_rejections: totals
+                        .test_rejections
+                        .saturating_add(exporter.direct_scanout_test_rejections()),
+                    refusals: totals
+                        .refusals
+                        .saturating_add(exporter.direct_scanout_refusals()),
+                    fallbacks: totals
+                        .fallbacks
+                        .saturating_add(exporter.direct_scanout_fallbacks()),
+                },
+            )
+        }
+
         pub fn renderer_worker_count(&self) -> usize {
             if Self::shared_renderer_worker_enabled() {
                 self.groups
@@ -2806,6 +2902,7 @@ mod persistent_native_scanout {
                 frame: content.frame(),
                 submission: retirement.cycle,
                 content,
+                direct: self.heads[index].presented_direct,
                 ust: retirement.retirement.ust,
                 msc: retirement.retirement.msc,
             })
@@ -3089,7 +3186,8 @@ pub use persistent_native_scanout::{
     LiveProductionNativeTopologyPlan, LiveProductionNativeTopologyPlanError,
     LiveProductionNativeTopologyPreparationPhase, LiveProductionNativeTopologyPreparationReport,
     LiveProductionNativeTopologyResourceCohort, LiveProductionNativeTopologyResourceRejection,
-    LiveProductionNativeTopologyResourceTransition, LiveProductionPageFlipWatchdogStatus,
+    LiveProductionNativeTopologyResourceTransition, LiveProductionDirectScanoutTotals,
+    LiveProductionPageFlipWatchdogStatus,
     LiveProductionRendererImageHandoff, LiveProductionRetainedSceneQueueStatus,
     LiveProductionScanoutContent, LiveProductionSemanticStartupBarrier,
     finish_live_production_native_initialization, live_production_mirror_head_work_frame,

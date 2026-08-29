@@ -203,6 +203,7 @@ fn full_state_composition_keeps_retained_surface_before_current_damage() {
         }],
         output_damage_snapshot: None,
         trace: None,
+        direct_scanout: Default::default(),
     };
 
     let composed = compose_full_state_mixed_frame(
@@ -271,6 +272,7 @@ fn mixed_frame_clone_preserves_compositor_solid_rectangles() {
         }],
         output_damage_snapshot: Some(snapshot.clone()),
         trace: None,
+        direct_scanout: Default::default(),
     };
 
     let cloned = try_clone_mixed_frame(&frame).unwrap();
@@ -332,6 +334,7 @@ fn mixed_frame_clone_shares_immutable_cpu_pixels() {
         }],
         output_damage_snapshot: None,
         trace: None,
+        direct_scanout: Default::default(),
     };
 
     let cloned = try_clone_mixed_frame(&frame).unwrap();
@@ -741,5 +744,126 @@ fn stale_prepared_page_flip_settles_as_skip_and_retires_resources_exactly_once()
     assert_eq!(
         coordinator.reject_skip(transaction, 41, 42),
         Err(LivePresentFeedbackError::UnknownPresentation { transaction })
+    );
+}
+
+/// A directly scanned frame is on glass, not copied. Its Present completes as
+/// `Flipped` and the buffer stays owed to the client until a successor flip
+/// takes the plane. Releasing it any earlier lets the client draw into pixels
+/// the display is reading.
+///
+/// Model: `validation/tla/PresentFlipOwnership.tla`,
+/// `DisplayedClientBufferIsNeverReleased` and `ReleasedOnlyBySuccessor`.
+#[test]
+fn a_directly_flipped_buffer_is_released_only_after_its_successor() {
+    let displayed_handle = BufferHandle::from_raw(31);
+    let successor_handle = BufferHandle::from_raw(32);
+    let displayed = TransactionId::from_raw(33);
+    let successor = TransactionId::from_raw(34);
+    let idle_handle = FenceHandle::from_raw(35);
+    let idle_fence = sophia_xshmfence::allocate().unwrap();
+    let idle_query = idle_fence.try_clone().unwrap();
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    for handle in [displayed_handle, successor_handle] {
+        coordinator
+            .resources_mut()
+            .register_source(descriptor(handle), vec![fd()])
+            .unwrap();
+    }
+    coordinator
+        .resources_mut()
+        .register_fence(idle_handle, false, idle_fence)
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction: displayed,
+            buffer: displayed_handle,
+            acquire_fence: None,
+            idle_fence: Some(idle_handle),
+        })
+        .unwrap();
+    coordinator.resources_mut().mark_submitted(displayed).unwrap();
+
+    let completed = coordinator
+        .complete_flip_without_idle(displayed, 11, 12)
+        .unwrap();
+
+    // The client learns its frame is on screen, and learns it as a flip.
+    assert_eq!(
+        completed.feedback,
+        [LivePresentProtocolFeedback::Complete {
+            transaction: displayed,
+            ust: 11,
+            msc: 12,
+            disposition: LivePresentBufferDisposition::Flipped,
+        }]
+    );
+    // And does not get its buffer back, because the screen is scanning it.
+    assert!(!completed.idle_fence_triggered);
+    assert!(!sophia_xshmfence::query(&idle_query).unwrap());
+    assert_eq!(
+        coordinator.resources().state(displayed),
+        Some(LiveBufferState::Submitted)
+    );
+
+    // A successor takes the plane. Only now is the release lawful.
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction: successor,
+            buffer: successor_handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+    let released = coordinator.idle_displayed(displayed).unwrap();
+
+    assert_eq!(
+        released.feedback,
+        [LivePresentProtocolFeedback::Idle {
+            transaction: displayed
+        }]
+    );
+    assert!(released.idle_fence_triggered);
+    assert!(sophia_xshmfence::query(&idle_query).unwrap());
+}
+
+/// `Flipped` is not `Retained`. Both report X `Flip`, but only one of them
+/// means a client's own buffer reached the plane uncomposed, and a session
+/// with no direct scanout must not be able to report the number that proves
+/// this row.
+#[test]
+fn a_retained_completion_is_not_a_direct_flip() {
+    let handle = BufferHandle::from_raw(41);
+    let transaction = TransactionId::from_raw(42);
+    let mut coordinator = LiveProductionPresentFeedbackCoordinator::default();
+    coordinator
+        .resources_mut()
+        .register_source(descriptor(handle), vec![fd()])
+        .unwrap();
+    coordinator
+        .resources_mut()
+        .begin(LivePresentationSubmission {
+            transaction,
+            buffer: handle,
+            acquire_fence: None,
+            idle_fence: None,
+        })
+        .unwrap();
+    coordinator.resources_mut().mark_submitted(transaction).unwrap();
+
+    let retained = coordinator
+        .complete_retained_without_idle(transaction, 1, 2)
+        .unwrap();
+
+    assert_eq!(
+        retained.feedback,
+        [LivePresentProtocolFeedback::Complete {
+            transaction,
+            ust: 1,
+            msc: 2,
+            disposition: LivePresentBufferDisposition::Retained,
+        }]
     );
 }

@@ -1862,9 +1862,15 @@ impl LiveProductionNativeScanout {
             let index = self
                 .head_index_for_head(head_plan.head)
                 .ok_or("topology preparation lost a live head")?;
-            let frame = candidate_frames
+            let mut frame = candidate_frames
                 .remove(&head_plan.head)
                 .expect("candidate frame coverage was validated");
+            // A topology commit is not a frame: it proves a mode the head does
+            // not yet run, and it must own the framebuffer it commits. A
+            // client's buffer would be scanned out under a mode nobody has
+            // validated it for, so a candidate frame carries no proof
+            // regardless of the plan it came from.
+            frame.frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired;
             self.exporters[index].set_pending_mixed_frame(frame.frame);
         }
 
@@ -2568,10 +2574,18 @@ impl LiveProductionNativeScanout {
                                 "candidate exporter remained occupied after preparation".into()
                             );
                         }
-                        let frame = state
+                        let mut frame = state
                             .rollback_frames
                             .remove(&head_plan.head)
                             .expect("rollback frame coverage was validated");
+                        // A topology commit is not a frame: it proves a mode
+                        // the head does not yet run, and it must own the
+                        // framebuffer it commits. A client's buffer would be
+                        // scanned out under a mode nobody has validated it
+                        // for, so a candidate or rollback frame carries no
+                        // proof regardless of the plan it came from.
+                        frame.frame.direct_scanout =
+                            sophia_engine::DirectScanoutVerdict::CompositionRequired;
                         self.exporters[index].set_pending_mixed_frame(frame.frame);
                     }
                     state.phase = LiveProductionNativeTopologyPreparationPhase::PreparingRollback;

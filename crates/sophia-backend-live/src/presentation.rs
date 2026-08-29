@@ -157,6 +157,8 @@ pub fn try_clone_mixed_frame(
         layers,
         output_damage_snapshot: frame.output_damage_snapshot.clone(),
         trace: frame.trace,
+        // A duplicate of the same frame: same layers, same proof.
+        direct_scanout: frame.direct_scanout,
     })
 }
 
@@ -312,6 +314,10 @@ impl LivePresentationResourceSession {
             layers,
             output_damage_snapshot: None,
             trace: None,
+            // No plan reached here: this frame is the staging form a Present
+            // takes on its way into head composition, not a lowered head
+            // frame. It carries no proof, so it composes.
+            direct_scanout: sophia_engine::DirectScanoutVerdict::default(),
         })
     }
 

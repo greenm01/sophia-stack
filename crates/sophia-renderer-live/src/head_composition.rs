@@ -283,6 +283,11 @@ pub fn lower_head_composition_plan_with_caches(
             head: plan.head,
             scene_generation: plan.scene_generation,
         }),
+        // Engine's verdict on this exact plan, carried down with the pixels it
+        // describes. Lowering adds no layer the plan did not command -- every
+        // arm above comes from a command or from `plan.cursor`, both of which
+        // the verdict classifies -- so the verdict remains true of the frame.
+        direct_scanout: plan.direct_scanout,
     })
 }
 

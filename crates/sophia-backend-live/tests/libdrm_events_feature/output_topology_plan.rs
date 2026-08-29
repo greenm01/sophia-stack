@@ -879,6 +879,7 @@ fn topology_composition_frame(
                 software_cursor: None,
             }),
             trace: None,
+            direct_scanout: Default::default(),
         },
     }
 }
@@ -910,6 +911,7 @@ fn identified_head_composition_frame(
                 software_cursor: None,
             }),
             trace: None,
+            direct_scanout: Default::default(),
         },
     }
 }
