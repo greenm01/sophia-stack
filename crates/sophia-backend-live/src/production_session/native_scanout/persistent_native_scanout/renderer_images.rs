@@ -1180,11 +1180,12 @@ impl LiveProductionNativeScanout {
         Ok(expected_count)
     }
 
-    /// Every logical output's exporter has an initialized renderer-image owner.
+    /// Every head's exporter has an initialized renderer-image owner.
     ///
-    /// Counted over exporters rather than heads: a mirror group has one exporter
-    /// and several heads, so counting heads would ask the same exporter twice and
-    /// call an empty desktop initialized.
+    /// Counted over exporters, which are one per physical head and index-
+    /// parallel with them -- including inside a mirror group, whose heads each
+    /// own one. The store those owners reach is device-wide once outputs share
+    /// a worker; what is per head here is the owner, not the images.
     pub fn renderer_image_owners_initialized(&self) -> bool {
         !self.exporters.is_empty()
             && self
@@ -1221,7 +1222,11 @@ impl LiveProductionNativeScanout {
     }
 
     pub fn persistent_render_metrics(&self) -> LivePersistentRenderMetrics {
-        self.exporters.iter().fold(
+        // Counted once for the session rather than folded per exporter: with
+        // outputs sharing a thread, summing what each head can reach would
+        // report the head count and hide the very collapse being measured.
+        let renderer_workers = self.renderer_worker_count();
+        let folded = self.exporters.iter().fold(
             LivePersistentRenderMetrics::default(),
             |mut metrics, exporter| {
                 let stats = exporter.persistent_render_stats();
@@ -1321,6 +1326,9 @@ impl LiveProductionNativeScanout {
                     metrics.worker_release_enqueue_failures = metrics
                         .worker_release_enqueue_failures
                         .saturating_add(worker.release_enqueue_failures);
+                    metrics.worker_result_misroutes = metrics
+                        .worker_result_misroutes
+                        .saturating_add(worker.result_misroutes);
                     metrics.frame_slot_acquisitions = metrics
                         .frame_slot_acquisitions
                         .saturating_add(worker.frame_slots.acquisitions);
@@ -1362,6 +1370,10 @@ impl LiveProductionNativeScanout {
                 metrics.max_upload = metrics.max_upload.max(stats.max_upload);
                 metrics
             },
-        )
+        );
+        LivePersistentRenderMetrics {
+            renderer_workers,
+            ..folded
+        }
     }
 }

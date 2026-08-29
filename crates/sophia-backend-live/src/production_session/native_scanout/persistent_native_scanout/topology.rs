@@ -1218,10 +1218,14 @@ impl LiveProductionNativeScanout {
             .collect::<Vec<_>>();
         let mut workers = BTreeSet::new();
         for index in indices.iter().copied() {
-            self.exporters[index].enable_worker()?;
+            self.enable_head_renderer_worker(index)?;
             if !self.exporters[index].worker_enabled() {
                 return Err("semantic startup renderer worker was not established".into());
             }
+            // `workers` counts renderer threads this head can reach, which is
+            // one whether it owns the thread or shares its group's. How many
+            // threads the session actually runs is a session-wide fact and is
+            // reported as one, in the resource record.
             tracing::info!(
                 "sophia_live_head_bootstrap schema=1 status=worker_ready output={} head={} workers=1",
                 output.raw(),

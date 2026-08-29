@@ -120,6 +120,11 @@ mod persistent_native_scanout {
         pub session: crate::RealAtomicScanoutPageFlipSession,
         pub sender: SyncSender<crate::LivePageFlipCallback>,
         pub receiver: Receiver<crate::LivePageFlipCallback>,
+        /// The renderer thread every head on this card shares, once sharing is
+        /// on. A group is a card session, which is exactly the DRM device
+        /// group the heads render against: one EGL display, one GBM device,
+        /// and one renderer-image store for all of them.
+        pub renderer_core: Option<std::sync::Arc<crate::NativeGbmRendererWorkerCore>>,
     }
 
     struct LiveProductionMirrorRetirementReport {
@@ -320,6 +325,14 @@ mod persistent_native_scanout {
         pub worker_soft_stalls: usize,
         pub worker_hard_stalls: usize,
         pub worker_release_enqueue_failures: usize,
+        /// Renderer threads this session ran: one per card group when outputs
+        /// share, one per enabled head when they do not. The difference the
+        /// coalescing row exists to make, and invisible in every other
+        /// counter.
+        pub renderer_workers: usize,
+        /// Results that reached an output naming a different one. Zero by
+        /// construction; reported so the claim is checked rather than assumed.
+        pub worker_result_misroutes: usize,
         pub frame_slot_acquisitions: usize,
         pub frame_slot_reuses: usize,
         pub frame_slot_deferrals: usize,
@@ -605,6 +618,7 @@ mod persistent_native_scanout {
                     session,
                     sender,
                     receiver,
+                    renderer_core: None,
                 });
             }
             // A head and its exporter are one physical scanout slot. Keep them
@@ -2550,19 +2564,96 @@ mod persistent_native_scanout {
             }
         }
 
+        /// Whether outputs of one device group share a renderer thread.
+        ///
+        /// Opt-in until the shared worker is promoted on physical evidence.
+        /// A head that renders alone cannot starve a sibling or misroute a
+        /// result to one, so the failure modes this introduces do not exist
+        /// until it is on, and the gate that proves them is the one that
+        /// turns it on.
+        fn shared_renderer_worker_enabled() -> bool {
+            std::env::var("SOPHIA_ENABLE_SHARED_RENDERER_WORKER").is_ok_and(|value| value == "1")
+        }
+
+        /// Give one head a renderer worker: its group's shared thread when
+        /// sharing is on, a thread of its own when it is not.
+        ///
+        /// Every path that brings a head up runs through here, because a head
+        /// enabled the other way would quietly keep its own EGL display and
+        /// its own copy of every imported image while the session reported
+        /// itself as sharing.
+        pub(crate) fn enable_head_renderer_worker(
+            &mut self,
+            index: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            // The head's own identity, so two exporters on one core never
+            // collide in their replies, their slots, or their leases.
+            // Group in the high bits, head in the low. Head identities repeat
+            // across cards -- a two-card guest reports head=1 for both of its
+            // outputs -- and while a key only has to be unique within the core
+            // that holds it, uniqueness by construction beats uniqueness by an
+            // argument about scope that a later change could quietly break.
+            let group = u64::try_from(self.heads[index].group).unwrap_or(u64::MAX);
+            self.exporters[index].set_output(crate::LiveRendererWorkerOutputKey::from_raw(
+                (group << 32) | (self.heads[index].head.raw() & 0xFFFF_FFFF),
+            ));
+            if Self::shared_renderer_worker_enabled() {
+                let group = self.heads[index].group;
+                if self.groups[group].renderer_core.is_none() {
+                    let discovery = self.groups[group].session.render_device_discovery()?;
+                    self.groups[group].renderer_core =
+                        Some(crate::NativeGbmRendererWorkerCore::spawn(
+                            crate::RenderDeviceDiscoveryBackend::open_render_device(&discovery),
+                        )?);
+                }
+                let core = self.groups[group]
+                    .renderer_core
+                    .as_ref()
+                    .expect("group renderer core established above")
+                    .clone();
+                self.exporters[index].attach_shared_worker(&core);
+            } else {
+                self.exporters[index].enable_worker()?;
+            }
+            Ok(())
+        }
+
         pub fn enable_renderer_workers(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
             let mut enabled = 0usize;
             for index in 0..self.exporters.len() {
                 if !self.heads[index].enabled {
                     continue;
                 }
-                self.exporters[index].enable_worker()?;
+                self.enable_head_renderer_worker(index)?;
                 if !self.exporters[index].worker_enabled() {
                     return Err("native renderer worker was not established".into());
                 }
                 enabled = enabled.saturating_add(1);
             }
             Ok(enabled)
+        }
+
+        /// How many renderer threads this session runs.
+        ///
+        /// One per card group when sharing is on, one per enabled head when
+        /// it is off. The count is evidence: it is the difference the row
+        /// exists to make, and a session claiming to share while running a
+        /// thread per head would look identical everywhere else.
+        pub fn renderer_worker_count(&self) -> usize {
+            if Self::shared_renderer_worker_enabled() {
+                self.groups
+                    .iter()
+                    .filter(|group| group.renderer_core.is_some())
+                    .count()
+            } else {
+                self.exporters
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, exporter)| {
+                        self.heads[*index].enabled && exporter.worker_enabled()
+                    })
+                    .count()
+            }
         }
 
         pub fn enabled_head_count(&self) -> usize {

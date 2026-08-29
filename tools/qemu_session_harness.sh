@@ -8,6 +8,9 @@ KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
 SCENARIO="${SOPHIA_QEMU_SCENARIO:-session}"
 TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
+# Passed to the guest so a headless run can exercise outputs sharing one
+# renderer thread. Off by default, exactly as it is in a session.
+SHARED_RENDERER_WORKER="${SOPHIA_ENABLE_SHARED_RENDERER_WORKER:-0}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
 if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" && "$SCENARIO" != "xmonad-interactive" ]]; then
@@ -794,7 +797,7 @@ LOGGER_PID=$!
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
 

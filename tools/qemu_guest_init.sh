@@ -43,6 +43,11 @@ esac
 case " $cmdline " in
     *" sophia.two_xterm=1 "*) two_xterm=true ;;
 esac
+case " $cmdline " in
+    *" sophia.shared_renderer_worker=1 "*)
+        export SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1
+        ;;
+esac
 
 if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
