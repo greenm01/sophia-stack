@@ -457,6 +457,16 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
                 exit 1
             }
             ;;
+        kitty)
+            # The client this stack is known to hand DMA-BUFs. vkcube
+            # presents through the software path here -- 389 Presents,
+            # every one a CPU layer -- while Kitty produced DMA-BUF
+            # content in every promoted Hagia archive. Direct scanout
+            # needs a client buffer, so the probe uses the one that
+            # provides one.
+            standalone_default_bin="$(command -v kitty || true)"
+            standalone_requirement=kitty
+            ;;
         vkcube)
             standalone_default_bin="$(command -v vkcube || true)"
             standalone_requirement=vkcube
@@ -489,7 +499,7 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             }
             ;;
         *)
-            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears, vkcube, or xterm." >&2
+            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears, kitty, vkcube, or xterm." >&2
             exit 1
             ;;
     esac
@@ -585,6 +595,46 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         session_args+=(
             --session-app-arg=standalone=--wsi
             --session-app-arg=standalone=xcb
+        )
+    fi
+    if [[ "$standalone_workload" == kitty ]]; then
+        standalone_width="${SOPHIA_STANDALONE_WIDTH:-2560}"
+        standalone_height="${SOPHIA_STANDALONE_HEIGHT:-1440}"
+        [[ "$standalone_width" =~ ^[1-9][0-9]*$
+            && "$standalone_height" =~ ^[1-9][0-9]*$ ]] || {
+            echo "SOPHIA_STANDALONE_WIDTH and SOPHIA_STANDALONE_HEIGHT must be positive integers." >&2
+            exit 1
+        }
+        # No window manager means no one to fullscreen this, so it is sized in
+        # pixels to the head it will land on. `px` is not decoration: a bare
+        # number is a count of cells.
+        #
+        # Opaque, because a translucent background makes the client's alpha
+        # part of the image and nothing behind it would be drawn on a plane.
+        # Its own config is ignored so the probe does not depend on a dotfile.
+        session_args+=(
+            --session-app-arg=standalone=--config
+            --session-app-arg=standalone=NONE
+            --session-app-arg=standalone=--override
+            --session-app-arg=standalone=linux_display_server=x11
+            --session-app-arg=standalone=--override
+            --session-app-arg=standalone=background_opacity=1
+            --session-app-arg=standalone=--override
+            --session-app-arg=standalone=remember_window_size=no
+            --session-app-arg=standalone=--override
+            "--session-app-arg=standalone=initial_window_width=${standalone_width}px"
+            --session-app-arg=standalone=--override
+            "--session-app-arg=standalone=initial_window_height=${standalone_height}px"
+            --session-app-arg=standalone=--override
+            --session-app-arg=standalone=confirm_os_window_close=0
+        )
+        # A bounded client, so the run needs no operator beyond starting it:
+        # the shell exits and `--exit-when-startup-exits` ends the session.
+        # Must come last -- everything after the command is the command's.
+        session_args+=(
+            --session-app-arg=standalone=sh
+            --session-app-arg=standalone=-c
+            "--session-app-arg=standalone=sleep ${SOPHIA_STANDALONE_HOLD_SECONDS:-20}"
         )
     fi
     if (( standalone_direct_scanout == 1 )) && [[ "$standalone_workload" == vkcube ]]; then

@@ -12,10 +12,16 @@ set -euo pipefail
 # client asked for the head's size fills it, and no WM means no focus ring and
 # no border over the frame.
 #
-# The client is bounded and sized, so the run needs no operator beyond starting
-# it: vkcube draws its frames and exits, and `--exit-when-startup-exits` ends
-# the session with it. Ctrl+Alt+Delete logs out early if you want it back
-# sooner; Ctrl+Alt+Backspace is emergency recovery as always.
+# The client is Kitty, because it is the one this stack is known to hand
+# DMA-BUFs: every promoted Hagia archive carries hundreds of DMA-BUF frames
+# from it, while vkcube on this machine presents through the software path --
+# 389 Presents, every one a CPU layer, and direct scanout needs a client
+# buffer.
+#
+# It is bounded and sized, so the run needs no operator beyond starting it: the
+# shell inside it exits and `--exit-when-startup-exits` ends the session with
+# it. Ctrl+Alt+Delete logs out early; Ctrl+Alt+Backspace is emergency recovery
+# as always.
 #
 # The input-latency harness cannot answer this question: it proves input
 # reaches a terminal, so it needs an input proof, and the session refuses
@@ -26,19 +32,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export SOPHIA_TTY_PROFILE=standalone
 export SOPHIA_SESSION_VERBOSE_TRACE=true
 export SOPHIA_ENABLE_DIRECT_SCANOUT=1
-: "${SOPHIA_STANDALONE_WORKLOAD:=vkcube}"
+: "${SOPHIA_STANDALONE_WORKLOAD:=kitty}"
 : "${SOPHIA_STANDALONE_WIDTH:=2560}"
 : "${SOPHIA_STANDALONE_HEIGHT:=1440}"
-: "${SOPHIA_STANDALONE_FRAME_COUNT:=600}"
+: "${SOPHIA_STANDALONE_HOLD_SECONDS:=20}"
 export SOPHIA_STANDALONE_WORKLOAD SOPHIA_STANDALONE_WIDTH \
-    SOPHIA_STANDALONE_HEIGHT SOPHIA_STANDALONE_FRAME_COUNT
+    SOPHIA_STANDALONE_HEIGHT SOPHIA_STANDALONE_HOLD_SECONDS
 
 printf '%s\n' \
     'Direct scanout probe:' \
     "  Client: $SOPHIA_STANDALONE_WORKLOAD at ${SOPHIA_STANDALONE_WIDTH}x${SOPHIA_STANDALONE_HEIGHT}," \
-    "  ${SOPHIA_STANDALONE_FRAME_COUNT} frames, no window manager, no chrome." \
+    "  holding ${SOPHIA_STANDALONE_HOLD_SECONDS}s, no window manager, no chrome." \
     '' \
-    '  1. Confirm the cube fills the screen edge to edge.' \
+    '  1. Confirm the client fills the screen edge to edge.' \
     '  2. It exits on its own; the session ends with it.' \
     '  3. Ctrl+Alt+Delete logs out early. Ctrl+Alt+Backspace is emergency only.' \
     '  4. Back at tty3, run:' \
