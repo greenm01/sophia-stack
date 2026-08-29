@@ -25,7 +25,11 @@ if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
     elif [[ "$SESSION_PROFILE" == native ]]; then
         echo "  $ROOT_DIR/tools/start_sophia_native_hot_reload_tty3.sh" >&2
     elif [[ "$SESSION_PROFILE" == standalone ]]; then
-        echo "  $ROOT_DIR/tools/start_sophia_vkcube_standalone_tty3.sh" >&2
+        if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
+            echo "  just direct-scanout-probe" >&2
+        else
+            echo "  $ROOT_DIR/tools/start_sophia_vkcube_standalone_tty3.sh" >&2
+        fi
     else
         echo "  $ROOT_DIR/tools/start_sophia_${SESSION_PROFILE}_tty3.sh" >&2
     fi
