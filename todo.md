@@ -2140,7 +2140,11 @@ other mature compositors are references rather than Sophia runtime components.
   which a two-card guest reporting `head=1` twice disproved; it composes group
   with head now, and duplicate registration is refused rather than trusted.
 - [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
-  layer, followed by a hardware cursor plane. Retain mixed composition as the
+  layer, followed by a hardware cursor plane. Engine must prove the exact frame
+  has no overlay or active effect that samples the scene, uses an offscreen
+  group, or otherwise requires composition. Effect activation returns cleanly
+  to mixed composition, and later removal may restore eligibility only through
+  a fresh Engine proof and backend atomic test. Retain mixed composition as the
   fail-closed fallback.
 - [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
   transaction owner can combine primary and cursor-plane state in the same
@@ -2337,6 +2341,31 @@ Launcher, And Shell Integration are pre-freeze port requirements.
   a generated golden/malformed corpus, an independent C proof client, and a
   23,582,243-state lifecycle check. Permanent compatibility, broader display
   lists, reservation coordination, and signed installed evidence remain open.
+- [x] Ratify visual styling and compositor-effect extensibility without moving
+  compositor authority out of Engine. WM and shell authors own role-appropriate
+  visual policy; public protocols carry bounded semantic intent rather than
+  shader code; Engine owns validation, animation timing, damage, rendering, and
+  presentation. The first provider boundary is a private version-coupled Rust
+  trait for separately maintained modules linked into the trusted renderer
+  build and selected by the immutable packaged profile. Runtime shared-library
+  loading and a sandboxed effect host remain evidence-gated later designs; see
+  `docs/compositor-graphics.md` and `docs/sophia-shell-v1-direction.md`.
+- [ ] Before broadening the shell schema, model effect capability admission,
+  bounded parameters, generation supersession, Engine-clock cancellation,
+  provider absence or failure, deterministic fallback, and atomic multi-head
+  presentation. Retain negative controls that expose unnegotiated capabilities,
+  stale animation, missing fallback, unequal-head semantics, and an effect that
+  incorrectly survives provider or authority revocation.
+- [ ] Implement one protocol-neutral Engine effect registry and the private
+  build-linked provider interface, then prove backdrop blur as a scene-sampling
+  effect and a focus transition as Engine-clocked animation. Keep provider code
+  outside the core renderer module, bind it to the installed release identity,
+  add deterministic reference lowering and native shader/pixel/damage gates,
+  and prove that effect activation disables direct scanout without stale pixels.
+  Only then admit capability-gated semantic effect intents to the experimental
+  shell contract or a future outbound-gated WM extension; do not reopen frozen
+  `sophia_wm_v1` revision 3. Require the Rust and independent C/Hagia corpora and
+  one independently packaged provider proof before considering a stable SDK.
 - [ ] Settle the remaining display-list vocabulary before schema work. Admit
   generic target regions and a desktop-background surface class, evaluate analytic
   screen-corner and indeterminate-progress primitives, and refuse per-widget

@@ -217,6 +217,43 @@ operation that the client cannot execute itself due to security (pixel blindness
 should be an explicit stated rule of the specification process, not an outcome
 negotiated per primitive.
 
+## Visual Style And Effect Contract
+
+The shell owns visual policy; Engine owns visual authority and execution. A
+future shell revision may choose colors, artwork, semantic effects, and bounded
+transitions for shell content derived from facts that role may already hold.
+Engine validates the proposal, resolves every effect against the session's
+admitted capabilities, clocks its transition, computes damage, performs any
+scene sampling or offscreen work, and presents the result atomically.
+
+The public shell wire never becomes a shader or renderer-plugin ABI. Effect
+proposals name negotiated semantic capabilities with bounded parameters,
+generations, and explicit legible fallbacks. Shader source, SPIR-V, GL objects,
+native handles, and arbitrary uniform blocks do not cross. Specialized
+renderer implementations are trusted build-linked providers selected as
+packaged desktop-profile inputs; their private Rust interface evolves with the
+renderer and is not frozen with `sophia_shell_v1`.
+
+This also preserves the WM/shell separation. `WmChromePolicy` remains the
+frozen revision-3 WM's narrow metadata-blind styling surface. A desktop family
+that wants richer WM-branded visuals supplies them through a separately
+authorized companion shell or, after evidence, a capability-gated WM extension.
+It does not move metadata or compositor state into blind spatial policy.
+
+Engine owns one animation clock for client content and compositor visuals. A
+shell may declare a bounded transition target, duration class, and easing
+policy once the eventual schema admits them; it does not drive an independent
+per-frame timeline. Ordinary changing shell content may still submit new
+generations, but those commits are content updates rather than authority over
+Engine's frame schedule.
+
+Content-addressed cached textures are the initial novelty path to model and
+measure. Stable content uploads once and later display lists reference its
+bounded handle. This does not yet prove that the current bytes-only transport
+can carry the required upload workload. Descriptor passing remains deferred
+until measured damage, bandwidth, power, fencing, and lifetime evidence shows
+that cached bytes are insufficient.
+
 ### DMA-BUF Handoffs Are A Candidate
 
 A shell-owned DMA-BUF transferred by Unix-domain FD passing is one candidate
@@ -412,24 +449,21 @@ integers collide. Concrete records and limits remain schema work.
 1. Does a display-list shell interface carry a full desktop at acceptable cost,
    or does per-frame list submission for animated content force a buffer path?
    This is the question that decides whether Path B is viable at all.
-2. **Can the shared transport carry shell texture traffic at all?** This is the
-   one open question that reaches back into `sophia_wm_v1` and is therefore
-   sequencing-critical. `docs/sophia-policy-ipc.md` limits one frame to 64 KiB,
+2. *Partly answered.* Content-addressed cached textures are the first path to
+   model and measure; descriptor passing remains deferred. Whether the shared
+   transport can carry even that shell texture traffic remains
+   sequencing-critical.
+   `docs/sophia-policy-ipc.md` limits one frame to 64 KiB,
    uses begin/chunk/end transfers for anything larger, permits one transfer in
    flight per direction, and describes a bytes-only wire with no file-descriptor
    passing. A 1920x40 bar at ARGB8888 is roughly 307 KiB, or five chunks for a
    single full upload. A continuously animating widget is not expressible.
-   Three candidate resolutions, in order of preference:
-   - **Content-addressed cached textures.** Upload once, reference by handle
-     thereafter. `docs/compositor-graphics.md` already implies this with its
-     cached-text strategy. Preserves the bytes-only wire. Does not help
-     genuinely per-frame content.
-   - **A descriptor-passing side channel for the shell role only.** Language
-     neutral over a unix socket, but it weakens the independently-implementable
-     property and touches shared transport code in `sophia-runtime`.
-   - **Strictly analytic display lists, no client rasterization.** Preserves the
-     transport untouched but removes the novelty valve above, forcing primitive
-     expansion and the toolkit outcome the architecture refuses.
+   The selected first experiment uploads content once and references it by
+   handle thereafter. It preserves the bytes-only wire but does not help
+   genuinely per-frame content. A descriptor-passing side channel may be
+   reconsidered only after that failure is measured. Strictly analytic display
+   lists remain rejected because they remove the novelty valve and force the
+   toolkit outcome the architecture refuses.
 3. What is the damage, bandwidth, and power cost of the client-rasterized
    texture valve under a continuously animating widget?
 4. *Partly answered.* Exclusive zones use the exact generation chain above and
@@ -444,8 +478,8 @@ integers collide. Concrete records and limits remain schema work.
    The offline descriptor reference now proves a title-only recent-window list
    with opaque activation; it deliberately preserves icon tokens without
    rendering them and does not choose ordering or recency.
-6. Does the shell need its own animation clock, or does Engine own animation
-   and the shell only declare transitions?
+6. *Answered.* Engine owns the animation clock. The shell declares bounded
+   transition intent and submits content generations; it does not drive frames.
 7. Where does the launcher live? It needs a text input, a result list, and
    arbitrary launch, and it straddles shell, broker, and session capability.
 

@@ -132,6 +132,71 @@ propose layout using opaque surface and workspace facts. A compositor close
 button remains an Engine/session action routed to the owning protocol authority,
 not a WM command.
 
+## Visual Policy And Effect Extensibility
+
+Except for the existing `WmChromePolicy` slice, this section describes target
+architecture. Effect intents, the provider registry, and visual providers are
+not implemented.
+
+The compositor role remains inside Engine, but the desktop's visual identity
+does not. A WM or shell family may define its own styling and effect policy
+without making that policy part of Sophia's universal Engine. The boundary has
+three forms:
+
+| Visual form | Policy owner | Execution path |
+| --- | --- | --- |
+| Artwork or a novel widget that does not sample the scene | shell | rasterize once where possible, transfer as bounded content-addressed content, and reuse as an Engine-composited texture |
+| A recurring mathematical compositing operation | WM or shell through a role-appropriate semantic intent | Engine validates and lowers a stable compositor operator |
+| A specialized operation that needs compositor pixels or custom renderer code | WM or shell selects an admitted semantic capability | a trusted, installed visual provider lowers it behind Engine's renderer boundary |
+
+The existing `WmChromePolicy` is the first narrow metadata-blind styling
+surface: a WM may choose frame and focus-ring policy for allocations it already
+owns. Revision 3 of `sophia_wm_v1` remains frozen. Richer WM-authored styling
+requires a separately authorized companion shell or a later outbound-gated WM
+extension; it does not justify exposing display lists, shader parameters, or
+metadata through the frozen interface. A shell may propose richer display-list
+content and transitions from the sanitized facts its role already holds.
+
+Public policy protocols carry semantic visual intent, never renderer programs.
+An effect intent must name a negotiated capability, bounded parameters, a
+generation, and a committed legible fallback. It cannot carry shader source,
+SPIR-V, native handles, procedure pointers, arbitrary renderer state, or client
+pixels. Engine resolves the intent against the provider set admitted for that
+session, validates its bounds and freshness, and includes the resolved effect
+in the same immutable frame candidate as client content and ordinary chrome.
+
+The first provider boundary is deliberately source-level rather than a stable
+runtime ABI. A visual provider is a separately maintained Rust module linked
+into the trusted renderer build behind a private, version-coupled provider
+trait. The packaged desktop profile selects and hashes the provider set as a
+release input before the session starts. A shell, WM, application, or mutable
+personal configuration cannot upload or load provider code at runtime. Dynamic
+libraries and a sandboxed effect host remain possible later designs, but neither
+is promised until multiple provider implementations demonstrate the required
+ABI, isolation, synchronization, and failure behavior.
+
+A provider is implementation, not authority. It receives only the bounded
+renderer-private input needed to lower an already validated effect. It does not
+receive protocol objects, raw metadata, physical input, policy state, DRM/KMS
+ownership, or permission to schedule or present a frame. Engine owns effect
+lifetime, offscreen allocation, damage, capability degradation, and the
+animation clock. WMs and shells declare transition targets and policy; they do
+not submit frame-by-frame animation timing.
+
+Effects are optional embellishment. Mandatory text, controls, trust state, and
+security surfaces remain independently renderable. An unknown capability,
+malformed parameter set, stale generation, or unavailable provider rejects the
+affected candidate or renders its committed fallback. A provider lowering
+failure emits only a reduced report and uses that fallback when it can still
+produce a complete frame; otherwise Engine preserves the prior coherent scene.
+
+An active overlay or effect that samples existing scene pixels, uses an
+offscreen group, or otherwise changes the final composed image makes that exact
+frame ineligible for direct scanout. Engine records composition as required,
+and the backend remains responsible for the final format/modifier atomic test.
+Removing the effect may restore eligibility on a later independently validated
+frame. Providers cannot bypass either decision.
+
 ## Native Rendering Strategy
 
 The native implementation should extend Sophia's existing EGL/OpenGL
