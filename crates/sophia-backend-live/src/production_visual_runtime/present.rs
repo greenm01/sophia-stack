@@ -400,7 +400,7 @@ impl LiveProductionVisualRuntime {
         // captured nothing -- the surface's newest content is that successor
         // itself -- so a promotion that finds nothing is ordinary.
         if let Some(native_scanout) = native_scanout {
-            let image = sophia_renderer_live::LiveRendererImageId::from_raw(transaction.raw());
+            let image = crate::presentation::renderer_image_for_present(transaction);
             if let Err(error) = native_scanout.promote_renderer_image(image) {
                 tracing::warn!(
                     transaction = transaction.raw(),

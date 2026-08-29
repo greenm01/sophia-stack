@@ -286,7 +286,7 @@ impl LiveProductionVisualRuntime {
         &self,
         image_id: sophia_renderer_live::LiveRendererImageId,
     ) -> Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame> {
-        let transaction = TransactionId::from_raw(image_id.raw());
+        let transaction = crate::presentation::present_for_renderer_image(image_id);
         if !self
             .displayed_direct_presents
             .values()

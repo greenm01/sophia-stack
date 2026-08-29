@@ -204,3 +204,28 @@ fn a_composed_frame_still_sources_its_renderer_image() {
             if image_id.raw() == 299
     ));
 }
+
+/// The Present/renderer-image identity is one definition, not three guesses.
+///
+/// Finding a displayed direct frame's client planes is a reverse lookup from
+/// the image id its retained layer carries. If that derivation ever drifts,
+/// the lookup does not error -- it finds nothing, falls back to naming a
+/// renderer image nobody imported, and the compose refuses. That is exactly
+/// how the first overlay over a direct frame killed a session, so the
+/// round trip is pinned here rather than left as a coincidence three call
+/// sites happen to agree on.
+#[test]
+fn a_present_and_its_renderer_image_name_each_other() {
+    use crate::presentation::{present_for_renderer_image, renderer_image_for_present};
+    use sophia_protocol::TransactionId;
+
+    for raw in [1u64, 437, 4_294_967_296] {
+        let transaction = TransactionId::from_raw(raw);
+        let image = renderer_image_for_present(transaction);
+        assert_eq!(
+            present_for_renderer_image(image),
+            transaction,
+            "the reverse lookup must find the Present that staged the image"
+        );
+    }
+}

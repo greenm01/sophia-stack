@@ -14,7 +14,7 @@ use sophia_renderer_live::{
     LiveDmaBufPresentationRegistry, LiveOwnedDmaBufPlane, LiveOwnedMixedCompositionFrame,
     LiveOwnedMixedCompositionLayer, LiveOwnedMultiPlaneDmaBufFrame,
     LivePresentationDisconnectReport, LivePresentationRegistryLimits, LivePresentationRetirement,
-    LiveResourceReleaseStatus, LiveSharedCpuBufferSource,
+    LiveRendererImageId, LiveResourceReleaseStatus, LiveSharedCpuBufferSource,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +23,24 @@ pub struct LivePresentationSubmission {
     pub buffer: BufferHandle,
     pub acquire_fence: Option<FenceHandle>,
     pub idle_fence: Option<FenceHandle>,
+}
+
+/// The renderer image a Present's composed frame is staged under.
+///
+/// One Present stages one image, so the transaction names it. Three places
+/// depend on that -- the layer built here, the promotion at retirement, and
+/// the reverse lookup that finds a displayed direct frame's client planes --
+/// and the last of those fails *silently* if the derivation ever changes: it
+/// finds no direct frame, falls back to naming a renderer image nobody
+/// imported, and the compose refuses. That was the overlay bug. It has a name
+/// and one definition now so it cannot drift back.
+pub fn renderer_image_for_present(transaction: TransactionId) -> LiveRendererImageId {
+    LiveRendererImageId::from_raw(transaction.raw())
+}
+
+/// The inverse: which Present staged this image.
+pub fn present_for_renderer_image(image_id: LiveRendererImageId) -> TransactionId {
+    TransactionId::from_raw(image_id.raw())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -352,7 +370,7 @@ impl LivePresentationResourceSession {
             });
         }
         layers.push(LiveOwnedMixedCompositionLayer::DmaBuf {
-            image_id: sophia_renderer_live::LiveRendererImageId::from_raw(transaction.raw()),
+            image_id: renderer_image_for_present(transaction),
             frame: LiveOwnedMultiPlaneDmaBufFrame {
                 width: descriptor.size.width as u32,
                 height: descriptor.size.height as u32,
