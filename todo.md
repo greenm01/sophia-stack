@@ -70,13 +70,12 @@ refresh-relative latency row is proved on physical run `20260828T231430Z`
 two hundred forty-five independent presses with clean stage percentiles.
 Native archive `0003` promotes one shared renderer worker per DRM device
 group, with both heads of one card on one thread and no result reaching an
-output that did not ask for it. Atomic-test-gated direct scanout for one
-compatible opaque DMA-BUF layer works on this hardware: thirty client buffers
-reached the plane from one validating commit, with no rejections, refusals, or
-fallbacks, and a clean retirement and session end. Promoting that run under the
-archive discipline is the active product step; returning a directly scanned
-output to composition on effect activation, and the hardware cursor plane,
-follow it.
+output that did not ask for it. Direct-scanout archive `0001` promotes
+atomic-test-gated direct scanout for one compatible opaque DMA-BUF layer:
+thirty-eight client buffers reached the plane from one validating commit, with
+no test rejections, proof disagreements, or fallbacks. Returning a directly
+scanned output to composition on effect activation is the active product step,
+with the hardware cursor plane behind it.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -2156,12 +2155,12 @@ other mature compositors are references rather than Sophia runtime components.
   than reaching the terminal submit-failure path. ARGB8888 is offered where the
   layer covers the whole head, because nothing is behind it there and the
   atomic test still decides.
-- [ ] Promote the direct-scanout run under the archive discipline. The path
-  works on this hardware -- thirty client buffers on the plane from one
-  validating commit, no rejections, refusals, or fallbacks, a clean retirement
-  and session end -- but that run was produced by the probe, which binds no
-  identity. `just direct-scanout-gate` binds a signed commit and the binary,
-  client, and configuration digests, then verifies and archives.
+- [x] Promote the direct-scanout run under the archive discipline.
+  Direct-scanout archive `0001` binds a signed commit with the Sophia binary,
+  the client whose buffer reached the plane, and both configurations the
+  session loaded: thirty-eight client buffers on the plane from one validating
+  commit, no test rejections, no proof disagreements, no unsupported formats,
+  no fallbacks, and a clean retirement and session end.
 - [ ] Prove that effect or overlay activation returns a directly scanned output
   to composition without a lost or stale frame, and that later removal restores
   eligibility only through a fresh Engine proof and a fresh backend atomic
