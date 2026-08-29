@@ -53,6 +53,12 @@ mod persistent_native_scanout {
         /// when heads never wait on each other, which is every session in
         /// which they do not share a renderer thread.
         pub max_service_skew: usize,
+        /// Whether the session asked for direct scanout at all.
+        pub direct_scanout_admissible: bool,
+        /// Whether startup readiness has proven a picture reached glass. Until
+        /// it has, every head composes: the proof reads composed pixels, and a
+        /// direct frame produces none.
+        pub direct_scanout_admitted: bool,
         pub max_submit_to_page_flip: Duration,
         pub callback_accepted: usize,
         pub callback_rejected: usize,
@@ -724,6 +730,8 @@ mod persistent_native_scanout {
                 max_in_flight_ticks: 0,
                 max_in_flight_per_output: 0,
                 max_service_skew: 0,
+                direct_scanout_admissible: false,
+                direct_scanout_admitted: false,
                 pending_frame_supersessions: 0,
                 max_submit_to_page_flip: Duration::ZERO,
                 callback_accepted: 0,
@@ -2722,8 +2730,15 @@ mod persistent_native_scanout {
             // itself -- because head membership can change after a head is
             // enabled, and neither check alone covers both orders.
             let mirrored = self.head_indices(self.heads[index].output.id).len() > 1;
+            // Not yet, even when the session asked for it: `admit_direct_scanout`
+            // turns it on once startup readiness has proven a picture reached
+            // glass. A head enabled here would take the direct path before that
+            // proof could be made, and the proof reads composed pixels.
+            self.direct_scanout_admissible = Self::direct_scanout_enabled();
             self.exporters[index]
-                .set_direct_scanout_enabled(Self::direct_scanout_enabled() && !mirrored);
+                .set_direct_scanout_enabled(
+                    self.direct_scanout_admitted && self.direct_scanout_admissible && !mirrored,
+                );
             if Self::shared_renderer_worker_enabled() {
                 let group = self.heads[index].group;
                 if self.groups[group].renderer_core.is_none() {
@@ -2830,6 +2845,25 @@ mod persistent_native_scanout {
                 }
                 totals
             })
+        }
+
+        /// Let heads take the direct path, now that startup readiness has
+        /// proven a picture reached glass.
+        ///
+        /// Before that the barrier has no evidence to read: it measures
+        /// composed pixels, and a direct frame is never composed. A session
+        /// that flipped immediately could put a client on screen and still
+        /// time out claiming nothing was presented, which is exactly what one
+        /// did.
+        pub fn admit_direct_scanout(&mut self) {
+            self.direct_scanout_admitted = true;
+            if !self.direct_scanout_admissible {
+                return;
+            }
+            for index in 0..self.exporters.len() {
+                let mirrored = self.head_indices(self.heads[index].output.id).len() > 1;
+                self.exporters[index].set_direct_scanout_enabled(!mirrored);
+            }
         }
 
         pub fn renderer_worker_count(&self) -> usize {

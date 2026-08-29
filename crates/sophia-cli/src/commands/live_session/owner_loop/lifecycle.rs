@@ -956,6 +956,22 @@
         if !startup_ready_reported && startup_readiness.ready {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
+            // Direct scanout only after the session has proven it can put
+            // light on a screen.
+            //
+            // The barrier's evidence is a pixel readback of a composed frame,
+            // and a direct frame is never composed, so a session that took the
+            // direct path immediately could flip forever without ever proving
+            // anything reached glass -- which is what happened: the client was
+            // visibly on screen and readiness timed out at no_visual_detail.
+            //
+            // Composing until readiness costs the first frames and nothing
+            // after them, and it keeps a proof that exists to catch a blank
+            // screen from being satisfied by a commit the driver merely
+            // accepted.
+            if let Some(native) = native_scanout.as_mut() {
+                native.admit_direct_scanout();
+            }
             let logical_output_progress = native_scanout.as_ref().map(|native| {
                 logical_startup_output_progress(native.heads.iter().map(|head| {
                     (

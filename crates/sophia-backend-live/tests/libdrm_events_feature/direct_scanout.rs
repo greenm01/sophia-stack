@@ -541,3 +541,32 @@ fn a_geometry_refusal_says_what_it_measured() {
         2
     );
 }
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn an_exporter_composes_until_direct_scanout_is_admitted() {
+    // Startup readiness proves a picture reached glass by reading composed
+    // pixels. A direct frame is never composed and produces none, so a session
+    // that took the direct path immediately could put a client on screen and
+    // still time out claiming nothing was presented -- which one did.
+    //
+    // The exporter's own flag is what the session turns on afterwards; this
+    // pins that an exporter left off composes a frame it would otherwise have
+    // handed to the plane.
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_pending_mixed_frame(proven_direct_frame());
+    let _ = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
+        direct_scanout_head(),
+    ));
+    assert_eq!(exporter.direct_scanout_attempts(), 0);
+    assert!(!exporter.direct_scanout_outstanding());
+
+    // Admitted, the same frame is offered to the plane.
+    exporter.set_direct_scanout_enabled(true);
+    exporter.set_pending_mixed_frame(proven_direct_frame());
+    let export = exporter.export_rendered_scanout_buffer(LiveGbmEglFrameTargetRecord::new(
+        direct_scanout_head(),
+    ));
+    assert_eq!(exporter.direct_scanout_attempts(), 1);
+    assert!(export.owner.is_some_and(|owner| owner.is_direct_client_buffer()));
+}
