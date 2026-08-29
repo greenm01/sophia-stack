@@ -82,12 +82,18 @@ is_retryable_pre_input_cursor_failure() {
             "$session_log"
 }
 
-# A page flip the kernel never completed, at a point in the session where no
-# measurement was in flight. Exactly one window is dangerous: armed but not
-# finished, where the stall may be the very thing the sample was measuring.
-# Before arming nothing has been measured yet, and after completion the
-# measurement is already taken -- a stall in either window costs the sample
-# and asserts nothing, so redoing it loses nothing.
+# A page flip the kernel never completed. Redoing the sample costs one
+# session and asserts nothing, so the budget rather than the timing decides:
+# a transient is absorbed, and a stall that keeps happening exhausts the
+# budget and fails the run, which is the escalation that belongs here.
+#
+# An earlier version refused to retry a stall that landed between arming and
+# proof completion, reasoning that the stall might be what the sample was
+# measuring. That failed a thirty-five session run on its fifteenth sample
+# over a stall on the head with no client on it, in a session that recorded
+# no measurement at all -- there was nothing to contaminate. A sample either
+# contributes a measurement or it does not, and one that does not is free to
+# redo whenever it died.
 #
 # Keyed on the stall record and the terminal error rather than one wrapper
 # message: the same fault surfaces through the completion drain after a proof
@@ -99,14 +105,6 @@ is_retryable_page_flip_stall() {
         'sophia_live_native_page_flip_stall schema=[12] status=hard_stall' \
         "$session_log" 2>/dev/null || return 1
     grep -Eq '^Error: .*hard-stall boundary' "$session_log" || return 1
-    if grep -Fq \
-        'sophia_live_session_input schema=1 status=ready source=physical' \
-        "$session_log" &&
-        ! grep -Fq \
-            'sophia_live_session_input schema=2 status=complete source=physical' \
-            "$session_log"; then
-        return 1
-    fi
     return 0
 }
 
@@ -164,14 +162,16 @@ check_retry_classifier() {
         status=1
     fi
 
-    # Armed and unfinished is the one fatal window.
+    # A stall between arming and completion produces no measurement, so it is
+    # redone like any other. This shape failed a run before the budget, not
+    # the timing, was made to decide.
     printf '%s\n' \
         'sophia_live_session_input schema=1 status=ready source=physical text=sophia' \
-        'sophia_live_native_page_flip_stall schema=1 status=hard_stall output=2 head=2 index=1 group=0 age_ms=501 action=terminate_session' \
-        'Error: "native completion drain failed: native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements"' \
+        'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=2 head=2 index=1 group=0 age_ms=500 poller_pending=0 action=terminate_session' \
+        'Error: "native page flip exceeded the 500 ms hard-stall boundary on head 2 after 1 retirements; bounded session cleanup failed"' \
         >"$fixture/stall.log"
-    if is_retryable_page_flip_stall "$fixture/stall.log"; then
-        echo "a stall while a proof was armed was classified as retryable" >&2
+    if ! is_retryable_page_flip_stall "$fixture/stall.log"; then
+        echo "a stall between arming and completion was not classified as retryable" >&2
         status=1
     fi
 
