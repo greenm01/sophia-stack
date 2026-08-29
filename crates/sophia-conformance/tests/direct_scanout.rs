@@ -337,3 +337,73 @@ fn the_gate_terminal_is_read_from_the_descriptor_not_a_subprocess() {
     )));
     let _ = Stdio::null();
 }
+
+/// A record decorated by `tracing` -- timestamp, level, module, ANSI colour --
+/// ahead of the marker, as a verbose session log actually carries it.
+fn decorated(record: &str) -> String {
+    format!(
+        "\u{1b}[2m2026-08-29T22:46:34.398135Z\u{1b}[0m \u{1b}[32m INFO\u{1b}[0m \u{1b}[2msophia_backend_live::scanout::rendered_scanout::exporter::direct\u{1b}[0m\u{1b}[2m:\u{1b}[0m {record}"
+    )
+}
+
+/// Episode records are read wherever the marker sits in the line, because the
+/// session emits them through `tracing` and a verbose log decorates them.
+///
+/// Anchoring to the line start saw only bare records, which was none of them:
+/// a physical run whose evidence plainly contained the fresh validating
+/// commit was refused for lacking one, and `episode_sessions=0` in every
+/// earlier gate summary was the same blindness passing vacuously -- the
+/// episode-order rules had never actually run against hardware evidence.
+#[test]
+fn decorated_episode_records_are_read_like_bare_ones() {
+    let text = [
+        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
+        "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=2 composed_cursor=0",
+        "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
+        &decorated("sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=299 reason=none"),
+        &decorated("sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=299 reason=none"),
+        &decorated("sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=299 reason=none"),
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=activated output=1 flips_before=10",
+        &decorated("sophia_live_direct_scanout_geometry schema=2 status=composition_required command=rect output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1440"),
+        "sophia_live_session_present schema=2 status=retired transaction=243 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=10",
+        &decorated("sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=400 reason=none"),
+        &decorated("sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=400 reason=none"),
+        &decorated("sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=400 reason=none"),
+        "",
+    ]
+    .join("\n");
+
+    let report = overlay_verification(&text).expect("decorated records satisfy every rule");
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("sophia_direct_scanout_overlay schema=1 status=returned")),
+        "{report:?}"
+    );
+    // And the order rules actually ran: a session whose episodes were seen is
+    // counted, where the blind reader always reported zero.
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("episode_sessions=1")),
+        "episode records were not seen: {report:?}"
+    );
+}
+
+/// The rules still bite on decorated records: a decorated flip inside the
+/// window is a flip inside the window.
+#[test]
+fn a_decorated_flip_inside_the_window_is_still_refused() {
+    let text = overlay_log().replace(
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=10",
+        &format!(
+            "{}\n{}\nsophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=10",
+            decorated("sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=350 reason=none"),
+            decorated("sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=350 reason=none")
+        ),
+    );
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("while the overlay was up"), "{error}");
+}

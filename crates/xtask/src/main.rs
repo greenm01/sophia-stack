@@ -82,6 +82,14 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         {
             verify_direct_scanout_standalone(logs)
         }
+        // The overlay-requiring verification the gate runs, callable on its
+        // own so a refused gate can be diagnosed against the evidence it
+        // bound instead of re-deriving the rules by hand.
+        [command, subject, logs @ ..]
+            if command == "verify" && subject == "direct-scanout-overlay" =>
+        {
+            direct_scanout::verify_standalone_logs_with_overlay(logs, true).map(print_lines)
+        }
         [command, subject, rest @ ..]
             if command == "verify" && subject == "direct-scanout-archive" =>
         {

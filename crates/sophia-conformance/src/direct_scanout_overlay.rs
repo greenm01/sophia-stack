@@ -21,9 +21,10 @@ fn window(text: &str, log: &str) -> Result<Window, String> {
     let mut activated = None;
     let mut withdrawn = None;
     for (index, line) in text.lines().enumerate() {
-        let Some(rest) =
-            line.strip_prefix("sophia_live_direct_scanout_overlay_proof schema=1 status=")
-        else {
+        let Some(rest) = crate::direct_scanout::record_after_marker(
+            line,
+            "sophia_live_direct_scanout_overlay_proof schema=1 status=",
+        ) else {
             continue;
         };
         match rest.split_whitespace().next().unwrap_or_default() {
@@ -55,11 +56,21 @@ fn window(text: &str, log: &str) -> Result<Window, String> {
 }
 
 /// Episode records, with the line they appeared on.
+///
+/// Located by marker rather than by prefix: episode records are emitted
+/// through `tracing`, which decorates them with a timestamp and ANSI colour
+/// in a verbose session log. Prefix-matching saw only bare lines, which was
+/// none of them -- the fresh-test rule refused a run whose evidence plainly
+/// contained the test, and `episode_sessions=0` in every earlier gate summary
+/// was this same blindness passing vacuously.
 fn episodes(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.lines().enumerate().filter_map(|(index, line)| {
-        line.strip_prefix("sophia_live_direct_scanout schema=1 status=")
-            .and_then(|rest| rest.split_whitespace().next())
-            .map(|status| (index, status))
+        crate::direct_scanout::record_after_marker(
+            line,
+            "sophia_live_direct_scanout schema=1 status=",
+        )
+        .and_then(|rest| rest.split_whitespace().next())
+        .map(|status| (index, status))
     })
 }
 

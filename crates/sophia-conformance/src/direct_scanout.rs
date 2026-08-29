@@ -187,8 +187,9 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
             {
                 per_head.push(head.trim().to_owned());
             }
+            // Geometry records come through `tracing` and carry its prefix.
             if let Some(measured) =
-                line.strip_prefix("sophia_live_direct_scanout_geometry schema=2 ")
+                record_after_marker(line, "sophia_live_direct_scanout_geometry schema=2 ")
             {
                 geometry.push(measured.trim().to_owned());
             }
@@ -297,6 +298,17 @@ fn last_record<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
     text.lines().rfind(|line| line.starts_with(prefix))
 }
 
+/// The remainder of a record line after its marker, wherever the marker sits.
+///
+/// Records emitted through `tracing` carry a timestamp and ANSI colour ahead
+/// of the marker in a verbose session log; records emitted through the
+/// session's own printer start at column zero. A reader that anchors to the
+/// line start silently sees only the second kind, and a rule that sees no
+/// records passes -- or refuses -- vacuously.
+pub(crate) fn record_after_marker<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    line.find(marker).map(|start| &line[start + marker.len()..])
+}
+
 /// Whether the episode records are in a lawful order, and whether there were
 /// any. The counters cannot rule out a flip for a scene that was never
 /// exported, or a validating commit that passed for one.
@@ -304,7 +316,8 @@ fn check_episode_order(text: &str, log: &str) -> Result<bool, String> {
     let mut exported = false;
     let mut seen = false;
     for line in text.lines() {
-        let Some(rest) = line.strip_prefix("sophia_live_direct_scanout schema=1 status=") else {
+        let Some(rest) = record_after_marker(line, "sophia_live_direct_scanout schema=1 status=")
+        else {
             continue;
         };
         seen = true;
