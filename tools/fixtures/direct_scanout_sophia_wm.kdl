@@ -1,0 +1,26 @@
+/- kdl-version 2
+schema 2
+
+// The native WM policy under which a single client's frame can be scanned out
+// directly. Two things differ from `standalone_sophia_wm.kdl`, and both are
+// eligibility requirements rather than taste:
+//
+//   layout "columns" -- one client fills the output exactly. The "natural"
+//   layout centres a window at its own size, which leaves a background the
+//   compositor must paint around it, so the frame is never one layer covering
+//   the head.
+//
+//   focus-ring disabled -- a focus ring lowers to a Border command, and any
+//   command that paints means the composed image is not the client's buffer.
+//
+// Everything else is the standalone policy unchanged, including the logout
+// binding, so a session started with this is recoverable the same way.
+policy timeout-ms=300
+workspace 1
+layout "columns"
+action "logout" id=4 behavior="logout"
+binding action=4 keycode=16 modifiers="super+shift"
+chrome {
+    focus-ring enabled=#false width=0 color="#70b7ff"
+    frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+}

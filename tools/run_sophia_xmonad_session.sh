@@ -527,6 +527,15 @@ session_args=(
 )
 if [[ "$SESSION_PROFILE" == standalone ]]; then
     standalone_wm_template="$ROOT_DIR/tools/fixtures/standalone_sophia_wm.kdl"
+    # Direct scanout needs a frame that is one client buffer covering the head
+    # and nothing else, which the standalone policy's centred layout and focus
+    # ring both prevent. Switching the policy with the flag keeps the two from
+    # drifting apart: a session asked for direct scanout under a policy that
+    # cannot produce an eligible frame would report zeros and prove nothing.
+    if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
+        standalone_wm_template="$ROOT_DIR/tools/fixtures/direct_scanout_sophia_wm.kdl"
+    fi
+    standalone_wm_template="${SOPHIA_STANDALONE_WM_CONFIG:-$standalone_wm_template}"
     standalone_wm_config="$STATE_DIR/standalone-wm.kdl"
     if [[ ! -f "$standalone_wm_template" ]]; then
         echo "The standalone WM policy is missing: $standalone_wm_template" >&2

@@ -132,4 +132,44 @@ printf '%s\n' "$output" | grep -Fq "disagree on the verdict histogram" || {
     exit 1
 }
 
+# The standalone probe's own two rules, which the session verifier does not
+# own: the policy that can produce an eligible frame actually ran, and one
+# surface was laid out. A run under the natural-size policy reports zeros for a
+# reason that has nothing to do with this row, and reading that as a defect
+# would send someone looking in the wrong place.
+standalone="$ROOT_DIR/tools/verify_direct_scanout_standalone.sh"
+probe="$temp_dir/probe.log"
+{
+    printf 'sophia_wm_demo schema=1 status=ready generation=1 layout_policy=columns\n'
+    printf 'sophia_live_wm schema=1 status=layout_committed transaction=1 surfaces=1 moved_surfaces=0 configure_deliveries=1 outcome=Committed\n'
+    cat "$pass"
+} >"$probe"
+"$standalone" "$probe" >/dev/null || {
+    echo "the standalone verifier rejected a probe that should pass" >&2
+    exit 1
+}
+
+probe_reject() {
+    local name="$1" log="$2" expected="$3" output
+    if output="$("$standalone" "$log" 2>&1)"; then
+        echo "the standalone verifier accepted $name" >&2
+        exit 1
+    fi
+    printf '%s\n' "$output" | grep -Fq "$expected" || {
+        echo "the standalone verifier refused $name for the wrong reason:" >&2
+        printf '%s\n' "$output" >&2
+        exit 1
+    }
+}
+
+natural="$temp_dir/natural.log"
+sed 's/layout_policy=columns/layout_policy=natural/' "$probe" >"$natural"
+probe_reject "a probe run under the natural-size policy" "$natural" \
+    "cannot produce an eligible frame"
+
+crowded="$temp_dir/crowded.log"
+sed 's/ surfaces=1 / surfaces=2 /' "$probe" >"$crowded"
+probe_reject "a probe with more than one surface" "$crowded" \
+    "single-surface layout did not commit"
+
 echo "direct scanout session verifier checks passed"

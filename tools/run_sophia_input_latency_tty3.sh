@@ -190,21 +190,6 @@ check_retry_classifier() {
     # knew nothing about stalls, and killed a thirty-four sample run. Both
     # failure paths must ask.
     local consulted
-    # Two, not one: this grep matches its own pattern, so a threshold of one
-    # is satisfied by the check itself and would pass with the feature gone.
-    # The stall-classifier check below has the same shape for the same reason.
-    local direct_uses
-    direct_uses="$(grep -c 'SOPHIA_ENABLE_DIRECT_SCANOUT=1' "${BASH_SOURCE[0]}")"
-    if ((direct_uses < 2)); then
-        echo "--direct no longer enables the direct scanout path" >&2
-        status=1
-    fi
-    local direct_verified
-    direct_verified="$(grep -c 'verify_direct_scanout_sessions.sh' "${BASH_SOURCE[0]}")"
-    if ((direct_verified < 2)); then
-        echo "--direct no longer verifies that the direct scanout path engaged" >&2
-        status=1
-    fi
     consulted="$(grep -c 'is_retryable_page_flip_stall "\$session_log"' "${BASH_SOURCE[0]}")"
     if ((consulted < 2)); then
         echo "only $consulted failure path consults the stall classifier; both must" >&2
@@ -246,10 +231,9 @@ Usage: tools/run_sophia_input_latency_tty3.sh
 
 Run from a logged-in local TTY3 with DRM released and /dev/uinput writable.
 Pass --shared to measure with a card's outputs sharing one renderer thread.
-Pass --direct to enable direct scanout, which this profile is the only
-configuration that can exercise: one Kitty, no WM policy, no indicator strip.
-A --direct run additionally requires that the path actually engaged, and
-prints the eligibility verdict histogram when it did not.
+--direct is refused here: this harness's client is xterm, which draws through
+X core rendering and never presents a DMA-BUF, so direct scanout cannot
+engage. Use the standalone GPU-client profile for that.
 The default gate collects 35 independent sessions. Their presses pool into
 one population, and the reporter refuses to call anything a ninety-ninth
 percentile below two hundred of them. It requires p99 below two refresh
@@ -324,7 +308,6 @@ if [[ "${1:-}" == --self-test ]]; then
     exit 0
 fi
 SHARED_RENDERER_WORKER=0
-DIRECT_SCANOUT=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --shared)
@@ -335,18 +318,19 @@ while [[ $# -gt 0 ]]; do
             export SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1
             ;;
         --direct)
-            # This profile is the strip-free single-client session -- one Kitty
-            # on its own output, no WM policy, no shell, so no indicator strip
-            # and no public policy client to publish one. That is the only
-            # configuration in the tree today in which a frame can be one
-            # opaque client DMA-BUF and nothing else, which is what direct
-            # scanout requires. Measuring it here rather than in a gate of its
-            # own reuses a harness that already owns session retry, page-flip
-            # stall classification, and archiving -- and answers the latency
-            # question the row also owes, since a direct frame skips a whole
-            # composition pass and should never cost more than one.
-            DIRECT_SCANOUT=1
-            export SOPHIA_ENABLE_DIRECT_SCANOUT=1
+            # Refused rather than run. This harness proves input reaches a
+            # terminal, so it needs `--expect-physical-text`, and the session
+            # refuses `--terminal-exec` alongside an input proof -- the client
+            # is always xterm. xterm draws through X core rendering into a CPU
+            # buffer and never issues a Present, so no frame here can ever be
+            # one opaque client DMA-BUF, and direct scanout cannot engage
+            # whatever the flag says.
+            #
+            # A run measured that: thirty-five sessions with the flag on
+            # reported `eligible=0 layer_not_dma_buf=24`, matching
+            # `cpu_nonzero_frames=24` exactly. Refusing in one second beats
+            # discovering it again in twenty minutes.
+            fail "this harness runs xterm, which never presents a DMA-BUF; direct scanout needs a GPU client (see tools/start_sophia_vkcube_standalone_tty3.sh)"
             ;;
         *) fail "unexpected argument: $1 (use --help)" ;;
     esac
@@ -386,12 +370,11 @@ chmod 700 "$PENDING"
 # A run interrupted at the console must not leave a session holding the GPU.
 trap 'terminate_proof "${PROOF_PID:-}"; kill "${INJECTOR_PID:-}" 2>/dev/null || true; kill "${GUARD_PID:-}" 2>/dev/null || true; preserve_pending $?' EXIT
 
-printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\nshared_renderer_worker=%s\ndirect_scanout=%s\n' \
+printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\nshared_renderer_worker=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_MSEC" \
     "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
     "$MAX_SUBMIT_TO_FLIP_MSEC" "$KEY_INTERVAL_MSEC" \
     "$MAX_SESSION_START_ATTEMPTS" "$SHARED_RENDERER_WORKER" \
-    "$DIRECT_SCANOUT" \
     >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
@@ -584,21 +567,6 @@ SOPHIA_INPUT_LATENCY_MAX_SUBMIT_TO_FLIP_MSEC="$MAX_SUBMIT_TO_FLIP_MSEC" \
     "$PENDING"/sample-*/session.log | tee "$PENDING/report.log"
 report_status="${PIPESTATUS[0]}"
 set -e
-
-if (( DIRECT_SCANOUT == 1 )); then
-    # Inside the same `set +e` region as the report, and reading PIPESTATUS
-    # rather than the pipeline's: a failure here must mark the run failed
-    # without aborting before the evidence is archived, and `tee`'s success
-    # would otherwise stand in for the verifier's.
-    set +e
-    tools/verify_direct_scanout_sessions.sh "$PENDING"/sample-*/session.log \
-        2>&1 | tee "$PENDING/direct-scanout.log"
-    direct_status="${PIPESTATUS[0]}"
-    set -e
-    if (( direct_status != 0 )); then
-        report_status="$direct_status"
-    fi
-fi
 
 mv "$PENDING" "$FINAL"
 trap - EXIT
