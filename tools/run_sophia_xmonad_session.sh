@@ -581,6 +581,13 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             "--config=$standalone_core_config"
             "--desktop-profile=$standalone_desktop_profile"
         )
+        # The overlay proof, when the gate asked for it. The session opens an
+        # overlay over a directly scanned frame itself, because the shell that
+        # would open one in a product session is exactly what this session does
+        # not run.
+        if [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]]; then
+            session_args+=(--direct-overlay-proof)
+        fi
     else
         session_args+=(--no-config)
     fi

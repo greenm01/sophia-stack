@@ -149,3 +149,158 @@ fn identity_binding_preserves_the_archive_schema() {
         direct_scanout_archive::sha256(&desktop).unwrap()
     )));
 }
+
+/// A session that flipped, opened an overlay, composed while it was up, and
+/// resumed flipping only after a fresh validating commit.
+fn overlay_log() -> String {
+    [
+        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
+        "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=12 composed_cursor=0",
+        "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=activated output=1 flips_before=10",
+        "sophia_live_direct_scanout_geometry schema=2 status=composition_required command=rect output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1440",
+        "sophia_live_session_present schema=2 status=retired transaction=243 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=10",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=400 reason=none",
+        "sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=400 reason=none",
+        "sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=400 reason=none",
+        "",
+    ]
+    .join("\n")
+}
+
+fn overlay_verification(text: &str) -> Result<Vec<String>, String> {
+    let directory = TempDir::new();
+    let log = write_log(&directory, text);
+    direct_scanout::verify_standalone_logs_with_overlay(&[log], true)
+}
+
+#[test]
+fn overlay_verification_accepts_a_return_to_composition() {
+    let report = overlay_verification(&overlay_log()).unwrap();
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("sophia_direct_scanout_overlay schema=1 status=returned")),
+        "the overlay window should be reported: {report:?}"
+    );
+}
+
+/// A run that never opened one is a different proof, not a failed one. Every
+/// existing caller and both archives verify through the same entry.
+#[test]
+fn a_run_without_an_overlay_still_verifies_without_the_requirement() {
+    let directory = TempDir::new();
+    let log = write_log(&directory, &passing_log());
+    direct_scanout::verify_standalone_logs(&[log]).unwrap();
+}
+
+#[test]
+fn a_run_without_an_overlay_is_refused_when_one_was_required() {
+    let error = overlay_verification(&passing_log()).unwrap_err();
+    assert!(error.contains("never activated"), "{error}");
+}
+
+/// An activation ends the eligibility episode, so a flip inside the window
+/// reached the plane under a stamp the activation invalidated.
+#[test]
+fn a_flip_while_the_overlay_is_up_is_refused() {
+    let text = overlay_log().replace(
+        "sophia_live_direct_scanout_geometry schema=2 status=composition_required command=rect output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1440",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=350 reason=none\nsophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=350 reason=none\nsophia_live_direct_scanout_geometry schema=2 status=composition_required command=rect output=1 head_width=2560 head_height=1440 layer_x=0 layer_y=0 layer_width=2560 layer_height=1440",
+    );
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("while the overlay was up"), "{error}");
+}
+
+/// Without a painting refusal the window is satisfiable by a session that
+/// simply stopped drawing, which proves nothing about composition.
+#[test]
+fn an_overlay_that_drew_nothing_is_refused() {
+    let text = overlay_log()
+        .lines()
+        .filter(|line| !line.contains("sophia_live_direct_scanout_geometry"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("drew nothing"), "{error}");
+}
+
+/// `SuccessorComposedRetires`: the displaced direct frame is retired by a
+/// composed successor, and a window with no retirement never exercised it.
+#[test]
+fn an_overlay_window_with_no_retirement_is_refused() {
+    let text = overlay_log().replace(
+        "sophia_live_session_present schema=2 status=retired transaction=243 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true\n",
+        "",
+    );
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("no composed successor"), "{error}");
+}
+
+/// `ReProveAfterEpisodeChange`: eligibility returns only through a fresh test.
+#[test]
+fn a_flip_resuming_without_a_fresh_test_is_refused() {
+    let text = overlay_log().replace(
+        "sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=400 reason=none\n",
+        "",
+    );
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(
+        error.contains("without a fresh validating commit"),
+        "{error}"
+    );
+}
+
+/// An overlay left up at session end means the withdrawal never happened, so
+/// re-eligibility was never asked for.
+#[test]
+fn an_overlay_that_never_withdrew_is_refused() {
+    let text = overlay_log()
+        .lines()
+        .filter(|line| !line.contains("status=withdrawn"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("never withdrew"), "{error}");
+}
+
+/// Two activations cannot be paired into one window, and the second would be a
+/// second episode the brackets silently swallow.
+#[test]
+fn an_overlay_that_opened_twice_is_refused() {
+    let text = overlay_log().replace(
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=10",
+        "sophia_live_direct_scanout_overlay_proof schema=1 status=activated output=1 flips_before=20\nsophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before=20",
+    );
+    let error = overlay_verification(&text).unwrap_err();
+    assert!(error.contains("opened twice"), "{error}");
+}
+
+/// The gate and the probe share one argument vocabulary, so the flag has to
+/// survive alongside the positional arguments rather than displacing one.
+#[test]
+fn the_overlay_flag_parses_beside_the_positional_arguments() {
+    let plain = direct_scanout_gate::Probe::from_arguments(&[]).unwrap();
+    assert!(!plain.overlay_proof, "overlay proof is off by default");
+
+    let flagged =
+        direct_scanout_gate::Probe::from_arguments(&["--overlay-proof".to_owned()]).unwrap();
+    assert!(flagged.overlay_proof);
+    assert_eq!(flagged.width, plain.width, "the flag is not a width");
+    assert_eq!(flagged.height, plain.height);
+
+    let mixed = direct_scanout_gate::Probe::from_arguments(&[
+        "1920".to_owned(),
+        "--overlay-proof".to_owned(),
+        "1080".to_owned(),
+    ])
+    .unwrap();
+    assert!(mixed.overlay_proof);
+    assert_eq!(mixed.width, 1920);
+    assert_eq!(mixed.height, 1080, "the flag must not consume a position");
+}

@@ -14,6 +14,9 @@ pub struct Probe {
     pub height: u32,
     pub hold_seconds: u32,
     pub workload: String,
+    /// Whether the session drives an overlay over a directly scanned frame and
+    /// the verification requires the return to composition.
+    pub overlay_proof: bool,
 }
 
 impl Default for Probe {
@@ -23,6 +26,7 @@ impl Default for Probe {
             height: 1440,
             hold_seconds: 20,
             workload: "kitty".to_owned(),
+            overlay_proof: false,
         }
     }
 }
@@ -38,6 +42,17 @@ pub struct GateReport {
 
 impl Probe {
     pub fn from_arguments(arguments: &[String]) -> Result<Self, String> {
+        let mut overlay_proof = false;
+        let arguments = arguments
+            .iter()
+            .filter(|argument| {
+                let flag = argument.as_str() == "--overlay-proof";
+                overlay_proof |= flag;
+                !flag
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let arguments = arguments.as_slice();
         if arguments.len() > 4 {
             return Err(
                 "direct-scanout run accepts WIDTH HEIGHT HOLD WORKLOAD as positional arguments"
@@ -63,6 +78,7 @@ impl Probe {
                 probe.workload
             ));
         }
+        probe.overlay_proof = overlay_proof;
         Ok(probe)
     }
 }
@@ -82,6 +98,9 @@ pub fn run_probe(repo: &Path, probe: &Probe, client: Option<&Path>) -> Result<()
             "SOPHIA_STANDALONE_HOLD_SECONDS",
             probe.hold_seconds.to_string(),
         );
+    if probe.overlay_proof {
+        command.env("SOPHIA_DIRECT_OVERLAY_PROOF", "1");
+    }
     if let Some(client) = client {
         command.env("SOPHIA_STANDALONE_APP_BIN", client);
     }
@@ -96,6 +115,10 @@ pub fn run_probe(repo: &Path, probe: &Probe, client: Option<&Path>) -> Result<()
 }
 
 pub fn run_gate(repo: &Path) -> Result<GateReport, String> {
+    run_gate_with(repo, &Probe::default())
+}
+
+pub fn run_gate_with(repo: &Path, probe: &Probe) -> Result<GateReport, String> {
     require_tty3()?;
     let source_commit = git_output(repo, &["rev-parse", "HEAD"])?;
     if !git_output(repo, &["status", "--short"])?.is_empty() {
@@ -159,7 +182,7 @@ pub fn run_gate(repo: &Path) -> Result<GateReport, String> {
             ));
         }
     }
-    run_probe(repo, &Probe::default(), Some(&client))?;
+    run_probe(repo, probe, Some(&client))?;
     if !session_log.is_file() {
         return Err(format!(
             "the direct-scanout session produced no evidence: {}",
@@ -179,7 +202,10 @@ pub fn run_gate(repo: &Path) -> Result<GateReport, String> {
         core_config: &core,
         desktop_profile: &desktop,
     })?;
-    direct_scanout::verify_standalone_logs(&[evidence.display().to_string()])?;
+    direct_scanout::verify_standalone_logs_with_overlay(
+        &[evidence.display().to_string()],
+        probe.overlay_proof,
+    )?;
     let run_root = std::env::var_os("SOPHIA_DIRECT_SCANOUT_RUN_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| state_home.join("sophia/promotion/direct-scanout-runs"));

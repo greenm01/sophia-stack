@@ -141,12 +141,16 @@ fn default_standalone_log() -> Result<PathBuf, String> {
 }
 
 fn gate_direct_scanout(arguments: &[String]) -> Result<(), String> {
-    if !arguments.is_empty() {
-        return Err("gate direct-scanout takes no arguments".to_owned());
-    }
+    // Parsed by `Probe`, which owns the argument vocabulary: the gate and the
+    // probe run the same session, and two spellings of the same options would
+    // let them drift.
+    let probe = direct_scanout_gate::Probe::from_arguments(arguments)?;
     let repo = workspace_root()?;
     println!("Building and running the exact physical-proof binary...");
-    let report = direct_scanout_gate::run_gate(&repo)?;
+    if probe.overlay_proof {
+        println!("Overlay proof: the session will open an overlay over a direct frame.");
+    }
+    let report = direct_scanout_gate::run_gate_with(&repo, &probe)?;
     println!("Sophia commit:  {}", report.source_commit);
     println!("Sophia binary:  {}", report.sophia_sha256);
     println!(

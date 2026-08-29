@@ -246,6 +246,18 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
 
 /// Verify the single-client, WM-free session shape needed by direct scanout.
 pub fn verify_standalone_logs(logs: &[String]) -> Result<Vec<String>, String> {
+    verify_standalone_logs_with_overlay(logs, false)
+}
+
+/// The same, additionally requiring that an overlay opened over a directly
+/// scanned frame and that eligibility returned afterwards.
+///
+/// Off by default so every existing caller and archive keeps verifying: a run
+/// that never opened an overlay is not a failed run, it is a different proof.
+pub fn verify_standalone_logs_with_overlay(
+    logs: &[String],
+    require_overlay: bool,
+) -> Result<Vec<String>, String> {
     if logs.is_empty() {
         return Err("no standalone session logs were given".to_owned());
     }
@@ -267,6 +279,13 @@ pub fn verify_standalone_logs(logs: &[String]) -> Result<Vec<String>, String> {
         }
     }
     let mut report = verify_logs(logs)?;
+    if require_overlay {
+        for log in logs {
+            let text = std::fs::read_to_string(log)
+                .map_err(|error| format!("could not read {log}: {error}"))?;
+            report.extend(crate::direct_scanout_overlay::check(&text, log)?);
+        }
+    }
     report.extend(
         logs.iter()
             .map(|log| format!("direct scanout standalone probe passed: {log}")),

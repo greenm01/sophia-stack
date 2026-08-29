@@ -39,6 +39,13 @@ direct-scanout-probe width='2560' height='1440' hold='20' workload='kitty':
 direct-scanout-gate:
     @cargo --quiet xtask conformance gate direct-scanout
 
+# Prove a directly scanned output returns to composition when an overlay opens,
+# and that eligibility comes back only through a fresh atomic test. Run from
+# tty3. The overlay is opened by the session itself: the shell that would open
+# one in a product session is what this session does not run.
+direct-scanout-overlay-gate:
+    @cargo --quiet xtask conformance gate direct-scanout --overlay-proof
+
 # Re-verify an archived direct-scanout run, newest by default.
 direct-scanout-archive run='':
     @cargo --quiet xtask conformance verify direct-scanout-archive "{{ run }}"
