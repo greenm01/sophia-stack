@@ -436,6 +436,50 @@ sed -e 's/sophia_live_native_resources schema=9 status=complete/sophia_live_nati
     exit 1
 }
 
+# Schema 10 adds the renderer-thread count, the misroute counter, and the
+# service-skew figure. Real schema-10 evidence needs a physical run with
+# outputs sharing a worker; until that archive exists, this derives the shape
+# from the same real record the other schema controls mutate.
+forward="$temp_dir/forward.log"
+sed -e 's/sophia_live_native_resources schema=9 status=complete/sophia_live_native_resources schema=10 status=complete/' \
+    -e 's/ max_worker_request_msec=61/ max_worker_request_msec=61 renderer_workers=1 worker_result_misroutes=0 worker_max_service_skew=1/' \
+    "$evidence" >"$forward"
+"$verifier" "$forward" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier rejected schema-10 evidence" >&2
+    exit 1
+}
+
+# A shared worker that misrouted a result is not the run being promoted: the
+# reply channels make that unreachable, so any count above zero means the
+# structure was subverted.
+misrouted="$temp_dir/misrouted.log"
+sed 's/ worker_result_misroutes=0/ worker_result_misroutes=1/' "$forward" >"$misrouted"
+reject_mutation "a run whose renderer misrouted a result" "$misrouted" \
+    "a renderer result reached an output that did not request it"
+
+# Skew is bounded only where outputs share a thread, and two heads on one
+# thread may be passed over at most once each.
+starved="$temp_dir/starved.log"
+sed 's/ worker_max_service_skew=1/ worker_max_service_skew=2/' "$forward" >"$starved"
+reject_mutation "a run that starved an output behind its sibling" "$starved" \
+    "was passed over"
+
+# The same skew on independent threads is not a fault: threads interleave as
+# the GPU allows, and bounding that would assert something about parallelism.
+unshared="$temp_dir/unshared.log"
+sed -e 's/ renderer_workers=1/ renderer_workers=2/' \
+    -e 's/ worker_max_service_skew=1/ worker_max_service_skew=2/' "$forward" >"$unshared"
+"$verifier" "$unshared" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier applied a sharing bound to independent threads" >&2
+    exit 1
+}
+
+# A schema-10 record owes its new fields.
+truncated="$temp_dir/truncated.log"
+sed 's/ renderer_workers=1//' "$forward" >"$truncated"
+reject_mutation "schema-10 evidence without the renderer-thread count" "$truncated" \
+    "resource record is missing renderer_workers"
+
 # A restarted or degraded WM is a different run than the one being promoted.
 restarted="$temp_dir/restarted.log"
 sed 's/wm_restarts=0/wm_restarts=1/' "$evidence" >"$restarted"

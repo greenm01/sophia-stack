@@ -669,8 +669,12 @@ render-node worker is the opposite typed mode: PRIME FDs are mandatory and its
 renderer-local handles are never submitted directly. `Pending` is an ordinary
 deferred scanout state, not a failed frame. KMS page-flip retirement drops the
 lease token; only then does the worker release the locked GBM buffer on the
-thread that owns its native context. Each physical-head worker owns exactly
-three complete target slots. A slot retains its EGL context, GL pipeline,
+thread that owns its native context. Each output owns exactly three complete
+target slots, held inside whichever worker serves it: one per head while heads
+render alone, or one shared by every output of a DRM device group when they
+are coalesced. A slot index alone does not identify a bundle across outputs,
+so the slots and the pixel proof taken from them are keyed per output within
+the worker's render context. A slot retains its EGL context, GL pipeline,
 GBM/EGL frame surface, and import cache together and carries a typed slot ID
 plus monotonically increasing incarnation. The worker accepts a release only
 when its lease ID and complete slot token match the retained buffer. A stale or
