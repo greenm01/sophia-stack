@@ -291,6 +291,35 @@ pub enum LiveDirectScanoutRefusal {
 }
 
 impl LiveDirectScanoutRefusal {
+    /// Whether this refusal means Engine's proof and the pixels it was
+    /// computed from disagree.
+    ///
+    /// Those are defects: an ineligible frame never becomes an attempt, so a
+    /// structural refusal can only be the two halves of the proof contradicting
+    /// each other. A format or plane the backend cannot use is different --
+    /// Engine proves structure and never looks at pixel formats, which is the
+    /// documented split -- and counting the two together made a legitimate
+    /// refusal look like a defect on the first run that produced one.
+    pub const fn is_structural_disagreement(self) -> bool {
+        match self {
+            Self::LayerCount(_)
+            | Self::LayerNotDmaBuf
+            | Self::LayerResampled
+            | Self::LayerTranslucent
+            | Self::LayerTransformed
+            | Self::LayerOffset
+            | Self::LayerNotHeadSized
+            | Self::LayerClipped
+            | Self::BufferSizeMismatch => true,
+            // Not proven at all, so nothing disagreed.
+            Self::NotProven(_)
+            // The backend's own domain: format, plane layout, descriptors.
+            | Self::FormatNotOpaque(_)
+            | Self::PlaneLayoutUnusable
+            | Self::PlaneFdCloneFailed => false,
+        }
+    }
+
     /// A stable name for evidence records.
     pub const fn reduced_name(self) -> &'static str {
         match self {
@@ -407,7 +436,21 @@ impl LiveOwnedMixedCompositionFrame {
         {
             return Err(LiveDirectScanoutRefusal::BufferSizeMismatch);
         }
-        if frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 {
+        // XRGB always; ARGB only here, where the checks above have already
+        // established that this layer covers the head exactly.
+        //
+        // Alpha is part of the image when something is behind it. On a primary
+        // plane filling the whole head nothing is, so it cannot change what is
+        // displayed -- and the driver still decides, because the atomic test
+        // runs on the framebuffer this descriptor produces. Offering it is not
+        // assuming it.
+        //
+        // Refusing ARGB outright left this row with no client on this machine:
+        // Kitty allocates ARGB whatever its background opacity says, and it is
+        // the one client here known to hand over a DMA-BUF at all.
+        if frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
+            && frame.format != crate::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
+        {
             return Err(LiveDirectScanoutRefusal::FormatNotOpaque(frame.format));
         }
         let plane_count = frame.plane_count;

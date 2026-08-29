@@ -550,7 +550,23 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     # session without one registers none at all. The ordinary exit is the
     # application exiting, which `--exit-when-startup-exits` turns into the
     # session exiting.
-    session_args+=(--no-config)
+    if (( standalone_direct_scanout == 1 )); then
+        # The compiled default's fallback chrome draws a focus ring, and a
+        # session with no window manager uses the fallback. That ring lowers to
+        # a Border command, which made thirty-nine of one run's frames
+        # ineligible for a reason that has nothing to do with the client. This
+        # config differs from the compiled default in that one line.
+        standalone_core_template="$ROOT_DIR/tools/fixtures/direct_scanout_core.kdl"
+        standalone_core_config="$STATE_DIR/standalone-core.kdl"
+        if [[ ! -f "$standalone_core_template" ]]; then
+            echo "The standalone core configuration is missing: $standalone_core_template" >&2
+            exit 1
+        fi
+        install -m 600 "$standalone_core_template" "$standalone_core_config"
+        session_args+=("--config=$standalone_core_config")
+    else
+        session_args+=(--no-config)
+    fi
     session_args+=(
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone

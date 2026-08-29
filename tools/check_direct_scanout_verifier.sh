@@ -12,7 +12,7 @@ verifier="$ROOT_DIR/tools/verify_direct_scanout_sessions.sh"
 temp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$temp_dir"' EXIT
 
-resources='sophia_live_native_resources schema=11 status=complete target_creations=6 renderer_workers=1 worker_result_misroutes=0 worker_max_service_skew=0 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=1'
+resources='sophia_live_native_resources schema=12 status=complete target_creations=6 renderer_workers=1 worker_result_misroutes=0 worker_max_service_skew=0 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=1'
 verdicts='sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=44 layer_count=6 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=2 layer_translucent=0 composition_required=0 composed_cursor=0'
 
 write_pass() {
@@ -85,6 +85,18 @@ sed 's/ direct_scanout_refusals=0/ direct_scanout_refusals=1/' "$pass" >"$disagr
 reject "a run whose proof disagreed with its pixels" "$disagreed" \
     "disagreed with the frame it lowered"
 
+# A format or plane layout the backend cannot use is not that. Engine proves
+# structure and never looks at a pixel format, so this is the backend answering
+# a question Engine did not ask -- and counting the two together made the first
+# run that produced one look like a defect.
+unsupported="$temp_dir/unsupported.log"
+sed -e 's/ direct_scanout_unsupported=0/ direct_scanout_unsupported=1/' \
+    -e 's/ direct_scanout_attempts=44/ direct_scanout_attempts=45/' "$pass" >"$unsupported"
+"$verifier" "$unsupported" >/dev/null || {
+    echo "the verifier read a format refusal as a proof defect" >&2
+    exit 1
+}
+
 # A client buffer on a plane the driver was never asked about.
 untested="$temp_dir/untested.log"
 sed 's/ direct_scanout_tests=2/ direct_scanout_tests=0/' "$pass" >"$untested"
@@ -139,7 +151,7 @@ reject "a validating commit for a scene never exported" "$premature" \
 
 # Evidence from a build that predates the row.
 stale="$temp_dir/stale.log"
-sed 's/sophia_live_native_resources schema=11/sophia_live_native_resources schema=10/' "$pass" >"$stale"
+sed 's/sophia_live_native_resources schema=12/sophia_live_native_resources schema=11/' "$pass" >"$stale"
 reject "evidence from a build without the direct path" "$stale" \
     "did not run this build"
 

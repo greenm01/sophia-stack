@@ -323,6 +323,11 @@ mod persistent_native_scanout {
         /// defect rather than ordinary ineligibility -- an ineligible frame
         /// never becomes an attempt at all.
         pub refusals: usize,
+        /// Proven frames the backend declined for a reason of its own: a
+        /// format or plane layout it cannot use. Engine proves structure and
+        /// never looks at a pixel format, so this is the backend answering a
+        /// question Engine did not ask, and it is not a defect.
+        pub unsupported: usize,
         /// Direct attempts that composed instead, having reached no screen.
         pub fallbacks: usize,
     }
@@ -2780,6 +2785,9 @@ mod persistent_native_scanout {
                     refusals: totals
                         .refusals
                         .saturating_add(exporter.direct_scanout_refusals()),
+                    unsupported: totals
+                        .unsupported
+                        .saturating_add(exporter.direct_scanout_unsupported()),
                     fallbacks: totals
                         .fallbacks
                         .saturating_add(exporter.direct_scanout_fallbacks()),

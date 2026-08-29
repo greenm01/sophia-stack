@@ -26,6 +26,7 @@ struct Counters {
     tests: usize,
     test_rejections: usize,
     refusals: usize,
+    unsupported: usize,
     fallbacks: usize,
 }
 
@@ -33,7 +34,7 @@ struct Counters {
 type CounterField = (&'static str, fn(&mut Counters) -> &mut usize);
 
 impl Counters {
-    const FIELDS: [CounterField; 6] = [
+    const FIELDS: [CounterField; 7] = [
         ("direct_scanout_attempts", |counters| &mut counters.attempts),
         ("direct_scanout_flips", |counters| &mut counters.flips),
         ("direct_scanout_tests", |counters| &mut counters.tests),
@@ -41,6 +42,9 @@ impl Counters {
             &mut counters.test_rejections
         }),
         ("direct_scanout_refusals", |counters| &mut counters.refusals),
+        ("direct_scanout_unsupported", |counters| {
+            &mut counters.unsupported
+        }),
         ("direct_scanout_fallbacks", |counters| {
             &mut counters.fallbacks
         }),
@@ -64,6 +68,7 @@ impl Counters {
         self.tests += other.tests;
         self.test_rejections += other.test_rejections;
         self.refusals += other.refusals;
+        self.unsupported += other.unsupported;
         self.fallbacks += other.fallbacks;
     }
 
@@ -78,7 +83,7 @@ impl Counters {
                 self.refusals
             ));
         }
-        if self.flips + self.fallbacks > self.attempts {
+        if self.flips + self.fallbacks + self.unsupported > self.attempts {
             return Err(format!("more direct attempts settled than were made: {log}"));
         }
         if self.test_rejections > self.tests {
@@ -137,9 +142,9 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
         }
         sessions += 1;
 
-        let resources = last_record(&text, "sophia_live_native_resources schema=11 status=complete ")
+        let resources = last_record(&text, "sophia_live_native_resources schema=12 status=complete ")
             .ok_or_else(|| {
-                format!("session reported no schema-11 resource record, so it did not run this build: {log}")
+                format!("session reported no schema-12 resource record, so it did not run this build: {log}")
             })?;
         let counters = Counters::from_record(resources).map_err(|error| format!("{error}: {log}"))?;
         counters.check(log)?;
@@ -184,12 +189,13 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
         .collect::<String>();
     let mut report = vec![
         format!(
-            "sophia_direct_scanout_gate schema=1 sessions={sessions} attempts={} flips={} tests={} test_rejections={} refusals={} fallbacks={} episode_sessions={episode_sessions}",
+            "sophia_direct_scanout_gate schema=1 sessions={sessions} attempts={} flips={} tests={} test_rejections={} refusals={} unsupported={} fallbacks={} episode_sessions={episode_sessions}",
             totals.attempts,
             totals.flips,
             totals.tests,
             totals.test_rejections,
             totals.refusals,
+            totals.unsupported,
             totals.fallbacks,
         ),
         format!("sophia_direct_scanout_verdicts schema=1 sessions={sessions}{histogram}"),

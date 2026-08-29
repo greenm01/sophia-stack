@@ -269,7 +269,7 @@ done
 # 0001 is schema-7 evidence and must stay independently verifiable; schema 8
 # additionally carries the buffer-age damage outcomes.
 mapfile -t resource_lines < <(
-    grep -E '^sophia_live_native_resources schema=(7|8|9|10|11) status=complete ' "$evidence"
+    grep -E '^sophia_live_native_resources schema=(7|8|9|10|11|12) status=complete ' "$evidence"
 )
 (( ${#resource_lines[@]} == 1 )) ||
     fail "expected one schema-7 or schema-8 native resource-lifetime record"
@@ -301,6 +301,12 @@ if (( resource_schema >= 11 )); then
         direct_scanout_test_rejections direct_scanout_refusals
         direct_scanout_fallbacks)
 fi
+# Schema 12 counts a refusal the backend made for a reason of its own -- a
+# format or plane layout it cannot use -- apart from a structural disagreement
+# with Engine's proof. Only the second is a defect.
+if (( resource_schema >= 12 )); then
+    slot_keys+=(direct_scanout_unsupported)
+fi
 for key in "${slot_keys[@]}"; do
     value="$(field "$resources" "$key")" ||
         fail "resource record is missing $key"
@@ -329,7 +335,11 @@ if (( resource_schema >= 11 )); then
     direct_fallbacks="$(field "$resources" direct_scanout_fallbacks)"
     # Every attempt ends exactly one of three ways, and the third -- still
     # outstanding at session end -- is at most one per head.
-    (( direct_flips + direct_fallbacks <= direct_attempts )) ||
+    direct_unsupported=0
+    if (( resource_schema >= 12 )); then
+        direct_unsupported="$(field "$resources" direct_scanout_unsupported)"
+    fi
+    (( direct_flips + direct_fallbacks + direct_unsupported <= direct_attempts )) ||
         fail "direct scanout settled more attempts than it made"
     (( $(field "$resources" direct_scanout_test_rejections) <=
         $(field "$resources" direct_scanout_tests) )) ||

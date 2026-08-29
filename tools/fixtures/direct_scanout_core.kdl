@@ -1,0 +1,29 @@
+/- kdl-version 2
+schema 2
+
+// Core configuration for the direct-scanout probe.
+//
+// One line differs from the compiled default: the fallback focus ring is off.
+//
+// The fallback chrome is what a session draws when no window manager has
+// negotiated a chrome preference, and this probe runs no window manager -- so
+// the compiled default's 2px ring was drawn around the fullscreen client on
+// thirty-nine of its frames. A focus ring lowers to a Border command, and any
+// command that paints means the composed image is not the client's buffer.
+//
+// Nothing else is changed, so a failure here is not a configuration this
+// probe invented.
+input {
+    seat "seat0"
+    keyboard rules="evdev" model="pc105" layout="us" variant="" options=""
+    repeat delay-ms=660 interval-ms=25
+}
+compositor {
+    chrome-fallback {
+        focus-ring enabled=#false width=0 color="#70b7ff"
+        frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
+    }
+    chrome-limits max-width=64
+}
+namespace profile="classic-shared"
+diagnostics verbose=#false

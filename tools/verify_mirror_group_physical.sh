@@ -428,7 +428,7 @@ require_positive_field "$session" cpu_checksum
 # the Engine's logical scene plan. Their domains differ; the plan, queue,
 # submission, page-flip, and retirement checks above bind the latter to both
 # heads.
-resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9|10|11) status=complete ' "$evidence")"
+resources="$(grep -E '^sophia_live_native_resources schema=(5|6|7|8|9|10|11|12) status=complete ' "$evidence")"
 [[ "$(printf '%s\n' "$resources" | wc -l)" == 1 ]] ||
     fail "expected one native renderer resource completion"
 require_positive_field "$resources" worker_requests
@@ -472,6 +472,9 @@ if (( resource_schema >= 7 )); then
         slot_keys+=(direct_scanout_attempts direct_scanout_flips
             direct_scanout_tests direct_scanout_test_rejections
             direct_scanout_refusals direct_scanout_fallbacks)
+    fi
+    if (( resource_schema >= 12 )); then
+        slot_keys+=(direct_scanout_unsupported)
     fi
     for key in "${slot_keys[@]}"; do
         value="$(field "$resources" "$key")" || fail "record is missing $key"

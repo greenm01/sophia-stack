@@ -484,11 +484,11 @@ reject_mutation "schema-10 evidence without the renderer-thread count" "$truncat
 # physical run with the path enabled; until that archive exists, this derives
 # the shape from the same real record the other schema controls mutate.
 direct="$temp_dir/direct.log"
-sed -e 's/sophia_live_native_resources schema=10 status=complete/sophia_live_native_resources schema=11 status=complete/' \
-    -e 's/ worker_max_service_skew=1/ worker_max_service_skew=1 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_fallbacks=1/' \
+sed -e 's/sophia_live_native_resources schema=10 status=complete/sophia_live_native_resources schema=12 status=complete/' \
+    -e 's/ worker_max_service_skew=1/ worker_max_service_skew=1 direct_scanout_attempts=44 direct_scanout_flips=43 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=1/' \
     "$forward" >"$direct"
 "$verifier" "$direct" "$proof_text" >/dev/null 2>&1 || {
-    echo "the native verifier rejected schema-11 evidence" >&2
+    echo "the native verifier rejected schema-12 evidence" >&2
     exit 1
 }
 
@@ -526,7 +526,7 @@ reject_mutation "more settled direct attempts than attempts" "$overcounted" \
 # A schema-11 record owes its new fields.
 partial="$temp_dir/partial.log"
 sed 's/ direct_scanout_fallbacks=1//' "$direct" >"$partial"
-reject_mutation "schema-11 evidence without the fallback count" "$partial" \
+reject_mutation "schema-12 evidence without the fallback count" "$partial" \
     "resource record is missing direct_scanout_fallbacks"
 
 # A restarted or degraded WM is a different run than the one being promoted.

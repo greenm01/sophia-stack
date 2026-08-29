@@ -85,7 +85,17 @@ where
                     ));
                 }
                 Err(refusal) => {
-                    self.direct_scanout_refusals = self.direct_scanout_refusals.saturating_add(1);
+                    // Counted apart: a structural disagreement means Engine's
+                    // proof and the pixels contradict each other, while a
+                    // format the plane cannot take is the backend answering a
+                    // question Engine never asked.
+                    if refusal.is_structural_disagreement() {
+                        self.direct_scanout_refusals =
+                            self.direct_scanout_refusals.saturating_add(1);
+                    } else {
+                        self.direct_scanout_unsupported =
+                            self.direct_scanout_unsupported.saturating_add(1);
+                    }
                     self.last_direct_scanout_refusal = Some(refusal);
                     self.record_direct_scanout_episode(
                         "refused",
@@ -214,6 +224,10 @@ where
 
     pub const fn direct_scanout_refusals(&self) -> usize {
         self.direct_scanout_refusals
+    }
+
+    pub const fn direct_scanout_unsupported(&self) -> usize {
+        self.direct_scanout_unsupported
     }
 
     pub const fn direct_scanout_fallbacks(&self) -> usize {

@@ -699,18 +699,39 @@ fn translucency_scaling_clipping_and_partial_cover_each_refuse() {
 }
 
 #[test]
-fn argb_is_not_opaque_enough_to_scan_out() {
-    // ARGB8888 is an accepted scanout format for a compositor buffer, whose
-    // alpha the compositor controls. A client's alpha is part of the image,
-    // and nothing behind it would be drawn on a plane.
+fn argb_is_offered_at_full_head_and_the_driver_decides() {
+    // Alpha is part of the image when something is behind it. Filling the head
+    // exactly, nothing is, so it cannot change what is displayed -- and the
+    // checks above have already established full head by the time format is
+    // asked. The atomic test still decides whether the driver takes it.
+    //
+    // Refusing ARGB outright left this row with no client on this machine:
+    // Kitty allocates ARGB whatever its background opacity says.
     let mut frame = direct_frame();
     direct_layer_frame(&mut frame).format =
         sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888;
+
+    let buffer = frame
+        .direct_scanout_buffer(DIRECT_HEAD)
+        .expect("an opaque-by-coverage ARGB layer is offered");
+    assert_eq!(
+        buffer.descriptor.format,
+        sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+        "the client's own format reaches the descriptor unchanged"
+    );
+}
+
+#[test]
+fn a_format_that_is_neither_xrgb_nor_argb_is_refused() {
+    // NV12: a plane may well scan it out, but nothing here has established
+    // what its planes mean, and a format nobody classified must not ride along
+    // on the strength of covering the head.
+    const NV12: u32 = u32::from_le_bytes(*b"NV12");
+    let mut frame = direct_frame();
+    direct_layer_frame(&mut frame).format = NV12;
     assert_eq!(
         frame.direct_scanout_buffer(DIRECT_HEAD).unwrap_err(),
-        sophia_renderer_live::LiveDirectScanoutRefusal::FormatNotOpaque(
-            sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
-        )
+        sophia_renderer_live::LiveDirectScanoutRefusal::FormatNotOpaque(NV12)
     );
 }
 
@@ -763,4 +784,51 @@ fn lowering_carries_the_plans_verdict_onto_the_frame_it_produces() {
         sophia_renderer_live::LiveOwnedMixedCompositionFrame::default().direct_scanout,
         DirectScanoutVerdict::default()
     );
+}
+
+/// Which refusals mean Engine's proof and the pixels disagree, and which are
+/// the backend answering a question Engine never asked.
+///
+/// Counting the two together made the first run that produced a legitimate
+/// refusal -- a client handing over ARGB -- read as a proof defect, and sent
+/// the reader looking for a bug in the eligibility rules instead of at a
+/// pixel format.
+#[test]
+fn a_format_refusal_is_not_a_proof_defect() {
+    use sophia_renderer_live::LiveDirectScanoutRefusal as Refusal;
+
+    // Engine proves structure, so these can only be its proof contradicting
+    // the pixels that proof was computed from.
+    for refusal in [
+        Refusal::LayerCount(2),
+        Refusal::LayerNotDmaBuf,
+        Refusal::LayerResampled,
+        Refusal::LayerTranslucent,
+        Refusal::LayerTransformed,
+        Refusal::LayerOffset,
+        Refusal::LayerNotHeadSized,
+        Refusal::LayerClipped,
+        Refusal::BufferSizeMismatch,
+    ] {
+        assert!(
+            refusal.is_structural_disagreement(),
+            "{} should be a proof defect",
+            refusal.reduced_name()
+        );
+    }
+
+    // Engine never looks at a pixel format or a plane layout, so nothing it
+    // proved is contradicted by the backend declining one.
+    for refusal in [
+        Refusal::NotProven(DirectScanoutVerdict::default()),
+        Refusal::FormatNotOpaque(0),
+        Refusal::PlaneLayoutUnusable,
+        Refusal::PlaneFdCloneFailed,
+    ] {
+        assert!(
+            !refusal.is_structural_disagreement(),
+            "{} should not be a proof defect",
+            refusal.reduced_name()
+        );
+    }
 }

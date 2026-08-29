@@ -91,6 +91,10 @@ where
     pub(super) direct_scanout_tests: usize,
     pub(super) direct_scanout_test_rejections: usize,
     pub(super) direct_scanout_refusals: usize,
+    /// Attempts the backend declined for a reason of its own -- a format or
+    /// plane layout it cannot use. Legitimate, and counted apart from a
+    /// structural disagreement, which is a defect.
+    pub(super) direct_scanout_unsupported: usize,
     pub(super) direct_scanout_fallbacks: usize,
     pub(super) last_direct_scanout_refusal: Option<sophia_renderer_live::LiveDirectScanoutRefusal>,
     /// Frames the latest-wins cell dropped without rendering them.
@@ -169,6 +173,7 @@ where
             direct_scanout_tests: 0,
             direct_scanout_test_rejections: 0,
             direct_scanout_refusals: 0,
+            direct_scanout_unsupported: 0,
             direct_scanout_fallbacks: 0,
             last_direct_scanout_refusal: None,
             pending_frame_supersessions: 0,
