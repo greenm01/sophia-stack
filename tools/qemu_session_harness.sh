@@ -21,6 +21,14 @@ SINGLE_CARD="${SOPHIA_QEMU_SINGLE_CARD:-0}"
 # When set, the run asserts the session ran exactly this many renderer
 # threads. Printing the count proves nothing on its own.
 EXPECT_RENDERER_WORKERS="${SOPHIA_QEMU_EXPECT_RENDERER_WORKERS:-}"
+# One virtio GPU exposes both connectors but QEMU enables only the scanout its
+# UI owns, so the second reports disconnected and the guest sees one output.
+# DRM's `e` mode suffix forces a connector on regardless of detection, which
+# is what puts two heads on one card without a second display backend.
+FORCED_CONNECTOR=""
+if [[ "$SINGLE_CARD" == 1 ]]; then
+    FORCED_CONNECTOR=" video=Virtual-2:1280x800@60e"
+fi
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
 if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" && "$SCENARIO" != "xmonad-interactive" ]]; then
@@ -815,7 +823,7 @@ LOGGER_PID=$!
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER$FORCED_CONNECTOR" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
 
