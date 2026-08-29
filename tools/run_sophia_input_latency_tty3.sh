@@ -218,6 +218,7 @@ if [[ "${1:-}" == --help ]]; then
 Usage: tools/run_sophia_input_latency_tty3.sh
 
 Run from a logged-in local TTY3 with DRM released and /dev/uinput writable.
+Pass --shared to measure with a card's outputs sharing one renderer thread.
 The default gate collects 35 independent sessions. Their presses pool into
 one population, and the reporter refuses to call anything a ninety-ninth
 percentile below two hundred of them. It requires p99 below two refresh
@@ -291,6 +292,15 @@ if [[ "${1:-}" == --self-test ]]; then
     check_proof_termination
     exit 0
 fi
+SHARED_RENDERER_WORKER=0
+if [[ "${1:-}" == --shared ]]; then
+    # Measure with the outputs of a card sharing one renderer thread. A second
+    # head's render can then delay this one, which is the one thing the shared
+    # worker could cost that nothing has measured yet.
+    SHARED_RENDERER_WORKER=1
+    export SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1
+    shift
+fi
 [[ $# -eq 0 ]] || fail "unexpected arguments (use --help)"
 [[ "$SAMPLES" =~ ^[1-9][0-9]*$ && "$SAMPLES" -le 100 ]] ||
     fail "SOPHIA_INPUT_LATENCY_SAMPLES must be an integer from 1 through 100"
@@ -326,11 +336,11 @@ chmod 700 "$PENDING"
 # A run interrupted at the console must not leave a session holding the GPU.
 trap 'terminate_proof "${PROOF_PID:-}"; kill "${INJECTOR_PID:-}" 2>/dev/null || true; kill "${GUARD_PID:-}" 2>/dev/null || true; preserve_pending $?' EXIT
 
-printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\n' \
+printf 'source_commit=%s\nrun_id=%s\nsamples=%s\nrefresh_msec=%s\nend_to_end_budget_refreshes=2\nmax_queue_dwell_msec=%s\nmax_dwell_to_submit_msec=%s\nmax_submit_to_flip_msec=%s\nkey_interval_msec=%s\nmax_session_start_attempts=%s\nshared_renderer_worker=%s\n' \
     "$COMMIT" "$RUN_ID" "$SAMPLES" "$REFRESH_MSEC" \
     "$MAX_QUEUE_DWELL_MSEC" "$MAX_DWELL_TO_SUBMIT_MSEC" \
     "$MAX_SUBMIT_TO_FLIP_MSEC" "$KEY_INTERVAL_MSEC" \
-    "$MAX_SESSION_START_ATTEMPTS" \
+    "$MAX_SESSION_START_ATTEMPTS" "$SHARED_RENDERER_WORKER" \
     >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 

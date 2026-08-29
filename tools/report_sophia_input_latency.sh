@@ -64,6 +64,7 @@ distribution_stage_p99s=0
 distribution_p99_flip_worst_usec=0
 distribution_p99_dwell_worst_usec=0
 observed_refresh_msec=0
+observed_renderer_workers=unknown
 max_queue_dwell=0
 max_dwell_to_submit=0
 max_submit_to_flip=0
@@ -148,6 +149,21 @@ for session_log in "$@"; do
     # Refresh is a property of the display, not of the harness. Take it from
     # the session that ran; the environment default is a fallback for evidence
     # that predates the record.
+    # How many renderer threads produced these numbers. Two reports with the
+    # same latencies and different thread counts are different measurements,
+    # and nothing else in the record distinguishes them.
+    resources_line="$(grep -Em1 '^sophia_live_native_resources schema=10 status=complete ' \
+        "$session_log" || true)"
+    if [[ -n "$resources_line" ]]; then
+        session_workers="$(field "$resources_line" renderer_workers || true)"
+        if [[ "$session_workers" =~ ^[0-9]+$ ]]; then
+            if [[ "$observed_renderer_workers" == unknown ]]; then
+                observed_renderer_workers="$session_workers"
+            elif [[ "$observed_renderer_workers" != "$session_workers" ]]; then
+                observed_renderer_workers=mixed
+            fi
+        fi
+    fi
     head_line="$(grep -Em1 '^sophia_live_native_head schema=2 status=ready ' \
         "$session_log" || true)"
     if [[ -n "$head_line" ]]; then
@@ -256,11 +272,12 @@ if ((distribution_stage_p99s == 1)); then
     p99_dwell_to_submit_msec=$(((distribution_p99_dwell_worst_usec + 999) / 1000))
     p99_submit_to_page_flip_msec=$(((distribution_p99_flip_worst_usec + 999) / 1000))
 fi
-printf 'sophia_input_latency_report schema=4 status=%s failed_gates=%s samples=%s percentile_source=%s stage_source=%s refresh_source=%s p99_msec=%s max_msec=%s refresh_msec=%s end_to_end_budget_refreshes=%s end_to_end_budget_msec=%s max_queue_dwell_msec=%s queue_dwell_budget_msec=%s p99_dwell_to_submit_msec=%s max_dwell_to_submit_msec=%s dwell_to_submit_budget_msec=%s p99_submit_to_page_flip_msec=%s max_submit_to_page_flip_msec=%s submit_to_page_flip_budget_msec=%s submit_to_page_flip_jitter_msec=1\n' \
+printf 'sophia_input_latency_report schema=5 status=%s failed_gates=%s samples=%s percentile_source=%s stage_source=%s refresh_source=%s p99_msec=%s max_msec=%s refresh_msec=%s end_to_end_budget_refreshes=%s end_to_end_budget_msec=%s max_queue_dwell_msec=%s queue_dwell_budget_msec=%s p99_dwell_to_submit_msec=%s max_dwell_to_submit_msec=%s dwell_to_submit_budget_msec=%s p99_submit_to_page_flip_msec=%s max_submit_to_page_flip_msec=%s submit_to_page_flip_budget_msec=%s submit_to_page_flip_jitter_msec=1 renderer_workers=%s\n' \
     "$status" "$failed_gate_summary" "$samples" "$percentile_source" \
     "$stage_source" "$refresh_source" "$p99_msec" "$maximum" \
     "$REFRESH_MSEC" "$END_TO_END_REFRESHES" "$END_TO_END_BUDGET_MSEC" \
     "$max_queue_dwell" "$MAX_QUEUE_DWELL_MSEC" \
     "$p99_dwell_to_submit_msec" "$max_dwell_to_submit" "$MAX_DWELL_TO_SUBMIT_MSEC" \
-    "$p99_submit_to_page_flip_msec" "$max_submit_to_flip" "$MAX_SUBMIT_TO_FLIP_MSEC"
+    "$p99_submit_to_page_flip_msec" "$max_submit_to_flip" "$MAX_SUBMIT_TO_FLIP_MSEC" \
+    "$observed_renderer_workers"
 exit "$exit_status"
