@@ -793,26 +793,6 @@ else
     )
 fi
 session_args+=("$@")
-# The whole vector this run will use, asked of the session before it is spawned.
-# The profile-shape check in the launcher runs while the display manager is
-# still up; this one covers what that cannot know -- the client arguments this
-# particular run assembled.
-# The accepted record must appear, not merely a zero exit. A binary from before
-# the flag existed ignores it and starts a real session instead -- which here,
-# with the display manager already down, means taking DRM at the validation
-# step. A validation that might not be one is worse than none.
-if ! "$ROOT_DIR/target/release/sophia" sophia-live-session --validate-session-args \
-    "${session_args[@]:1}" >"$STATE_DIR/session-args-check.log" \
-    2>"$STATE_DIR/session-args-check.err"; then
-    echo "The assembled session arguments would be refused:" >&2
-    cat "$STATE_DIR/session-args-check.err" >&2
-    exit 1
-fi
-if ! grep -q '^sophia_live_session_args schema=1 status=accepted' \
-    "$STATE_DIR/session-args-check.log"; then
-    echo "This sophia binary does not support --validate-session-args; rebuild it." >&2
-    exit 1
-fi
 session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
@@ -858,6 +838,29 @@ session_command=(
     "$SOPHIA_BIN"
     "${session_args[@]}"
 )
+
+# Ask the session whether it would accept this exact command.
+#
+# The command itself, not a reconstruction of it: the first attempt rebuilt the
+# vector without the environment the session runs under and was refused for
+# missing a variable that was always going to be there. Validating anything but
+# what actually runs answers a question nobody asked.
+#
+# The accepted record must appear, not merely a zero exit. A binary from before
+# the flag existed ignores it and starts a real session instead -- which here,
+# with the display manager already down, means taking DRM at the validation
+# step. A validation that might not be one is worse than none.
+if ! "${session_command[@]}" --validate-session-args \
+    >"$STATE_DIR/session-args-check.log" 2>"$STATE_DIR/session-args-check.err"; then
+    echo "The assembled session arguments would be refused:" >&2
+    cat "$STATE_DIR/session-args-check.err" >&2
+    exit 1
+fi
+if ! grep -q '^sophia_live_session_args schema=1 status=accepted' \
+    "$STATE_DIR/session-args-check.log"; then
+    echo "This sophia binary does not support --validate-session-args; rebuild it." >&2
+    exit 1
+fi
 if [[ "$SESSION_PROFILE" == standalone
     && "$standalone_workload" == vkcube
     && -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
