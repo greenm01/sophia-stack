@@ -16661,8 +16661,8 @@ implementing: nothing about sharing a worker forces fair service, and a
 scheduler that picked its next render by scanning outputs in a fixed order
 would starve the second screen while satisfying every other invariant.
 
-The pinned TLA+ Tools v1.7.4 jar is not on this host, so `tools/check_tla.sh`
-refuses to run as the gate defines it. The model above was checked with the
-tla2tools build under `~/src/Specula/lib`, and `FrameServiceArbitration` and
-`MirrorHeadPacing` were re-checked with the same build as neighbours. The
-pinned-jar run remains owed before this row can be promoted.
+The pinned jar was on this host all along, at `~/tmp/tla2tools-1.7.4.jar`;
+the copy under `~/src/Specula/lib` that `tools/check_tla.sh` first refused is
+a different build, which is what the checksum pin exists to catch. The full
+harness then ran all twenty-nine models under the pinned TLC 2.19 with no
+error, and `SharedWorkerService` reproduced exactly the figures above.
