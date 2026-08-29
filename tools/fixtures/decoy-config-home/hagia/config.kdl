@@ -1,0 +1,36 @@
+// A desktop profile that must never be discovered by a proof session.
+//
+// Physical proofs run on a developer's machine, where ~/.config/hagia holds a
+// real operator profile. A session whose argument vector does not pin its
+// configuration discovers that profile instead of the one the proof intends,
+// and in normal mode a profile naming a shell and shortcuts the session
+// cannot satisfy refuses to start -- which is how a gate came to die at a
+// greetd prompt with nothing to read.
+//
+// So every profile's vector is validated against this file in place of the
+// operator's. It is deliberately *schema-valid*: the refusal has to come from
+// what the profile asks for, not from a parse error, or the check would pass
+// for a reason that says nothing about discovery.
+//
+// It asks for the two things a WM-less proof session cannot provide: a shell,
+// and shortcuts binding capabilities nothing registers. A vector that reaches
+// this file therefore fails offline, at check time, rather than on a TTY.
+//
+// It is never loaded by a real session. A test wanting a usable profile wants
+// a different fixture -- this one exists to be refused.
+
+schema 1
+
+policy {
+    layout "scroller"
+}
+
+shell {
+    enabled #true
+}
+
+shortcut {
+    profile "decoy-config-home"
+    bind "Super+Return" "session:spawn-terminal"
+    bind "Super+b" "session:spawn-browser"
+}

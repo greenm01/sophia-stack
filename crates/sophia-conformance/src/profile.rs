@@ -182,6 +182,33 @@ pub fn session_args(profile: Profile, options: &Options) -> Result<Vec<String>, 
     Ok(arguments)
 }
 
+/// The configuration root every validation runs against.
+///
+/// Committed rather than generated, so the thing being validated against is
+/// reviewable and identical everywhere.
+fn decoy_config_home() -> Result<std::path::PathBuf, String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .ok_or("the conformance manifest has no workspace root")?
+        .join("tools/fixtures/decoy-config-home");
+    if !root.join("hagia/config.kdl").is_file() {
+        return Err(format!(
+            "the decoy configuration fixture is missing: {}",
+            root.display()
+        ));
+    }
+    Ok(root)
+}
+
+/// An empty home, so configuration discovery has exactly one place to look.
+fn isolated_home() -> Result<std::path::PathBuf, String> {
+    let home = std::env::temp_dir().join(format!("sophia-profile-home-{}", std::process::id()));
+    std::fs::create_dir_all(&home)
+        .map_err(|error| format!("could not make an isolated home: {error}"))?;
+    Ok(home)
+}
+
 /// Ask the session whether it would accept this vector.
 ///
 /// Validation crosses the same CLI boundary used by an installed session, before
@@ -197,6 +224,27 @@ fn validate(arguments: &[String]) -> Result<(), String> {
         // Validating without it would be validating a different session than
         // the one that runs, and `--native-scanout` is gated on it.
         .env("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE", "1")
+        // Configuration discovery is pointed at a profile built to be refused.
+        //
+        // A vector that does not pin its configuration discovers whatever the
+        // operator has in ~/.config/hagia. On a developer's machine that is a
+        // real profile naming a shell and shortcuts a proof session cannot
+        // provide, and in normal mode the session refuses to start -- which
+        // happened, on a TTY, with the session already down and greetd back.
+        // Validating against the operator's own profile could not catch it:
+        // the vector was fine on any machine without one.
+        //
+        // Pointing discovery at a decoy makes the leak a property of the
+        // vector rather than of the machine. A profile that pins its
+        // configuration never reads this file; one that does not, refuses
+        // here, offline.
+        .env("XDG_CONFIG_HOME", decoy_config_home()?)
+        // HOME is isolated as well, so the decoy is the *only* configuration
+        // this validation can discover. Without this the operator's own
+        // ~/.config/hagia stays reachable and refuses a leaking vector too --
+        // which looks identical from here, and would let the decoy stop
+        // working without anything noticing.
+        .env("HOME", isolated_home()?)
         .output()
         .map_err(|error| format!("could not run {binary}: {error}"))?;
     let accepted = String::from_utf8_lossy(&output.stdout)
@@ -260,10 +308,39 @@ pub fn resolve(arguments: &[String]) -> Result<Vec<String>, String> {
 }
 
 /// Every profile's vector, validated, with the length each produced.
+/// Prove the decoy profile still refuses a vector that reaches it.
+///
+/// Every profile below is validated against a configuration root built to be
+/// refused, which only means anything while it is still refusing. If the
+/// schema moves under the fixture, or the shell rule that rejects it softens,
+/// the file becomes an inert directory and all five validations quietly stop
+/// testing discovery at all -- passing, and proving nothing.
+///
+/// So the check runs the one vector that must fail: normal mode with no
+/// configuration pinned. That is the exact shape that took a gate down at a
+/// greetd prompt.
+fn require_discovery_leak_is_visible() -> Result<(), String> {
+    let leaking = [
+        "--session-mode=normal".to_owned(),
+        "--display=:77".to_owned(),
+        "--session-app=probe=/usr/bin/true".to_owned(),
+        "--session-start=probe".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+    ];
+    if validate(&leaking).is_ok() {
+        return Err(
+            "a normal-mode vector with no configuration pinned was accepted, so the decoy \nprofile is no longer refused and every profile check below proves nothing about \nconfiguration discovery. Check tools/fixtures/decoy-config-home/hagia/config.kdl \nagainst the current desktop-profile schema."
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 pub fn check_every_profile(arguments: &[String]) -> Result<Vec<(&'static str, usize)>, String> {
     if !arguments.is_empty() {
         return Err("check-profiles takes no arguments".to_owned());
     }
+    require_discovery_leak_is_visible()?;
     let mut accepted = Vec::new();
     for profile in PROFILES {
         let mut options = Options {
