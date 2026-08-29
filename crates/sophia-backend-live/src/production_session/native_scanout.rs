@@ -2787,6 +2787,19 @@ mod persistent_native_scanout {
             )
         }
 
+        /// How many lowered frames carried each direct-scanout verdict, summed
+        /// over heads and indexed as `DirectScanoutVerdict::VERDICTS`.
+        pub fn direct_scanout_verdicts(&self) -> [usize; 9] {
+            self.exporters.iter().fold([0usize; 9], |mut totals, exporter| {
+                for (total, count) in
+                    std::iter::zip(&mut totals, exporter.direct_scanout_verdicts())
+                {
+                    *total = total.saturating_add(count);
+                }
+                totals
+            })
+        }
+
         pub fn renderer_worker_count(&self) -> usize {
             if Self::shared_renderer_worker_enabled() {
                 self.groups

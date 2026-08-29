@@ -17,6 +17,12 @@ SHARED_RENDERER_WORKER="${SOPHIA_ENABLE_SHARED_RENDERER_WORKER:-0}"
 # outputs land in two device groups and a shared renderer worker has nothing
 # to coalesce -- correct behaviour, and no coverage. One card with two
 # connectors is the only headless shape in which outputs share a group.
+# Passed to the guest so a headless run can exercise -- or, more usefully
+# here, fail to exercise -- the direct scanout path. A software-GPU guest has
+# no client producing a full-head opaque DMA-BUF, so with this on the run
+# proves the flag is inert when nothing is eligible: the composed path must
+# behave identically, which is what makes shipping the flag safe.
+DIRECT_SCANOUT="${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}"
 SINGLE_CARD="${SOPHIA_QEMU_SINGLE_CARD:-0}"
 # When set, the run asserts the session ran exactly this many renderer
 # threads. Printing the count proves nothing on its own.
@@ -823,7 +829,7 @@ LOGGER_PID=$!
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER$FORCED_CONNECTOR" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$FORCED_CONNECTOR" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
 

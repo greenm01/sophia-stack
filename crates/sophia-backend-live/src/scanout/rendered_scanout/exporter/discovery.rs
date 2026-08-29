@@ -63,6 +63,8 @@ where
     /// derives a candidate, so the flag's off state is the pre-row behaviour
     /// exactly, not a different path that happens to compose.
     pub(super) direct_scanout_enabled: bool,
+    /// How many lowered frames carried each verdict, in `VERDICTS` order.
+    direct_scanout_verdicts: [usize; 9],
     /// The composed form of a frame handed out directly, kept until the
     /// submission that took it says whether it reached a screen.
     ///
@@ -154,6 +156,7 @@ where
             last_cpu_frame_checksum: None,
             last_cpu_frame_export_status: None,
             direct_scanout_enabled: false,
+            direct_scanout_verdicts: [0; 9],
             direct_scanout_tested: false,
             direct_fallback: None,
             direct_scanout_attempts: 0,
@@ -366,7 +369,23 @@ where
         &mut self,
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame,
     ) {
+        // Counted here because this is the one place a lowered frame reaches
+        // an exporter, and because zeros in the direct-scanout counters cannot
+        // say whether the path is off, the scene was never eligible, or the
+        // proof was computed wrongly. The histogram says which.
+        //
+        // Frames whose verdict a mirror or topology path deliberately cleared
+        // count as `composition_required`, which is what they are by then.
+        self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()] = self
+            .direct_scanout_verdicts[frame.direct_scanout.reduced_index()]
+            .saturating_add(1);
         self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
+    }
+
+    /// How many lowered frames carried each verdict, indexed as
+    /// `DirectScanoutVerdict::VERDICTS`.
+    pub const fn direct_scanout_verdicts(&self) -> [usize; 9] {
+        self.direct_scanout_verdicts
     }
 
     pub const fn pending_mixed_frame(&self) -> bool {

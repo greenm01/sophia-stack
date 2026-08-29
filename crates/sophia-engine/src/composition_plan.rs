@@ -227,6 +227,38 @@ impl DirectScanoutVerdict {
         matches!(self, Self::Eligible)
     }
 
+    /// Every verdict, in the order `reduced_index` numbers them.
+    ///
+    /// Exists so evidence can report a histogram without a reader having to
+    /// know the enum, and so adding a verdict without extending the histogram
+    /// is a compile error rather than a silently missing column.
+    pub const VERDICTS: [Self; 9] = [
+        Self::Eligible,
+        Self::LayerCount(0),
+        Self::LayerNotActive,
+        Self::LayerResampled,
+        Self::LayerNotFullHead,
+        Self::LayerNotDmaBuf,
+        Self::LayerTranslucent,
+        Self::CompositionRequired,
+        Self::ComposedCursor,
+    ];
+
+    /// This verdict's slot in a histogram over `VERDICTS`.
+    pub const fn reduced_index(self) -> usize {
+        match self {
+            Self::Eligible => 0,
+            Self::LayerCount(_) => 1,
+            Self::LayerNotActive => 2,
+            Self::LayerResampled => 3,
+            Self::LayerNotFullHead => 4,
+            Self::LayerNotDmaBuf => 5,
+            Self::LayerTranslucent => 6,
+            Self::CompositionRequired => 7,
+            Self::ComposedCursor => 8,
+        }
+    }
+
     /// A stable name for evidence records.
     pub const fn reduced_name(self) -> &'static str {
         match self {

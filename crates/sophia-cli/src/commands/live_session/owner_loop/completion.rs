@@ -823,6 +823,24 @@
         direct_scanout_totals.refusals,
         direct_scanout_totals.fallbacks,
     );
+    // Why frames were or were not eligible, so a run in which direct scanout
+    // never fired can say which of "the path was off", "the scene was never
+    // eligible", and "the proof is wrong" it was. Zeros in the counters above
+    // cannot distinguish those, and that is the first question anyone asks of
+    // a gate that measured nothing.
+    {
+        let verdicts = native_scanout
+            .as_ref()
+            .map_or([0usize; 9], sophia_backend_live::LiveProductionNativeScanout::direct_scanout_verdicts);
+        let mut record =
+            String::from("sophia_live_direct_scanout_verdicts schema=1 status=complete");
+        for (verdict, count) in
+            std::iter::zip(sophia_engine::DirectScanoutVerdict::VERDICTS, verdicts)
+        {
+            record.push_str(&format!(" {}={count}", verdict.reduced_name()));
+        }
+        println!("{record}");
+    }
     if let Some(native_scanout) = native_scanout.as_ref() {
         println!(
             "sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps={} fallbacks={} pending={}",

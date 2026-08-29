@@ -48,6 +48,11 @@ case " $cmdline " in
         export SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1
         ;;
 esac
+case " $cmdline " in
+    *" sophia.direct_scanout=1 "*)
+        export SOPHIA_ENABLE_DIRECT_SCANOUT=1
+        ;;
+esac
 
 if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
