@@ -403,6 +403,12 @@ struct FakeNativePrimaryPlaneScanoutDevice {
     resources: FakeNativePrimaryPlaneResourceDevice,
     submit: io::Result<()>,
     commits: std::cell::Cell<usize>,
+    /// Commits that carried `TEST_ONLY`, counted separately.
+    ///
+    /// A device that only counts commits cannot tell a question from an
+    /// answer: a validating commit that quietly lost its flag would change
+    /// the screen while every assertion still passed.
+    test_only_commits: std::cell::Cell<usize>,
     accept_commits: Option<usize>,
 }
 
@@ -533,11 +539,15 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneScanoutDev
 impl LibdrmNativeAtomicCommitDevice for FakeNativePrimaryPlaneScanoutDevice {
     fn submit_atomic_commit(
         &self,
-        _flags: drm::control::AtomicCommitFlags,
+        flags: drm::control::AtomicCommitFlags,
         _request: drm::control::atomic::AtomicModeReq,
     ) -> io::Result<()> {
         let taken = self.commits.get();
         self.commits.set(taken.saturating_add(1));
+        if flags.contains(drm::control::AtomicCommitFlags::TEST_ONLY) {
+            self.test_only_commits
+                .set(self.test_only_commits.get().saturating_add(1));
+        }
         if self.accept_commits.is_some_and(|accept| taken >= accept) {
             return Err(io::Error::other("synthetic head commit refusal"));
         }
@@ -554,6 +564,10 @@ impl FakeNativePrimaryPlaneScanoutDevice {
     fn accepting_commits(mut self, accept: usize) -> Self {
         self.accept_commits = Some(accept);
         self
+    }
+
+    fn test_only_commits(&self) -> usize {
+        self.test_only_commits.get()
     }
 
     fn commits(&self) -> usize {

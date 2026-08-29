@@ -1,4 +1,11 @@
-#[derive(Debug)]
+/// Cloneable so one built request can be asked about and then performed.
+///
+/// A validating commit and the flip that follows it must describe the exact
+/// same framebuffer, or the driver's answer was about something else. Cloning
+/// the request is what makes that literal rather than approximate: the
+/// alternative is building a second framebuffer and trusting that identical
+/// inputs produce an identically scannable one.
+#[derive(Clone, Debug)]
 pub struct LibdrmNativeAtomicCommitRequest {
     request: drm::control::atomic::AtomicModeReq,
     scope: LibdrmNativeAtomicCommitRequestScope,

@@ -1121,3 +1121,109 @@ fn live_runtime_assembly_tracks_rendered_scanout_until_accepted_page_flip() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// A validating commit asks about the exact framebuffer that would flip and
+/// changes nothing. `validate_prepared_native_primary_plane_scanout` returns
+/// the prepared scanout either way, because its resources are still owed a
+/// submit or a cancel: an answer is not a disposal.
+#[test]
+fn a_validating_commit_asks_without_flipping() {
+    let device = full_primary_plane_scanout_device();
+    let selection = select_native_primary_plane_target(&device);
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        );
+
+    let (verdict, prepared_again) = validate_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+
+    assert_eq!(verdict, LibdrmNativeAtomicCommitSubmitStatus::Submitted);
+    assert_eq!(device.commits.get(), 1, "the test itself is a commit");
+    assert_eq!(
+        device.test_only_commits(),
+        1,
+        "a validating commit must carry TEST_ONLY, or it changed the screen"
+    );
+    assert_eq!(
+        device.resources.destroyed_framebuffers.get(),
+        0,
+        "asking about a framebuffer must not destroy it"
+    );
+
+    // The same request then performs the flip it was asked about.
+    let submitted = submit_prepared_native_primary_plane_scanout(&device, prepared_again);
+    assert_eq!(
+        submitted.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    assert_eq!(device.commits.get(), 2);
+    assert_eq!(
+        device.test_only_commits(),
+        1,
+        "the flip itself is performed, not asked about"
+    );
+}
+
+/// A driver that refuses the buffer answers rather than fails. The caller
+/// composes instead, and the prepared scanout comes back so its resources can
+/// be cancelled.
+#[test]
+fn a_refused_validating_commit_is_an_answer_not_a_fault() {
+    let device = full_primary_plane_scanout_device().accepting_commits(0);
+    let selection = select_native_primary_plane_target(&device);
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        );
+
+    let (verdict, prepared_again) = validate_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+
+    assert_eq!(verdict, LibdrmNativeAtomicCommitSubmitStatus::Rejected);
+    let cancelled = cancel_prepared_native_primary_plane_scanout(&device, prepared_again);
+    assert_eq!(
+        cancelled.status,
+        LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed,
+        "a refused frame releases its framebuffer rather than leaking it"
+    );
+}
+
+/// A validating commit never carries a page-flip event: there is no flip to
+/// report, and the kernel refuses the pair outright. The policy clears it so
+/// the two facts never have to agree in two places.
+#[test]
+fn a_validating_policy_carries_no_page_flip_event() {
+    let validating = LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().validating();
+
+    assert!(validating.test_only);
+    assert!(!validating.page_flip_event);
+    // Scope is unchanged: asking about a page flip is still a page flip's
+    // worth of state, not a modeset.
+    assert_eq!(
+        validating.expected_request_scope(),
+        LibdrmNativeAtomicCommitRequestScope::PageFlip
+    );
+}

@@ -149,6 +149,7 @@ fn test_dma_buf_plane_fds() -> [Option<OwnedFd>; 4] {
 fn full_primary_plane_scanout_device() -> FakeNativePrimaryPlaneScanoutDevice {
     FakeNativePrimaryPlaneScanoutDevice {
         commits: std::cell::Cell::new(0),
+        test_only_commits: std::cell::Cell::new(0),
         accept_commits: None,
         selection: full_kms_selection_device(),
         properties: full_property_lookup_device(),

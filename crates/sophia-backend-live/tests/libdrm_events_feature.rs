@@ -94,7 +94,7 @@ use sophia_backend_live::{
     submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor,
     submit_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy,
     submit_prepared_native_primary_plane_scanout, submit_prepared_rendered_primary_plane_scanout,
-    validate_native_multi_head_topology,
+    validate_native_multi_head_topology, validate_prepared_native_primary_plane_scanout,
 };
 #[cfg(feature = "libinput-events")]
 use sophia_backend_live::{

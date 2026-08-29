@@ -342,6 +342,14 @@ where
     } else {
         request_owner.blocking()
     };
+    // A validating commit asks the driver about this exact framebuffer and
+    // changes nothing. The flag owner clears the page-flip event for it,
+    // since there is no flip to report and the kernel refuses the pair.
+    let request_owner = if policy.test_only {
+        request_owner.test_only()
+    } else {
+        request_owner
+    };
     let request_scope = request_owner.reduced_scope();
     if request_scope != policy.expected_request_scope() {
         let commit_flags = request_owner.reduced_flags();
@@ -441,6 +449,43 @@ where
     D: LibdrmNativePrimaryPlaneResourceDevice,
 {
     destroy_native_primary_plane_resources(device, prepared.resources)
+}
+
+/// Ask the driver whether a prepared scanout would be accepted.
+///
+/// The commit carries `TEST_ONLY`, so the screen does not change and no
+/// page-flip event arrives. A refusal is an answer, not a fault: it means
+/// this buffer cannot be scanned out on this plane, and the caller composes
+/// instead. The prepared scanout is returned either way, because the
+/// resources it holds are still owed a submit or a cancel.
+///
+/// The request is cloned rather than rebuilt, so the commit that flips is the
+/// one the driver was asked about, down to the framebuffer id.
+///
+/// Errno is not inspected. The commit layer classifies every failure the same
+/// way, and a driver refusing a modifier is indistinguishable here from one
+/// refusing anything else -- which is why a refusal falls back rather than
+/// retrying with a different guess.
+#[cfg(feature = "libdrm-events")]
+pub fn validate_prepared_native_primary_plane_scanout<D>(
+    device: &D,
+    prepared: LibdrmNativePrimaryPlanePreparedScanout,
+) -> (
+    LibdrmNativeAtomicCommitSubmitStatus,
+    LibdrmNativePrimaryPlanePreparedScanout,
+)
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let (flags, native) = prepared.request.clone().test_only().into_native();
+    let status = match device.submit_atomic_commit(flags, native) {
+        Ok(()) => LibdrmNativeAtomicCommitSubmitStatus::Submitted,
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            LibdrmNativeAtomicCommitSubmitStatus::WouldBlock
+        }
+        Err(_) => LibdrmNativeAtomicCommitSubmitStatus::Rejected,
+    };
+    (status, prepared)
 }
 
 pub fn submit_prepared_native_primary_plane_scanout<D>(
