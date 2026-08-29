@@ -68,8 +68,10 @@ history is promoted on signed native archive `0002`. The one-in-flight and
 refresh-relative latency row is proved on physical run `20260828T231430Z`
 (source `96b00d0d`): full chain p99 24 ms against the two-refresh budget over
 two hundred forty-five independent presses with clean stage percentiles.
-Coalescing same-device outputs onto one shared renderer worker is the active
-product step.
+Native archive `0003` promotes one shared renderer worker per DRM device
+group, with both heads of one card on one thread and no result reaching an
+output that did not ask for it. Atomic-test-gated direct scanout for one
+compatible opaque DMA-BUF layer is the active product step.
 
 The current Void host has the required xmonad-configuration build and runtime
 dependencies installed. Dependency installation is complete and is not an
@@ -2106,10 +2108,37 @@ other mature compositors are references rather than Sophia runtime components.
   press's vsync phase. Each fix is pinned by regressions that reproduce the
   recorded defect shape. Evidence under
   `rendering-benchmarks/96b00d0d*/input-latency/20260828T231430Z`.
-- [ ] Coalesce all outputs in the same DRM/render-device group onto one shared
+- [x] Coalesce all outputs in the same DRM/render-device group onto one shared
   renderer worker. Preserve one latest pending request per output, bounded
   response demultiplexing, explicit per-output retirement tokens, and bounded
   inter-output service skew under concurrent producers.
+  Promoted on signed native archive `0003`, Sophia source
+  `8806046462bdd2f8c23c2702427e0d8b9fd7cd1b` against Hagia
+  `9c9a59061fd0d8e88310b764f7dd240e729fb035`: two heads of one card on one
+  renderer thread, `renderer_workers=1` with `worker_result_misroutes=0`,
+  `worker_max_service_skew=1` inside the one-per-sibling bound,
+  `max_in_flight_per_output=2` for two presented heads, 207 worker requests
+  settling as 207 completions with no deferral, no stale release, and no slot
+  leased at completion.
+  The model came first (`SharedWorkerService.tla`, three load-bearing negative
+  controls), and it refused two drafts before it held: skew compared service
+  counts directly, which fires on an idle head that simply has nothing to
+  draw, and the environment forbade composing during an in-flight render,
+  which is what the code does and whose absence made the submission gate's
+  control unable to fail.
+  The renderer context was the load-bearing change. One three-slot array
+  serving two outputs rebuilds a bundle on every alternation between their
+  sizes, so slots and the pixel proof taken from them are keyed per output;
+  results are routed on a channel per output rather than correlated by
+  position, and the misroute check is kept anyway. Renderer images are now
+  imported once per device rather than once per head.
+  Two instrumentation defects surfaced only under real evidence.
+  `max_in_flight_per_output` read a field only the mirror path sets, so it had
+  been structurally zero for every non-mirror session since schema 9 landed --
+  this row's central claim had never actually been measured on an extended
+  desktop. And the output key was unique only by an argument about scope,
+  which a two-card guest reporting `head=1` twice disproved; it composes group
+  with head now, and duplicate registration is refused rather than trusted.
 - [ ] Add atomic-test-gated direct scanout for one compatible opaque DMA-BUF
   layer, followed by a hardware cursor plane. Retain mixed composition as the
   fail-closed fallback.
