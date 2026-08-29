@@ -304,3 +304,36 @@ fn the_overlay_flag_parses_beside_the_positional_arguments() {
     assert_eq!(mixed.width, 1920);
     assert_eq!(mixed.height, 1080, "the flag must not consume a position");
 }
+
+/// The gate reads its terminal from the descriptor rather than from `tty(1)`.
+///
+/// `Command::output` closes the child's stdin, so the subprocess this replaced
+/// was asking `tty` about a null descriptor: on a real tty3 it answered "not a
+/// tty" and exited 1, and the gate refused before it could start. Reading
+/// `/proc/self/fd/0` asks the descriptor we already hold.
+#[test]
+fn the_gate_terminal_is_read_from_the_descriptor_not_a_subprocess() {
+    use std::process::{Command, Stdio};
+
+    // The mechanism that broke: a captured child cannot see our terminal.
+    let captured = Command::new("tty").output().unwrap();
+    assert!(
+        !captured.status.success(),
+        "a captured `tty` child can never identify the parent's terminal"
+    );
+
+    // The mechanism that replaced it always resolves for this process,
+    // whatever it is attached to -- a terminal for the gate, a socket for a
+    // test harness. What it must never do is fail the way the subprocess did.
+    std::fs::read_link("/proc/self/fd/0")
+        .expect("this process's own stdin descriptor always resolves");
+
+    // And the decision the gate actually makes about what it resolved to.
+    assert!(direct_scanout_gate::is_gate_terminal(Path::new(
+        "/dev/tty3"
+    )));
+    assert!(!direct_scanout_gate::is_gate_terminal(Path::new(
+        "/dev/tty1"
+    )));
+    let _ = Stdio::null();
+}

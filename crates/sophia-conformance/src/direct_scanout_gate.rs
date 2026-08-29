@@ -233,16 +233,37 @@ fn positive(value: &str, name: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("{name} must be a positive integer, got {value:?}"))
 }
 
+/// Which terminal this process is attached to, read from the descriptor
+/// rather than from a subprocess.
+///
+/// `Command::output` closes the child's stdin, so asking `tty(1)` what our
+/// terminal is asks it about a null descriptor: it answered "not a tty" and
+/// exited 1 on a real tty3, which refused the gate before it could start.
+/// The descriptor is right here; nothing needs to be asked.
+fn current_terminal() -> Result<PathBuf, String> {
+    std::fs::read_link("/proc/self/fd/0")
+        .map_err(|error| format!("could not read this process's terminal: {error}"))
+}
+
+/// Whether this terminal is the one the gate runs on.
+///
+/// Split from the descriptor read so the decision is testable without a
+/// terminal: the read is one syscall and the decision is the rule.
+pub fn is_gate_terminal(terminal: &Path) -> bool {
+    terminal == Path::new("/dev/tty3")
+}
+
 fn require_tty3() -> Result<(), String> {
     if !std::io::stdin().is_terminal() {
         return Err("switch to tty3, log in, and run: just direct-scanout-gate".to_owned());
     }
-    let tty = command_output("tty", &[])?.trim().to_owned();
-    if tty == "/dev/tty3" {
+    let terminal = current_terminal()?;
+    if is_gate_terminal(&terminal) {
         Ok(())
     } else {
         Err(format!(
-            "switch to tty3, log in, and run: just direct-scanout-gate (current terminal: {tty})"
+            "switch to tty3, log in, and run: just direct-scanout-gate (current terminal: {})",
+            terminal.display()
         ))
     }
 }
@@ -288,26 +309,4 @@ fn git_status(repo: &Path, arguments: &[&str]) -> Result<bool, String> {
         .status()
         .map(|status| status.success())
         .map_err(|error| format!("could not run git: {error}"))
-}
-
-fn command_output(program: &str, arguments: &[&str]) -> Result<String, String> {
-    command_output_with(program, Path::new("."), arguments)
-}
-
-fn command_output_with(
-    program: &str,
-    directory: &Path,
-    arguments: &[&str],
-) -> Result<String, String> {
-    let output = Command::new(program)
-        .current_dir(directory)
-        .args(arguments)
-        .output()
-        .map_err(|error| format!("could not run {program}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("{program} exited with {}", output.status));
-    }
-    String::from_utf8(output.stdout)
-        .map(|text| text.trim().to_owned())
-        .map_err(|error| format!("{program} emitted non-UTF-8: {error}"))
 }
