@@ -1,5 +1,6 @@
 #![cfg(feature = "gbm-probe")]
 
+use sophia_engine::DirectScanoutVerdict;
 use sophia_engine::{
     HeadBindingOutcome, HeadCompositionPlan, HeadCompositorCommand, HeadLayerBinding,
     HeadLogicalTransform, HeadSamplingClass, OutputSceneCursor, RenderHeadId,
@@ -78,6 +79,9 @@ fn plan() -> HeadCompositionPlan {
             height: 450,
         }),
         logical_content_checksum: 0x55,
+        // This fixture is a composed multi-layer plan; the renderer's own
+        // tests do not exercise eligibility, which Engine decides.
+        direct_scanout: DirectScanoutVerdict::CompositionRequired,
     }
 }
 

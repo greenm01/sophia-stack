@@ -458,6 +458,47 @@ equality, and WM-epoch equality separately. TLC then violated
 `PresentedBundlesMatchExactGenerationAndEpoch`, respectively. The clean model
 restores all three checks; no unsafe-mode switch remains in the retained spec.
 
+`PresentFlipOwnership.tla` states what a direct-scanout Present owes the
+client whose buffer it puts on the plane, and is written before the code that
+will implement it. `PresentCopyOwnership` owns the composited path, where a
+compositor snapshot reaches glass and the client source goes idle at the flip;
+this module owns its complement, where nothing is copied and the client's own
+buffer is displayed. The bounded configuration explores 329 generated states
+and 182 distinct states to depth 12.
+
+Three things follow from displaying the client's buffer rather than a copy of
+it. The buffer cannot be released at submission or at the flip, because the
+screen is scanning it; release waits for a successor's retirement. That
+successor may be a composed frame, since an overlay or effect activating makes
+the next frame ineligible while the direct frame is still on glass -- the
+return to mixed composition is a successor, not an eviction. And a flip is
+lawful only under a proof and an atomic test that are fresh in the current
+eligibility episode, because an activation ends the episode and everything
+stamped before it describes a different scene.
+
+The test stamp was unfalsifiable in the first draft. Engine proves every frame
+while the backend tests only on the eligibility edge, so a frame can carry a
+fresh proof over a stale test -- and without an action expressing that
+asymmetry, the proof stamp blocked every path the test stamp's control would
+have used, and the control could not fail. `ReProveAfterEpisodeChange` is that
+action, and the model is more faithful for it: the two stamps are separate in
+the code for exactly this reason.
+
+The `~effectActive` conjunct on `DirectFlip` is provably unreachable and kept
+anyway, in the same spirit as `EmittedEffectsAreExecutable`: activation
+advances the episode and no action stamps a proof or test while an effect is
+live, so a live effect always implies a stale stamp. Its control cannot fail
+today, and that is recorded here rather than resolved by deleting a conjunct
+whose absence would let a later decoupling of episode from activation make a
+flip during an effect lawful.
+
+Four temporary negative controls independently release the buffer at the flip,
+release it before it is ever displayed, drop the test stamp from the flip
+guard, and settle a fallback as `Flip`. TLC then violates
+`DisplayedClientBufferIsNeverReleased` at depth 4, `ReleasedOnlyBySuccessor` at
+depth 3, `EveryFlipWasEligible` at depth 7, and `FlipFeedbackRequiresRealFlip`
+at depth 4 respectively.
+
 ## Rust Boundary Map
 
 The model is deliberately smaller than the implementation. Its actions map to
@@ -487,6 +528,13 @@ the current owning Rust boundaries as follows:
 | `Collect` | `NativeGbmRendererWorker::poll` matching a result against the requesting output's in-flight record |
 | `reply` per output | the per-output bounded reply channel this row introduces; today one `Receiver` per per-head worker |
 | `passedOver` | service order of the shared command queue; no Rust counterpart until the shared worker exists |
+| `ProveEligibility`, `ReProveAfterEpisodeChange` | the per-frame direct-scanout verdict computed in `build_head_composition_plan` and carried on `HeadCompositionPlan` |
+| `TestPass`, `TestRefuse` | a `TEST_ONLY` atomic commit of the exact client framebuffer, issued on the composition-to-direct edge |
+| `DirectFlip` | the real atomic commit of a client-owned framebuffer, acquiring no renderer frame slot |
+| `CommitRefused` | the fallback ladder re-queueing the same content through mixed composition |
+| `SuccessorDirectRetires`, `SuccessorComposedRetires` | page-flip retirement of the following frame, which is what destroys the displayed bundle |
+| `CompleteFlip` | the `Flip` Present disposition, reserved today and unreachable from the copy path |
+| `effectActive`, `episode` | an overlay or resolved effect in the frame candidate; no Rust counterpart until the provider registry lands |
 | `PrimeAdmission` | `PersistentLiveLayout::prime_admission_extent` selecting complete safe pixels before the first blind-WM target |
 | `IssueConfigure`, `IssueFocus` | delayed synthetic requests emitted by the legacy WM process |
 | `ReplaceProjection` | `X11WmBridgeState::replace_active_workspace_projection` replacing cached membership and the complete mapped-window projection |

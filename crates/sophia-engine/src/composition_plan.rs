@@ -179,6 +179,135 @@ pub struct HeadCompositionPlan {
     pub cursor: Option<OutputSceneCursor>,
     pub repaint: Region,
     pub logical_content_checksum: u64,
+    /// Whether this exact frame needs no composition to reach the screen.
+    pub direct_scanout: DirectScanoutVerdict,
+}
+
+/// Why a frame cannot be scanned out directly, or that it can.
+///
+/// A verdict rather than a boolean, because the reason is what the evidence
+/// records and what an operator reads when a frame that looked eligible was
+/// composed instead.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DirectScanoutVerdict {
+    /// One opaque client layer fills the head and nothing else draws.
+    Eligible,
+    /// Not exactly one layer: none to scan out, or several to combine.
+    LayerCount(usize),
+    /// The layer fell back to another variant, so its pixels are not the
+    /// client's committed content.
+    LayerNotActive,
+    /// The client's buffer would have to be scaled to fill the head.
+    LayerResampled,
+    /// The layer does not cover the head exactly, so something else would
+    /// show through.
+    LayerNotFullHead,
+    /// The layer is not a client DMA-BUF; a CPU buffer has no framebuffer to
+    /// hand the plane.
+    LayerNotDmaBuf,
+    /// The layer is translucent, so what is behind it is part of the image.
+    LayerTranslucent,
+    /// Chrome, an overlay, or a resolved effect changes the composed image.
+    CompositionRequired,
+    /// A composed cursor is part of the image. The hardware cursor rides its
+    /// own plane and does not appear here.
+    ComposedCursor,
+}
+
+impl DirectScanoutVerdict {
+    pub const fn is_eligible(self) -> bool {
+        matches!(self, Self::Eligible)
+    }
+
+    /// A stable name for evidence records.
+    pub const fn reduced_name(self) -> &'static str {
+        match self {
+            Self::Eligible => "eligible",
+            Self::LayerCount(_) => "layer_count",
+            Self::LayerNotActive => "layer_not_active",
+            Self::LayerResampled => "layer_resampled",
+            Self::LayerNotFullHead => "layer_not_full_head",
+            Self::LayerNotDmaBuf => "layer_not_dma_buf",
+            Self::LayerTranslucent => "layer_translucent",
+            Self::CompositionRequired => "composition_required",
+            Self::ComposedCursor => "composed_cursor",
+        }
+    }
+}
+
+/// Whether one compositor command changes the image a direct scanout would
+/// show.
+///
+/// Matched exhaustively and without a wildcard: a command variant added later
+/// must be classified deliberately, and until it is, the compiler stops the
+/// change rather than letting an unconsidered primitive ride along invisibly
+/// on someone's screen. This follows the rule scanout cloning already states
+/// for plan fields -- unconsidered state disables the optimization rather
+/// than wrongly preserving it.
+fn command_requires_composition(command: &HeadCompositorCommand) -> bool {
+    match command {
+        // The letterbox fill, emitted unconditionally and empty exactly when
+        // the projected scene already covers the framebuffer.
+        //
+        // Unreachable as a verdict under the ordering below: letterboxing
+        // means the scene is smaller than the head, so the layer inside it
+        // cannot cover the head either, and the geometry check answers first
+        // with something more precise. Stated anyway, because a rect that
+        // paints is composition whatever else is true of the frame, and a
+        // later reordering must not make an empty-looking plan eligible.
+        HeadCompositorCommand::Background(rect) => {
+            rect.geometry.width != 0 && rect.geometry.height != 0
+        }
+        // The client's own content, which the plane will scan out directly.
+        HeadCompositorCommand::Surface { .. } => false,
+        HeadCompositorCommand::Border(_)
+        | HeadCompositorCommand::Rect(_)
+        | HeadCompositorCommand::Text(_)
+        | HeadCompositorCommand::IndicatorStrip(_) => true,
+    }
+}
+
+/// Whether this exact frame can go to the plane without being composed.
+///
+/// Engine proves structure only. Whether the buffer's format and modifier can
+/// actually be scanned out is the backend's atomic test to answer, and no
+/// verdict here promises a flip will be accepted.
+///
+/// Every check is stated against the finished plan rather than the scene it
+/// came from, because the plan is what reaches the screen: a frame is
+/// eligible or not, never a surface or a session.
+pub fn direct_scanout_verdict(plan: &HeadCompositionPlan) -> DirectScanoutVerdict {
+    if plan.layers.len() != 1 {
+        return DirectScanoutVerdict::LayerCount(plan.layers.len());
+    }
+    let layer = &plan.layers[0];
+    if layer.outcome != HeadBindingOutcome::Active {
+        return DirectScanoutVerdict::LayerNotActive;
+    }
+    if layer.requested_sampling != HeadSamplingClass::Exact {
+        return DirectScanoutVerdict::LayerResampled;
+    }
+    if !matches!(layer.source, BufferSource::DmaBuf { .. }) {
+        return DirectScanoutVerdict::LayerNotDmaBuf;
+    }
+    if layer.opacity_millis != 1_000 {
+        return DirectScanoutVerdict::LayerTranslucent;
+    }
+    let covers_head = layer.native_geometry.x == 0
+        && layer.native_geometry.y == 0
+        && layer.native_geometry.width == plan.native_size.width
+        && layer.native_geometry.height == plan.native_size.height
+        && layer.native_clip == layer.native_geometry;
+    if !covers_head {
+        return DirectScanoutVerdict::LayerNotFullHead;
+    }
+    if plan.cursor.is_some() {
+        return DirectScanoutVerdict::ComposedCursor;
+    }
+    if plan.compositor.iter().any(command_requires_composition) {
+        return DirectScanoutVerdict::CompositionRequired;
+    }
+    DirectScanoutVerdict::Eligible
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -529,7 +658,7 @@ pub fn build_head_composition_plan(
         repaint.push(clip_to_target(expanded, target.native_size));
     }
 
-    Ok(HeadCompositionPlan {
+    let mut plan = HeadCompositionPlan {
         output: snapshot.output,
         scene_generation: snapshot.scene_generation,
         head: target.head,
@@ -543,7 +672,13 @@ pub fn build_head_composition_plan(
         cursor,
         repaint,
         logical_content_checksum: snapshot.logical_content_checksum,
-    })
+        direct_scanout: DirectScanoutVerdict::Eligible,
+    };
+    // Computed from the finished plan and stored on it, so eligibility is a
+    // property of the exact frame that will be presented rather than of the
+    // scene it was derived from.
+    plan.direct_scanout = direct_scanout_verdict(&plan);
+    Ok(plan)
 }
 
 /// Reduces a head-native plan into the existing per-output damage ledger

@@ -618,3 +618,214 @@ fn intersect_for_test(first: Rect, second: Rect) -> Rect {
         height: (bottom - top).max(0),
     }
 }
+
+// Direct-scanout eligibility. Every case is stated against a finished plan,
+// because eligibility belongs to the exact frame that reaches the screen.
+
+/// One opaque client DMA-BUF filling the head, drawn by nothing else. This is
+/// the only shape the plane may scan out directly, and it is deliberately
+/// narrow: everything below is a way of not being it.
+fn direct_scanout_scene() -> OutputSceneSnapshot {
+    let output = OutputId::from_raw(1);
+    let surface = SurfaceId::new(4, 1);
+    let full = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    OutputSceneSnapshot {
+        output,
+        scene_generation: 12,
+        logical_viewport: full,
+        surfaces: vec![OutputSceneSurface {
+            surface,
+            committed_generation: 8,
+            geometry: full,
+            clip: full,
+            opacity_millis: 1_000,
+            content: SurfaceContentSet::new(
+                Size {
+                    width: 2560,
+                    height: 1440,
+                },
+                vec![SurfaceContentVariant {
+                    variant: 1,
+                    source: BufferSource::DmaBuf { handle: 77 },
+                    pixel_size: Size {
+                        width: 2560,
+                        height: 1440,
+                    },
+                    density_millis: 1_000,
+                    transform: SurfaceRasterTransform::Normal,
+                    fidelity: SurfaceContentFidelity::AuthorityRaster,
+                    damage: Region::single(full),
+                }],
+            )
+            .unwrap(),
+            damage: Region::single(full),
+        }],
+        display_list: CompositorDisplayList {
+            output,
+            commands: vec![CompositorDisplayCommand::Surface { surface }],
+        },
+        cursor: None,
+        logical_damage: Region::single(full),
+        logical_content_checksum: 0x5678,
+    }
+}
+
+fn direct_scanout_plan(scene: &OutputSceneSnapshot) -> HeadCompositionPlan {
+    build_head_composition_plan(scene, target(1, 2560, 1440, OutputHeadMapping::Fit))
+        .expect("the fullscreen scene plans")
+}
+
+#[test]
+fn one_opaque_client_layer_filling_the_head_is_directly_scannable() {
+    let plan = direct_scanout_plan(&direct_scanout_scene());
+
+    assert_eq!(plan.direct_scanout, DirectScanoutVerdict::Eligible);
+    assert!(plan.direct_scanout.is_eligible());
+    // The letterbox fill is emitted unconditionally and is empty exactly when
+    // the scene already covers the framebuffer, which is the only case that
+    // could be eligible anyway.
+    assert!(!plan.compositor.is_empty());
+}
+
+#[test]
+fn chrome_over_a_fullscreen_client_requires_composition() {
+    // The shape an ordinary Hagia desktop presents: the indicator strip is
+    // drawn above the fullscreen window on purpose, and the guide asserts it
+    // stays visible. Such a frame is composed, and this is why.
+    let mut scene = direct_scanout_scene();
+    let surface = SurfaceId::new(4, 1);
+    // A focus border here; the production instance is the indicator strip,
+    // which lowers to the same class of drawn primitive and is classified by
+    // the same arm.
+    scene
+        .display_list
+        .commands
+        .push(CompositorDisplayCommand::Border(CompositorBorder {
+            node: CompositorNodeId::SurfaceChrome {
+                surface,
+                role: SurfaceChromeRole::Frame,
+            },
+            generation: 3,
+            outer: Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+            inner: Rect {
+                x: 4,
+                y: 4,
+                width: 2552,
+                height: 1432,
+            },
+            color: CompositorRgb8 {
+                red: 0,
+                green: 80,
+                blue: 255,
+            },
+        }));
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::CompositionRequired
+    );
+}
+
+#[test]
+fn a_letterboxed_client_does_not_cover_its_head() {
+    // The same client on a head whose aspect it does not fill. The plan does
+    // carry letterbox rects the plane would not produce, but the layer stops
+    // short of the head first, and that is the more precise thing to say.
+    let scene = direct_scanout_scene();
+    let plan = build_head_composition_plan(&scene, target(1, 2560, 1600, OutputHeadMapping::Fit))
+        .expect("the letterboxed scene plans");
+
+    assert_eq!(plan.direct_scanout, DirectScanoutVerdict::LayerNotFullHead);
+    assert!(
+        plan.compositor.iter().any(|command| matches!(
+            command,
+            HeadCompositorCommand::Background(rect)
+                if rect.geometry.width != 0 && rect.geometry.height != 0
+        )),
+        "the letterbox rects this frame would need are present in the plan"
+    );
+}
+
+#[test]
+fn a_cpu_client_buffer_has_no_framebuffer_to_scan_out() {
+    let mut scene = direct_scanout_scene();
+    scene.surfaces[0].content = SurfaceContentSet::new(
+        Size {
+            width: 2560,
+            height: 1440,
+        },
+        vec![SurfaceContentVariant {
+            variant: 1,
+            source: BufferSource::CpuBuffer { handle: 41 },
+            pixel_size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            density_millis: 1_000,
+            transform: SurfaceRasterTransform::Normal,
+            fidelity: SurfaceContentFidelity::AuthorityRaster,
+            damage: Region::single(scene.logical_viewport),
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::LayerNotDmaBuf
+    );
+}
+
+#[test]
+fn a_translucent_client_shows_what_is_behind_it() {
+    let mut scene = direct_scanout_scene();
+    scene.surfaces[0].opacity_millis = 800;
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::LayerTranslucent
+    );
+}
+
+#[test]
+fn a_composed_cursor_is_part_of_the_image() {
+    // The hardware cursor rides its own plane and never appears in a plan;
+    // a cursor that reaches the plan is one the compositor would draw.
+    let mut scene = direct_scanout_scene();
+    scene.cursor = Some(OutputSceneCursor {
+        geometry: Rect {
+            x: 640,
+            y: 360,
+            width: 24,
+            height: 24,
+        },
+        source: BufferSource::CpuBuffer { handle: 99 },
+        generation: 5,
+    });
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::ComposedCursor
+    );
+}
+
+#[test]
+fn an_empty_head_scans_out_nothing() {
+    let mut scene = direct_scanout_scene();
+    scene.surfaces.clear();
+    scene.display_list.commands.clear();
+
+    assert_eq!(
+        direct_scanout_plan(&scene).direct_scanout,
+        DirectScanoutVerdict::LayerCount(0)
+    );
+}
