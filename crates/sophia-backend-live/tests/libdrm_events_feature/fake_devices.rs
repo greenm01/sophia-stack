@@ -181,6 +181,16 @@ struct FakeNativePrimaryPlaneResourceDevice {
     destroy_framebuffer: io::Result<()>,
     destroy_mode_blob: io::Result<()>,
     destroyed_framebuffers: std::cell::Cell<usize>,
+    /// PRIME imports and the handles they left open.
+    ///
+    /// The trait's default refuses to import, which was right while nothing
+    /// but the renderer's own buffers reached a plane. A client's buffer takes
+    /// the PRIME transport, so a device that cannot import cannot reach the
+    /// direct path at all -- and closing is counted too, because a refused
+    /// attempt that leaks its imported handles is exactly the failure the
+    /// fallback ladder must not have.
+    imported_buffers: std::cell::Cell<usize>,
+    closed_buffers: std::cell::Cell<usize>,
 }
 
 impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneResourceDevice {
@@ -234,6 +244,18 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneResourceDe
         self.destroyed_framebuffers
             .set(self.destroyed_framebuffers.get().saturating_add(1));
         clone_io_result(&self.destroy_framebuffer)
+    }
+
+    fn import_scanout_dma_buf(&self, _fd: BorrowedFd<'_>) -> io::Result<drm::buffer::Handle> {
+        self.imported_buffers
+            .set(self.imported_buffers.get().saturating_add(1));
+        Ok(buffer_handle(77))
+    }
+
+    fn close_scanout_buffer(&self, _handle: drm::buffer::Handle) -> io::Result<()> {
+        self.closed_buffers
+            .set(self.closed_buffers.get().saturating_add(1));
+        Ok(())
     }
 
     fn destroy_mode_blob(&self, _mode_blob: u64) -> io::Result<()> {
@@ -531,6 +553,17 @@ impl LibdrmNativePrimaryPlaneResourceDevice for FakeNativePrimaryPlaneScanoutDev
         self.resources.destroy_scanout_framebuffer(framebuffer)
     }
 
+    // Forwarded rather than left to the trait default, which refuses. A
+    // client's buffer reaches this device only through PRIME, so a scanout
+    // device that cannot import cannot reach the direct path at all.
+    fn import_scanout_dma_buf(&self, fd: BorrowedFd<'_>) -> io::Result<drm::buffer::Handle> {
+        self.resources.import_scanout_dma_buf(fd)
+    }
+
+    fn close_scanout_buffer(&self, handle: drm::buffer::Handle) -> io::Result<()> {
+        self.resources.close_scanout_buffer(handle)
+    }
+
     fn destroy_mode_blob(&self, mode_blob: u64) -> io::Result<()> {
         self.resources.destroy_mode_blob(mode_blob)
     }
@@ -576,5 +609,13 @@ impl FakeNativePrimaryPlaneScanoutDevice {
 
     fn destroyed_framebuffers(&self) -> usize {
         self.resources.destroyed_framebuffers.get()
+    }
+
+    fn imported_buffers(&self) -> usize {
+        self.resources.imported_buffers.get()
+    }
+
+    fn closed_buffers(&self) -> usize {
+        self.resources.closed_buffers.get()
     }
 }

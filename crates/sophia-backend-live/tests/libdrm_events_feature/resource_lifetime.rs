@@ -15,6 +15,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let oversized_modeset = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
@@ -33,6 +35,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let oversized_page_flip = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
@@ -68,6 +72,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let invalid_pitch = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
             framebuffer: Ok(framebuffer_handle()),
@@ -86,6 +92,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let argb_format = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
@@ -104,6 +112,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let invalid_format = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Err(io::Error::from(io::ErrorKind::PermissionDenied)),
@@ -122,6 +132,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let multi_plane_without_modifier = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
@@ -144,6 +156,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let multi_plane_linear_modifier = create_native_primary_plane_page_flip_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(15),
             framebuffer: Ok(framebuffer_handle()),
@@ -210,6 +224,8 @@ fn native_libdrm_primary_plane_resources_validate_size_and_lifetime() {
 
     let zero_mode_blob = create_native_primary_plane_resources(
         &FakeNativePrimaryPlaneResourceDevice {
+            imported_buffers: std::cell::Cell::new(0),
+            closed_buffers: std::cell::Cell::new(0),
             destroyed_framebuffers: std::cell::Cell::new(0),
             mode_blob: Ok(0),
             framebuffer: Ok(framebuffer_handle()),

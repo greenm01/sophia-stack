@@ -119,6 +119,8 @@ fn full_kms_selection_device() -> FakeNativeKmsSelectionDevice {
 fn full_primary_plane_resource_device() -> FakeNativePrimaryPlaneResourceDevice {
     FakeNativePrimaryPlaneResourceDevice {
         destroyed_framebuffers: std::cell::Cell::new(0),
+        imported_buffers: std::cell::Cell::new(0),
+        closed_buffers: std::cell::Cell::new(0),
         mode_blob: Ok(15),
         framebuffer: Ok(framebuffer_handle()),
         destroy_framebuffer: Ok(()),

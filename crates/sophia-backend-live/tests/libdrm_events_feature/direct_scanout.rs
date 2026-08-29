@@ -323,3 +323,181 @@ fn every_step_of_an_episode_names_the_scene_it_belongs_to() {
     LiveRenderedScanoutBufferExporter::commit_direct_scanout(&mut exporter);
     assert_eq!(exporter.outstanding_direct_scene_generation(), None);
 }
+
+#[cfg(feature = "gbm-probe")]
+fn direct_scanout_runtime_frame(
+    size: Size,
+) -> sophia_renderer_live::LiveOwnedMixedCompositionFrame {
+    let mut frame = proven_direct_frame();
+    let sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf {
+        frame: client,
+        placement,
+        ..
+    } = &mut frame.layers[0]
+    else {
+        panic!("direct fixture changed layer kind")
+    };
+    client.width = size.width as u32;
+    client.height = size.height as u32;
+    client.planes[0].as_mut().expect("one plane").stride = size.width as u32 * 4;
+    placement.target = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
+    frame
+}
+
+#[cfg(feature = "gbm-probe")]
+fn direct_scanout_runtime_exporter()
+-> NativeGbmRenderedScanoutBufferDiscoveryExporter<MissingRenderDevice> {
+    let mut exporter = NativeGbmRenderedScanoutBufferDiscoveryExporter::new(MissingRenderDevice);
+    exporter.set_direct_scanout_enabled(true);
+    exporter.set_pending_mixed_frame(direct_scanout_runtime_frame(Size {
+        width: 1280,
+        height: 720,
+    }));
+    exporter
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn a_direct_submission_asks_the_driver_first_and_then_flips_the_same_request() {
+    let root = ready_drm_sysfs_fixture("runtime-direct-scanout-flip");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    let device = full_primary_plane_scanout_device();
+    let mut exporter = direct_scanout_runtime_exporter();
+
+    let submitted = assembly.submit_rendered_primary_plane_scanout_with(&device, &mut exporter);
+
+    assert_eq!(
+        submitted.status,
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    // The client's buffer was imported into the KMS file and hung on a
+    // framebuffer -- the PRIME transport, which no production path used before
+    // this row.
+    assert_eq!(device.imported_buffers(), 1);
+    // Two commits: the question and the answer. The validating one carried
+    // TEST_ONLY, which is what makes it a question rather than a second flip.
+    assert_eq!(device.commits(), 2);
+    assert_eq!(device.test_only_commits(), 1);
+    assert_eq!(exporter.direct_scanout_tests(), 1);
+    assert_eq!(exporter.direct_scanout_test_rejections(), 0);
+    assert_eq!(exporter.direct_scanout_flips(), 1);
+    assert_eq!(exporter.direct_scanout_fallbacks(), 0);
+    // The composed form is dropped; the client's buffer is not released here.
+    assert!(!exporter.direct_scanout_outstanding());
+    assert!(submitted.submission.is_some());
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn a_refused_validating_commit_never_reaches_the_screen_or_the_failure_path() {
+    let root = ready_drm_sysfs_fixture("runtime-direct-scanout-test-refused");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    // Refuses every commit, so the validating one is refused first.
+    let device = full_primary_plane_scanout_device().accepting_commits(0);
+    let mut exporter = direct_scanout_runtime_exporter();
+
+    let submitted = assembly.submit_rendered_primary_plane_scanout_with(&device, &mut exporter);
+
+    // Deferred, not failed. A submit failure discards the frame and, on a
+    // mirror group, ends the session.
+    // `PresentFlipOwnership.tla`, `CommitRefused`.
+    assert_eq!(
+        submitted.status,
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending
+    );
+    // One commit, and it was the question. Nothing reached a screen.
+    assert_eq!(device.commits(), 1);
+    assert_eq!(device.test_only_commits(), 1);
+    assert_eq!(exporter.direct_scanout_test_rejections(), 1);
+    assert_eq!(exporter.direct_scanout_flips(), 0);
+    assert_eq!(exporter.direct_scanout_fallbacks(), 1);
+    assert!(submitted.submission.is_none());
+    // The same content is back, ready to compose.
+    assert!(exporter.pending_mixed_frame());
+    // What the refused attempt imported is released rather than leaked: the
+    // framebuffer destroyed and the imported handle closed.
+    assert_eq!(device.destroyed_framebuffers(), 1);
+    assert_eq!(device.imported_buffers(), 1);
+    assert_eq!(device.closed_buffers(), 1);
+    // And the next attempt asks again, because a refusal ends the episode.
+    assert!(LiveRenderedScanoutBufferExporter::direct_scanout_test_required(&exporter));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn a_rejected_real_commit_after_a_passing_test_also_falls_back() {
+    let root = ready_drm_sysfs_fixture("runtime-direct-scanout-commit-rejected");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    // Accepts the validating commit and refuses the flip that follows it,
+    // which a driver is entitled to do however the test answered.
+    let device = full_primary_plane_scanout_device().accepting_commits(1);
+    let mut exporter = direct_scanout_runtime_exporter();
+
+    let submitted = assembly.submit_rendered_primary_plane_scanout_with(&device, &mut exporter);
+
+    assert_eq!(
+        submitted.status,
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending
+    );
+    assert_eq!(device.commits(), 2);
+    assert_eq!(device.test_only_commits(), 1);
+    assert_eq!(exporter.direct_scanout_tests(), 1);
+    assert_eq!(exporter.direct_scanout_test_rejections(), 0);
+    assert_eq!(exporter.direct_scanout_flips(), 0);
+    assert_eq!(exporter.direct_scanout_fallbacks(), 1);
+    assert!(submitted.submission.is_none());
+    assert!(exporter.pending_mixed_frame());
+    assert_eq!(device.destroyed_framebuffers(), 1);
+    assert_eq!(device.imported_buffers(), 1);
+    assert_eq!(device.closed_buffers(), 1);
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "gbm-probe")]
+#[test]
+fn a_composed_submission_never_asks_the_driver_a_question() {
+    // The control for all three above: with the path off, the same session
+    // commits once and never carries TEST_ONLY. A validating commit appearing
+    // here would mean the direct path had leaked into the composed one.
+    let root = ready_drm_sysfs_fixture("runtime-direct-scanout-composed-control");
+    let report = discover_live_backend(&LiveBackendConfig::new(&root));
+    let mut assembly = report
+        .into_live_runtime_assembly(QueuedInputPoller::default())
+        .expect("ready backend should seed live assembly");
+    let device = full_primary_plane_scanout_device();
+    let mut exporter = FakeRenderedScanoutExporter::exported(Size {
+        width: 1280,
+        height: 720,
+    });
+
+    let submitted = assembly.submit_rendered_primary_plane_scanout_with(&device, &mut exporter);
+
+    assert_eq!(
+        submitted.status,
+        LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    assert_eq!(device.commits(), 1);
+    assert_eq!(device.test_only_commits(), 0);
+    assert_eq!(device.imported_buffers(), 0);
+
+    std::fs::remove_dir_all(root).unwrap();
+}

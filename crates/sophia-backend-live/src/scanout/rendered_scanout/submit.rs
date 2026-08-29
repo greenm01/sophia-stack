@@ -51,7 +51,7 @@ where
             }
         }
         let direct = prepared.scanout_buffer.is_direct_client_buffer();
-        let result = submit_prepared_rendered_primary_plane_scanout(device, prepared);
+        let mut result = submit_prepared_rendered_primary_plane_scanout(device, prepared);
         if direct {
             if result.status
                 == LiveRenderedPrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
@@ -61,8 +61,21 @@ where
                 // the screen will scan until a successor flip retires it.
                 exporter.commit_direct_scanout();
             } else {
-                // A real commit rejected after a passing test. Same ladder.
+                // A real commit rejected after a passing test, which the
+                // driver is entitled to do. The frame is not lost and the
+                // session is not over: the composed form goes back into the
+                // pending cell and the status says deferred, not failed.
+                //
+                // Rewriting the status is the whole point. Left as
+                // `PrimaryPlaneSubmitFailed` it reaches the terminal
+                // submit-failure path, which discards the frame and, on a
+                // mirror group, ends the session -- for a commit the fallback
+                // has already recovered from. The cleanup the submit produced
+                // is carried through unchanged, so the framebuffer and its
+                // imported handles are still destroyed.
                 exporter.fall_back_from_direct();
+                result.status =
+                    LiveRenderedPrimaryPlaneScanoutSubmitStatus::ScanoutExportPending;
             }
         }
         return result;
