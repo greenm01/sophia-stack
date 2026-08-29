@@ -1443,20 +1443,44 @@ fn an_explicit_profile_enabling_a_shell_still_refuses_without_one() {
     std::fs::remove_file(&profile).unwrap();
 }
 
-/// The argument vector the standalone single-application probe builds.
+/// The argument vector the direct-scanout probe builds, with the fixtures it
+/// ships rather than copies of them.
 ///
-/// Two physical runs died in argument validation on things nothing described,
-/// so this carries the whole vector rather than a fragment of it. It caught a
-/// third on the way in: `--native-scanout` is gated on an environment variable
-/// the runner exports, and it is left out below with that reason stated,
-/// because setting one from a test races every other test in the process.
+/// Three physical runs have now died in argument validation on things nothing
+/// described. The last one dropped `--no-config` for a core configuration and
+/// so began discovering the operator's own desktop profile, which enables a
+/// shell and binds spawn-terminal -- neither of which a one-application proof
+/// can provide. Both configurations are explicit now, and both are read from
+/// the files the runner installs.
+///
+/// `--native-scanout` is deliberately absent: it is gated on an environment
+/// variable the runner exports, and setting one from a test races every other
+/// test in the process.
 #[test]
 fn the_standalone_single_application_argument_set_still_starts() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/fixtures");
+    let staged = |name: &str| {
+        let path = std::env::temp_dir().join(format!(
+            "sophia-probe-{name}-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::copy(fixtures.join(name), &path).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let core = staged("direct_scanout_core.kdl");
+    let desktop = staged("direct_scanout_desktop.kdl");
+
     let accepted = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),
         "--display=:77".to_owned(),
         "--startup-ready-timeout-ms=8000".to_owned(),
-        "--no-config".to_owned(),
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", desktop.display()),
         "--session-app=standalone=/usr/bin/true".to_owned(),
         "--session-start=standalone".to_owned(),
         "--exit-when-startup-exits".to_owned(),
@@ -1484,4 +1508,6 @@ fn the_standalone_single_application_argument_set_still_starts() {
         "the standalone argument set was refused: {:?}",
         accepted.err()
     );
+    std::fs::remove_file(&core).unwrap();
+    std::fs::remove_file(&desktop).unwrap();
 }

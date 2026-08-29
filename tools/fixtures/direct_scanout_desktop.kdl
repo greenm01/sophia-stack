@@ -1,0 +1,25 @@
+schema 1
+
+// Desktop profile for the direct-scanout probe.
+//
+// Passed explicitly so the probe is hermetic. Without it the session discovers
+// whatever desktop profile the operator has installed -- on this machine
+// `~/.config/hagia/config.kdl`, which enables a shell and binds spawn-terminal
+// and spawn-browser, none of which a one-application proof can provide. A
+// proof that reads the operator's desktop is not a proof of anything.
+//
+// The core configuration is passed for the same reason and is separate:
+// `--config` and `--no-config` are mutually exclusive, so a probe that needs a
+// core config cannot also fall back to the compiled desktop profile.
+//
+// The shell is off: there is no shell process, and `session:window-switcher`
+// would name a capability this session does not have.
+//
+// Nothing is bound. A session with no window manager registers no shortcuts at
+// all -- they are resolved against a policy client's configuration and there is
+// no policy client here -- so a binding would describe something that cannot
+// happen. The probe's client exits on its own; that is the exit.
+shell { enabled #false; }
+shortcut {
+  profile "direct-scanout-standalone"
+}

@@ -563,7 +563,23 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             exit 1
         fi
         install -m 600 "$standalone_core_template" "$standalone_core_config"
-        session_args+=("--config=$standalone_core_config")
+        # And a desktop profile, so the probe is hermetic. Without one the
+        # session discovers whatever the operator has installed -- here
+        # `~/.config/hagia/config.kdl`, which enables a shell and binds
+        # spawn-terminal, neither of which a one-application proof can provide.
+        # `--config` and `--no-config` are mutually exclusive, so a probe that
+        # needs a core config cannot fall back to the compiled desktop profile.
+        standalone_desktop_template="$ROOT_DIR/tools/fixtures/direct_scanout_desktop.kdl"
+        standalone_desktop_profile="$STATE_DIR/standalone-desktop.kdl"
+        if [[ ! -f "$standalone_desktop_template" ]]; then
+            echo "The standalone desktop profile is missing: $standalone_desktop_template" >&2
+            exit 1
+        fi
+        install -m 600 "$standalone_desktop_template" "$standalone_desktop_profile"
+        session_args+=(
+            "--config=$standalone_core_config"
+            "--desktop-profile=$standalone_desktop_profile"
+        )
     else
         session_args+=(--no-config)
     fi
