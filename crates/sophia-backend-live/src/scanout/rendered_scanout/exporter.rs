@@ -1,3 +1,4 @@
+mod direct;
 mod discovery;
 mod export;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

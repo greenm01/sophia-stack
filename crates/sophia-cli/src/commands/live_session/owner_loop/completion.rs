@@ -958,6 +958,19 @@
     }
 
     let present_observation = &present_observer;
+    // Present dispositions, always emitted, kept apart from the session line
+    // so that separating a direct flip from a retained one does not require
+    // bumping a schema forty readers agree on. `complete_flip` here is the
+    // `Retained` disposition alone; the session line reports X completion
+    // modes and adds the two together.
+    println!(
+        "sophia_live_present_dispositions schema=1 status=complete complete_copy={} complete_flip={} complete_direct={} complete_skip={} idle={}",
+        present_observation.complete_copy,
+        present_observation.complete_flip,
+        present_observation.complete_direct(),
+        present_observation.complete_skip,
+        present_observation.idle,
+    );
     if let Some(cadence) = present_observation.displayed_cadence.summary() {
         println!(
             "sophia_live_present_cadence schema=1 status=complete samples={} advancing_intervals={} nonadvancing={} overflowed=false mean_fps={:.3} p95_frame_msec={:.3} evicted={}",
