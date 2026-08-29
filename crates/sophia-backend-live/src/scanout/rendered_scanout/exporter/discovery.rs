@@ -3,7 +3,11 @@ use super::{LiveRenderedScanoutBufferExport, LiveRenderedScanoutBufferExporter};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use crate::api::*;
 
-use super::{NativeGbmRendererWorker, NativeGbmRendererWorkerScanoutLease, WorkerPoll};
+use super::worker::LiveRendererWorkerOutputKey;
+use super::{
+    NativeGbmRendererWorker, NativeGbmRendererWorkerCore, NativeGbmRendererWorkerScanoutLease,
+    WorkerPoll,
+};
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use sophia_renderer_live::{
     LiveCpuComposedFrame, LiveRendererScanoutBufferExportDetail,
@@ -28,6 +32,10 @@ where
     R: RenderDeviceDiscoveryBackend,
 {
     discovery: R,
+    /// Which output this exporter speaks for. It names the worker's reply
+    /// route and, inside a shared render context, this output's own target
+    /// slots -- the inline path uses it for the latter alone.
+    output: LiveRendererWorkerOutputKey,
     context: Option<NativeGbmRenderedScanoutContext<R::Device>>,
     worker: Option<NativeGbmRendererWorker>,
     worker_frame_kind: Option<PendingRenderedFrameKind>,
@@ -83,6 +91,7 @@ where
     pub fn new(discovery: R) -> Self {
         Self {
             discovery,
+            output: LiveRendererWorkerOutputKey::from_raw(0),
             context: None,
             worker: None,
             worker_frame_kind: None,
@@ -114,9 +123,23 @@ where
     {
         let device = discovery.open_render_device();
         let mut exporter = Self::new(discovery);
+        let output = exporter.output;
         exporter.context_open_attempts = 1;
-        exporter.worker = Some(NativeGbmRendererWorker::spawn(device)?);
+        exporter.worker = Some(NativeGbmRendererWorker::spawn(device, output)?);
         Ok(exporter)
+    }
+
+    /// Name the output this exporter speaks for.
+    ///
+    /// Set before a worker is attached. Two exporters sharing a core must not
+    /// share a key: it is the only thing separating their replies, their
+    /// slots, and their leases.
+    pub fn set_output(&mut self, output: LiveRendererWorkerOutputKey) {
+        self.output = output;
+    }
+
+    pub const fn output(&self) -> LiveRendererWorkerOutputKey {
+        self.output
     }
 
     pub fn enable_worker(&mut self) -> std::io::Result<()>
@@ -129,10 +152,23 @@ where
         self.context_open_attempts = self.context_open_attempts.saturating_add(1);
         self.worker = Some(NativeGbmRendererWorker::spawn(
             self.discovery.open_render_device(),
+            self.output,
         )?);
         self.context = None;
         self.context_status = None;
         Ok(())
+    }
+
+    /// Attach this output to a worker shared with the rest of its device
+    /// group, rather than giving it a thread of its own.
+    pub fn attach_shared_worker(&mut self, core: &std::sync::Arc<NativeGbmRendererWorkerCore>) {
+        if self.worker.is_some() {
+            return;
+        }
+        self.context_open_attempts = self.context_open_attempts.saturating_add(1);
+        self.worker = Some(core.attach(self.output));
+        self.context = None;
+        self.context_status = None;
     }
 
     /// Arms the next CPU export as a direct-GBM-only bootstrap.
@@ -429,9 +465,9 @@ where
         if let Some(worker) = &self.worker {
             return worker.composition_nonzero_rgb_pixels();
         }
-        self.context
-            .as_ref()
-            .map_or(0, |context| context.composition_nonzero_rgb_pixels())
+        self.context.as_ref().map_or(0, |context| {
+            context.composition_nonzero_rgb_pixels(self.output.target_set())
+        })
     }
 }
 
