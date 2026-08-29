@@ -77,6 +77,31 @@ pub struct LiveOwnedHeadCompositionSource {
 /// solids. DMA-BUF and retained renderer-image variants remain unavailable
 /// here until their lease resolver can return an independently owned source for
 /// every head; they are rejected rather than flattened or silently omitted.
+/// The plan's verdict, demoted when the lowering chose a source the plane
+/// cannot take.
+///
+/// Without this, the backend's re-derivation refused the frame and counted it
+/// as Engine's proof contradicting the pixels -- a defect -- when both sides
+/// were right in their own vocabulary. The disagreement was real and lived
+/// here, in the seam neither of them owns.
+fn lowered_direct_scanout(
+    plan: &HeadCompositionPlan,
+    layers: &[LiveOwnedMixedCompositionLayer],
+) -> sophia_engine::DirectScanoutVerdict {
+    if !plan.direct_scanout.is_eligible() {
+        return plan.direct_scanout;
+    }
+    let client_buffer = matches!(
+        layers.first(),
+        Some(LiveOwnedMixedCompositionLayer::DmaBuf { .. })
+    ) && layers.len() == 1;
+    if client_buffer {
+        plan.direct_scanout
+    } else {
+        sophia_engine::DirectScanoutVerdict::CompositionRequired("retained_source")
+    }
+}
+
 pub fn lower_cpu_head_composition_plan(
     plan: &HeadCompositionPlan,
     sources: &[LiveCpuPresentationLayer],
@@ -275,6 +300,7 @@ pub fn lower_head_composition_plan_with_caches(
             surface.source_size = source_size(source)?;
         }
     }
+    let direct_scanout = lowered_direct_scanout(plan, &layers);
     Ok(LiveOwnedMixedCompositionFrame {
         layers,
         output_damage_snapshot: Some(output_damage_snapshot),
@@ -284,10 +310,16 @@ pub fn lower_head_composition_plan_with_caches(
             scene_generation: plan.scene_generation,
         }),
         // Engine's verdict on this exact plan, carried down with the pixels it
-        // describes. Lowering adds no layer the plan did not command -- every
-        // arm above comes from a command or from `plan.cursor`, both of which
-        // the verdict classifies -- so the verdict remains true of the frame.
-        direct_scanout: plan.direct_scanout,
+        // describes -- but only while it stays true of them. Lowering adds no
+        // layer the plan did not command; what it does do is *choose a source
+        // kind*, and a retained recompose substitutes the compositor's
+        // promoted snapshot for the client's buffer. That frame is
+        // structurally eligible and still cannot go to a plane: the snapshot
+        // is not the client's memory, and handing it over would display the
+        // copy while claiming the ownership contract of the original. Engine
+        // cannot see this -- source-kind selection is a lowering decision --
+        // so the demotion happens here, where the choice is made.
+        direct_scanout,
     })
 }
 

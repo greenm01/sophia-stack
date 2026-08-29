@@ -771,13 +771,32 @@ fn a_cpu_layer_has_no_buffer_to_hand_the_plane() {
 }
 
 #[test]
-fn lowering_carries_the_plans_verdict_onto_the_frame_it_produces() {
-    // The verdict has to survive lowering, because the backend reads it from
-    // the frame and never sees the plan.
+fn lowering_keeps_the_verdict_only_while_it_stays_true_of_the_frame() {
+    // The backend reads the verdict from the frame and never sees the plan --
+    // so the verdict must describe the frame, not the plan it came from.
+    // Lowering chooses a *source kind*, and a retained recompose substitutes
+    // the compositor's promoted snapshot for the client's buffer: that frame
+    // is structurally eligible and still cannot go to a plane, because the
+    // snapshot is not the client's memory. Carrying Eligible over it made the
+    // first overlay withdrawal on hardware read as a proof defect.
     let mut plan = plan();
     plan.direct_scanout = DirectScanoutVerdict::Eligible;
     let lowered = lower_cpu_head_composition_plan(&plan, &[source(42)]).unwrap();
-    assert_eq!(lowered.direct_scanout, DirectScanoutVerdict::Eligible);
+    assert_eq!(
+        lowered.direct_scanout,
+        DirectScanoutVerdict::CompositionRequired("retained_source"),
+        "a CPU-lowered layer is not the client's DMA-BUF, whatever the plan proved"
+    );
+
+    // A demotion, never a promotion: an ineligible plan stays ineligible no
+    // matter what the lowering picked.
+    let mut composed = plan.clone();
+    composed.direct_scanout = DirectScanoutVerdict::CompositionRequired("border");
+    let lowered = lower_cpu_head_composition_plan(&composed, &[source(42)]).unwrap();
+    assert_eq!(
+        lowered.direct_scanout,
+        DirectScanoutVerdict::CompositionRequired("border")
+    );
 
     // And the default that arrives with no plan behind it composes, so a
     // frame built anywhere else cannot be mistaken for a proven one.
@@ -785,6 +804,43 @@ fn lowering_carries_the_plans_verdict_onto_the_frame_it_produces() {
         sophia_renderer_live::LiveOwnedMixedCompositionFrame::default().direct_scanout,
         DirectScanoutVerdict::default()
     );
+}
+
+/// The eligible verdict survives lowering exactly when the frame's single
+/// layer is the client's own buffer -- the case direct scanout exists for.
+#[test]
+fn lowering_keeps_eligible_when_the_client_buffer_is_the_frame() {
+    let mut plan = plan();
+    plan.direct_scanout = DirectScanoutVerdict::Eligible;
+    plan.layers[0].source = BufferSource::DmaBuf { handle: 88 };
+    let fd: OwnedFd = std::fs::File::open("/dev/null").unwrap().into();
+    let source = LiveOwnedHeadCompositionSource {
+        surface: SurfaceId::new(3, 1),
+        source: BufferSource::DmaBuf { handle: 88 },
+        kind: LiveOwnedHeadCompositionSourceKind::DmaBuf {
+            image_id: LiveRendererImageId::from_raw(10),
+            frame: LiveOwnedMultiPlaneDmaBufFrame {
+                width: 600,
+                height: 450,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                modifier: 0,
+                plane_count: 1,
+                planes: [
+                    Some(LiveOwnedDmaBufPlane {
+                        fd,
+                        offset: 0,
+                        stride: 2_400,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+        },
+    };
+
+    let lowered = lower_head_composition_plan(&plan, std::slice::from_ref(&source)).unwrap();
+    assert_eq!(lowered.direct_scanout, DirectScanoutVerdict::Eligible);
 }
 
 /// Which refusals mean Engine's proof and the pixels disagree, and which are
