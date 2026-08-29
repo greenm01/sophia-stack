@@ -2194,11 +2194,21 @@ other mature compositors are references rather than Sophia runtime components.
   session loaded: thirty-eight client buffers on the plane from one validating
   commit, no test rejections, no proof disagreements, no unsupported formats,
   no fallbacks, and a clean retirement and session end.
-- [ ] Prove that effect or overlay activation returns a directly scanned output
+- [x] Prove that effect or overlay activation returns a directly scanned output
   to composition without a lost or stale frame, and that later removal restores
   eligibility only through a fresh Engine proof and a fresh backend atomic
-  test. The model covers both and the episode counters record them; no physical
-  run has yet opened an overlay over a directly scanned frame.
+  test. Direct-scanout archive `0002` promotes it: ten direct flips, an
+  overlay opened by the session's own proof control through the same
+  `set_descriptor_overlay` entry the shell uses, a composed successor built
+  from the client's still-held planes and retired inside the window with the
+  displaced buffer's snapshot promoted before its release, withdrawal, a
+  second validating commit, and flips resumed to a clean bounded completion.
+  Getting there fixed three boundary defects the offline suite could not
+  reach: the retained requeue sourced a never-imported renderer image for a
+  direct frame, the lowering carried an eligibility verdict that stopped
+  being true when it substituted the snapshot, and the conformance readers
+  anchored records to the line start and so had never actually run the
+  episode-order rules against decorated hardware evidence.
 - [ ] Measure whether a direct frame costs less than a composed one. It skips a
   whole composition pass, so dwell-to-submit should not regress and may
   improve, but the input-latency harness cannot answer it: that harness needs
