@@ -797,10 +797,20 @@ session_args+=("$@")
 # The profile-shape check in the launcher runs while the display manager is
 # still up; this one covers what that cannot know -- the client arguments this
 # particular run assembled.
+# The accepted record must appear, not merely a zero exit. A binary from before
+# the flag existed ignores it and starts a real session instead -- which here,
+# with the display manager already down, means taking DRM at the validation
+# step. A validation that might not be one is worse than none.
 if ! "$ROOT_DIR/target/release/sophia" sophia-live-session --validate-session-args \
-    "${session_args[@]:1}" >/dev/null 2>"$STATE_DIR/session-args-check.log"; then
+    "${session_args[@]:1}" >"$STATE_DIR/session-args-check.log" \
+    2>"$STATE_DIR/session-args-check.err"; then
     echo "The assembled session arguments would be refused:" >&2
-    cat "$STATE_DIR/session-args-check.log" >&2
+    cat "$STATE_DIR/session-args-check.err" >&2
+    exit 1
+fi
+if ! grep -q '^sophia_live_session_args schema=1 status=accepted' \
+    "$STATE_DIR/session-args-check.log"; then
+    echo "This sophia binary does not support --validate-session-args; rebuild it." >&2
     exit 1
 fi
 session_environment=(
