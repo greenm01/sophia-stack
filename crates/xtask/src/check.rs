@@ -1,19 +1,24 @@
 //! Canonical deterministic repository checks.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub fn run(repo: &Path, arguments: &[String]) -> Result<(), String> {
+/// Runs the offline gate and returns what it has to say.
+///
+/// Returning the summary rather than printing it keeps the printing in the
+/// binary, where the layout rule puts it: a library that prints has decided
+/// for every caller how its result is presented.
+pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     match arguments {
         [] => all(repo),
-        [subject] if subject == "layout" => layout(repo),
+        [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),
     }
 }
 
-fn all(repo: &Path) -> Result<(), String> {
+fn all(repo: &Path) -> Result<Vec<String>, String> {
     command(repo, "cargo", &["fmt", "--all", "--check"])?;
     command(repo, "git", &["diff", "--check"])?;
     command_quiet(
@@ -46,6 +51,7 @@ fn all(repo: &Path) -> Result<(), String> {
     sophia_conformance::profile::check_every_profile(&[])?;
     layout(repo)?;
     anchored_readers(repo)?;
+    let report = vec![archives(repo)?];
     for tool in [
         "tools/check_direct_scanout_verifier.sh",
         "tools/check_direct_scanout_archive_verifier.sh",
@@ -55,7 +61,93 @@ fn all(repo: &Path) -> Result<(), String> {
     ] {
         command(repo, tool, &[])?;
     }
-    Ok(())
+    Ok(report)
+}
+
+/// Promoted archives, re-verified as a regression corpus.
+///
+/// These are the only decorated, real-hardware evidence the repo owns, and
+/// the verifiers that read them are the code most likely to rot silently: a
+/// reader that stops matching still returns Ok on a synthetic fixture built
+/// from the same assumption it just broke. Re-verifying the archives is how a
+/// broken reader is caught by a machine rather than by a burned TTY.
+///
+/// Absent families are reported and never fail. This runs on machines that
+/// have never promoted anything, and a missing corpus is not a defect.
+fn archives(repo: &Path) -> Result<String, String> {
+    let Some(root) = promotion_root() else {
+        return Ok("archives: no state home, corpus skipped".to_owned());
+    };
+    let families: [(&str, ArchiveVerifier); 3] = [
+        (
+            "hagia-native-runs",
+            ArchiveVerifier::Tool("tools/verify_hagia_native_session_archive.sh"),
+        ),
+        (
+            "mirror-group-runs",
+            ArchiveVerifier::Tool("tools/verify_mirror_group_physical_archive.sh"),
+        ),
+        ("direct-scanout-runs", ArchiveVerifier::DirectScanout),
+    ];
+    let mut summary = Vec::new();
+    let mut absent = Vec::new();
+    for (family, verifier) in families {
+        let directory = root.join(family);
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            absent.push(family);
+            continue;
+        };
+        let mut runs = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect::<Vec<_>>();
+        runs.sort();
+        if runs.is_empty() {
+            absent.push(family);
+            continue;
+        }
+        let total = runs.len();
+        for run in runs {
+            let outcome = match verifier {
+                ArchiveVerifier::Tool(tool) => command_quiet(
+                    repo,
+                    &repo.join(tool).display().to_string(),
+                    &[&run.display().to_string()],
+                ),
+                ArchiveVerifier::DirectScanout => {
+                    sophia_conformance::direct_scanout_archive::verify_archive(repo, &run)
+                }
+            };
+            outcome.map_err(|error| {
+                format!(
+                    "promoted archive {} no longer verifies: {error}\nEither this change broke a verifier, or the archive was altered. Both are worth stopping for.",
+                    run.display()
+                )
+            })?;
+        }
+        summary.push(format!("{family} {total}/{total}"));
+    }
+    if !absent.is_empty() {
+        summary.push(format!("(absent: {})", absent.join(" ")));
+    }
+    Ok(format!("archives: {}", summary.join("  ")))
+}
+
+enum ArchiveVerifier {
+    Tool(&'static str),
+    DirectScanout,
+}
+
+fn promotion_root() -> Option<PathBuf> {
+    let state = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".local/state"))
+        })?;
+    Some(state.join("sophia/promotion"))
 }
 
 /// Session-log readers must find their records by marker, not by line start.

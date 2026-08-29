@@ -201,7 +201,30 @@ pub fn verify_archive(repo: &Path, run: &Path) -> Result<(), String> {
             run.display()
         ));
     }
-    direct_scanout::verify_standalone_logs(&[evidence.display().to_string()])?;
+    // An archive re-verifies under the rules that promoted it, not under
+    // today's default. A run that opened an overlay proved something stronger
+    // -- the return to composition and back -- and re-verifying it as an
+    // ordinary run would quietly stop checking the harder half.
+    //
+    // The manifest says so when it can (`proof=overlay`), and the evidence
+    // says so when the manifest predates the field. Both are consulted rather
+    // than either alone: the field cannot be added to an already-checksummed
+    // archive, and evidence alone would let a plain run that happened to
+    // contain a stray record decide its own rules.
+    let declared = manifest
+        .iter()
+        .any(|(key, value)| key == "proof" && value == "overlay");
+    let observed = evidence_text.contains("sophia_live_direct_scanout_overlay_proof schema=1 ");
+    if declared && !observed {
+        return Err(format!(
+            "direct-scanout manifest declares an overlay proof its evidence does not contain: {}",
+            run.display()
+        ));
+    }
+    direct_scanout::verify_standalone_logs_with_overlay(
+        &[evidence.display().to_string()],
+        declared || observed,
+    )?;
     Ok(())
 }
 
@@ -217,8 +240,19 @@ fn write_archive(
     fs::copy(evidence, &session).map_err(|error| format!("could not archive evidence: {error}"))?;
     write_private(&run.join("result.kdl"), RESULT.as_bytes())?;
     let recorded_at = command_output("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"])?;
+    // Which proof this run carried, so a later re-verification applies the
+    // rules that promoted it rather than today's default. Read from the
+    // evidence, because the evidence is what was proven.
+    let proof = if fs::read_to_string(&session)
+        .map_err(|error| format!("could not read archived evidence: {error}"))?
+        .contains("sophia_live_direct_scanout_overlay_proof schema=1 ")
+    {
+        "proof=overlay\n"
+    } else {
+        ""
+    };
     let manifest = format!(
-        "record_schema=1\nrecord_kind=direct_scanout\nrecorded_at_utc={}\nsource_commit={}\nevidence_sha256={}\nsophia_binary_sha256={}\nclient_binary_sha256={}\ncore_config_sha256={}\ndesktop_profile_sha256={}\n",
+        "record_schema=1\nrecord_kind=direct_scanout\nrecorded_at_utc={}\nsource_commit={}\nevidence_sha256={}\nsophia_binary_sha256={}\nclient_binary_sha256={}\ncore_config_sha256={}\ndesktop_profile_sha256={}\n{proof}",
         recorded_at.trim(),
         identity.source_commit,
         evidence_sha256,

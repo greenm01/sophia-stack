@@ -127,4 +127,31 @@ sed -i 's/^record_kind=.*/record_kind=hagia_native_session/' "$wrong_kind/manife
 (cd "$wrong_kind" && sha256sum manifest result.kdl session.log >SHA256SUMS)
 reject "an archive recording another kind of run" "$wrong_kind" "another kind of run"
 
+# An archive re-verifies under the rules that promoted it. A manifest may
+# declare `proof=overlay`, and evidence carrying overlay records says the same
+# thing for archives written before the field existed. Both are consulted:
+# without the manifest an older overlay run would quietly re-verify as an
+# ordinary one, and without the evidence check a field could outlive the proof
+# it names.
+declared_only="$temp_dir/declared-without-evidence"
+cp -r "$archive" "$declared_only"
+printf 'proof=overlay\n' >>"$declared_only/manifest"
+(cd "$declared_only" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "a manifest declaring an overlay proof its evidence lacks" "$declared_only" \
+    "does not contain"
+
+# Evidence carrying overlay records must face the overlay rules even with no
+# field to declare them -- this is how archive 0002 keeps being held to the
+# proof it actually made. An activation with no withdrawal is the cheapest
+# violation of those rules that a plain verification would happily accept.
+observed="$temp_dir/observed-overlay"
+cp -r "$archive" "$observed"
+printf 'sophia_live_direct_scanout_overlay_proof schema=1 status=activated output=1 flips_before=10\n' \
+    >>"$observed/session.log"
+sed -i "s/^evidence_sha256=.*/evidence_sha256=$(sha256sum "$observed/session.log" | awk '{ print $1 }')/" \
+    "$observed/manifest"
+(cd "$observed" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "evidence with overlay records verified as an ordinary run" "$observed" \
+    "never withdrew"
+
 echo "direct scanout archive verifier checks passed"

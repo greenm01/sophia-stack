@@ -28,7 +28,7 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
-        Some("check") => check::run(&workspace_root()?, &arguments[1..]),
+        Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("profile") => run_profile(&arguments[1..]),
         Some("conformance") => run_conformance(&arguments[1..]),
         // Compatibility aliases for callers introduced before grouping.
