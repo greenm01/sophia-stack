@@ -184,6 +184,18 @@ check_retry_classifier() {
     fi
 
     rm -rf -- "$fixture"
+
+    # The classifier was right and unconsulted once already: a stall that
+    # ended a session before it asked for input took the earlier exit, which
+    # knew nothing about stalls, and killed a thirty-four sample run. Both
+    # failure paths must ask.
+    local consulted
+    consulted="$(grep -c 'is_retryable_page_flip_stall "\$session_log"' "${BASH_SOURCE[0]}")"
+    if ((consulted < 2)); then
+        echo "only $consulted failure path consults the stall classifier; both must" >&2
+        status=1
+    fi
+
     ((status == 0)) || return "$status"
     echo "Sophia input latency retry classifier checks passed"
 }
@@ -445,6 +457,22 @@ for ((sample = 1; sample <= SAMPLES; sample++)); do
                 "$sample" "$attempt" | tee -a "$sample_dir/attempts.log"
             sleep 0.1
             continue
+        fi
+        # A stall can also end a session before it ever asks for input, and
+        # that sample has produced even less than one that stalled later. The
+        # budget is shared with the post-injection path because it counts the
+        # same fault: a display that stopped completing flips, wherever in the
+        # session it happened to stop.
+        if ((stall_retries < MAX_PAGE_FLIP_STALL_RETRIES)) &&
+            is_retryable_page_flip_stall "$session_log"; then
+            stall_retries=$((stall_retries + 1))
+            stalled_dir="$PENDING/stalled-sample-$(printf '%03d' "$sample").attempt-$stall_retries"
+            mv "$sample_dir" "$stalled_dir"
+            printf 'sophia_input_latency_runner schema=1 status=retrying sample=%s stall_retry=%s/%s reason=page_flip_stall_before_readiness evidence=%s\n' \
+                "$sample" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" \
+                "$(basename "$stalled_dir")" | tee -a "$PENDING/stall-retries.log"
+            sample=$((sample - 1))
+            continue 2
         fi
         fail "Sophia exited before sample $sample requested physical input (status $proof_status)"
     done
