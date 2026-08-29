@@ -407,3 +407,49 @@ fn a_decorated_flip_inside_the_window_is_still_refused() {
     let error = overlay_verification(&text).unwrap_err();
     assert!(error.contains("while the overlay was up"), "{error}");
 }
+
+/// Attempts with no readable episode records mean the reader is blind.
+///
+/// This is the rule that was missing. Every attempt emits an `exported`
+/// record, so counters without episodes is not a quiet session -- it is a
+/// matcher failing to match. `episode_sessions=0` sat in every gate summary
+/// from archive 0001 onward while the order rules never ran, and nothing
+/// asked why.
+#[test]
+fn attempts_without_readable_episodes_are_refused() {
+    let text = passing_log()
+        .lines()
+        .filter(|line| !line.contains("sophia_live_direct_scanout schema=1 status="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let directory = TempDir::new();
+    let log = write_log(&directory, &text);
+    let error = direct_scanout::verify_logs(&[log]).unwrap_err();
+    assert!(error.contains("the reader is not matching"), "{error}");
+}
+
+/// A session whose every record is decorated verifies end to end, which is
+/// what the promoted archives actually look like.
+#[test]
+fn a_fully_decorated_session_verifies() {
+    let text = passing_log()
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                line.to_owned()
+            } else {
+                decorated(line)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let directory = TempDir::new();
+    let log = write_log(&directory, &text);
+    let report = direct_scanout::verify_standalone_logs(&[log]).unwrap();
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("episode_sessions=1")),
+        "{report:?}"
+    );
+}

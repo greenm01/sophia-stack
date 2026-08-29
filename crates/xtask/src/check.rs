@@ -45,6 +45,7 @@ fn all(repo: &Path) -> Result<(), String> {
     )?;
     sophia_conformance::profile::check_every_profile(&[])?;
     layout(repo)?;
+    anchored_readers(repo)?;
     for tool in [
         "tools/check_direct_scanout_verifier.sh",
         "tools/check_direct_scanout_archive_verifier.sh",
@@ -55,6 +56,59 @@ fn all(repo: &Path) -> Result<(), String> {
         command(repo, tool, &[])?;
     }
     Ok(())
+}
+
+/// Session-log readers must find their records by marker, not by line start.
+///
+/// Records reach a session log two ways: printed by the session itself, bare;
+/// or emitted through `tracing`, decorated with a timestamp, level, module
+/// path, and ANSI colour. A reader anchored to the line start sees only the
+/// first kind -- and which kind carries a given record is a fact about
+/// plumbing, not about evidence, so it changes without anyone deciding to
+/// change it.
+///
+/// That is not hypothetical. The episode-order rules were anchored, saw none
+/// of their records, and reported `episode_sessions=0` in every gate summary
+/// from archive 0001 onward while never once running. A passing physical run
+/// was then refused by a rule that had never worked.
+///
+/// One reader stays anchored on purpose, and this names it rather than
+/// letting an allowlist grow silently.
+fn anchored_readers(repo: &Path) -> Result<(), String> {
+    let source = repo.join("crates/sophia-conformance/src");
+    let mut offenders = BTreeSet::new();
+    for entry in std::fs::read_dir(&source)
+        .map_err(|error| format!("could not read {}: {error}", source.display()))?
+    {
+        let path = entry
+            .map_err(|error| format!("could not read a conformance source entry: {error}"))?
+            .path();
+        if path.extension().is_none_or(|extension| extension != "rs") {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        if sophia_conformance::direct_scanout::ANCHORED_READER_ALLOWLIST.contains(&name.as_str()) {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+        for (index, line) in text.lines().enumerate() {
+            if line.contains("starts_with(\"sophia_") || line.contains("strip_prefix(\"sophia_") {
+                offenders.insert(format!("{name}:{}", index + 1));
+            }
+        }
+    }
+    if offenders.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "these conformance readers anchor a session record to the line start, so a \n`tracing`-decorated record is invisible to them:\n  {}\nUse `record_after_marker`. If a reader genuinely parses bare stdout rather \nthan a session log, add its file to ANCHORED_READER_ALLOWLIST with the reason.",
+        offenders.into_iter().collect::<Vec<_>>().join("\n  ")
+    ))
 }
 
 fn layout(repo: &Path) -> Result<(), String> {

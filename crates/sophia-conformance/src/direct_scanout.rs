@@ -182,9 +182,11 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
         }
 
         for line in text.lines() {
-            if let Some(head) =
-                line.strip_prefix("sophia_live_direct_scanout_verdicts schema=2 status=head ")
-            {
+            // Per-head verdicts come through `tracing` and carry its prefix.
+            if let Some(head) = record_after_marker(
+                line,
+                "sophia_live_direct_scanout_verdicts schema=2 status=head ",
+            ) {
                 per_head.push(head.trim().to_owned());
             }
             // Geometry records come through `tracing` and carry its prefix.
@@ -202,6 +204,22 @@ fn direct_scanout(logs: &[String]) -> Result<Vec<String>, String> {
 
     if sessions == 0 {
         return Err("no session produced evidence".to_owned());
+    }
+
+    // Every attempt emits an `exported` episode record, so attempts without a
+    // single session whose episodes were seen means this reader is blind --
+    // not that nothing happened. A matcher that cannot find its records does
+    // not fail; it passes, or refuses, vacuously, and reports neither.
+    //
+    // This is the rule that was missing. `episode_sessions=0` sat in every
+    // gate summary from archive 0001 onward while the episode-order checks
+    // never once ran against hardware evidence, because the records arrive
+    // decorated by `tracing` and the reader was anchored to the line start.
+    if totals.attempts > 0 && episode_sessions == 0 {
+        return Err(format!(
+            "{} direct-scanout attempts produced no readable episode records across {sessions} sessions: the reader is not matching this evidence",
+            totals.attempts
+        ));
     }
 
     let histogram = DirectScanoutVerdict::VERDICTS
@@ -272,10 +290,10 @@ pub fn verify_standalone_logs_with_overlay(
                 "a window manager ran; its chrome makes every frame ineligible: {log}"
             ));
         }
-        if !text
-            .lines()
-            .any(|line| line.starts_with("sophia_live_session_present schema=2 status=retired "))
-        {
+        if !text.lines().any(|line| {
+            record_after_marker(line, "sophia_live_session_present schema=2 status=retired ")
+                .is_some()
+        }) {
             return Err(format!("the client never presented a frame: {log}"));
         }
     }
@@ -294,8 +312,17 @@ pub fn verify_standalone_logs_with_overlay(
     Ok(report)
 }
 
-fn last_record<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
-    text.lines().rfind(|line| line.starts_with(prefix))
+/// The last record carrying this marker, from the marker onward.
+///
+/// Marker-based like every other reader here. These particular records happen
+/// to arrive bare today, because the session prints them itself rather than
+/// emitting them through `tracing` -- but that is a fact about which printer
+/// owns each record, not a property of the evidence, and reading them as
+/// though it were guaranteed is what made the episode rules vacuous.
+fn last_record<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
+    text.lines()
+        .rev()
+        .find_map(|line| record_after_marker(line, marker))
 }
 
 /// The remainder of a record line after its marker, wherever the marker sits.
@@ -308,6 +335,15 @@ fn last_record<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
 pub(crate) fn record_after_marker<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
     line.find(marker).map(|start| &line[start + marker.len()..])
 }
+
+/// Readers that must stay anchored, and why.
+///
+/// `profile.rs` reads a captured child's stdout, which is bare by
+/// construction -- no `tracing` layer decorates it, and matching mid-line
+/// there would accept a record quoted inside another line. Everything that
+/// reads a *session log* must be marker-based; `cargo xtask check` enforces
+/// that with an allowlist naming this one exception.
+pub const ANCHORED_READER_ALLOWLIST: [&str; 1] = ["profile.rs"];
 
 /// Whether the episode records are in a lawful order, and whether there were
 /// any. The counters cannot rule out a flip for a scene that was never
