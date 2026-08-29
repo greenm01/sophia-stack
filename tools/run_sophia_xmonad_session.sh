@@ -605,29 +605,50 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             echo "SOPHIA_STANDALONE_WIDTH and SOPHIA_STANDALONE_HEIGHT must be positive integers." >&2
             exit 1
         }
-        # No window manager means no one to fullscreen this, so it is sized in
-        # pixels to the head it will land on. `px` is not decoration: a bare
-        # number is a count of cells.
+        # No window manager means no one to fullscreen this, so it is sized to
+        # the head it will land on. A bare number is already pixels here; a `c`
+        # suffix would mean cells, and a `px` suffix is a parse error that
+        # Kitty reports as "errors parsing configuration" inside its own
+        # window, where a session log never sees it.
         #
         # Opaque, because a translucent background makes the client's alpha
         # part of the image and nothing behind it would be drawn on a plane.
         # Its own config is ignored so the probe does not depend on a dotfile.
+        kitty_overrides=(
+            linux_display_server=x11
+            background_opacity=1
+            remember_window_size=no
+            "initial_window_width=$standalone_width"
+            "initial_window_height=$standalone_height"
+            confirm_os_window_close=0
+        )
         session_args+=(
             --session-app-arg=standalone=--config
             --session-app-arg=standalone=NONE
-            --session-app-arg=standalone=--override
-            --session-app-arg=standalone=linux_display_server=x11
-            --session-app-arg=standalone=--override
-            --session-app-arg=standalone=background_opacity=1
-            --session-app-arg=standalone=--override
-            --session-app-arg=standalone=remember_window_size=no
-            --session-app-arg=standalone=--override
-            "--session-app-arg=standalone=initial_window_width=${standalone_width}px"
-            --session-app-arg=standalone=--override
-            "--session-app-arg=standalone=initial_window_height=${standalone_height}px"
-            --session-app-arg=standalone=--override
-            --session-app-arg=standalone=confirm_os_window_close=0
         )
+        for override in "${kitty_overrides[@]}"; do
+            session_args+=(
+                --session-app-arg=standalone=--override
+                "--session-app-arg=standalone=$override"
+            )
+        done
+        # Kitty reports a bad override as "errors parsing configuration" inside
+        # its own window, which a session log never sees and which costs a
+        # whole physical run to discover -- `initial_window_width=2560px` did
+        # exactly that. Its own parser answers here, before anything takes DRM.
+        kitty_override_check=()
+        for override in "${kitty_overrides[@]}"; do
+            kitty_override_check+=("${override/=/ }")
+        done
+        if ! "$standalone_bin" +runpy 'import sys
+from kitty.config import parse_config
+for spec in sys.argv[1:]:
+    parse_config([spec])
+' "${kitty_override_check[@]}" >/dev/null 2>"$STATE_DIR/kitty-override-check.log"; then
+            echo "Kitty refused one of the probe's overrides:" >&2
+            cat "$STATE_DIR/kitty-override-check.log" >&2
+            exit 1
+        fi
         # A bounded client, so the run needs no operator beyond starting it:
         # the shell exits and `--exit-when-startup-exits` ends the session.
         # Must come last -- everything after the command is the command's.
