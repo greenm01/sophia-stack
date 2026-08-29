@@ -117,11 +117,26 @@ impl SessionApplicationConfig {
         Ok(())
     }
 
+    /// Which of a profile's shortcuts this session can actually perform.
+    ///
+    /// A binding naming a capability the session does not have would do
+    /// nothing when pressed, so an author who wrote it wants to hear about it
+    /// and the session refuses. A *compiled default* profile has no author: it
+    /// is the fallback loaded whenever no user profile is found, so its
+    /// bindings describe a full desktop rather than this session's intent.
+    /// Refusing on those made every single-application session unstartable --
+    /// `--no-config`, and any machine with no `~/.config/sophia` at all -- for
+    /// nineteen days, because nothing that ran regularly took that path.
+    ///
+    /// So a default's unsatisfiable bindings are dropped and reported, and an
+    /// explicit profile's are still an error.
     pub(super) fn validate_shortcuts(
         &self,
         shortcuts: &sophia_config::DesktopShortcutCandidate,
         shell_enabled: bool,
-    ) -> Result<(), SessionApplicationConfigError> {
+        profile_is_compiled_default: bool,
+    ) -> Result<Vec<sophia_config::DesktopSessionShortcut>, SessionApplicationConfigError> {
+        let mut dropped = Vec::new();
         for binding in &shortcuts.bindings {
             let available = match binding.target {
                 sophia_config::DesktopShortcutTarget::PolicyAction(_) => true,
@@ -141,11 +156,19 @@ impl SessionApplicationConfig {
                     sophia_config::DesktopSessionShortcut::WindowSwitcher,
                 ) => shell_enabled,
             };
-            if !available {
+            if available {
+                continue;
+            }
+            if !profile_is_compiled_default {
                 return Err(SessionApplicationConfigError::UnavailableShortcutCapability);
             }
+            if let sophia_config::DesktopShortcutTarget::Session(shortcut) = binding.target {
+                if !dropped.contains(&shortcut) {
+                    dropped.push(shortcut);
+                }
+            }
         }
-        Ok(())
+        Ok(dropped)
     }
 }
 

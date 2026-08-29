@@ -1387,6 +1387,32 @@
     if !control_metrics.is_drained(session_controls.pending_len()) {
         return Err("persistent session controls did not drain cleanly".into());
     }
+    // Shortcuts the profile asked for that this session cannot perform. Always
+    // emitted, so `dropped=0` is the ordinary case rather than silence: a
+    // session where Super+Return does nothing should say so somewhere, and
+    // before this it neither said so nor started.
+    {
+        let profile = config.shortcut_profile_candidate.profile.as_str();
+        let dropped = &config.dropped_shortcuts;
+        let targets = if dropped.is_empty() {
+            "none".to_owned()
+        } else {
+            dropped
+                .iter()
+                .map(|shortcut| shortcut.profile_name())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        println!(
+            "sophia_live_session_shortcuts schema=1 status=complete profile={profile} dropped={} targets={targets} shell={}",
+            dropped.len(),
+            if config.shell_dropped {
+                "dropped"
+            } else {
+                "kept"
+            },
+        );
+    }
     let key_metrics = client_keys.metrics();
     let repeat_metrics = key_repeat.metrics();
     println!(

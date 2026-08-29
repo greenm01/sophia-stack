@@ -47,6 +47,21 @@ pub enum DesktopSessionShortcut {
     WindowSwitcher,
 }
 
+impl DesktopSessionShortcut {
+    /// The name this shortcut is written as in a profile, and the name it is
+    /// reported by. One vocabulary, so a record naming a dropped shortcut can
+    /// be matched against the profile line that asked for it.
+    pub const fn profile_name(self) -> &'static str {
+        match self {
+            Self::CloseFocused => "close-window",
+            Self::Logout => "logout",
+            Self::LaunchTerminal => "spawn-terminal",
+            Self::LaunchBrowser => "spawn-browser",
+            Self::WindowSwitcher => "window-switcher",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DesktopShortcutTarget {
     PolicyAction(String),

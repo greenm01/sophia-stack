@@ -561,25 +561,7 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         fi
         install -m 600 "$standalone_wm_template" "$standalone_wm_config"
     fi
-    # `--no-config` loads the compiled desktop profile, whose shortcuts bind
-    # spawn-terminal and spawn-browser. A session running one application
-    # declares neither, so it is refused before it starts with
-    # `UnavailableShortcutCapability` -- which has left this whole profile
-    # unstartable since 29b9424b. The direct-scanout probe supplies a profile
-    # binding only what this session can do; the two are mutually exclusive,
-    # so the flag chooses between them.
-    if (( standalone_direct_scanout == 1 )); then
-        standalone_desktop_template="$ROOT_DIR/tools/fixtures/direct_scanout_desktop.kdl"
-        standalone_desktop_profile="$STATE_DIR/standalone-desktop.kdl"
-        if [[ ! -f "$standalone_desktop_template" ]]; then
-            echo "The standalone desktop profile is missing: $standalone_desktop_template" >&2
-            exit 1
-        fi
-        install -m 600 "$standalone_desktop_template" "$standalone_desktop_profile"
-        session_args+=("--desktop-profile=$standalone_desktop_profile")
-    else
-        session_args+=(--no-config)
-    fi
+    session_args+=(--no-config)
     session_args+=(
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone

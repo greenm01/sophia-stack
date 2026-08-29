@@ -88,6 +88,13 @@ struct PersistentXtermSessionConfig {
     initial_caps_lock: bool,
     initial_num_lock: bool,
     shortcut_profile_candidate: sophia_config::DesktopShortcutCandidate,
+    /// Whether the compiled default profile's shell was turned off because
+    /// this session has nothing to run it with.
+    shell_dropped: bool,
+    /// Shortcuts the compiled default profile named that this session cannot
+    /// perform, dropped rather than refused. Empty for an explicit profile,
+    /// which refuses instead.
+    dropped_shortcuts: Vec<sophia_config::DesktopSessionShortcut>,
     input_profile: PreparedInputProfile,
     output_profile: PreparedOutputProfile,
     desktop_profile: sophia_config::DesktopProfileGeneration,
@@ -573,23 +580,37 @@ impl PersistentXtermSessionConfig {
         }) {
             return Err("--shell-process requires an absolute path".into());
         }
-        let live_shell_enabled = shell_enabled && normal_session;
+        let profile_is_compiled_default = desktop_profile_source.is_none();
+        let resolved_shell_process = || -> Option<String> {
+            explicit_shell_process.clone().or_else(|| {
+                wm_process.as_ref().and_then(|process| {
+                    let process = std::path::Path::new(process);
+                    process.is_absolute().then(|| {
+                        let parent = process
+                            .parent()
+                            .expect("an absolute executable has a parent");
+                        parent.join("hagia-shell").to_string_lossy().into_owned()
+                    })
+                })
+            })
+        };
+        // The compiled default profile enables a shell, because it describes a
+        // full desktop. A session running one application has no shell process
+        // and no window manager to infer one beside, and refusing on that made
+        // every such session unstartable. A default asking for a desktop this
+        // session is not gets the shell turned off and reported; an explicit
+        // profile still refuses, because someone wrote that intent down.
+        let shell_dropped = shell_enabled
+            && normal_session
+            && profile_is_compiled_default
+            && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
+                || resolved_shell_process().is_none());
+        let live_shell_enabled = shell_enabled && normal_session && !shell_dropped;
         let shell_process = if live_shell_enabled {
             if wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
                 return Err("an enabled shell requires --wm-interface=sophia_wm_v1".into());
             }
-            let process = explicit_shell_process
-                .or_else(|| {
-                    wm_process.as_ref().and_then(|process| {
-                        let process = std::path::Path::new(process);
-                        process.is_absolute().then(|| {
-                            let parent = process
-                                .parent()
-                                .expect("an absolute executable has a parent");
-                            parent.join("hagia-shell").to_string_lossy().into_owned()
-                        })
-                    })
-                })
+            let process = resolved_shell_process()
                 .ok_or("an enabled shell requires --shell-process or an absolute WM path")?;
             Some(process)
         } else {
@@ -630,9 +651,20 @@ impl PersistentXtermSessionConfig {
         if shell_proof_restart_after_visible.is_some() && shell_process.is_none() {
             return Err("--shell-proof-restart-after-visible requires an enabled shell".into());
         }
-        if normal_session && wm_process.is_some() {
-            applications.validate_shortcuts(&shortcut_profile_candidate, live_shell_enabled)?;
-        }
+        // Every normal session, not only one running a window manager. The
+        // `wm_process.is_some()` this replaces meant a session without one was
+        // never told that a binding it carried could do nothing -- which is
+        // most single-application proofs, and now the standalone and native
+        // profiles too.
+        let dropped_shortcuts = if normal_session {
+            applications.validate_shortcuts(
+                &shortcut_profile_candidate,
+                live_shell_enabled,
+                profile_is_compiled_default,
+            )?
+        } else {
+            Vec::new()
+        };
         let (wm_public_fault_after, wm_public_restart_after_action) =
             wm_proof::parse_wm_proof_controls(args, wm_process.is_some(), max_runtime)?;
         let output_proof_rollback_after_apply = parse_output_proof_rollback_after_apply(
@@ -812,6 +844,8 @@ impl PersistentXtermSessionConfig {
             initial_caps_lock,
             initial_num_lock,
             shortcut_profile_candidate,
+            shell_dropped,
+            dropped_shortcuts,
             input_profile,
             output_profile,
             desktop_profile,

@@ -1314,48 +1314,149 @@ fn live_xauthority_file_is_owner_only_valid_and_removed_on_drop() {
     std::fs::remove_dir(directory).unwrap();
 }
 
-/// The argument set the standalone single-application profile builds, kept
-/// startable.
+/// A session running one application starts under the compiled default
+/// profile, and says which of its shortcuts it dropped.
 ///
-/// `--no-config` loads the compiled desktop profile, whose shortcuts bind
-/// spawn-terminal and spawn-browser. A session running one application
-/// declares neither, so shortcut validation refuses it before it starts. That
-/// left the whole standalone profile unstartable from 29b9424b until a
-/// physical run tripped over it, because nothing here described the arguments
-/// the runner actually passes.
+/// The compiled profile binds spawn-terminal and spawn-browser. It is the
+/// fallback loaded whenever no user profile is found -- `--no-config`, and any
+/// machine with no `~/.config/sophia` -- so refusing on it made every
+/// single-application session unstartable from 29b9424b until a physical run
+/// tripped over it, nineteen days later.
 #[test]
-fn the_standalone_single_application_argument_set_still_starts() {
+fn a_single_application_session_drops_default_shortcuts_it_cannot_perform() {
+    let config = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        "--no-config".to_owned(),
+        "--session-app=standalone=/usr/bin/true".to_owned(),
+        "--session-start=standalone".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+    ])
+    .expect("a single-application session starts under the compiled profile");
+
+    // Named, not silently ignored: a session where Super+Return does nothing
+    // should say so, and reporting it is what makes the drop reviewable.
+    let dropped = config
+        .dropped_shortcuts
+        .iter()
+        .map(|shortcut| shortcut.profile_name())
+        .collect::<Vec<_>>();
+    assert!(
+        dropped.contains(&"spawn-terminal") && dropped.contains(&"spawn-browser"),
+        "expected the unavailable spawn shortcuts to be named: {dropped:?}"
+    );
+    // Nothing else was dropped. Logout and close-window need no application,
+    // and dropping them would mean the session could not be left.
+    assert!(
+        !dropped.contains(&"logout") && !dropped.contains(&"close-window"),
+        "dropped a shortcut that needs no application: {dropped:?}"
+    );
+}
+
+/// An author who wrote an unsatisfiable binding still hears about it.
+///
+/// This is the half of the old behaviour worth keeping: a profile someone
+/// wrote by hand states intent, and a binding in it that can do nothing is a
+/// mistake rather than a default that does not apply.
+#[test]
+fn an_explicit_profile_still_refuses_a_shortcut_the_session_cannot_perform() {
     let profile = std::env::temp_dir().join(format!(
-        "sophia-standalone-desktop-{}-{}.kdl",
+        "sophia-explicit-shortcut-{}-{}.kdl",
         std::process::id(),
         line!()
     ));
-    // The shipped fixture itself, not a copy of it: the runner installs this
-    // exact file, so a test carrying its own inline version would keep passing
-    // after the real one drifted. Copied because a desktop profile must be
-    // mode 600, which is what the runner's `install -m 600` gives it.
-    let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/fixtures/direct_scanout_desktop.kdl");
-    std::fs::copy(&shipped, &profile).unwrap();
+    std::fs::write(
+        &profile,
+        concat!(
+            "schema 1\n",
+            "shell { enabled #false; }\n",
+            "shortcut {\n",
+            "  profile \"explicit\"\n",
+            "  bind \"Super+Return\" \"session:spawn-terminal\"\n",
+            "}\n",
+        ),
+    )
+    .unwrap();
     {
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
 
-    // The argument vector the direct-scanout probe actually builds, including
-    // the client arguments and the absence of `--wm-process`: two physical
-    // runs died here, once on shortcut validation and once on a window manager
-    // that no longer has a serving mode, and neither was described anywhere a
-    // test could see it.
+    let refused = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        format!("--desktop-profile={}", profile.display()),
+        "--session-app=standalone=/usr/bin/true".to_owned(),
+        "--session-start=standalone".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+    ]);
+
+    assert!(
+        refused.is_err(),
+        "an explicit profile naming an unavailable capability was accepted"
+    );
+    std::fs::remove_file(&profile).unwrap();
+}
+
+/// An explicit profile that enables a shell still refuses without one.
+///
+/// The compiled default's shell is turned off for a session that cannot run
+/// it, because the default describes a desktop rather than this session. A
+/// profile someone wrote is different: silently dropping its shell would take
+/// the indicator strip and the switcher out of a Hagia session without saying
+/// so, and the gate asserting they are visible would fail somewhere else
+/// entirely.
+#[test]
+fn an_explicit_profile_enabling_a_shell_still_refuses_without_one() {
+    let profile = std::env::temp_dir().join(format!(
+        "sophia-explicit-shell-{}-{}.kdl",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::write(
+        &profile,
+        concat!(
+            "schema 1\n",
+            "shell { enabled #true; }\n",
+            "shortcut {\n",
+            "  profile \"explicit-shell\"\n",
+            "  bind \"Ctrl+Alt+Delete\" \"session:logout\"\n",
+            "}\n",
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    let refused = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        format!("--desktop-profile={}", profile.display()),
+        "--session-app=standalone=/usr/bin/true".to_owned(),
+        "--session-start=standalone".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+    ]);
+
+    assert!(
+        refused.is_err(),
+        "an explicit profile enabling a shell started without one"
+    );
+    std::fs::remove_file(&profile).unwrap();
+}
+
+/// The argument vector the standalone single-application probe builds.
+///
+/// Two physical runs died in argument validation on things nothing described,
+/// so this carries the whole vector rather than a fragment of it. It caught a
+/// third on the way in: `--native-scanout` is gated on an environment variable
+/// the runner exports, and it is left out below with that reason stated,
+/// because setting one from a test races every other test in the process.
+#[test]
+fn the_standalone_single_application_argument_set_still_starts() {
     let accepted = PersistentXtermSessionConfig::from_args(&[
         "--session-mode=normal".to_owned(),
         "--display=:77".to_owned(),
-        // `--native-scanout` is deliberately absent: it is gated on an
-        // environment variable the runner exports, and setting one from a test
-        // races every other test in the process. Its own gate refused this
-        // vector when it was included, which is the check working.
         "--startup-ready-timeout-ms=8000".to_owned(),
-        format!("--desktop-profile={}", profile.display()),
+        "--no-config".to_owned(),
         "--session-app=standalone=/usr/bin/true".to_owned(),
         "--session-start=standalone".to_owned(),
         "--exit-when-startup-exits".to_owned(),
@@ -1377,26 +1478,10 @@ fn the_standalone_single_application_argument_set_still_starts() {
         "--session-app-arg=standalone=-c".to_owned(),
         "--session-app-arg=standalone=sleep 20".to_owned(),
     ]);
+
     assert!(
         accepted.is_ok(),
         "the standalone argument set was refused: {:?}",
         accepted.err()
     );
-
-    // And the control: the same session under the compiled profile is refused,
-    // which is the behaviour that broke the runner. If this ever starts
-    // succeeding, the profile above is no longer buying anything.
-    let refused = PersistentXtermSessionConfig::from_args(&[
-        "--session-mode=normal".to_owned(),
-        "--no-config".to_owned(),
-        "--session-app=standalone=/usr/bin/true".to_owned(),
-        "--session-start=standalone".to_owned(),
-        "--exit-when-startup-exits".to_owned(),
-    ]);
-    assert!(
-        refused.is_err(),
-        "the compiled profile no longer refuses a session with no terminal"
-    );
-
-    std::fs::remove_file(&profile).unwrap();
 }
