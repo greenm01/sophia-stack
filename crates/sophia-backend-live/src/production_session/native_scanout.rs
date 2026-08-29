@@ -2908,10 +2908,20 @@ mod persistent_native_scanout {
                 .any(|head| head.scanout_submission.is_some())
         }
 
+        /// Heads holding a KMS submission the kernel has not retired.
+        ///
+        /// Keyed on the submitted sequence rather than on the retained mirror
+        /// owner. `scanout_submission` exists only on the mirror path, where a
+        /// group parks each head's owner until the cohort joins; an ordinary
+        /// extended-desktop head never sets it, so counting it reported zero
+        /// for every session that was not mirroring -- including the one this
+        /// counter exists to describe. The submitted sequence is set at submit
+        /// and taken at retirement on both paths, which is exactly the window
+        /// "in flight" names.
         pub fn head_scanout_in_flight_count(&self) -> usize {
             self.heads
                 .iter()
-                .filter(|head| head.scanout_submission.is_some())
+                .filter(|head| head.submitted_sequence.is_some())
                 .count()
         }
 
