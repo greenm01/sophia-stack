@@ -375,8 +375,11 @@ where
         }
     }
 
-    pub fn composition_nonzero_rgb_pixels(&self) -> usize {
-        self.inner.composition_nonzero_rgb_pixels()
+    pub fn composition_nonzero_rgb_pixels(
+        &self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
+    ) -> usize {
+        self.inner.composition_nonzero_rgb_pixels(set)
     }
 
     /// Capture pixels on every composed render. Smoke-test instrumentation.
@@ -388,8 +391,9 @@ where
     /// ran for that render.
     pub fn composition_pixel_metrics(
         &self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
     ) -> Option<sophia_renderer_native_egl::NativeCompositionPixelMetrics> {
-        self.inner.composition_pixel_metrics()
+        self.inner.composition_pixel_metrics(set)
     }
 
     pub fn from_backend_device_result(
@@ -541,6 +545,7 @@ where
 
     pub fn export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
         &mut self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
         frame_slot: usize,
         target: LiveGbmEglFrameTargetRecord,
         frame: &crate::LiveCpuComposedFrame,
@@ -559,6 +564,7 @@ where
         reduced_native_owned_scanout_buffer_export_report(
             self.inner
                 .export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    set,
                     frame_slot,
                     target.size.width as u32,
                     target.size.height as u32,
@@ -633,6 +639,7 @@ where
 
     pub fn export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
         &mut self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
         frame_slot: usize,
         target: LiveGbmEglFrameTargetRecord,
         frame: LiveDmaBufFrame<'_>,
@@ -651,6 +658,7 @@ where
         reduced_native_owned_scanout_buffer_export_report(
             self.inner
                 .export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    set,
                     frame_slot,
                     sophia_renderer_native_egl::NativeDmaBufFrame {
                         width: frame.width,
@@ -688,7 +696,7 @@ where
         layers: &[LiveMixedCompositionLayer<'_>],
         preferred_modifiers: &[u64],
         trace: Option<LiveCompositionTrace>,
-        frame_slot: Option<usize>,
+        frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
         repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         if !target.is_valid_scanout_target() {
@@ -810,9 +818,10 @@ where
             repaint,
         };
         let report = match frame_slot {
-            Some(frame_slot) => self
+            Some((set, frame_slot)) => self
                 .inner
                 .export_composed_owned_scanout_buffer_with_modifiers_in_frame_slot(
+                    set,
                     frame_slot,
                     native_frame,
                     preferred_modifiers,
@@ -846,6 +855,7 @@ where
     /// the caller's history says the slot's buffer owes at each possible age.
     pub fn export_owned_mixed_frame_with_modifiers_in_frame_slot(
         &mut self,
+        set: sophia_renderer_native_egl::NativeFrameTargetSetId,
         frame_slot: usize,
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
@@ -856,7 +866,7 @@ where
             target,
             frame,
             preferred_modifiers,
-            Some(frame_slot),
+            Some((set, frame_slot)),
             repaint,
         )
     }
@@ -866,7 +876,7 @@ where
         target: LiveGbmEglFrameTargetRecord,
         frame: &LiveOwnedMixedCompositionFrame,
         preferred_modifiers: &[u64],
-        frame_slot: Option<usize>,
+        frame_slot: Option<(sophia_renderer_native_egl::NativeFrameTargetSetId, usize)>,
         repaint: Option<&sophia_renderer_native_egl::NativeCompositionRepaintTable>,
     ) -> Result<NativeGbmOwnedScanoutBufferExportReport, LiveMixedCompositionError> {
         // Capture client DMA-BUFs before assembling the output frame. Retained

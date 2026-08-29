@@ -49,12 +49,12 @@ where
             self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
             self.destroy_persistent_composition_target(persistent);
         }
-        if let Some(persistent) = self.composition_target.as_mut() {
-            let capture_pixels = self.capture_pixels_always
-                || native_composition_pixel_proof_capture(
-                self.composition_pixel_proof_attempts,
+        let capture_pixels = self.capture_pixels_always
+            || native_composition_pixel_proof_capture(
+                self.current_proof_attempts(),
                 frame.layers.len(),
             );
+        if let Some(persistent) = self.composition_target.as_mut() {
             let render_started = Instant::now();
             let rendered = render_native_target_composition(
                 &self.egl,
@@ -78,19 +78,22 @@ where
             self.last_render_buffer_age = render_evidence.buffer_age;
             self.last_render_repaint = render_evidence.repaint;
             self.last_render_target_generation = Some(persistent.generation);
-            self.proven_composition_nonzero_rgb_pixels =
-                retain_native_composition_nonzero_proof(
-                    self.proven_composition_nonzero_rgb_pixels,
-                    pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
-                    render_evidence.traced_nonzero_rgb_pixels,
-                );
+            // Against the set that owns the bundle just rendered, not against
+            // whichever output rendered last: this is one output's evidence.
+            let retained = retain_native_composition_nonzero_proof(
+                self.current_proven_nonzero(),
+                pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
+                render_evidence.traced_nonzero_rgb_pixels,
+            );
+            let set = self.current_set_mut();
+            set.proven_composition_nonzero_rgb_pixels = retained;
             if capture_pixels {
-                self.composition_pixel_proof_attempts =
-                    self.composition_pixel_proof_attempts.saturating_add(1);
+                set.composition_pixel_proof_attempts =
+                    set.composition_pixel_proof_attempts.saturating_add(1);
                 if let Some(metrics) = pixel_metrics {
-                    self.last_composition_pixel_metrics = Some(metrics);
+                    set.last_composition_pixel_metrics = Some(metrics);
                     if metrics.nonzero_rgb_pixels > 0 {
-                        self.composition_pixel_proof_attempts =
+                        set.composition_pixel_proof_attempts =
                             NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS;
                     }
                 }
@@ -144,7 +147,7 @@ where
                 self.stats.composition_target_creations.saturating_add(1);
             let capture_pixels = self.capture_pixels_always
                 || native_composition_pixel_proof_capture(
-                self.composition_pixel_proof_attempts,
+                self.current_proof_attempts(),
                 frame.layers.len(),
             );
             let render_started = Instant::now();
@@ -175,19 +178,22 @@ where
             self.last_render_buffer_age = render_evidence.buffer_age;
             self.last_render_repaint = render_evidence.repaint;
             self.last_render_target_generation = Some(generation);
-            self.proven_composition_nonzero_rgb_pixels =
-                retain_native_composition_nonzero_proof(
-                    self.proven_composition_nonzero_rgb_pixels,
-                    pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
-                    render_evidence.traced_nonzero_rgb_pixels,
-                );
+            // Against the set that owns the bundle just rendered, not against
+            // whichever output rendered last: this is one output's evidence.
+            let retained = retain_native_composition_nonzero_proof(
+                self.current_proven_nonzero(),
+                pixel_metrics.map_or(0, |metrics| metrics.nonzero_rgb_pixels),
+                render_evidence.traced_nonzero_rgb_pixels,
+            );
+            let set = self.current_set_mut();
+            set.proven_composition_nonzero_rgb_pixels = retained;
             if capture_pixels {
-                self.composition_pixel_proof_attempts =
-                    self.composition_pixel_proof_attempts.saturating_add(1);
+                set.composition_pixel_proof_attempts =
+                    set.composition_pixel_proof_attempts.saturating_add(1);
                 if let Some(metrics) = pixel_metrics {
-                    self.last_composition_pixel_metrics = Some(metrics);
+                    set.last_composition_pixel_metrics = Some(metrics);
                     if metrics.nonzero_rgb_pixels > 0 {
-                        self.composition_pixel_proof_attempts =
+                        set.composition_pixel_proof_attempts =
                             NATIVE_COMPOSITION_PIXEL_PROOF_ATTEMPTS;
                     }
                 }

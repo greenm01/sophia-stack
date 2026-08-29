@@ -11,7 +11,9 @@ pub use sophia_protocol::{BufferSource, Size};
 /// Re-exported here so backend-live keeps a single renderer dependency. Gated
 /// with the renderer itself, which is optional.
 #[cfg(feature = "gbm-probe")]
-pub use sophia_renderer_native_egl::{NativeCompositionDamageRect, NativeCompositionRepaintTable};
+pub use sophia_renderer_native_egl::{
+    NativeCompositionDamageRect, NativeCompositionRepaintTable, NativeFrameTargetSetId,
+};
 
 mod buffer_registry;
 mod cpu_buffer_registry;

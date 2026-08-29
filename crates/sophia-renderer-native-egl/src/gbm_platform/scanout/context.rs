@@ -32,11 +32,17 @@ pub struct NativeGbmRenderedScanoutContext<T: std::os::fd::AsFd> {
     display: khronos_egl::Display,
     gbm_device: gbm::Device<T>,
     stats: NativeGbmPersistentRenderStats,
-    last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
-    proven_composition_nonzero_rgb_pixels: usize,
-    composition_pixel_proof_attempts: usize,
     composition_target: Option<PersistentCompositionTarget>,
-    frame_targets: [Option<PersistentCompositionTarget>; NATIVE_FRAME_TARGET_SLOT_CAPACITY],
+    /// Target slots and pixel-proof state, one set per output the context
+    /// serves. A device-shared context renders for several outputs, and a
+    /// slot index alone does not identify a bundle across them: two outputs
+    /// both use slots 0 through 2, at their own sizes and modifiers, so a
+    /// shared array would rebuild a bundle on every alternation. That rebuild
+    /// is exactly what `target_recreations` counts and what the gates require
+    /// to stay at zero.
+    target_sets: std::collections::BTreeMap<NativeFrameTargetSetId, NativeFrameTargetSet>,
+    /// Whose set the inline `composition_target` currently belongs to.
+    current_target_set: NativeFrameTargetSetId,
     /// Whether this display reports `EGL_BUFFER_AGE_EXT`. Queried once: the
     /// extension set does not change under a live display, and a per-frame
     /// string search on the render path would cost more than the damage saves.
@@ -79,6 +85,40 @@ struct NativeRenderTarget {
     height: u32,
     egl_context: khronos_egl::Context,
     pipeline: PersistentXrgb8888GlPipeline,
+}
+
+/// Identifies one output's private target state within a device context.
+///
+/// Opaque on purpose: the renderer has no notion of an output, and the
+/// backend supplies whatever identity it uses for a head.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NativeFrameTargetSetId(u64);
+
+impl NativeFrameTargetSetId {
+    /// The set a context uses when nobody names one, which is every
+    /// single-output caller and every test.
+    pub const DEFAULT: Self = Self(0);
+
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// One output's slots and its own pixel-proof budget.
+///
+/// The proof is per output because it is that output's evidence: a capture
+/// latched by whichever head rendered first would report one screen's pixels
+/// as another's.
+#[derive(Default)]
+struct NativeFrameTargetSet {
+    targets: [Option<PersistentCompositionTarget>; NATIVE_FRAME_TARGET_SLOT_CAPACITY],
+    last_composition_pixel_metrics: Option<NativeCompositionPixelMetrics>,
+    proven_composition_nonzero_rgb_pixels: usize,
+    composition_pixel_proof_attempts: usize,
 }
 
 struct PersistentCompositionTarget {
@@ -184,11 +224,9 @@ where
             display,
             gbm_device,
             stats: NativeGbmPersistentRenderStats::default(),
-            last_composition_pixel_metrics: None,
-            proven_composition_nonzero_rgb_pixels: 0,
-            composition_pixel_proof_attempts: 0,
             composition_target: None,
-            frame_targets: std::array::from_fn(|_| None),
+            target_sets: std::collections::BTreeMap::new(),
+            current_target_set: NativeFrameTargetSetId::DEFAULT,
             import_cache_capacity,
             renderer_images: std::collections::BTreeMap::new(),
             renderer_image_bytes: 0,
@@ -218,7 +256,11 @@ where
                 .sampling
                 .saturating_add(persistent.target.pipeline.sampling_stats());
         }
-        for persistent in self.frame_targets.iter().flatten() {
+        for persistent in self
+            .target_sets
+            .values()
+            .flat_map(|set| set.targets.iter().flatten())
+        {
             accumulate_import_cache_stats(&mut stats.import_cache, persistent.import_cache.stats());
             stats.sampling = stats
                 .sampling
@@ -227,8 +269,30 @@ where
         stats
     }
 
-    pub const fn composition_pixel_metrics(&self) -> Option<NativeCompositionPixelMetrics> {
-        self.last_composition_pixel_metrics
+    pub fn composition_pixel_metrics(
+        &self,
+        set: NativeFrameTargetSetId,
+    ) -> Option<NativeCompositionPixelMetrics> {
+        self.target_sets
+            .get(&set)
+            .and_then(|set| set.last_composition_pixel_metrics)
+    }
+
+    /// The set the inline target currently belongs to, created on demand.
+    fn current_set_mut(&mut self) -> &mut NativeFrameTargetSet {
+        self.target_sets.entry(self.current_target_set).or_default()
+    }
+
+    fn current_proof_attempts(&self) -> usize {
+        self.target_sets
+            .get(&self.current_target_set)
+            .map_or(0, |set| set.composition_pixel_proof_attempts)
+    }
+
+    fn current_proven_nonzero(&self) -> usize {
+        self.target_sets
+            .get(&self.current_target_set)
+            .map_or(0, |set| set.proven_composition_nonzero_rgb_pixels)
     }
 
     /// Capture pixels on every composed render. Smoke-test instrumentation:
@@ -238,213 +302,19 @@ where
         self.capture_pixels_always = true;
     }
 
-    pub const fn composition_nonzero_rgb_pixels(&self) -> usize {
-        self.proven_composition_nonzero_rgb_pixels
+    pub fn composition_nonzero_rgb_pixels(&self, set: NativeFrameTargetSetId) -> usize {
+        self.target_sets
+            .get(&set)
+            .map_or(0, |set| set.proven_composition_nonzero_rgb_pixels)
     }
 
-    pub fn evict_renderer_image(
-        &mut self,
-        image_id: NativeRendererImageId,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        let mut evicted_import = self.evict_current_target_import(image_id)?;
-        for frame_slot in 0..NATIVE_FRAME_TARGET_SLOT_CAPACITY {
-            evicted_import |= self
-                .with_frame_target_slot(frame_slot, |context| {
-                    context.evict_current_target_import(image_id)
-                })
-                .expect("bounded native frame target slot")?;
-        }
-        // Drop every EGL import before its compositor-owned GBM backing store.
-        // This ordering keeps cache recovery from observing a dead DMA-BUF.
-        let evicted_image = self.renderer_images.remove(&image_id);
-        if let Some(image) = evicted_image {
-            self.renderer_image_bytes = self.renderer_image_bytes.saturating_sub(image.bytes);
-            self.stats.snapshot_evictions = self.stats.snapshot_evictions.saturating_add(1);
-            self.update_renderer_image_stats();
-            return Ok(true);
-        }
-        Ok(evicted_import)
-    }
 
-    fn evict_current_target_import(
-        &mut self,
-        image_id: NativeRendererImageId,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        let mut evicted_import = false;
-        if let Some(persistent) = self.composition_target.as_mut() {
-            let surface = persistent.surface.egl_surface();
-            self.egl
-                .make_current(
-                    self.display,
-                    Some(surface),
-                    Some(surface),
-                    Some(persistent.target.egl_context),
-                )
-                .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)?;
-            let result = persistent.import_cache.evict(
-                &self.egl,
-                self.display,
-                &persistent.target.pipeline,
-                image_id,
-            );
-            let _ = self.egl.make_current(self.display, None, None, None);
-            if result.is_err()
-                && let Some(persistent) = self.composition_target.take()
-            {
-                self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-                self.stats.recovery_replacements =
-                    self.stats.recovery_replacements.saturating_add(1);
-                self.destroy_persistent_composition_target(persistent);
-                evicted_import = true;
-            } else {
-                evicted_import = result?;
-            }
-        }
-        Ok(evicted_import)
-    }
 
-    pub fn clear_renderer_images(
-        &mut self,
-    ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
-        let mut cleared_imports = self.clear_current_target_imports()?;
-        for frame_slot in 0..NATIVE_FRAME_TARGET_SLOT_CAPACITY {
-            cleared_imports = cleared_imports.saturating_add(
-                self.with_frame_target_slot(frame_slot, |context| {
-                    context.clear_current_target_imports()
-                })
-                .expect("bounded native frame target slot")?,
-            );
-        }
-        let cleared_images = self.renderer_images.len();
-        self.renderer_images.clear();
-        self.renderer_image_bytes = 0;
-        self.stats.snapshot_evictions = self
-            .stats
-            .snapshot_evictions
-            .saturating_add(cleared_images);
-        self.update_renderer_image_stats();
-        Ok(cleared_imports.max(cleared_images))
-    }
 
-    fn clear_current_target_imports(
-        &mut self,
-    ) -> Result<usize, NativeGbmScanoutBufferExportDetail> {
-        let mut cleared_imports = 0;
-        if let Some(persistent) = self.composition_target.as_mut() {
-            let surface = persistent.surface.egl_surface();
-            self.egl
-                .make_current(
-                    self.display,
-                    Some(surface),
-                    Some(surface),
-                    Some(persistent.target.egl_context),
-                )
-                .map_err(|_| NativeGbmScanoutBufferExportDetail::EglMakeCurrentFailed)?;
-            let live_entries = persistent.import_cache.stats().live_entries;
-            let result = persistent.import_cache.clear(
-                &self.egl,
-                self.display,
-                &persistent.target.pipeline,
-            );
-            let _ = self.egl.make_current(self.display, None, None, None);
-            if result.is_err()
-                && let Some(persistent) = self.composition_target.take()
-            {
-                self.stats.target_recreations = self.stats.target_recreations.saturating_add(1);
-                self.stats.recovery_replacements =
-                    self.stats.recovery_replacements.saturating_add(1);
-                self.destroy_persistent_composition_target(persistent);
-                cleared_imports = live_entries;
-            } else {
-                cleared_imports = result?;
-            }
-        }
-        Ok(cleared_imports)
-    }
 
-    pub fn promote_renderer_image(
-        &mut self,
-        image_id: NativeRendererImageId,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        let Some(image) = self.renderer_images.get_mut(&image_id) else {
-            return Ok(false);
-        };
-        if image.state == NativeRendererImageState::Promoted {
-            return Ok(false);
-        }
-        image.state = NativeRendererImageState::Promoted;
-        self.stats.snapshot_promotions = self.stats.snapshot_promotions.saturating_add(1);
-        Ok(true)
-    }
 
-    pub fn export_promoted_renderer_image(
-        &self,
-        image_id: NativeRendererImageId,
-    ) -> Result<Option<NativeRendererImageSnapshot>, NativeGbmScanoutBufferExportDetail> {
-        let Some(image) = self.renderer_images.get(&image_id) else {
-            return Ok(None);
-        };
-        if image.state != NativeRendererImageState::Promoted {
-            return Ok(None);
-        }
-        let mut plane_fds = image.buffer.export_plane_fds()?.into_plane_fds();
-        let pitches = image.buffer.plane_pitches();
-        let offsets = image.buffer.plane_offsets();
-        let planes = std::array::from_fn(|index| {
-            plane_fds[index]
-                .take()
-                .map(|fd| NativeOwnedDmaBufPlane {
-                    fd,
-                    offset: offsets[index],
-                    stride: pitches[index],
-                })
-        });
-        if planes[..usize::from(image.buffer.plane_count())]
-            .iter()
-            .any(Option::is_none)
-        {
-            return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
-        }
-        Ok(Some(NativeRendererImageSnapshot {
-            image_id,
-            width: image.buffer.width(),
-            height: image.buffer.height(),
-            format: image.buffer.format(),
-            modifier: image.buffer.modifier().unwrap_or(u64::MAX),
-            plane_count: image.buffer.plane_count(),
-            planes,
-        }))
-    }
 
-    pub fn restore_promoted_renderer_image(
-        &mut self,
-        snapshot: NativeRendererImageSnapshot,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        let image_id = snapshot.image_id();
-        if !self.capture_renderer_image(image_id, snapshot.as_frame())? {
-            return Ok(false);
-        }
-        if !self.promote_renderer_image(image_id)? {
-            let _ = self.rollback_renderer_image(image_id);
-            return Err(NativeGbmScanoutBufferExportDetail::InvalidRendererImageId);
-        }
-        Ok(true)
-    }
 
-    pub fn rollback_renderer_image(
-        &mut self,
-        image_id: NativeRendererImageId,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        if self
-            .renderer_images
-            .get(&image_id)
-            .is_none_or(|image| image.state != NativeRendererImageState::Staged)
-        {
-            return Ok(false);
-        }
-        self.stats.snapshot_rollbacks = self.stats.snapshot_rollbacks.saturating_add(1);
-        self.evict_renderer_image(image_id)
-    }
 
     pub fn export_rendered_owned_scanout_buffer(
         &self,
@@ -538,6 +408,7 @@ where
 
     pub fn export_xrgb8888_owned_scanout_buffer_with_modifiers_in_frame_slot(
         &mut self,
+        set: NativeFrameTargetSetId,
         frame_slot: usize,
         width: u32,
         height: u32,
@@ -545,7 +416,7 @@ where
         pixels: &[u8],
         preferred_modifiers: &[u64],
     ) -> NativeGbmOwnedScanoutBufferExportReport {
-        self.with_frame_target_slot(frame_slot, |context| {
+        self.with_frame_target_slot(set, frame_slot, |context| {
             context.export_xrgb8888_owned_scanout_buffer_with_modifiers(
                 width,
                 height,
@@ -596,11 +467,12 @@ where
 
     pub fn export_dmabuf_owned_scanout_buffer_with_modifiers_in_frame_slot(
         &mut self,
+        set: NativeFrameTargetSetId,
         frame_slot: usize,
         frame: NativeDmaBufFrame<'_>,
         preferred_modifiers: &[u64],
     ) -> NativeGbmOwnedScanoutBufferExportReport {
-        self.with_frame_target_slot(frame_slot, |context| {
+        self.with_frame_target_slot(set, frame_slot, |context| {
             context.export_dmabuf_owned_scanout_buffer_with_modifiers(
                 frame,
                 preferred_modifiers,
@@ -668,11 +540,12 @@ where
 
     pub fn export_composed_owned_scanout_buffer_with_modifiers_in_frame_slot(
         &mut self,
+        set: NativeFrameTargetSetId,
         frame_slot: usize,
         frame: NativeCompositionFrame<'_>,
         preferred_modifiers: &[u64],
     ) -> NativeGbmOwnedScanoutBufferExportReport {
-        self.with_frame_target_slot(frame_slot, |context| {
+        self.with_frame_target_slot(set, frame_slot, |context| {
             context.export_composed_owned_scanout_buffer_with_modifiers(
                 frame,
                 preferred_modifiers,
@@ -681,66 +554,39 @@ where
         .unwrap_or_else(invalid_frame_slot_report)
     }
 
+    /// Swap one set's slot into the inline target for the duration of an
+    /// operation, then put it back where it came from.
+    ///
+    /// The set travels with the slot because the inline target is the only
+    /// thing the render path knows about: while it is swapped in, anything
+    /// recording pixel-proof state must record it against the set that owns
+    /// the bundle, not against whoever rendered last.
     fn with_frame_target_slot<R>(
         &mut self,
+        set: NativeFrameTargetSetId,
         frame_slot: usize,
         operation: impl FnOnce(&mut Self) -> R,
     ) -> Option<R> {
-        let slot = self.frame_targets.get_mut(frame_slot)?;
-        let persistent = slot.take();
+        if frame_slot >= NATIVE_FRAME_TARGET_SLOT_CAPACITY {
+            return None;
+        }
+        let persistent = self
+            .target_sets
+            .entry(set)
+            .or_default()
+            .targets
+            .get_mut(frame_slot)?
+            .take();
         let inline = std::mem::replace(&mut self.composition_target, persistent);
+        let restored_set = std::mem::replace(&mut self.current_target_set, set);
         let result = operation(self);
-        self.frame_targets[frame_slot] = self.composition_target.take();
+        self.current_target_set = restored_set;
+        let rendered = self.composition_target.take();
+        self.target_sets.entry(set).or_default().targets[frame_slot] = rendered;
         self.composition_target = inline;
         Some(result)
     }
 
-    pub fn capture_renderer_image(
-        &mut self,
-        image_id: NativeRendererImageId,
-        frame: NativeMultiPlaneDmaBufFrame<'_>,
-    ) -> Result<bool, NativeGbmScanoutBufferExportDetail> {
-        if !image_id.is_valid() || !frame.is_valid() {
-            return Err(NativeGbmScanoutBufferExportDetail::InvalidTarget);
-        }
-        if self.renderer_images.contains_key(&image_id) {
-            return Ok(false);
-        }
-        let estimated_bytes = u64::from(frame.width)
-            .checked_mul(u64::from(frame.height))
-            .and_then(|pixels| pixels.checked_mul(4))
-            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidTarget)?;
-        if self.renderer_images.len() >= DEFAULT_NATIVE_RENDERER_IMAGE_CAPACITY
-            || self.renderer_image_bytes.saturating_add(estimated_bytes)
-                > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
-        {
-            return Err(NativeGbmScanoutBufferExportDetail::RendererImageStoreFull);
-        }
-        let buffer = self.render_renderer_image_snapshot(image_id, frame)?;
-        if buffer.format() != frame.format {
-            return Err(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor);
-        }
-        let bytes = u64::from(buffer.pitch())
-            .checked_mul(u64::from(buffer.height()))
-            .ok_or(NativeGbmScanoutBufferExportDetail::InvalidBufferDescriptor)?;
-        if self.renderer_image_bytes.saturating_add(bytes)
-            > DEFAULT_NATIVE_RENDERER_IMAGE_BYTE_BUDGET
-        {
-            return Err(NativeGbmScanoutBufferExportDetail::RendererImageStoreFull);
-        }
-        self.renderer_images.insert(
-            image_id,
-            NativeRendererImage {
-                buffer,
-                state: NativeRendererImageState::Staged,
-                bytes,
-            },
-        );
-        self.renderer_image_bytes = self.renderer_image_bytes.saturating_add(bytes);
-        self.stats.snapshot_captures = self.stats.snapshot_captures.saturating_add(1);
-        self.update_renderer_image_stats();
-        Ok(true)
-    }
 
     fn render_renderer_image_snapshot(
         &mut self,
@@ -845,10 +691,6 @@ where
         Err(last_detail)
     }
 
-    fn update_renderer_image_stats(&mut self) {
-        self.stats.snapshot_live_entries = self.renderer_images.len();
-        self.stats.snapshot_live_bytes = self.renderer_image_bytes;
-    }
 
     fn destroy_renderer_image_capture_target(
         &mut self,
@@ -898,6 +740,7 @@ where
 
 }
 include!("context/render_once.rs");
+include!("context/renderer_images.rs");
 impl<T> NativeGbmRenderedScanoutContext<T>
 where
     T: std::os::fd::AsFd,
@@ -953,9 +796,11 @@ where
         if let Some(persistent) = self.composition_target.take() {
             self.destroy_persistent_composition_target(persistent);
         }
-        for index in 0..NATIVE_FRAME_TARGET_SLOT_CAPACITY {
-            if let Some(persistent) = self.frame_targets[index].take() {
-                self.destroy_persistent_composition_target(persistent);
+        for mut set in std::mem::take(&mut self.target_sets).into_values() {
+            for slot in &mut set.targets {
+                if let Some(persistent) = slot.take() {
+                    self.destroy_persistent_composition_target(persistent);
+                }
             }
         }
         let _ = self.egl.terminate(self.display);
