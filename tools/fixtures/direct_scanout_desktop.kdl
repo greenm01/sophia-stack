@@ -1,0 +1,27 @@
+schema 1
+
+// The desktop profile for the direct-scanout probe.
+//
+// The compiled default profile binds `session:spawn-terminal` and
+// `session:spawn-browser`, and a session that declares neither is refused
+// before it starts with `UnavailableShortcutCapability`. That refusal is
+// correct in itself -- a binding naming a capability the session does not
+// have would do nothing -- but it means `--no-config` cannot be used by any
+// session running a single application, which is what this probe is.
+//
+// Declaring the applications instead would be worse here: a stray Super+Return
+// would put a second surface on the screen, and the whole point is a frame
+// with exactly one layer. So the profile binds only what this session can
+// actually do.
+//
+// Logout stays on Ctrl+Alt+Delete. Super+Shift+Q is left alone because the
+// native WM policy owns it -- see `direct_scanout_sophia_wm.kdl` -- and
+// binding it in both places would be two owners for one key.
+//
+// The shell is off: there is no shell process, and `session:window-switcher`
+// would be another unavailable capability.
+shell { enabled #false; }
+shortcut {
+  profile "direct-scanout-standalone"
+  bind "Ctrl+Alt+Delete" "session:logout"
+}

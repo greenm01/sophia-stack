@@ -1313,3 +1313,66 @@ fn live_xauthority_file_is_owner_only_valid_and_removed_on_drop() {
     assert!(!path.exists());
     std::fs::remove_dir(directory).unwrap();
 }
+
+/// The argument set the standalone single-application profile builds, kept
+/// startable.
+///
+/// `--no-config` loads the compiled desktop profile, whose shortcuts bind
+/// spawn-terminal and spawn-browser. A session running one application
+/// declares neither, so shortcut validation refuses it before it starts. That
+/// left the whole standalone profile unstartable from 29b9424b until a
+/// physical run tripped over it, because nothing here described the arguments
+/// the runner actually passes.
+#[test]
+fn the_standalone_single_application_argument_set_still_starts() {
+    let profile = std::env::temp_dir().join(format!(
+        "sophia-standalone-desktop-{}-{}.kdl",
+        std::process::id(),
+        line!()
+    ));
+    // The shipped fixture itself, not a copy of it: the runner installs this
+    // exact file, so a test carrying its own inline version would keep passing
+    // after the real one drifted. Copied because a desktop profile must be
+    // mode 600, which is what the runner's `install -m 600` gives it.
+    let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/fixtures/direct_scanout_desktop.kdl");
+    std::fs::copy(&shipped, &profile).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    // What the direct-scanout probe passes: a profile binding only what a
+    // one-application session can do.
+    let accepted = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        format!("--desktop-profile={}", profile.display()),
+        "--session-app=standalone=/usr/bin/true".to_owned(),
+        "--session-start=standalone".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+        "--wm-process=/usr/bin/true".to_owned(),
+    ]);
+    assert!(
+        accepted.is_ok(),
+        "the standalone argument set was refused: {:?}",
+        accepted.err()
+    );
+
+    // And the control: the same session under the compiled profile is refused,
+    // which is the behaviour that broke the runner. If this ever starts
+    // succeeding, the profile above is no longer buying anything.
+    let refused = PersistentXtermSessionConfig::from_args(&[
+        "--session-mode=normal".to_owned(),
+        "--no-config".to_owned(),
+        "--session-app=standalone=/usr/bin/true".to_owned(),
+        "--session-start=standalone".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+        "--wm-process=/usr/bin/true".to_owned(),
+    ]);
+    assert!(
+        refused.is_err(),
+        "the compiled profile no longer refuses a session with no terminal"
+    );
+
+    std::fs::remove_file(&profile).unwrap();
+}
