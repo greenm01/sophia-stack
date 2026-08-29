@@ -953,6 +953,75 @@
                 );
             }
         }
+        // The overlay proof, when the session asked for it. Placed on the tick
+        // rather than in the input phase because nothing here is driven by
+        // input: the shell would open this overlay from a shortcut, and this
+        // session has no shell to press one in.
+        if let Some(native) = native_scanout.as_mut() {
+            let flips = native.direct_scanout_totals().flips;
+            let flipping_output = native.direct_scanout_output();
+            match direct_overlay_proof.tick(flips, flipping_output) {
+                crate::live_session::direct_overlay_proof::DirectOverlayAction::Activate(
+                    output,
+                ) => {
+                    let head = runtime
+                        .as_ref()
+                        .and_then(|runtime| {
+                            runtime
+                                .logical_viewports()
+                                .into_iter()
+                                .find(|(id, _)| *id == output)
+                        })
+                        .map(|(_, viewport)| viewport);
+                    if let (Some(runtime), Some(head)) = (runtime.as_mut(), head) {
+                        let overlay =
+                            crate::live_session::direct_overlay_proof::overlay_projection(
+                                output,
+                                direct_overlay_generation,
+                                head,
+                            );
+                        // The same entry the shell uses. A proof that drove a
+                        // private path would prove nothing about the product.
+                        match runtime.set_descriptor_overlay(
+                            Some(overlay),
+                            &scene,
+                            native_scanout.as_mut(),
+                        ) {
+                            Ok(_) => crate::session_println!(
+                                "sophia_live_direct_scanout_overlay_proof schema=1 status=activated output={} flips_before={flips}",
+                                output.raw(),
+                            ),
+                            Err(error) => {
+                                return Err(format!(
+                                    "direct-scanout overlay proof could not activate: {error}"
+                                )
+                                .into());
+                            }
+                        }
+                    }
+                }
+                crate::live_session::direct_overlay_proof::DirectOverlayAction::Withdraw => {
+                    if let Some(runtime) = runtime.as_mut() {
+                        match runtime.set_descriptor_overlay(
+                            None,
+                            &scene,
+                            native_scanout.as_mut(),
+                        ) {
+                            Ok(_) => crate::session_println!(
+                                "sophia_live_direct_scanout_overlay_proof schema=1 status=withdrawn output=0 flips_before={flips}",
+                            ),
+                            Err(error) => {
+                                return Err(format!(
+                                    "direct-scanout overlay proof could not withdraw: {error}"
+                                )
+                                .into());
+                            }
+                        }
+                    }
+                }
+                crate::live_session::direct_overlay_proof::DirectOverlayAction::Idle => {}
+            }
+        }
         if !startup_ready_reported && startup_readiness.ready {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());

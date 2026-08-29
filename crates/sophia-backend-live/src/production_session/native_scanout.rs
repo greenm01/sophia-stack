@@ -2786,6 +2786,17 @@ mod persistent_native_scanout {
         /// exporters own the counts and a head that comes and goes takes its
         /// history with it; a session-level mirror would have to be kept
         /// correct across every topology change to say the same thing.
+        /// The output whose head has flipped a client buffer directly, if any.
+        ///
+        /// Named so a development control can put an overlay on the screen
+        /// that is actually scanning one, rather than on whichever output
+        /// happens to be first.
+        pub fn direct_scanout_output(&self) -> Option<OutputId> {
+            std::iter::zip(&self.heads, &self.exporters)
+                .find(|(_, exporter)| exporter.direct_scanout_flips() != 0)
+                .map(|(head, _)| head.output.id)
+        }
+
         pub fn direct_scanout_totals(&self) -> LiveProductionDirectScanoutTotals {
             self.exporters.iter().fold(
                 LiveProductionDirectScanoutTotals::default(),

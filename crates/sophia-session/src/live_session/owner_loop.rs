@@ -524,6 +524,12 @@ fn run_session_loop_inner(
     let mut retired_present_surfaces = BTreeMap::new();
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
     let mut startup_ready_reported = false;
+    // Inert unless the session asked for it; see `direct_overlay_proof`.
+    let mut direct_overlay_proof =
+        crate::live_session::direct_overlay_proof::DirectOverlayProof::new(
+            config.direct_overlay_proof,
+        );
+    let direct_overlay_generation = 1u64;
     let mut startup_native_recovery_attempted = false;
     let mut startup_topology_recovery_pending = false;
     let mut startup_outputs_ready_reported = false;

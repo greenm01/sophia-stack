@@ -108,6 +108,9 @@ struct PersistentXtermSessionConfig {
     inject_surface_resize_sequence: Vec<Size>,
     m4_first_acquire_delay: Option<Duration>,
     m4_reject_first_present: bool,
+    /// Whether this session drives an overlay over a directly scanned frame to
+    /// prove the return to composition. Off in every product session.
+    pub(crate) direct_overlay_proof: bool,
     m4_diagnose_first_mixed_export: bool,
     firefox_m8_proof: bool,
     firefox_m10_proof: bool,
@@ -467,6 +470,13 @@ impl PersistentXtermSessionConfig {
             return Err("--m4-first-acquire-delay-ms accepts 1-2000 milliseconds".into());
         }
         let m4_reject_first_present = args.iter().any(|arg| arg == "--m4-reject-first-present");
+        // Drives an overlay over a directly scanned frame, which no client in
+        // this session can do: the probe runs no shell and no policy client,
+        // and the shell is what opens the descriptor overlay in a product
+        // session. The transition it exercises -- a composed successor
+        // retiring a frame the plane is still scanning -- is modelled in
+        // `PresentFlipOwnership.tla` and had never run on hardware.
+        let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
         let m4_diagnose_first_mixed_export = args
             .iter()
             .any(|arg| arg == "--m4-diagnose-first-mixed-export");
@@ -753,6 +763,11 @@ impl PersistentXtermSessionConfig {
         if client.is_some() && inject_text.is_some() && expect_client_stdout.is_none() {
             return Err("--client with --inject-text requires --expect-client-stdout".into());
         }
+        if direct_overlay_proof && (!native_scanout || !normal_session) {
+            return Err(
+                "--direct-overlay-proof requires --native-scanout and --session-mode=normal".into(),
+            );
+        }
         if (m4_first_acquire_delay.is_some()
             || m4_reject_first_present
             || m4_diagnose_first_mixed_export)
@@ -859,6 +874,7 @@ impl PersistentXtermSessionConfig {
             inject_surface_resize_sequence,
             m4_first_acquire_delay,
             m4_reject_first_present,
+            direct_overlay_proof,
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
             firefox_m10_proof,
