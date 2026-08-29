@@ -290,7 +290,7 @@ fi
 # result reached an output that did not ask for it. Both are meaningless
 # until outputs can share a worker, so earlier evidence owes neither.
 if [[ "$resource_schema" == 10 ]]; then
-    slot_keys+=(renderer_workers worker_result_misroutes)
+    slot_keys+=(renderer_workers worker_result_misroutes worker_max_service_skew)
 fi
 for key in "${slot_keys[@]}"; do
     value="$(field "$resources" "$key")" ||
@@ -333,6 +333,27 @@ if [[ "$resource_schema" == 9 || "$resource_schema" == 10 ]]; then
         fail "no KMS submission was ever in flight, so the session presented nothing"
     (( depth <= heads )) ||
         fail "an output held $depth concurrent KMS submissions across $heads presented heads"
+fi
+# A result may only reach the output that asked for it. Per-output reply
+# channels make the alternative unreachable rather than unlikely, so anything
+# here means the routing that structure guarantees was subverted.
+if [[ "$resource_schema" == 10 ]]; then
+    (( $(field "$resources" worker_result_misroutes) == 0 )) ||
+        fail "a renderer result reached an output that did not request it"
+    # Bounded inter-output service skew, asserted only where outputs actually
+    # share a thread. Independent threads interleave as the GPU allows, and a
+    # FIFO bound over them would be a claim about parallelism rather than
+    # about fairness. The figure is sampled on the tick, so it is a lower
+    # bound: exceeding the bound is real, staying under it is evidence rather
+    # than proof.
+    workers="$(field "$resources" renderer_workers)"
+    (( workers >= 1 )) ||
+        fail "session reported $workers renderer threads"
+    if (( workers < heads )); then
+        skew="$(field "$resources" worker_max_service_skew)"
+        (( skew <= heads - 1 )) ||
+            fail "one output was passed over $skew times across $heads heads sharing $workers threads"
+    fi
 fi
 # No leaked lease. A slot still leased after the session drained means a page
 # flip retired without releasing its buffer, which is exactly the failure the

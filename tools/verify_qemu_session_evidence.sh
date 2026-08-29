@@ -94,6 +94,34 @@ if (( total_nonzero_exports == 0 )); then
     echo "QEMU evidence has no nonzero exports on any output" >&2
     exit 1
 fi
+# How many renderer threads the session ran. Only schema 10 reports it, and
+# only a run that declares what it expects asserts it: the count is the whole
+# difference between outputs sharing a thread and outputs that merely could.
+expected_workers="${SOPHIA_QEMU_EXPECT_RENDERER_WORKERS:-}"
+if [[ -n "$expected_workers" ]]; then
+    if ! [[ "$expected_workers" =~ ^[1-9][0-9]*$ ]]; then
+        echo "SOPHIA_QEMU_EXPECT_RENDERER_WORKERS must be a positive integer" >&2
+        exit 1
+    fi
+    resources_line="$(grep -E '^sophia_live_native_resources schema=10 status=complete ' \
+        "$EVIDENCE_FILE" || true)"
+    if [[ -z "$resources_line" ]]; then
+        echo "renderer-thread expectation needs schema-10 resource evidence" >&2
+        exit 1
+    fi
+    observed_workers="$(sed -n 's/.* renderer_workers=\([0-9][0-9]*\).*/\1/p' \
+        <<< "$resources_line")"
+    if [[ "$observed_workers" != "$expected_workers" ]]; then
+        echo "session ran $observed_workers renderer threads, expected $expected_workers" >&2
+        exit 1
+    fi
+    misroutes="$(sed -n 's/.* worker_result_misroutes=\([0-9][0-9]*\).*/\1/p' \
+        <<< "$resources_line")"
+    if (( misroutes != 0 )); then
+        echo "$misroutes renderer results reached an output that did not request them" >&2
+        exit 1
+    fi
+fi
 if [[ "$(grep -c '^sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
     echo "QEMU evidence is missing the per-output fixed-refresh vsync gate" >&2
     exit 1

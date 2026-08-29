@@ -11,6 +11,16 @@ TWO_XTERM="${SOPHIA_QEMU_TWO_XTERM:-0}"
 # Passed to the guest so a headless run can exercise outputs sharing one
 # renderer thread. Off by default, exactly as it is in a session.
 SHARED_RENDERER_WORKER="${SOPHIA_ENABLE_SHARED_RENDERER_WORKER:-0}"
+# Put both guest outputs on one virtio GPU instead of one apiece.
+#
+# The default two-device topology gives the guest two DRM cards, so its two
+# outputs land in two device groups and a shared renderer worker has nothing
+# to coalesce -- correct behaviour, and no coverage. One card with two
+# connectors is the only headless shape in which outputs share a group.
+SINGLE_CARD="${SOPHIA_QEMU_SINGLE_CARD:-0}"
+# When set, the run asserts the session ran exactly this many renderer
+# threads. Printing the count proves nothing on its own.
+EXPECT_RENDERER_WORKERS="${SOPHIA_QEMU_EXPECT_RENDERER_WORKERS:-}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
 if [[ "$SCENARIO" != "session" && "$SCENARIO" != "emergency-recovery" && "$SCENARIO" != "gtk-classic" && "$SCENARIO" != "gtk-confined" && "$SCENARIO" != "xmonad-m7" && "$SCENARIO" != "xmonad-idle-efficiency" && "$SCENARIO" != "xmonad-launch-burst" && "$SCENARIO" != "xmonad-producer-overload" && "$SCENARIO" != "xmonad-render-contention" && "$SCENARIO" != "xmonad-resize-storm" && "$SCENARIO" != "xmonad-stale-response" && "$SCENARIO" != "xmonad-m8-launcher" && "$SCENARIO" != "xmonad-m8-mix" && "$SCENARIO" != "xmonad-m8-soak" && "$SCENARIO" != "xmonad-interactive" ]]; then
@@ -723,16 +733,24 @@ if [[ "$GPU_MODE" == virgl ]]; then
     # Virgl keeps guest producers and Sophia's renderer on one explicit host
     # render node; software QEMU remains the default.
     display_args=(-display "egl-headless,rendernode=$RENDER_NODE")
-    gpu_args=(
-        -device virtio-vga-gl,max_outputs=1
-        -device virtio-gpu-pci,max_outputs=1
-    )
+    if [[ "$SINGLE_CARD" == 1 ]]; then
+        gpu_args=(-device virtio-vga-gl,max_outputs=2)
+    else
+        gpu_args=(
+            -device virtio-vga-gl,max_outputs=1
+            -device virtio-gpu-pci,max_outputs=1
+        )
+    fi
 else
     display_args=(-display none -vnc "unix:$VNC_SOCKET")
-    gpu_args=(
-        -device virtio-vga,max_outputs=1
-        -device virtio-gpu-pci,max_outputs=1
-    )
+    if [[ "$SINGLE_CARD" == 1 ]]; then
+        gpu_args=(-device virtio-vga,max_outputs=2)
+    else
+        gpu_args=(
+            -device virtio-vga,max_outputs=1
+            -device virtio-gpu-pci,max_outputs=1
+        )
+    fi
 fi
 
 machine="q35,accel=kvm:tcg"
@@ -2015,7 +2033,9 @@ fi
 echo "sophia_qemu_session schema=3 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
 if [[ "$TWO_XTERM" == "1" ]]; then
     SOPHIA_QEMU_REQUIRE_TWO_XTERM=1 \
+        SOPHIA_QEMU_EXPECT_RENDERER_WORKERS="$EXPECT_RENDERER_WORKERS" \
         "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" "$EVIDENCE_FILE"
 else
-    "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" "$EVIDENCE_FILE"
+    SOPHIA_QEMU_EXPECT_RENDERER_WORKERS="$EXPECT_RENDERER_WORKERS" \
+        "$ROOT_DIR/tools/verify_qemu_session_evidence.sh" "$EVIDENCE_FILE"
 fi

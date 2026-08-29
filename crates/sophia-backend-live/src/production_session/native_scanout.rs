@@ -49,6 +49,10 @@ mod persistent_native_scanout {
         pub max_in_flight_per_output: usize,
         /// Frames the latest-wins pending cell dropped without rendering.
         pub pending_frame_supersessions: usize,
+        /// The most renders siblings completed while one head waited. Zero
+        /// when heads never wait on each other, which is every session in
+        /// which they do not share a renderer thread.
+        pub max_service_skew: usize,
         pub max_submit_to_page_flip: Duration,
         pub callback_accepted: usize,
         pub callback_rejected: usize,
@@ -171,6 +175,9 @@ mod persistent_native_scanout {
         pub presented_submission_ust_usec: u64,
         pub presented_page_flip_ust_usec: u64,
         pub presented_submit_to_page_flip: Duration,
+        /// Sibling completions when this head's current request went
+        /// outstanding, or `None` while it has nothing in flight.
+        pub(crate) service_skew_baseline: Option<usize>,
         pub submissions: usize,
         pub retirements: usize,
         pub callback_accepted: usize,
@@ -579,6 +586,7 @@ mod persistent_native_scanout {
                         presented_content: None,
                         presented_logical_checksum: 0,
                         presented_submissions: 0,
+                        service_skew_baseline: None,
                         presented_submission_ust_usec: 0,
                         presented_page_flip_ust_usec: 0,
                         presented_submit_to_page_flip: Duration::ZERO,
@@ -678,6 +686,7 @@ mod persistent_native_scanout {
                 retire_failures: 0,
                 max_in_flight_ticks: 0,
                 max_in_flight_per_output: 0,
+                max_service_skew: 0,
                 pending_frame_supersessions: 0,
                 max_submit_to_page_flip: Duration::ZERO,
                 callback_accepted: 0,
@@ -1260,6 +1269,49 @@ mod persistent_native_scanout {
                 .map(|exporter| exporter.pending_frame_supersessions())
                 .sum();
             self.pending_frame_supersessions = self.pending_frame_supersessions.max(supersessions);
+            self.observe_service_skew();
+        }
+
+        /// How far one output's wait ran behind its siblings' service.
+        ///
+        /// While a head has a request outstanding, every render another head
+        /// completes is that head being passed over. Taking the shared queue
+        /// in order bounds this at one per sibling, which is the property the
+        /// model states and the reason no scheduler is needed; measuring it
+        /// is what turns that from an argument into evidence.
+        ///
+        /// Sampled on the tick rather than hooked at submit and completion,
+        /// because the worker cannot see its own queue: a render already
+        /// dequeued gives no way to know who was waiting behind it. Two
+        /// completions inside one tick therefore read as one, so this is a
+        /// lower bound on true skew -- it can miss a peak, never invent one.
+        /// The structural guarantee remains FIFO service; this is the check
+        /// that the implementation kept it.
+        fn observe_service_skew(&mut self) {
+            for index in 0..self.exporters.len() {
+                if !self.heads[index].enabled {
+                    continue;
+                }
+                if !self.exporters[index].worker_in_flight() {
+                    self.heads[index].service_skew_baseline = None;
+                    continue;
+                }
+                let siblings: usize = self
+                    .exporters
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .filter_map(|(_, exporter)| exporter.worker_metrics())
+                    .map(|metrics| metrics.completions)
+                    .sum();
+                match self.heads[index].service_skew_baseline {
+                    None => self.heads[index].service_skew_baseline = Some(siblings),
+                    Some(baseline) => {
+                        self.max_service_skew =
+                            self.max_service_skew.max(siblings.saturating_sub(baseline));
+                    }
+                }
+            }
         }
 
         fn service_mirror_group_retirement(
