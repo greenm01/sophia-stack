@@ -2236,8 +2236,23 @@ other mature compositors are references rather than Sophia runtime components.
   then dropped the half-measured population entirely rather than reporting
   it, so the only symptom was a comparison that said no direct frames
   existed.
-- [ ] Add the hardware cursor plane, with the per-output KMS transaction owner
-  the next row introduces. **Partly proven.** Direct-scanout archive `0005`
+- [x] Add the hardware cursor plane, with the per-output KMS transaction owner
+  the next row introduces. Direct-scanout archives `0005` and `0006` promote
+  it in two steps. `0005` put the cursor on a plane at all: twelve moves, the
+  card accepting, no failures, direct scanout undisturbed -- and exposed that
+  every update was a standalone commit, with worst-case motion-to-submit at
+  21 ms against the legacy ioctl's 9. `0006` runs the same sweep with the
+  owner complete: twelve moves produced only eight cursor-only commits,
+  because the rest rode primary commits as one combined atomic request --
+  the thing the next row asks the owner to be able to do, observed rather
+  than claimed -- and the worst case came down to 17 ms.
+  A rejected combined commit retries with the primary alone, prepared beside
+  the combined request rather than rebuilt after failure, so a cursor can
+  never cost a frame; the run needed no such retry, and the counters would
+  have named it if it had. `updates_primary_in_flight=0` on both archives is
+  the kernel's per-CRTC serialization observed, where the legacy path
+  counted fifteen.
+  **Superseded detail below.** Direct-scanout archive `0005`
   runs the same twelve-position sweep as `0004` with the cursor on an atomic
   plane: the card accepted the plane, twelve moves reached it, no hardware
   failures, and direct scanout was undisturbed -- 36 flips with 26 after the
