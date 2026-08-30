@@ -523,3 +523,30 @@ where
 {
     destroy_native_primary_plane_resources(device, prepared.resources)
 }
+
+/// Put a cursor on its plane, and nothing else.
+///
+/// Returns when the commit has been applied, because it blocks -- so the CRTC
+/// is free by the time the caller reads the answer, and the owner never has
+/// to guess at a completion it did not observe.
+///
+/// A refusal is reported rather than raised. The cursor's position stays
+/// pending and the next commit carries it; a pointer that stutters is not a
+/// reason to fail a session, and a cursor must never cost a frame.
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub fn submit_native_cursor_only_commit<D>(
+    device: &D,
+    request: LibdrmNativeAtomicCommitRequest,
+) -> LibdrmNativeAtomicCommitSubmitStatus
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    let (flags, request) = request.into_native();
+    match device.submit_atomic_commit(flags, request) {
+        Ok(()) => LibdrmNativeAtomicCommitSubmitStatus::Submitted,
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            LibdrmNativeAtomicCommitSubmitStatus::WouldBlock
+        }
+        Err(_) => LibdrmNativeAtomicCommitSubmitStatus::Rejected,
+    }
+}

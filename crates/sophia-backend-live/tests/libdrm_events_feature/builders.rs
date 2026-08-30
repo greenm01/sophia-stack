@@ -439,3 +439,88 @@ fn write_fixture_file(root: &std::path::Path, name: &str, contents: &str) {
 #[cfg(feature = "gbm-probe")]
 #[path = "atomic_scanout_hardware_smoke.rs"]
 mod atomic_scanout_hardware_smoke;
+
+/// A cursor-only commit blocks and carries no page-flip event.
+///
+/// Blocking is what lets the owner know the CRTC is free when the call
+/// returns, rather than inventing a completion it never observed -- which is
+/// the only way `OneOutstandingCommitPerCrtc` can be enforced against a
+/// commit that reports nothing. No event because the reader beneath it
+/// accounts for frames, and a cursor arriving there would be a pointer that
+/// looks like a retired Present.
+#[test]
+fn a_cursor_only_commit_blocks_and_reports_no_flip() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicCommitFlagsReport, LibdrmNativeAtomicCommitRequestScope,
+        LibdrmNativeCursorPlacement, build_native_cursor_only_atomic_request,
+    };
+
+    let request = build_native_cursor_only_atomic_request(
+        drm::control::from_u32(51).unwrap(),
+        drm::control::from_u32(41).unwrap(),
+        cursor_plane_properties(),
+        Some(LibdrmNativeCursorPlacement {
+            framebuffer: drm::control::from_u32(9).unwrap(),
+            x: 120,
+            y: 80,
+            width: 64,
+            height: 64,
+        }),
+    );
+
+    assert_eq!(
+        request.reduced_flags(),
+        LibdrmNativeAtomicCommitFlagsReport {
+            page_flip_event: false,
+            nonblocking: false,
+            allow_modeset: false,
+            test_only: false,
+        }
+    );
+    assert_eq!(
+        request.reduced_scope(),
+        LibdrmNativeAtomicCommitRequestScope::PageFlip,
+        "a cursor changes no mode"
+    );
+}
+
+/// Hiding is the same commit with nothing to show, and must not become a
+/// modeset or start asking for flip events.
+#[test]
+fn hiding_a_cursor_is_the_same_shape_of_commit() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicCommitFlagsReport, build_native_cursor_only_atomic_request,
+    };
+
+    let request = build_native_cursor_only_atomic_request(
+        drm::control::from_u32(51).unwrap(),
+        drm::control::from_u32(41).unwrap(),
+        cursor_plane_properties(),
+        None,
+    );
+    assert_eq!(
+        request.reduced_flags(),
+        LibdrmNativeAtomicCommitFlagsReport {
+            page_flip_event: false,
+            nonblocking: false,
+            allow_modeset: false,
+            test_only: false,
+        }
+    );
+}
+
+fn cursor_plane_properties() -> sophia_backend_live::LibdrmNativeCursorPlanePropertyHandles {
+    let handle = |raw: u32| drm::control::from_u32(raw).unwrap();
+    sophia_backend_live::LibdrmNativeCursorPlanePropertyHandles::new(
+        handle(104),
+        handle(105),
+        handle(106),
+        handle(107),
+        handle(108),
+        handle(109),
+        handle(110),
+        handle(111),
+        handle(112),
+        handle(113),
+    )
+}

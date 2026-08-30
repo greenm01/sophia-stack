@@ -362,3 +362,31 @@ pub struct LibdrmNativeCursorPlacement {
     pub width: u32,
     pub height: u32,
 }
+
+/// A commit that carries a cursor and nothing else.
+///
+/// The only request in the frame path that attaches no framebuffer to the
+/// primary. Atomic requests are sparse, so naming only cursor properties
+/// leaves the primary scanning whatever it was scanning -- which is what lets
+/// a pointer move across a directly scanned client buffer without evicting
+/// it.
+///
+/// Blocking, with no page-flip event. Blocking because the CRTC is then free
+/// when the call returns, which is the only way the owner can enforce one
+/// outstanding commit per CRTC without inventing a completion it did not
+/// observe. No event because the event reader and the presentation feedback
+/// beneath it account for *frames*, and a cursor arriving there would be a
+/// pointer that looks like a retired Present.
+#[cfg(feature = "libdrm-events")]
+pub fn build_native_cursor_only_atomic_request(
+    plane: drm::control::plane::Handle,
+    crtc: drm::control::crtc::Handle,
+    properties: LibdrmNativeCursorPlanePropertyHandles,
+    placement: Option<LibdrmNativeCursorPlacement>,
+) -> LibdrmNativeAtomicCommitRequest {
+    let mut request = drm::control::atomic::AtomicModeReq::new();
+    add_cursor_plane_properties(&mut request, plane, crtc, properties, placement);
+    LibdrmNativeAtomicCommitRequest::new(request)
+        .without_page_flip_event()
+        .blocking()
+}
