@@ -108,7 +108,7 @@ client_timed_exit="$(rendering_performance_field "$client" timed_exit)" ||
 # CPU software-Present evidence: the patch-batch path must have been exercised,
 # not whole-pixmap replacement every present.
 efficiency="$(
-    grep -E '^sophia_live_rendering_efficiency schema=1 status=complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_rendering_efficiency schema=(1|2) status=complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$efficiency" ]] || fail "missing rendering-efficiency evidence"

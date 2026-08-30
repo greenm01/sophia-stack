@@ -136,7 +136,7 @@ awk '
     END { for (surface in seen) count++; print count + 0 }
 ' "$EVIDENCE_FILE") == 3 )) || fail "three distinct DMA-BUF identities were not selected"
 
-rendering="$(grep -E '^sophia_live_rendering_efficiency schema=1 status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+rendering="$(grep -E '^sophia_live_rendering_efficiency schema=(1|2) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$rendering" ]] || fail "rendering-efficiency completion is missing"
 for key in cpu_updates cpu_replacements cpu_patch_updates cpu_payload_bytes composition_target_reuses; do
     value="$(field "$rendering" "$key")" || fail "rendering completion lacks $key"

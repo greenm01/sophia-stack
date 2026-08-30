@@ -136,6 +136,22 @@ impl LiveProductionCpuScene {
         self.buffers.total_bytes()
     }
 
+    /// How often a client update had to copy because a presentation still held
+    /// the bytes it was patching.
+    pub const fn cpu_cow_splits(&self) -> u64 {
+        self.buffers.cow_splits()
+    }
+
+    /// The most this scene ever held at once, which is what a bound is a claim
+    /// about. The live figures say whether it drained; these say whether it grew.
+    pub const fn peak_resident_buffers(&self) -> usize {
+        self.buffers.peak_buffers()
+    }
+
+    pub const fn peak_resident_buffer_bytes(&self) -> usize {
+        self.buffers.peak_bytes()
+    }
+
     pub fn missing_committed_buffer_count(
         &self,
         committed_surfaces: &[CommittedSurfaceState],

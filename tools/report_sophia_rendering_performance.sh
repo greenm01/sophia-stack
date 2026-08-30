@@ -25,7 +25,7 @@ completion="$(
 )"
 [[ -n "$completion" ]] || fail "missing bounded session completion"
 efficiency="$(
-    grep -E '^sophia_live_rendering_efficiency schema=1 status=complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_rendering_efficiency schema=(1|2) status=complete ' "$SESSION_LOG" |
         tail -n 1
 )"
 [[ -n "$efficiency" ]] || fail "missing rendering-efficiency evidence"

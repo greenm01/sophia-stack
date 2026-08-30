@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY="$ROOT_DIR/tools/verify_qemu_xmonad_idle_efficiency_evidence.sh"
 FIXTURE="$(mktemp)"
 MUTATION="$(mktemp)"
-trap 'rm -f -- "$FIXTURE" "$MUTATION"' EXIT
+SCHEMA2="$(mktemp)"
+trap 'rm -f -- "$FIXTURE" "$MUTATION" "$SCHEMA2"' EXIT
 
 {
     echo 'sophia_qemu_xmonad schema=2 status=starting isolation=headless control=qmp-unix profile=xmonad windows=2 gpu_mode=virgl host_render_node=explicit'
@@ -116,6 +117,21 @@ fi
 sed 's/status=clean app_groups=0/status=clean app_groups=1/' "$FIXTURE" >"$MUTATION"
 if "$VERIFY" "$MUTATION" >/dev/null 2>&1; then
     echo "idle-efficiency verifier accepted dirty application cleanup" >&2
+    exit 1
+fi
+
+# Schema-2 rendering-efficiency evidence, which a current session emits. The
+# schema-1 fixture above stays because archived evidence carries it, so both
+# must verify: a reader that accepted only one of them would either orphan the
+# archives or stop reading live sessions, and each has happened before.
+sed 's/^sophia_live_rendering_efficiency schema=1 status=complete \(.*\)$/sophia_live_rendering_efficiency schema=2 status=complete \1 cpu_cow_splits=0 cpu_resident_buffers_peak=3 cpu_resident_bytes_peak=98304/' \
+    "$FIXTURE" >"$SCHEMA2"
+grep -q 'sophia_live_rendering_efficiency schema=2 ' "$SCHEMA2" || {
+    echo "the schema-2 fixture rewrite did not apply" >&2
+    exit 1
+}
+if ! "$VERIFY" "$SCHEMA2" >/dev/null 2>&1; then
+    echo "idle-efficiency verifier rejected schema-2 rendering evidence" >&2
     exit 1
 fi
 

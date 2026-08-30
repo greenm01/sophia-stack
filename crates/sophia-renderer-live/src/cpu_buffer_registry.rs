@@ -80,6 +80,14 @@ pub struct LiveCpuBufferRegistry {
     /// outliving the updates that follow them, which is real work but not the
     /// work this path was optimized for.
     cow_splits: u64,
+    /// The most buffers and bytes this registry has ever held at once.
+    ///
+    /// The live figures answer whether it drained; these answer whether it ever
+    /// grew. A session that ends at zero having peaked at a thousand buffers
+    /// looks identical to one that never held more than three, and only the
+    /// second is bounded.
+    peak_buffers: usize,
+    peak_bytes: usize,
 }
 
 impl LiveCpuBufferRegistry {
@@ -108,6 +116,7 @@ impl LiveCpuBufferRegistry {
             LiveCpuBufferUpdate::Patch(patch) => self.apply_patch(patch)?,
             LiveCpuBufferUpdate::PatchBatch(batch) => self.apply_patch_batch(batch)?,
         }
+        self.record_peak();
         Ok(true)
     }
 
@@ -117,6 +126,25 @@ impl LiveCpuBufferRegistry {
 
     pub fn retain_handles(&mut self, mut retain: impl FnMut(u64) -> bool) {
         self.buffers.retain(|handle, _| retain(*handle));
+    }
+
+    /// How many patches had to copy because a presentation still held the bytes.
+    pub const fn cow_splits(&self) -> u64 {
+        self.cow_splits
+    }
+
+    /// The high-water marks, which are what "bounded" is a claim about.
+    pub const fn peak_buffers(&self) -> usize {
+        self.peak_buffers
+    }
+
+    pub const fn peak_bytes(&self) -> usize {
+        self.peak_bytes
+    }
+
+    fn record_peak(&mut self) {
+        self.peak_buffers = self.peak_buffers.max(self.buffers.len());
+        self.peak_bytes = self.peak_bytes.max(self.total_bytes());
     }
 
     pub fn len(&self) -> usize {
@@ -144,6 +172,7 @@ impl LiveCpuBufferRegistry {
     }
 
     fn apply_patch(&mut self, patch: LiveCpuBufferPatch) -> Result<(), LiveCpuBufferRegistryError> {
+        let splits = &mut self.cow_splits;
         let buffer = self
             .buffers
             .get_mut(&patch.handle)
@@ -159,7 +188,7 @@ impl LiveCpuBufferRegistry {
             rect: patch.rect,
             bytes: patch.bytes,
         };
-        apply_patch_region(buffer, &region)?;
+        apply_patch_region(buffer, &region, splits)?;
         buffer.generation = patch.generation;
         Ok(())
     }
@@ -171,6 +200,7 @@ impl LiveCpuBufferRegistry {
         if batch.patches.len() > LIVE_CPU_PATCH_BATCH_MAX_RECTS {
             return Err(LiveCpuBufferRegistryError::PatchBatchCapacityExceeded);
         }
+        let splits = &mut self.cow_splits;
         let buffer = self
             .buffers
             .get_mut(&batch.handle)
@@ -186,7 +216,7 @@ impl LiveCpuBufferRegistry {
             validate_patch_region(buffer, patch)?;
         }
         for patch in &batch.patches {
-            apply_patch_region(buffer, patch)?;
+            apply_patch_region(buffer, patch, splits)?;
         }
         buffer.generation = batch.generation;
         Ok(())
@@ -233,6 +263,7 @@ fn validate_patch_region(
 fn apply_patch_region(
     buffer: &mut LiveCpuBufferSource,
     patch: &LiveCpuBufferPatchRegion,
+    splits: &mut u64,
 ) -> Result<(), LiveCpuBufferRegistryError> {
     validate_patch_region(buffer, patch)?;
     let x = usize::try_from(patch.rect.x)
@@ -252,6 +283,9 @@ fn apply_patch_region(
     // leave the base untouched, and splitting it would be a mutation. A batch
     // splits on its first region and writes the rest into the copy, which is
     // what keeps the batch one logical write.
+    if Arc::strong_count(&buffer.bytes) > 1 {
+        *splits = splits.saturating_add(1);
+    }
     let target_bytes = Arc::make_mut(&mut buffer.bytes);
     for row in 0..height {
         let source = row

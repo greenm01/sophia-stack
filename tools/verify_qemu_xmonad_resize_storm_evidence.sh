@@ -95,7 +95,7 @@ grep -Eq 'sophia_live_output_repaint schema=1 status=presented output=[0-9]+ mod
 (( $(count 'sophia_live_native_page_flip schema=1 status=retired output=') >= 12 )) ||
     fail "fewer than twelve native frames retired during the storm"
 
-rendering="$(grep -E '^sophia_live_rendering_efficiency schema=1 status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+rendering="$(grep -E '^sophia_live_rendering_efficiency schema=(1|2) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$rendering" ]] || fail "rendering-efficiency completion is missing"
 for key in cpu_patch_updates cpu_payload_bytes; do
     value="$(field "$rendering" "$key")" || fail "rendering completion is missing $key"

@@ -36,7 +36,10 @@ import re
 import sys
 
 # Records whose emitters have been checked to write one schema per message.
-GUARDED = ('sophia_live_native_resources',)
+GUARDED = (
+    'sophia_live_native_resources',
+    'sophia_live_rendering_efficiency',
+)
 
 emitted = {}
 for root, dirs, files in os.walk('crates'):

@@ -183,7 +183,7 @@ for pair in \
     [[ "$actual" == "${pair#*=}" ]] || fail "${pair%%=*} is $actual, expected ${pair#*=}"
 done
 
-rendering="$(grep -E '^sophia_live_rendering_efficiency schema=1 status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
+rendering="$(grep -E '^sophia_live_rendering_efficiency schema=(1|2) status=complete ' "$EVIDENCE_FILE" | tail -n 1)"
 [[ -n "$rendering" ]] || fail "rendering-efficiency completion is missing"
 for key in cpu_updates cpu_replacements damage_scoped_metric_frames composition_target_reuses; do
     value="$(field "$rendering" "$key")" || fail "rendering completion lacks $key"

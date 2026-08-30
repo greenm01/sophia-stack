@@ -924,8 +924,18 @@
             native_scanout.pending_kernel_page_flip_timestamps(),
         );
     }
+    // Schema 2 adds what the copy-on-write backing costs and bounds.
+    //
+    // `cpu_cow_splits` counts patches that had to copy because a presentation
+    // still held the bytes. Near zero is the steady state; tracking the update
+    // count means presentations outlive the updates that follow them, which is
+    // real work rather than a defect but is not the work this path was
+    // optimized for. `cpu_resident_buffers_peak` and `cpu_resident_bytes_peak`
+    // are what "bounded" is a claim about: a registry that ends empty having
+    // peaked at a thousand buffers reads identically to one that never held
+    // more than three, and only the second is bounded.
     crate::session_println!(
-        "sophia_live_rendering_efficiency schema=1 status=complete cpu_updates={} cpu_replacements={} cpu_patch_updates={} cpu_patch_rects={} cpu_payload_bytes={} exact_pixel_metric_frames={} damage_scoped_metric_frames={} composition_target_reuses={}",
+        "sophia_live_rendering_efficiency schema=2 status=complete cpu_updates={} cpu_replacements={} cpu_patch_updates={} cpu_patch_rects={} cpu_payload_bytes={} exact_pixel_metric_frames={} damage_scoped_metric_frames={} composition_target_reuses={} cpu_cow_splits={} cpu_resident_buffers_peak={} cpu_resident_bytes_peak={}",
         cpu_buffer_updates,
         cpu_buffer_replacements,
         cpu_buffer_patch_updates,
@@ -934,6 +944,9 @@
         scene.exact_pixel_metric_frames(),
         scene.damage_scoped_metric_frames(),
         native_resources.composition_target_reuses,
+        scene.cpu_cow_splits(),
+        scene.peak_resident_buffers(),
+        scene.peak_resident_buffer_bytes(),
     );
     crate::session_println!(
         "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches} merged_batches={merged_batches} max_merge_run={max_merge_run}"
