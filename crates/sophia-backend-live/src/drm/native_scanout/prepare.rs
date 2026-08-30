@@ -21,6 +21,16 @@ pub struct LibdrmNativePrimaryPlanePreparedScanout {
     property_handles: LibdrmNativePrimaryPlanePropertyHandles,
     resources: LibdrmNativePrimaryPlaneResourceBundle,
     request: LibdrmNativeAtomicCommitRequest,
+    /// The same commit without its cursor, prepared beside the one that
+    /// carries it.
+    ///
+    /// A combined commit shares one fate: a cursor-side refusal takes the
+    /// frame with it, a failure class that cannot exist while the cursor
+    /// rides a separate ioctl. The retry is built here, from the same
+    /// objects, rather than rebuilt at rejection time -- the frame the
+    /// driver then accepts is one whose construction did not depend on
+    /// anything having gone wrong first. A cursor must never cost a frame.
+    retry_without_cursor: Option<LibdrmNativeAtomicCommitRequest>,
 }
 
 /// One enabled head's complete resources for a card-scoped topology commit.
@@ -294,6 +304,14 @@ where
     let objects = resource_bundle.into_objects(selected);
     let request =
         build_native_primary_plane_atomic_request_for_policy(objects, property_handles, policy);
+    let retry_without_cursor = policy.cursor.is_some().then(|| {
+        build_native_primary_plane_atomic_request_for_policy(
+            objects,
+            property_handles,
+            policy.without_cursor(),
+        )
+        .request
+    });
     let Some(request_owner) = request.request else {
         let destroy = destroy_native_primary_plane_resources(device, resource_bundle);
         let mut result = LibdrmNativePrimaryPlaneScanoutPrepareResult::from_descriptor(
@@ -387,6 +405,7 @@ where
             property_handles,
             resources: resource_bundle,
             request: request_owner,
+            retry_without_cursor: retry_without_cursor.flatten(),
         }),
         cleanup: None,
     }
@@ -473,19 +492,32 @@ where
 
 pub fn submit_prepared_native_primary_plane_scanout<D>(
     device: &D,
-    prepared: LibdrmNativePrimaryPlanePreparedScanout,
+    mut prepared: LibdrmNativePrimaryPlanePreparedScanout,
 ) -> LibdrmNativePrimaryPlaneScanoutSubmitResult
 where
     D: LibdrmNativeAtomicCommitDevice + LibdrmNativePrimaryPlaneResourceDevice,
 {
     let (flags, request) = prepared.request.into_native();
-    let submit = match device.submit_atomic_commit(flags, request) {
+    let mut cursor_dropped = false;
+    let mut submit = match device.submit_atomic_commit(flags, request) {
         Ok(()) => LibdrmNativeAtomicCommitSubmitStatus::Submitted,
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
             LibdrmNativeAtomicCommitSubmitStatus::WouldBlock
         }
         Err(_) => LibdrmNativeAtomicCommitSubmitStatus::Rejected,
     };
+    // A rejected combined commit retries with the primary alone. The frame
+    // survives and the cursor stays pending for a later commit -- the
+    // model's NoFrameLostToCursor, as a second submit rather than a hope.
+    if submit == LibdrmNativeAtomicCommitSubmitStatus::Rejected {
+        if let Some(retry) = prepared.retry_without_cursor.take() {
+            let (flags, request) = retry.into_native();
+            if device.submit_atomic_commit(flags, request).is_ok() {
+                submit = LibdrmNativeAtomicCommitSubmitStatus::Submitted;
+                cursor_dropped = true;
+            }
+        }
+    }
     let mut result = LibdrmNativePrimaryPlaneScanoutSubmitResult::from_descriptor(
         if submit == LibdrmNativeAtomicCommitSubmitStatus::Submitted {
             LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
@@ -504,6 +536,7 @@ where
     result.request_scope = Some(prepared.request_scope);
     result.commit_flags = Some(prepared.commit_flags);
     result.submit = Some(submit);
+    result.cursor_dropped = cursor_dropped;
     if submit == LibdrmNativeAtomicCommitSubmitStatus::Submitted {
         result.submission = Some(LibdrmNativePrimaryPlaneScanoutSubmission {
             resources: prepared.resources,

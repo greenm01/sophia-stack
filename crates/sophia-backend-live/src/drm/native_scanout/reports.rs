@@ -18,6 +18,11 @@ pub struct LibdrmNativePrimaryPlaneScanoutSubmitResult {
     pub submit: Option<LibdrmNativeAtomicCommitSubmitStatus>,
     pub submission: Option<LibdrmNativePrimaryPlaneScanoutSubmission>,
     pub cleanup: Option<LibdrmNativePrimaryPlaneResourceCleanup>,
+    /// The commit was accepted only after its cursor was dropped.
+    ///
+    /// The caller must not settle the cursor cells: the plane is not showing
+    /// the ride, and the position stays pending for a later commit.
+    pub cursor_dropped: bool,
 }
 
 impl LibdrmNativePrimaryPlaneScanoutSubmitResult {
@@ -43,6 +48,7 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitResult {
             submit: None,
             submission: None,
             cleanup: None,
+            cursor_dropped: false,
         }
     }
 

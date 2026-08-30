@@ -66,6 +66,20 @@ where
         Some(decision)
     }
 
+    /// Arm or clear the cursor that rides this output's next primary commit.
+    #[cfg(feature = "libdrm-events")]
+    pub fn set_cursor_ride_request(
+        &mut self,
+        output: OutputId,
+        cursor: Option<crate::LibdrmNativeAtomicCursor>,
+    ) -> bool {
+        let Some(state) = self.outputs.get_mut(output) else {
+            return false;
+        };
+        state.cursor_ride_request = cursor;
+        true
+    }
+
     #[cfg(feature = "libdrm-events")]
     pub fn configure_native_output_selection(
         &mut self,

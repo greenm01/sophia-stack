@@ -343,6 +343,7 @@ fn live_runtime_direct_rendered_scanout_submit_rechecks_native_kms_snapshot_befo
     let device = FakeNativePrimaryPlaneScanoutDevice {
         commits: std::cell::Cell::new(0),
         accept_commits: None,
+        reject_commits_before: 0,
         selection: FakeNativeKmsSelectionDevice {
             connector_snapshot: Ok(LibdrmNativeConnectorSnapshot::new(
                 false,

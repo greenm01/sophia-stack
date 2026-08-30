@@ -17,6 +17,16 @@ pub struct LiveRenderedOutputState {
 
     pub(crate) vrr_decision: OutputVrrDecision,
     pub(crate) vrr_property_request: Option<bool>,
+    /// A cursor placement to carry in this output's next primary commit.
+    ///
+    /// Armed by the owner when a frame is about to go out and a cursor is
+    /// pending -- the ride costs nothing, since the request was being built
+    /// anyway. Re-armed every tick from the head's pending cell rather than
+    /// consumed here, because a deferred submission must not swallow the
+    /// position; the owner settles or re-arms it by reading the submit
+    /// report.
+    #[cfg(feature = "libdrm-events")]
+    pub(crate) cursor_ride_request: Option<crate::LibdrmNativeAtomicCursor>,
     /// Every connector backing this logical output, in head order.
     ///
     /// One entry is the ordinary desktop; several is a mirror group. Empty means
@@ -84,6 +94,8 @@ impl LiveRenderedOutputState {
             page_flip_callback_intake: LivePageFlipCallbackIntake::new(output.id),
             vrr_decision: OutputVrrDecision::DisabledByPolicy,
             vrr_property_request: None,
+            #[cfg(feature = "libdrm-events")]
+            cursor_ride_request: None,
             #[cfg(feature = "libdrm-events")]
             native_selections: Vec::new(),
             #[cfg(feature = "libdrm-events")]

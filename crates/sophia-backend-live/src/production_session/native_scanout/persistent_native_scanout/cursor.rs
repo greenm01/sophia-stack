@@ -189,6 +189,49 @@ impl LiveProductionNativeScanout {
 }
 
 impl LiveProductionNativeScanout {
+    /// The cursor this head's next primary commit should carry, if any.
+    ///
+    /// `None` when the session is not driving the atomic path, when nothing
+    /// is pending, or when the head has no usable cursor plane -- all of
+    /// which mean the frame commits exactly as it always did. The placement
+    /// is returned beside the request so the caller can settle the cells
+    /// with the value it actually armed, not whatever is pending by the time
+    /// the submit report comes back.
+    pub(crate) fn arm_cursor_ride(
+        &mut self,
+        index: usize,
+    ) -> Option<(
+        crate::LibdrmNativeAtomicCursor,
+        Option<crate::LibdrmNativeCursorPlacement>,
+    )> {
+        if self.cursor_path != crate::HardwareCursorPath::AtomicPlane {
+            return None;
+        }
+        let placement = self.heads[index].pending_cursor?;
+        if placement == self.heads[index].committed_cursor {
+            self.heads[index].pending_cursor = None;
+            return None;
+        }
+        let plane = self.heads[index].selection.cursor_plane()?;
+        if self.heads[index].cursor_properties.is_none() {
+            self.heads[index].cursor_properties = crate::discover_cursor_plane_properties(
+                self.groups[self.heads[index].group]
+                    .session
+                    .cursor_commit_device(),
+                plane,
+            );
+        }
+        let properties = self.heads[index].cursor_properties?;
+        Some((
+            crate::LibdrmNativeAtomicCursor {
+                plane,
+                properties,
+                placement,
+            },
+            placement,
+        ))
+    }
+
     /// Put the cursor where it belongs on every head, atomically.
     ///
     /// One decision per head, taken by `plan_cursor_commit` so the rule lives

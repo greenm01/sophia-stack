@@ -23,6 +23,9 @@ pub struct LiveRenderedPrimaryPlaneScanoutSubmitResult<Owner> {
     pub commit_submit: Option<LibdrmNativeAtomicCommitSubmitStatus>,
     pub submission: Option<LiveRenderedPrimaryPlaneScanoutSubmission<Owner>>,
     pub cleanup: Option<LiveRenderedPrimaryPlaneScanoutCleanup<Owner>>,
+    /// The commit was accepted only after its cursor was dropped; the caller
+    /// must leave the cursor pending rather than settle it as shown.
+    pub cursor_dropped: bool,
 }
 
 #[cfg(feature = "libdrm-events")]

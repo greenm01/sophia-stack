@@ -107,6 +107,42 @@ where
     E: LiveRenderedScanoutBufferExporter,
     E::Owner: LiveRenderedScanoutBufferPrimeSource,
 {
+    prepare_rendered_primary_plane_scanout_from_target_and_selection_with_cursor(
+        scanout_target,
+        target,
+        selection,
+        vrr_enabled,
+        None,
+        device,
+        exporter,
+    )
+}
+
+/// The same, with a cursor riding the frame's commit.
+///
+/// The ride is the cheap half of the transaction owner: the request is being
+/// built anyway, and a cursor aboard it waits for nothing. The policy is
+/// where it lands because the policy is what already travels this far --
+/// VRR rides it the same way.
+#[cfg(feature = "libdrm-events")]
+pub fn prepare_rendered_primary_plane_scanout_from_target_and_selection_with_cursor<D, E>(
+    scanout_target: LiveKmsScanoutTargetStatus,
+    target: Option<LiveGbmEglFrameTargetRecord>,
+    selection: LibdrmNativePrimaryPlaneSelectionResult,
+    vrr_enabled: Option<bool>,
+    cursor_ride: Option<crate::LibdrmNativeAtomicCursor>,
+    device: &D,
+    exporter: &mut E,
+) -> LiveRenderedPrimaryPlaneScanoutPrepareResult<E::Owner>
+where
+    D: LibdrmNativePropertyLookupDevice + LibdrmNativePrimaryPlaneResourceDevice,
+    E: LiveRenderedScanoutBufferExporter,
+    E::Owner: LiveRenderedScanoutBufferPrimeSource,
+{
+    let mut policy = LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip();
+    if let Some(cursor) = cursor_ride {
+        policy = policy.with_cursor(cursor);
+    }
     prepare_rendered_primary_plane_scanout_from_target_and_selection_with_policy(
         scanout_target,
         target,
@@ -114,7 +150,7 @@ where
         vrr_enabled,
         device,
         exporter,
-        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        policy,
     )
 }
 
@@ -358,6 +394,7 @@ where
         commit_submit: native.submit,
         submission,
         cleanup,
+        cursor_dropped: native.cursor_dropped,
     }
 }
 

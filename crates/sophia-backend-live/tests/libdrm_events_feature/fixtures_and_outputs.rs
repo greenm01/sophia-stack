@@ -153,6 +153,7 @@ fn full_primary_plane_scanout_device() -> FakeNativePrimaryPlaneScanoutDevice {
         commits: std::cell::Cell::new(0),
         test_only_commits: std::cell::Cell::new(0),
         accept_commits: None,
+        reject_commits_before: 0,
         selection: full_kms_selection_device(),
         properties: full_property_lookup_device(),
         resources: full_primary_plane_resource_device(),

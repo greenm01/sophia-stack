@@ -18,6 +18,7 @@ pub(crate) struct LiveRenderedPrimaryPlaneRuntimeAdapter<'a, D, E> {
     pub(crate) submitted_after_page_flip_serial: Option<u64>,
     pub(crate) selection: LibdrmNativePrimaryPlaneSelectionResult,
     pub(crate) vrr_enabled: Option<bool>,
+    pub(crate) cursor_ride: Option<crate::LibdrmNativeAtomicCursor>,
     pub(crate) device: &'a D,
     pub(crate) exporter: &'a mut E,
     pub(crate) submit_report: &'a mut Option<LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport>,
@@ -83,6 +84,7 @@ where
             None,
             self.selection,
             self.vrr_enabled,
+            self.cursor_ride,
             self.device,
             self.exporter,
         );

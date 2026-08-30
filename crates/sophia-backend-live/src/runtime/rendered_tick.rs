@@ -57,6 +57,7 @@ where
             },
         );
         let vrr_enabled = state.vrr_property_request;
+        let cursor_ride = state.cursor_ride_request;
         let mut rendered_primary_plane_scanout_submit = None;
 
         let engine = self.assembly.run_tick_with_live_runtime_adapter(
@@ -75,6 +76,7 @@ where
                     submitted_after_page_flip_serial,
                     selection,
                     vrr_enabled,
+                    cursor_ride,
                     device,
                     exporter,
                     submit_report: &mut rendered_primary_plane_scanout_submit,

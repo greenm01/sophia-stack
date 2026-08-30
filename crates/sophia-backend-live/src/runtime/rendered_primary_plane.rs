@@ -173,6 +173,7 @@ where
             state.gbm_egl_frame_target,
             selection,
             state.vrr_property_request,
+            state.cursor_ride_request,
             device,
             exporter,
         )
@@ -211,6 +212,7 @@ where
             Some(&mut state.pending_runtime_scanout_states),
             selection,
             state.vrr_property_request,
+            state.cursor_ride_request,
             device,
             exporter,
         )

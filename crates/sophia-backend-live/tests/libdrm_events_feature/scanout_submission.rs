@@ -1227,3 +1227,142 @@ fn a_validating_policy_carries_no_page_flip_event() {
         LibdrmNativeAtomicCommitRequestScope::PageFlip
     );
 }
+
+/// A rejected combined commit retries with the primary alone.
+///
+/// The cursor and the frame share one request, so a cursor-side refusal
+/// takes the frame with it -- a failure class that cannot exist on the
+/// legacy ioctl. `NoFrameLostToCursor` is the model's answer: the retry is
+/// prepared beside the combined request, and the driver refusing the first
+/// gets the same frame again without its passenger. The result says the
+/// cursor was dropped, so the caller leaves the position pending instead of
+/// recording a cursor the plane is not showing.
+#[test]
+fn a_rejected_combined_commit_retries_without_its_cursor() {
+    let mut device = full_primary_plane_scanout_device();
+    device.reject_commits_before = 1;
+    let selection = select_native_primary_plane_target(&device);
+    let cursor = sophia_backend_live::LibdrmNativeAtomicCursor {
+        plane: drm::control::from_u32(61).unwrap(),
+        properties: cursor_plane_property_handles(),
+        placement: Some(sophia_backend_live::LibdrmNativeCursorPlacement {
+            framebuffer: drm::control::from_u32(9).unwrap(),
+            x: 40,
+            y: 30,
+            width: 64,
+            height: 64,
+        }),
+    };
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().with_cursor(cursor),
+        );
+
+    let submitted = submit_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+    assert_eq!(
+        submitted.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip,
+        "the frame survives the cursor's refusal"
+    );
+    assert!(
+        submitted.cursor_dropped,
+        "and the result says the cursor did not ride"
+    );
+    assert_eq!(device.commits.get(), 2, "one refusal, one retry");
+}
+
+/// The retry is spent only on rejection: an accepted combined commit is one
+/// commit, and the cursor is aboard it.
+#[test]
+fn an_accepted_combined_commit_does_not_retry() {
+    let device = full_primary_plane_scanout_device();
+    let selection = select_native_primary_plane_target(&device);
+    let cursor = sophia_backend_live::LibdrmNativeAtomicCursor {
+        plane: drm::control::from_u32(61).unwrap(),
+        properties: cursor_plane_property_handles(),
+        placement: None,
+    };
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().with_cursor(cursor),
+        );
+    let submitted = submit_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+    assert_eq!(
+        submitted.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    assert!(!submitted.cursor_dropped);
+    assert_eq!(device.commits.get(), 1);
+}
+
+/// A rejected commit with no cursor aboard has nothing to drop, and stays a
+/// rejection -- the retry must not resurrect ordinary failures.
+#[test]
+fn a_rejected_commit_without_a_cursor_stays_rejected() {
+    let mut device = full_primary_plane_scanout_device();
+    device.reject_commits_before = 1;
+    let selection = select_native_primary_plane_target(&device);
+    let mut prepared =
+        prepare_native_primary_plane_scanout_from_selection_and_renderer_descriptor_with_policy(
+            &device,
+            selection,
+            scanout_descriptor(Size {
+                width: 1280,
+                height: 720,
+            }),
+            LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+        );
+    let submitted = submit_prepared_native_primary_plane_scanout(
+        &device,
+        prepared
+            .prepared
+            .take()
+            .expect("successful preparation retains an affine owner"),
+    );
+    assert_eq!(
+        submitted.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::AtomicSubmitFailed
+    );
+    assert!(!submitted.cursor_dropped);
+    assert_eq!(device.commits.get(), 1);
+}
+
+fn cursor_plane_property_handles() -> sophia_backend_live::LibdrmNativeCursorPlanePropertyHandles {
+    let handle = |raw: u32| drm::control::from_u32(raw).unwrap();
+    sophia_backend_live::LibdrmNativeCursorPlanePropertyHandles::new(
+        handle(204),
+        handle(205),
+        handle(206),
+        handle(207),
+        handle(208),
+        handle(209),
+        handle(210),
+        handle(211),
+        handle(212),
+        handle(213),
+    )
+}

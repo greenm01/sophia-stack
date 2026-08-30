@@ -439,6 +439,10 @@ struct FakeNativePrimaryPlaneScanoutDevice {
     /// the screen while every assertion still passed.
     test_only_commits: std::cell::Cell<usize>,
     accept_commits: Option<usize>,
+    /// Commits before this index are refused. The inverse of
+    /// `accept_commits`: a driver that rejects the first request and accepts
+    /// the retry, which is the combined-commit fallback's whole scenario.
+    reject_commits_before: usize,
 }
 
 impl LibdrmNativeKmsSelectionDevice for FakeNativePrimaryPlaneScanoutDevice {
@@ -590,6 +594,9 @@ impl LibdrmNativeAtomicCommitDevice for FakeNativePrimaryPlaneScanoutDevice {
         }
         if self.accept_commits.is_some_and(|accept| taken >= accept) {
             return Err(io::Error::other("synthetic head commit refusal"));
+        }
+        if taken < self.reject_commits_before {
+            return Err(io::Error::other("synthetic first-commit refusal"));
         }
         clone_io_result(&self.submit)
     }

@@ -27,6 +27,8 @@ pub struct LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {
     pub in_flight: bool,
     pub in_flight_ticks: u64,
     pub cleanup_pending: bool,
+    /// The commit was accepted only after its cursor was dropped.
+    pub cursor_dropped: bool,
 }
 
 impl LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {

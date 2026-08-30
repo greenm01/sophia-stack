@@ -524,3 +524,84 @@ fn cursor_plane_properties() -> sophia_backend_live::LibdrmNativeCursorPlaneProp
         handle(113),
     )
 }
+
+/// A policy carrying a cursor prepares two requests: the combined one, and
+/// the same commit without its cursor.
+///
+/// The second is the retry NoFrameLostToCursor depends on. Built beside the
+/// first from the same objects rather than rebuilt at rejection time, so the
+/// frame the driver then accepts is one whose construction did not depend on
+/// anything having gone wrong first.
+#[test]
+fn a_cursor_ride_is_prepared_with_its_primary_only_retry() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicCursor, LibdrmNativeCursorPlacement,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy,
+        build_native_primary_plane_atomic_request_for_policy,
+    };
+
+    let objects = primary_plane_objects(Size {
+        width: 1280,
+        height: 720,
+    });
+    let properties = primary_plane_properties();
+    let cursor = LibdrmNativeAtomicCursor {
+        plane: drm::control::from_u32(61).unwrap(),
+        properties: cursor_plane_properties(),
+        placement: Some(LibdrmNativeCursorPlacement {
+            framebuffer: drm::control::from_u32(9).unwrap(),
+            x: 40,
+            y: 30,
+            width: 64,
+            height: 64,
+        }),
+    };
+
+    let combined = build_native_primary_plane_atomic_request_for_policy(
+        objects,
+        properties,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().with_cursor(cursor),
+    );
+    let primary_only = build_native_primary_plane_atomic_request_for_policy(
+        objects,
+        properties,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip(),
+    );
+    let combined = combined.request.expect("combined request builds");
+    let primary_only = primary_only.request.expect("primary-only request builds");
+
+    // Same flags and scope: the retry is the same commit minus one plane, not
+    // a different kind of commit.
+    assert_eq!(combined.reduced_flags(), primary_only.reduced_flags());
+    assert_eq!(combined.reduced_scope(), primary_only.reduced_scope());
+}
+
+/// The retry policy is the same commit minus its passenger, and nothing else.
+///
+/// The fakes cannot see inside a built request, so this is where "the retry
+/// carries no cursor" is checkable: on the policy transformation the retry is
+/// built from. Everything a commit's shape depends on survives; only the
+/// cursor goes.
+#[test]
+fn the_retry_policy_only_removes_the_cursor() {
+    use sophia_backend_live::{
+        LibdrmNativeAtomicCursor, LibdrmNativePrimaryPlaneScanoutSubmitPolicy,
+    };
+
+    let cursor = LibdrmNativeAtomicCursor {
+        plane: drm::control::from_u32(61).unwrap(),
+        properties: cursor_plane_properties(),
+        placement: None,
+    };
+    let combined = LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip()
+        .with_vrr_enabled(true)
+        .with_cursor(cursor);
+    let retry = combined.without_cursor();
+
+    assert_eq!(retry.cursor, None, "the passenger is gone");
+    assert_eq!(
+        retry,
+        LibdrmNativePrimaryPlaneScanoutSubmitPolicy::page_flip().with_vrr_enabled(true),
+        "and nothing else changed"
+    );
+}

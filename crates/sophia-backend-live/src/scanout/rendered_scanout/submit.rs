@@ -9,6 +9,7 @@ pub(crate) fn submit_rendered_primary_plane_scanout_from_scanout_target_and_sele
     target: Option<LiveGbmEglFrameTargetRecord>,
     selection: LibdrmNativePrimaryPlaneSelectionResult,
     vrr_enabled: Option<bool>,
+    cursor_ride: Option<crate::LibdrmNativeAtomicCursor>,
     device: &D,
     exporter: &mut E,
 ) -> LiveRenderedPrimaryPlaneScanoutSubmitResult<E::Owner>
@@ -19,11 +20,12 @@ where
     E: LiveRenderedScanoutBufferExporter,
     E::Owner: LiveRenderedScanoutBufferPrimeSource,
 {
-    let mut prepare = prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+    let mut prepare = prepare_rendered_primary_plane_scanout_from_target_and_selection_with_cursor(
         scanout_target,
         target,
         selection,
         vrr_enabled,
+        cursor_ride,
         device,
         exporter,
     );
@@ -118,6 +120,7 @@ where
         commit_submit: None,
         submission: None,
         cleanup: prepare.cleanup,
+        cursor_dropped: false,
     }
 }
 
@@ -163,6 +166,7 @@ where
         commit_flags: prepare.commit_flags,
         commit_submit: Some(test),
         submission: None,
+        cursor_dropped: false,
         cleanup: cancelled
             .cleanup
             .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {

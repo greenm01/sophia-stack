@@ -179,6 +179,13 @@ mod persistent_native_scanout {
         /// cursor plane for this CRTC or its plane cannot be positioned --
         /// both of which mean the head keeps the legacy ioctl.
         pub cursor_properties: Option<crate::LibdrmNativeCursorPlanePropertyHandles>,
+        /// The placement a prepared-but-unsubmitted commit is carrying.
+        ///
+        /// Mirror heads prepare in one pass and submit in a later one, so the
+        /// value armed at prepare time has to survive to the accept -- and
+        /// settle with what was actually aboard the request, not whatever is
+        /// pending by then.
+        pub prepared_cursor_ride: Option<Option<crate::LibdrmNativeCursorPlacement>>,
         pub scale: u32,
         pub refresh_millihz: u32,
         pub transform: sophia_protocol::OutputTransform,
@@ -307,6 +314,7 @@ mod persistent_native_scanout {
             in_flight: false,
             in_flight_ticks: 0,
             cleanup_pending: prepare.cleanup.is_some(),
+            cursor_dropped: false,
         }
     }
 
@@ -340,6 +348,7 @@ mod persistent_native_scanout {
             in_flight: result.submission.is_some(),
             in_flight_ticks: 0,
             cleanup_pending: result.cleanup.is_some(),
+            cursor_dropped: result.cursor_dropped,
         }
     }
 
@@ -672,6 +681,7 @@ mod persistent_native_scanout {
                         pending_cursor: None,
                         committed_cursor: None,
                         cursor_properties: None,
+                        prepared_cursor_ride: None,
                         displayed_scanout: None,
                         displayed_group_frame: None,
                         scanout_submission: None,
@@ -1149,6 +1159,16 @@ mod persistent_native_scanout {
             }
             let group = self.heads[index].group;
             self.poll_group_callbacks(group)?;
+            // Arm the cursor to ride this frame's commit, when one is
+            // pending. The request is being built anyway, so the ride costs
+            // nothing -- and it is the only way a cursor moves while frames
+            // are flowing, since the CRTC is then never free for a
+            // cursor-only commit. Settled below only when the submit was
+            // accepted; a deferred or failed submission leaves the position
+            // pending, because a cursor must never be lost to a frame that
+            // did not happen.
+            let cursor_ride = self.arm_cursor_ride(index);
+            runtime.set_cursor_ride_request(output, cursor_ride.map(|(cursor, _)| cursor));
             let (report, exported_nonzero, worker_was_in_flight, submitted_direct) = {
                 let groups = &mut self.groups;
                 let head = &mut self.heads[index];
@@ -1254,6 +1274,21 @@ mod persistent_native_scanout {
                         self.heads[index].submitted_sequence = Some(self.heads[index].submissions);
                         self.heads[index].submitted_content = content;
                         self.heads[index].submitted_direct = submitted_direct;
+                        // Settled only if the cursor actually rode: a
+                        // combined commit the driver refused retries with the
+                        // primary alone, and settling then would record a
+                        // cursor the plane is not showing. The position stays
+                        // pending instead, for a later commit.
+                        if let Some((_, placement)) = cursor_ride {
+                            if submit.cursor_dropped {
+                                self.cursor_update_failures =
+                                    self.cursor_update_failures.saturating_add(1);
+                            } else {
+                                self.heads[index].committed_cursor = placement;
+                                self.heads[index].pending_cursor = None;
+                                self.cursor_updates = self.cursor_updates.saturating_add(1);
+                            }
+                        }
                         if matches!(
                             content,
                             Some(
@@ -1945,10 +1980,17 @@ mod persistent_native_scanout {
                         .ok_or("mirror generation could not create a preparation cohort")?;
                         self.output_cohorts.insert((output, logical_frame), cohort);
                     }
+                    // Each mirror head carries its own cursor contribution:
+                    // the pointer projects differently per head, and a head
+                    // it is not on hides in this same commit.
+                    let cursor_ride = self.arm_cursor_ride(head_index);
+                    if let Some((_, placement)) = cursor_ride {
+                        self.heads[head_index].prepared_cursor_ride = Some(placement);
+                    }
                     let mut prepare = {
                         let device = self.groups[head_group].session.card();
                         let exporter = &mut self.exporters[head_index];
-                        crate::prepare_rendered_primary_plane_scanout_from_target_and_selection_with(
+                        crate::prepare_rendered_primary_plane_scanout_from_target_and_selection_with_cursor(
                             crate::LiveKmsScanoutTargetStatus::Ready,
                             Some(crate::LiveGbmEglFrameTargetRecord::new(size)),
                             crate::LibdrmNativePrimaryPlaneSelectionResult {
@@ -1956,6 +1998,7 @@ mod persistent_native_scanout {
                                 selection: Some(selection),
                             },
                             None,
+                            cursor_ride.map(|(cursor, _)| cursor),
                             device,
                             exporter,
                         )
@@ -2096,6 +2139,17 @@ mod persistent_native_scanout {
                                 .unwrap_or(self.heads[head_index].last_checksum),
                         );
                         self.heads[head_index].submitted_at = Some(Instant::now());
+                        if let Some(placement) = self.heads[head_index].prepared_cursor_ride.take()
+                        {
+                            if submit.cursor_dropped {
+                                self.cursor_update_failures =
+                                    self.cursor_update_failures.saturating_add(1);
+                            } else {
+                                self.heads[head_index].committed_cursor = placement;
+                                self.heads[head_index].pending_cursor = None;
+                                self.cursor_updates = self.cursor_updates.saturating_add(1);
+                            }
+                        }
                         self.heads[head_index].submitted_ust_usec =
                             Some(Self::monotonic_ust_usec());
                         self.submissions = self.submissions.saturating_add(1);

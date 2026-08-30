@@ -21,6 +21,7 @@ pub(crate) fn track_rendered_primary_plane_scanout_submit_from_target_and_select
     pending_runtime_scanout_states: Option<&mut VecDeque<RuntimeScanoutState>>,
     selection: LibdrmNativePrimaryPlaneSelectionResult,
     vrr_enabled: Option<bool>,
+    cursor_ride: Option<crate::LibdrmNativeAtomicCursor>,
     device: &D,
     exporter: &mut E,
 ) -> LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport
@@ -61,6 +62,7 @@ where
             in_flight: true,
             in_flight_ticks: *rendered_primary_plane_scanout_in_flight_ticks,
             cleanup_pending: rendered_primary_plane_scanout_cleanup.is_some(),
+            cursor_dropped: false,
         };
     }
 
@@ -94,6 +96,7 @@ where
             in_flight: false,
             in_flight_ticks: *rendered_primary_plane_scanout_in_flight_ticks,
             cleanup_pending: true,
+            cursor_dropped: false,
         };
     }
 
@@ -102,6 +105,7 @@ where
         target,
         selection,
         vrr_enabled,
+        cursor_ride,
         device,
         exporter,
     );
@@ -155,6 +159,7 @@ where
         in_flight: rendered_primary_plane_scanout_submission.is_some(),
         in_flight_ticks: *rendered_primary_plane_scanout_in_flight_ticks,
         cleanup_pending,
+        cursor_dropped: result.cursor_dropped,
     }
 }
 

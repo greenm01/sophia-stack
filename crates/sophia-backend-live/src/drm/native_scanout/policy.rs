@@ -82,6 +82,18 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
         self
     }
 
+    /// This same commit without its passenger.
+    ///
+    /// The retry a rejected combined commit falls back to. A named
+    /// transformation rather than a field assignment at the call site,
+    /// because the call site cannot be tested -- the request it builds is
+    /// opaque past construction -- while this can: everything preserved,
+    /// cursor gone.
+    pub const fn without_cursor(mut self) -> Self {
+        self.cursor = None;
+        self
+    }
+
     pub const fn expected_request_scope(self) -> LibdrmNativeAtomicCommitRequestScope {
         if self.allow_modeset {
             LibdrmNativeAtomicCommitRequestScope::Modeset
