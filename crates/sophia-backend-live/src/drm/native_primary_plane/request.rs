@@ -222,3 +222,105 @@ pub(super) fn add_primary_plane_properties(
         drm::control::property::Value::UnsignedRange(height),
     );
 }
+
+/// One cursor plane's contribution to a head's atomic request.
+///
+/// The same ten properties the primary contributes, with two differences that
+/// are the whole reason a cursor plane exists. `CRTC_X`/`CRTC_Y` carry the
+/// pointer's position rather than the origin, and they are the only values
+/// that change as the pointer moves -- the framebuffer and the sizes stay put
+/// once installed, which is what makes a cursor-only commit cheap.
+///
+/// Hiding is the same request with no framebuffer and no CRTC. A head the
+/// pointer has left is hidden by the commit that moves the cursor elsewhere,
+/// in that same request, which is what keeps two heads from showing two
+/// cursors (`CursorPlaneTransactionOwner.tla`, `CursorLeavesNoGhost`).
+#[cfg(feature = "libdrm-events")]
+pub fn add_cursor_plane_properties(
+    request: &mut drm::control::atomic::AtomicModeReq,
+    plane: drm::control::plane::Handle,
+    crtc: drm::control::crtc::Handle,
+    properties: LibdrmNativeCursorPlanePropertyHandles,
+    placement: Option<LibdrmNativeCursorPlacement>,
+) {
+    let Some(placement) = placement else {
+        request.add_property(
+            plane,
+            properties.plane_fb_id,
+            drm::control::property::Value::Framebuffer(None),
+        );
+        request.add_property(
+            plane,
+            properties.plane_crtc_id,
+            drm::control::property::Value::CRTC(None),
+        );
+        return;
+    };
+    request.add_property(
+        plane,
+        properties.plane_fb_id,
+        drm::control::property::Value::Framebuffer(Some(placement.framebuffer)),
+    );
+    request.add_property(
+        plane,
+        properties.plane_crtc_id,
+        drm::control::property::Value::CRTC(Some(crtc)),
+    );
+    request.add_property(
+        plane,
+        properties.plane_src_x,
+        drm::control::property::Value::UnsignedRange(0),
+    );
+    request.add_property(
+        plane,
+        properties.plane_src_y,
+        drm::control::property::Value::UnsignedRange(0),
+    );
+    request.add_property(
+        plane,
+        properties.plane_src_w,
+        drm::control::property::Value::UnsignedRange(
+            u64::from(placement.width) << LIBDRM_NATIVE_PRIMARY_PLANE_SOURCE_FIXED_POINT_SHIFT,
+        ),
+    );
+    request.add_property(
+        plane,
+        properties.plane_src_h,
+        drm::control::property::Value::UnsignedRange(
+            u64::from(placement.height) << LIBDRM_NATIVE_PRIMARY_PLANE_SOURCE_FIXED_POINT_SHIFT,
+        ),
+    );
+    request.add_property(
+        plane,
+        properties.plane_crtc_x,
+        drm::control::property::Value::SignedRange(i64::from(placement.x)),
+    );
+    request.add_property(
+        plane,
+        properties.plane_crtc_y,
+        drm::control::property::Value::SignedRange(i64::from(placement.y)),
+    );
+    request.add_property(
+        plane,
+        properties.plane_crtc_w,
+        drm::control::property::Value::UnsignedRange(u64::from(placement.width)),
+    );
+    request.add_property(
+        plane,
+        properties.plane_crtc_h,
+        drm::control::property::Value::UnsignedRange(u64::from(placement.height)),
+    );
+}
+
+/// Where a cursor sits on one head, and which buffer it shows.
+///
+/// Absent placement means hidden, which is a state a head genuinely has --
+/// the pointer is on another monitor -- rather than an error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibdrmNativeCursorPlacement {
+    pub framebuffer: drm::control::framebuffer::Handle,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}

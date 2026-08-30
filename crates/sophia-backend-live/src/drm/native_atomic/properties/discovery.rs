@@ -1,4 +1,7 @@
-use super::{LibdrmNativePrimaryPlanePropertyHandles, LibdrmNativePropertyLookupDevice};
+use super::{
+    LibdrmNativeCursorPlanePropertyHandles, LibdrmNativePrimaryPlanePropertyHandles,
+    LibdrmNativePropertyLookupDevice,
+};
 
 #[derive(Debug)]
 pub struct LibdrmNativePrimaryPlanePropertyDiscoveryResult {
@@ -183,4 +186,33 @@ where
         capable: true,
         enable_property: Some(enable_property),
     }
+}
+
+/// The cursor plane's own properties, or nothing if it lacks any of them.
+///
+/// Nothing is an ordinary answer: a plane that cannot be positioned is not a
+/// cursor plane this compositor can use, and the head keeps the legacy ioctl
+/// rather than the session refusing to start. Only the plane object is read,
+/// because the connector and CRTC belong to the head that already discovered
+/// them.
+pub fn discover_cursor_plane_properties<D>(
+    device: &D,
+    plane: drm::control::plane::Handle,
+) -> Option<LibdrmNativeCursorPlanePropertyHandles>
+where
+    D: LibdrmNativePropertyLookupDevice,
+{
+    let plane_properties = device.plane_property_handles(plane).ok()?;
+    Some(LibdrmNativeCursorPlanePropertyHandles::new(
+        plane_properties.get("FB_ID")?,
+        plane_properties.get("CRTC_ID")?,
+        plane_properties.get("SRC_X")?,
+        plane_properties.get("SRC_Y")?,
+        plane_properties.get("SRC_W")?,
+        plane_properties.get("SRC_H")?,
+        plane_properties.get("CRTC_X")?,
+        plane_properties.get("CRTC_Y")?,
+        plane_properties.get("CRTC_W")?,
+        plane_properties.get("CRTC_H")?,
+    ))
 }

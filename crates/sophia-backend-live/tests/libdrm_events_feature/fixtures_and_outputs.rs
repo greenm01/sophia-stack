@@ -604,3 +604,60 @@ impl LiveRenderedScanoutBufferExporter for FakeRenderedScanoutExporter {
         }
     }
 }
+
+/// A cursor plane offers the ten properties a placement needs.
+#[test]
+fn cursor_plane_properties_are_discovered_when_the_plane_can_be_positioned() {
+    use sophia_backend_live::discover_cursor_plane_properties;
+
+    let device = full_property_lookup_device();
+    assert!(
+        discover_cursor_plane_properties(&device, plane_handle()).is_some(),
+        "a plane carrying every positioning property is usable as a cursor"
+    );
+}
+
+/// A plane missing any one of them is not a cursor plane this compositor can
+/// drive, and that is an ordinary answer: the head keeps the legacy ioctl
+/// rather than the session refusing to start over a plane it never needed.
+#[test]
+fn a_plane_that_cannot_be_positioned_is_not_offered_as_a_cursor() {
+    use sophia_backend_live::discover_cursor_plane_properties;
+
+    for missing in [
+        "FB_ID", "CRTC_ID", "SRC_X", "SRC_Y", "SRC_W", "SRC_H", "CRTC_X", "CRTC_Y", "CRTC_W",
+        "CRTC_H",
+    ] {
+        let mut device = full_property_lookup_device();
+        let kept = [
+            ("FB_ID", property_handle(104)),
+            ("CRTC_ID", property_handle(105)),
+            ("SRC_X", property_handle(106)),
+            ("SRC_Y", property_handle(107)),
+            ("SRC_W", property_handle(108)),
+            ("SRC_H", property_handle(109)),
+            ("CRTC_X", property_handle(110)),
+            ("CRTC_Y", property_handle(111)),
+            ("CRTC_W", property_handle(112)),
+            ("CRTC_H", property_handle(113)),
+        ]
+        .into_iter()
+        .filter(|(name, _)| *name != missing)
+        .collect::<Vec<_>>();
+        device.plane = Ok(LibdrmNativePropertyHandleSet::new(kept));
+        assert!(
+            discover_cursor_plane_properties(&device, plane_handle()).is_none(),
+            "a plane without {missing} cannot carry a cursor"
+        );
+    }
+}
+
+/// A read failure is not a usable cursor plane either.
+#[test]
+fn a_plane_whose_properties_cannot_be_read_is_not_offered_as_a_cursor() {
+    use sophia_backend_live::discover_cursor_plane_properties;
+
+    let mut device = full_property_lookup_device();
+    device.plane = Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+    assert!(discover_cursor_plane_properties(&device, plane_handle()).is_none());
+}

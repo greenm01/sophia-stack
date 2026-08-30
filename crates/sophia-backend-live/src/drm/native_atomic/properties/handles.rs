@@ -116,3 +116,53 @@ impl LibdrmNativePropertyHandleSet {
         self.handles.iter().map(|(name, _)| name.as_str())
     }
 }
+
+/// The properties a cursor plane contributes to a head's atomic request.
+///
+/// Ten of the primary plane's, and none of the connector's or CRTC's: the
+/// cursor rides the head that already names those, so a request carrying
+/// both planes names the CRTC once. What differs is what the values mean --
+/// `CRTC_X` and `CRTC_Y` are the pointer's position here, where the primary
+/// plane pins them to the origin.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibdrmNativeCursorPlanePropertyHandles {
+    pub(crate) plane_fb_id: drm::control::property::Handle,
+    pub(crate) plane_crtc_id: drm::control::property::Handle,
+    pub(crate) plane_src_x: drm::control::property::Handle,
+    pub(crate) plane_src_y: drm::control::property::Handle,
+    pub(crate) plane_src_w: drm::control::property::Handle,
+    pub(crate) plane_src_h: drm::control::property::Handle,
+    pub(crate) plane_crtc_x: drm::control::property::Handle,
+    pub(crate) plane_crtc_y: drm::control::property::Handle,
+    pub(crate) plane_crtc_w: drm::control::property::Handle,
+    pub(crate) plane_crtc_h: drm::control::property::Handle,
+}
+
+impl LibdrmNativeCursorPlanePropertyHandles {
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        plane_fb_id: drm::control::property::Handle,
+        plane_crtc_id: drm::control::property::Handle,
+        plane_src_x: drm::control::property::Handle,
+        plane_src_y: drm::control::property::Handle,
+        plane_src_w: drm::control::property::Handle,
+        plane_src_h: drm::control::property::Handle,
+        plane_crtc_x: drm::control::property::Handle,
+        plane_crtc_y: drm::control::property::Handle,
+        plane_crtc_w: drm::control::property::Handle,
+        plane_crtc_h: drm::control::property::Handle,
+    ) -> Self {
+        Self {
+            plane_fb_id,
+            plane_crtc_id,
+            plane_src_x,
+            plane_src_y,
+            plane_src_w,
+            plane_src_h,
+            plane_crtc_x,
+            plane_crtc_y,
+            plane_crtc_w,
+            plane_crtc_h,
+        }
+    }
+}

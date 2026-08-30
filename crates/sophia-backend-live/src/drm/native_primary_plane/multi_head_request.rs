@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg(feature = "libdrm-events")]
-use super::request::add_primary_plane_properties;
+use super::request::{add_cursor_plane_properties, add_primary_plane_properties};
 
 /// One head's contribution to a combined atomic request.
 ///
@@ -14,6 +14,24 @@ pub struct LibdrmNativeAtomicHead {
     pub objects: LibdrmNativePrimaryPlaneObjects,
     pub properties: LibdrmNativePrimaryPlanePropertyHandles,
     pub vrr_enabled: Option<bool>,
+    /// This head's cursor plane and where its pointer sits, when the card
+    /// offers a cursor plane and the session drives it atomically.
+    ///
+    /// The inner `Option` is the pointer being on another head: absent
+    /// placement hides the cursor here, in the same request that shows it
+    /// elsewhere, which is what keeps two heads from showing two cursors.
+    /// The outer one is a head with no cursor plane at all, which keeps the
+    /// legacy ioctl and contributes nothing.
+    pub cursor: Option<LibdrmNativeAtomicCursor>,
+}
+
+/// A cursor plane's contribution to one head's part of a request.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug)]
+pub struct LibdrmNativeAtomicCursor {
+    pub plane: drm::control::plane::Handle,
+    pub properties: LibdrmNativeCursorPlanePropertyHandles,
+    pub placement: Option<LibdrmNativeCursorPlacement>,
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -26,11 +44,18 @@ impl LibdrmNativeAtomicHead {
             objects,
             properties,
             vrr_enabled: None,
+            cursor: None,
         }
     }
 
     pub const fn with_vrr(mut self, enabled: bool) -> Self {
         self.vrr_enabled = Some(enabled);
+        self
+    }
+
+    /// Carry this head's cursor plane in the same request as its primary.
+    pub const fn with_cursor(mut self, cursor: LibdrmNativeAtomicCursor) -> Self {
+        self.cursor = Some(cursor);
         self
     }
 }
@@ -308,6 +333,18 @@ pub fn build_native_multi_head_atomic_request(
             );
         }
         add_primary_plane_properties(&mut request, objects, properties, width, height);
+        // The cursor rides the same request as the primary it sits over, which
+        // is the point of the transaction owner: one commit per CRTC, not one
+        // for the frame and another racing it for the pointer.
+        if let Some(cursor) = head.cursor {
+            add_cursor_plane_properties(
+                &mut request,
+                cursor.plane,
+                objects.crtc,
+                cursor.properties,
+                cursor.placement,
+            );
+        }
         if let (Some(enabled), Some(property)) = (head.vrr_enabled, properties.crtc_vrr_enabled()) {
             request.add_property(
                 objects.crtc,
@@ -409,6 +446,15 @@ pub fn build_native_topology_change_atomic_request(
                     drm::control::property::Value::Boolean(true),
                 );
                 add_primary_plane_properties(&mut request, objects, properties, width, height);
+                if let Some(cursor) = head.cursor {
+                    add_cursor_plane_properties(
+                        &mut request,
+                        cursor.plane,
+                        objects.crtc,
+                        cursor.properties,
+                        cursor.placement,
+                    );
+                }
                 if let (Some(enabled), Some(property)) =
                     (head.vrr_enabled, properties.crtc_vrr_enabled())
                 {
