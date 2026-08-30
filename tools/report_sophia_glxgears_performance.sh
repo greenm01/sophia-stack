@@ -72,7 +72,6 @@ for assignment in \
     native_retire_failures=0 \
     native_in_flight=false \
     native_cleanup_pending=false \
-    wm_policy=external \
     wm_restarts=0 \
     wm_degraded=false \
     present_live_sources=0 \
@@ -179,7 +178,7 @@ native_max_submit_to_page_flip_msec="$(
     rendering_performance_field "$completion" native_max_submit_to_page_flip_msec
 )" || fail "completion lacks native_max_submit_to_page_flip_msec"
 native_resources="$(
-    grep -E '^sophia_live_native_resources schema=(5|6|7|8|9) status=complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_native_resources schema=(5|6|7|8|9|10|11|12) status=complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$native_resources" ]] || fail "missing native import-cache metrics"
@@ -209,6 +208,20 @@ done
 # by construction, because the kernel serializes commits per CRTC and the
 # cursor waits instead. Keeping them would have failed the atomic path for
 # behaving correctly.
+# The benchmark runs a standalone session; the gate was written when it ran
+# under xmonad and still demanded wm_policy=external, which a standalone
+# session never reports. That made the gate unrunnable through its own
+# benchmark script -- it could only ever pass against its fixture.
+#
+# What the gate is for is that pointer motion does not perturb frame pacing,
+# and a window manager has no part in that. Either shape is accepted; a
+# degraded or restarting WM is still refused above.
+wm_policy="$(field "$completion" wm_policy)"
+case "$wm_policy" in
+external | disabled) ;;
+*) fail "session reported an unexpected wm_policy: $wm_policy" ;;
+esac
+
 cursor="$(
     grep -E '^sophia_live_session_cursor schema=5 path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
         tail -n 1 || true

@@ -141,4 +141,20 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Both session shapes this benchmark can produce are accepted, and nothing
+# else is. The gate demanded wm_policy=external until it was noticed that the
+# benchmark had long since become a standalone session, which reports
+# disabled -- so the gate could only ever pass against its own fixture.
+sed 's/wm_policy=external/wm_policy=disabled/' "$FIXTURE" >"$MUTATED"
+if ! "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter rejected a valid standalone session" >&2
+    exit 1
+fi
+
+sed 's/wm_policy=external/wm_policy=hosted/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted an unknown wm_policy" >&2
+    exit 1
+fi
+
 echo "glxgears performance reporter regressions passed"
