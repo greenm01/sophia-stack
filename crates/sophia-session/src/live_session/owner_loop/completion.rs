@@ -956,7 +956,23 @@
         );
     }
     crate::session_println!(
-        "sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
+        "sophia_live_session_cursor schema=5 path={} plane={} moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
+        match native_scanout.as_ref().map(|scanout| scanout.cursor_path) {
+            Some(sophia_backend_live::HardwareCursorPath::AtomicPlane) => "atomic_plane",
+            _ => "legacy_ioctl",
+        },
+        // What the card would accept, which is not what the session chose.
+        // A run on the legacy ioctl over a card that offers a cursor plane
+        // says so, and a run claiming the atomic path over a card that
+        // refused one is a contradiction a reader can catch.
+        match native_scanout
+            .as_ref()
+            .and_then(|scanout| scanout.cursor_plane_probe())
+        {
+            Some(sophia_backend_live::CursorPlaneProbe::Accepted) => "accepted",
+            Some(sophia_backend_live::CursorPlaneProbe::Refused) => "refused",
+            None => "unprobed",
+        },
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.as_millis(),
         native_scanout

@@ -40,7 +40,7 @@ sophia_live_input_latency_distribution schema=1 status=complete source=libinput_
 sophia_live_session_input_devices schema=1 source=paths added=6 removed=0 active=6 keyboards=3 pointers=3 touch=0
 sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps=36 fallbacks=0 pending=0
 sophia_live_session_scheduler schema=1 authority_batches=36 cpu_compositions=23 coalesced_batches=0 merged_batches=13 max_merge_run=6
-sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced=0 max_motion_to_submit_msec=128 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=14 updates_primary_in_flight=0 buttons_routed=4 hardware_updates=3 hidden_updates=0 hardware_failures=0
+sophia_live_session_cursor schema=5 path=legacy_ioctl plane=unprobed moves_coalesced=0 max_motion_to_submit_msec=128 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=14 updates_primary_in_flight=0 buttons_routed=4 hardware_updates=3 hidden_updates=0 hardware_failures=0
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
 sophia_live_output_topology_monitor schema=1 source=kernel status=complete observed=0 coalesced=0 delivered=0
 sophia_live_output_topology_health schema=1 status=clean quarantined=false

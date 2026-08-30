@@ -287,7 +287,7 @@ for boundary in \
         fail "pointer did not reverse immediately from the ${axis} ${side} edge"
 done
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=4 path=legacy_ioctl ' "$SESSION_LOG" | tail -n 1
+    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' "$SESSION_LOG" | tail -n 1
 )"
 [[ -n "$cursor" ]] || fail "final cursor health record is missing"
 require_value_at_least "$cursor" buttons_routed 2

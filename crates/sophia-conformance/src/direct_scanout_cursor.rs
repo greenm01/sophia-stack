@@ -14,7 +14,22 @@
 use crate::direct_scanout::{record_after_marker, reject_duplicate_fields};
 
 const PROOF: &str = "sophia_live_direct_scanout_cursor_proof schema=1 status=";
-const CURSOR: &str = "sophia_live_session_cursor schema=4 ";
+/// The cursor record, newest schema first.
+///
+/// Schema 5 added the driving path and the plane probe; schema 4 predates
+/// the atomic path entirely, so a record in that shape was necessarily on
+/// the legacy ioctl with nothing probed. Reading both is not politeness --
+/// archive `0004` is schema 4, and a reader that only understood the newest
+/// shape would quietly stop verifying the proof that archive was written to
+/// make. The corpus caught exactly that.
+const CURSOR_SCHEMAS: [(&str, &str, &str); 2] = [
+    ("sophia_live_session_cursor schema=5 ", "", ""),
+    (
+        "sophia_live_session_cursor schema=4 ",
+        "legacy_ioctl",
+        "unprobed",
+    ),
+];
 
 fn field<'a>(record: &'a str, name: &str) -> Option<&'a str> {
     record.split_whitespace().find_map(|field| {
@@ -72,15 +87,40 @@ pub fn check(text: &str, log: &str) -> Result<Vec<String>, String> {
     // The cursor stayed on hardware for the whole of it. A cursor that fell
     // back to composition would still look like a moving cursor on screen
     // and would mean the opposite of what this proof claims.
-    let cursor = text
-        .lines()
-        .rev()
-        .find_map(|line| record_after_marker(line, CURSOR))
+    let (cursor, implied_path, implied_plane) = CURSOR_SCHEMAS
+        .iter()
+        .find_map(|(marker, path, plane)| {
+            text.lines()
+                .rev()
+                .find_map(|line| record_after_marker(line, marker))
+                .map(|record| (record, *path, *plane))
+        })
         .ok_or_else(|| format!("the session reported no cursor record: {log}"))?;
     reject_duplicate_fields(cursor, "cursor").map_err(|error| format!("{error}: {log}"))?;
-    if field(cursor, "path") != Some("legacy_ioctl") {
+    // Either path proves the claim -- a cursor that keeps working over
+    // directly scanned frames -- and which one it was is the difference
+    // between archive 0004's baseline and the atomic run that must match it.
+    let path = field(cursor, "path")
+        .filter(|_| implied_path.is_empty())
+        .unwrap_or(if implied_path.is_empty() {
+            "unknown"
+        } else {
+            implied_path
+        });
+    if !["legacy_ioctl", "atomic_plane"].contains(&path) {
+        return Err(format!("the cursor rode an unknown path {path:?}: {log}"));
+    }
+    // A session cannot drive a plane the card refused. The two fields exist
+    // precisely so this is checkable rather than assumed, and a record
+    // claiming otherwise describes a run that did not happen.
+    let plane = if implied_plane.is_empty() {
+        field(cursor, "plane").unwrap_or("unprobed")
+    } else {
+        implied_plane
+    };
+    if path == "atomic_plane" && plane != "accepted" {
         return Err(format!(
-            "the cursor did not ride the legacy ioctl, so this is not that baseline: {log}"
+            "the cursor claims an atomic plane the card reported as {plane}: {log}"
         ));
     }
     if number(cursor, "hardware_failures", log)? != 0 {
@@ -114,7 +154,7 @@ pub fn check(text: &str, log: &str) -> Result<Vec<String>, String> {
     }
 
     Ok(vec![format!(
-        "sophia_direct_scanout_cursor schema=1 status=rode_hardware moves={moves} hardware_updates={hardware_updates} coalesced={} motion_to_submit_msec={} flips_after={flipped_after}",
+        "sophia_direct_scanout_cursor schema=2 status=rode_hardware path={path} plane={plane} moves={moves} hardware_updates={hardware_updates} coalesced={} motion_to_submit_msec={} flips_after={flipped_after}",
         field(cursor, "moves_coalesced").unwrap_or("0"),
         field(cursor, "max_motion_to_submit_msec").unwrap_or("0"),
     )])

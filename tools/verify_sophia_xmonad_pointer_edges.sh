@@ -84,7 +84,7 @@ for transition in \
 done
 
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=4 path=legacy_ioctl ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' "$SESSION_LOG" |
         tail -n 1
 )"
 [[ -n "$cursor" ]] || fail "final cursor health record is missing"

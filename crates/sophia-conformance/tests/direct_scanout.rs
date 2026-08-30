@@ -618,8 +618,12 @@ fn a_population_measured_on_only_one_side_is_refused() {
 }
 
 fn cursor_record(path: &str, updates: usize, failures: usize) -> String {
+    cursor_record_with_plane(path, "accepted", updates, failures)
+}
+
+fn cursor_record_with_plane(path: &str, plane: &str, updates: usize, failures: usize) -> String {
     format!(
-        "sophia_live_session_cursor schema=4 path={path} moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates={updates} hidden_updates=0 hardware_failures={failures}"
+        "sophia_live_session_cursor schema=5 path={path} plane={plane} moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates={updates} hidden_updates=0 hardware_failures={failures}"
     )
 }
 
@@ -657,7 +661,7 @@ fn cursor_verification_accepts_motion_over_direct_frames() {
     let report = cursor_verification(&cursor_log()).unwrap();
     assert!(
         report.iter().any(|line| {
-            line.contains("sophia_direct_scanout_cursor schema=1 status=rode_hardware")
+            line.contains("sophia_direct_scanout_cursor schema=2 status=rode_hardware")
                 && line.contains("moves=12")
         }),
         "{report:?}"
@@ -678,7 +682,9 @@ fn a_cursor_that_never_moved_is_refused() {
 }
 
 /// A cursor that fell back to composition still looks like a moving cursor
-/// on screen, and means the opposite of what this proof claims.
+/// on screen, and means the opposite of what this proof claims. Neither
+/// hardware path is named `composited`, so it is refused as unrecognised
+/// rather than read as one of them.
 #[test]
 fn a_cursor_that_left_the_hardware_path_is_refused() {
     let text = cursor_log().replace(
@@ -686,7 +692,7 @@ fn a_cursor_that_left_the_hardware_path_is_refused() {
         &cursor_record("composited", 13, 0),
     );
     let error = cursor_verification(&text).unwrap_err();
-    assert!(error.contains("not that baseline"), "{error}");
+    assert!(error.contains("unknown path"), "{error}");
 }
 
 #[test]
@@ -742,4 +748,71 @@ fn a_run_without_cursor_records_still_verifies_when_not_asked() {
     let directory = TempDir::new();
     let log = write_log(&directory, &passing_log());
     direct_scanout::verify_standalone_logs_proving(&[log], false, false, false).unwrap();
+}
+
+/// The atomic path proves the same claim as the legacy one, and the record
+/// says which was driven. That field is the difference between archive 0004's
+/// baseline and the run that has to match it.
+#[test]
+fn cursor_verification_accepts_the_atomic_path() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record("atomic_plane", 13, 0),
+    );
+    let report = cursor_verification(&text).unwrap();
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("path=atomic_plane") && line.contains("plane=accepted")),
+        "{report:?}"
+    );
+}
+
+/// A session cannot drive a plane the card refused. The record carries both
+/// facts so this is checkable rather than assumed -- a run claiming otherwise
+/// describes something that did not happen.
+#[test]
+fn a_cursor_claiming_a_plane_the_card_refused_is_rejected() {
+    for plane in ["refused", "unprobed"] {
+        let text = cursor_log().replace(
+            &cursor_record("legacy_ioctl", 13, 0),
+            &cursor_record_with_plane("atomic_plane", plane, 13, 0),
+        );
+        let error = cursor_verification(&text).unwrap_err();
+        assert!(error.contains("the card reported as"), "{plane}: {error}");
+    }
+}
+
+/// The legacy path over a card that would accept a plane is an ordinary run,
+/// not a contradiction: capability is not a decision.
+#[test]
+fn the_legacy_path_over_a_capable_card_is_accepted() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record_with_plane("legacy_ioctl", "accepted", 13, 0),
+    );
+    cursor_verification(&text).expect("a capable card driven legacy is ordinary");
+}
+
+/// A schema-4 record still verifies, because archive `0004` is one.
+///
+/// That schema predates the atomic path, so the reader supplies what the
+/// shape implies -- legacy ioctl, nothing probed -- rather than guessing or
+/// refusing. A reader that only understood the newest schema would stop
+/// checking the proof that archive exists to make, which is what the archive
+/// corpus caught when this record's schema was bumped.
+#[test]
+fn the_previous_cursor_schema_still_verifies() {
+    let legacy = cursor_record("legacy_ioctl", 13, 0);
+    let schema_four = format!(
+        "sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates=13 hidden_updates=0 hardware_failures=0"
+    );
+    let text = cursor_log().replace(&legacy, &schema_four);
+    let report = cursor_verification(&text).expect("archive 0004's shape still reads");
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("path=legacy_ioctl") && line.contains("plane=unprobed")),
+        "{report:?}"
+    );
 }

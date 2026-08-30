@@ -192,7 +192,7 @@ for assignment in \
 done
 
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=4 path=legacy_ioctl ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$cursor" ]] || fail "missing legacy hardware-cursor metrics"

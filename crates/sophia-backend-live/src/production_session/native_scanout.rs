@@ -124,6 +124,12 @@ mod persistent_native_scanout {
         pub cursor_hidden_updates: usize,
         pub cursor_initialization_deferrals: usize,
         pub cursor_updates_primary_in_flight: usize,
+        /// Which cursor path this session is driving, and what the card said
+        /// it would accept. Two facts, kept apart: a session can be on the
+        /// legacy ioctl while the card would happily scan a cursor plane,
+        /// and a record that reported one as the other would be describing a
+        /// capability as a decision.
+        pub cursor_path: crate::HardwareCursorPath,
         pub cursor_update_failures: usize,
         pub max_cursor_initialization: Duration,
         pub max_cursor_update: Duration,
@@ -761,6 +767,7 @@ mod persistent_native_scanout {
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
                 cursor_hidden_updates: 0,
+                cursor_path: crate::HardwareCursorPath::LegacyIoctl,
                 cursor_initialization_deferrals: 0,
                 cursor_updates_primary_in_flight: 0,
                 cursor_update_failures: 0,

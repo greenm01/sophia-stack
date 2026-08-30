@@ -231,12 +231,17 @@ impl RealAtomicScanoutPageFlipSession {
     }
 
     #[cfg(feature = "gbm-probe")]
-    pub fn initialize_classic_hardware_cursor(&mut self) -> io::Result<()> {
+    /// The cursor's planes, dimensions, and pixels -- everything both paths
+    /// need before either can show one.
+    ///
+    /// Split out of legacy initialization because the probe used to live
+    /// inside it, which meant the capability check would have stopped running
+    /// the moment a session drove the atomic path instead: it would have
+    /// disappeared exactly when it started mattering.
+    #[cfg(feature = "gbm-probe")]
+    pub fn prepare_hardware_cursor(&mut self) -> io::Result<()> {
         use drm::{Device as _, control::Device as _};
 
-        if self.cursor_controller.is_initialized() {
-            return Ok(());
-        }
         if self.cursor_planes.is_none() {
             self.cursor_planes = Some(self.discover_atomic_cursor_planes()?);
         }
@@ -306,7 +311,7 @@ impl RealAtomicScanoutPageFlipSession {
         if self.cursor_plane_probe.is_none() {
             let probe = self.probe_first_atomic_cursor_plane()?;
             tracing::info!(
-                "sophia_live_cursor_plane schema=1 status={} driving=legacy_ioctl",
+                "sophia_live_cursor_plane schema=1 status={}",
                 match probe {
                     crate::CursorPlaneProbe::Accepted => "accepted",
                     crate::CursorPlaneProbe::Refused => "refused",
@@ -314,6 +319,15 @@ impl RealAtomicScanoutPageFlipSession {
             );
             self.cursor_plane_probe = Some(probe);
         }
+        Ok(())
+    }
+
+    #[cfg(feature = "gbm-probe")]
+    pub fn initialize_classic_hardware_cursor(&mut self) -> io::Result<()> {
+        if self.cursor_controller.is_initialized() {
+            return Ok(());
+        }
+        self.prepare_hardware_cursor()?;
 
         let crtcs = self
             .selections

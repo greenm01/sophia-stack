@@ -35,6 +35,16 @@ pub fn project_native_cursor_logical_viewport(
 }
 
 impl LiveProductionNativeScanout {
+    /// What the card said about a cursor plane, once any group has asked.
+    ///
+    /// One answer per card, and the groups agree by construction: the buffer
+    /// and its format belong to the card, not the head.
+    pub fn cursor_plane_probe(&self) -> Option<crate::CursorPlaneProbe> {
+        self.groups
+            .iter()
+            .find_map(|group| group.session.cursor_plane_probe())
+    }
+
     pub fn update_classic_hardware_cursor(
         &mut self,
         position: sophia_protocol::Point,

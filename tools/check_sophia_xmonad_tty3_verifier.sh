@@ -30,7 +30,7 @@ for mutation in \
     'schema=1 status=active source=resume' \
     'source=2560x1440 target=2560x1440_0_0 clip=none unit_scale=true' \
     'sophia_live_selection schema=1 status=complete ' \
-    'sophia_live_session_cursor schema=4 path=legacy_ioctl ' \
+    'sophia_live_session_cursor schema=5 path=legacy_ioctl ' \
     'status=output_edge_confined axis=horizontal side=minimum' \
     'status=edge_reverse_immediate axis=vertical side=maximum' \
     'sophia_live_session_keys schema=2 '; do
