@@ -146,7 +146,11 @@ signed commit `44297a21` retained the same host signature on head 1 after four
 retirements. Its retry then failed before graphics takeover because the
 operator had left TTY3 and the new session's recovery guard was not armed
 within 30 seconds. The runner now pauses for operator readiness before creating
-each fresh recovery guard. Outstanding: rerun the guarded
+each fresh recovery guard. The repeat on signed commit `5617d780` recorded
+all three retry-handoff states, but its nested guard also expired after 30
+seconds; attempt 1 had the same attributed host stall on head 2 after 246
+retirements. Retry guards now retain a bounded 120-second arm window after
+operator readiness. Outstanding: rerun the guarded
 TTY3 terminal gate, confirm that xterm scrolls continuously, and retain its
 passing schema-4 report. Do not close this row from the offline real-xterm
 regression or these failed physical attempts.

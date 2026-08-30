@@ -17566,3 +17566,24 @@ until the operator presses Enter, explains that the next guard must be armed
 again, and records `operator_ready` before launching the retry. Closed input
 fails instead of silently proceeding. The retry count remains bounded, but its
 safety-critical handoff is deliberately operator-paced.
+
+## 2026-08-30: the nested retry guard needs a longer bounded arm window
+
+The repeat on signed commit `5617d780` reached the same host tail by a
+different path: head 2 retired 246 flips before its next callback disappeared,
+with the same empty, routed, clean poller attribution. The attempt detached
+cleanly and was retained.
+
+The retry handoff correctly recorded `awaiting_operator`, `operator_ready`, and
+`retrying`. The operator then left TTY3 immediately after acknowledgement,
+while the child session was still reaching its fresh safety prompt. Its
+30-second arm window expired, so the launcher again refused graphics takeover
+and restored greetd. This archive is not CP-14.1 evidence.
+
+The shared session launcher now accepts a validated, positive input-guard arm
+timeout no greater than 300 seconds while preserving its 30-second default.
+The terminal gate leaves the initial attempt unchanged and sets only retried
+sessions to 120 seconds after `operator_ready`. That window remains bounded but
+allows enough time to return to TTY3 after inspecting a retained attempt.
+`source.env` records the chosen retry timeout. This changes operator scheduling,
+not Engine failure classification or graphics-takeover safety.

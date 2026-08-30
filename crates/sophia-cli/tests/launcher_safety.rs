@@ -31,6 +31,16 @@ fn graphical_takeover_disables_console_rendering_and_input_echo_after_guard_armi
 }
 
 #[test]
+fn input_guard_arm_timeout_is_bounded_and_defaults_to_thirty_seconds() {
+    assert!(SESSION_LAUNCHER.contains(
+        "INPUT_GUARD_ARM_TIMEOUT_SECONDS=\"${SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS:-30}\""
+    ));
+    assert!(SESSION_LAUNCHER.contains("\"$INPUT_GUARD_ARM_TIMEOUT_SECONDS\" -gt 300"));
+    assert!(SESSION_LAUNCHER.contains("guard_wait_tick < INPUT_GUARD_ARM_WAIT_TICKS"));
+    assert!(SESSION_LAUNCHER.contains("within $INPUT_GUARD_ARM_TIMEOUT_SECONDS seconds"));
+}
+
+#[test]
 fn graphical_takeover_saves_and_restores_exact_tty_state() {
     let save_termios = offset("tty_state=\"$(stty -g)\"");
     let save_kd = offset("kd_mode=\"$(python3 \"$TTY_MODE_HELPER\" get)\"");

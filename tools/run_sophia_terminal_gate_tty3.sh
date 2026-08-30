@@ -10,6 +10,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 KERNEL_LOG="${SOPHIA_KERNEL_LOG:-/var/log/socklog/kernel/current}"
 MAX_PAGE_FLIP_STALL_RETRIES="${SOPHIA_TERMINAL_MAX_STALL_RETRIES:-8}"
+RETRY_ARM_TIMEOUT_SECONDS="${SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS:-120}"
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 ARCHIVE_ROOT="$STATE_HOME/sophia/rendering-benchmarks/$COMMIT/terminal-cpu"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -167,6 +168,8 @@ Up to $MAX_PAGE_FLIP_STALL_RETRIES attributed below-process page-flip stalls
 are retained and retried. Override with SOPHIA_TERMINAL_MAX_STALL_RETRIES.
 Each retry pauses for Enter before its fresh Ctrl-Alt-Backspace recovery guard
 must be armed.
+Retry guard arming waits up to $RETRY_ARM_TIMEOUT_SECONDS seconds. Override with
+SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS.
 EOF
     exit 0
 fi
@@ -179,6 +182,10 @@ fi
     fail "SOPHIA_TERMINAL_MAX_STALL_RETRIES must be a nonnegative integer"
 ((MAX_PAGE_FLIP_STALL_RETRIES <= 32)) ||
     fail "SOPHIA_TERMINAL_MAX_STALL_RETRIES must not exceed 32"
+[[ "$RETRY_ARM_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
+    fail "SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS must be a positive integer"
+((RETRY_ARM_TIMEOUT_SECONDS <= 300)) ||
+    fail "SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS must not exceed 300"
 [[ -t 0 && "$(tty)" == /dev/tty3 ]] ||
     fail "run this interactively from a logged-in local TTY3"
 [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
@@ -193,7 +200,7 @@ chmod 700 "$STATE_HOME/sophia/rendering-benchmarks" \
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 trap 'preserve_pending_on_exit $?' EXIT
-printf 'source_commit=%s\nrun_id=%s\nkernel_log=%s\nmax_page_flip_stall_retries=%s\n' "$COMMIT" "$RUN_ID" "$KERNEL_LOG" "$MAX_PAGE_FLIP_STALL_RETRIES" >"$PENDING/source.env"
+printf 'source_commit=%s\nrun_id=%s\nkernel_log=%s\nmax_page_flip_stall_retries=%s\nretry_arm_timeout_seconds=%s\n' "$COMMIT" "$RUN_ID" "$KERNEL_LOG" "$MAX_PAGE_FLIP_STALL_RETRIES" "$RETRY_ARM_TIMEOUT_SECONDS" >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
 echo "Evidence will be retained in $FINAL"
@@ -251,6 +258,7 @@ while true; do
             "$PENDING/stall-retries.log" ||
             fail "operator did not authorize terminal benchmark retry $next_retry"
         stall_retries="$next_retry"
+        export SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS="$RETRY_ARM_TIMEOUT_SECONDS"
         printf 'terminal-gate-retry schema=1 status=retrying attempt=%s retry=%s/%s reason=below_process_page_flip_stall evidence=%s\n' "$attempt" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" "$(basename "$attempt_dir")" | tee -a "$PENDING/stall-retries.log"
         continue
     fi

@@ -20,6 +20,7 @@ REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
+INPUT_GUARD_ARM_TIMEOUT_SECONDS="${SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS:-30}"
 SESSION_HANDOFF="${SOPHIA_SESSION_HANDOFF:-display_manager}"
 TRUECOLOR_PROOF="${SOPHIA_TRUECOLOR_PROOF:-false}"
 FIREFOX_M10_PROOF=false
@@ -60,6 +61,12 @@ if [[ -n "$SESSION_WATCHDOG_SECONDS"
     echo "SOPHIA_SESSION_WATCHDOG_SECONDS must be a positive integer when set." >&2
     exit 1
 fi
+if [[ ! "$INPUT_GUARD_ARM_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$
+    || "$INPUT_GUARD_ARM_TIMEOUT_SECONDS" -gt 300 ]]; then
+    echo "SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS must be an integer from 1 through 300." >&2
+    exit 1
+fi
+INPUT_GUARD_ARM_WAIT_TICKS=$((INPUT_GUARD_ARM_TIMEOUT_SECONDS * 20))
 if [[ "$SESSION_HANDOFF" != display_manager && "$SESSION_HANDOFF" != cycle_runner ]]; then
     echo "SOPHIA_SESSION_HANDOFF must be display_manager or cycle_runner." >&2
     exit 1
@@ -382,7 +389,7 @@ lifecycle_phase entering input_guard
 guard_pid=$!
 echo "Safety check: press and release Ctrl-Alt-Backspace once to arm recovery."
 echo "During Sophia, press Ctrl-Alt-Backspace again for emergency recovery."
-for _ in {1..600}; do
+for ((guard_wait_tick = 0; guard_wait_tick < INPUT_GUARD_ARM_WAIT_TICKS; guard_wait_tick++)); do
     [[ ! -s "$GUARD_ARMED_FILE" ]] || break
     kill -0 "$guard_pid" 2>/dev/null || {
         echo "Input guard exited before arming; see $GUARD_LOG" >&2
@@ -391,7 +398,7 @@ for _ in {1..600}; do
     sleep 0.05
 done
 [[ -s "$GUARD_ARMED_FILE" ]] || {
-    echo "Input guard was not armed within 30 seconds; refusing graphics takeover." >&2
+    echo "Input guard was not armed within $INPUT_GUARD_ARM_TIMEOUT_SECONDS seconds; refusing graphics takeover." >&2
     exit 1
 }
 echo "Emergency input guard armed."

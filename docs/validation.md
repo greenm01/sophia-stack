@@ -496,10 +496,14 @@ the poller must be empty, routed, last read `WouldBlock`, and report zero decode
 or rejected callbacks. Every failed attempt remains under `attempt-NNN/`.
 Before each retry, the wrapper pauses on the originating TTY until the operator
 presses Enter; the next session creates a fresh recovery guard, so press and
-release Ctrl-Alt-Backspace again when its safety prompt appears. Only the final
-attempt is promoted to the archive root and evaluated. A pending or
-rejected callback, another benchmark failure, or exhaustion of the bounded
-budget fails immediately. `SOPHIA_TERMINAL_MAX_STALL_RETRIES` may lower the
+release Ctrl-Alt-Backspace again when its safety prompt appears. The initial
+guard keeps the session launcher's 30-second default; retry guards wait up to
+120 seconds so an operator can return after reviewing the retained attempt.
+`SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS` may set that retry-only wait from
+one through 300 seconds. Only the final attempt is promoted to the archive root
+and evaluated. A pending or rejected callback, another benchmark failure, or
+exhaustion of the bounded budget fails immediately.
+`SOPHIA_TERMINAL_MAX_STALL_RETRIES` may lower the
 budget or raise it no higher than 32.
 
 The trailing `sophia_terminal_performance schema=4` report retains those
