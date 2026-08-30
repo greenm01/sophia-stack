@@ -2209,11 +2209,33 @@ other mature compositors are references rather than Sophia runtime components.
   being true when it substituted the snapshot, and the conformance readers
   anchored records to the line start and so had never actually run the
   episode-order rules against decorated hardware evidence.
-- [ ] Measure whether a direct frame costs less than a composed one. It skips a
-  whole composition pass, so dwell-to-submit should not regress and may
-  improve, but the input-latency harness cannot answer it: that harness needs
-  an input proof, and a session with one always runs xterm, which never
-  presents a DMA-BUF.
+- [x] Measure whether a direct frame costs less than a composed one. It does,
+  by roughly half at the median and by three orders of magnitude in the tail.
+  Direct-scanout archive `0003` measures both populations on one head in one
+  session -- direct flips outside the overlay window, composed frames inside
+  it -- with the client's buffer offered to the plane in 17 microseconds at
+  the median against 35 for a composed frame, and a p99 of 22 microseconds
+  against 12,883. The tail is the whole finding: a direct frame's cost is
+  nearly constant because nothing is drawn, while a composed frame waits on a
+  renderer that occasionally takes twelve milliseconds. Submit-to-flip is not
+  the point but is measured beside it to check the assumption that the
+  display engine does not care how the buffer arrived: 7,972 microseconds
+  against 15,099 at the median, both dominated by this host's chronic DCN32
+  flip stalls rather than by anything Sophia does, and neither population is
+  penalised for arriving directly.
+  The stated blocker turned out to be about the wrong harness. Input latency
+  needs an input proof, whose session runs xterm, which never presents a
+  DMA-BUF -- but this question was never about input, and the standalone
+  probe whose eligibility archives `0001` and `0002` already proved answers
+  it directly. No threshold gates the values: this host stalls modesets, and
+  the row asks what a frame costs, not that it cost less than a number.
+  One instrumentation defect surfaced only under real evidence. The
+  classifier asked the flip counter whether the export it had timed was
+  direct, but a flip happens later at submit, so every export answered no and
+  the direct population was left with no offer samples at all. The emitter
+  then dropped the half-measured population entirely rather than reporting
+  it, so the only symptom was a comparison that said no direct frames
+  existed.
 - [ ] Add the hardware cursor plane, with the per-output KMS transaction owner
   the next row introduces. The legacy cursor continues over directly scanned
   frames on its own ioctl.
