@@ -1086,16 +1086,29 @@
                 // and the card agreed. Chosen at readiness rather than at
                 // setup because the probe runs when the cursor is first
                 // prepared, which is after the first frames.
-                if config.atomic_cursor {
-                    let path = native.use_atomic_cursor_plane();
-                    crate::session_println!(
-                        "sophia_live_cursor_path schema=1 status=selected path={}",
-                        match path {
-                            sophia_backend_live::HardwareCursorPath::AtomicPlane => "atomic_plane",
-                            sophia_backend_live::HardwareCursorPath::LegacyIoctl => "legacy_ioctl",
-                        }
-                    );
-                }
+                //
+                // Recorded either way, and with what was asked beside what was
+                // taken. A session that opted out records the legacy path
+                // rather than nothing, because an absent record cannot be told
+                // apart from a session that never reached readiness; and a card
+                // that refused the plane is a different run from an operator
+                // who asked for the ioctl, which `path` alone cannot say.
+                let requested = if config.atomic_cursor {
+                    "atomic_plane"
+                } else {
+                    "legacy_ioctl"
+                };
+                let path = if config.atomic_cursor {
+                    match native.use_atomic_cursor_plane() {
+                        sophia_backend_live::HardwareCursorPath::AtomicPlane => "atomic_plane",
+                        sophia_backend_live::HardwareCursorPath::LegacyIoctl => "legacy_ioctl",
+                    }
+                } else {
+                    "legacy_ioctl"
+                };
+                crate::session_println!(
+                    "sophia_live_cursor_path schema=2 status=selected requested={requested} path={path}"
+                );
             }
             let logical_output_progress = native_scanout.as_ref().map(|native| {
                 logical_startup_output_progress(native.heads.iter().map(|head| {

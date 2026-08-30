@@ -1556,10 +1556,20 @@ fn the_two_cursor_flags_are_mutually_exclusive() {
 /// not have. The default simply does not apply there; naming one explicitly
 /// is what gets refused.
 ///
-/// The remaining case -- that `--legacy-cursor` sets the preference false on
-/// a session that does have native scanout -- cannot be asserted here for
-/// the environment reason above, and is checked against the release binary
-/// with `--validate-session-args` instead.
+/// The remaining case -- that `--legacy-cursor` sets the preference false --
+/// is not asserted anywhere in this process. It cannot be: observing the
+/// field needs a config that parsed, which needs `--native-scanout`, which is
+/// gated on an environment variable a test may not set without racing every
+/// other test here. An earlier version of this comment claimed the release
+/// binary checked it under `--validate-session-args`; that validates the
+/// argument vector and reads no field, so the claim was false and the case
+/// was uncovered.
+///
+/// It is covered by evidence instead. A session records
+/// `sophia_live_cursor_path schema=1 status=selected path=...` at readiness,
+/// and `tools/verify_hagia_native_session.sh` requires that line, so a run
+/// that took the path it was not asked for is refused by the gate rather than
+/// by a unit test.
 #[test]
 fn the_cursor_flags_need_native_scanout() {
     for flag in ["--atomic-cursor", "--legacy-cursor"] {

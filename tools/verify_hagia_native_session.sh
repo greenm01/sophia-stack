@@ -406,6 +406,33 @@ fi
     $(field "$resources" worker_completions) + $(field "$resources" frame_slot_deferrals) )) ||
     fail "renderer-worker requests did not settle as completion or bounded deferral"
 
+# Which hardware cursor path the session took, and which one it asked for. The
+# record was emitted for two archives before anything read it, so a run could
+# take the legacy ioctl on a card that refused the plane and nothing would say
+# so.
+#
+# Absence is not failed here. Archives 0001 through 0003 predate the cursor
+# tranche entirely and must stay independently verifiable, and this file cannot
+# tell evidence that lost the record from evidence written before it existed.
+# Requiring a current run to carry it belongs to the gate, which knows it is
+# running current code; this checks that whatever the evidence does say is
+# consistent.
+cursor_path_line="$(grep -E '^sophia_live_cursor_path schema=2 status=selected ' \
+    "$evidence" || true)"
+if [[ -n "$cursor_path_line" ]]; then
+    [[ "$cursor_path_line" =~ ^sophia_live_cursor_path\ schema=2\ status=selected\ requested=(atomic_plane|legacy_ioctl)\ path=(atomic_plane|legacy_ioctl)$ ]] ||
+        fail "the cursor-path record does not name both a request and a path"
+    cursor_requested="$(field "$cursor_path_line" requested)"
+    cursor_taken="$(field "$cursor_path_line" path)"
+    # Only one direction is a defect. Asking for the plane and getting the
+    # ioctl is the probe refusing a card, which is the fallback this row
+    # retained on purpose. Asking for the ioctl and getting the plane is the
+    # preference being ignored.
+    if [[ "$cursor_requested" == legacy_ioctl && "$cursor_taken" != legacy_ioctl ]]; then
+        fail "the session asked for the legacy cursor and took $cursor_taken"
+    fi
+fi
+
 # Exact TTY restoration, which the runner records after the session returns.
 require_line "exact TTY recovery" \
     '^sophia_tty_recovery schema=3 profile=hagia kd_mode_before=[^ ]+ kd_mode_after=[^ ]+ termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none$'

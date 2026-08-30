@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Binds the exact source and binary identity of a native Hagia session proof
 # before any DRM takeover, then hands off to the gate. Both repositories must be
-# clean, signed, and at the locally known origin/master: the archive this run
-# produces is only as good as the identity bound here.
+# clean and signed: the archive this run produces is only as good as the
+# identity bound here.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
@@ -37,14 +37,14 @@ for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; d
         echo "Physical-proof HEAD lacks a valid signature: $repo" >&2
         exit 1
     }
-    upstream="$(git -C "$repo" rev-parse --verify refs/remotes/origin/master 2>/dev/null || true)"
-    if [[ -z "$upstream" || "$commit" != "$upstream" ]]; then
-        echo "Physical-proof HEAD must equal the locally known origin/master: $repo" >&2
-        echo "  HEAD:          $commit" >&2
-        echo "  origin/master: ${upstream:-missing}" >&2
-        exit 1
-    fi
 done
+# A signed commit on a clean tree is the whole identity requirement, which is
+# the rule the direct-scanout gate already moved to. Demanding HEAD equal the
+# locally known origin/master added a push to every commit-gate-run cycle
+# without adding anything the archive binds to: the archive names the commit,
+# the commit is signed, and re-verification checks both against these
+# repositories, none of which involves a remote. Where a commit has been pushed
+# is a publishing question, not an evidence one.
 hagia_bin="${TMPDIR:-/tmp}/hagia-native-${hagia_commit:0:12}"
 hagia_shell_bin="${TMPDIR:-/tmp}/hagia-native-shell-${hagia_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-native-nimcache-${hagia_commit:0:12}"

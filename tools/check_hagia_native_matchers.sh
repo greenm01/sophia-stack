@@ -121,6 +121,7 @@ printf '%s\n' \
     'sophia_live_wm schema=4 status=ready adapter=sophia_wm_v1 socket=session_owned epoch=1 restarts=0' \
     'sophia_live_metadata_broker schema=1 status=ready protected=true peer_pid=30552 revision=2' \
     'sophia_live_metadata_shell schema=1 status=ready protected=true peer_pid=30555 revision=1 connection_epoch=1' \
+    'sophia_live_cursor_path schema=2 status=selected requested=atomic_plane path=atomic_plane' \
     'sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1' \
     'sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1' \
     'sophia_live_wm schema=1 status=layout_committed transaction=2 surfaces=0 moved_surfaces=0 configure_deliveries=0 outcome=Committed' \
@@ -546,6 +547,43 @@ current_starved="$temp_dir/current-starved.log"
 sed 's/ worker_max_service_skew=1/ worker_max_service_skew=2/' "$direct" >"$current_starved"
 reject_mutation "current-schema evidence that starved an output behind its sibling" \
     "$current_starved" "was passed over"
+
+# The cursor path a session took, against the one it asked for. Asking for the
+# plane and taking the ioctl is a card refusing the probe, which is the
+# fallback this row kept on purpose and must stay acceptable. The reverse is
+# the preference being ignored.
+refused_card="$temp_dir/refused-card.log"
+sed 's/requested=atomic_plane path=atomic_plane/requested=atomic_plane path=legacy_ioctl/' \
+    "$evidence" >"$refused_card"
+"$verifier" "$refused_card" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier refused a card that kept the legacy cursor, which is the fallback working" >&2
+    exit 1
+}
+
+ignored_preference="$temp_dir/ignored-preference.log"
+sed 's/requested=atomic_plane path=atomic_plane/requested=legacy_ioctl path=atomic_plane/' \
+    "$evidence" >"$ignored_preference"
+reject_mutation "a session that asked for the legacy cursor and took the plane" \
+    "$ignored_preference" "asked for the legacy cursor and took"
+
+# A record that names only where the cursor ended up cannot say whether the
+# card refused or the preference was ignored, which is the whole reason the
+# request is recorded beside the path.
+halved="$temp_dir/halved-cursor.log"
+sed 's/ requested=atomic_plane path=atomic_plane/ path=atomic_plane/' \
+    "$evidence" >"$halved"
+reject_mutation "a cursor record that names no request" "$halved" \
+    "does not name both a request and a path"
+
+# Evidence predating the record must stay verifiable: archives 0001 through
+# 0003 carry no cursor line at all, and this file cannot tell those from a run
+# that lost it. The gate owns that requirement instead.
+no_cursor="$temp_dir/no-cursor.log"
+grep -v '^sophia_live_cursor_path ' "$evidence" >"$no_cursor"
+"$verifier" "$no_cursor" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier required a cursor record, which orphans archives 0001 to 0003" >&2
+    exit 1
+}
 
 current_overdepth="$temp_dir/current-overdepth.log"
 sed 's/max_in_flight_per_output=2/max_in_flight_per_output=3/' "$direct" >"$current_overdepth"

@@ -228,6 +228,16 @@ printf 'sophia_hagia_native_identity schema=1 status=bound sophia_commit=%s hagi
     "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" \
     "$hagia_shell_sha256" "$recorded_profile_sha256" >>"$evidence"
 
+# A run made by current code records which hardware cursor path it took. The
+# verifier cannot require that, because it also reads archives written before
+# the record existed and absence there means "older", not "lost". Here absence
+# can only mean lost: this gate just built and ran the binary that emits it.
+grep -qE '^sophia_live_cursor_path schema=2 status=selected requested=(atomic_plane|legacy_ioctl) path=(atomic_plane|legacy_ioctl)$' \
+    "$evidence" || {
+    echo "The session recorded no hardware cursor path, which current code always emits" >&2
+    exit 1
+}
+
 SOPHIA_HAGIA_NATIVE_GUIDE="$guide" \
     "$ROOT_DIR/tools/verify_hagia_native_session.sh" "$evidence" "$proof_text"
 SOPHIA_HAGIA_BIN="$hagia_bin" \

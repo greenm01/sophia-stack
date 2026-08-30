@@ -475,36 +475,34 @@ impl PersistentXtermSessionConfig {
             return Err("--m4-first-acquire-delay-ms accepts 1-2000 milliseconds".into());
         }
         let m4_reject_first_present = args.iter().any(|arg| arg == "--m4-reject-first-present");
-        // Drives an overlay over a directly scanned frame, which no client in
-        // this session can do: the probe runs no shell and no policy client,
-        // and the shell is what opens the descriptor overlay in a product
-        // session. The transition it exercises -- a composed successor
-        // retiring a frame the plane is still scanning -- is modelled in
-        // `PresentFlipOwnership.tla` and had never run on hardware.
-        // Moves the cursor over frames the plane is scanning directly. The
-        // roadmap claims the legacy ioctl keeps working there; no run has
-        // moved a cursor to find out, and the replacement needs the baseline.
-        // Drive the cursor through the atomic path instead of the legacy
-        // ioctl. Opt-in for its first runs: archive 0004 proved the legacy
-        // path over directly scanned frames, and there is no reason for
-        // every session to change before one has shown the atomic path
-        // moving a cursor at all.
-        // The cursor rides an atomic plane by default now.
+        // The cursor rides an atomic plane by default. Archive 0006 showed the
+        // owner combining primary and cursor state in one request on hardware,
+        // and a continuous-motion shakedown held 58 fps with p95 inside one
+        // refresh while doing in 56 commits the work the legacy ioctl took 298
+        // to do -- 243 of which overlapped a page flip, which is the thing an
+        // atomic commit cannot do and does not need to.
         //
-        // Archive 0006 showed the owner combining primary and cursor state in
-        // one request on hardware, and a continuous-motion shakedown held 58
-        // fps with p95 inside one refresh while doing the same work in 56
-        // commits that the legacy ioctl took 298 to do -- 243 of which
-        // overlapped a page flip, which is the thing an atomic commit cannot
-        // do and does not need to.
+        // Still a preference rather than a guarantee: the startup probe decides
+        // per card, and one that refuses keeps the legacy ioctl, which is why
+        // that path is a fallback rather than dead code.
         //
-        // Still a preference rather than a guarantee: the startup probe
-        // decides per card, and one that refuses keeps the legacy ioctl,
-        // which is why that path is a fallback rather than dead code.
+        // `--atomic-cursor` no longer selects anything, because the default
+        // already does. It is retained as an assertion: a run that names it is
+        // refused unless the session it asked for can honour it, so a harness
+        // measuring the atomic path cannot quietly measure the legacy one.
         let asked_atomic_cursor = args.iter().any(|arg| arg == "--atomic-cursor");
         let legacy_cursor = args.iter().any(|arg| arg == "--legacy-cursor");
         let atomic_cursor = !legacy_cursor;
+        // Moves the cursor over frames the plane is scanning directly, which is
+        // how archive 0004 established the legacy baseline the atomic path had
+        // to match rather than assuming the ioctl kept working there.
         let direct_cursor_proof = args.iter().any(|arg| arg == "--direct-cursor-proof");
+        // Drives an overlay over a directly scanned frame, which no client in
+        // this session can do: the probe runs no shell and no policy client,
+        // and the shell is what opens the descriptor overlay in a product
+        // session. The transition it exercises -- a composed successor retiring
+        // a frame the plane is still scanning -- is modelled in
+        // `PresentFlipOwnership.tla` and had never run on hardware before it.
         let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
         // How long the overlay stays up. A run proving the transition wants
         // the shortest window that contains it; a run measuring what frames
