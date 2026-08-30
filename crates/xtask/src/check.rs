@@ -51,7 +51,12 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     sophia_conformance::profile::check_every_profile(&[])?;
     layout(repo)?;
     anchored_readers(repo)?;
-    let report = vec![archives(repo)?];
+    let mut report = vec![archives(repo)?];
+    report.push(hardware_proof(
+        repo,
+        "tools/check_buffer_age_equivalence.sh",
+        "buffer-age pixel equivalence",
+    )?);
     for tool in [
         "tools/check_live_record_schema_readers.sh",
         "tools/check_direct_scanout_verifier.sh",
@@ -262,6 +267,28 @@ fn display_set(values: &[String]) -> String {
         "none".to_owned()
     } else {
         format!("\n  {}", values.join("\n  "))
+    }
+}
+
+/// A proof that needs real hardware, reported when the hardware is absent.
+///
+/// The wrapper exits 2 when it cannot run, which is not a pass and not a
+/// failure: on a machine with no writable render node the question was never
+/// asked. Treating that as success would let the proof rot exactly the way an
+/// unreferenced script does, and treating it as failure would make the offline
+/// gate unrunnable on a build host. So it is reported by name instead, and the
+/// operator reads whether their machine answered.
+fn hardware_proof(repo: &Path, tool: &str, subject: &str) -> Result<String, String> {
+    let status = Command::new(tool)
+        .current_dir(repo)
+        .status()
+        .map_err(|error| format!("could not run {tool}: {error}"))?;
+    match status.code() {
+        Some(0) => Ok(format!("{subject}: proved on this host")),
+        Some(2) => Ok(format!(
+            "{subject}: not proved here, this host has no device"
+        )),
+        _ => Err(format!("{tool} exited with {status}")),
     }
 }
 

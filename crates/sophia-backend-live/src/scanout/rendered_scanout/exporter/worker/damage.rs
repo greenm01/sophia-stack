@@ -50,14 +50,23 @@ pub struct WorkerSlotDamage {
 
 impl WorkerSlotDamage {
     fn new() -> Self {
-        // Opt-in until a captured-pixel proof shows a damage-limited render is
-        // byte-identical to a full one. The failure mode is a frame that is
-        // presentable, self-consistent, and stale in one region, which no
-        // health check would catch and an operator would read as a rendering
-        // glitch. Off by default costs a repaint; wrong by default costs trust
-        // in the evidence.
+        // On by default. The precondition this was opt-in for is met:
+        // `tools/check_buffer_age_equivalence.sh` renders a twelve-frame
+        // sequence twice on this host's GPU, damage-limited and full, and
+        // requires the results byte-identical -- and requires a lying damage
+        // table to be caught by the same comparison. Signed native archive
+        // 0002 then promoted the path on hardware.
+        //
+        // The failure mode that justified opt-in -- a frame presentable,
+        // self-consistent, and stale in one region -- is structurally
+        // unreachable rather than merely untriggered: every path that cannot
+        // prove a buffer age falls back to a full repaint under a named
+        // reason, and a partial write records no history at all.
+        //
+        // SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0 is the opt-out, kept so a session
+        // suspecting a stale region can rule this path out without a rebuild.
         Self::with_enabled(
-            std::env::var("SOPHIA_ENABLE_BUFFER_AGE_DAMAGE").is_ok_and(|value| value == "1"),
+            !std::env::var("SOPHIA_ENABLE_BUFFER_AGE_DAMAGE").is_ok_and(|value| value == "0"),
         )
     }
 

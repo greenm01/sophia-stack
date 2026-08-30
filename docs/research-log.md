@@ -17122,3 +17122,84 @@ The document roles are now explicit: normative docs own contracts; `todo.md`
 owns current execution order; `roadmap-history.md` owns completed milestone
 summaries; this log owns decisions, diagnoses, and retained evidence; and the
 dated snapshot owns the lossless pre-cleanup record.
+
+## 2026-08-30: a schema bump that silences its own readers
+
+Three Milestone 14 rules stopped being checked without anything failing. The
+one-KMS-submission bound was guarded by `[[ "$resource_schema" == 9 ||
+"$resource_schema" == 10 ]]` and the renderer-misroute and service-skew rules
+by `== 10`, so all three went unasserted the moment `sophia_live_native_resources`
+reached schema 11. The QEMU shared-worker expectation and the input-latency
+reporter's `renderer_workers` field matched `schema=10` exactly and could not
+read a current session at all, which is why `renderer_workers` has never once
+populated in an input-latency report -- the field added specifically to
+distinguish shared-worker from per-output measurements. Five more verifiers
+stopped at schema 9, including the warmed-resource assertions in
+`verify_sophia_xmonad_four_kitty.sh`.
+
+The shape of the defect is that a missing line is indistinguishable from a
+satisfied rule. A reader greps for a record, finds nothing because the schema
+moved, and skips the block that would have failed. Nothing in the output says
+a rule was skipped, and the run passes with fewer assertions than the operator
+believes they bought.
+
+Guards now compare with `>=` and acceptance patterns admit any schema the
+emitter writes. Evidence too old to carry a field is refused by the field check
+rather than by the schema, which puts the refusal where the missing information
+actually is: `resource record is missing renderer_workers` names the problem,
+where `no schema-10 record` names only a number.
+
+`tools/check_live_record_schema_readers.sh` makes the next bump fail offline.
+It reads the schema the emitter writes and refuses any reader that can match
+only older ones. It guards one record on purpose. A record name does not
+identify a message -- `sophia_live_wm` writes schema 4 for `status=ready` and
+schema 1 for `status=session_action_committed`, and `sophia_session_app` writes
+schema 1 and 2 for the same status under different sources -- so guarding a
+record means having first checked that its emitters agree. Fixture builders
+under `tools/check_*.sh` are excluded because they write old-schema evidence
+deliberately, to prove a verifier still accepts an archive.
+
+Running the general form of that check surfaced two further pinned readers not
+repaired here, because each needs a per-gate decision rather than a sweep:
+`sophia_live_session status=bounded_complete` is emitted only at schema 16 while
+ten readers accept at most 15, and `sophia_live_wm status=ready` is emitted only
+at schema 4 while nine readers accept only 1. Those are xmonad-era physical and
+QEMU gates. They fail loudly rather than silently, so they are broken rather
+than misleading, and they are recorded here rather than fixed inside a
+Milestone 14 change.
+
+## 2026-08-30: damage-limited repaint is the default
+
+`SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=1` is retired as the opt-in switch; `=0` is
+now the opt-out. The comment that made it opt-in named its own precondition --
+a captured-pixel proof that a damage-limited render is byte-identical to a full
+one -- and that proof exists. `tools/check_buffer_age_equivalence.sh` renders a
+twelve-frame sequence twice on this host's GPU through a render node only, with
+real partial repaints, requires the two byte-identical, and requires a lying
+damage table to be caught by the same comparison. Signed native archive `0002`
+then promoted the path on hardware: 129 partial repaints beside 627 full
+fallbacks, 201 history records, zero invalidations.
+
+The failure mode that justified opt-in -- a frame presentable, self-consistent,
+and stale in one region -- is structurally unreachable rather than merely
+untriggered. Every path that cannot prove a buffer age falls back to a full
+repaint under a named reason (`UnknownBufferAge`, `NoHistory`,
+`BeyondHistoryDepth`, `DamageUnavailable`, `PlanChoseFull`), and a partial write
+records no history at all, so a slot whose export did not finish can never claim
+an age.
+
+That proof had zero callers. It was in no gate, no `justfile` recipe, and no
+document, which is the same rot that let the pacing gate drift three schema
+revisions. It now runs in `cargo xtask check`, reported rather than silently
+skipped: exit 2 means this host has no writable render node and the question was
+never asked, which is neither a pass nor a failure and should not read as
+either.
+
+The native gate no longer exports the variable, since the default supplies it.
+Its matcher now refuses a gate that sets `=0`, so the promotion run cannot opt
+out of the boundary it exists to promote while still reporting a pass.
+
+Shared renderer workers and direct scanout stay opt-in. Each owes its own
+promotion decision, and neither has the standing pixel-equivalence proof that
+made this one safe to default. Making all three default at once would have put
+three unproven changes behind one archive.

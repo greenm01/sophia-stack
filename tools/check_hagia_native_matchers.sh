@@ -80,13 +80,15 @@ if grep -v '^[[:space:]]*#' "$root_dir/tools/hagia_native_session_gate.sh" \
     echo "the native gate overrides the terminal action while requesting a physical text proof" >&2
     exit 1
 fi
-# Schema-8 evidence requires the buffer-age boundary exercised, and only the
-# gate can turn it on: the feature is opt-in until this promotion.
-grep -Fq 'SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=1' \
-    "$root_dir/tools/hagia_native_session_gate.sh" || {
-    echo "the native gate does not enable damage-limited repaint for its promotion run" >&2
+# Damage-limited repaint is the default, so the gate no longer turns it on.
+# What it may not do is turn it off: the verifier requires a frame that
+# rendered partially, and a gate that opted out would fail that check for a
+# reason the operator would have to guess at from the session log.
+if grep -v '^[[:space:]]*#' "$root_dir/tools/hagia_native_session_gate.sh" \
+    | grep -Fq 'SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0'; then
+    echo "the native gate disables damage-limited repaint for its promotion run" >&2
     exit 1
-}
+fi
 # So the guide stands down instead. The gate must give it something to claim.
 grep -Fq 'SOPHIA_HAGIA_NATIVE_GUIDE_CLAIM="$guide_claim"' \
     "$root_dir/tools/hagia_native_session_gate.sh" || {
