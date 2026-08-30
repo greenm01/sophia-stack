@@ -2237,9 +2237,25 @@ other mature compositors are references rather than Sophia runtime components.
   it, so the only symptom was a comparison that said no direct frames
   existed.
 - [ ] Add the hardware cursor plane, with the per-output KMS transaction owner
-  the next row introduces. The legacy cursor continues over directly scanned
-  frames on its own ioctl, which archive `0004` now establishes rather than
-  assumes: twelve cursor positions driven through the same `Pointer::place`
+  the next row introduces. **Partly proven.** Direct-scanout archive `0005`
+  runs the same twelve-position sweep as `0004` with the cursor on an atomic
+  plane: the card accepted the plane, twelve moves reached it, no hardware
+  failures, and direct scanout was undisturbed -- 36 flips with 26 after the
+  motion stopped. `updates_primary_in_flight=0` is the kernel's per-CRTC
+  serialization observed rather than assumed, where the legacy path counted
+  fifteen.
+  What it costs is worst-case latency: motion-to-submit peaked at 21 ms
+  against `0004`'s 9 ms, which is about one frame of waiting for a busy CRTC
+  and is the expected price of joining the queue the primary waits in.
+  What is **not** proven, and blocks the next row: the owner never combines
+  primary and cursor state in one request. Every atomic cursor update is a
+  standalone commit. The machinery exists end to end -- the submit policy
+  carries a cursor, the request builder applies it -- but nothing populates
+  it, so `plan_cursor_commit`'s `RideNextPrimary` branch is unreachable.
+  Connecting it is what would remove most of that 21 ms, since a cursor
+  riding a frame that is going out waits for nothing.
+  The legacy cursor continues over directly scanned frames on its own ioctl,
+  which archive `0004` establishes rather than assumes: twelve cursor positions driven through the same `Pointer::place`
   entry physical input uses, 519 hardware updates with no failures, the
   cursor never leaving `legacy_ioctl`, `composed_cursor` still zero, and
   twenty-six client buffers reaching the plane after the motion stopped.
