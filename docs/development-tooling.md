@@ -58,6 +58,10 @@ cargo xtask conformance verify direct-scanout-cursor LOG
 cargo xtask conformance verify direct-scanout-archive [RUN]
 cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
 cargo xtask conformance gate direct-scanout [PROOF]
+cargo xtask conformance desktop-comparison prepare RUN KERNEL MESA GPU
+cargo xtask conformance desktop-comparison run RUN SAMPLE_LOG
+cargo xtask conformance desktop-comparison verify RUN
+cargo xtask conformance desktop-comparison report RUN
 sophia session run [OPTIONS]
 sophia session input-guard [OPTIONS]
 ```
@@ -72,6 +76,13 @@ return to composition, `--cost` measures direct against composed frames in one
 session, `--cursor` sweeps the hardware cursor, and `--atomic-cursor` asserts
 the default atomic path rather than selecting it. Each has a matching
 `verify` spelling above.
+
+The desktop comparison is a diagnostic 39-sample matrix, not a relative
+release gate. Its typed conformance owner requires a clean signed candidate,
+pins and hashes configuration plus hardware/software identities, rotates stack
+order across three short repetitions, binds every raw sample by checksum, and
+requires one two-hour soak per stack. TTY and display-manager takeover remain a
+minimal local adapter outside the typed evidence contract.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.

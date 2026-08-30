@@ -374,19 +374,20 @@ fn run_x_authority_external_probe_smoke(
         .into());
     }
 
-    let runtime_state = if transactions.is_empty() {
-        None
-    } else {
-        Some(runtime_state_from_observed_transactions(&transactions)?)
-    };
-    let runtime_committed = runtime_state
-        .as_ref()
-        .map(|state| state.authority_transactions_committed)
-        .unwrap_or(0);
-    let runtime_surfaces = runtime_state
-        .as_ref()
-        .map(|state| state.authority_surfaces_applied)
-        .unwrap_or(0);
+    // A sustained client is meant to cross the runtime adapter's 64-observation
+    // per-tick bound. Replay consecutive bounded ticks instead of treating that
+    // adapter capacity as a client-lifetime limit.
+    let mut runtime_committed = 0u64;
+    let mut runtime_surfaces = 0u64;
+    const RUNTIME_FIXED_OBSERVATION_RESERVE: usize = 16;
+    let transaction_capacity = sophia_runtime::MAX_SESSION_RUNTIME_OBSERVATION_BATCH
+        .saturating_sub(RUNTIME_FIXED_OBSERVATION_RESERVE);
+    for bounded_tick in transactions.chunks(transaction_capacity) {
+        let state = runtime_state_from_observed_transactions(bounded_tick)?;
+        runtime_committed =
+            runtime_committed.saturating_add(state.authority_transactions_committed);
+        runtime_surfaces = runtime_surfaces.max(state.authority_surfaces_applied);
+    }
     let cpu_buffer_bytes = cpu_buffers.values().map(|buffer| buffer.bytes.len()).sum();
     let nonzero_pixel_bytes = cpu_buffers
         .values()
@@ -416,7 +417,7 @@ fn run_x_authority_external_probe_smoke(
     }
     if label == "xterm_render" && !fixed_text_scroll_proved {
         return Err(format!(
-            "{label} did not prove current-surface fixed-text scrolling for {display}: required=ImageText8->CopyArea->ImageText8+rows09-12 observed={opcodes}"
+            "{label} did not prove sustained current-surface fixed-text scrolling for {display}: required=ImageText8->CopyArea->ImageText8+rows077-080 observed={opcodes}"
         )
         .into());
     }
@@ -521,10 +522,10 @@ fn fixed_text_scroll_proof(
     buffers: &std::collections::BTreeMap<u64, XAuthorityCpuBufferSnapshot>,
 ) -> bool {
     let rows = [
-        b"SophiaMirror09".as_slice(),
-        b"SophiaMirror10".as_slice(),
-        b"SophiaMirror11".as_slice(),
-        b"SophiaMirror12".as_slice(),
+        b"SophiaStream077".as_slice(),
+        b"SophiaStream078".as_slice(),
+        b"SophiaStream079".as_slice(),
+        b"SophiaStream080".as_slice(),
     ];
     let mut current = std::collections::BTreeMap::new();
     for request in requests {

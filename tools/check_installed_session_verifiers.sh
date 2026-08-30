@@ -8,6 +8,10 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
 TEMP_FILE="$TEMP_DIR/mutated.log"
 CAPTURE_RELEASE="$TEMP_DIR/release"
+# Most static fixtures predate the resource sampler and exercise archive
+# compatibility. Individual sampled cases below opt back into current policy.
+export SOPHIA_SOAK_SAMPLE_POLICY=archive
+
 
 install -d -m 755 "$CAPTURE_RELEASE/target/release"
 printf 'schema=1\nversion=0.1.0-test\n' >"$CAPTURE_RELEASE/manifest"
@@ -37,6 +41,13 @@ sed 's/^sophia_live_session schema=14 status=bounded_complete /sophia_live_sessi
 # Steady-state growth, which is the rule a soak is the right workload for. The
 # fixture predates the sampler, so absence must stay acceptable; a sampled
 # fixture must verify flat and must fail on a gauge that climbs after settling.
+if SOPHIA_SOAK_SAMPLE_POLICY=current \
+    "$ROOT_DIR/tools/verify_installed_session_soak.sh" \
+        "$PASS" 7200000 2 2 >/dev/null 2>&1; then
+    echo "installed soak verifier accepted current evidence with no resource series" >&2
+    exit 1
+fi
+
 SAMPLED="$TEMP_DIR/sampled.log"
 {
     grep -v '^sophia_live_session schema=14 status=bounded_complete ' "$PASS"
@@ -47,10 +58,30 @@ SAMPLED="$TEMP_DIR/sampled.log"
     echo 'sophia_live_resource_steady_state schema=1 status=complete samples=160 saturated=false interval_msec=5000'
     grep '^sophia_live_session schema=14 status=bounded_complete ' "$PASS"
 } >"$SAMPLED"
-"$ROOT_DIR/tools/verify_installed_session_soak.sh" "$SAMPLED" 7200000 2 2 || {
+SOPHIA_SOAK_SAMPLE_POLICY=current \
+    "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$SAMPLED" 7200000 2 2 || {
     echo "installed soak verifier rejected a soak whose sampled resources stayed flat" >&2
     exit 1
 }
+
+TOO_FEW="$TEMP_DIR/sampled-too-few.log"
+sed 's/samples=160/samples=119/' "$SAMPLED" | \
+    sed '/^sophia_live_resource_sample schema=1 seq=1[2-9][0-9] /d' >"$TOO_FEW"
+if SOPHIA_SOAK_SAMPLE_POLICY=current \
+    "$ROOT_DIR/tools/verify_installed_session_soak.sh" \
+        "$TOO_FEW" 7200000 2 2 >/dev/null 2>&1; then
+    echo "installed soak verifier accepted fewer than 120 resource samples" >&2
+    exit 1
+fi
+
+SATURATED="$TEMP_DIR/sampled-saturated.log"
+sed 's/saturated=false/saturated=true/' "$SAMPLED" >"$SATURATED"
+if SOPHIA_SOAK_SAMPLE_POLICY=current \
+    "$ROOT_DIR/tools/verify_installed_session_soak.sh" \
+        "$SATURATED" 7200000 2 2 >/dev/null 2>&1; then
+    echo "installed soak verifier accepted saturated resource evidence" >&2
+    exit 1
+fi
 
 for gauge in cpu_registry_buffers cpu_registry_bytes snapshot_live_entries \
     import_cache_live_entries; do

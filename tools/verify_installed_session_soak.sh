@@ -13,6 +13,7 @@ session_log="${1:-}"
 minimum_msec="${2:-7200000}"
 minimum_terminal_actions="${3:-10}"
 minimum_firefox_actions="${4:-5}"
+sample_policy="${5:-${SOPHIA_SOAK_SAMPLE_POLICY:-current}}"
 
 # A two-hour soak at the five-second cadence records well over a thousand
 # samples; this floor only refuses a population too small for the halves
@@ -21,7 +22,7 @@ SOPHIA_SOAK_MIN_RESOURCE_SAMPLES="${SOPHIA_SOAK_MIN_RESOURCE_SAMPLES:-120}"
 # Allocator arena drift over hours, not a leak allowance.
 SOPHIA_SOAK_RSS_GROWTH_TOLERANCE_KIB="${SOPHIA_SOAK_RSS_GROWTH_TOLERANCE_KIB:-65536}"
 [[ -s "$session_log" ]] || {
-    echo "usage: tools/verify_installed_session_soak.sh SESSION_LOG [MIN_MSEC [MIN_TERMINALS [MIN_FIREFOX]]]" >&2
+    echo "usage: tools/verify_installed_session_soak.sh SESSION_LOG [MIN_MSEC [MIN_TERMINALS [MIN_FIREFOX [current|archive]]]]" >&2
     exit 1
 }
 for value in "$minimum_msec" "$minimum_terminal_actions" "$minimum_firefox_actions"; do
@@ -30,6 +31,10 @@ for value in "$minimum_msec" "$minimum_terminal_actions" "$minimum_firefox_actio
         exit 1
     }
 done
+[[ "$sample_policy" == current || "$sample_policy" == archive ]] || {
+    echo "soak sample policy must be current or archive" >&2
+    exit 1
+}
 if grep -Eqi '(^|[[:space:]])(panic|error([:[:space:]])|status=(failed|degraded))' "$session_log"; then
     echo "soak log contains an error, panic, or degraded status" >&2
     exit 1
@@ -334,14 +339,39 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pend
 # bounded gate is a ramp -- windows appear, live counts climb, and comparing
 # halves of that refuses a healthy run for doing what it was told.
 #
-# Absence stays acceptable: soaks recorded before the sampler existed must stay
-# verifiable, and this file cannot tell those from a run that lost it.
-steady_state_line="$(grep -E '^sophia_live_resource_steady_state schema=1 status=complete ' \
-    "$session_log" || true)"
-if [[ -n "$steady_state_line" ]]; then
-    soak_samples="$(sed -n 's/.* samples=\([0-9][0-9]*\).*/\1/p' <<< "$steady_state_line")"
+# Current acceptance fails closed if the sampler is absent. Historical archive
+# verification opts into `archive`, where absence predating the sampler remains
+# readable; a present series is held to the same structure and growth rules.
+mapfile -t steady_state_lines < <(
+    grep -E '^sophia_live_resource_steady_state schema=1 status=complete ' \
+        "$session_log" || true
+)
+if [[ "$sample_policy" == current ]]; then
+    (( ${#steady_state_lines[@]} == 1 )) || {
+        echo "current soak requires exactly one resource steady-state record; found ${#steady_state_lines[@]}" >&2
+        exit 1
+    }
+elif (( ${#steady_state_lines[@]} > 1 )); then
+    echo "archive soak has duplicate resource steady-state records" >&2
+    exit 1
+fi
+
+soak_samples=0
+if (( ${#steady_state_lines[@]} == 1 )); then
+    steady_state_line="${steady_state_lines[0]}"
+    soak_samples="$(line_field "$steady_state_line" samples || true)"
+    sample_interval_msec="$(line_field "$steady_state_line" interval_msec || true)"
+    sample_saturated="$(line_field "$steady_state_line" saturated || true)"
     [[ "$soak_samples" =~ ^[0-9]+$ ]] || {
         echo "soak steady-state record has a nonnumeric sample count" >&2
+        exit 1
+    }
+    [[ "$sample_interval_msec" =~ ^[1-9][0-9]*$ ]] || {
+        echo "soak steady-state record has no positive sample interval" >&2
+        exit 1
+    }
+    [[ "$sample_saturated" == false ]] || {
+        echo "soak resource sampler saturated its bounded evidence capacity" >&2
         exit 1
     }
     (( soak_samples >= SOPHIA_SOAK_MIN_RESOURCE_SAMPLES )) || {
@@ -355,6 +385,21 @@ if [[ -n "$steady_state_line" ]]; then
         echo "soak claimed $soak_samples resource samples and recorded ${#soak_samples_lines[@]}" >&2
         exit 1
     }
+    previous_uptime=0
+    for (( index = 0; index < soak_samples; index++ )); do
+        sequence="$(line_field "${soak_samples_lines[index]}" seq || true)"
+        uptime="$(line_field "${soak_samples_lines[index]}" uptime_msec || true)"
+        expected_sequence=$((index + 1))
+        [[ "$sequence" =~ ^[0-9]+$ && "$sequence" -eq "$expected_sequence" ]] || {
+            echo "soak resource sample $index is not contiguous from sequence one" >&2
+            exit 1
+        }
+        [[ "$uptime" =~ ^[0-9]+$ && "$uptime" -gt "$previous_uptime" ]] || {
+            echo "soak resource sample $index has no advancing uptime" >&2
+            exit 1
+        }
+        previous_uptime="$uptime"
+    done
     # Drop the first quarter as warmup, then require the later half's peak not
     # to exceed the earlier half's. Each gauge is a live count rather than a
     # total, so a rising peak is a population being held rather than work being
@@ -393,4 +438,4 @@ if [[ -n "$steady_state_line" ]]; then
     done
 fi
 
-echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits focus_commits=$focus_commits workspace_away=$workspace_away workspace_return=$workspace_return workspace_views=$workspace_views workspace_moves=$workspace_moves pointer_moves=$pointer_moves pointer_resizes=$pointer_resizes practical_actions=${#SOPHIA_SOAK_PRACTICAL_ACTION_IDS[@]} visual_resizes=$visual_resizes close_actions=$close_actions selection_owner_changes=$selection_owner_changes selection_conversions=$selection_conversions outputs=$outputs"
+echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits focus_commits=$focus_commits workspace_away=$workspace_away workspace_return=$workspace_return workspace_views=$workspace_views workspace_moves=$workspace_moves pointer_moves=$pointer_moves pointer_resizes=$pointer_resizes practical_actions=${#SOPHIA_SOAK_PRACTICAL_ACTION_IDS[@]} visual_resizes=$visual_resizes close_actions=$close_actions selection_owner_changes=$selection_owner_changes selection_conversions=$selection_conversions outputs=$outputs sample_policy=$sample_policy resource_samples=$soak_samples"

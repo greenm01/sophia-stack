@@ -81,11 +81,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod authority_file;
+mod cpu_visual_progress;
 pub(crate) mod direct_cursor_proof;
 pub(crate) mod direct_overlay_proof;
 pub(super) mod input_guard;
 mod metadata_broker;
 mod metadata_shell;
+use cpu_visual_progress::CpuVisualProgress;
 use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
 mod policy_transport_worker;

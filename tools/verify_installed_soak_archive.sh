@@ -123,7 +123,7 @@ observed_identity_sha256="$(sha256sum "$run/identity.log" | awk '{ print $1 }')"
 }
 
 "$VERIFY_SOAK" \
-    "$run/session.log" "$minimum_msec" "$minimum_terminals" "$minimum_firefox"
+    "$run/session.log" "$minimum_msec" "$minimum_terminals" "$minimum_firefox" archive
 expected_summary="$(sophia_soak_emit_summary "$run/session.log")"
 observed_summary="$(cat "$run/soak-summary.kdl")"
 [[ "$observed_summary" == "$expected_summary" ]] || {

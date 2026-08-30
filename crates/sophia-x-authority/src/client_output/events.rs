@@ -190,6 +190,17 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_u16(byte_order, &mut out[14..16], height);
             put_u16(byte_order, &mut out[16..18], count);
         }
+        XClientEvent::NoExpose {
+            sequence,
+            drawable,
+            minor_opcode,
+            major_opcode,
+        } => {
+            write_event_header(byte_order, &mut out, X_NO_EXPOSE, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], drawable);
+            put_u16(byte_order, &mut out[8..10], minor_opcode);
+            out[10] = major_opcode;
+        }
         XClientEvent::VisibilityNotify {
             sequence,
             window,

@@ -4,6 +4,7 @@
 //! records and vocabulary so development tools can validate sessions without
 //! duplicating production authority or parsing schemas in shell.
 
+pub mod desktop_comparison;
 pub mod direct_scanout;
 pub mod direct_scanout_archive;
 pub mod direct_scanout_cost;

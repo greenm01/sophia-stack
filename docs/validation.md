@@ -490,14 +490,23 @@ bursts before xterm's process-level safety timeout. The independent 30-second
 watchdog bounds the complete session. Let the xterm exit automatically; the
 logout shortcut intentionally produces an incomplete benchmark.
 
-The trailing `sophia_terminal_performance schema=3` report requires positive
-immutable CPU patch traffic, damage-driven partial repaint, no unexpected X11
-or native failure, clean resource drain, and
-`cpu_max_compose_msec <= cpu_compose_budget_msec`. The default composition
-budget is 25 ms; `SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive
-integer and is reserved for a separately documented gate. The report also
-requires the client to reproduce the declared line-batch and interval metadata.
-The raw report can be regenerated from the retained standalone session log:
+The trailing `sophia_terminal_performance schema=4` report retains those
+resource, patch, damage, client-metadata, failure, drain, and composition-budget
+checks and additionally requires exactly one
+`sophia_live_cpu_visual_progress schema=1 status=complete` record. Post-readiness
+updates must balance exactly as presented plus superseded with zero pending or
+discarded updates. At least three content-changing primary retirements must
+occur; the first update and first changed retirement must follow readiness
+within one second; source and display gaps may not exceed one second; and the
+last update and last changed retirement must precede completion by no more than
+one second. The largest accepted-update-to-exact-retirement latency may not
+exceed two periods of the session's reported refresh plus one millisecond of
+integer tolerance. A startup-only burst cannot pass.
+
+The default composition budget remains 25 ms;
+`SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive integer and is
+reserved for a separately documented gate. The raw report can be regenerated
+from the retained standalone session log:
 
 ```sh
 tools/report_sophia_terminal_performance.sh
@@ -506,8 +515,9 @@ tools/report_sophia_terminal_performance.sh
 If the machine locks or the report fails, retain the standalone session,
 launcher, input-guard, recovery, lifecycle, and protected kernel logs. Do not
 repeat the physical takeover until that evidence is diagnosed. This benchmark
-does not establish Xserver parity: Copy-based xterm redraw has no equivalent
-per-frame flip cadence yet.
+does not establish Xserver parity. Optional X Present cadence remains a
+diagnostic; the gate's screen-progress authority is the session's exact primary
+composition and KMS-retirement evidence.
 
 After greetd restores the normal Xorg or XLibre session, open a terminal in
 that session and run:
@@ -590,6 +600,34 @@ Offline regressions are
 `tools/check_sophia_rendering_performance_reporter.sh`,
 `tools/check_sophia_terminal_performance_reporter.sh`, and
 `tools/check_xserver_rendering_performance_reporter.sh`.
+
+Milestone 14's broader same-hardware comparison is a separate diagnostic matrix
+owned by typed conformance code:
+
+```sh
+cargo xtask conformance desktop-comparison prepare RUN KERNEL MESA GPU
+cargo xtask conformance desktop-comparison run RUN SAMPLE_LOG
+cargo xtask conformance desktop-comparison verify RUN
+cargo xtask conformance desktop-comparison report RUN
+```
+
+Preparation refuses a dirty or unsigned Sophia candidate. It hashes the
+repository-owned stack configurations and local Firefox fixture, pins the
+candidate and reference-stack identities, and records the common two-output
+topology plus operator-supplied kernel, Mesa, and GPU identities. The schedule
+rotates Sophia, XLibre+xmonad, and niri across three repetitions of Kitty 60 s,
+the offline Firefox fixture, resize, and a 16-Kitty launch burst, then requires
+one two-hour soak for each stack: 39 raw samples total.
+
+Each native-stack adapter emits exactly one
+`desktop_comparison_sample schema=1 status=complete` record. `run` verifies its
+schedule position, backend, topology, executable versions, duration, resource
+and frame populations, crash count, and sample-loss count before copying the
+raw log under a deterministic path and extending its checksum ledger. `verify`
+requires the exact complete matrix; `report` emits stack/workload means with
+`verdict=none`. Reference performance is never a Sophia correctness threshold.
+The repository-owned inputs and adapter boundary are documented in
+`validation/desktop-comparison/README.md`.
 
 For the visible xmonad/KMS proof, run
 `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch
@@ -1524,10 +1562,31 @@ sophia-status
 sophia-run-cycles
 sophia-verify-cycles 10
 
-# Historical xmonad soak artifacts remain reproducible but are not current
-# promotion gates:
+# Historical xmonad soak artifacts remain reproducible through the explicit
+# archive policy and are not current promotion gates:
 sophia-verify-soak
 ```
+
+The raw current-candidate soak verifier defaults to the `current` sample policy:
+
+```sh
+tools/verify_installed_session_soak.sh SESSION_LOG 7200000 10 5 current
+```
+
+Current evidence requires exactly one nonsaturated five-second resource series,
+at least 120 samples, an exact declared sample count, contiguous sequence numbers
+starting at one, and advancing uptime. After dropping the warmup quarter, the
+later settled half may not exceed the earlier half's peak for CPU registry
+buffers/bytes, native frame slots, snapshots, or imported-image cache entries.
+RSS alone has a 64 MiB allocator-arena tolerance. Totals such as COW splits may
+rise and are not treated as resident-resource leaks. The two-hour duration and
+ordinary lifecycle/application/action gates still apply.
+
+`tools/verify_installed_soak_archive.sh` passes `archive` explicitly so an old
+checksummed run that predates resource sampling remains reproducible. Archive
+policy permits an absent series but applies the complete current rules when a
+series is present; neither an archive nor a synthetic fixture is fresh milestone
+evidence.
 
 The opt-in checkpoint/restart and state-transition proof runs from a logged-in
 TTY 4 and restores the originating display manager and VT on every exit:

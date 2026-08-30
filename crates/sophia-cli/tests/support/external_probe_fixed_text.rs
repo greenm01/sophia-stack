@@ -84,10 +84,10 @@ fn request(
 #[test]
 fn fixed_text_scroll_proof_requires_current_rows_and_causal_opcodes() {
     let rows: [&[u8]; 4] = [
-        b"SophiaMirror09",
-        b"SophiaMirror10",
-        b"SophiaMirror11",
-        b"SophiaMirror12",
+        b"SophiaStream077",
+        b"SophiaStream078",
+        b"SophiaStream079",
+        b"SophiaStream080",
     ];
     let surface = sophia_protocol::SurfaceId::new(1, 1);
     let current = fixed_text_snapshot(1, &rows);
@@ -121,23 +121,23 @@ fn fixed_text_scroll_proof_rejects_a_stale_or_partial_surface() {
     let surface = sophia_protocol::SurfaceId::new(1, 1);
     let auxiliary = sophia_protocol::SurfaceId::new(2, 1);
     let stale = fixed_text_snapshot(1, &[
-        b"SophiaMirror09",
-        b"SophiaMirror10",
-        b"SophiaMirror11",
-        b"SophiaMirror12",
+        b"SophiaStream077",
+        b"SophiaStream078",
+        b"SophiaStream079",
+        b"SophiaStream080",
     ]);
     let current = fixed_text_snapshot(2, &[b"unrelated current surface"]);
-    let partial = fixed_text_snapshot(3, &[b"SophiaMirror12"]);
+    let partial = fixed_text_snapshot(3, &[b"SophiaStream080"]);
     let reordered = fixed_text_snapshot(4, &[
-        b"SophiaMirror09",
-        b"SophiaMirror11",
-        b"SophiaMirror10",
-        b"SophiaMirror12",
+        b"SophiaStream077",
+        b"SophiaStream079",
+        b"SophiaStream078",
+        b"SophiaStream080",
     ]);
 
     assert!(cpu_buffer_contains_fixed_text(
         &stale,
-        b"SophiaMirror12",
+        b"SophiaStream080",
         Some((0x00ff_ffff, 0)),
     ));
     let causal = [

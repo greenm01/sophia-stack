@@ -1087,7 +1087,27 @@ fn x11_dispatch_pixmap_put_image_and_copy_area_emit_window_transaction() {
         &mut atoms,
         &mut properties,
     );
-    assert!(copy.outputs.is_empty());
+    assert!(matches!(
+        copy.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::NoExpose {
+            sequence: 4,
+            drawable,
+            minor_opcode: 0,
+            major_opcode: 62,
+        })] if *drawable == XResourceId::new(0x220121, 1)
+    ));
+    let encoded_no_expose = copy.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded_no_expose.len(), 1);
+    assert_eq!(encoded_no_expose[0][0], 14);
+    assert_eq!(
+        read_u16(XByteOrder::LittleEndian, &encoded_no_expose[0][2..4]),
+        4
+    );
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded_no_expose[0][4..8]),
+        0x220121
+    );
+    assert_eq!(encoded_no_expose[0][10], 62);
     let response = copy.response.unwrap();
     assert_eq!(response.transactions.len(), 1);
     assert_eq!(

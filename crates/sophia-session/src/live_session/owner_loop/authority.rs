@@ -705,6 +705,13 @@
                             head.presented_submission_ust_usec,
                             head.presented_page_flip_ust_usec,
                         );
+                        cpu_visual_progress.observe_primary_state(
+                            head.presented_submissions,
+                            head.presented_content
+                                .map(|_| head.presented_logical_checksum),
+                            head.refresh_millihz,
+                            Instant::now(),
+                        );
                     }
                     metrics.backend_ticks = metrics
                         .backend_ticks

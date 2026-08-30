@@ -672,6 +672,13 @@
                     head.presented_submission_ust_usec,
                     head.presented_page_flip_ust_usec,
                 );
+                cpu_visual_progress.observe_primary_state(
+                    head.presented_submissions,
+                    head.presented_content
+                        .map(|_| head.presented_logical_checksum),
+                    head.refresh_millihz,
+                    Instant::now(),
+                );
             }
             metrics.runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
@@ -1067,6 +1074,20 @@
         if !startup_ready_reported && startup_readiness.ready {
             startup_ready_reported = true;
             startup_ready_msec.get_or_insert_with(|| started.elapsed().as_millis());
+            let (presented_submissions, presented_checksum, refresh_millihz) = native_scanout
+                .as_ref()
+                .and_then(|native| native.heads.first())
+                .map_or((0, None, 0), |head| {
+                    (
+                        head.presented_submissions,
+                        head.presented_content
+                            .map(|_| head.presented_logical_checksum),
+                        head.refresh_millihz,
+                    )
+                });
+            cpu_visual_progress.observe_ready(
+                Instant::now(), presented_submissions, presented_checksum, refresh_millihz,
+            );
             // Direct scanout only after the session has proven it can put
             // light on a screen.
             //

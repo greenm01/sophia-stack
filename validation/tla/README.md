@@ -146,6 +146,32 @@ describes a system that shares nothing and copies always.
 Scenario correspondence and the implementation-only checks are recorded in
 `validation/specula/stable-x-backing-lease-modeling-brief.md`.
 
+`ContinuousContentPresentation.tla` owns the post-readiness software-content
+pipeline that the physical terminal gate measures. It keeps intake,
+latest-content composition, native submission, kernel flip, and exact callback
+reduction as separate actions. Every accepted update must be exactly one of
+presented, superseded, or pending; pending is bounded to the latest accepted
+generation; a presented update must belong to the retired set; and pipeline
+identities must have been accepted. Under weak fairness for every productive
+stage and each exact callback, the final bounded source update eventually
+settles. Timing is intentionally absent: the schema-4 empirical gate owns
+one-second source/display gaps and the two-refresh update-to-retirement bound.
+
+The checked configuration explores 646 generated states and 316 distinct states
+to depth 22. Four retained executable negative configurations make the model's
+assumptions observable rather than documentary:
+
+- removing exact callback-drain fairness violates the temporal property;
+- removing composition fairness violates the temporal property;
+- accepting a successor without accounting the superseded pending update
+  violates `AllAcceptedUpdatesAccounted`; and
+- allowing a stale callback to present the latest pending update violates
+  `PresentedUpdatesRetired`.
+
+`tools/check_tla.sh` requires those four runs to fail with their exact expected
+TLC signatures. A negative control that starts passing is therefore a checker
+failure, not a model improvement.
+
 Fairness is per action rather than over the whole progress disjunction, and
 `Settle` is outside it. That distinction is the difference between a settlement
 property and a tautology: `Settle` is enabled in every non-terminal state, so a

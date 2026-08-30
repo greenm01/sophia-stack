@@ -524,6 +524,7 @@ fn run_session_loop_inner(
     let mut retired_present_surfaces = BTreeMap::new();
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
     let mut startup_ready_reported = false;
+    let mut cpu_visual_progress = CpuVisualProgress::default();
     // Inert unless the session asked for it; see `direct_overlay_proof`.
     let mut direct_overlay_proof =
         crate::live_session::direct_overlay_proof::DirectOverlayProof::new(

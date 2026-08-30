@@ -275,6 +275,15 @@
                 cleanup_failures.push(format!("native completion drain failed: {error}"));
             }
         }
+        if let Some(head) = native_scanout.heads.first() {
+            cpu_visual_progress.observe_primary_state(
+                head.presented_submissions,
+                head.presented_content
+                    .map(|_| head.presented_logical_checksum),
+                head.refresh_millihz,
+                Instant::now(),
+            );
+        }
         if detach_established {
             match native_scanout.clear_renderer_images() {
                 Ok(evicted_renderer_images) => {
@@ -951,6 +960,10 @@
         scene.cpu_cow_splits(),
         scene.peak_resident_buffers(),
         scene.peak_resident_buffer_bytes(),
+    );
+    crate::session_println!(
+        "{}",
+        cpu_visual_progress.record(Instant::now(), startup_ready_msec.unwrap_or_default())
     );
     crate::session_println!(
         "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches} merged_batches={merged_batches} max_merge_run={max_merge_run}"

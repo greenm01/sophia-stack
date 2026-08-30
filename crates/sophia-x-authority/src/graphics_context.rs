@@ -21,6 +21,7 @@ pub struct XGraphicsContextValues {
     pub line_width: u16,
     pub fill_style: u8,
     pub font: Option<XResourceId>,
+    pub graphics_exposures: bool,
     pub clip_x_origin: i16,
     pub clip_y_origin: i16,
     pub clip_rectangles: Vec<Rect>,
@@ -36,6 +37,7 @@ impl Default for XGraphicsContextValues {
             line_width: 0,
             fill_style: 0,
             font: None,
+            graphics_exposures: true,
             clip_x_origin: 0,
             clip_y_origin: 0,
             clip_rectangles: Vec::new(),
@@ -146,6 +148,9 @@ impl XGraphicsContextTable {
         if mask & (1 << 14) != 0 {
             record.values.font = values.font;
             record.font_face = font_face.expect("a validated GC font accompanies the font mask");
+        }
+        if mask & (1 << 16) != 0 {
+            record.values.graphics_exposures = values.graphics_exposures;
         }
         if mask & (1 << 17) != 0 {
             record.values.clip_x_origin = values.clip_x_origin;

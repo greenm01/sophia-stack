@@ -852,8 +852,8 @@ fn x11_core_decoder_preserves_change_gc_mask_and_values_in_both_byte_orders() {
             &change_gc_request(
                 byte_order,
                 0x220020,
-                (1 << 2) | (1 << 17),
-                &[0x0012_3456, 7],
+                (1 << 2) | (1 << 16) | (1 << 17),
+                &[0x0012_3456, 0, 7],
             ),
         )
         .unwrap();
@@ -866,8 +866,9 @@ fn x11_core_decoder_preserves_change_gc_mask_and_values_in_both_byte_orders() {
             panic!("expected ChangeGC");
         };
         assert_eq!(gc, XResourceId::new(0x220020, 1));
-        assert_eq!(value_mask, (1 << 2) | (1 << 17));
+        assert_eq!(value_mask, (1 << 2) | (1 << 16) | (1 << 17));
         assert_eq!(values.foreground, 0x0012_3456);
+        assert!(!values.graphics_exposures);
         assert_eq!(values.clip_x_origin, 7);
     }
 }

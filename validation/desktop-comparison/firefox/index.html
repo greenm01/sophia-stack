@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sophia desktop comparison fixture</title>
+<style>
+  html { color-scheme: light dark; font: 18px system-ui; }
+  main { max-width: 70ch; margin: 8vh auto; }
+  .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .grid span { aspect-ratio: 1; background: hsl(calc(var(--i) * 17) 70% 55%); }
+</style>
+<main><h1>Local Firefox workload</h1><p>No network content is used.</p><div class="grid" id="grid"></div></main>
+<script>
+  for (let i = 0; i < 64; i++) grid.insertAdjacentHTML('beforeend', `<span style="--i:${i}"></span>`);
+  setInterval(() => document.documentElement.dataset.tick = String(Date.now()), 250);
+</script>

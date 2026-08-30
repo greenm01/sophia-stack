@@ -74,7 +74,8 @@ Status vocabulary:
   buffer-age damage, refresh-relative input latency, one shared renderer worker
   per DRM group, direct scanout, return to composition on overlay/effect
   activation, direct-versus-composed measurements, and the atomic cursor path.
-  Two implementation/evidence rows remain.
+  Continuous software-content presentation and the comparison/soak contracts
+  are implemented; their fresh physical evidence remains.
 
 Latest retained Milestone 14 evidence:
 
@@ -86,6 +87,8 @@ Latest retained Milestone 14 evidence:
 | Shared renderer | signed native archive `0003`: one worker, zero misroutes |
 | Direct scanout | archives `0001`–`0003`: eligibility, effect fallback, and same-session cost |
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
+| Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
+| CPU continuity | sustained real-xterm regression: 541 runtime commits and CPU buffers, no X error |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -97,21 +100,28 @@ before changing any product default.
 
 ## Critical Path
 
-### CP-14.1 — Lease-safe stable X backing (`NOW`)
+### CP-14.1 — Stable X backing and continuous presentation (`NOW`)
 
 - [ ] Replace full immutable CPU presentation replacement for stable
-  software-rendered X toplevels with lease-safe damage generations or
-  copy-on-write backing.
+  software-rendered X toplevels with lease-safe copy-on-write backing, and prove
+  sustained post-readiness content reaches physical retirement.
 
-Implementation and offline proof are complete; the signed physical run is what
-remains. `StableBackingLease.tla` models the lifetime transition with six
-negative controls; the backing is `Arc`-backed copy-on-write end to end; a
-damage list past the transport bound coalesces rather than replacing; a derived
-density variant is patched by the draw it replays; and bounded resource sampling
-plus a halves comparison in `verify_hagia_native_session.sh` measures warmed
-growth. The headless session gate passes on it, reporting 31 of 32 CPU updates
-as patches with the registry peaking at one buffer. See `docs/research-log.md`,
-2026-08-30.
+Backing implementation, formal proof, and hardware mechanism evidence are
+complete. `StableBackingLease.tla` carries six negative controls; the backing is
+`Arc`-backed copy-on-write end to end; over-bound damage coalesces; and derived
+density variants preserve patches. The retained terminal run reported 63 of 64
+updates as patches, two COW splits, and one resident registry buffer.
+
+That run also exposed a pre-existing frozen-output path. Successful core X
+`CopyArea` omitted the required `NoExpose`, so xterm waited after its first
+scroll. X Authority now emits `NoExpose` according to the GC's
+`graphics_exposures` flag, and the sustained real-xterm regression reaches 541
+runtime commits and CPU buffers without an X error. The live session now emits
+bounded post-readiness intake, composition, exact primary-retirement, latest-
+wins accounting, cadence, and latency evidence. The schema-4 terminal reporter
+refuses startup-only progress, gaps over one second, fewer than three changed
+retirements, unaccounted updates, or update-to-retirement latency beyond two
+refresh periods.
 
 Required exit:
 
@@ -120,11 +130,16 @@ Required exit:
   retires;
 - bound generations, backing storage, damage history, and fallback behavior;
 - model the lifetime transition before changing it and retain every
-  implementation-relevant counterexample as a deterministic regression; and
-- prove no warmed steady-state allocation growth on the retained workload.
+  implementation-relevant counterexample as a deterministic regression;
+- prove no warmed steady-state allocation growth on the retained workload;
+- account every accepted post-readiness CPU update as presented, superseded, or
+  pending, with no pending update at completion; and
+- show sustained source and physical-retirement progress at refresh-relative
+  latency on the physical terminal workload.
 
-Outstanding: one signed `hagia-native-runs` archive on this code, which also
-carries the buffer-age default and closes CP-14.3's exit evidence.
+Outstanding: commit the candidate, rerun the guarded TTY3 terminal gate, confirm
+that xterm scrolls continuously, and retain its passing schema-4 report. Do not
+close this row from the offline real-xterm regression alone.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 
@@ -141,6 +156,14 @@ Required exit:
 - classify the comparison as diagnostic. Sophia's absolute correctness,
   authority, and refresh-relative latency gates remain authoritative.
 
+The typed orchestration is complete under
+`cargo xtask conformance desktop-comparison`: preparation requires a clean,
+signed Sophia candidate and pins repository inputs, binaries, topology, kernel,
+Mesa, and GPU; ingestion binds checksummed raw logs to a rotated schedule; and
+verification requires all 39 samples. The matrix is twelve short samples per
+stack plus one two-hour soak per stack. Relative results always report
+`verdict=none`. Outstanding: run and retain the physical matrix on one machine.
+
 ### CP-14.3 — Close Milestone 14 (`NEXT`)
 
 - [ ] Verify the milestone exit, archive the concise result in
@@ -149,6 +172,12 @@ Required exit:
 Milestone 14 exits only with bounded warmed resource counts, no steady-state
 allocation growth, refresh-relative latency evidence, clean normal teardown,
 and no change to Sophia's native-X authority model.
+
+The current-soak verifier now requires a nonsaturated five-second resource
+series, at least 120 contiguous samples, and flat settled peaks with zero
+tolerance for accounted resources. Historical installed archives explicitly use
+the archive policy and remain reproducible. A fresh two-hour current run remains
+required; no fixture or historical archive closes this row.
 
 ### CP-15.1 — Native protocol-family lifecycle audit (`NEXT`)
 

@@ -104,6 +104,15 @@
                     native_scanout.is_some(),
                     defer_cpu_frame,
                 );
+                let accepted_cpu_updates = production_batch
+                    .groups
+                    .iter()
+                    .map(|group| group.cpu_buffer_updates.len())
+                    .sum();
+                cpu_visual_progress.observe_updates(
+                    accepted_cpu_updates,
+                    Instant::now(),
+                );
                 let indicator_publication = wm_session
                     .as_ref()
                     .and_then(LiveWmSession::indicator_publication);
@@ -187,6 +196,7 @@
                     );
                 }
                 if composed {
+                    cpu_visual_progress.observe_composition(report.checksum, Instant::now());
                     metrics.max_compose = metrics.max_compose.max(compose_elapsed);
                     metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);
                 } else {

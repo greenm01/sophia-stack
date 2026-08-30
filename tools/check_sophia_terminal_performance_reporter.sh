@@ -8,6 +8,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORTER="$ROOT_DIR/tools/report_sophia_terminal_performance.sh"
 FIXTURE="$ROOT_DIR/tools/fixtures/sophia_terminal_performance_pass.log"
+STARTUP_ONLY_FIXTURE="$ROOT_DIR/tools/fixtures/sophia_terminal_performance_startup_only.log"
 
 fail() {
     echo "terminal performance reporter regression failed: $*" >&2
@@ -16,7 +17,7 @@ fail() {
 
 report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" status=pass "* ]] || fail "pass fixture did not pass"
-[[ "$report" == *" schema=3 "* ]] || fail "missing schema"
+[[ "$report" == *" schema=4 "* ]] || fail "missing schema"
 [[ "$report" == *" workload=xterm-cpu "* ]] || fail "missing workload"
 [[ "$report" == *" duration_seconds=20 "* ]] || fail "missing duration"
 [[ "$report" == *" surface_width=500 surface_height=500 "* ]] || fail "missing surface size"
@@ -29,11 +30,78 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" cpu_compose_budget_msec=25 "* ]] || fail "missing compose budget"
 [[ "$report" == *" partial_repaints=2 full_repaints=1 "* ]] || fail "missing repaint counts"
 [[ "$report" == *" present_fps=58.900 "* ]] || fail "missing present cadence"
+[[ "$report" == *" post_startup_updates=540 post_startup_compositions=500 "* ]] ||
+    fail "missing post-startup progress"
+[[ "$report" == *" changed_primary_retirements=480 "* ]] ||
+    fail "missing changed retirement count"
+[[ "$report" == *" retirement_deadline_usec=34334 "* ]] ||
+    fail "missing two-refresh retirement deadline"
+[[ "$report" == *" last_retirement_to_completion_msec=84 "* ]] ||
+    fail "missing final display-progress boundary"
 
 MUTATED="$(mktemp)"
 trap 'rm -f "$MUTATED"' EXIT
 
 # Fails closed when the immutable patch-batch path was never exercised.
+# The retained field shape from the failed physical run had healthy aggregate
+# counts but no work after readiness. It must remain a permanent negative
+# control for this gate.
+if "$REPORTER" "$STARTUP_ONLY_FIXTURE" >/dev/null 2>&1; then
+    fail "reporter accepted startup-only CPU activity"
+fi
+
+# The schema is mandatory and unique; accepting its absence or duplicates
+# would allow unrelated aggregate counters to stand in for continuous progress.
+grep -v '^sophia_live_cpu_visual_progress ' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted missing CPU visual-progress evidence"
+fi
+sed '/^sophia_live_cpu_visual_progress /p' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted duplicate CPU visual-progress evidence"
+fi
+
+sed 's/changed_primary_retirements=480/changed_primary_retirements=2/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted fewer than three changed retirements"
+fi
+
+sed 's/source_max_gap_msec=50/source_max_gap_msec=1001/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted a one-second CPU source stall"
+fi
+
+sed 's/display_max_gap_msec=50/display_max_gap_msec=1001/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted a one-second changed-retirement stall"
+fi
+
+sed 's/first_retirement_after_ready_msec=32/first_retirement_after_ready_msec=1001/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted a late first changed retirement"
+fi
+
+sed 's/last_retirement_after_ready_msec=19916/last_retirement_after_ready_msec=18999/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted display progress ending more than one second early"
+fi
+
+sed 's/pending_updates=0/pending_updates=1/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted an update pending after native drain"
+fi
+
+sed 's/max_update_to_retirement_usec=16000/max_update_to_retirement_usec=34335/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted retirement later than two refresh intervals"
+fi
+
 sed 's/cpu_patch_updates=539/cpu_patch_updates=0/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted zero CPU patch traffic"

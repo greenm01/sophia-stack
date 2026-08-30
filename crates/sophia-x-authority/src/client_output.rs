@@ -26,6 +26,7 @@ const X_MOTION_NOTIFY: u8 = 6;
 const X_FOCUS_IN: u8 = 9;
 const X_FOCUS_OUT: u8 = 10;
 const X_EXPOSE: u8 = 12;
+const X_NO_EXPOSE: u8 = 14;
 const X_VISIBILITY_NOTIFY: u8 = 15;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
@@ -160,6 +161,12 @@ pub enum XClientEvent {
         width: u16,
         height: u16,
         count: u16,
+    },
+    NoExpose {
+        sequence: u16,
+        drawable: XResourceId,
+        minor_opcode: u16,
+        major_opcode: u8,
     },
     VisibilityNotify {
         sequence: u16,

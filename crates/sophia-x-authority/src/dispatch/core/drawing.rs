@@ -204,15 +204,24 @@ fn dispatch_core_drawing_request(
                 height,
                 &values,
             );
-            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
-                vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    u32::try_from(destination.local.raw()).unwrap_or(0),
-                ))]
-            } else {
-                Vec::new()
+            let outputs = match response.outcome {
+                XAuthorityResponseOutcome::Accepted if values.graphics_exposures => {
+                    vec![XClientOutput::Event(XClientEvent::NoExpose {
+                        sequence: context.sequence,
+                        drawable: destination,
+                        minor_opcode: 0,
+                        major_opcode: context.major_opcode,
+                    })]
+                }
+                XAuthorityResponseOutcome::Accepted => Vec::new(),
+                XAuthorityResponseOutcome::Rejected(error) => {
+                    vec![XClientOutput::Error(x_error_from_runtime(
+                        error,
+                        context.sequence,
+                        context.major_opcode,
+                        u32::try_from(destination.local.raw()).unwrap_or(0),
+                    ))]
+                }
             };
             XDispatchResult {
                 response: Some(response),

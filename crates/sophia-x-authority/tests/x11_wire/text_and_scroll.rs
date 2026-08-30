@@ -498,7 +498,15 @@ fn x11_copy_area_scrolls_overlap_and_copies_text_from_pixmap_backing() {
         &mut atoms,
         &mut properties,
     );
-    assert!(copy_pixmap.outputs.is_empty());
+    assert!(matches!(
+        copy_pixmap.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::NoExpose {
+            sequence: 5,
+            drawable,
+            minor_opcode: 0,
+            major_opcode: 62,
+        })] if *drawable == XResourceId::new(window.into(), 1)
+    ));
     assert_eq!(copy_pixmap.response.unwrap().transactions.len(), 1);
     let bottom_before = runtime
         .drawable_image_region(
@@ -534,7 +542,15 @@ fn x11_copy_area_scrolls_overlap_and_copies_text_from_pixmap_backing() {
         &mut atoms,
         &mut properties,
     );
-    assert!(scroll.outputs.is_empty());
+    assert!(matches!(
+        scroll.outputs.as_slice(),
+        [XClientOutput::Event(XClientEvent::NoExpose {
+            sequence: 6,
+            drawable,
+            minor_opcode: 0,
+            major_opcode: 62,
+        })] if *drawable == XResourceId::new(window.into(), 1)
+    ));
     assert_eq!(
         scroll.response.unwrap().transactions[0].damage,
         Region::single(Rect {
@@ -558,6 +574,17 @@ fn x11_copy_area_scrolls_overlap_and_copies_text_from_pixmap_backing() {
         .unwrap();
     assert_eq!(top_after, bottom_before);
 
+    let disable_exposures = text_contract_dispatch(
+        namespace,
+        70,
+        56,
+        &change_gc_request(XByteOrder::LittleEndian, gc, 1 << 16, &[0]),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(disable_exposures.outputs.is_empty());
+
     let clipped = text_contract_dispatch(
         namespace,
         7,
@@ -578,6 +605,7 @@ fn x11_copy_area_scrolls_overlap_and_copies_text_from_pixmap_backing() {
         &mut atoms,
         &mut properties,
     );
+    assert!(clipped.outputs.is_empty());
     assert_eq!(
         clipped.response.unwrap().transactions[0].damage,
         Region::single(Rect {

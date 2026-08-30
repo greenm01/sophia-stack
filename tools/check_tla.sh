@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission; do
+for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission ContinuousContentPresentation; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -51,4 +51,51 @@ for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBa
             -config "$model.cfg" \
             "$model.tla"
     )
+done
+
+# These configurations deliberately weaken exactly one progress or identity
+# rule. A passing TLC run would mean the model no longer detects the failure it
+# exists to exclude, so success is an error here.
+for control in \
+    ContinuousContentPresentationNoDrainFairness \
+    ContinuousContentPresentationNoCompositionFairness \
+    ContinuousContentPresentationUnaccountedSupersession \
+    ContinuousContentPresentationStaleRetirement; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/ContinuousContentPresentation.tla" "$control_dir/"
+    cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (
+        cd "$control_dir"
+        java -XX:+UseParallelGC -jar "$JAR_PATH" \
+            -deadlock \
+            -workers 1 \
+            -fp 0 \
+            -config "$control.cfg" \
+            ContinuousContentPresentation.tla
+    ) >"$log" 2>&1; then
+        echo "TLA+ negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        ContinuousContentPresentationNoDrainFairness|ContinuousContentPresentationNoCompositionFairness)
+            grep -Fq 'Error: Temporal properties were violated.' "$log" || {
+                echo "TLA+ fairness control failed for the wrong reason: $control" >&2
+                exit 1
+            }
+            ;;
+        ContinuousContentPresentationUnaccountedSupersession)
+            grep -Fq 'Invariant AllAcceptedUpdatesAccounted is violated.' "$log" || {
+                echo "TLA+ supersession control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+        ContinuousContentPresentationStaleRetirement)
+            grep -Fq 'Invariant PresentedUpdatesRetired is violated.' "$log" || {
+                echo "TLA+ stale-retirement control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+    esac
 done

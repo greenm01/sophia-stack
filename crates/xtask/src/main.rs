@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 
 mod check;
 
-use sophia_conformance::{direct_scanout, direct_scanout_archive, direct_scanout_gate, profile};
+use sophia_conformance::{
+    desktop_comparison, direct_scanout, direct_scanout_archive, direct_scanout_gate, profile,
+};
 
 fn main() -> std::process::ExitCode {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -74,6 +76,7 @@ fn run_profile(arguments: &[String]) -> Result<(), String> {
 
 fn run_conformance(arguments: &[String]) -> Result<(), String> {
     match arguments {
+        [subject, rest @ ..] if subject == "desktop-comparison" => run_desktop_comparison(rest),
         [command, subject, logs @ ..] if command == "verify" && subject == "direct-scanout" => {
             direct_scanout::verify_logs(logs).map(print_lines)
         }
@@ -126,6 +129,29 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         )),
         [command] => Err(format!("conformance command {command:?} needs a subject")),
         [] => Err("conformance needs a command".to_owned()),
+    }
+}
+
+fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
+    let repo = workspace_root()?;
+    match arguments {
+        [command, run, kernel, mesa, gpu] if command == "prepare" => {
+            desktop_comparison::prepare(&repo, Path::new(run), kernel, mesa, gpu).map(print_lines)
+        }
+        [command, run, sample] if command == "run" => {
+            desktop_comparison::run_sample(&repo, Path::new(run), Path::new(sample))
+                .map(print_lines)
+        }
+        [command, run] if command == "verify" => {
+            desktop_comparison::verify(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "report" => {
+            desktop_comparison::report(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, ..] => Err(format!(
+            "desktop-comparison {command:?} has invalid arguments; expected prepare RUN KERNEL MESA GPU, run RUN SAMPLE_LOG, verify RUN, or report RUN"
+        )),
+        [] => Err("desktop-comparison needs prepare, run, verify, or report".to_owned()),
     }
 }
 
@@ -312,6 +338,12 @@ usage: cargo xtask <command>
 
   conformance verify direct-scanout-archive [RUN]
       Re-verify one archive, or the newest archive when RUN is omitted.
+
+  conformance desktop-comparison prepare RUN KERNEL MESA GPU
+  conformance desktop-comparison run RUN SAMPLE_LOG
+  conformance desktop-comparison verify RUN
+  conformance desktop-comparison report RUN
+      Prepare, bind, verify, and reduce the diagnostic native desktop matrix.
 
 compatibility aliases: session-args, check-profiles, verify direct-scanout
 profiles: xmonad hagia native standalone kitty

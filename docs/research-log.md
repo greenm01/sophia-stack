@@ -17426,3 +17426,91 @@ A session too short to sample fails rather than passing quietly, which is the
 deliberate half of that rule: the headless gate runs three hundred ticks and
 records `samples=0`, and a run that cannot show a settled population cannot make
 the claim the milestone exits on.
+
+## 2026-08-30: xterm stopped because CopyArea never answered NoExpose
+
+The first physical CP-14.1 terminal run proved the new storage mechanism but
+looked frozen. Its 20-second record carried 831 producer iterations into 64 CPU
+updates, then only seven compositions and five flips, all near startup. The
+operator's visual refusal was correct; positive update and patch totals had let
+the old schema-3 reporter call startup activity a continuous workload.
+
+An extended real-xterm trace located the earliest stopped stage. xterm reached a
+successful core `CopyArea` request and then issued no next scroll. The GC's
+default `graphics-exposures` value was true, but X Authority neither stored that
+field nor emitted the core `NoExpose` event after a copy with no exposed region.
+xterm was waiting for the server response its request required, so this was not
+an Engine scheduler or backing-registry starvation defect.
+
+`GraphicsContextState` now defaults `graphics_exposures=true`, create/change-GC
+decode applies mask bit 16, and a successful `CopyArea` emits `NoExpose` only
+when that flag is enabled. Wire, output-encoding, enabled/disabled behavior, and
+text-scroll regressions cover the boundary. The paced real-xterm workload now
+runs 80 stream rows at 20 ms and reaches 1,221 requests, 541 runtime commits, and
+541 CPU buffers with `first_error=none`. That longer run also exposed a harness
+error: its replay chunk of 64 left no room for fixed per-tick observations. The
+chunk is now bounded below the runtime observation capacity rather than relying
+on the capacity and the workload coincidentally matching.
+
+The session no longer asks update totals to stand in for pixels reaching a
+screen. A private bounded tracker starts at the exact readiness baseline and
+observes post-readiness CPU intake, composition checksums, and primary native
+retirement. Latest-wins intake settles every replaced pending update as
+superseded; only an exact matching primary checksum presents the current update;
+unchanged compositions supersede it. Completion reports accepted, presented,
+superseded, pending, cadence, refresh, and largest intake-to-retirement latency
+with no emitter-owned verdict.
+
+The terminal reporter is schema 4 and owns the verdict. It refuses missing or
+duplicate progress, startup-only activity, fewer than three changed primary
+retirements, first or last source/display progress outside the one-second window,
+one-second source or display gaps, incomplete accounting, pending or discarded
+updates, and exact-retirement latency over two refresh periods plus rounding
+tolerance. The prior physical failure shape is a retained negative fixture.
+
+`ContinuousContentPresentation.tla` keeps intake, composition, submission,
+kernel flip, and exact callback reduction separate. Its positive configuration
+explores 646 generated states and 316 distinct states to depth 22. Four checked
+negative configurations independently remove drain fairness, composition
+fairness, supersession accounting, and exact retirement; the first two violate
+liveness and the latter two violate their named invariants. Timing remains
+empirical because a bounded state model cannot prove the physical scheduler's
+one-second and refresh-relative budgets.
+
+The first combined checker run exposed a harness boundary rather than a model
+counterexample: failed TLC runs retain timestamp-named state directories, so two
+negative controls started in the same second could collide before parsing the
+second model. Every negative control now owns an isolated temporary directory,
+and back-to-back execution reaches all four exact expected violations.
+
+This closes the diagnosed protocol and evidence defects, not CP-14.1's physical
+exit. A fresh clean signed TTY3 candidate must visibly scroll for the full
+workload and pass schema 4 before the row moves.
+
+## 2026-08-30: comparison and steady-state claims get typed acceptance first
+
+The two-hour resource series used to be optional in the generic soak verifier,
+which made absence indistinguishable from a flat population. Direct verification
+now defaults to `current`: exactly one nonsaturated series, at least 120 samples,
+an exact declared count, contiguous sequence identities, advancing uptime, and
+flat settled resource peaks are mandatory. Accounted buffers, bytes, slots,
+snapshots, and imported-image cache entries have no growth tolerance; RSS alone
+gets 64 MiB for allocator arenas. The immutable installed archive wrapper passes
+`archive` explicitly, preserving older evidence while applying every current
+rule to any series it does contain.
+
+The same-hardware comparison now has one typed owner in
+`sophia-conformance`, surfaced as
+`cargo xtask conformance desktop-comparison`. A clean signed preparation hashes
+the three repository stack profiles and local Firefox input, records the common
+topology and hardware/software identities, and creates a rotated schedule. Raw
+adapters are bound one at a time only after prior checksums and the new typed
+sample pass. Final verification requires 36 short captures and three two-hour
+soaks; reporting emits diagnostic means with `verdict=none`, so a reference
+desktop never becomes Sophia's correctness oracle.
+
+Mutation tests retain incomplete schedules, modified raw logs, identity/backend
+mismatch, crashes, sample loss, missing samples, short or saturated series, every
+steady-state gauge growing, and the old startup-only terminal trace. These are
+acceptance implementations, not observations. No comparison sample or fresh
+two-hour current soak was captured in this non-TTY implementation session.
