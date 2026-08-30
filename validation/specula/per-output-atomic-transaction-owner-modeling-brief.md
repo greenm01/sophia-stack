@@ -190,6 +190,25 @@ and one outstanding-commit resource. The property to check is that a cursor
 leaving one head's viewport does not force that head's primary to commit,
 and does not prevent the group's request from going out.
 
+**Correction, found while planning the implementation.** The premise above is
+wrong about the path that matters. `LibdrmNativeAtomicHead` and the combined
+request it feeds are built only for topology work and `TEST_ONLY` probes;
+every *frame* commits once per head, mirror groups included
+(`production_session/native_scanout.rs:1756`, which prepares and submits per
+head rather than assembling a group request).
+
+So a cursor moving between heads of a group is two commits, not one, and
+`CursorLeavesNoGhost` holds across them rather than within one. There is a
+window -- one commit long -- in which the head the pointer left still shows
+it while the head it arrived on already does. The model forbids that state
+outright, which is stricter than what the implementation can offer today.
+
+Two ways to close it, neither belonging to this row: give the model a
+per-head commit resource and weaken the property to "eventually agree", or
+give the frame path a combined per-group request, which is a larger change to
+how mirroring submits than a cursor justifies. Recorded here so the row
+cannot claim the model covers a case it does not.
+
 ### Scenario 6: Bounded Cursor-Only Work
 
 **Mechanism**: pointer motion arrives far faster than frames. The row
@@ -303,6 +322,11 @@ a stated consequence.
   implied by the single-outstanding-commit rule alone.
 - Whether the primary-only retry can lose a cursor position -- the retry
   drops the cursor contribution, and the pending cell must survive it.
+
+**Not checked, and now known not to hold as modelled.** The group scenario
+assumes one request per group; the frame path commits per head. See the
+correction in Scenario 5 -- `CursorLeavesNoGhost` is satisfied across commits
+with a one-commit window, not within a single request.
 
 ### 6.2 Testable Only
 
