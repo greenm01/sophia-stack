@@ -436,6 +436,14 @@ if [[ -n "$steady_state_line" ]]; then
         fail "the steady-state record has a nonnumeric sample count"
     # Below this the halves carry too few readings to mean anything: a
     # comparison over three samples a side is noise with a verdict attached.
+    #
+    # A session too short to sample is a session too short to make the claim,
+    # so this fails rather than passing quietly. At the five-second cadence the
+    # floor is under two minutes of session, which the bounded workflow this
+    # gate drives exceeds by a wide margin; a run that trips it either ended
+    # early or lost the sampler. `SOPHIA_MIN_RESOURCE_SAMPLES` exists so a
+    # deliberately shorter proof can say what it is settling for, in its own
+    # runner, rather than by weakening the rule here.
     (( sample_count >= SOPHIA_MIN_RESOURCE_SAMPLES )) ||
         fail "the session recorded $sample_count resource samples, fewer than the $SOPHIA_MIN_RESOURCE_SAMPLES a growth comparison needs"
     mapfile -t resource_samples < <(

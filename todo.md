@@ -103,6 +103,16 @@ before changing any product default.
   software-rendered X toplevels with lease-safe damage generations or
   copy-on-write backing.
 
+Implementation and offline proof are complete; the signed physical run is what
+remains. `StableBackingLease.tla` models the lifetime transition with six
+negative controls; the backing is `Arc`-backed copy-on-write end to end; a
+damage list past the transport bound coalesces rather than replacing; a derived
+density variant is patched by the draw it replays; and bounded resource sampling
+plus a halves comparison in `verify_hagia_native_session.sh` measures warmed
+growth. The headless session gate passes on it, reporting 31 of 32 CPU updates
+as patches with the registry peaking at one buffer. See `docs/research-log.md`,
+2026-08-30.
+
 Required exit:
 
 - preserve child composition and exact admission extents;
@@ -112,6 +122,9 @@ Required exit:
 - model the lifetime transition before changing it and retain every
   implementation-relevant counterexample as a deterministic regression; and
 - prove no warmed steady-state allocation growth on the retained workload.
+
+Outstanding: one signed `hagia-native-runs` archive on this code, which also
+carries the buffer-age default and closes CP-14.3's exit evidence.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 
