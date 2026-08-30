@@ -16,8 +16,9 @@ pub use raster_variants::{XPutImageSemantics, XRasterFallbackCause};
 pub use update::{
     X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
     XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
+    XAuthorityCpuDrawResult,
 };
-use update::{packed_patch, packed_patch_region};
+use update::{packed_patch_region, patch_is_representable};
 
 pub const X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888: u32 = u32::from_le_bytes(*b"XR24");
 pub const X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -186,7 +187,7 @@ impl XSoftwareBufferStore {
         size: Size,
         damage: &[Rect],
         gc: &XGraphicsContextValues,
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<XAuthorityCpuDrawResult> {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         for rect in damage {
@@ -201,7 +202,7 @@ impl XSoftwareBufferStore {
         size: Size,
         rect: Rect,
         pixel: u32,
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<XAuthorityCpuDrawResult> {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         fill_rect(buffer, rect, pixel, &XGraphicsContextValues::default());
@@ -214,7 +215,7 @@ impl XSoftwareBufferStore {
         size: Size,
         draws: &[XTextDraw<'_>],
         gc: &XGraphicsContextValues,
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<XAuthorityCpuDrawResult> {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let mut damage = Vec::with_capacity(draws.len());
@@ -282,7 +283,7 @@ impl XSoftwareBufferStore {
         size: Size,
         destination: Rect,
         data: &[u8],
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<XAuthorityCpuDrawResult> {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         copy_xrgb8888(buffer, destination, data);
@@ -368,7 +369,7 @@ impl XSoftwareBufferStore {
         size: Size,
         points: &[XPoint],
         gc: &XGraphicsContextValues,
-    ) -> Option<XAuthorityCpuBufferUpdate> {
+    ) -> Option<XAuthorityCpuDrawResult> {
         let damage = point_bounds(points, gc.line_width)?;
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
@@ -385,7 +386,7 @@ impl XSoftwareBufferStore {
         size: Size,
         rectangles: &[Rect],
         gc: &XGraphicsContextValues,
-    ) -> Option<(XAuthorityCpuBufferUpdate, Rect)> {
+    ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let damage = rectangle_outline_bounds(rectangles, gc.line_width)?;
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
@@ -407,7 +408,7 @@ impl XSoftwareBufferStore {
         dst_x: i16,
         dst_y: i16,
         gc: &XGraphicsContextValues,
-    ) -> Option<(XAuthorityCpuBufferUpdate, Rect)> {
+    ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let source = self.buffers.get(&source)?.clone();
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(destination, destination_size, handle)?;
@@ -584,18 +585,34 @@ fn copy_buffer_region(
     })
 }
 
+/// Rebrand a drawable's snapshot after a core drawing operation.
+///
+/// The damage is still validated exactly as before. `patch_is_representable`
+/// makes every refusal `packed_patch` makes about a rectangle -- an empty or
+/// fully clipped rect, an unrepresentable offset, a snapshot too short for the
+/// rows it claims -- and returning `None` here is what turns those into
+/// `InvalidResource`. What is gone is the copy: the patch was built and dropped
+/// without being read, and the snapshot was cloned whole for a caller that
+/// wanted its handle.
+///
+/// The pixels reach Engine through `present_window_damage`, which composes this
+/// drawable into its toplevel's presentation buffer and publishes that.
 fn finish_immutable_update(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     handle: u64,
     replaced: bool,
     damage: Option<Rect>,
-) -> Option<XAuthorityCpuBufferUpdate> {
+) -> Option<XAuthorityCpuDrawResult> {
     if !replaced {
-        packed_patch(buffer, damage?)?;
+        patch_is_representable(buffer, damage?)?;
     }
     buffer.generation = buffer.generation.checked_add(1)?;
     buffer.handle = handle;
-    Some(XAuthorityCpuBufferUpdate::Replace(buffer.clone()))
+    Some(XAuthorityCpuDrawResult {
+        handle,
+        size: buffer.size,
+        generation: buffer.generation,
+    })
 }
 
 fn fill_rect(

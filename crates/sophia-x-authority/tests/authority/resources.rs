@@ -514,6 +514,76 @@ fn engine_geometry_control_updates_authority_geometry_without_consuming_client_g
     assert_eq!(draw.transactions[0].target_geometry.height, 70);
 }
 
+/// A core draw whose damage names nothing the buffer holds is refused.
+///
+/// The refusal used to be a side effect of building a patch: the drawing path
+/// packed the damaged bytes, threw them away, and returned `None` when packing
+/// failed. Building that patch is gone, because no caller read it, so this pins
+/// that the refusal survived the copy being removed. Without it, a rectangle
+/// entirely outside the drawable would be accepted and committed as a draw that
+/// touched nothing.
+#[test]
+fn core_draw_damage_outside_the_drawable_is_still_refused() {
+    let namespace = NamespaceId::from_raw(41);
+    let window = XResourceId::new(0x71, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(80),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface: SurfaceId::new(41, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 20,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+
+    // Establish the buffer, so the refusal below is about the rectangle rather
+    // than about a drawable that has no storage yet.
+    runtime.apply_core_draw(
+        TransactionId::from_raw(81),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        }),
+    );
+    assert!(runtime.take_cpu_buffer_update().is_some());
+
+    let response = runtime.apply_core_draw(
+        TransactionId::from_raw(82),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 400,
+            y: 400,
+            width: 8,
+            height: 8,
+        }),
+    );
+    assert_eq!(
+        response.outcome,
+        XAuthorityResponseOutcome::Rejected(XAuthorityRuntimeError::InvalidResource),
+        "damage outside the drawable must be refused, not committed"
+    );
+    assert!(
+        runtime.take_cpu_buffer_update().is_none(),
+        "a refused draw must publish no update"
+    );
+}
+
 #[test]
 fn cpu_buffer_submissions_use_stable_damage_generations_and_resize_replacement() {
     let namespace = NamespaceId::from_raw(19);

@@ -19,6 +19,35 @@ pub struct XAuthorityCpuBufferSnapshot {
     pub bytes: Vec<u8>,
 }
 
+/// What a core drawing operation did, without the pixels it did it to.
+///
+/// Core drawing rebrands the drawable's snapshot with a fresh handle and then
+/// composes it into the toplevel's presentation buffer, which is the update the
+/// session actually publishes. Every caller of a drawing operation reads only
+/// the handle from this half, so returning the snapshot meant cloning a whole
+/// buffer for a caller that indexed one field out of it -- for a 1080p toplevel,
+/// eight megabytes copied and dropped per draw.
+///
+/// Passive by construction: it names what happened and owns nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XAuthorityCpuDrawResult {
+    pub handle: u64,
+    pub size: Size,
+    pub generation: u64,
+}
+
+impl XAuthorityCpuDrawResult {
+    #[must_use]
+    pub const fn handle(&self) -> u64 {
+        self.handle
+    }
+
+    #[must_use]
+    pub const fn size(&self) -> Size {
+        self.size
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XAuthorityCpuBufferPatch {
     pub handle: u64,
@@ -153,10 +182,43 @@ impl XAuthorityCpuBufferUpdate {
     }
 }
 
+/// Whether a damage rectangle names bytes this buffer actually holds.
+///
+/// Every refusal `packed_patch` can make about a rectangle is made here, so a
+/// caller that only needs the answer does not have to copy the bytes to get it.
+/// Splitting them apart is what lets a drawing operation validate its damage
+/// without building an update nobody reads; keeping one implementation is what
+/// stops the two answers drifting.
+pub(super) fn patch_is_representable(
+    buffer: &XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+) -> Option<()> {
+    let (left, top, right, bottom) = clipped_bounds(buffer.size, rect)?;
+    let width = right.saturating_sub(left);
+    let row_bytes = width.checked_mul(4)?;
+    let source_stride = usize::try_from(buffer.stride).ok()?;
+    row_bytes.checked_mul(bottom.saturating_sub(top))?;
+    for y in top..bottom {
+        let offset = y
+            .checked_mul(source_stride)?
+            .checked_add(left.checked_mul(4)?)?;
+        buffer
+            .bytes
+            .get(offset..offset.checked_add(row_bytes)?)
+            .map(|_| ())?;
+    }
+    i32::try_from(left).ok()?;
+    i32::try_from(top).ok()?;
+    i32::try_from(width).ok()?;
+    i32::try_from(bottom.saturating_sub(top)).ok()?;
+    Some(())
+}
+
 pub(super) fn packed_patch(
     buffer: &XAuthorityCpuBufferSnapshot,
     rect: Rect,
 ) -> Option<XAuthorityCpuBufferPatch> {
+    patch_is_representable(buffer, rect)?;
     let (left, top, right, bottom) = clipped_bounds(buffer.size, rect)?;
     let width = right.saturating_sub(left);
     let height = bottom.saturating_sub(top);
