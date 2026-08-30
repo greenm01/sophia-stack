@@ -17123,6 +17123,94 @@ owns current execution order; `roadmap-history.md` owns completed milestone
 summaries; this log owns decisions, diagnoses, and retained evidence; and the
 dated snapshot owns the lossless pre-cleanup record.
 
+## 2026-08-30: the direct-scanout archives, recorded after the fact
+
+The log stopped at "asking the driver before changing the screen" while three
+direct-scanout archives and six cursor archives were promoted. That breaks the
+rule in `docs/development-tooling.md` that architecture, the roadmap, and this
+log agree, so the tranche is recorded here retrospectively. The narrative form
+lives in `docs/roadmap-archive-2026-08-30.md`; what follows is what each archive
+proved and what getting there found.
+
+Archive `0001` promoted eligibility: thirty-eight client buffers reached the
+plane from one validating commit, with no test rejections, no proof
+disagreements, no unsupported formats, and no fallbacks.
+
+Archive `0002` promoted the return to composition. An overlay opened through
+the same `set_descriptor_overlay` entry the shell uses, a composed successor was
+built from the client's still-held planes and retired inside the window with the
+displaced buffer's snapshot promoted before its release, the overlay withdrew, a
+second validating commit passed, and flips resumed. Three boundary defects
+surfaced that no offline suite could reach: the retained requeue sourced a
+renderer image that had never been imported, the lowering carried an eligibility
+verdict that stopped being true the moment it substituted the snapshot, and the
+conformance readers anchored records to the line start, so the episode-order
+rules had never actually run against decorated hardware evidence.
+
+Archive `0003` answered what a direct frame costs. On one head in one session,
+the client's buffer was offered to the plane in 17 microseconds at the median
+against 35 for a composed frame, and at p99 in 22 microseconds against 12,883.
+The tail is the finding: a direct frame's cost is nearly constant because
+nothing is drawn, while a composed frame waits on a renderer that occasionally
+takes twelve milliseconds. Submit-to-flip was measured beside it only to check
+that the display engine does not care how a buffer arrived -- 7,972 against
+15,099 microseconds at the median, both dominated by this host's chronic DCN32
+stalls rather than by anything Sophia does.
+
+One instrumentation defect surfaced only under real evidence. The classifier
+asked the flip counter whether the export it had just timed was direct, but a
+flip happens later, at submit, so every export answered no and the direct
+population was left with no offer samples at all. The emitter then dropped the
+half-measured population rather than reporting it, so the only symptom was a
+comparison claiming no direct frames existed.
+
+## 2026-08-30: the cursor archives, and three that tested nothing
+
+Archive `0004` established the legacy baseline the atomic path had to match,
+rather than assuming the ioctl kept working over directly scanned frames:
+twelve positions driven through the same `Pointer::place` entry physical input
+uses, 519 hardware updates with no failures, the cursor never leaving
+`legacy_ioctl`, `composed_cursor` still zero, and twenty-six client buffers
+reaching the plane after the motion stopped. Motion-to-submit peaked at 9
+milliseconds.
+
+The three archives before it had asserted this and tested none of it. Their
+cursor records read `moves_coalesced=0 max_motion_to_submit_msec=0
+hardware_updates=1` -- a cursor initialized once and never moved. The lesson is
+narrow and repeats elsewhere in this log: a counter at its initial value is
+indistinguishable from a counter nothing exercised, and an archive that names
+one is evidence of nothing.
+
+Archive `0005` put the cursor on an atomic plane: the card accepted it, twelve
+moves reached it, no hardware failures, direct scanout undisturbed, and
+`updates_primary_in_flight=0` against the legacy path's fifteen -- the kernel's
+per-CRTC serialization observed rather than assumed. It cost worst-case
+latency, 21 milliseconds against 9, which is about one frame of waiting for a
+busy CRTC. It also showed the owner never combining primary and cursor state:
+every atomic update was a standalone commit, and `plan_cursor_commit`'s
+`RideNextPrimary` branch was unreachable because nothing populated it.
+
+Archive `0006` closed that. The same twelve-move sweep produced only eight
+cursor-only commits, because the rest rode primary commits as one combined
+atomic request -- the thing the owner was asked to be able to do, observed
+rather than claimed -- and the worst case came down to 17 milliseconds. A
+rejected combined commit retries with the primary alone, prepared beside the
+combined request rather than rebuilt after failure, so a cursor can never cost
+a frame; this run needed no such retry, and the counters would have named it.
+
+The legacy baseline was then replaced under continuous motion rather than
+twelve synthetic moves: 57.97 fps at p95 16.687 ms, no cursor failures, and no
+commit overlapping a page flip. The same day's accidental legacy run is what it
+replaces and is the first legacy evidence under continuous motion: 298 hardware
+updates, 243 of them overlapping a flip. The atomic path did that work in 56
+commits with none -- a five-fold reduction with pacing intact.
+
+Repairing the gate that grades this was part of the row. The pacing gate
+demanded `wm_policy=external` from a benchmark that had become standalone and
+matched a resource schema three revisions old, so it could only ever pass
+against its own fixture. That is the same defect class as the reader drift
+recorded below, found the same week in a different file.
+
 ## 2026-08-30: a schema bump that silences its own readers
 
 Three Milestone 14 rules stopped being checked without anything failing. The

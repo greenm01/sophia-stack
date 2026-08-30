@@ -52,8 +52,12 @@ cargo xtask check layout
 cargo xtask profile check
 cargo xtask profile args --profile=standalone
 cargo xtask conformance verify direct-scanout-standalone LOG
-cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD
-cargo xtask conformance gate direct-scanout
+cargo xtask conformance verify direct-scanout-overlay LOG
+cargo xtask conformance verify direct-scanout-cost LOG
+cargo xtask conformance verify direct-scanout-cursor LOG
+cargo xtask conformance verify direct-scanout-archive [RUN]
+cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
+cargo xtask conformance gate direct-scanout [PROOF]
 sophia session run [OPTIONS]
 sophia session input-guard [OPTIONS]
 ```
@@ -61,6 +65,13 @@ sophia session input-guard [OPTIONS]
 `session-args`, `check-profiles`, `verify direct-scanout`,
 `sophia-live-session`, and `sophia-session-input-guard` remain compatibility
 aliases. They are not the spelling for new code.
+
+`PROOF` selects what a probe run exercises beyond ordinary direct scanout:
+`--overlay-proof` opens an overlay over a directly scanned frame and proves the
+return to composition, `--cost` measures direct against composed frames in one
+session, `--cursor` sweeps the hardware cursor, and `--atomic-cursor` asserts
+the default atomic path rather than selecting it. Each has a matching
+`verify` spelling above.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.
@@ -70,8 +81,25 @@ Installed sessions invoke `sophia` directly.
 
 `cargo xtask check` is the canonical offline, non-hardware repository gate. It
 runs formatting, diff hygiene, offline metadata, workspace tests, workspace
-Clippy, typed profile validation, the exact source-layout debt check, and the
-active verifier mutation suites.
+Clippy, typed profile validation, the exact source-layout debt check, the
+evidence-reader schema guard, promoted-archive re-verification, and the active
+verifier mutation suites.
+
+`tools/check_live_record_schema_readers.sh` refuses a reader that can match only
+schemas older than the one its emitter writes. A record that gains a field and
+leaves its readers behind fails nothing on its own: the reader finds no line and
+skips the rule it owned, so the run passes with fewer assertions than it appears
+to. The guard names its records explicitly, because a record name does not
+identify a message -- `sophia_live_wm` writes one schema for `status=ready` and
+another for `status=session_action_committed` -- so guarding a record means
+having checked that its emitters agree.
+
+One step in the graph needs real hardware and is reported rather than skipped.
+`tools/check_buffer_age_equivalence.sh` proves a damage-limited render
+byte-identical to a full one on this host's GPU, through a render node only. It
+exits 2 where no render node is writable, which the gate reports by name: a
+question that was never asked is neither a pass nor a failure, and treating it
+as either is how an unreferenced proof rots.
 
 `cargo xtask check layout` compares normalized audit identities with
 `docs/source-layout-debt.txt`. That file is not an exception list: every entry

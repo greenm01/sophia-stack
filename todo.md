@@ -87,11 +87,13 @@ Latest retained Milestone 14 evidence:
 | Direct scanout | archives `0001`–`0003`: eligibility, effect fallback, and same-session cost |
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 
-Promotion does not imply default enablement. Buffer-age damage remains opt-in
-through `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=1`; shared rendering remains opt-in in
-ordinary sessions; the atomic cursor is now preferred with `--legacy-cursor`
-and the startup probe preserving the ioctl fallback. Verify current code and
-packaged policy before changing any product default.
+Promotion does not imply default enablement. Damage-limited repaint is now the
+default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
+pixel-equivalence proof runs in `cargo xtask check`. Shared rendering and direct
+scanout remain opt-in in ordinary sessions, each owing its own promotion
+decision. The atomic cursor is preferred, with `--legacy-cursor` and the startup
+probe preserving the ioctl fallback. Verify current code and packaged policy
+before changing any product default.
 
 ## Critical Path
 
@@ -179,6 +181,19 @@ evidence may change that order.
 
 These rows do not reorder the critical path.
 
+- [ ] Repair the evidence readers still pinned below their emitter. Ten accept
+  `sophia_live_session status=bounded_complete` at schema 15 or lower against an
+  emitter that writes 16, and nine accept `sophia_live_wm status=ready` at
+  schema 1 against an emitter that writes 4. These are xmonad-era physical and
+  QEMU gates; they fail loudly rather than silently, so each needs a per-gate
+  decision about whether it still earns its keep. Add each repaired record to
+  `tools/check_live_record_schema_readers.sh` once its emitters are confirmed to
+  agree.
+- [ ] Decide whether `run_frame_fed_output_gate_tty4.sh` and
+  `run_current_critical_path_tty4.sh` keep requiring HEAD to equal the locally
+  known origin/master. The direct-scanout and Hagia native runners no longer do;
+  `package_live_session.sh` keeps it deliberately, because packaging is the
+  publishing question the rule was wrong about being.
 - [ ] Move remaining session-private test modules out of production `src` as
   visibility boundaries permit, and split the oversized cohesive units named in
   `docs/source-layout-debt.txt`. Do not weaken privacy or add test-only

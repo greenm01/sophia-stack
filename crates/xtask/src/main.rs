@@ -295,6 +295,15 @@ usage: cargo xtask <command>
   conformance verify direct-scanout[-standalone] <log>...
       Verify typed direct-scanout evidence and optional session shape.
 
+  conformance verify direct-scanout-{overlay,cost,cursor} <log>...
+      Verify the effect-fallback, direct-versus-composed cost, and hardware
+      cursor evidence a probe run produces.
+
+  conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
+  conformance gate direct-scanout [PROOF]
+      Drive one probe session, or run the signed physical gate around it.
+      PROOF is one of --overlay-proof, --cost, --cursor, --atomic-cursor.
+
   conformance bind direct-scanout SESSION_LOG EVIDENCE COMMIT SOPHIA CLIENT CORE DESKTOP
       Copy session evidence and append its typed source/binary identity.
 
