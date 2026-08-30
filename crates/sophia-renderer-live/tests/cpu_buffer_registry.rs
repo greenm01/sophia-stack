@@ -407,3 +407,84 @@ fn an_evicted_handle_keeps_its_bytes_for_whoever_still_holds_them() {
         "a queued Present must still compose the bytes it was planned against"
     );
 }
+
+/// A warmed registry stops allocating.
+///
+/// The milestone's exit criterion is "no steady-state allocation growth", and
+/// on a physical run that is measured from sampled gauges. This is the same
+/// property where it can be made exact: after the first pass, repeated patch
+/// cycles against a settled buffer must neither grow the registry nor move the
+/// allocation.
+///
+/// Counting allocations rather than sampling resident size is what makes it a
+/// regression instead of a flake. RSS drifts under identical work because the
+/// allocator returns freed pages to its own arenas; allocation identity does
+/// not drift.
+#[test]
+fn a_warmed_registry_neither_grows_nor_reallocates() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(buffer(21, 1)))
+        .expect("the base must be admitted");
+
+    let patch = |generation: u64, fill: u8| {
+        LiveCpuBufferUpdate::PatchBatch(LiveCpuBufferPatchBatch {
+            handle: 21,
+            size: Size {
+                width: 2,
+                height: 2,
+            },
+            stride: 8,
+            format: u32::from_le_bytes(*b"XR24"),
+            generation,
+            patches: vec![LiveCpuBufferPatchRegion {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 1,
+                },
+                bytes: vec![fill; 8],
+            }],
+        })
+    };
+
+    // One warmup pass, then the settled series the assertions describe.
+    registry.apply(patch(2, 1)).expect("warmup patch");
+    let settled_allocation = Arc::as_ptr(&registry.get(21).unwrap().bytes);
+    let settled_len = registry.len();
+    let settled_bytes = registry.total_bytes();
+    let settled_splits = registry.cow_splits();
+
+    for generation in 3..64 {
+        registry
+            .apply(patch(generation, u8::try_from(generation % 251).unwrap()))
+            .expect("settled patch");
+    }
+
+    assert_eq!(
+        registry.len(),
+        settled_len,
+        "a warmed registry must not accumulate buffers"
+    );
+    assert_eq!(
+        registry.total_bytes(),
+        settled_bytes,
+        "a warmed registry must not accumulate bytes"
+    );
+    assert_eq!(
+        Arc::as_ptr(&registry.get(21).unwrap().bytes),
+        settled_allocation,
+        "a warmed registry must not reallocate the buffer it keeps patching"
+    );
+    assert_eq!(
+        registry.cow_splits(),
+        settled_splits,
+        "no presentation held these bytes, so nothing should have copied them"
+    );
+
+    // And the peaks agree with the live figures, which is what makes the
+    // sampled bound a statement about the whole run rather than its end.
+    assert_eq!(registry.peak_buffers(), settled_len);
+    assert_eq!(registry.peak_bytes(), settled_bytes);
+}

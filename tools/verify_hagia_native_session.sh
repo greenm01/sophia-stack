@@ -15,6 +15,16 @@ set -euo pipefail
 evidence="${1:?usage: verify_hagia_native_session.sh EVIDENCE [PROOF_TEXT]}"
 proof_text="${2:-hagianativeproof}"
 
+# The smallest sampled population a halves comparison can say anything about.
+# Twenty is roughly a hundred seconds of a settled session at the five-second
+# cadence, which leaves seven readings a side after warmup is dropped.
+SOPHIA_MIN_RESOURCE_SAMPLES="${SOPHIA_MIN_RESOURCE_SAMPLES:-20}"
+# Resident size is the one sampled figure that includes allocations Sophia does
+# not account for. glibc returns freed memory to its arenas rather than to the
+# kernel, so RSS drifts upward under identical work; the accounted gauges carry
+# no allowance at all.
+SOPHIA_RSS_GROWTH_TOLERANCE_KIB="${SOPHIA_RSS_GROWTH_TOLERANCE_KIB:-32768}"
+
 fail() {
     echo "Hagia native session verification failed: $*" >&2
     exit 1
@@ -405,6 +415,68 @@ fi
 (( $(field "$resources" worker_requests) ==
     $(field "$resources" worker_completions) + $(field "$resources" frame_slot_deferrals) )) ||
     fail "renderer-worker requests did not settle as completion or bounded deferral"
+
+# No steady-state growth, measured rather than inferred.
+#
+# Every other resource rule here reads the completion record, which is emitted
+# once and can only say whether the session drained. A run that leaks a buffer a
+# minute for two hours and frees them all at teardown produces the same clean
+# completion record as one that never held more than three. The sampled series
+# is what tells them apart.
+#
+# The rule compares the run against itself: discard the first quarter as warmup,
+# then require the later half's peak not to exceed the earlier half's. That is a
+# statement about a settled session, which is why the warmup is dropped -- a
+# session that grows while it starts is a session starting.
+steady_state_line="$(grep -E '^sophia_live_resource_steady_state schema=1 status=complete ' \
+    "$evidence" || true)"
+if [[ -n "$steady_state_line" ]]; then
+    sample_count="$(field "$steady_state_line" samples)"
+    [[ "$sample_count" =~ ^[0-9]+$ ]] ||
+        fail "the steady-state record has a nonnumeric sample count"
+    # Below this the halves carry too few readings to mean anything: a
+    # comparison over three samples a side is noise with a verdict attached.
+    (( sample_count >= SOPHIA_MIN_RESOURCE_SAMPLES )) ||
+        fail "the session recorded $sample_count resource samples, fewer than the $SOPHIA_MIN_RESOURCE_SAMPLES a growth comparison needs"
+    mapfile -t resource_samples < <(
+        grep -E '^sophia_live_resource_sample schema=1 seq=[0-9]+ ' "$evidence"
+    )
+    (( ${#resource_samples[@]} == sample_count )) ||
+        fail "the session claimed $sample_count resource samples and recorded ${#resource_samples[@]}"
+    # Each gauge is a live count rather than a total, so a rising peak is a
+    # population being held rather than work being done. cpu_cow_splits is
+    # deliberately absent: it is a total, and it rises whenever a presentation
+    # outlives the update that follows it, which is ordinary.
+    for gauge in cpu_registry_buffers cpu_registry_bytes frame_slots_leased \
+        snapshot_live_entries import_cache_live_entries rss_kib; do
+        warmup=$(( sample_count / 4 ))
+        settled=$(( sample_count - warmup ))
+        midpoint=$(( warmup + settled / 2 ))
+        early_peak=0
+        late_peak=0
+        for (( index = warmup; index < sample_count; index++ )); do
+            value="$(field "${resource_samples[index]}" "$gauge")" ||
+                fail "resource sample $index is missing $gauge"
+            [[ "$value" =~ ^[0-9]+$ ]] ||
+                fail "resource sample $index has nonnumeric $gauge=$value"
+            if (( index < midpoint )); then
+                (( value > early_peak )) && early_peak="$value"
+            else
+                (( value > late_peak )) && late_peak="$value"
+            fi
+        done
+        # Resident size is the one figure that includes allocations Sophia does
+        # not itself account for, so it carries an allocator-noise allowance.
+        # The accounted gauges carry none: a bounded population that ends the
+        # run larger than it settled at is the defect this exists to catch.
+        tolerance=0
+        if [[ "$gauge" == rss_kib ]]; then
+            tolerance="$SOPHIA_RSS_GROWTH_TOLERANCE_KIB"
+        fi
+        (( late_peak <= early_peak + tolerance )) ||
+            fail "$gauge grew across the settled session: peaked at $early_peak, then at $late_peak"
+    done
+fi
 
 # Which hardware cursor path the session took, and which one it asked for. The
 # record was emitted for two archives before anything read it, so a run could

@@ -532,6 +532,94 @@ sed 's/ direct_scanout_fallbacks=1//' "$direct" >"$partial"
 reject_mutation "schema-12 evidence without the fallback count" "$partial" \
     "resource record is missing direct_scanout_fallbacks"
 
+# A settled session that never grew. Twenty-four samples at flat gauges, which
+# is what the halves comparison is meant to accept.
+{
+    for seq in $(seq 1 24); do
+        printf 'sophia_live_resource_sample schema=1 seq=%d uptime_msec=%d rss_kib=141312 cpu_registry_buffers=3 cpu_registry_bytes=98304 cpu_cow_splits=0 frame_slots_leased=0 snapshot_live_entries=0 import_cache_live_entries=0\n' \
+            "$seq" "$(( seq * 5000 ))"
+    done
+    echo 'sophia_live_resource_steady_state schema=1 status=complete samples=24 saturated=false interval_msec=5000'
+} >>"$evidence"
+"$verifier" "$evidence" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier rejected a session whose sampled resources stayed flat" >&2
+    exit 1
+}
+
+# A gauge that climbs across the settled half is the defect the samples exist
+# to find. The completion record is untouched in each case: these sessions all
+# drain cleanly at teardown, which is exactly why one record could never have
+# caught them.
+for gauge in cpu_registry_buffers cpu_registry_bytes frame_slots_leased \
+    snapshot_live_entries import_cache_live_entries; do
+    grew="$temp_dir/grew-$gauge.log"
+    awk -v gauge="$gauge" '
+        /^sophia_live_resource_sample / {
+            seq = 0
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^seq=/) { split($i, s, "="); seq = s[2] }
+            }
+            if (seq > 18) {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ "^" gauge "=") {
+                        split($i, g, "=")
+                        $i = gauge "=" (g[2] + 64)
+                    }
+                }
+            }
+        }
+        { print }
+    ' "$evidence" >"$grew"
+    reject_mutation "a session whose $gauge grew after it settled" "$grew" \
+        "grew across the settled session"
+done
+
+# Resident size carries an allocator-noise allowance, so growth is refused only
+# past it. Both directions are checked: drift below the allowance is accepted,
+# and a real climb above it is not.
+drifted="$temp_dir/rss-drift.log"
+sed 's/rss_kib=141312/rss_kib=145408/' "$evidence" >"$drifted"
+"$verifier" "$drifted" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier refused resident-size drift inside its own allowance" >&2
+    exit 1
+}
+
+leaked="$temp_dir/rss-leaked.log"
+awk '
+    /^sophia_live_resource_sample / {
+        seq = 0
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^seq=/) { split($i, s, "="); seq = s[2] }
+        }
+        if (seq > 18) {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^rss_kib=/) { $i = "rss_kib=999999" }
+            }
+        }
+    }
+    { print }
+' "$evidence" >"$leaked"
+reject_mutation "a session whose resident size climbed past the allowance" "$leaked" \
+    "rss_kib grew across the settled session"
+
+# Too few samples cannot support the comparison, and must say so rather than
+# passing on an empty population.
+sparse="$temp_dir/sparse.log"
+grep -v '^sophia_live_resource_sample schema=1 seq=1[0-9] ' "$evidence" \
+    | grep -v '^sophia_live_resource_sample schema=1 seq=2[0-9] ' \
+    | sed 's/samples=24/samples=9/' >"$sparse"
+reject_mutation "a session with too few samples to compare" "$sparse" \
+    "fewer than the"
+
+# Evidence with no samples at all stays verifiable: archives 0001 through 0003
+# predate the sampler, and this file cannot tell those from a run that lost it.
+unsampled="$temp_dir/unsampled.log"
+grep -v '^sophia_live_resource_sample \|^sophia_live_resource_steady_state ' "$evidence" >"$unsampled"
+"$verifier" "$unsampled" "$proof_text" >/dev/null 2>&1 || {
+    echo "the native verifier required resource samples, which orphans archives 0001 to 0003" >&2
+    exit 1
+}
+
 # The shared-worker and one-in-flight rules were guarded by schema equality
 # rather than by a lower bound, so they stopped running the moment the record
 # moved past the schema they named -- which is how they went unasserted for

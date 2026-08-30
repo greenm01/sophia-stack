@@ -924,6 +924,10 @@
             native_scanout.pending_kernel_page_flip_timestamps(),
         );
     }
+    // The sampled population, reported without a verdict. Whether it grew is
+    // decided by the verifier from the samples themselves: an emitter that
+    // graded its own health would be the only witness to its own failure.
+    resource_sampler.report();
     // Schema 2 adds what the copy-on-write backing costs and bounds.
     //
     // `cpu_cow_splits` counts patches that had to copy because a presentation

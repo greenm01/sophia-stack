@@ -1054,6 +1054,7 @@ pub(crate) fn run_persistent_xterm_session(
     Ok(())
 }
 
+include!("live_session/owner_loop/resource_samples.rs");
 include!("live_session/owner_loop_state.rs");
 include!("live_session/output_topology_owner.rs");
 include!("live_session/owner_loop.rs");

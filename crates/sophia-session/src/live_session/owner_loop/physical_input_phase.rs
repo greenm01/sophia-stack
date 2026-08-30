@@ -1029,10 +1029,35 @@ macro_rules! publish_resumed_topology_transport {
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
+// Samples the gauges the completion record reports once, so a verifier can ask
+// whether they grew rather than only whether they drained.
+let mut resource_sampler = LiveResourceSampler::new(started);
 let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        // Before any phase runs, so a sample describes a settled loop rather
+        // than a moment inside one. The gauge reads walk a map and read
+        // /proc, which is why they happen on a cadence rather than per pass.
+        let sample_now = Instant::now();
+        if resource_sampler.is_due(sample_now) {
+            let native_resources = native_scanout.as_ref().map_or_else(
+                sophia_backend_live::LivePersistentRenderMetrics::default,
+                LiveProductionNativeScanout::persistent_render_metrics,
+            );
+            resource_sampler.record(
+                sample_now,
+                LiveResourceSample {
+                    cpu_registry_buffers: scene.resident_buffer_count(),
+                    cpu_registry_bytes: scene.resident_buffer_bytes(),
+                    cpu_cow_splits: scene.cpu_cow_splits(),
+                    frame_slots_leased: u32::try_from(native_resources.frame_slots_leased)
+                        .unwrap_or(u32::MAX),
+                    snapshot_live_entries: native_resources.snapshot_live_entries,
+                    import_cache_live_entries: native_resources.import_cache_live_entries,
+                },
+            );
+        }
         if let Some(broker) = metadata_broker.as_mut() {
             broker.poll()?;
             broker.drain_candidates(metadata_candidate_receiver)?;
