@@ -416,74 +416,36 @@ fi
     $(field "$resources" worker_completions) + $(field "$resources" frame_slot_deferrals) )) ||
     fail "renderer-worker requests did not settle as completion or bounded deferral"
 
-# No steady-state growth, measured rather than inferred.
+# The resource sampler ran for as long as the session did.
 #
-# Every other resource rule here reads the completion record, which is emitted
-# once and can only say whether the session drained. A run that leaks a buffer a
-# minute for two hours and frees them all at teardown produces the same clean
-# completion record as one that never held more than three. The sampled series
-# is what tells them apart.
+# This gate drives a ramp, not a steady state: three launches, a focus, a close,
+# a logout. Every live gauge legitimately climbs while the operator is acquiring
+# windows, so comparing halves of it would refuse a healthy run for doing the
+# work it was asked to do. A first version of this rule did exactly that, and the
+# physical run is what showed it -- snapshot_live_entries went 2, 2, 6, 8 across
+# a twenty-four-second session because three terminals appeared.
 #
-# The rule compares the run against itself: discard the first quarter as warmup,
-# then require the later half's peak not to exceed the earlier half's. That is a
-# statement about a settled session, which is why the warmup is dropped -- a
-# session that grows while it starts is a session starting.
+# Growth belongs to a workload that settles, and lives in the soak verifier.
+# What is checkable here is that the sampler was alive throughout, which is the
+# difference between a short session and a lost sampler. The completion record's
+# zero-live-entry rules already own whether this session drained.
 steady_state_line="$(grep -E '^sophia_live_resource_steady_state schema=1 status=complete ' \
     "$evidence" || true)"
 if [[ -n "$steady_state_line" ]]; then
     sample_count="$(field "$steady_state_line" samples)"
-    [[ "$sample_count" =~ ^[0-9]+$ ]] ||
-        fail "the steady-state record has a nonnumeric sample count"
-    # Below this the halves carry too few readings to mean anything: a
-    # comparison over three samples a side is noise with a verdict attached.
-    #
-    # A session too short to sample is a session too short to make the claim,
-    # so this fails rather than passing quietly. At the five-second cadence the
-    # floor is under two minutes of session, which the bounded workflow this
-    # gate drives exceeds by a wide margin; a run that trips it either ended
-    # early or lost the sampler. `SOPHIA_MIN_RESOURCE_SAMPLES` exists so a
-    # deliberately shorter proof can say what it is settling for, in its own
-    # runner, rather than by weakening the rule here.
-    (( sample_count >= SOPHIA_MIN_RESOURCE_SAMPLES )) ||
-        fail "the session recorded $sample_count resource samples, fewer than the $SOPHIA_MIN_RESOURCE_SAMPLES a growth comparison needs"
-    mapfile -t resource_samples < <(
-        grep -E '^sophia_live_resource_sample schema=1 seq=[0-9]+ ' "$evidence"
-    )
-    (( ${#resource_samples[@]} == sample_count )) ||
-        fail "the session claimed $sample_count resource samples and recorded ${#resource_samples[@]}"
-    # Each gauge is a live count rather than a total, so a rising peak is a
-    # population being held rather than work being done. cpu_cow_splits is
-    # deliberately absent: it is a total, and it rises whenever a presentation
-    # outlives the update that follows it, which is ordinary.
-    for gauge in cpu_registry_buffers cpu_registry_bytes frame_slots_leased \
-        snapshot_live_entries import_cache_live_entries rss_kib; do
-        warmup=$(( sample_count / 4 ))
-        settled=$(( sample_count - warmup ))
-        midpoint=$(( warmup + settled / 2 ))
-        early_peak=0
-        late_peak=0
-        for (( index = warmup; index < sample_count; index++ )); do
-            value="$(field "${resource_samples[index]}" "$gauge")" ||
-                fail "resource sample $index is missing $gauge"
-            [[ "$value" =~ ^[0-9]+$ ]] ||
-                fail "resource sample $index has nonnumeric $gauge=$value"
-            if (( index < midpoint )); then
-                (( value > early_peak )) && early_peak="$value"
-            else
-                (( value > late_peak )) && late_peak="$value"
-            fi
-        done
-        # Resident size is the one figure that includes allocations Sophia does
-        # not itself account for, so it carries an allocator-noise allowance.
-        # The accounted gauges carry none: a bounded population that ends the
-        # run larger than it settled at is the defect this exists to catch.
-        tolerance=0
-        if [[ "$gauge" == rss_kib ]]; then
-            tolerance="$SOPHIA_RSS_GROWTH_TOLERANCE_KIB"
-        fi
-        (( late_peak <= early_peak + tolerance )) ||
-            fail "$gauge grew across the settled session: peaked at $early_peak, then at $late_peak"
-    done
+    sample_interval="$(field "$steady_state_line" interval_msec)"
+    [[ "$sample_count" =~ ^[0-9]+$ && "$sample_interval" =~ ^[1-9][0-9]*$ ]] ||
+        fail "the steady-state record has a nonnumeric sample count or interval"
+    recorded="$(grep -cE '^sophia_live_resource_sample schema=1 seq=[0-9]+ ' "$evidence" || true)"
+    (( recorded == sample_count )) ||
+        fail "the session claimed $sample_count resource samples and recorded $recorded"
+    elapsed_msec="$(field "$completion" elapsed_msec)"
+    if [[ "$elapsed_msec" =~ ^[0-9]+$ ]] && (( sample_count > 0 || elapsed_msec >= sample_interval )); then
+        # One sample per interval, give or take the pass the session ended on.
+        expected=$(( elapsed_msec / sample_interval ))
+        (( sample_count >= expected - 1 && sample_count <= expected + 1 )) ||
+            fail "the sampler recorded $sample_count samples across ${elapsed_msec}ms, where its ${sample_interval}ms cadence owes about $expected"
+    fi
 fi
 
 # Which hardware cursor path the session took, and which one it asked for. The

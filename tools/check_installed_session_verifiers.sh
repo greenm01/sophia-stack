@@ -34,6 +34,58 @@ sed 's/^sophia_live_session schema=14 status=bounded_complete /sophia_live_sessi
     "$PASS" >"$TEMP_FILE"
 "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$TEMP_FILE" 7200000 2 2
 "$ROOT_DIR/tools/verify_installed_runtime_identity.sh" "$IDENTITY_PASS"
+# Steady-state growth, which is the rule a soak is the right workload for. The
+# fixture predates the sampler, so absence must stay acceptable; a sampled
+# fixture must verify flat and must fail on a gauge that climbs after settling.
+SAMPLED="$TEMP_DIR/sampled.log"
+{
+    grep -v '^sophia_live_session schema=14 status=bounded_complete ' "$PASS"
+    for seq in $(seq 1 160); do
+        printf 'sophia_live_resource_sample schema=1 seq=%d uptime_msec=%d rss_kib=204800 cpu_registry_buffers=4 cpu_registry_bytes=131072 cpu_cow_splits=%d frame_slots_leased=0 snapshot_live_entries=6 import_cache_live_entries=6\n' \
+            "$seq" "$(( seq * 5000 ))" "$seq"
+    done
+    echo 'sophia_live_resource_steady_state schema=1 status=complete samples=160 saturated=false interval_msec=5000'
+    grep '^sophia_live_session schema=14 status=bounded_complete ' "$PASS"
+} >"$SAMPLED"
+"$ROOT_DIR/tools/verify_installed_session_soak.sh" "$SAMPLED" 7200000 2 2 || {
+    echo "installed soak verifier rejected a soak whose sampled resources stayed flat" >&2
+    exit 1
+}
+
+for gauge in cpu_registry_buffers cpu_registry_bytes snapshot_live_entries \
+    import_cache_live_entries; do
+    GREW="$TEMP_DIR/soak-grew-$gauge.log"
+    awk -v gauge="$gauge" '
+        /^sophia_live_resource_sample / {
+            seq = 0
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^seq=/) { split($i, s, "="); seq = s[2] }
+            }
+            if (seq > 130) {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ "^" gauge "=") {
+                        split($i, g, "=")
+                        $i = gauge "=" (g[2] + 32)
+                    }
+                }
+            }
+        }
+        { print }
+    ' "$SAMPLED" >"$GREW"
+    if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$GREW" 7200000 2 2 2>/dev/null; then
+        echo "installed soak verifier accepted a soak whose $gauge grew after it settled" >&2
+        exit 1
+    fi
+done
+
+# cpu_cow_splits rises all through the flat fixture and must not be read as
+# growth: it is a total, and it counts a presentation outliving the update that
+# follows it, which is ordinary rather than a leak.
+grep -q 'cpu_cow_splits=160 ' "$SAMPLED" || {
+    echo "the sampled soak fixture does not exercise a rising total" >&2
+    exit 1
+}
+
 if "$ROOT_DIR/tools/verify_installed_session_soak.sh" "$PASS" 7200001 2 2; then
     echo "installed soak verifier accepted an undersized duration" >&2
     exit 1

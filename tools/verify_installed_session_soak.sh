@@ -13,6 +13,13 @@ session_log="${1:-}"
 minimum_msec="${2:-7200000}"
 minimum_terminal_actions="${3:-10}"
 minimum_firefox_actions="${4:-5}"
+
+# A two-hour soak at the five-second cadence records well over a thousand
+# samples; this floor only refuses a population too small for the halves
+# comparison to mean anything.
+SOPHIA_SOAK_MIN_RESOURCE_SAMPLES="${SOPHIA_SOAK_MIN_RESOURCE_SAMPLES:-120}"
+# Allocator arena drift over hours, not a leak allowance.
+SOPHIA_SOAK_RSS_GROWTH_TOLERANCE_KIB="${SOPHIA_SOAK_RSS_GROWTH_TOLERANCE_KIB:-65536}"
 [[ -s "$session_log" ]] || {
     echo "usage: tools/verify_installed_session_soak.sh SESSION_LOG [MIN_MSEC [MIN_TERMINALS [MIN_FIREFOX]]]" >&2
     exit 1
@@ -316,5 +323,74 @@ grep -Eq '^sophia_live_session_health schema=1 status=clean .* pending_wm=0 pend
     echo "soak final health is not clean" >&2
     exit 1
 }
+
+# No steady-state allocation growth, which is where this belongs.
+#
+# Every other resource rule in the tree reads a completion record, and one
+# record can only say whether the session drained: a run that leaks a buffer a
+# minute for two hours and frees them all at teardown produces the same clean
+# record as one that never held more than three. The sampled series tells them
+# apart, and a soak is the only workload here that settles enough to ask. A
+# bounded gate is a ramp -- windows appear, live counts climb, and comparing
+# halves of that refuses a healthy run for doing what it was told.
+#
+# Absence stays acceptable: soaks recorded before the sampler existed must stay
+# verifiable, and this file cannot tell those from a run that lost it.
+steady_state_line="$(grep -E '^sophia_live_resource_steady_state schema=1 status=complete ' \
+    "$session_log" || true)"
+if [[ -n "$steady_state_line" ]]; then
+    soak_samples="$(sed -n 's/.* samples=\([0-9][0-9]*\).*/\1/p' <<< "$steady_state_line")"
+    [[ "$soak_samples" =~ ^[0-9]+$ ]] || {
+        echo "soak steady-state record has a nonnumeric sample count" >&2
+        exit 1
+    }
+    (( soak_samples >= SOPHIA_SOAK_MIN_RESOURCE_SAMPLES )) || {
+        echo "soak recorded $soak_samples resource samples, fewer than the $SOPHIA_SOAK_MIN_RESOURCE_SAMPLES a growth comparison needs" >&2
+        exit 1
+    }
+    mapfile -t soak_samples_lines < <(
+        grep -E '^sophia_live_resource_sample schema=1 seq=[0-9]+ ' "$session_log"
+    )
+    (( ${#soak_samples_lines[@]} == soak_samples )) || {
+        echo "soak claimed $soak_samples resource samples and recorded ${#soak_samples_lines[@]}" >&2
+        exit 1
+    }
+    # Drop the first quarter as warmup, then require the later half's peak not
+    # to exceed the earlier half's. Each gauge is a live count rather than a
+    # total, so a rising peak is a population being held rather than work being
+    # done; cpu_cow_splits is excluded because it is a total and rises whenever
+    # a presentation outlives the update after it, which is ordinary.
+    for gauge in cpu_registry_buffers cpu_registry_bytes frame_slots_leased \
+        snapshot_live_entries import_cache_live_entries rss_kib; do
+        warmup=$(( soak_samples / 4 ))
+        midpoint=$(( warmup + (soak_samples - warmup) / 2 ))
+        early_peak=0
+        late_peak=0
+        for (( index = warmup; index < soak_samples; index++ )); do
+            value="$(sed -n "s/.* $gauge=\([0-9][0-9]*\).*/\1/p" <<< "${soak_samples_lines[index]}")"
+            [[ "$value" =~ ^[0-9]+$ ]] || {
+                echo "soak resource sample $index has no numeric $gauge" >&2
+                exit 1
+            }
+            if (( index < midpoint )); then
+                (( value > early_peak )) && early_peak="$value"
+            else
+                (( value > late_peak )) && late_peak="$value"
+            fi
+        done
+        # Resident size is the only sampled figure including allocations Sophia
+        # does not account for; glibc returns freed memory to its arenas rather
+        # than to the kernel, so it drifts upward under identical work. The
+        # accounted gauges carry no allowance.
+        tolerance=0
+        if [[ "$gauge" == rss_kib ]]; then
+            tolerance="$SOPHIA_SOAK_RSS_GROWTH_TOLERANCE_KIB"
+        fi
+        (( late_peak <= early_peak + tolerance )) || {
+            echo "soak $gauge grew across the settled session: peaked at $early_peak, then at $late_peak" >&2
+            exit 1
+        }
+    done
+fi
 
 echo "installed Sophia soak gate passed: elapsed_msec=$elapsed terminal_actions=$terminal_actions firefox_actions=$firefox_actions layout_commits=$layout_commits focus_commits=$focus_commits workspace_away=$workspace_away workspace_return=$workspace_return workspace_views=$workspace_views workspace_moves=$workspace_moves pointer_moves=$pointer_moves pointer_resizes=$pointer_resizes practical_actions=${#SOPHIA_SOAK_PRACTICAL_ACTION_IDS[@]} visual_resizes=$visual_resizes close_actions=$close_actions selection_owner_changes=$selection_owner_changes selection_conversions=$selection_conversions outputs=$outputs"
