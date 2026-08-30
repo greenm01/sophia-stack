@@ -110,6 +110,42 @@ Scenario correspondence, the implementation-only checks, and the open question
 of where a slot's content age actually comes from are recorded in
 `validation/specula/buffer-age-damage-history-modeling-brief.md`.
 
+`StableBackingLease.tla` is the same shape one level down, and one property
+further. `VisualDamageHistory` owns what a reused target slot already contains;
+this owns what the renderer's registry copy of one stable software-rendered X
+toplevel contains, given updates applied while presentations still hold the
+bytes. It exists as a separate model rather than an extension because the
+exclusion above is load-bearing there and false here: a slot's buffer keeps its
+content across release, which is what makes buffer age worth anything, whereas a
+client raster under copy-on-write is defined by a live lease deciding whether a
+mutation may touch the allocation or must copy it first.
+
+Allocations are modelled as identities so sharing and splitting are observable,
+and a lease captures the content it was handed so immutability can be checked
+rather than assumed. An update is modelled by the region set it covers, so a
+coalesced batch is a superset cover and a full replacement covers everything;
+rectangle arithmetic and the transport's rect capacity stay out. The properties
+are that a held lease still reads what it captured, that a registry brought up
+to the current generation holds what a full replacement would have produced,
+and that live allocations never exceed one plus the number of held leases --
+which is how "bound the backing storage" is stated so that an unreclaimed split
+appears here rather than as growth on a physical run.
+
+The checked configuration explores 1,270,260 generated states and 251,236
+distinct states to depth 14. Six temporary negative controls each produced a
+counterexample: an in-place apply under a live lease violated
+`LeasedContentStable`; an update covering less than the damage it owed, and a
+stale update overwriting newer content, both violated `RegistryMatchesStore`;
+retirement that stopped checking for a sibling lease, and a resize that freed
+the old epoch while a lease held it, both violated `LeasedAllocationsLive`. The
+sixth checked `SplitIsReachable` and found it violated, confirming the
+optimization is admissible in the model rather than vacuously safe -- a model
+where no split can ever occur satisfies every safety property above and
+describes a system that shares nothing and copies always.
+
+Scenario correspondence and the implementation-only checks are recorded in
+`validation/specula/stable-x-backing-lease-modeling-brief.md`.
+
 Fairness is per action rather than over the whole progress disjunction, and
 `Settle` is outside it. That distinction is the difference between a settlement
 property and a tautology: `Settle` is enabled in every non-terminal state, so a
