@@ -587,6 +587,12 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         # not run.
         if [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-overlay-proof)
+            # A cost run holds the overlay far longer than a transition
+            # proof does: what it needs from the composed phase is a
+            # population, and this client repaints on a cursor blink.
+            if [[ -n "${SOPHIA_DIRECT_OVERLAY_HOLD_TICKS:-}" ]]; then
+                session_args+=("--direct-overlay-hold-ticks=$SOPHIA_DIRECT_OVERLAY_HOLD_TICKS")
+            fi
         fi
     else
         session_args+=(--no-config)

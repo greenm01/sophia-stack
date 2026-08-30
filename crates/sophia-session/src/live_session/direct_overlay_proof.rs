@@ -26,11 +26,16 @@ use sophia_protocol::{OutputId, Rect};
 /// the plane is actually scanning, and a deadline can fire before one is.
 pub(crate) const FLIPS_BEFORE_ACTIVATION: usize = 10;
 
-/// How many ticks the overlay stays up.
+/// How many ticks the overlay stays up by default.
 ///
 /// Long enough for composed frames to reach glass and for the displaced
 /// direct buffer to be retired by one of them; short enough that a bounded
 /// session still ends on its own.
+///
+/// A run measuring what frames cost wants more than the transition: it needs
+/// a composed population large enough to have a distribution, and a client
+/// that repaints on a cursor blink offers only a couple of frames a second.
+/// So the hold is a parameter, and this is what it is when nobody asks.
 pub(crate) const ACTIVATION_TICKS: u32 = 240;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +52,7 @@ enum Stage {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DirectOverlayProof {
     enabled: bool,
+    hold_ticks: u32,
     stage: Stage,
 }
 
@@ -62,9 +68,17 @@ pub(crate) enum DirectOverlayAction {
 }
 
 impl DirectOverlayProof {
-    pub(crate) const fn new(enabled: bool) -> Self {
+    pub(crate) const fn new(enabled: bool, hold_ticks: u32) -> Self {
         Self {
             enabled,
+            // A zero hold would open the overlay and withdraw it on the same
+            // tick, leaving a window with no composed frame in it -- which
+            // the verifier reads as a proof that never happened.
+            hold_ticks: if hold_ticks == 0 {
+                ACTIVATION_TICKS
+            } else {
+                hold_ticks
+            },
             stage: Stage::Waiting,
         }
     }
@@ -84,7 +98,7 @@ impl DirectOverlayProof {
                     return DirectOverlayAction::Idle;
                 }
                 self.stage = Stage::Activated {
-                    remaining: ACTIVATION_TICKS,
+                    remaining: self.hold_ticks,
                 };
                 DirectOverlayAction::Activate(output)
             }

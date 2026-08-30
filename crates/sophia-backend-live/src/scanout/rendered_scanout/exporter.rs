@@ -1,5 +1,6 @@
 mod direct;
 mod discovery;
+mod discovery_export;
 mod export;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod frame_slots;

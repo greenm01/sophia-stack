@@ -16,7 +16,7 @@ const OUTPUT: OutputId = OutputId::from_raw(1);
 /// overlay appearing in one would be this control leaking into it.
 #[test]
 fn a_session_that_did_not_ask_never_activates() {
-    let mut proof = DirectOverlayProof::new(false);
+    let mut proof = DirectOverlayProof::new(false, ACTIVATION_TICKS);
     for _ in 0..1_000 {
         assert_eq!(
             proof.tick(FLIPS_BEFORE_ACTIVATION * 10, Some(OUTPUT)),
@@ -30,7 +30,7 @@ fn a_session_that_did_not_ask_never_activates() {
 /// composed path against a composed predecessor -- which is not the claim.
 #[test]
 fn activation_waits_for_flips_to_reach_glass() {
-    let mut proof = DirectOverlayProof::new(true);
+    let mut proof = DirectOverlayProof::new(true, ACTIVATION_TICKS);
     for flips in 0..FLIPS_BEFORE_ACTIVATION {
         assert_eq!(proof.tick(flips, Some(OUTPUT)), DirectOverlayAction::Idle);
     }
@@ -43,7 +43,7 @@ fn activation_waits_for_flips_to_reach_glass() {
 /// No output carrying direct frames means nothing to overlay.
 #[test]
 fn activation_needs_an_output() {
-    let mut proof = DirectOverlayProof::new(true);
+    let mut proof = DirectOverlayProof::new(true, ACTIVATION_TICKS);
     assert_eq!(
         proof.tick(FLIPS_BEFORE_ACTIVATION * 2, None),
         DirectOverlayAction::Idle
@@ -56,7 +56,7 @@ fn activation_needs_an_output() {
 /// ending with the overlay still on glass.
 #[test]
 fn the_overlay_goes_up_once_and_comes_down_once() {
-    let mut proof = DirectOverlayProof::new(true);
+    let mut proof = DirectOverlayProof::new(true, ACTIVATION_TICKS);
     assert_eq!(
         proof.tick(FLIPS_BEFORE_ACTIVATION, Some(OUTPUT)),
         DirectOverlayAction::Activate(OUTPUT)
@@ -101,4 +101,53 @@ fn the_overlay_emits_a_command_that_requires_composition() {
     assert!(rect.geometry.x >= head.x && rect.geometry.y >= head.y);
     assert!(rect.geometry.x + rect.geometry.width <= head.x + head.width);
     assert!(rect.geometry.y + rect.geometry.height <= head.y + head.height);
+}
+
+/// The hold is a parameter, because a transition proof and a cost
+/// measurement want different windows: the first wants the shortest one that
+/// contains the transition, the second wants a composed population large
+/// enough to have a distribution.
+#[test]
+fn the_overlay_holds_for_the_requested_number_of_ticks() {
+    let output = OUTPUT;
+    let mut proof = DirectOverlayProof::new(true, 3);
+    assert_eq!(
+        proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+        DirectOverlayAction::Activate(output)
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+            DirectOverlayAction::Idle
+        );
+    }
+    assert_eq!(
+        proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+        DirectOverlayAction::Withdraw,
+        "a three-tick hold withdraws on the third tick after activating"
+    );
+}
+
+/// A zero hold would open and close the overlay on the same tick, leaving a
+/// window with no composed frame in it -- which the verifier reads as a
+/// proof that never happened. Zero means "unspecified", so it takes the
+/// default rather than degenerating.
+#[test]
+fn a_zero_hold_falls_back_to_the_default_window() {
+    let output = OUTPUT;
+    let mut proof = DirectOverlayProof::new(true, 0);
+    assert_eq!(
+        proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+        DirectOverlayAction::Activate(output)
+    );
+    for _ in 0..(ACTIVATION_TICKS - 1) {
+        assert_eq!(
+            proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+            DirectOverlayAction::Idle
+        );
+    }
+    assert_eq!(
+        proof.tick(FLIPS_BEFORE_ACTIVATION, Some(output)),
+        DirectOverlayAction::Withdraw
+    );
 }

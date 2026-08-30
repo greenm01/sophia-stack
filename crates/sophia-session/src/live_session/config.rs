@@ -111,6 +111,9 @@ struct PersistentXtermSessionConfig {
     /// Whether this session drives an overlay over a directly scanned frame to
     /// prove the return to composition. Off in every product session.
     pub(crate) direct_overlay_proof: bool,
+    /// How long the proof overlay stays up, in owner-loop ticks. Zero means
+    /// the control's own default.
+    pub(crate) direct_overlay_hold_ticks: u32,
     m4_diagnose_first_mixed_export: bool,
     firefox_m8_proof: bool,
     firefox_m10_proof: bool,
@@ -477,6 +480,20 @@ impl PersistentXtermSessionConfig {
         // retiring a frame the plane is still scanning -- is modelled in
         // `PresentFlipOwnership.tla` and had never run on hardware.
         let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
+        // How long the overlay stays up. A run proving the transition wants
+        // the shortest window that contains it; a run measuring what frames
+        // cost wants a composed population big enough to have a
+        // distribution, which at a cursor-blink repaint rate takes seconds.
+        let direct_overlay_hold_ticks = arg_value(args, "--direct-overlay-hold-ticks")
+            .as_deref()
+            .map(parse_u64)
+            .transpose()?
+            .unwrap_or(0);
+        if direct_overlay_hold_ticks > 60_000 {
+            return Err("--direct-overlay-hold-ticks accepts at most 60000 ticks".into());
+        }
+        let direct_overlay_hold_ticks =
+            u32::try_from(direct_overlay_hold_ticks).unwrap_or(u32::MAX);
         let m4_diagnose_first_mixed_export = args
             .iter()
             .any(|arg| arg == "--m4-diagnose-first-mixed-export");
@@ -768,6 +785,9 @@ impl PersistentXtermSessionConfig {
                 "--direct-overlay-proof requires --native-scanout and --session-mode=normal".into(),
             );
         }
+        if direct_overlay_hold_ticks != 0 && !direct_overlay_proof {
+            return Err("--direct-overlay-hold-ticks requires --direct-overlay-proof".into());
+        }
         if (m4_first_acquire_delay.is_some()
             || m4_reject_first_present
             || m4_diagnose_first_mixed_export)
@@ -875,6 +895,7 @@ impl PersistentXtermSessionConfig {
             m4_first_acquire_delay,
             m4_reject_first_present,
             direct_overlay_proof,
+            direct_overlay_hold_ticks,
             m4_diagnose_first_mixed_export,
             firefox_m8_proof,
             firefox_m10_proof,

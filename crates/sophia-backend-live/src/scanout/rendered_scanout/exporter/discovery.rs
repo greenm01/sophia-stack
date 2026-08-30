@@ -1,5 +1,5 @@
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-use super::{LiveRenderedScanoutBufferExport, LiveRenderedScanoutBufferExporter};
+use super::LiveRenderedScanoutBufferExport;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use crate::api::*;
 
@@ -47,6 +47,8 @@ where
     last_target_lifecycle: Option<LiveGbmEglFrameTargetLifecycleReport>,
     pub(super) last_export_status: Option<LiveRendererScanoutBufferExportStatus>,
     pub(super) pending_frame: Option<PendingRenderedFrame>,
+    pub(super) frame_offered_at: Option<std::time::Instant>,
+    pub(super) cost: crate::DirectScanoutCost,
     direct_cpu_bootstrap_armed: bool,
     direct_cpu_bootstrap_attempts: usize,
     direct_cpu_bootstrap_exports: usize,
@@ -152,6 +154,8 @@ where
             last_target_lifecycle: None,
             last_export_status: None,
             pending_frame: None,
+            frame_offered_at: None,
+            cost: crate::DirectScanoutCost::default(),
             direct_cpu_bootstrap_armed: false,
             direct_cpu_bootstrap_attempts: 0,
             direct_cpu_bootstrap_exports: 0,
@@ -347,7 +351,15 @@ where
         if self.pending_frame.is_some() {
             self.pending_frame_supersessions = self.pending_frame_supersessions.saturating_add(1);
         }
+        // Superseding restamps: the cost of a frame is measured from the
+        // content that actually reached the plane, not from one the scene
+        // moved past while it waited.
+        self.frame_offered_at = Some(std::time::Instant::now());
         self.pending_frame = Some(frame);
+    }
+
+    pub fn cost(&self) -> &crate::DirectScanoutCost {
+        &self.cost
     }
 
     /// One line per direct-scanout episode transition.
@@ -566,60 +578,14 @@ where
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-impl<R> LiveRenderedScanoutBufferExporter for NativeGbmRenderedScanoutBufferDiscoveryExporter<R>
+impl<R> NativeGbmRenderedScanoutBufferDiscoveryExporter<R>
 where
     R: RenderDeviceDiscoveryBackend,
 {
-    type Owner = NativeGbmRenderedScanoutOwner;
-
-    fn direct_scanout_test_required(&self) -> bool {
-        !self.direct_scanout_tested
-    }
-
-    fn record_direct_scanout_test(&mut self, accepted: bool) {
-        self.direct_scanout_tests = self.direct_scanout_tests.saturating_add(1);
-        self.record_direct_scanout_episode(
-            if accepted {
-                "test_passed"
-            } else {
-                "test_rejected"
-            },
-            self.outstanding_direct_generation(),
-            "none",
-        );
-        if accepted {
-            self.direct_scanout_tested = true;
-        } else {
-            self.direct_scanout_test_rejections =
-                self.direct_scanout_test_rejections.saturating_add(1);
-            self.direct_scanout_tested = false;
-        }
-    }
-
-    fn commit_direct_scanout(&mut self) {
-        // Read before committing: committing drops the composed form the
-        // identity is read from.
-        let generation = self.outstanding_direct_generation();
-        Self::commit_direct_scanout(self);
-        self.record_direct_scanout_episode("flipped", generation, "none");
-    }
-
-    fn fall_back_from_direct(&mut self) -> bool {
-        // A refusal ends the episode: whatever the driver objected to, the
-        // next direct frame is a fresh question and gets a fresh test.
-        self.direct_scanout_tested = false;
-        let generation = self.outstanding_direct_generation();
-        let fell_back = Self::fall_back_from_direct(self);
-        if fell_back {
-            self.record_direct_scanout_episode("fell_back", generation, "none");
-        }
-        fell_back
-    }
-
-    fn export_rendered_scanout_buffer(
+    pub(super) fn export_rendered_scanout_buffer_measured(
         &mut self,
         target: LiveGbmEglFrameTargetRecord,
-    ) -> LiveRenderedScanoutBufferExport<Self::Owner> {
+    ) -> LiveRenderedScanoutBufferExport<NativeGbmRenderedScanoutOwner> {
         self.export_attempts = self.export_attempts.saturating_add(1);
         // Every export ends the eligibility episode unless it is itself
         // direct; the direct branch below restores this. Clearing first and

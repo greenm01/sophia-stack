@@ -859,6 +859,40 @@
         }
         crate::session_println!("{record}");
     }
+    // What a frame cost, split by how it reached the plane. Direct scanout
+    // skips a composition pass, so the offer-to-submit half is where a
+    // difference has to show; the submit-to-flip half is measured beside it
+    // because "the display engine does not care how the buffer got there" is
+    // an assumption worth being able to check.
+    //
+    // Absent populations are omitted rather than reported as zero. A session
+    // that never composed has nothing to compare against, and a zero would
+    // read as free instead of as absent.
+    if let Some(native_scanout) = native_scanout.as_ref() {
+        let cost = native_scanout.direct_scanout_cost();
+        for (population, samples) in [("direct", &cost.direct), ("composed", &cost.composed)] {
+            let (Some(offer), Some(flip)) = (
+                samples.offer_to_submit.summary(),
+                samples.submit_to_flip.summary(),
+            ) else {
+                continue;
+            };
+            crate::session_println!(
+                "sophia_live_direct_scanout_cost schema=1 population={population} frames={} offer_submit_us_min={} offer_submit_us_p50={} offer_submit_us_p99={} offer_submit_us_max={} submit_flip_frames={} submit_flip_us_min={} submit_flip_us_p50={} submit_flip_us_p99={} submit_flip_us_max={} saturated={}",
+                offer.frames,
+                offer.min,
+                offer.p50,
+                offer.p99,
+                offer.max,
+                flip.frames,
+                flip.min,
+                flip.p50,
+                flip.p99,
+                flip.max,
+                offer.saturated || flip.saturated,
+            );
+        }
+    }
     if let Some(native_scanout) = native_scanout.as_ref() {
         crate::session_println!(
             "sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps={} fallbacks={} pending={}",

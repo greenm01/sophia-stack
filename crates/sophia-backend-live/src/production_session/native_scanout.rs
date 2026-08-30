@@ -25,6 +25,9 @@ mod persistent_native_scanout {
     pub use topology::*;
 
     pub struct LiveProductionNativeScanout {
+        /// Submit-to-flip samples; the offer-to-submit half lives per
+        /// exporter, and `direct_scanout_cost` merges the two.
+        cost: crate::DirectScanoutCost,
         pub groups: Vec<LiveProductionNativeGroup>,
         pub heads: Vec<LiveProductionNativeHead>,
         /// Logical output descriptors are independent of physical head extents.
@@ -733,6 +736,7 @@ mod persistent_native_scanout {
                 direct_scanout_admissible: false,
                 direct_scanout_admitted: false,
                 pending_frame_supersessions: 0,
+                cost: crate::DirectScanoutCost::default(),
                 max_submit_to_page_flip: Duration::ZERO,
                 callback_accepted: 0,
                 callback_rejected: 0,
@@ -1458,6 +1462,10 @@ mod persistent_native_scanout {
                     submitted_ust_usec.unwrap_or_default();
                 self.heads[head_index].presented_page_flip_ust_usec = callback_ust;
                 self.heads[head_index].presented_submit_to_page_flip = submit_to_page_flip;
+                // A mirror head composes by construction -- eligibility
+                // requires a single-head plan shape -- so this is recorded
+                // as composed rather than asked.
+                self.cost.record_submit_to_flip(false, submit_to_page_flip);
                 let Some(frame) = self.heads[head_index].submitted_group_frame.take() else {
                     errors.push(format!(
                         "mirror head {} callback has no logical generation",
@@ -2624,6 +2632,14 @@ mod persistent_native_scanout {
                         submitted_ust_usec.unwrap_or_default();
                     self.heads[index].presented_page_flip_ust_usec = ust;
                     self.heads[index].presented_submit_to_page_flip = submit_to_page_flip;
+                    // What the display engine did with the buffer, filed
+                    // under how the buffer got there. This half should not
+                    // differ by population, and is measured to find out
+                    // rather than to assume.
+                    self.cost.record_submit_to_flip(
+                        self.heads[index].presented_direct,
+                        submit_to_page_flip,
+                    );
                     if self
                         .production_page_flips
                         .observe_page_flip(output, kernel_sequence, presentation_msec, ust)
@@ -2795,6 +2811,22 @@ mod persistent_native_scanout {
             std::iter::zip(&self.heads, &self.exporters)
                 .find(|(_, exporter)| exporter.direct_scanout_flips() != 0)
                 .map(|(head, _)| head.output.id)
+        }
+
+        /// What frames cost, both halves and both populations.
+        ///
+        /// The submit-to-flip half is recorded here, on the head that
+        /// flipped; the offer-to-submit half lives in each exporter, which
+        /// is the only place that knows how long its own composition pass
+        /// took. They are merged rather than kept apart because the question
+        /// -- does a direct frame cost less than a composed one -- is about
+        /// the whole path, not either end of it.
+        pub fn direct_scanout_cost(&self) -> crate::DirectScanoutCost {
+            let mut cost = self.cost.clone();
+            for exporter in &self.exporters {
+                cost.merge(exporter.cost());
+            }
+            cost
         }
 
         pub fn direct_scanout_totals(&self) -> LiveProductionDirectScanoutTotals {

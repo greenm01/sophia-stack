@@ -528,6 +528,7 @@ fn run_session_loop_inner(
     let mut direct_overlay_proof =
         crate::live_session::direct_overlay_proof::DirectOverlayProof::new(
             config.direct_overlay_proof,
+            config.direct_overlay_hold_ticks,
         );
     let direct_overlay_generation = 1u64;
     let mut startup_native_recovery_attempted = false;
