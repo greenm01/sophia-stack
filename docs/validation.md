@@ -490,6 +490,15 @@ bursts before xterm's process-level safety timeout. The independent 30-second
 watchdog bounds the complete session. Let the xterm exit automatically; the
 logout shortcut intentionally produces an incomplete benchmark.
 
+The wrapper retains and retries up to eight page-flip stalls only when schema-2
+attribution proves the completion event never crossed the card descriptor:
+the poller must be empty, routed, last read `WouldBlock`, and report zero decoded
+or rejected callbacks. Every failed attempt remains under `attempt-NNN/`; only
+the final attempt is promoted to the archive root and evaluated. A pending or
+rejected callback, another benchmark failure, or exhaustion of the bounded
+budget fails immediately. `SOPHIA_TERMINAL_MAX_STALL_RETRIES` may lower the
+budget or raise it no higher than 32.
+
 The trailing `sophia_terminal_performance schema=4` report retains those
 resource, patch, damage, client-metadata, failure, drain, and composition-budget
 checks and additionally requires exactly one
@@ -513,9 +522,10 @@ tools/report_sophia_terminal_performance.sh
 ```
 
 If the machine locks or the report fails, retain the standalone session,
-launcher, input-guard, recovery, lifecycle, and protected kernel logs. Do not
-repeat the physical takeover until that evidence is diagnosed. This benchmark
-does not establish Xserver parity. Optional X Present cadence remains a
+launcher, input-guard, recovery, lifecycle, and protected kernel logs. The
+wrapper may repeat only the attributed below-process stall above; do not repeat
+any other failed physical takeover until its evidence is diagnosed. This
+benchmark does not establish Xserver parity. Optional X Present cadence remains a
 diagnostic; the gate's screen-progress authority is the session's exact primary
 composition and KMS-retirement evidence.
 

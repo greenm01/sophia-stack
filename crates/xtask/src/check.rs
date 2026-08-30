@@ -57,6 +57,11 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "tools/check_buffer_age_equivalence.sh",
         "buffer-age pixel equivalence",
     )?);
+    command(
+        repo,
+        "tools/run_sophia_terminal_gate_tty3.sh",
+        &["--self-test"],
+    )?;
     for tool in [
         "tools/check_live_record_schema_readers.sh",
         "tools/check_direct_scanout_verifier.sh",

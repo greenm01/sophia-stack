@@ -9,6 +9,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 KERNEL_LOG="${SOPHIA_KERNEL_LOG:-/var/log/socklog/kernel/current}"
+MAX_PAGE_FLIP_STALL_RETRIES="${SOPHIA_TERMINAL_MAX_STALL_RETRIES:-8}"
 COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 ARCHIVE_ROOT="$STATE_HOME/sophia/rendering-benchmarks/$COMMIT/terminal-cpu"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -21,6 +22,65 @@ fail() {
     exit 1
 }
 
+# Retry only the attributed host fault: a schema-2 hard stall whose event
+# poller is empty, routed, and clean. A queued or rejected callback is a Sophia
+# defect and must fail the gate on its first occurrence.
+is_retryable_host_page_flip_stall() {
+    local session_log="$1"
+
+    grep -Eq 'sophia_live_native_page_flip_stall schema=2 status=hard_stall .*poller_pending=0 poller_routes=[1-9][0-9]* poller_last_read=WouldBlock poller_last_decoded=0 poller_last_rejected=0 .*action=terminate_session' "$session_log" 2>/dev/null || return 1
+    grep -Eq '^Error: .*hard-stall boundary' "$session_log" || return 1
+}
+
+should_retry_host_page_flip_stall() {
+    local benchmark_status="$1" retries="$2" retry_limit="$3" session_log="$4"
+
+    ((benchmark_status != 0 && retries < retry_limit)) || return 1
+    is_retryable_host_page_flip_stall "$session_log"
+}
+
+check_stall_retry_classifier() {
+    local fixture status
+    fixture="$(mktemp -d)"
+    status=0
+
+    printf '%s\n' 'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=1 head=1 poller_pending=0 poller_routes=2 poller_last_read=WouldBlock poller_last_decoded=0 poller_last_rejected=0 action=terminate_session' 'Error: "native page flip exceeded the 500 ms hard-stall boundary"' >"$fixture/session.log"
+    if ! should_retry_host_page_flip_stall 1 0 8 "$fixture/session.log"; then
+        echo "attributed below-process page-flip stall was not retryable" >&2
+        status=1
+    fi
+    if should_retry_host_page_flip_stall 0 0 8 "$fixture/session.log"; then
+        echo "successful benchmark was retryable" >&2
+        status=1
+    fi
+    if should_retry_host_page_flip_stall 1 8 8 "$fixture/session.log"; then
+        echo "exhausted page-flip retry budget was retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' 'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=1 head=1 poller_pending=1 poller_routes=2 poller_last_read=WouldBlock poller_last_decoded=0 poller_last_rejected=0 action=terminate_session' 'Error: "native page flip exceeded the 500 ms hard-stall boundary"' >"$fixture/session.log"
+    if is_retryable_host_page_flip_stall "$fixture/session.log"; then
+        echo "Sophia-side pending callback was retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' 'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=1 head=1 poller_pending=0 poller_routes=2 poller_last_read=CallbacksDecoded poller_last_decoded=0 poller_last_rejected=1 action=terminate_session' 'Error: "native page flip exceeded the 500 ms hard-stall boundary"' >"$fixture/session.log"
+    if is_retryable_host_page_flip_stall "$fixture/session.log"; then
+        echo "Sophia-side rejected callback was retryable" >&2
+        status=1
+    fi
+
+    printf '%s\n' 'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=1 head=1 poller_pending=0 poller_routes=2 poller_last_read=WouldBlock poller_last_decoded=0 poller_last_rejected=0 action=terminate_session' >"$fixture/session.log"
+    if is_retryable_host_page_flip_stall "$fixture/session.log"; then
+        echo "stall without the matching terminal error was retryable" >&2
+        status=1
+    fi
+
+    rm -rf -- "$fixture"
+    ((status == 0)) || return "$status"
+    echo "terminal gate page-flip stall retry classifier passed"
+}
+
 copy_if_present() {
     local source="$1" destination="$2"
     if [[ -s "$source" ]]; then
@@ -29,11 +89,12 @@ copy_if_present() {
 }
 
 capture_session_artifacts() {
-    copy_if_present "$SESSION_DIR/session.log" "$PENDING/session.log"
-    copy_if_present "$SESSION_DIR/input-guard.log" "$PENDING/input-guard.log"
-    copy_if_present "$SESSION_DIR/recovery.log" "$PENDING/recovery.log"
-    copy_if_present "$SESSION_DIR/lifecycle.log" "$PENDING/lifecycle.log"
-    copy_if_present /tmp/sophia-standalone-tty3-launch.log "$PENDING/launch.log"
+    local destination="${1:-$PENDING}"
+    copy_if_present "$SESSION_DIR/session.log" "$destination/session.log"
+    copy_if_present "$SESSION_DIR/input-guard.log" "$destination/input-guard.log"
+    copy_if_present "$SESSION_DIR/recovery.log" "$destination/recovery.log"
+    copy_if_present "$SESSION_DIR/lifecycle.log" "$destination/lifecycle.log"
+    copy_if_present /tmp/sophia-standalone-tty3-launch.log "$destination/launch.log"
 }
 
 run_finalized=false
@@ -58,10 +119,21 @@ Run from a logged-in local TTY3. Requires a clean worktree, sudo access,
 running socklog-unix and nanoklogd services, and a nonempty kernel log.
 Evidence is retained under:
   $STATE_HOME/sophia/rendering-benchmarks/<commit>/terminal-cpu/<UTC timestamp>/
+
+Up to $MAX_PAGE_FLIP_STALL_RETRIES attributed below-process page-flip stalls
+are retained and retried. Override with SOPHIA_TERMINAL_MAX_STALL_RETRIES.
 EOF
     exit 0
 fi
+if [[ "${1:-}" == --self-test ]]; then
+    check_stall_retry_classifier
+    exit
+fi
 [[ $# -eq 0 ]] || fail "unexpected arguments (use --help)"
+[[ "$MAX_PAGE_FLIP_STALL_RETRIES" =~ ^[0-9]+$ ]] ||
+    fail "SOPHIA_TERMINAL_MAX_STALL_RETRIES must be a nonnegative integer"
+((MAX_PAGE_FLIP_STALL_RETRIES <= 32)) ||
+    fail "SOPHIA_TERMINAL_MAX_STALL_RETRIES must not exceed 32"
 [[ -t 0 && "$(tty)" == /dev/tty3 ]] ||
     fail "run this interactively from a logged-in local TTY3"
 [[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] ||
@@ -76,8 +148,7 @@ chmod 700 "$STATE_HOME/sophia/rendering-benchmarks" \
 mkdir "$PENDING"
 chmod 700 "$PENDING"
 trap 'preserve_pending_on_exit $?' EXIT
-printf 'source_commit=%s\nrun_id=%s\nkernel_log=%s\n' \
-    "$COMMIT" "$RUN_ID" "$KERNEL_LOG" >"$PENDING/source.env"
+printf 'source_commit=%s\nrun_id=%s\nkernel_log=%s\nmax_page_flip_stall_retries=%s\n' "$COMMIT" "$RUN_ID" "$KERNEL_LOG" "$MAX_PAGE_FLIP_STALL_RETRIES" >"$PENDING/source.env"
 chmod 600 "$PENDING/source.env"
 
 echo "Evidence will be retained in $FINAL"
@@ -103,11 +174,40 @@ chmod 600 "$PENDING"/kernel-before.*
 echo
 echo "The benchmark will ask you to press and release Ctrl-Alt-Backspace."
 echo "Confirm that the centered xterm scrolls continuously, then let it exit."
-set +e
-"$ROOT_DIR/tools/benchmark_sophia_terminal_tty3.sh" 2>&1 |
-    tee "$PENDING/operator.log"
-benchmark_status="${PIPESTATUS[0]}"
-set -e
+attempt=0
+stall_retries=0
+benchmark_status=1
+attempt_dir=
+while true; do
+    attempt=$((attempt + 1))
+    attempt_dir="$PENDING/attempt-$(printf '%03d' "$attempt")"
+    mkdir "$attempt_dir"
+    chmod 700 "$attempt_dir"
+    echo
+    echo "Starting terminal benchmark attempt $attempt..."
+    set +e
+    "$ROOT_DIR/tools/benchmark_sophia_terminal_tty3.sh" 2>&1 |
+        tee "$attempt_dir/operator.log"
+    benchmark_status="${PIPESTATUS[0]}"
+    set -e
+    capture_session_artifacts "$attempt_dir"
+
+    if should_retry_host_page_flip_stall \
+        "$benchmark_status" \
+        "$stall_retries" \
+        "$MAX_PAGE_FLIP_STALL_RETRIES" \
+        "$attempt_dir/session.log"; then
+        stall_retries=$((stall_retries + 1))
+        printf 'terminal-gate-retry schema=1 status=retrying attempt=%s retry=%s/%s reason=below_process_page_flip_stall evidence=%s\n' "$attempt" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" "$(basename "$attempt_dir")" | tee -a "$PENDING/stall-retries.log"
+        sleep 0.1
+        continue
+    fi
+    break
+done
+
+for artifact in session.log input-guard.log recovery.log lifecycle.log launch.log operator.log; do
+    copy_if_present "$attempt_dir/$artifact" "$PENDING/$artifact"
+done
 
 visual_confirmed=false
 if ((benchmark_status == 0)); then
@@ -116,8 +216,6 @@ if ((benchmark_status == 0)); then
         y|Y|yes|YES|Yes) visual_confirmed=true ;;
     esac
 fi
-
-capture_session_artifacts
 
 report_status=1
 if [[ -s "$PENDING/session.log" ]]; then
@@ -146,6 +244,10 @@ chmod 600 "$PENDING"/kernel-after.* "$PENDING/kernel-delta.log"
 
 failures=()
 ((benchmark_status == 0)) || failures+=(benchmark)
+if ((benchmark_status != 0)) &&
+    is_retryable_host_page_flip_stall "$PENDING/session.log"; then
+    failures+=(page_flip_stall_retry_budget)
+fi
 ((report_status == 0)) || failures+=(performance_report)
 [[ "$visual_confirmed" == true ]] || failures+=(visual_confirmation)
 [[ "$kernel_delta_complete" == true ]] || failures+=(kernel_log_rotated)
@@ -179,10 +281,7 @@ failure_list=none
 if ((${#failures[@]} > 0)); then
     failure_list="$(IFS=,; printf '%s' "${failures[*]}")"
 fi
-printf 'terminal-gate-result schema=1 status="%s" commit="%s" benchmark-status=%s report-status=%s visual-confirmed=%s kernel-delta-complete=%s failures="%s"\n' \
-    "$status" "$COMMIT" "$benchmark_status" "$report_status" \
-    "$visual_confirmed" "$kernel_delta_complete" "$failure_list" \
-    >"$PENDING/result.kdl"
+printf 'terminal-gate-result schema=1 status="%s" commit="%s" benchmark-status=%s report-status=%s visual-confirmed=%s kernel-delta-complete=%s attempts=%s stall-retries=%s stall-retry-limit=%s failures="%s"\n' "$status" "$COMMIT" "$benchmark_status" "$report_status" "$visual_confirmed" "$kernel_delta_complete" "$attempt" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" "$failure_list" >"$PENDING/result.kdl"
 chmod 600 "$PENDING/result.kdl"
 
 mv "$PENDING" "$FINAL"
