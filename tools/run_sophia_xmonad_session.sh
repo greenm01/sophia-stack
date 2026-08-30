@@ -590,10 +590,6 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         if [[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-cursor-proof)
         fi
-        # Drive the cursor atomically rather than through the legacy ioctl.
-        if [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]]; then
-            session_args+=(--atomic-cursor)
-        fi
         if [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-overlay-proof)
             # A cost run holds the overlay far longer than a transition
@@ -605,6 +601,16 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         fi
     else
         session_args+=(--no-config)
+    fi
+    # Drive the cursor atomically rather than through the legacy ioctl.
+    #
+    # Outside the direct-scanout branch on purpose: the cursor path has
+    # nothing to do with whether client buffers reach the plane directly.
+    # It was inside it, so a benchmark that did not enable direct scanout
+    # silently ran the legacy path while SOPHIA_ATOMIC_CURSOR=1 was set --
+    # a whole physical run spent measuring the thing it was meant to replace.
+    if [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]]; then
+        session_args+=(--atomic-cursor)
     fi
     session_args+=(
         "--session-app=standalone=$standalone_bin"
@@ -848,6 +854,30 @@ else
     )
 fi
 session_args+=("$@")
+
+# Every requested flag reached the vector.
+#
+# An environment variable that asks for a behaviour and is then dropped is
+# worse than one that is not honoured at all: the session runs, the evidence
+# looks healthy, and it describes the wrong thing. That happened -- a
+# glxgears benchmark asked for the atomic cursor, the flag sat behind an
+# unrelated guard, and a physical run measured the legacy path while
+# reporting success. This refuses instead.
+requested_flags=()
+[[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]] && requested_flags+=(--atomic-cursor)
+[[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-cursor-proof)
+[[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-overlay-proof)
+for requested in ${requested_flags[@]+"${requested_flags[@]}"}; do
+    found=false
+    for assembled in "${session_args[@]}"; do
+        [[ "$assembled" == "$requested" ]] && found=true && break
+    done
+    if [[ "$found" != true ]]; then
+        echo "The session was asked for $requested and did not receive it." >&2
+        echo "A run that quietly drops a requested flag measures the wrong thing." >&2
+        exit 1
+    fi
+done
 session_environment=(
     SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1
     DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null
