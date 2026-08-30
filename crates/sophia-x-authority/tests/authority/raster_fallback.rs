@@ -820,3 +820,125 @@ fn a_surface_with_no_canonical_raster_falls_back_instead_of_failing() {
     );
     assert_eq!(cause, XRasterFallbackCause::NoCanonicalRaster);
 }
+
+/// A live density variant is patched by later drawing, not resent.
+///
+/// A derived variant used to publish its whole buffer for every drawing
+/// command, once per retained density: a one-glyph edit on a window with two
+/// variants copied two whole buffers to carry a few hundred bytes of change.
+/// The replay now reports where it painted and the variant publishes that
+/// region.
+///
+/// The check is equivalence. Replaying the published updates has to leave the
+/// same pixels a full replacement would, because the failure this risks is a
+/// variant stale in one place, at the right generation, in a frame that is
+/// otherwise presentable. `apply_command` computes the extent beside each
+/// branch's own projection for exactly that reason.
+#[test]
+fn a_live_density_variant_publishes_patches_that_replay_like_replacements() {
+    let namespace = NamespaceId::from_raw(232);
+    let window = XResourceId::new(0x232, 1);
+    let surface = SurfaceId::new(232, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 400);
+
+    // Establish a replayable journal, then materialize a 0.75x variant.
+    runtime.begin_dispatch();
+    runtime.apply_put_image(
+        TransactionId::from_raw(401),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 20,
+        }),
+        Some(&opaque_image(40, 20, 0x0011_2233)),
+        Some(&z_pixmap_semantics()),
+    );
+    // Materializing the variant publishes a baseline replacement in the
+    // requirement response; keep it as the base later updates replay against.
+    let mut replayed = std::collections::BTreeMap::new();
+    for update in runtime.take_cpu_buffer_updates() {
+        update.apply_to(&mut replayed).unwrap();
+    }
+    let outcome = runtime
+        .apply_surface_raster_requirements(
+            TransactionId::from_raw(402),
+            &fallback_requirement(surface, 2, &[750]),
+        )
+        .unwrap();
+    let XSurfaceRasterOutcome::Satisfied(response) = outcome else {
+        panic!("the 0.75 class must replay from the journal: {outcome:?}");
+    };
+    let [XAuthorityCpuBufferUpdate::Replace(derived)] = response.cpu_buffer_updates.as_slice()
+    else {
+        panic!("materializing a variant publishes one derived replacement");
+    };
+    let variant_handle = derived.handle;
+    for update in &response.cpu_buffer_updates {
+        update.apply_to(&mut replayed).unwrap();
+    }
+
+    // Draw again. The variant owes only the region the replay painted.
+    runtime.begin_dispatch();
+    runtime.apply_core_draw_with_gc(
+        TransactionId::from_raw(403),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 4,
+            y: 4,
+            width: 6,
+            height: 6,
+        }),
+        &XGraphicsContextValues {
+            foreground: 0x0000_ff00,
+            ..XGraphicsContextValues::default()
+        },
+    );
+    let updates = runtime.take_cpu_buffer_updates();
+    let variant_updates: Vec<_> = updates
+        .iter()
+        .filter(|update| update.handle() == variant_handle)
+        .collect();
+    assert!(
+        !variant_updates.is_empty(),
+        "the live variant must publish something for a drawing command"
+    );
+    assert!(
+        variant_updates
+            .iter()
+            .all(|update| !update.is_replacement()),
+        "a live variant must patch rather than resend its whole buffer: {variant_updates:?}"
+    );
+    for update in &updates {
+        update.apply_to(&mut replayed).unwrap();
+    }
+
+    // The painted region arrived, and nothing outside it moved.
+    let variant = replayed.get(&variant_handle).expect("replayed variant");
+    let stride = usize::try_from(variant.stride).unwrap();
+    let pixel_at = |x: usize, y: usize| -> u32 {
+        let offset = y * stride + x * 4;
+        u32::from_le_bytes(variant.bytes[offset..offset + 4].try_into().unwrap())
+    };
+    // The 1x rectangle (4,4,6,6) projects to (3,3,5,5) at 0.75x. Every pixel
+    // of it is checked, not a sample: a cover short by one column leaves
+    // exactly one edge stale, which is the shape this is guarding against.
+    for y in 3..8usize {
+        for x in 3..8usize {
+            assert_eq!(
+                pixel_at(x, y) & 0x00ff_ffff,
+                0x0000_ff00,
+                "({x},{y}) is inside the replayed draw and was not carried"
+            );
+        }
+    }
+    assert_eq!(
+        pixel_at(25, 13) & 0x00ff_ffff,
+        0x0011_2233,
+        "a pixel outside the draw must still hold the uploaded image"
+    );
+}

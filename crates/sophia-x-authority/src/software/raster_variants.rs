@@ -11,9 +11,10 @@ use crate::image::X_IMAGE_FORMAT_Z_PIXMAP;
 use crate::{X_GX_COPY, XByteOrder, XFontFace, XGraphicsContextValues, XResourceId};
 
 use super::raster_replay::apply_command;
+use super::update::packed_patch_region;
 use super::{
     X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888, X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES,
-    XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
+    XAuthorityCpuBufferPatchBatch, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
 };
 
 pub(crate) const X_AUTHORITY_RASTER_JOURNAL_MAX_COMMANDS: usize = 4_096;
@@ -441,9 +442,38 @@ impl XAuthorityRasterStore {
         }
         let mut updates = Vec::new();
         for (class, backing) in &mut state.variants {
-            apply_command(&mut backing.snapshot, *class, &command);
+            // Where the replay painted, in this variant's own density space.
+            // `apply_command` reports it beside each branch's projection, so
+            // the extent cannot disagree with the paint.
+            let painted = apply_command(&mut backing.snapshot, *class, &command);
             backing.snapshot.generation = backing.snapshot.generation.saturating_add(1);
-            updates.push(XAuthorityCpuBufferUpdate::Replace(backing.snapshot.clone()));
+            // A derived variant used to publish its whole buffer for every
+            // drawing command, once per retained density. A one-glyph edit on a
+            // window with two variants copied two whole buffers to carry a few
+            // hundred bytes of change.
+            //
+            // Fail closed on anything the replay could not place: an unknown
+            // extent, or one this buffer cannot represent as a patch, owes a
+            // full replacement rather than a patch that might miss a region.
+            let update = match painted {
+                Some(extent) if extent.width <= 0 || extent.height <= 0 => continue,
+                Some(extent) => packed_patch_region(&backing.snapshot, extent).map_or_else(
+                    || XAuthorityCpuBufferUpdate::Replace(backing.snapshot.clone()),
+                    |region| {
+                        XAuthorityCpuBufferUpdate::PatchBatch(XAuthorityCpuBufferPatchBatch {
+                            handle: backing.snapshot.handle,
+                            drawable: backing.snapshot.drawable,
+                            size: backing.snapshot.size,
+                            stride: backing.snapshot.stride,
+                            format: backing.snapshot.format,
+                            generation: backing.snapshot.generation,
+                            patches: vec![region],
+                        })
+                    },
+                ),
+                None => XAuthorityCpuBufferUpdate::Replace(backing.snapshot.clone()),
+            };
+            updates.push(update);
         }
         updates
     }

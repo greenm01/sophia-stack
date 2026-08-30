@@ -62,27 +62,69 @@ fn projected_gc(gc: &XGraphicsContextValues, density: u32) -> XGraphicsContextVa
     projected
 }
 
+/// Replay one retained command into a derived density store, and say where.
+///
+/// The returned rectangle is the region this call asked to paint, already
+/// projected into the variant's density space. `None` means the extent is not
+/// known, and the caller owes a full replacement.
+///
+/// It is computed here, beside each branch's own projection, rather than by a
+/// second function that reads the same command. A separate extent calculation
+/// that disagreed with the paint would under-report by exactly the region it
+/// forgot, and the result -- a variant stale in one place, at the right
+/// generation, in an otherwise presentable frame -- is the failure
+/// `StableBackingLease`'s `RegistryMatchesStore` forbids and that nothing
+/// downstream could catch.
+///
+/// Over-reporting is safe: the extent is what the patch will carry, and the
+/// bytes it carries are read from the variant after this call.
 pub(super) fn apply_command(
     snapshot: &mut XAuthorityCpuBufferSnapshot,
     class: SurfaceRasterClass,
     command: &XAuthorityRasterCommand,
-) {
+) -> Option<Rect> {
     let density = class.density_millis;
     match command {
         XAuthorityRasterCommand::Paint { rects, gc } => {
             let gc = projected_gc(gc, density);
+            let mut painted: Option<Rect> = None;
             for rect in rects {
-                fill_rect(snapshot, project_rect(*rect, density), gc.foreground, &gc);
+                let projected = project_rect(*rect, density);
+                fill_rect(snapshot, projected, gc.foreground, &gc);
+                painted = Some(painted.map_or(projected, |bounds| union_rect(bounds, projected)));
             }
+            painted
         }
-        XAuthorityRasterCommand::Clear { rect, pixel } => fill_rect(
-            snapshot,
-            project_rect(*rect, density),
-            *pixel,
-            &XGraphicsContextValues::default(),
-        ),
+        XAuthorityRasterCommand::Clear { rect, pixel } => {
+            let projected = project_rect(*rect, density);
+            fill_rect(
+                snapshot,
+                projected,
+                *pixel,
+                &XGraphicsContextValues::default(),
+            );
+            Some(projected)
+        }
         XAuthorityRasterCommand::Lines { points, gc } => {
             let gc = projected_gc(gc, density);
+            // The line rasteriser walks between projected endpoints and widens
+            // by the line width, so the painted region is the bounding box of
+            // the endpoints grown by that width on every side.
+            let mut painted: Option<Rect> = None;
+            let half_width = i32::from(gc.line_width.max(1)).saturating_add(1);
+            for pair in points.windows(2) {
+                for point in pair {
+                    let x = floor_edge(point.x, density);
+                    let y = floor_edge(point.y, density);
+                    let cell = Rect {
+                        x: x.saturating_sub(half_width),
+                        y: y.saturating_sub(half_width),
+                        width: half_width.saturating_mul(2).saturating_add(1),
+                        height: half_width.saturating_mul(2).saturating_add(1),
+                    };
+                    painted = Some(painted.map_or(cell, |bounds| union_rect(bounds, cell)));
+                }
+            }
             for pair in points.windows(2) {
                 draw_line(
                     snapshot,
@@ -98,39 +140,96 @@ pub(super) fn apply_command(
                     &gc,
                 );
             }
+            painted
         }
         XAuthorityRasterCommand::Rectangles { rectangles, gc } => {
             let gc = projected_gc(gc, density);
+            // An outline is stroked on the rectangle's edges, so it reaches
+            // half a line width outside the rectangle itself.
+            let width = i32::from(gc.line_width.max(1)).saturating_add(1);
+            let mut painted: Option<Rect> = None;
             for rectangle in rectangles {
-                draw_rectangle_outline(
-                    snapshot,
-                    project_rect(*rectangle, density),
-                    i32::from(gc.line_width.max(1)),
-                    &gc,
-                );
+                let projected = project_rect(*rectangle, density);
+                draw_rectangle_outline(snapshot, projected, i32::from(gc.line_width.max(1)), &gc);
+                let grown = Rect {
+                    x: projected.x.saturating_sub(width),
+                    y: projected.y.saturating_sub(width),
+                    width: projected.width.saturating_add(width.saturating_mul(2)),
+                    height: projected.height.saturating_add(width.saturating_mul(2)),
+                };
+                painted = Some(painted.map_or(grown, |bounds| union_rect(bounds, grown)));
             }
+            painted
         }
         XAuthorityRasterCommand::Text { draws, gc } => {
+            let mut painted: Option<Rect> = None;
             for draw in draws {
-                draw_projected_text(snapshot, density, draw, gc);
+                let extent = draw_projected_text(snapshot, density, draw, gc);
+                painted = Some(painted.map_or(extent, |bounds| union_rect(bounds, extent)));
             }
+            painted
         }
         XAuthorityRasterCommand::CopyArea {
             source,
             destination_x,
             destination_y,
             gc,
-        } => copy_projected_area(
-            snapshot,
-            project_rect(*source, density),
-            floor_edge(*destination_x, density),
-            floor_edge(*destination_y, density),
-            &projected_gc(gc, density),
-        ),
+        } => {
+            let projected = project_rect(*source, density);
+            let destination_x = floor_edge(*destination_x, density);
+            let destination_y = floor_edge(*destination_y, density);
+            copy_projected_area(
+                snapshot,
+                projected,
+                destination_x,
+                destination_y,
+                &projected_gc(gc, density),
+            );
+            // The copy lands at the destination, carrying the source extent.
+            Some(Rect {
+                x: destination_x,
+                y: destination_y,
+                width: projected.width,
+                height: projected.height,
+            })
+        }
         XAuthorityRasterCommand::PutImage { image, gc } => {
             blit_projected_image(snapshot, density, image, gc);
+            Some(project_rect(image.rect, density))
         }
-        XAuthorityRasterCommand::Unsupported(_) => {}
+        // Nothing was replayed, so nothing was painted. An empty region rather
+        // than an unknown one: the caller may skip this command entirely.
+        XAuthorityRasterCommand::Unsupported(_) => Some(Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        }),
+    }
+}
+
+fn union_rect(left: Rect, right: Rect) -> Rect {
+    if left.width <= 0 || left.height <= 0 {
+        return right;
+    }
+    if right.width <= 0 || right.height <= 0 {
+        return left;
+    }
+    let x = left.x.min(right.x);
+    let y = left.y.min(right.y);
+    let right_edge = left
+        .x
+        .saturating_add(left.width)
+        .max(right.x.saturating_add(right.width));
+    let bottom_edge = left
+        .y
+        .saturating_add(left.height)
+        .max(right.y.saturating_add(right.height));
+    Rect {
+        x,
+        y,
+        width: right_edge.saturating_sub(x),
+        height: bottom_edge.saturating_sub(y),
     }
 }
 
@@ -243,12 +342,17 @@ fn source_pixel(image: &XOwnedImagePixels, stride: usize, sx: i32, sy: i32) -> O
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
 }
 
+/// Replay one text draw, returning the cell box it covered.
+///
+/// The box is the font's own extent for the string, which is what an image
+/// draw fills and what the glyphs are rasterised inside, so it contains every
+/// pixel this call can touch.
 fn draw_projected_text(
     snapshot: &mut XAuthorityCpuBufferSnapshot,
     density: u32,
     draw: &XOwnedTextDraw,
     gc: &XGraphicsContextValues,
-) {
+) -> Rect {
     let top = draw.baseline.saturating_sub(draw.font.ascent());
     let width = i32::try_from(draw.text.len())
         .unwrap_or(i32::MAX)
@@ -289,6 +393,15 @@ fn draw_projected_text(
             &raster_gc,
         );
     }
+    project_rect(
+        Rect {
+            x: draw.x,
+            y: top,
+            width,
+            height: draw.font.ascent().saturating_add(draw.font.descent()),
+        },
+        density,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
