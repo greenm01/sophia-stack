@@ -369,7 +369,7 @@ heads="$(grep -oE '^sophia_live_native_startup_output schema=1 status=presented 
 # design, so the bound is the presented head count rather than one: asserting
 # one per output would fail every mirror session and would be wrong, not
 # strict. `heads` is counted from the presented startup outputs above.
-if [[ "$resource_schema" == 9 || "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 9 )); then
     depth="$(field "$resources" max_in_flight_per_output)"
     (( depth >= 1 )) ||
         fail "no KMS submission was ever in flight, so the session presented nothing"
@@ -379,7 +379,7 @@ fi
 # A result may only reach the output that asked for it. Per-output reply
 # channels make the alternative unreachable rather than unlikely, so anything
 # here means the routing that structure guarantees was subverted.
-if [[ "$resource_schema" == 10 ]]; then
+if (( resource_schema >= 10 )); then
     (( $(field "$resources" worker_result_misroutes) == 0 )) ||
         fail "a renderer result reached an output that did not request it"
     # Bounded inter-output service skew, asserted only where outputs actually

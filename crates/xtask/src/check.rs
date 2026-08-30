@@ -53,6 +53,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     anchored_readers(repo)?;
     let report = vec![archives(repo)?];
     for tool in [
+        "tools/check_live_record_schema_readers.sh",
         "tools/check_direct_scanout_verifier.sh",
         "tools/check_direct_scanout_archive_verifier.sh",
         "tools/check_sophia_standalone_vkcube_verifier.sh",

@@ -529,6 +529,27 @@ sed 's/ direct_scanout_fallbacks=1//' "$direct" >"$partial"
 reject_mutation "schema-12 evidence without the fallback count" "$partial" \
     "resource record is missing direct_scanout_fallbacks"
 
+# The shared-worker and one-in-flight rules were guarded by schema equality
+# rather than by a lower bound, so they stopped running the moment the record
+# moved past the schema they named -- which is how they went unasserted for
+# every schema-11 and schema-12 session. These three controls mutate the
+# newest fixture rather than the schema-10 one, so a guard that silently
+# stops applying to current evidence fails here instead of in production.
+current_misrouted="$temp_dir/current-misrouted.log"
+sed 's/ worker_result_misroutes=0/ worker_result_misroutes=1/' "$direct" >"$current_misrouted"
+reject_mutation "current-schema evidence whose renderer misrouted a result" \
+    "$current_misrouted" "a renderer result reached an output that did not request it"
+
+current_starved="$temp_dir/current-starved.log"
+sed 's/ worker_max_service_skew=1/ worker_max_service_skew=2/' "$direct" >"$current_starved"
+reject_mutation "current-schema evidence that starved an output behind its sibling" \
+    "$current_starved" "was passed over"
+
+current_overdepth="$temp_dir/current-overdepth.log"
+sed 's/max_in_flight_per_output=2/max_in_flight_per_output=3/' "$direct" >"$current_overdepth"
+reject_mutation "current-schema evidence holding more submissions than heads" \
+    "$current_overdepth" "concurrent KMS submissions across 2 presented heads"
+
 # A restarted or degraded WM is a different run than the one being promoted.
 restarted="$temp_dir/restarted.log"
 sed 's/wm_restarts=0/wm_restarts=1/' "$evidence" >"$restarted"

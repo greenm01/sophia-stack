@@ -152,7 +152,7 @@ for session_log in "$@"; do
     # How many renderer threads produced these numbers. Two reports with the
     # same latencies and different thread counts are different measurements,
     # and nothing else in the record distinguishes them.
-    resources_line="$(grep -Em1 '^sophia_live_native_resources schema=10 status=complete ' \
+    resources_line="$(grep -Em1 '^sophia_live_native_resources schema=[0-9]+ status=complete ' \
         "$session_log" || true)"
     if [[ -n "$resources_line" ]]; then
         session_workers="$(field "$resources_line" renderer_workers || true)"

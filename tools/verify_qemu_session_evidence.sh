@@ -103,14 +103,21 @@ if [[ -n "$expected_workers" ]]; then
         echo "SOPHIA_QEMU_EXPECT_RENDERER_WORKERS must be a positive integer" >&2
         exit 1
     fi
-    resources_line="$(grep -E '^sophia_live_native_resources schema=10 status=complete ' \
+    resources_line="$(grep -E '^sophia_live_native_resources schema=[0-9]+ status=complete ' \
         "$EVIDENCE_FILE" || true)"
     if [[ -z "$resources_line" ]]; then
-        echo "renderer-thread expectation needs schema-10 resource evidence" >&2
+        echo "renderer-thread expectation needs schema-10 or newer resource evidence" >&2
         exit 1
     fi
     observed_workers="$(sed -n 's/.* renderer_workers=\([0-9][0-9]*\).*/\1/p' \
         <<< "$resources_line")"
+    # renderer_workers arrived at schema 10. Evidence that predates it cannot
+    # answer the question this expectation asks, and must say so rather than
+    # comparing an empty string against the expected count.
+    if [[ -z "$observed_workers" ]]; then
+        echo "resource evidence carries no renderer_workers field" >&2
+        exit 1
+    fi
     if [[ "$observed_workers" != "$expected_workers" ]]; then
         echo "session ran $observed_workers renderer threads, expected $expected_workers" >&2
         exit 1
