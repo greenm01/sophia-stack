@@ -141,10 +141,15 @@ Two physical attempts on signed commit `32b555b6` ended before the visual
 prompt on the host's known lost-vblank path: first head 1 after 307 retirements,
 then head 2 after 41. Both had an empty, routed, clean poller while the peer head
 continued. The runner now retains and retries only that attributed
-below-process signature within a bounded budget. Outstanding: rerun the guarded
+below-process signature within a bounded budget. The first bounded run on
+signed commit `44297a21` retained the same host signature on head 1 after four
+retirements. Its retry then failed before graphics takeover because the
+operator had left TTY3 and the new session's recovery guard was not armed
+within 30 seconds. The runner now pauses for operator readiness before creating
+each fresh recovery guard. Outstanding: rerun the guarded
 TTY3 terminal gate, confirm that xterm scrolls continuously, and retain its
 passing schema-4 report. Do not close this row from the offline real-xterm
-regression or either failed physical attempt.
+regression or these failed physical attempts.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

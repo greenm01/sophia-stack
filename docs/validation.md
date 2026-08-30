@@ -493,8 +493,11 @@ logout shortcut intentionally produces an incomplete benchmark.
 The wrapper retains and retries up to eight page-flip stalls only when schema-2
 attribution proves the completion event never crossed the card descriptor:
 the poller must be empty, routed, last read `WouldBlock`, and report zero decoded
-or rejected callbacks. Every failed attempt remains under `attempt-NNN/`; only
-the final attempt is promoted to the archive root and evaluated. A pending or
+or rejected callbacks. Every failed attempt remains under `attempt-NNN/`.
+Before each retry, the wrapper pauses on the originating TTY until the operator
+presses Enter; the next session creates a fresh recovery guard, so press and
+release Ctrl-Alt-Backspace again when its safety prompt appears. Only the final
+attempt is promoted to the archive root and evaluated. A pending or
 rejected callback, another benchmark failure, or exhaustion of the bounded
 budget fails immediately. `SOPHIA_TERMINAL_MAX_STALL_RETRIES` may lower the
 budget or raise it no higher than 32.

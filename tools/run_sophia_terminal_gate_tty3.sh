@@ -39,6 +39,27 @@ should_retry_host_page_flip_stall() {
     is_retryable_host_page_flip_stall "$session_log"
 }
 
+# A recovery guard belongs to one session process. Wait until the operator is
+# back at the originating TTY before starting a retry whose guard must be armed
+# again.
+await_retry_operator() {
+    local attempt="$1" retry="$2" retry_limit="$3" evidence="$4" retry_log="$5"
+
+    printf 'terminal-gate-retry schema=1 status=awaiting_operator attempt=%s retry=%s/%s reason=below_process_page_flip_stall evidence=%s\n' \
+        "$attempt" "$retry" "$retry_limit" "$evidence" |
+        tee -a "$retry_log"
+    echo
+    echo "Attempt $attempt hit the attributed host page-flip stall and was retained."
+    echo "The next attempt creates a fresh Ctrl-Alt-Backspace recovery guard."
+    if ! read -r -p "Press Enter when you are back on TTY3 and ready to arm it: "; then
+        echo "Operator input closed before the retry was authorized." >&2
+        return 1
+    fi
+    printf 'terminal-gate-retry schema=1 status=operator_ready attempt=%s retry=%s/%s reason=below_process_page_flip_stall evidence=%s\n' \
+        "$attempt" "$retry" "$retry_limit" "$evidence" |
+        tee -a "$retry_log"
+}
+
 check_stall_retry_classifier() {
     local fixture status
     fixture="$(mktemp -d)"
@@ -73,6 +94,28 @@ check_stall_retry_classifier() {
     printf '%s\n' 'sophia_live_native_page_flip_stall schema=2 status=hard_stall output=1 head=1 poller_pending=0 poller_routes=2 poller_last_read=WouldBlock poller_last_decoded=0 poller_last_rejected=0 action=terminate_session' >"$fixture/session.log"
     if is_retryable_host_page_flip_stall "$fixture/session.log"; then
         echo "stall without the matching terminal error was retryable" >&2
+        status=1
+    fi
+
+    : >"$fixture/retries.log"
+    if ! printf '\n' |
+        await_retry_operator 1 1 8 attempt-001 "$fixture/retries.log" \
+            >"$fixture/retry-prompt.log"; then
+        echo "operator-ready retry handoff rejected acknowledgement" >&2
+        status=1
+    fi
+    if ! grep -Fxq \
+        'terminal-gate-retry schema=1 status=awaiting_operator attempt=1 retry=1/8 reason=below_process_page_flip_stall evidence=attempt-001' \
+        "$fixture/retries.log" ||
+        ! grep -Fxq \
+            'terminal-gate-retry schema=1 status=operator_ready attempt=1 retry=1/8 reason=below_process_page_flip_stall evidence=attempt-001' \
+            "$fixture/retries.log"; then
+        echo "operator-ready retry handoff did not retain both states" >&2
+        status=1
+    fi
+    if await_retry_operator 1 1 8 attempt-001 "$fixture/eof.log" \
+        </dev/null >/dev/null 2>&1; then
+        echo "operator-ready retry handoff accepted closed input" >&2
         status=1
     fi
 
@@ -122,6 +165,8 @@ Evidence is retained under:
 
 Up to $MAX_PAGE_FLIP_STALL_RETRIES attributed below-process page-flip stalls
 are retained and retried. Override with SOPHIA_TERMINAL_MAX_STALL_RETRIES.
+Each retry pauses for Enter before its fresh Ctrl-Alt-Backspace recovery guard
+must be armed.
 EOF
     exit 0
 fi
@@ -197,9 +242,16 @@ while true; do
         "$stall_retries" \
         "$MAX_PAGE_FLIP_STALL_RETRIES" \
         "$attempt_dir/session.log"; then
-        stall_retries=$((stall_retries + 1))
+        next_retry=$((stall_retries + 1))
+        await_retry_operator \
+            "$attempt" \
+            "$next_retry" \
+            "$MAX_PAGE_FLIP_STALL_RETRIES" \
+            "$(basename "$attempt_dir")" \
+            "$PENDING/stall-retries.log" ||
+            fail "operator did not authorize terminal benchmark retry $next_retry"
+        stall_retries="$next_retry"
         printf 'terminal-gate-retry schema=1 status=retrying attempt=%s retry=%s/%s reason=below_process_page_flip_stall evidence=%s\n' "$attempt" "$stall_retries" "$MAX_PAGE_FLIP_STALL_RETRIES" "$(basename "$attempt_dir")" | tee -a "$PENDING/stall-retries.log"
-        sleep 0.1
         continue
     fi
     break
