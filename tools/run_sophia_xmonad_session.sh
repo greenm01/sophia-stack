@@ -590,6 +590,10 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         if [[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-cursor-proof)
         fi
+        # Drive the cursor atomically rather than through the legacy ioctl.
+        if [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]]; then
+            session_args+=(--atomic-cursor)
+        fi
         if [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-overlay-proof)
             # A cost run holds the overlay far longer than a transition

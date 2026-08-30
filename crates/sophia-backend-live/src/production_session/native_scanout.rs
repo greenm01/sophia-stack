@@ -173,6 +173,12 @@ mod persistent_native_scanout {
         /// What this head is currently showing, so a redundant commit can be
         /// skipped and a ghost can be noticed.
         pub committed_cursor: Option<crate::LibdrmNativeCursorPlacement>,
+        /// This head's cursor plane properties, discovered once.
+        ///
+        /// `None` until asked, and still `None` afterwards if the card has no
+        /// cursor plane for this CRTC or its plane cannot be positioned --
+        /// both of which mean the head keeps the legacy ioctl.
+        pub cursor_properties: Option<crate::LibdrmNativeCursorPlanePropertyHandles>,
         pub scale: u32,
         pub refresh_millihz: u32,
         pub transform: sophia_protocol::OutputTransform,
@@ -665,6 +671,7 @@ mod persistent_native_scanout {
                         last_submit_report: None,
                         pending_cursor: None,
                         committed_cursor: None,
+                        cursor_properties: None,
                         displayed_scanout: None,
                         displayed_group_frame: None,
                         scanout_submission: None,

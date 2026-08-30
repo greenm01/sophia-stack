@@ -196,6 +196,24 @@ impl RealAtomicScanoutPageFlipSession {
         self.probe_atomic_cursor_plane(&cursor, crtc)
     }
 
+    /// The framebuffer and size a cursor plane needs, once prepared.
+    ///
+    /// One call rather than three accessors: a caller that got the buffer
+    /// without the dimensions could commit a cursor sized for a different
+    /// card, and there is no reason to make that expressible.
+    #[cfg(feature = "gbm-probe")]
+    pub fn atomic_cursor_resources(&self) -> Option<(drm::control::framebuffer::Handle, u32, u32)> {
+        let framebuffer = self.cursor_framebuffer?;
+        let dimensions = self.cursor_dimensions?;
+        Some((framebuffer, dimensions.width, dimensions.height))
+    }
+
+    /// The card, for a caller committing a cursor on one of its planes.
+    #[cfg(feature = "gbm-probe")]
+    pub const fn cursor_commit_device(&self) -> &RealAtomicScanoutCard {
+        &self.card
+    }
+
     /// What the startup probe concluded, once it has run.
     #[cfg(feature = "gbm-probe")]
     pub const fn cursor_plane_probe(&self) -> Option<crate::CursorPlaneProbe> {

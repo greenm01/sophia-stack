@@ -1082,6 +1082,20 @@
             // accepted.
             if let Some(native) = native_scanout.as_mut() {
                 native.admit_direct_scanout();
+                // The cursor moves atomically from here, if the session asked
+                // and the card agreed. Chosen at readiness rather than at
+                // setup because the probe runs when the cursor is first
+                // prepared, which is after the first frames.
+                if config.atomic_cursor {
+                    let path = native.use_atomic_cursor_plane();
+                    crate::session_println!(
+                        "sophia_live_cursor_path schema=1 status=selected path={}",
+                        match path {
+                            sophia_backend_live::HardwareCursorPath::AtomicPlane => "atomic_plane",
+                            sophia_backend_live::HardwareCursorPath::LegacyIoctl => "legacy_ioctl",
+                        }
+                    );
+                }
             }
             let logical_output_progress = native_scanout.as_ref().map(|native| {
                 logical_startup_output_progress(native.heads.iter().map(|head| {

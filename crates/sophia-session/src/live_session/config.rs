@@ -110,6 +110,7 @@ struct PersistentXtermSessionConfig {
     m4_reject_first_present: bool,
     /// Whether this session drives an overlay over a directly scanned frame to
     /// prove the return to composition. Off in every product session.
+    pub(crate) atomic_cursor: bool,
     pub(crate) direct_cursor_proof: bool,
     pub(crate) direct_overlay_proof: bool,
     /// How long the proof overlay stays up, in owner-loop ticks. Zero means
@@ -483,6 +484,12 @@ impl PersistentXtermSessionConfig {
         // Moves the cursor over frames the plane is scanning directly. The
         // roadmap claims the legacy ioctl keeps working there; no run has
         // moved a cursor to find out, and the replacement needs the baseline.
+        // Drive the cursor through the atomic path instead of the legacy
+        // ioctl. Opt-in for its first runs: archive 0004 proved the legacy
+        // path over directly scanned frames, and there is no reason for
+        // every session to change before one has shown the atomic path
+        // moving a cursor at all.
+        let atomic_cursor = args.iter().any(|arg| arg == "--atomic-cursor");
         let direct_cursor_proof = args.iter().any(|arg| arg == "--direct-cursor-proof");
         let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
         // How long the overlay stays up. A run proving the transition wants
@@ -785,6 +792,9 @@ impl PersistentXtermSessionConfig {
         if client.is_some() && inject_text.is_some() && expect_client_stdout.is_none() {
             return Err("--client with --inject-text requires --expect-client-stdout".into());
         }
+        if atomic_cursor && (!native_scanout || !normal_session) {
+            return Err("--atomic-cursor requires --native-scanout and --session-mode=normal".into());
+        }
         if direct_cursor_proof && (!native_scanout || !normal_session) {
             return Err(
                 "--direct-cursor-proof requires --native-scanout and --session-mode=normal".into(),
@@ -904,6 +914,7 @@ impl PersistentXtermSessionConfig {
             inject_surface_resize_sequence,
             m4_first_acquire_delay,
             m4_reject_first_present,
+            atomic_cursor,
             direct_cursor_proof,
             direct_overlay_proof,
             direct_overlay_hold_ticks,
