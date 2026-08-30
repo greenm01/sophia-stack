@@ -60,6 +60,12 @@ direct-scanout-cost-gate:
 direct-scanout-cursor-gate:
     @cargo --quiet xtask conformance gate direct-scanout --cursor
 
+# The same proof with the cursor on an atomic plane instead of the legacy
+# ioctl. Run from tty3. Compare its motion-to-submit against archive 0004,
+# which is the same sweep on the path this one replaces.
+direct-scanout-atomic-cursor-gate:
+    @cargo --quiet xtask conformance gate direct-scanout --atomic-cursor
+
 # Re-verify an archived direct-scanout run, newest by default.
 direct-scanout-archive run='':
     @cargo --quiet xtask conformance verify direct-scanout-archive "{{ run }}"

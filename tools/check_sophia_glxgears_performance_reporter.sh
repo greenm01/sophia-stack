@@ -98,6 +98,36 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     exit 1
 fi
 
+# The atomic path passes this gate, and is held to its own shape rather than
+# the legacy one. An atomic cursor cannot commit while a flip is in flight --
+# the kernel serializes commits per CRTC -- so a positive overlap count there
+# is a contradiction, where on the legacy ioctl it is the evidence that
+# pointer motion happened at all.
+sed -e 's/path=legacy_ioctl/path=atomic_plane/' \
+    -e 's/updates_primary_in_flight=80/updates_primary_in_flight=0/' \
+    "$FIXTURE" >"$MUTATED"
+if ! "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter rejected a valid atomic cursor run" >&2
+    exit 1
+fi
+
+sed 's/path=legacy_ioctl/path=atomic_plane/' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted an atomic cursor committed during a flip" >&2
+    exit 1
+fi
+
+# Shaped so only the path restriction can reject it: with a zero overlap
+# count it would satisfy the atomic branch, so if it is refused, it is refused
+# for being neither hardware path.
+sed -e 's/path=legacy_ioctl/path=composited/' \
+    -e 's/updates_primary_in_flight=80/updates_primary_in_flight=0/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted a cursor that was neither hardware path" >&2
+    exit 1
+fi
+
 sed 's/mean_fps=59.999/mean_fps=54.999/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     echo "glxgears reporter accepted pointer-motion cadence below 55 FPS" >&2

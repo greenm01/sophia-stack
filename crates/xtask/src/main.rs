@@ -175,6 +175,9 @@ fn gate_direct_scanout(arguments: &[String]) -> Result<(), String> {
     if probe.cursor {
         println!("Cursor proof: the session moves a cursor over directly scanned frames.");
     }
+    if probe.atomic_cursor {
+        println!("Atomic cursor: the cursor rides a plane rather than the legacy ioctl.");
+    }
     let report = direct_scanout_gate::run_gate_with(&repo, &probe)?;
     println!("Sophia commit:  {}", report.source_commit);
     println!("Sophia binary:  {}", report.sophia_sha256);

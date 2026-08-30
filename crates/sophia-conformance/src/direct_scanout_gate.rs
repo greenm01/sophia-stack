@@ -35,6 +35,11 @@ pub struct Probe {
     /// Independent of the overlay: this proof wants frames going *to* the
     /// plane throughout, not a return to composition in the middle.
     pub cursor: bool,
+    /// Whether the cursor rides the atomic path rather than the legacy
+    /// ioctl. Implies `cursor`: the proof is what shows the path works, so
+    /// asking for the path without the proof would change how a session
+    /// behaves and check nothing.
+    pub atomic_cursor: bool,
 }
 
 impl Default for Probe {
@@ -47,6 +52,7 @@ impl Default for Probe {
             overlay_proof: false,
             cost: false,
             cursor: false,
+            atomic_cursor: false,
         }
     }
 }
@@ -65,6 +71,7 @@ impl Probe {
         let mut overlay_proof = false;
         let mut cost = false;
         let mut cursor = false;
+        let mut atomic_cursor = false;
         let arguments = arguments
             .iter()
             .filter(|argument| match argument.as_str() {
@@ -78,6 +85,10 @@ impl Probe {
                 }
                 "--cursor" => {
                     cursor = true;
+                    false
+                }
+                "--atomic-cursor" => {
+                    atomic_cursor = true;
                     false
                 }
                 _ => true,
@@ -111,7 +122,8 @@ impl Probe {
             ));
         }
         probe.cost = cost;
-        probe.cursor = cursor;
+        probe.cursor = cursor || atomic_cursor;
+        probe.atomic_cursor = atomic_cursor;
         // A cost run is an overlay run that holds the window open long
         // enough to have a composed population, so asking for one implies
         // the other rather than requiring both to be spelled.
@@ -143,6 +155,9 @@ pub fn run_probe(repo: &Path, probe: &Probe, client: Option<&Path>) -> Result<()
     }
     if probe.cursor {
         command.env("SOPHIA_DIRECT_CURSOR_PROOF", "1");
+    }
+    if probe.atomic_cursor {
+        command.env("SOPHIA_ATOMIC_CURSOR", "1");
     }
     if probe.cost {
         command.env(

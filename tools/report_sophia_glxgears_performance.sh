@@ -23,6 +23,13 @@ positive_field() {
     printf '%s\n' "$value"
 }
 
+field() {
+    local line="$1" key="$2" value
+    value="$(rendering_performance_field "$line" "$key")" ||
+        fail "completion lacks $key"
+    printf '%s\n' "$value"
+}
+
 nonnegative_field() {
     local line="$1" key="$2" value
     value="$(rendering_performance_field "$line" "$key")" ||
@@ -191,19 +198,40 @@ for assignment in \
         fail "native resource metrics do not contain $assignment"
 done
 
+# Either cursor path satisfies this gate.
+#
+# What it is for is that pointer motion does not perturb frame pacing, and
+# that holds whichever way the cursor reaches its plane. The two assertions
+# that used to sit here were about the legacy path's shape rather than about
+# cadence: it required `path=legacy_ioctl` literally, and required
+# `updates_primary_in_flight` to be strictly positive -- an ioctl moving a
+# cursor while a flip is outstanding. On the atomic path that count is zero
+# by construction, because the kernel serializes commits per CRTC and the
+# cursor waits instead. Keeping them would have failed the atomic path for
+# behaving correctly.
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session_cursor schema=5 path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
-[[ -n "$cursor" ]] || fail "missing legacy hardware-cursor metrics"
+[[ -n "$cursor" ]] || fail "missing hardware-cursor metrics"
+cursor_path="$(field "$cursor" path)"
 cursor_updates_primary_in_flight="$(
-    positive_field "$cursor" updates_primary_in_flight
+    nonnegative_field "$cursor" updates_primary_in_flight
 )"
+# The legacy path overlaps flips and the atomic path cannot; each is checked
+# for its own shape rather than both for one.
+if [[ "$cursor_path" == legacy_ioctl ]]; then
+    ((cursor_updates_primary_in_flight > 0)) ||
+        fail "the legacy cursor never overlapped a page flip, so pointer motion was not exercised"
+else
+    ((cursor_updates_primary_in_flight == 0)) ||
+        fail "an atomic cursor committed while a flip was in flight"
+fi
 cursor_max_update_msec="$(nonnegative_field "$cursor" max_update_msec)"
 cursor_hardware_failures="$(nonnegative_field "$cursor" hardware_failures)"
 ((cursor_max_update_msec <= 20)) ||
-    fail "legacy cursor ioctl exceeded the 20 ms steady-update budget"
+    fail "cursor updates exceeded the 20 ms steady-update budget"
 ((cursor_hardware_failures == 0)) || fail "hardware cursor update failed"
 
 printf '%s\n' \
-    "sophia_glxgears_performance schema=5 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers snapshot_captures=$snapshot_captures snapshot_promotions=$snapshot_promotions import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec cursor_updates_primary_in_flight=$cursor_updates_primary_in_flight cursor_max_update_msec=$cursor_max_update_msec"
+    "sophia_glxgears_performance schema=6 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers snapshot_captures=$snapshot_captures snapshot_promotions=$snapshot_promotions import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec cursor_path=$cursor_path cursor_updates_primary_in_flight=$cursor_updates_primary_in_flight cursor_max_update_msec=$cursor_max_update_msec"
