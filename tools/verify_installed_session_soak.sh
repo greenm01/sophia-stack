@@ -278,7 +278,7 @@ for assignment in pending=0 release_barrier_pending=0 repeat_active_seats=0 \
     }
 done
 mapfile -t cursor_summaries < <(
-    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' \
+    grep -E '^sophia_live_session_cursor schema=5 path=(legacy_ioctl|atomic_plane) ' \
         "$session_log" || true
 )
 (( ${#cursor_summaries[@]} == 1 )) || {

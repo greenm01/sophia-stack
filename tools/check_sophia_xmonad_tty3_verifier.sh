@@ -132,4 +132,31 @@ if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
     exit 1
 fi
 
+# The atomic cursor path, held to its own shape: zero overlap is correct
+# there and would mean a motionless pointer on the legacy ioctl.
+sed -e 's/path=legacy_ioctl/path=atomic_plane/' \
+    -e 's/updates_primary_in_flight=[0-9]*/updates_primary_in_flight=0/' \
+    "$SESSION" >"$TEMP_FILE"
+if ! "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "xmonad verifier rejected a valid atomic cursor session" >&2
+    exit 1
+fi
+
+sed 's/path=legacy_ioctl/path=atomic_plane/' "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "xmonad verifier accepted an atomic cursor overlapping a flip" >&2
+    exit 1
+fi
+
+sed -e 's/path=legacy_ioctl/path=composited/' \
+    -e 's/updates_primary_in_flight=[0-9]*/updates_primary_in_flight=0/' \
+    "$SESSION" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_xmonad_tty3.sh" \
+    "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
+    echo "xmonad verifier accepted a cursor on neither hardware path" >&2
+    exit 1
+fi
+
 echo "xmonad TTY3 verifier fixtures passed"

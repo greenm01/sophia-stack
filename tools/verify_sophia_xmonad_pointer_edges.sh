@@ -83,13 +83,25 @@ for transition in \
         fail "free internal-seam transition is missing: $transition"
 done
 
+# Either hardware cursor path, each held to its own shape.
+#
+# The legacy ioctl moves a cursor whenever it likes, so overlapping a page
+# flip is the evidence that pointer motion happened at all. An atomic cursor
+# cannot overlap one -- the kernel serializes commits per CRTC and it waits
+# instead -- so the same count being positive there would mean a commit the
+# driver should have refused.
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=5 path=legacy_ioctl ' "$SESSION_LOG" |
-        tail -n 1
+    grep -E '^sophia_live_session_cursor schema=5 path=(legacy_ioctl|atomic_plane) ' \
+        "$SESSION_LOG" | tail -n 1
 )"
 [[ -n "$cursor" ]] || fail "final cursor health record is missing"
+cursor_path="$(field "$cursor" path)"
 require_at_least "$cursor" hardware_updates 1
-require_at_least "$cursor" updates_primary_in_flight 1
+if [[ "$cursor_path" == legacy_ioctl ]]; then
+    require_at_least "$cursor" updates_primary_in_flight 1
+else
+    require_eq "$cursor" updates_primary_in_flight 0
+fi
 require_eq "$cursor" hidden_updates 0
 require_eq "$cursor" hardware_failures 0
 
