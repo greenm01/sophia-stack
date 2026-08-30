@@ -117,6 +117,10 @@ struct FakeMultiNativeKmsSelectionDevice {
     crtcs: Vec<drm::control::crtc::Handle>,
     encoders: Vec<(drm::control::encoder::Handle, LibdrmNativeEncoderSnapshot)>,
     planes: Vec<(drm::control::plane::Handle, LibdrmNativePlaneSnapshot)>,
+    /// Planes this card reports as cursor planes. Everything else answers
+    /// `Primary`, which is what every test predating cursor discovery
+    /// assumed.
+    cursor_planes: Vec<drm::control::plane::Handle>,
 }
 
 impl LibdrmNativeKmsSelectionDevice for FakeMultiNativeKmsSelectionDevice {
@@ -166,6 +170,9 @@ impl LibdrmNativeKmsSelectionDevice for FakeMultiNativeKmsSelectionDevice {
         &self,
         plane: drm::control::plane::Handle,
     ) -> io::Result<Option<drm::control::PlaneType>> {
+        if self.cursor_planes.contains(&plane) {
+            return Ok(Some(drm::control::PlaneType::Cursor));
+        }
         Ok(self
             .planes
             .iter()

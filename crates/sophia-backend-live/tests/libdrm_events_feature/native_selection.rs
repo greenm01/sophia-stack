@@ -434,6 +434,7 @@ fn native_multi_output_selection_is_deterministic_and_disjoint() {
             (plane_b, LibdrmNativePlaneSnapshot::new([crtc_b])),
             (plane_a, LibdrmNativePlaneSnapshot::new([crtc_a])),
         ],
+        cursor_planes: Vec::new(),
     };
 
     let selected = select_native_primary_plane_targets(&device);
@@ -500,5 +501,195 @@ fn an_empty_group_identifies_no_output() {
     assert_eq!(
         NativeMirrorGrouping::new([vec!["DP-1".to_owned()], Vec::new()]),
         Err(NativeMirrorGroupingError::EmptyGroup)
+    );
+}
+
+/// A card that offers cursor planes has them discovered beside the primaries,
+/// one per CRTC and never shared.
+///
+/// Discovery only; nothing commits a cursor plane yet. A card without one --
+/// or whose single cursor plane is already serving another head -- keeps the
+/// legacy ioctl, so the absence has to be an ordinary answer rather than a
+/// failure.
+#[test]
+fn native_selection_discovers_a_cursor_plane_per_crtc() {
+    let connector_a = drm::control::from_u32::<drm::control::connector::Handle>(21).unwrap();
+    let connector_b = drm::control::from_u32::<drm::control::connector::Handle>(22).unwrap();
+    let encoder_a = drm::control::from_u32::<drm::control::encoder::Handle>(31).unwrap();
+    let encoder_b = drm::control::from_u32::<drm::control::encoder::Handle>(32).unwrap();
+    let crtc_a = drm::control::from_u32::<drm::control::crtc::Handle>(41).unwrap();
+    let crtc_b = drm::control::from_u32::<drm::control::crtc::Handle>(42).unwrap();
+    let plane_a = drm::control::from_u32::<drm::control::plane::Handle>(51).unwrap();
+    let plane_b = drm::control::from_u32::<drm::control::plane::Handle>(52).unwrap();
+    let cursor_a = drm::control::from_u32::<drm::control::plane::Handle>(61).unwrap();
+    let cursor_b = drm::control::from_u32::<drm::control::plane::Handle>(62).unwrap();
+
+    let device = FakeMultiNativeKmsSelectionDevice {
+        connectors: vec![
+            (
+                connector_a,
+                LibdrmNativeConnectorSnapshot::new(
+                    true,
+                    Some(encoder_a),
+                    [encoder_a],
+                    Some(Size {
+                        width: 1280,
+                        height: 720,
+                    }),
+                ),
+            ),
+            (
+                connector_b,
+                LibdrmNativeConnectorSnapshot::new(
+                    true,
+                    Some(encoder_b),
+                    [encoder_b],
+                    Some(Size {
+                        width: 1920,
+                        height: 1080,
+                    }),
+                ),
+            ),
+        ],
+        crtcs: vec![crtc_a, crtc_b],
+        encoders: vec![
+            (encoder_a, LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a])),
+            (encoder_b, LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b])),
+        ],
+        planes: vec![
+            (plane_a, LibdrmNativePlaneSnapshot::new([crtc_a])),
+            (plane_b, LibdrmNativePlaneSnapshot::new([crtc_b])),
+            (cursor_a, LibdrmNativePlaneSnapshot::new([crtc_a])),
+            (cursor_b, LibdrmNativePlaneSnapshot::new([crtc_b])),
+        ],
+        cursor_planes: vec![cursor_a, cursor_b],
+    };
+
+    let selected = select_native_primary_plane_targets(&device);
+    assert_eq!(
+        selected.status,
+        LibdrmNativePrimaryPlaneSelectionSetStatus::SelectedAll
+    );
+    assert_eq!(selected.selections.len(), 2);
+    assert_eq!(
+        selected.selections[0].cursor_plane().map(u32::from),
+        Some(61)
+    );
+    assert_eq!(
+        selected.selections[1].cursor_plane().map(u32::from),
+        Some(62)
+    );
+    assert_ne!(
+        selected.selections[0].cursor_plane(),
+        selected.selections[1].cursor_plane(),
+        "a cursor plane drives one CRTC at a time"
+    );
+}
+
+/// A card with no cursor plane selects exactly as before. The legacy ioctl is
+/// still the path there, and discovery reporting nothing is the ordinary
+/// answer rather than a refusal.
+#[test]
+fn native_selection_without_a_cursor_plane_is_unchanged() {
+    let connector = drm::control::from_u32::<drm::control::connector::Handle>(21).unwrap();
+    let encoder = drm::control::from_u32::<drm::control::encoder::Handle>(31).unwrap();
+    let crtc = drm::control::from_u32::<drm::control::crtc::Handle>(41).unwrap();
+    let plane = drm::control::from_u32::<drm::control::plane::Handle>(51).unwrap();
+
+    let device = FakeMultiNativeKmsSelectionDevice {
+        connectors: vec![(
+            connector,
+            LibdrmNativeConnectorSnapshot::new(
+                true,
+                Some(encoder),
+                [encoder],
+                Some(Size {
+                    width: 1280,
+                    height: 720,
+                }),
+            ),
+        )],
+        crtcs: vec![crtc],
+        encoders: vec![(encoder, LibdrmNativeEncoderSnapshot::new(Some(crtc), [crtc]))],
+        planes: vec![(plane, LibdrmNativePlaneSnapshot::new([crtc]))],
+        cursor_planes: Vec::new(),
+    };
+
+    let selected = select_native_primary_plane_targets(&device);
+    assert_eq!(
+        selected.status,
+        LibdrmNativePrimaryPlaneSelectionSetStatus::SelectedAll
+    );
+    assert_eq!(selected.selections[0].plane_id(), 51);
+    assert_eq!(selected.selections[0].cursor_plane(), None);
+}
+
+/// One cursor plane between two CRTCs goes to the first, and the second head
+/// keeps the legacy path rather than sharing it.
+#[test]
+fn a_single_cursor_plane_is_not_shared_between_heads() {
+    let connector_a = drm::control::from_u32::<drm::control::connector::Handle>(21).unwrap();
+    let connector_b = drm::control::from_u32::<drm::control::connector::Handle>(22).unwrap();
+    let encoder_a = drm::control::from_u32::<drm::control::encoder::Handle>(31).unwrap();
+    let encoder_b = drm::control::from_u32::<drm::control::encoder::Handle>(32).unwrap();
+    let crtc_a = drm::control::from_u32::<drm::control::crtc::Handle>(41).unwrap();
+    let crtc_b = drm::control::from_u32::<drm::control::crtc::Handle>(42).unwrap();
+    let plane_a = drm::control::from_u32::<drm::control::plane::Handle>(51).unwrap();
+    let plane_b = drm::control::from_u32::<drm::control::plane::Handle>(52).unwrap();
+    let shared_cursor = drm::control::from_u32::<drm::control::plane::Handle>(61).unwrap();
+
+    let device = FakeMultiNativeKmsSelectionDevice {
+        connectors: vec![
+            (
+                connector_a,
+                LibdrmNativeConnectorSnapshot::new(
+                    true,
+                    Some(encoder_a),
+                    [encoder_a],
+                    Some(Size {
+                        width: 1280,
+                        height: 720,
+                    }),
+                ),
+            ),
+            (
+                connector_b,
+                LibdrmNativeConnectorSnapshot::new(
+                    true,
+                    Some(encoder_b),
+                    [encoder_b],
+                    Some(Size {
+                        width: 1920,
+                        height: 1080,
+                    }),
+                ),
+            ),
+        ],
+        crtcs: vec![crtc_a, crtc_b],
+        encoders: vec![
+            (encoder_a, LibdrmNativeEncoderSnapshot::new(Some(crtc_a), [crtc_a])),
+            (encoder_b, LibdrmNativeEncoderSnapshot::new(Some(crtc_b), [crtc_b])),
+        ],
+        planes: vec![
+            (plane_a, LibdrmNativePlaneSnapshot::new([crtc_a])),
+            (plane_b, LibdrmNativePlaneSnapshot::new([crtc_b])),
+            (
+                shared_cursor,
+                LibdrmNativePlaneSnapshot::new([crtc_a, crtc_b]),
+            ),
+        ],
+        cursor_planes: vec![shared_cursor],
+    };
+
+    let selected = select_native_primary_plane_targets(&device);
+    assert_eq!(selected.selections.len(), 2);
+    assert_eq!(
+        selected.selections[0].cursor_plane().map(u32::from),
+        Some(61)
+    );
+    assert_eq!(
+        selected.selections[1].cursor_plane(),
+        None,
+        "the second head cannot borrow a cursor plane the first is driving"
     );
 }

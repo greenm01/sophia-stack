@@ -22,6 +22,12 @@ pub struct LibdrmNativePrimaryPlaneSelection {
     pub(crate) connector: drm::control::connector::Handle,
     pub(crate) crtc: drm::control::crtc::Handle,
     pub(crate) plane: drm::control::plane::Handle,
+    /// The cursor plane on this CRTC, when the card offers one.
+    ///
+    /// Optional because a card need not have one and because every existing
+    /// caller composing a selection by hand predates it. Discovery attaches
+    /// it; nothing yet commits it.
+    pub(crate) cursor: Option<drm::control::plane::Handle>,
     pub(crate) size: Size,
     pub(crate) mode: Option<drm::control::Mode>,
 }
@@ -43,9 +49,21 @@ impl LibdrmNativePrimaryPlaneSelection {
             connector,
             crtc,
             plane,
+            cursor: None,
             size,
             mode,
         }
+    }
+
+    /// The same selection with its CRTC's cursor plane attached.
+    pub const fn with_cursor_plane(mut self, cursor: drm::control::plane::Handle) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    /// The cursor plane discovery found for this CRTC, if any.
+    pub const fn cursor_plane(self) -> Option<drm::control::plane::Handle> {
+        self.cursor
     }
 
     pub const fn size(self) -> Size {
@@ -198,6 +216,7 @@ where
                             connector,
                             crtc,
                             plane,
+                            cursor: None,
                             size,
                             mode: snapshot.native_mode,
                         });
@@ -213,8 +232,34 @@ where
             }
         }
         if let Some(selection) = selected {
+            // The cursor plane for the same CRTC, when the card has one to
+            // spare. A card without one, or whose only cursor plane is
+            // already serving another head, simply keeps the legacy path --
+            // discovery reports what exists rather than requiring it.
+            let cursor = match select_plane_for_crtc(
+                device,
+                &planes,
+                selection.crtc,
+                drm::control::PlaneType::Cursor,
+                &used_planes,
+            ) {
+                Ok(cursor) => cursor,
+                Err(()) => {
+                    return selection_set_failure(
+                        LibdrmNativePrimaryPlaneSelectionSetStatus::ReadFailed,
+                        connected_connectors,
+                    );
+                }
+            };
+            let selection = match cursor {
+                Some(cursor) => selection.with_cursor_plane(cursor),
+                None => selection,
+            };
             used_crtcs.push(selection.crtc);
             used_planes.push(selection.plane);
+            if let Some(cursor) = selection.cursor {
+                used_planes.push(cursor);
+            }
             selections.push(selection);
         }
     }
@@ -308,12 +353,28 @@ where
                         };
                     }
                 };
+                let cursor = match select_plane_for_crtc(
+                    device,
+                    &planes,
+                    crtc,
+                    drm::control::PlaneType::Cursor,
+                    &[plane],
+                ) {
+                    Ok(cursor) => cursor,
+                    Err(()) => {
+                        return LibdrmNativePrimaryPlaneSelectionResult {
+                            status: LibdrmNativePrimaryPlaneSelectionStatus::ReadFailed,
+                            selection: None,
+                        };
+                    }
+                };
                 return LibdrmNativePrimaryPlaneSelectionResult {
                     status: LibdrmNativePrimaryPlaneSelectionStatus::Selected,
                     selection: Some(LibdrmNativePrimaryPlaneSelection {
                         connector,
                         crtc,
                         plane,
+                        cursor,
                         size,
                         mode: connector_snapshot.native_mode,
                     }),
@@ -346,7 +407,29 @@ fn select_primary_plane_for_crtc<D>(
 where
     D: LibdrmNativeKmsSelectionDevice,
 {
+    select_plane_for_crtc(device, planes, crtc, drm::control::PlaneType::Primary, &[])
+}
+
+/// The first plane of a given type this CRTC can drive, skipping any already
+/// claimed.
+///
+/// One function for both plane types because the question is the same one --
+/// which plane of this kind can this CRTC use -- and asking it twice in two
+/// shapes is how the two answers drift apart.
+fn select_plane_for_crtc<D>(
+    device: &D,
+    planes: &[drm::control::plane::Handle],
+    crtc: drm::control::crtc::Handle,
+    wanted: drm::control::PlaneType,
+    claimed: &[drm::control::plane::Handle],
+) -> Result<Option<drm::control::plane::Handle>, ()>
+where
+    D: LibdrmNativeKmsSelectionDevice,
+{
     for plane in planes.iter().copied() {
+        if claimed.contains(&plane) {
+            continue;
+        }
         let Ok(snapshot) = device.plane_snapshot(plane) else {
             return Err(());
         };
@@ -356,7 +439,7 @@ where
         let Ok(plane_type) = device.plane_type(plane) else {
             return Err(());
         };
-        if plane_type == Some(drm::control::PlaneType::Primary) {
+        if plane_type == Some(wanted) {
             return Ok(Some(plane));
         }
     }
