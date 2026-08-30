@@ -11,6 +11,7 @@ use sophia_protocol::{
     SurfaceContentSet, SurfaceContentVariant, SurfaceId, SurfaceRasterTransform,
     SurfaceTransaction, SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
+use std::sync::Arc;
 
 fn group(transaction: u64, surface: SurfaceId) -> LiveProductionAuthorityGroup {
     let transaction = TransactionId::from_raw(transaction);
@@ -119,7 +120,10 @@ fn production_group_matches_cpu_updates_to_every_content_variant() {
                 stride: u32::try_from(size.width * 4).unwrap(),
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0; usize::try_from(size.width * size.height * 4).unwrap()],
+                bytes: Arc::new(vec![
+                    0;
+                    usize::try_from(size.width * size.height * 4).unwrap()
+                ]),
             }));
     }
     authority.validate().unwrap();
@@ -145,7 +149,7 @@ fn in_flight_present_defers_only_later_work_for_the_same_surface() {
             stride: 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 2,
-            bytes: vec![1, 2, 3, 4],
+            bytes: Arc::new(vec![1, 2, 3, 4]),
         }));
     later_firefox.validate().unwrap();
     let unrelated_kitty = group(801, kitty);

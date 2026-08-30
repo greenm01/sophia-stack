@@ -9,6 +9,7 @@
 
 use std::fs::File;
 use std::os::fd::OwnedFd;
+use std::sync::Arc;
 use std::time::Instant;
 
 use sophia_backend_live::{
@@ -227,7 +228,10 @@ fn parked_present_released_after_a_late_admission() -> (
             stride: SIZE.width as u32 * 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0xff; (SIZE.width as usize) * (SIZE.height as usize) * 4],
+            bytes: Arc::new(vec![
+                0xff;
+                (SIZE.width as usize) * (SIZE.height as usize) * 4
+            ]),
         })])
         .unwrap();
 

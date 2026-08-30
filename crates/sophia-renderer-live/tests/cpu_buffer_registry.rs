@@ -3,6 +3,7 @@ use sophia_renderer_live::{
     LiveCpuBufferPatch, LiveCpuBufferPatchBatch, LiveCpuBufferPatchRegion, LiveCpuBufferRegistry,
     LiveCpuBufferRegistryError, LiveCpuBufferSource, LiveCpuBufferUpdate,
 };
+use std::sync::Arc;
 
 fn buffer(handle: u64, generation: u64) -> LiveCpuBufferSource {
     LiveCpuBufferSource {
@@ -14,7 +15,7 @@ fn buffer(handle: u64, generation: u64) -> LiveCpuBufferSource {
         stride: 8,
         format: u32::from_le_bytes(*b"XR24"),
         generation,
-        bytes: vec![0; 16],
+        bytes: Arc::new(vec![0; 16]),
     }
 }
 
@@ -64,7 +65,7 @@ fn replacement_and_patch_preserve_generation_order() {
 fn malformed_replacement_fails_closed() {
     let mut registry = LiveCpuBufferRegistry::new();
     let mut malformed = buffer(4, 1);
-    malformed.bytes.pop();
+    Arc::make_mut(&mut malformed.bytes).pop();
     assert_eq!(
         registry.apply(LiveCpuBufferUpdate::Replace(malformed)),
         Err(LiveCpuBufferRegistryError::InvalidBufferMetadata)
@@ -197,4 +198,212 @@ fn retention_drops_unreferenced_renderer_resources() {
     registry.retain_handles(|handle| handle == 2);
     assert!(registry.get(1).is_none());
     assert!(registry.get(2).is_some());
+}
+
+/// A lease keeps the pixels it was handed when a patch arrives.
+///
+/// The counterexample the model produces when the split is removed: a
+/// presentation is planned against a buffer, the client patches the same
+/// handle, and the presentation composes pixels from a generation it was never
+/// planned against. The bytes are shared, so nothing about the buffer's
+/// identity would have said the frame changed underneath it.
+///
+/// `NC1` in `validation/specula/stable-x-backing-lease-modeling-brief.md`,
+/// which violates `LeasedContentStable`.
+#[test]
+fn cow_split_preserves_leased_bytes() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    let mut base = buffer(11, 1);
+    Arc::make_mut(&mut base.bytes).fill(0xaa);
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(base))
+        .expect("the base must be admitted");
+
+    // A presentation takes the bytes it was planned against.
+    let leased = Arc::clone(&registry.get(11).unwrap().bytes);
+    assert_eq!(leased.as_slice(), [0xaa; 16]);
+
+    registry
+        .apply(LiveCpuBufferUpdate::PatchBatch(LiveCpuBufferPatchBatch {
+            handle: 11,
+            size: Size {
+                width: 2,
+                height: 2,
+            },
+            stride: 8,
+            format: u32::from_le_bytes(*b"XR24"),
+            generation: 2,
+            patches: vec![LiveCpuBufferPatchRegion {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 1,
+                },
+                bytes: vec![0xbb; 8],
+            }],
+        }))
+        .expect("the patch must be admitted");
+
+    let current = registry.get(11).unwrap();
+    assert_eq!(
+        current.bytes[..8],
+        [0xbb; 8],
+        "the registry must hold the patched row"
+    );
+    assert_eq!(
+        leased.as_slice(),
+        [0xaa; 16],
+        "a presentation still holding the buffer must read what it was handed"
+    );
+    assert!(
+        !Arc::ptr_eq(&leased, &current.bytes),
+        "the patch must land on a copy while the lease holds the original"
+    );
+}
+
+/// Once nothing else reads the bytes, a patch stops copying them.
+///
+/// This is the other half of the same guard, and the half that makes the
+/// optimization worth anything: a stable toplevel whose presentations retire
+/// before the next update patches one allocation forever. Checking allocation
+/// identity rather than a counter is what makes it a statement about copying.
+///
+/// `NC4` in the brief, which violates `LeasedAllocationsLive` when retirement
+/// stops tracking who still holds an allocation.
+#[test]
+fn patch_after_lease_release_mutates_in_place() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(buffer(12, 1)))
+        .expect("the base must be admitted");
+
+    let patch = |generation: u64, fill: u8| {
+        LiveCpuBufferUpdate::PatchBatch(LiveCpuBufferPatchBatch {
+            handle: 12,
+            size: Size {
+                width: 2,
+                height: 2,
+            },
+            stride: 8,
+            format: u32::from_le_bytes(*b"XR24"),
+            generation,
+            patches: vec![LiveCpuBufferPatchRegion {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 1,
+                },
+                bytes: vec![fill; 8],
+            }],
+        })
+    };
+
+    // Hold it, patch it, and let go: the split is expected here.
+    let leased = Arc::clone(&registry.get(12).unwrap().bytes);
+    registry.apply(patch(2, 0x11)).expect("first patch");
+    let after_split = Arc::as_ptr(&registry.get(12).unwrap().bytes);
+    drop(leased);
+
+    // With no holder left, every later patch writes into the same allocation.
+    for (index, generation) in (3..8).enumerate() {
+        registry
+            .apply(patch(generation, 0x20 + u8::try_from(index).unwrap()))
+            .expect("later patches");
+        assert_eq!(
+            Arc::as_ptr(&registry.get(12).unwrap().bytes),
+            after_split,
+            "patch at generation {generation} must reuse the allocation, not copy it"
+        );
+    }
+}
+
+/// A refused patch leaves the base alone, and does not copy it either.
+///
+/// The split must happen after validation. Splitting first would leave the
+/// registry pointing at a fresh allocation holding exactly the old pixels --
+/// correct, and a copy made for a write that never happened.
+#[test]
+fn a_refused_patch_neither_mutates_nor_copies_the_base() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(buffer(13, 1)))
+        .expect("the base must be admitted");
+    let before = Arc::clone(&registry.get(13).unwrap().bytes);
+
+    assert_eq!(
+        registry.apply(LiveCpuBufferUpdate::PatchBatch(LiveCpuBufferPatchBatch {
+            handle: 13,
+            size: Size {
+                width: 2,
+                height: 2,
+            },
+            stride: 8,
+            format: u32::from_le_bytes(*b"XR24"),
+            generation: 2,
+            patches: vec![LiveCpuBufferPatchRegion {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 2,
+                    height: 1,
+                },
+                // One byte short of the rectangle it claims.
+                bytes: vec![0xcc; 7],
+            }],
+        })),
+        Err(LiveCpuBufferRegistryError::InvalidPatchBytes)
+    );
+
+    let current = &registry.get(13).unwrap().bytes;
+    assert_eq!(
+        current.as_slice(),
+        [0; 16],
+        "a refused patch must not write"
+    );
+    assert!(
+        Arc::ptr_eq(&before, current),
+        "a refused patch must not copy the base either"
+    );
+}
+
+/// Dropping a handle does not invalidate a presentation still holding it.
+///
+/// A resize retires a handle and starts a new one, and residency
+/// reconciliation later drops the old entry. A frame queued against the old
+/// size was planned against those exact bytes and composes from them after the
+/// registry has forgotten the handle. Sharing the allocation is what makes the
+/// two facts compatible; owning it in the registry alone would make eviction a
+/// use-after-free in the safe-code sense of composing from a resurrected buffer.
+///
+/// `NC6` in `validation/specula/stable-x-backing-lease-modeling-brief.md`,
+/// which violates `LeasedAllocationsLive`.
+#[test]
+fn an_evicted_handle_keeps_its_bytes_for_whoever_still_holds_them() {
+    let mut registry = LiveCpuBufferRegistry::new();
+    let mut old_epoch = buffer(14, 1);
+    Arc::make_mut(&mut old_epoch.bytes).fill(0x7e);
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(old_epoch))
+        .expect("the pre-resize buffer must be admitted");
+
+    // A Present is planned against this handle at this size.
+    let queued = Arc::clone(&registry.get(14).unwrap().bytes);
+
+    // The resize starts a new handle, and reconciliation drops the old one.
+    registry
+        .apply(LiveCpuBufferUpdate::Replace(buffer(15, 1)))
+        .expect("the post-resize buffer must be admitted");
+    registry.retain_handles(|handle| handle == 15);
+
+    assert!(
+        registry.get(14).is_none(),
+        "the pre-resize handle must be gone from the registry"
+    );
+    assert_eq!(
+        queued.as_slice(),
+        [0x7e; 16],
+        "a queued Present must still compose the bytes it was planned against"
+    );
 }

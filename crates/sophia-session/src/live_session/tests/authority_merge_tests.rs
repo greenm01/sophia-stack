@@ -5,6 +5,7 @@
 // fail-closed boundaries that make merging safe.
 
 use super::*;
+use std::sync::Arc;
 
 fn content_batch(transaction: u64) -> XAuthorityObservedTransactionBatch {
     let mut batch = wm_update_coordinator_batch(TransactionId::from_raw(transaction));
@@ -26,7 +27,7 @@ fn cpu_buffer_replacement(handle: u64) -> sophia_x_authority::XAuthorityCpuBuffe
             stride: 8,
             format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0; 16],
+            bytes: Arc::new(vec![0; 16]),
         },
     )
 }

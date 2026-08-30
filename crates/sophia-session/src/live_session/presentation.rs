@@ -502,7 +502,9 @@ fn renderer_cpu_buffer_update(
                     stride: buffer.stride,
                     format: buffer.format,
                     generation: buffer.generation,
-                    bytes: buffer.bytes.clone(),
+                    // A refcount bump. The authority's snapshot and the registry's copy
+                    // share one allocation until one of them writes.
+                    bytes: std::sync::Arc::clone(&buffer.bytes),
                 },
             )
         }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn in_flight_renderer_source_keeps_cpu_content_variants() {
@@ -23,7 +24,7 @@ fn in_flight_renderer_source_keeps_cpu_content_variants() {
             stride: 64 * 4,
             format: sophia_renderer_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0x7f; 64 * 48 * 4],
+            bytes: Arc::new(vec![0x7f; 64 * 48 * 4]),
         },
     }];
     let dma_source = BufferSource::DmaBuf { handle: 3 };

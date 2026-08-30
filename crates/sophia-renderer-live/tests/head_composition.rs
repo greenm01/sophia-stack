@@ -18,6 +18,7 @@ use sophia_renderer_live::{
     LiveRendererImageId, lower_cpu_head_composition_plan, lower_head_composition_plan,
 };
 use std::os::fd::{AsRawFd, OwnedFd};
+use std::sync::Arc;
 
 fn plan() -> HeadCompositionPlan {
     let surface = SurfaceId::new(3, 1);
@@ -103,7 +104,7 @@ fn source(handle: u64) -> LiveCpuPresentationLayer {
             stride: 2_400,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 9,
-            bytes: vec![0; 2_400 * 450],
+            bytes: Arc::new(vec![0; 2_400 * 450]),
         },
     }
 }
@@ -224,7 +225,7 @@ fn cpu_source_of_the_wrong_size_is_still_refused() {
                 stride: 1_200,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 9,
-                bytes: vec![0; 1_200 * 450],
+                bytes: Arc::new(vec![0; 1_200 * 450]),
             }
             .into(),
         ),
@@ -303,7 +304,7 @@ fn production_scene_resolves_all_resident_cpu_variants_by_handle() {
         stride: u32::try_from(width * 4).unwrap(),
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
         generation,
-        bytes: vec![0; usize::try_from(width * height * 4).unwrap()],
+        bytes: Arc::new(vec![0; usize::try_from(width * height * 4).unwrap()]),
     };
     scene
         .apply_updates([

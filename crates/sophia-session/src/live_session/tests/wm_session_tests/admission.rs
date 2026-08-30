@@ -1,3 +1,4 @@
+use std::sync::Arc;
 #[test]
 fn pixel_silent_admission_retries_then_withdraws_without_an_owner_error() {
     let surface = SurfaceId::new(4, 1);
@@ -913,7 +914,7 @@ fn backing_admission_releases_cpu_replacement_before_selected_patch() {
             stride: 16,
             format: 0,
             generation: 1,
-            bytes: vec![0; 64],
+            bytes: Arc::new(vec![0; 64]),
         },
     );
     let patch = sophia_x_authority::XAuthorityCpuBufferUpdate::PatchBatch(

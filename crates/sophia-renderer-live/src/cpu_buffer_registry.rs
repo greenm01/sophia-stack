@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use sophia_protocol::{Rect, Size};
 
@@ -71,6 +72,14 @@ pub enum LiveCpuBufferRegistryError {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LiveCpuBufferRegistry {
     buffers: BTreeMap<u64, LiveCpuBufferSource>,
+    /// How often a patch found its bytes still being read and had to copy.
+    ///
+    /// Zero is the steady state and the interesting number: a stable toplevel
+    /// whose presentations retire before its next update patches in place
+    /// forever. A count that tracks the update count means presentations are
+    /// outliving the updates that follow them, which is real work but not the
+    /// work this path was optimized for.
+    cow_splits: u64,
 }
 
 impl LiveCpuBufferRegistry {
@@ -239,6 +248,11 @@ fn apply_patch_region(
     let row_bytes = width
         .checked_mul(4)
         .ok_or(LiveCpuBufferRegistryError::InvalidPatchBounds)?;
+    // After validation, never before: a patch that is going to be refused must
+    // leave the base untouched, and splitting it would be a mutation. A batch
+    // splits on its first region and writes the rest into the copy, which is
+    // what keeps the batch one logical write.
+    let target_bytes = Arc::make_mut(&mut buffer.bytes);
     for row in 0..height {
         let source = row
             .checked_mul(row_bytes)
@@ -251,8 +265,7 @@ fn apply_patch_region(
         let target_end = target
             .checked_add(row_bytes)
             .ok_or(LiveCpuBufferRegistryError::InvalidPatchBounds)?;
-        buffer
-            .bytes
+        target_bytes
             .get_mut(target..target_end)
             .ok_or(LiveCpuBufferRegistryError::InvalidPatchBounds)?
             .copy_from_slice(&patch.bytes[source..source + row_bytes]);

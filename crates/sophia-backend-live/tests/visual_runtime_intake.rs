@@ -19,6 +19,7 @@ use sophia_protocol::{
     AuthorityKind, BufferSource, OutputId, Rect, Region, Size, SurfaceId, SurfaceTransaction,
     SurfaceTransactionReadiness, TransactionId, TransactionOutcome,
 };
+use std::sync::Arc;
 use std::{cell::Cell, io, time::Duration};
 
 fn output() -> HeadlessOutput {
@@ -213,7 +214,7 @@ fn provisional_extended_topology_composes_each_head_from_one_committed_scene() {
             stride: 640 * 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0x7f; 640 * 480 * 4],
+            bytes: Arc::new(vec![0x7f; 640 * 480 * 4]),
         })])
         .unwrap();
 

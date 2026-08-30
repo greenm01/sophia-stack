@@ -20,7 +20,7 @@ use sophia_renderer_live::{
 
 #[test]
 fn shared_cpu_source_moves_pixels_once_and_clones_the_arc() {
-    let bytes = vec![0x5a; 16];
+    let bytes = Arc::new(vec![0x5a; 16]);
     let allocation = bytes.as_ptr();
     let source: LiveSharedCpuBufferSource = LiveCpuBufferSource {
         handle: 7,
@@ -134,7 +134,7 @@ fn cpu_composition_blits_clipped_xrgb_layers() {
         stride: 8,
         format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
         generation: 1,
-        bytes: vec![0xff; 16],
+        bytes: Arc::new(vec![0xff; 16]),
     };
     let report = compose_live_cpu_frame(
         Size {
@@ -486,7 +486,7 @@ fn production_scene_composes_only_the_visible_surface_order() {
             stride: 8,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0x55; 16],
+            bytes: Arc::new(vec![0x55; 16]),
         })])
         .unwrap();
     scene.reconcile_buffer_residency(&[1]);
@@ -615,7 +615,7 @@ fn production_scene_reconfiguration_preserves_buffers_and_invalidates_frames() {
             stride: 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0xff; 4],
+            bytes: Arc::new(vec![0xff; 4]),
         })])
         .unwrap();
     scene
@@ -1010,7 +1010,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0x11; 8],
+                bytes: Arc::new(vec![0x11; 8]),
             }),
             LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
                 handle: 2,
@@ -1021,7 +1021,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0x22; 8],
+                bytes: Arc::new(vec![0x22; 8]),
             }),
         ])
         .unwrap();
@@ -1040,7 +1040,7 @@ fn production_scene_uses_snapshot_damage_for_changed_surface_only() {
             stride: 8,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 2,
-            bytes: vec![0x33; 8],
+            bytes: Arc::new(vec![0x33; 8]),
         })])
         .unwrap();
     let report = scene

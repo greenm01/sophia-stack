@@ -53,7 +53,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
             stride: 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0x11; 4],
+            bytes: Arc::new(vec![0x11; 4]),
         })])
         .unwrap();
     let first = scene
@@ -75,7 +75,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
             stride: 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 2,
-            bytes: vec![0x22; 4],
+            bytes: Arc::new(vec![0x22; 4]),
         })])
         .unwrap();
     let second = scene
@@ -98,7 +98,7 @@ fn production_scene_reuses_a_retired_frame_while_latest_pixels_are_shared() {
             stride: 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 3,
-            bytes: vec![0x33; 4],
+            bytes: Arc::new(vec![0x33; 4]),
         })])
         .unwrap();
     let third = scene

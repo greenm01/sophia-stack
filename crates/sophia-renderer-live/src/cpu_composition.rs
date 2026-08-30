@@ -5,6 +5,16 @@ use sophia_protocol::{Point, Rect, Region, Size};
 
 use crate::{LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888, LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888};
 
+/// A client's CPU pixels as the registry holds them.
+///
+/// The bytes are shared with whoever handed them over and with every
+/// presentation that has been given this buffer, and are copied only when one
+/// of those still reads them. `Arc::make_mut` in the registry's patch path is
+/// what keeps a handle's history immutable: a lease reads what it was handed
+/// until it retires, and the update that arrives meanwhile lands on a copy.
+///
+/// Equality compares contents rather than allocations. Two allocations may hold
+/// identical pixels, and a source is compared for what it says.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveCpuBufferSource {
     pub handle: u64,
@@ -12,7 +22,7 @@ pub struct LiveCpuBufferSource {
     pub stride: u32,
     pub format: u32,
     pub generation: u64,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<Vec<u8>>,
 }
 
 /// Immutable CPU pixels retained by an owned renderer-composition frame.
@@ -30,6 +40,11 @@ pub struct LiveSharedCpuBufferSource {
 }
 
 impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
+    /// A refcount bump, not a copy.
+    ///
+    /// This conversion runs per density variant per head per composed frame.
+    /// It used to move a `Vec` into a fresh `Arc`, which meant the caller had
+    /// already cloned the registry's bytes to have a `Vec` to give away.
     fn from(buffer: LiveCpuBufferSource) -> Self {
         Self {
             handle: buffer.handle,
@@ -37,7 +52,7 @@ impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
             stride: buffer.stride,
             format: buffer.format,
             generation: buffer.generation,
-            bytes: Arc::new(buffer.bytes),
+            bytes: buffer.bytes,
         }
     }
 }

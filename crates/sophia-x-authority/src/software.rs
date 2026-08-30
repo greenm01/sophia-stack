@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use sophia_protocol::{Rect, Size};
 
@@ -120,7 +121,7 @@ impl XSoftwareBufferStore {
                     stride: u32::try_from(stride).ok()?,
                     format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
                     generation,
-                    bytes: vec![0; byte_len],
+                    bytes: Arc::new(vec![0; byte_len]),
                 },
             );
             if let Some(previous) = previous
@@ -496,7 +497,7 @@ impl XSoftwareBufferStore {
                     stride: u32::try_from(stride).ok()?,
                     format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
                     generation,
-                    bytes: vec![0; byte_len],
+                    bytes: Arc::new(vec![0; byte_len]),
                 },
             );
         }
@@ -510,6 +511,21 @@ impl XSoftwareBufferStore {
         self.next_handle = handle.saturating_add(1).max(1);
         handle
     }
+}
+
+/// The bytes of a snapshot, ready to be written.
+///
+/// `Arc::make_mut` copies only when somebody else still holds the allocation,
+/// which is exactly the guarantee immutability used to buy with an
+/// unconditional clone: a presentation handed these bytes keeps reading them
+/// until it retires, and the drawable's next update lands on a copy.
+///
+/// In the steady state nothing else holds them -- a published snapshot is
+/// consumed by the session and the registry takes its own reference -- so a
+/// draw mutates in place and allocates nothing. Called once per operation
+/// rather than once per pixel, because the refcount check is per call.
+fn bytes_mut(buffer: &mut XAuthorityCpuBufferSnapshot) -> &mut Vec<u8> {
+    Arc::make_mut(&mut buffer.bytes)
 }
 
 fn copy_buffer_region(
@@ -554,6 +570,7 @@ fn copy_buffer_region(
     let byte_width = width.saturating_mul(4);
     let source_stride = usize::try_from(source.stride).unwrap_or(0);
     let destination_stride = usize::try_from(destination.stride).unwrap_or(0);
+    let destination_bytes = bytes_mut(destination);
     for row in 0..height {
         let source_offset = top
             .saturating_add(row)
@@ -569,8 +586,7 @@ fn copy_buffer_region(
         else {
             return None;
         };
-        let Some(destination_row) = destination
-            .bytes
+        let Some(destination_row) = destination_bytes
             .get_mut(destination_offset..destination_offset.saturating_add(byte_width))
         else {
             return None;
@@ -625,13 +641,14 @@ fn fill_rect(
         return;
     };
     let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let bytes = bytes_mut(buffer);
     for y in top..bottom {
         for x in left..right {
             if !pixel_in_clip(x, y, gc) {
                 continue;
             }
             let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
-            if let Some(target) = buffer.bytes.get_mut(offset..offset.saturating_add(4)) {
+            if let Some(target) = bytes.get_mut(offset..offset.saturating_add(4)) {
                 let destination = u32::from_le_bytes(target.try_into().unwrap_or([0; 4]));
                 let output = apply_raster_function(pixel, destination, gc);
                 target.copy_from_slice(&output.to_le_bytes());
@@ -661,7 +678,7 @@ fn set_pixel(
     }
     let stride = usize::try_from(buffer.stride).unwrap_or(0);
     let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
-    if let Some(target) = buffer.bytes.get_mut(offset..offset.saturating_add(4)) {
+    if let Some(target) = bytes_mut(buffer).get_mut(offset..offset.saturating_add(4)) {
         let destination = u32::from_le_bytes(target.try_into().unwrap_or([0; 4]));
         target.copy_from_slice(&apply_raster_function(pixel, destination, gc).to_le_bytes());
     }
@@ -836,6 +853,7 @@ fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect, data: &[u
         return;
     }
     let target_stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let target_bytes = bytes_mut(buffer);
     for y in top..bottom {
         let source_y = y.saturating_sub(usize::try_from(rect.y.max(0)).unwrap_or(0));
         let source_x = left.saturating_sub(usize::try_from(rect.x.max(0)).unwrap_or(0));
@@ -850,9 +868,8 @@ fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect, data: &[u
         let Some(source) = data.get(source_offset..source_offset.saturating_add(byte_len)) else {
             continue;
         };
-        if let Some(target) = buffer
-            .bytes
-            .get_mut(target_offset..target_offset.saturating_add(byte_len))
+        if let Some(target) =
+            target_bytes.get_mut(target_offset..target_offset.saturating_add(byte_len))
         {
             target.copy_from_slice(source);
         }

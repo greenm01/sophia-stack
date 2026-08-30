@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use sophia_session::resize_transaction::{
     PendingLayoutGeometryAuthority, PendingLayoutObservationMerge, ResizeRollbackCoordinator,
@@ -314,7 +315,7 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
         stride: 2_560,
         format: u32::from_le_bytes(*b"XR24"),
         generation: 91,
-        bytes: vec![1; 640 * 800 * 4],
+        bytes: Arc::new(vec![1; 640 * 800 * 4]),
     });
     let batch = XAuthorityObservedTransactionBatch {
         client: None,

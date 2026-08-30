@@ -31,7 +31,7 @@ fn fixed_text_snapshot(handle: u64, rows: &[&[u8]]) -> XAuthorityCpuBufferSnapsh
         stride: stride as u32,
         format: 0x3432_5258,
         generation: 1,
-        bytes,
+        bytes: std::sync::Arc::new(bytes),
     }
 }
 

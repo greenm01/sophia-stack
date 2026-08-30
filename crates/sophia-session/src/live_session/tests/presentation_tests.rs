@@ -4,6 +4,7 @@ use crate::live_session::{
     wm_update_coordinator_batch,
 };
 use sophia_protocol::TransactionId;
+use std::sync::Arc;
 
 fn layer_snapshots_from_committed(
     committed_surfaces: &[CommittedSurfaceState],
@@ -196,7 +197,7 @@ fn test_cpu_buffer(handle: u64, bytes: [u8; 8]) -> sophia_backend_live::LiveCpuB
         stride: 8,
         format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
         generation: 1,
-        bytes: bytes.to_vec(),
+        bytes: Arc::new(bytes.to_vec()),
     }
 }
 
@@ -368,7 +369,11 @@ fn same_iteration_software_admission_release_replaces_original_observation() {
             stride: u32::try_from(geometry.width * 4).unwrap(),
             format: sophia_backend_live::LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0; usize::try_from(geometry.width * geometry.height * 4).unwrap()],
+            bytes: Arc::new(vec![
+                0;
+                usize::try_from(geometry.width * geometry.height * 4)
+                    .unwrap()
+            ]),
         },
     );
     observed.cpu_buffer_updates.push(cpu_update.clone());

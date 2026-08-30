@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use sophia_protocol::{
     MAX_SURFACE_CONTENT_VARIANTS, Rect, Region, SURFACE_CONTENT_DENSITY_1X_MILLIS, Size,
@@ -531,7 +532,7 @@ impl XAuthorityRasterStore {
                     .map_err(|_| "surface raster stride overflow")?,
                 format: X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0; bytes],
+                bytes: Arc::new(vec![0; bytes]),
             };
             for command in &candidate.journal {
                 apply_command(&mut snapshot, *class, command);

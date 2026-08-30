@@ -1180,5 +1180,5 @@ fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
     };
     assert_eq!(snapshot.format, X_AUTHORITY_CPU_BUFFER_FORMAT_XRGB8888);
     assert_eq!(snapshot.stride, 24);
-    assert_eq!(snapshot.bytes, palette);
+    assert_eq!(snapshot.bytes.as_slice(), palette);
 }

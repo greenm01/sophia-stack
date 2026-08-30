@@ -173,6 +173,11 @@ impl LiveProductionVisualRuntime {
         Box<dyn std::error::Error>,
     > {
         let committed = self.production.committed_surfaces();
+        // One source per layer per head, and each carries the client's pixels.
+        // The clone is a refcount bump: the registry, this frame, and every
+        // other head share one allocation, and the client's next patch copies
+        // it only while these still read it. It used to copy the whole buffer
+        // here, then again inside the conversion.
         let sources = cpu_layers
             .iter()
             .map(

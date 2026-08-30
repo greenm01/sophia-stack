@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use sophia_protocol::{Rect, Size};
 
@@ -16,7 +17,19 @@ pub struct XAuthorityCpuBufferSnapshot {
     pub stride: u32,
     pub format: u32,
     pub generation: u64,
-    pub bytes: Vec<u8>,
+    /// Shared, and copied only when somebody else still reads the old bytes.
+    ///
+    /// Publishing a snapshot used to mean copying it: the authority cloned into
+    /// the transport, the session cloned into the registry, the scene cloned
+    /// per density variant, and the backend cloned again per head. Sharing the
+    /// allocation makes each of those a refcount bump, and `Arc::make_mut` at
+    /// the mutation sites keeps the guarantee that paid for the copies -- a
+    /// presentation handed these bytes keeps reading them until it retires.
+    ///
+    /// Equality still compares contents. Two allocations may hold identical
+    /// pixels, and a published snapshot is compared for what it says rather
+    /// than for where it lives.
+    pub bytes: Arc<Vec<u8>>,
 }
 
 /// What a core drawing operation did, without the pixels it did it to.
@@ -278,6 +291,10 @@ fn apply_packed_patch(
         return Err("CPU buffer patch byte length is invalid");
     }
     let target_stride = usize::try_from(buffer.stride).map_err(|_| "invalid target stride")?;
+    // Checked once per patch rather than once per row: a patch is a single
+    // logical write, and splitting it halfway would leave two allocations
+    // each holding part of the result.
+    let target_bytes = Arc::make_mut(&mut buffer.bytes);
     for (row, y) in (top..bottom).enumerate() {
         let source_offset = row.saturating_mul(row_bytes);
         let target_offset = y
@@ -287,8 +304,7 @@ fn apply_packed_patch(
             .bytes
             .get(source_offset..source_offset.saturating_add(row_bytes))
             .ok_or("CPU buffer patch source row is invalid")?;
-        let target = buffer
-            .bytes
+        let target = target_bytes
             .get_mut(target_offset..target_offset.saturating_add(row_bytes))
             .ok_or("CPU buffer patch target row is invalid")?;
         target.copy_from_slice(source);
@@ -331,6 +347,10 @@ fn apply_packed_patch_region(
         usize::try_from(patch.rect.height).map_err(|_| "CPU buffer patch height is invalid")?;
     let row_bytes = width.saturating_mul(4);
     let target_stride = usize::try_from(buffer.stride).map_err(|_| "invalid target stride")?;
+    // Checked once per patch rather than once per row: a patch is a single
+    // logical write, and splitting it halfway would leave two allocations
+    // each holding part of the result.
+    let target_bytes = Arc::make_mut(&mut buffer.bytes);
     for row in 0..height {
         let source_offset = row.saturating_mul(row_bytes);
         let target_offset = top
@@ -341,8 +361,7 @@ fn apply_packed_patch_region(
             .bytes
             .get(source_offset..source_offset.saturating_add(row_bytes))
             .ok_or("CPU buffer patch source row is invalid")?;
-        let target = buffer
-            .bytes
+        let target = target_bytes
             .get_mut(target_offset..target_offset.saturating_add(row_bytes))
             .ok_or("CPU buffer patch target row is invalid")?;
         target.copy_from_slice(source);

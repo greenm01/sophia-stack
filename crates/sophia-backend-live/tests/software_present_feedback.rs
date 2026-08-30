@@ -236,7 +236,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
             stride: 8,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: 1,
-            bytes: vec![0; 8],
+            bytes: Arc::new(vec![0; 8]),
         })],
     )
     .unwrap();
@@ -276,7 +276,7 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0; 8],
+                bytes: Arc::new(vec![0; 8]),
             })],
         )
         .unwrap();
@@ -336,7 +336,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
                 stride: 8,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 1,
-                bytes: vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff],
+                bytes: Arc::new(vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff]),
             })],
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),

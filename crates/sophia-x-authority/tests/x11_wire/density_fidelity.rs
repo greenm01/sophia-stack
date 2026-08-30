@@ -150,7 +150,7 @@ fn canonical_and_exact_750(
     };
 
     (
-        canonical.bytes.clone(),
+        canonical.bytes.as_ref().clone(),
         canonical.size,
         xrgb_pixels(&derived.bytes),
     )

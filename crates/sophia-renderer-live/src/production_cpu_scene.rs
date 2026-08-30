@@ -207,6 +207,10 @@ impl LiveProductionCpuScene {
     /// Resolves every resident CPU variant carried by committed surface
     /// content. Multiple entries may name one surface; a head-plan consumer
     /// selects the exact entry by its chosen protocol-neutral buffer handle.
+    ///
+    /// Each resolved layer shares the registry's allocation rather than copying
+    /// it. This runs per variant per composed frame, so the copy it used to make
+    /// was the largest single cost on the software presentation path.
     pub fn presentation_variant_layers(
         &self,
         committed_surfaces: &[CommittedSurfaceState],
@@ -691,7 +695,10 @@ impl LiveProductionCpuScene {
                     stride: u32::try_from(marker_stride)?,
                     format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                     generation: 1,
-                    bytes: vec![marker_byte; marker_stride.saturating_mul(marker_height)],
+                    bytes: std::sync::Arc::new(vec![
+                        marker_byte;
+                        marker_stride.saturating_mul(marker_height)
+                    ]),
                 },
             };
             let report = compose_live_cpu_frame(output.size, &[marker])
