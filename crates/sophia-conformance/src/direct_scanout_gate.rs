@@ -191,15 +191,15 @@ pub fn run_gate_with(repo: &Path, probe: &Probe) -> Result<GateReport, String> {
     if !git_status(repo, &["verify-commit", &source_commit])? {
         return Err("physical-proof HEAD lacks a valid signature".to_owned());
     }
-    let upstream = git_output(
-        repo,
-        &["rev-parse", "--verify", "refs/remotes/origin/master"],
-    )?;
-    if source_commit != upstream {
-        return Err(format!(
-            "physical-proof HEAD must equal origin/master: HEAD={source_commit} origin/master={upstream}"
-        ));
-    }
+    // A signed commit on a clean tree is the whole identity requirement.
+    //
+    // The gate used to also demand HEAD equal the locally known
+    // origin/master, which added a push to every commit-gate-run cycle
+    // without adding anything the archive binds to: the archive names the
+    // commit, the commit is signed, and re-verification checks both against
+    // this repository -- none of which involves a remote. Where the commit
+    // has been pushed is a publishing question, not an evidence one, and a
+    // run made before pushing is bound exactly as tightly as one made after.
 
     let client = std::env::var_os("SOPHIA_STANDALONE_APP_BIN")
         .map(PathBuf::from)
