@@ -9,8 +9,9 @@ use sophia_protocol::{Rect, SurfaceRasterClass};
 
 use crate::{X_GX_COPY, XFontFace, XGraphicsContextValues};
 
+use super::XAuthorityCpuBufferSnapshot;
+use super::raster_ops::{draw_line, draw_rectangle_outline, fill_rect, set_pixel};
 use super::raster_variants::{XAuthorityRasterCommand, XOwnedImagePixels, XOwnedTextDraw};
-use super::{XAuthorityCpuBufferSnapshot, draw_line, draw_rectangle_outline, fill_rect, set_pixel};
 
 pub(super) fn floor_edge(value: i32, density: u32) -> i32 {
     let scaled = i64::from(value).saturating_mul(i64::from(density));

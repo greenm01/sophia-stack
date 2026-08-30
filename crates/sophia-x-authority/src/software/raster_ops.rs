@@ -1,0 +1,447 @@
+//! Writing pixels into a CPU snapshot.
+//!
+//! The rules a drawing operation obeys once its damage has been accepted:
+//! clipping to the drawable, the graphics context's raster function and clip
+//! list, and the byte layout of an XRGB8888 buffer. Split from the store
+//! because the two answer different questions -- this one is how a pixel is
+//! written, the store is which buffer is published and what it owes.
+//!
+//! `raster_replay` drives these same primitives to project a retained command
+//! into a derived density store, which is why they are `pub(super)` rather
+//! than private here.
+
+use std::sync::Arc;
+
+use sophia_protocol::{Rect, Size};
+
+use crate::{XFontFace, XGraphicsContextValues, XPoint};
+
+use super::XAuthorityCpuBufferSnapshot;
+
+/// The bytes of a snapshot, ready to be written.
+///
+/// `Arc::make_mut` copies only when somebody else still holds the allocation,
+/// which is exactly the guarantee immutability used to buy with an
+/// unconditional clone: a presentation handed these bytes keeps reading them
+/// until it retires, and the drawable's next update lands on a copy.
+///
+/// In the steady state nothing else holds them -- a published snapshot is
+/// consumed by the session and the registry takes its own reference -- so a
+/// draw mutates in place and allocates nothing. Called once per operation
+/// rather than once per pixel, because the refcount check is per call.
+pub(super) fn bytes_mut(buffer: &mut XAuthorityCpuBufferSnapshot) -> &mut Vec<u8> {
+    Arc::make_mut(&mut buffer.bytes)
+}
+
+pub(super) fn copy_buffer_region(
+    source: &XAuthorityCpuBufferSnapshot,
+    destination: &mut XAuthorityCpuBufferSnapshot,
+    source_rect: Rect,
+    destination_x: i32,
+    destination_y: i32,
+) -> Option<Rect> {
+    let Some((mut left, mut top, right, bottom)) = clipped_bounds(source.size, source_rect) else {
+        return None;
+    };
+    let mut target_x = destination_x.saturating_add(i32::try_from(left).unwrap_or(i32::MAX));
+    let mut target_y = destination_y.saturating_add(i32::try_from(top).unwrap_or(i32::MAX));
+    if target_x < 0 {
+        left =
+            left.saturating_add(usize::try_from(target_x.saturating_neg()).unwrap_or(usize::MAX));
+        target_x = 0;
+    }
+    if target_y < 0 {
+        top = top.saturating_add(usize::try_from(target_y.saturating_neg()).unwrap_or(usize::MAX));
+        target_y = 0;
+    }
+    let Ok(target_x) = usize::try_from(target_x) else {
+        return None;
+    };
+    let Ok(target_y) = usize::try_from(target_y) else {
+        return None;
+    };
+    let Ok(destination_width) = usize::try_from(destination.size.width) else {
+        return None;
+    };
+    let Ok(destination_height) = usize::try_from(destination.size.height) else {
+        return None;
+    };
+    let width = right
+        .saturating_sub(left)
+        .min(destination_width.saturating_sub(target_x));
+    let height = bottom
+        .saturating_sub(top)
+        .min(destination_height.saturating_sub(target_y));
+    let byte_width = width.saturating_mul(4);
+    let source_stride = usize::try_from(source.stride).unwrap_or(0);
+    let destination_stride = usize::try_from(destination.stride).unwrap_or(0);
+    let destination_bytes = bytes_mut(destination);
+    for row in 0..height {
+        let source_offset = top
+            .saturating_add(row)
+            .saturating_mul(source_stride)
+            .saturating_add(left.saturating_mul(4));
+        let destination_offset = target_y
+            .saturating_add(row)
+            .saturating_mul(destination_stride)
+            .saturating_add(target_x.saturating_mul(4));
+        let Some(source_row) = source
+            .bytes
+            .get(source_offset..source_offset.saturating_add(byte_width))
+        else {
+            return None;
+        };
+        let Some(destination_row) = destination_bytes
+            .get_mut(destination_offset..destination_offset.saturating_add(byte_width))
+        else {
+            return None;
+        };
+        destination_row.copy_from_slice(source_row);
+    }
+    (width != 0 && height != 0).then_some(Rect {
+        x: i32::try_from(target_x).ok()?,
+        y: i32::try_from(target_y).ok()?,
+        width: i32::try_from(width).ok()?,
+        height: i32::try_from(height).ok()?,
+    })
+}
+
+pub(super) fn fill_rect(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+    pixel: u32,
+    gc: &XGraphicsContextValues,
+) {
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+        return;
+    };
+    let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let bytes = bytes_mut(buffer);
+    for y in top..bottom {
+        for x in left..right {
+            if !pixel_in_clip(x, y, gc) {
+                continue;
+            }
+            let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+            if let Some(target) = bytes.get_mut(offset..offset.saturating_add(4)) {
+                let destination = u32::from_le_bytes(target.try_into().unwrap_or([0; 4]));
+                let output = apply_raster_function(pixel, destination, gc);
+                target.copy_from_slice(&output.to_le_bytes());
+            }
+        }
+    }
+}
+
+pub(super) fn set_pixel(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    x: i32,
+    y: i32,
+    pixel: u32,
+    gc: &XGraphicsContextValues,
+) {
+    if x < 0 || y < 0 || x >= buffer.size.width || y >= buffer.size.height {
+        return;
+    }
+    let Ok(x) = usize::try_from(x) else {
+        return;
+    };
+    let Ok(y) = usize::try_from(y) else {
+        return;
+    };
+    if !pixel_in_clip(x, y, gc) {
+        return;
+    }
+    let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+    if let Some(target) = bytes_mut(buffer).get_mut(offset..offset.saturating_add(4)) {
+        let destination = u32::from_le_bytes(target.try_into().unwrap_or([0; 4]));
+        target.copy_from_slice(&apply_raster_function(pixel, destination, gc).to_le_bytes());
+    }
+}
+
+pub(super) fn draw_line(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    from: XPoint,
+    to: XPoint,
+    width: i32,
+    gc: &XGraphicsContextValues,
+) {
+    let mut x = i32::from(from.x);
+    let mut y = i32::from(from.y);
+    let target_x = i32::from(to.x);
+    let target_y = i32::from(to.y);
+    let dx = (target_x - x).abs();
+    let sx = if x < target_x { 1 } else { -1 };
+    let dy = -(target_y - y).abs();
+    let sy = if y < target_y { 1 } else { -1 };
+    let mut error = dx + dy;
+    loop {
+        let offset = width / 2;
+        fill_rect(
+            buffer,
+            Rect {
+                x: x.saturating_sub(offset),
+                y: y.saturating_sub(offset),
+                width,
+                height: width,
+            },
+            gc.foreground,
+            gc,
+        );
+        if x == target_x && y == target_y {
+            break;
+        }
+        let doubled = error.saturating_mul(2);
+        if doubled >= dy {
+            error += dy;
+            x += sx;
+        }
+        if doubled <= dx {
+            error += dx;
+            y += sy;
+        }
+    }
+}
+
+pub(super) fn draw_rectangle_outline(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    rectangle: Rect,
+    line_width: i32,
+    gc: &XGraphicsContextValues,
+) {
+    let half = line_width / 2;
+    let outer_left = rectangle.x.saturating_sub(half);
+    let outer_top = rectangle.y.saturating_sub(half);
+    let outer_right = rectangle
+        .x
+        .saturating_add(rectangle.width)
+        .saturating_sub(half)
+        .saturating_add(line_width);
+    let outer_bottom = rectangle
+        .y
+        .saturating_add(rectangle.height)
+        .saturating_sub(half)
+        .saturating_add(line_width);
+    let inner_left = outer_left.saturating_add(line_width);
+    let inner_top = outer_top.saturating_add(line_width);
+    let inner_right = outer_right.saturating_sub(line_width);
+    let inner_bottom = outer_bottom.saturating_sub(line_width);
+    let outer = Rect {
+        x: outer_left,
+        y: outer_top,
+        width: outer_right.saturating_sub(outer_left),
+        height: outer_bottom.saturating_sub(outer_top),
+    };
+    if inner_left >= inner_right || inner_top >= inner_bottom {
+        fill_rect(buffer, outer, gc.foreground, gc);
+        return;
+    }
+
+    // The four bands do not overlap. That keeps every pixel to one raster operation,
+    // and fill_rect clips each band before walking it.
+    for band in [
+        Rect {
+            x: outer_left,
+            y: outer_top,
+            width: outer.width,
+            height: inner_top.saturating_sub(outer_top),
+        },
+        Rect {
+            x: outer_left,
+            y: inner_bottom,
+            width: outer.width,
+            height: outer_bottom.saturating_sub(inner_bottom),
+        },
+        Rect {
+            x: outer_left,
+            y: inner_top,
+            width: inner_left.saturating_sub(outer_left),
+            height: inner_bottom.saturating_sub(inner_top),
+        },
+        Rect {
+            x: inner_right,
+            y: inner_top,
+            width: outer_right.saturating_sub(inner_right),
+            height: inner_bottom.saturating_sub(inner_top),
+        },
+    ] {
+        fill_rect(buffer, band, gc.foreground, gc);
+    }
+}
+
+pub(super) fn rectangle_outline_bounds(rectangles: &[Rect], line_width: u16) -> Option<Rect> {
+    let first = *rectangles.first()?;
+    let mut left = first.x;
+    let mut top = first.y;
+    let mut right = first.x.saturating_add(first.width);
+    let mut bottom = first.y.saturating_add(first.height);
+    for rectangle in &rectangles[1..] {
+        left = left.min(rectangle.x);
+        top = top.min(rectangle.y);
+        right = right.max(rectangle.x.saturating_add(rectangle.width));
+        bottom = bottom.max(rectangle.y.saturating_add(rectangle.height));
+    }
+    let width = i32::from(line_width.max(1));
+    let half = width / 2;
+    Some(Rect {
+        x: left.saturating_sub(half),
+        y: top.saturating_sub(half),
+        width: right.saturating_sub(left).saturating_add(width),
+        height: bottom.saturating_sub(top).saturating_add(width),
+    })
+}
+
+pub(super) fn point_bounds(points: &[XPoint], line_width: u16) -> Option<Rect> {
+    let first = *points.first()?;
+    let mut left = i32::from(first.x);
+    let mut top = i32::from(first.y);
+    let mut right = left;
+    let mut bottom = top;
+    for point in &points[1..] {
+        let x = i32::from(point.x);
+        let y = i32::from(point.y);
+        left = left.min(x);
+        top = top.min(y);
+        right = right.max(x);
+        bottom = bottom.max(y);
+    }
+    let width = i32::from(line_width.max(1));
+    let half = width / 2;
+    Some(Rect {
+        x: left.saturating_sub(half),
+        y: top.saturating_sub(half),
+        width: right.saturating_sub(left).saturating_add(width),
+        height: bottom.saturating_sub(top).saturating_add(width),
+    })
+}
+
+pub(super) fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect, data: &[u8]) {
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+        return;
+    };
+    let source_width = usize::try_from(rect.width.max(0)).unwrap_or(0);
+    let source_height = usize::try_from(rect.height.max(0)).unwrap_or(0);
+    let Some(source_stride) = source_width.checked_mul(4) else {
+        return;
+    };
+    if data.len() < source_stride.saturating_mul(source_height) {
+        return;
+    }
+    let target_stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let target_bytes = bytes_mut(buffer);
+    for y in top..bottom {
+        let source_y = y.saturating_sub(usize::try_from(rect.y.max(0)).unwrap_or(0));
+        let source_x = left.saturating_sub(usize::try_from(rect.x.max(0)).unwrap_or(0));
+        let width = right.saturating_sub(left);
+        let source_offset = source_y
+            .saturating_mul(source_stride)
+            .saturating_add(source_x.saturating_mul(4));
+        let target_offset = y
+            .saturating_mul(target_stride)
+            .saturating_add(left.saturating_mul(4));
+        let byte_len = width.saturating_mul(4);
+        let Some(source) = data.get(source_offset..source_offset.saturating_add(byte_len)) else {
+            continue;
+        };
+        if let Some(target) =
+            target_bytes.get_mut(target_offset..target_offset.saturating_add(byte_len))
+        {
+            target.copy_from_slice(source);
+        }
+    }
+}
+
+pub(super) fn draw_fixed_glyph(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    cell_x: i32,
+    cell_y: i32,
+    byte: u8,
+    pixel: u32,
+    font: XFontFace,
+    gc: &XGraphicsContextValues,
+) {
+    let rows = font.glyph_rows(byte);
+    for (row, bits) in rows.into_iter().enumerate() {
+        for column in 0..6 {
+            if bits & (1 << (5 - column)) == 0 {
+                continue;
+            }
+            fill_rect(
+                buffer,
+                Rect {
+                    x: cell_x.saturating_add(column),
+                    y: cell_y.saturating_add(i32::try_from(row).unwrap_or(0)),
+                    width: 1,
+                    height: 1,
+                },
+                pixel,
+                gc,
+            );
+        }
+    }
+}
+
+pub(super) fn clipped_bounds(size: Size, rect: Rect) -> Option<(usize, usize, usize, usize)> {
+    if size.width <= 0 || size.height <= 0 || rect.width <= 0 || rect.height <= 0 {
+        return None;
+    }
+    let left = rect.x.max(0).min(size.width);
+    let top = rect.y.max(0).min(size.height);
+    let right = rect.x.saturating_add(rect.width).max(0).min(size.width);
+    let bottom = rect.y.saturating_add(rect.height).max(0).min(size.height);
+    if right <= left || bottom <= top {
+        return None;
+    }
+    Some((
+        usize::try_from(left).ok()?,
+        usize::try_from(top).ok()?,
+        usize::try_from(right).ok()?,
+        usize::try_from(bottom).ok()?,
+    ))
+}
+
+pub(super) fn pixel_in_clip(x: usize, y: usize, gc: &XGraphicsContextValues) -> bool {
+    if gc.clip_rectangles.is_empty() {
+        return true;
+    }
+    let x = i32::try_from(x).unwrap_or(i32::MAX);
+    let y = i32::try_from(y).unwrap_or(i32::MAX);
+    gc.clip_rectangles.iter().any(|rect| {
+        let left = rect.x.saturating_add(i32::from(gc.clip_x_origin));
+        let top = rect.y.saturating_add(i32::from(gc.clip_y_origin));
+        x >= left
+            && y >= top
+            && x < left.saturating_add(rect.width)
+            && y < top.saturating_add(rect.height)
+    })
+}
+
+pub(super) fn apply_raster_function(
+    source: u32,
+    destination: u32,
+    gc: &XGraphicsContextValues,
+) -> u32 {
+    let source = source & 0x00ff_ffff;
+    let destination = destination & 0x00ff_ffff;
+    let result = match gc.function {
+        0 => 0,
+        1 => source & destination,
+        2 => source & !destination,
+        3 => source,
+        4 => !source & destination,
+        5 => destination,
+        6 => source ^ destination,
+        7 => source | destination,
+        8 => !(source | destination),
+        9 => !(source ^ destination),
+        10 => !destination,
+        11 => source | !destination,
+        12 => !source,
+        13 => !source | destination,
+        14 => !(source & destination),
+        15 => u32::MAX,
+        _ => source,
+    } & 0x00ff_ffff;
+    let mask = gc.plane_mask & 0x00ff_ffff;
+    ((result & mask) | (destination & !mask)) & 0x00ff_ffff
+}

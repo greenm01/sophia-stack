@@ -5,7 +5,7 @@ use sophia_protocol::{Rect, Size};
 
 use crate::XResourceId;
 
-use super::clipped_bounds;
+use super::raster_ops::clipped_bounds;
 
 pub const X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS: usize = 32;
 
