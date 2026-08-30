@@ -3,9 +3,11 @@ mod legacy_cursor {
     use std::io;
 
     use sophia_backend_live::{
-        ClassicHardwareCursorUpdate, HardwareCursorPath, LEGACY_HARDWARE_CURSOR_FALLBACK_EDGE,
+        ClassicHardwareCursorUpdate, CursorPlaneProbe, HardwareCursorPath,
+        LEGACY_HARDWARE_CURSOR_FALLBACK_EDGE,
         LegacyHardwareCursorAdmission, LegacyHardwareCursorController, LegacyHardwareCursorDevice,
-        LegacyHardwareCursorTarget, hardware_cursor_admission, legacy_hardware_cursor_admission,
+        LegacyHardwareCursorTarget, cursor_path_for_probe, hardware_cursor_admission,
+        legacy_hardware_cursor_admission,
         resolve_legacy_hardware_cursor_dimensions,
     };
 
@@ -243,6 +245,27 @@ mod legacy_cursor {
             hardware_cursor_admission(HardwareCursorPath::LegacyIoctl, true, true),
             LegacyHardwareCursorAdmission::Update,
             "the legacy path is what archive 0004 proved and does not change"
+        );
+    }
+
+    /// A card that will not take a cursor plane keeps the legacy ioctl.
+    ///
+    /// A refusal is not a failure: archive `0004` moved a cursor over
+    /// directly scanned frames on that path with no failures, so falling back
+    /// to it costs nothing that was working. Probed once rather than per
+    /// frame, because the compositor owns the cursor buffer and its format and
+    /// size stop changing after the first answer -- unlike direct scanout,
+    /// where the client owns the buffer and every eligibility edge needs its
+    /// own test.
+    #[test]
+    fn a_refused_cursor_plane_keeps_the_legacy_path() {
+        assert_eq!(
+            cursor_path_for_probe(CursorPlaneProbe::Refused),
+            HardwareCursorPath::LegacyIoctl
+        );
+        assert_eq!(
+            cursor_path_for_probe(CursorPlaneProbe::Accepted),
+            HardwareCursorPath::AtomicPlane
         );
     }
 

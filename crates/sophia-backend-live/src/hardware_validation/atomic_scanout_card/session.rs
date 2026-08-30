@@ -16,6 +16,10 @@ pub struct RealAtomicScanoutPageFlipSession {
     #[cfg(feature = "gbm-probe")]
     cursor_buffer: Option<drm::control::dumbbuffer::DumbBuffer>,
     #[cfg(feature = "gbm-probe")]
+    cursor_framebuffer: Option<drm::control::framebuffer::Handle>,
+    #[cfg(feature = "gbm-probe")]
+    cursor_plane_probe: Option<crate::CursorPlaneProbe>,
+    #[cfg(feature = "gbm-probe")]
     cursor_dimensions: Option<LegacyHardwareCursorDimensions>,
     #[cfg(feature = "gbm-probe")]
     cursor_planes: Option<Vec<RealAtomicCursorPlane>>,
@@ -106,6 +110,98 @@ impl RealAtomicScanoutPageFlipSession {
     }
 
     #[cfg(feature = "gbm-probe")]
+    /// A framebuffer over the cursor buffer, for a cursor plane to point at.
+    ///
+    /// The legacy path hands the dumb buffer straight to `set_cursor2`; an
+    /// atomic request needs a framebuffer handle instead. Same pixels, same
+    /// buffer -- only the way the plane is told about them differs, which is
+    /// why this is created beside the buffer rather than duplicating it.
+    #[cfg(feature = "gbm-probe")]
+    fn ensure_atomic_cursor_framebuffer(
+        &mut self,
+    ) -> io::Result<drm::control::framebuffer::Handle> {
+        use drm::control::Device as _;
+
+        if let Some(framebuffer) = self.cursor_framebuffer {
+            return Ok(framebuffer);
+        }
+        let buffer = self
+            .cursor_buffer
+            .as_ref()
+            .ok_or_else(|| io::Error::other("cursor buffer is unavailable"))?;
+        let framebuffer = self.card.add_framebuffer(buffer, 32, 32)?;
+        self.cursor_framebuffer = Some(framebuffer);
+        Ok(framebuffer)
+    }
+
+    /// Ask the driver once whether it will scan this cursor plane.
+    ///
+    /// A test commit, never a real one: the answer is about format and size,
+    /// which do not change after this, and paying for a test on every frame
+    /// would buy nothing. A refusal keeps the legacy path, which works.
+    #[cfg(feature = "gbm-probe")]
+    fn probe_atomic_cursor_plane(
+        &mut self,
+        cursor: &RealAtomicCursorPlane,
+        crtc: drm::control::crtc::Handle,
+    ) -> io::Result<crate::CursorPlaneProbe> {
+        use drm::control::Device as _;
+
+        let framebuffer = self.ensure_atomic_cursor_framebuffer()?;
+        let dimensions = self
+            .cursor_dimensions
+            .ok_or_else(|| io::Error::other("hardware cursor dimensions are unavailable"))?;
+        let Some(properties) = crate::discover_cursor_plane_properties(&self.card, cursor.plane)
+        else {
+            return Ok(crate::CursorPlaneProbe::Refused);
+        };
+        let mut request = drm::control::atomic::AtomicModeReq::new();
+        crate::add_cursor_plane_properties(
+            &mut request,
+            cursor.plane,
+            crtc,
+            properties,
+            Some(crate::LibdrmNativeCursorPlacement {
+                framebuffer,
+                x: 0,
+                y: 0,
+                width: dimensions.width,
+                height: dimensions.height,
+            }),
+        );
+        match self
+            .card
+            .atomic_commit(drm::control::AtomicCommitFlags::TEST_ONLY, request)
+        {
+            Ok(()) => Ok(crate::CursorPlaneProbe::Accepted),
+            Err(_) => Ok(crate::CursorPlaneProbe::Refused),
+        }
+    }
+
+    /// Probe the cursor plane of the first head that has one.
+    ///
+    /// One answer for the card, because the buffer and its format are the
+    /// card's, not the head's. A card whose heads disagree would be a
+    /// surprise worth finding on hardware rather than a case to invent here.
+    #[cfg(feature = "gbm-probe")]
+    fn probe_first_atomic_cursor_plane(&mut self) -> io::Result<crate::CursorPlaneProbe> {
+        let Some((cursor, crtc)) = self.cursor_planes.as_ref().and_then(|planes| {
+            planes
+                .first()
+                .cloned()
+                .zip(self.selections.first().map(|selection| selection.crtc))
+        }) else {
+            return Ok(crate::CursorPlaneProbe::Refused);
+        };
+        self.probe_atomic_cursor_plane(&cursor, crtc)
+    }
+
+    /// What the startup probe concluded, once it has run.
+    #[cfg(feature = "gbm-probe")]
+    pub const fn cursor_plane_probe(&self) -> Option<crate::CursorPlaneProbe> {
+        self.cursor_plane_probe
+    }
+
     fn detach_atomic_cursor_planes(&self, planes: &[RealAtomicCursorPlane]) -> io::Result<()> {
         use drm::control::Device as _;
 
@@ -201,6 +297,22 @@ impl RealAtomicScanoutPageFlipSession {
                 }
             }
             self.cursor_buffer = Some(buffer);
+        }
+        // Ask the card once whether it would scan a cursor plane, and record
+        // the answer without acting on it. The commit path is not written
+        // yet, so the cursor still rides the legacy ioctl -- reporting the
+        // capability is not the same as claiming to use it, and evidence
+        // that conflated the two would be worse than no evidence.
+        if self.cursor_plane_probe.is_none() {
+            let probe = self.probe_first_atomic_cursor_plane()?;
+            tracing::info!(
+                "sophia_live_cursor_plane schema=1 status={} driving=legacy_ioctl",
+                match probe {
+                    crate::CursorPlaneProbe::Accepted => "accepted",
+                    crate::CursorPlaneProbe::Refused => "refused",
+                }
+            );
+            self.cursor_plane_probe = Some(probe);
         }
 
         let crtcs = self
@@ -485,6 +597,12 @@ impl Drop for RealAtomicScanoutPageFlipSession {
                 };
                 let _ = self.cursor_controller.hide_for_teardown(&mut device);
             }
+            // Before the buffer it describes: a framebuffer outliving its
+            // buffer is the leak the resource-bundle discipline exists to
+            // prevent, and the cursor is no exception to it.
+            if let Some(framebuffer) = self.cursor_framebuffer.take() {
+                let _ = self.card.destroy_framebuffer(framebuffer);
+            }
             if let Some(buffer) = self.cursor_buffer.take() {
                 let _ = self.card.destroy_dumb_buffer(buffer);
             }
@@ -578,6 +696,10 @@ impl RealAtomicScanoutCardSelection {
                 poller,
                 #[cfg(feature = "gbm-probe")]
                 cursor_buffer: None,
+                #[cfg(feature = "gbm-probe")]
+                cursor_framebuffer: None,
+                #[cfg(feature = "gbm-probe")]
+                cursor_plane_probe: None,
                 #[cfg(feature = "gbm-probe")]
                 cursor_dimensions: None,
                 #[cfg(feature = "gbm-probe")]
@@ -718,6 +840,10 @@ impl RealAtomicScanoutSelectionSet {
                 poller,
                 #[cfg(feature = "gbm-probe")]
                 cursor_buffer: None,
+                #[cfg(feature = "gbm-probe")]
+                cursor_framebuffer: None,
+                #[cfg(feature = "gbm-probe")]
+                cursor_plane_probe: None,
                 #[cfg(feature = "gbm-probe")]
                 cursor_dimensions: None,
                 #[cfg(feature = "gbm-probe")]

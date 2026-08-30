@@ -224,3 +224,30 @@ pub fn legacy_hardware_cursor_admission(
         primary_in_flight,
     )
 }
+
+/// What a startup probe of the cursor plane concluded.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CursorPlaneProbe {
+    /// The driver accepted a test commit carrying the cursor plane.
+    Accepted,
+    /// It refused, or the card has no cursor plane to offer.
+    Refused,
+}
+
+/// Which cursor path a session should drive, given what the card offered.
+///
+/// Probed once rather than per frame. The compositor owns the cursor buffer,
+/// so its format, size, and modifier are fixed after the first success --
+/// unlike direct scanout, where the *client* owns the buffer and every
+/// eligibility edge needs its own test. Position is the only thing that
+/// changes afterwards, and position is what a cursor plane is for.
+///
+/// A refusal is not a failure. The legacy ioctl is a working path -- archive
+/// `0004` moved a cursor over directly scanned frames on it with no failures
+/// -- so a card that will not take a cursor plane keeps it.
+pub const fn cursor_path_for_probe(probe: CursorPlaneProbe) -> HardwareCursorPath {
+    match probe {
+        CursorPlaneProbe::Accepted => HardwareCursorPath::AtomicPlane,
+        CursorPlaneProbe::Refused => HardwareCursorPath::LegacyIoctl,
+    }
+}
