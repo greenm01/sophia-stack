@@ -53,6 +53,13 @@ direct-scanout-overlay-gate:
 direct-scanout-cost-gate:
     @cargo --quiet xtask conformance gate direct-scanout --cost
 
+# Prove the legacy hardware cursor keeps working while the plane scans a
+# client's buffer directly. Run from tty3. This is the baseline the atomic
+# cursor plane has to match, and the claim no run has yet tested: every
+# direct-scanout archive so far had a cursor that was visible and never moved.
+direct-scanout-cursor-gate:
+    @cargo --quiet xtask conformance gate direct-scanout --cursor
+
 # Re-verify an archived direct-scanout run, newest by default.
 direct-scanout-archive run='':
     @cargo --quiet xtask conformance verify direct-scanout-archive "{{ run }}"

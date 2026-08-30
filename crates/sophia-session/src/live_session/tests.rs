@@ -100,6 +100,7 @@ fn add_test_surface_route(
 
 mod authority_merge_tests;
 mod desktop_shortcut_tests;
+mod direct_cursor_proof_tests;
 mod direct_overlay_proof_tests;
 mod input_policy_tests;
 mod metadata_shell_tests;

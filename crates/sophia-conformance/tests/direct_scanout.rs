@@ -616,3 +616,130 @@ fn a_population_measured_on_only_one_side_is_refused() {
         "{error}"
     );
 }
+
+fn cursor_record(path: &str, updates: usize, failures: usize) -> String {
+    format!(
+        "sophia_live_session_cursor schema=4 path={path} moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates={updates} hidden_updates=0 hardware_failures={failures}"
+    )
+}
+
+/// A session that moved a cursor over direct frames and kept flipping after.
+fn cursor_log() -> String {
+    [
+        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=1 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
+        "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=0 composed_cursor=0",
+        "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout schema=1 status=test_passed output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=299 reason=none",
+        "sophia_live_direct_scanout_cursor_proof schema=1 status=started output=1 flips_before=10",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=320 reason=none",
+        "sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=320 reason=none",
+        "sophia_live_direct_scanout_cursor_proof schema=1 status=finished moves=12 flips_after=24",
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=400 reason=none",
+        "sophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=400 reason=none",
+        "",
+    ]
+    .join("\n")
+        + &cursor_record("legacy_ioctl", 13, 0)
+        + "\n"
+}
+
+fn cursor_verification(text: &str) -> Result<Vec<String>, String> {
+    let directory = TempDir::new();
+    let log = write_log(&directory, text);
+    direct_scanout::verify_standalone_logs_proving(&[log], false, false, true)
+}
+
+#[test]
+fn cursor_verification_accepts_motion_over_direct_frames() {
+    let report = cursor_verification(&cursor_log()).unwrap();
+    assert!(
+        report.iter().any(|line| {
+            line.contains("sophia_direct_scanout_cursor schema=1 status=rode_hardware")
+                && line.contains("moves=12")
+        }),
+        "{report:?}"
+    );
+}
+
+/// The claim is about a cursor that moved. Every archive so far had one that
+/// was visible and still, which is why this proof exists at all.
+#[test]
+fn a_cursor_that_never_moved_is_refused() {
+    let text = cursor_log()
+        .lines()
+        .filter(|line| !line.contains("cursor_proof"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("never moved over a direct frame"), "{error}");
+}
+
+/// A cursor that fell back to composition still looks like a moving cursor
+/// on screen, and means the opposite of what this proof claims.
+#[test]
+fn a_cursor_that_left_the_hardware_path_is_refused() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record("composited", 13, 0),
+    );
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("not that baseline"), "{error}");
+}
+
+#[test]
+fn a_cursor_that_failed_on_hardware_is_refused() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record("legacy_ioctl", 13, 2),
+    );
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("failed while riding"), "{error}");
+}
+
+/// The proof control can report moves the hardware never performed if the
+/// updates were dropped above the ioctl, so the cursor record has to agree.
+#[test]
+fn moves_the_hardware_never_performed_are_refused() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record("legacy_ioctl", 1, 0),
+    );
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("nothing moved on hardware"), "{error}");
+}
+
+/// The outcome this proof exists to rule out: a cursor that moved because
+/// direct scanout had already stopped.
+#[test]
+fn a_run_with_no_flips_after_the_motion_is_refused() {
+    let text = cursor_log().replace(
+        "sophia_live_direct_scanout schema=1 status=exported output=1 scene_generation=400 reason=none\nsophia_live_direct_scanout schema=1 status=flipped output=1 scene_generation=400 reason=none\n",
+        "",
+    );
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("may have ended direct scanout"), "{error}");
+}
+
+/// An unbounded proof would leave a session moving a cursor forever.
+#[test]
+fn a_proof_that_never_finished_is_refused() {
+    let text = cursor_log()
+        .lines()
+        .filter(|line| !line.contains("status=finished"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let error = cursor_verification(&text).unwrap_err();
+    assert!(error.contains("never finished"), "{error}");
+}
+
+/// Runs without cursor records verify unchanged, keeping archives 0001
+/// through 0003 in the corpus.
+#[test]
+fn a_run_without_cursor_records_still_verifies_when_not_asked() {
+    let directory = TempDir::new();
+    let log = write_log(&directory, &passing_log());
+    direct_scanout::verify_standalone_logs_proving(&[log], false, false, false).unwrap();
+}

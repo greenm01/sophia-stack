@@ -110,6 +110,7 @@ struct PersistentXtermSessionConfig {
     m4_reject_first_present: bool,
     /// Whether this session drives an overlay over a directly scanned frame to
     /// prove the return to composition. Off in every product session.
+    pub(crate) direct_cursor_proof: bool,
     pub(crate) direct_overlay_proof: bool,
     /// How long the proof overlay stays up, in owner-loop ticks. Zero means
     /// the control's own default.
@@ -479,6 +480,10 @@ impl PersistentXtermSessionConfig {
         // session. The transition it exercises -- a composed successor
         // retiring a frame the plane is still scanning -- is modelled in
         // `PresentFlipOwnership.tla` and had never run on hardware.
+        // Moves the cursor over frames the plane is scanning directly. The
+        // roadmap claims the legacy ioctl keeps working there; no run has
+        // moved a cursor to find out, and the replacement needs the baseline.
+        let direct_cursor_proof = args.iter().any(|arg| arg == "--direct-cursor-proof");
         let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
         // How long the overlay stays up. A run proving the transition wants
         // the shortest window that contains it; a run measuring what frames
@@ -780,6 +785,11 @@ impl PersistentXtermSessionConfig {
         if client.is_some() && inject_text.is_some() && expect_client_stdout.is_none() {
             return Err("--client with --inject-text requires --expect-client-stdout".into());
         }
+        if direct_cursor_proof && (!native_scanout || !normal_session) {
+            return Err(
+                "--direct-cursor-proof requires --native-scanout and --session-mode=normal".into(),
+            );
+        }
         if direct_overlay_proof && (!native_scanout || !normal_session) {
             return Err(
                 "--direct-overlay-proof requires --native-scanout and --session-mode=normal".into(),
@@ -894,6 +904,7 @@ impl PersistentXtermSessionConfig {
             inject_surface_resize_sequence,
             m4_first_acquire_delay,
             m4_reject_first_present,
+            direct_cursor_proof,
             direct_overlay_proof,
             direct_overlay_hold_ticks,
             m4_diagnose_first_mixed_export,

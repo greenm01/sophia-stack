@@ -81,6 +81,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod authority_file;
+pub(crate) mod direct_cursor_proof;
 pub(crate) mod direct_overlay_proof;
 pub(super) mod input_guard;
 mod metadata_broker;

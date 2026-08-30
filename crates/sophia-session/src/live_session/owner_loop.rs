@@ -530,6 +530,8 @@ fn run_session_loop_inner(
             config.direct_overlay_proof,
             config.direct_overlay_hold_ticks,
         );
+    let mut direct_cursor_proof =
+        crate::live_session::direct_cursor_proof::DirectCursorProof::new(config.direct_cursor_proof);
     let direct_overlay_generation = 1u64;
     let mut startup_native_recovery_attempted = false;
     let mut startup_topology_recovery_pending = false;

@@ -585,6 +585,11 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
         # overlay over a directly scanned frame itself, because the shell that
         # would open one in a product session is exactly what this session does
         # not run.
+        # Moves the cursor over directly scanned frames, to test the claim
+        # that the legacy ioctl keeps working there.
+        if [[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]]; then
+            session_args+=(--direct-cursor-proof)
+        fi
         if [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]]; then
             session_args+=(--direct-overlay-proof)
             # A cost run holds the overlay far longer than a transition

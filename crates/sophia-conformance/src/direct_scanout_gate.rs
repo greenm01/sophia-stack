@@ -31,6 +31,10 @@ pub struct Probe {
     /// the composed population only exists while the overlay is up, so
     /// without it there is nothing to compare a direct frame against.
     pub cost: bool,
+    /// Whether the session moves a cursor over directly scanned frames.
+    /// Independent of the overlay: this proof wants frames going *to* the
+    /// plane throughout, not a return to composition in the middle.
+    pub cursor: bool,
 }
 
 impl Default for Probe {
@@ -42,6 +46,7 @@ impl Default for Probe {
             workload: "kitty".to_owned(),
             overlay_proof: false,
             cost: false,
+            cursor: false,
         }
     }
 }
@@ -59,6 +64,7 @@ impl Probe {
     pub fn from_arguments(arguments: &[String]) -> Result<Self, String> {
         let mut overlay_proof = false;
         let mut cost = false;
+        let mut cursor = false;
         let arguments = arguments
             .iter()
             .filter(|argument| match argument.as_str() {
@@ -68,6 +74,10 @@ impl Probe {
                 }
                 "--cost" => {
                     cost = true;
+                    false
+                }
+                "--cursor" => {
+                    cursor = true;
                     false
                 }
                 _ => true,
@@ -101,6 +111,7 @@ impl Probe {
             ));
         }
         probe.cost = cost;
+        probe.cursor = cursor;
         // A cost run is an overlay run that holds the window open long
         // enough to have a composed population, so asking for one implies
         // the other rather than requiring both to be spelled.
@@ -129,6 +140,9 @@ pub fn run_probe(repo: &Path, probe: &Probe, client: Option<&Path>) -> Result<()
         );
     if probe.overlay_proof {
         command.env("SOPHIA_DIRECT_OVERLAY_PROOF", "1");
+    }
+    if probe.cursor {
+        command.env("SOPHIA_DIRECT_CURSOR_PROOF", "1");
     }
     if probe.cost {
         command.env(
@@ -237,10 +251,11 @@ pub fn run_gate_with(repo: &Path, probe: &Probe) -> Result<GateReport, String> {
         core_config: &core,
         desktop_profile: &desktop,
     })?;
-    direct_scanout::verify_standalone_logs_with(
+    direct_scanout::verify_standalone_logs_proving(
         &[evidence.display().to_string()],
         probe.overlay_proof,
         probe.cost,
+        probe.cursor,
     )?;
     let run_root = std::env::var_os("SOPHIA_DIRECT_SCANOUT_RUN_ROOT")
         .map(PathBuf::from)

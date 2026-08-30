@@ -953,6 +953,48 @@
                 );
             }
         }
+        // The cursor proof, when the session asked for it. Moves the pointer
+        // through `place`, the same entry physical input uses, so what it
+        // exercises is the cursor path the product runs rather than a route
+        // built for the proof.
+        if let Some(native) = native_scanout.as_mut() {
+            let flips = native.direct_scanout_totals().flips;
+            let flipping_output = native.direct_scanout_output();
+            match direct_cursor_proof.tick(flips, flipping_output) {
+                crate::live_session::direct_cursor_proof::DirectCursorAction::Move {
+                    output,
+                    step,
+                } => {
+                    if let Some(runtime) = runtime.as_ref() {
+                        let head = runtime
+                            .logical_viewports()
+                            .into_iter()
+                            .find(|(candidate, _)| *candidate == output)
+                            .map(|(_, logical)| logical)
+                            .ok_or("the cursor proof's output has no logical viewport")?;
+                        let position =
+                            crate::live_session::direct_cursor_proof::cursor_position(head, step);
+                        pointer.place(position, None);
+                        cursor_updates.dirty_since.get_or_insert_with(Instant::now);
+                        cursor_updates.dirty = true;
+                        if step == 0 {
+                            crate::session_println!(
+                                "sophia_live_direct_scanout_cursor_proof schema=1 status=started output={} flips_before={flips}",
+                                output.raw()
+                            );
+                        }
+                    }
+                }
+                crate::live_session::direct_cursor_proof::DirectCursorAction::Finished {
+                    moves,
+                } => {
+                    crate::session_println!(
+                        "sophia_live_direct_scanout_cursor_proof schema=1 status=finished moves={moves} flips_after={flips}"
+                    );
+                }
+                crate::live_session::direct_cursor_proof::DirectCursorAction::Idle => {}
+            }
+        }
         // The overlay proof, when the session asked for it. Placed on the tick
         // rather than in the input phase because nothing here is driven by
         // input: the shell would open this overlay from a shortcut, and this

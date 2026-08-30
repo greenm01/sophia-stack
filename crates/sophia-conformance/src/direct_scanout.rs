@@ -291,6 +291,16 @@ pub fn verify_standalone_logs_with(
     require_overlay: bool,
     require_cost: bool,
 ) -> Result<Vec<String>, String> {
+    verify_standalone_logs_proving(logs, require_overlay, require_cost, false)
+}
+
+/// The same, additionally requiring a cursor that moved over direct frames.
+pub fn verify_standalone_logs_proving(
+    logs: &[String],
+    require_overlay: bool,
+    require_cost: bool,
+    require_cursor: bool,
+) -> Result<Vec<String>, String> {
     if logs.is_empty() {
         return Err("no standalone session logs were given".to_owned());
     }
@@ -312,7 +322,7 @@ pub fn verify_standalone_logs_with(
         }
     }
     let mut report = verify_logs(logs)?;
-    if require_overlay || require_cost {
+    if require_overlay || require_cost || require_cursor {
         for log in logs {
             let text = std::fs::read_to_string(log)
                 .map_err(|error| format!("could not read {log}: {error}"))?;
@@ -321,6 +331,9 @@ pub fn verify_standalone_logs_with(
             }
             if require_cost {
                 report.extend(crate::direct_scanout_cost::check(&text, log)?);
+            }
+            if require_cursor {
+                report.extend(crate::direct_scanout_cursor::check(&text, log)?);
             }
         }
     }

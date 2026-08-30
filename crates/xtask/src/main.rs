@@ -166,6 +166,9 @@ fn gate_direct_scanout(arguments: &[String]) -> Result<(), String> {
     if probe.cost {
         println!("Cost run: the overlay holds long enough to measure composed frames.");
     }
+    if probe.cursor {
+        println!("Cursor proof: the session moves a cursor over directly scanned frames.");
+    }
     let report = direct_scanout_gate::run_gate_with(&repo, &probe)?;
     println!("Sophia commit:  {}", report.source_commit);
     println!("Sophia binary:  {}", report.sophia_sha256);
