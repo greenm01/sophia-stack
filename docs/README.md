@@ -112,6 +112,9 @@ override the ownership and trust rules in the normative architecture.
 ## Historical Material
 
 - [Roadmap History](roadmap-history.md) archives completed milestones.
+- [Roadmap Snapshot (2026-08-30)](roadmap-archive-2026-08-30.md) preserves the
+  complete pre-cleanup active roadmap verbatim, including superseded ordering,
+  detailed evidence narratives, and unresolved candidate work.
 - [Research Log Archive](research-log-archive.md) preserves completed or
   superseded experiments.
 - `research/xlibre/` preserves the retired XLibre prototype and its regression
