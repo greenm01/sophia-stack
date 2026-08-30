@@ -126,6 +126,30 @@ cpu_max_compose_msec="$(
 ((cpu_max_compose_msec <= COMPOSE_BUDGET_MSEC)) ||
     fail "CPU composition exceeded ${COMPOSE_BUDGET_MSEC}ms: ${cpu_max_compose_msec}ms"
 
+# Copy-on-write backing, where schema 2 reports it. This is the workload that
+# exercises it: xterm draws in software, so its pixels take the CPU presentation
+# path that the shared backing changed. A GPU-backed client reports zeros here
+# and proves nothing about it either way.
+#
+# The peaks are what "bounded" is a claim about -- a registry that ends empty
+# having held a thousand buffers reads like one that never held four. The split
+# count carries no threshold: it counts presentations still holding bytes when
+# an update arrives, which is ordinary and workload-shaped, and is reported so a
+# run that copies on every single update is visible rather than silent.
+efficiency_schema="$(sed -n 's/^sophia_live_rendering_efficiency schema=\([0-9]*\) .*/\1/p' <<<"$efficiency")"
+cpu_cow_splits=unknown
+cpu_resident_buffers_peak=unknown
+cpu_resident_bytes_peak=unknown
+if [[ "$efficiency_schema" =~ ^[0-9]+$ ]] && ((efficiency_schema >= 2)); then
+    cpu_cow_splits="$(nonnegative_field "$efficiency" cpu_cow_splits)"
+    cpu_resident_buffers_peak="$(nonnegative_field "$efficiency" cpu_resident_buffers_peak)"
+    cpu_resident_bytes_peak="$(nonnegative_field "$efficiency" cpu_resident_bytes_peak)"
+    ((cpu_resident_buffers_peak > 0)) ||
+        fail "the CPU registry never held a buffer, so the software path was not exercised"
+    ((cpu_cow_splits <= cpu_patch_updates)) ||
+        fail "more copies ($cpu_cow_splits) than patches ($cpu_patch_updates) that could have caused them"
+fi
+
 # Damage-driven repaint proof: at least one partial repaint, not a full frame
 # on every present.
 partial_repaints="$(
@@ -157,4 +181,4 @@ fi
 native_retirements="$(positive_field "$completion" native_retirements)"
 
 printf '%s\n' \
-    "sophia_terminal_performance schema=3 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec"
+    "sophia_terminal_performance schema=3 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec cpu_cow_splits=$cpu_cow_splits cpu_resident_buffers_peak=$cpu_resident_buffers_peak cpu_resident_bytes_peak=$cpu_resident_bytes_peak"

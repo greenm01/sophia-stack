@@ -86,4 +86,34 @@ if SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC=invalid \
     fail "reporter accepted a malformed CPU composition budget"
 fi
 
+# Schema-2 rendering evidence, which a current session emits and which carries
+# the copy-on-write figures. The schema-1 fixture above stays: archived runs
+# carry it, and a reader that accepted only one of the two would either orphan
+# them or stop reading live sessions.
+SCHEMA2="$(mktemp)"
+trap 'rm -f -- "$MUTATED" "$SCHEMA2"' EXIT
+sed 's/^sophia_live_rendering_efficiency schema=1 status=complete \(.*\)$/sophia_live_rendering_efficiency schema=2 status=complete \1 cpu_cow_splits=12 cpu_resident_buffers_peak=2 cpu_resident_bytes_peak=1998848/' \
+    "$FIXTURE" >"$SCHEMA2"
+grep -q 'sophia_live_rendering_efficiency schema=2 ' "$SCHEMA2" ||
+    fail "the schema-2 fixture rewrite did not apply"
+schema2_report="$("$REPORTER" "$SCHEMA2")" ||
+    fail "reporter rejected schema-2 rendering evidence"
+grep -Fq 'cpu_cow_splits=12 cpu_resident_buffers_peak=2 cpu_resident_bytes_peak=1998848' \
+    <<<"$schema2_report" ||
+    fail "reporter did not carry the copy-on-write figures into its record"
+
+# A registry that never held a buffer means the software path was not
+# exercised, which is the one thing this workload exists to prove.
+sed 's/cpu_resident_buffers_peak=2/cpu_resident_buffers_peak=0/' "$SCHEMA2" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted a run whose CPU registry never held a buffer"
+fi
+
+# More copies than patches that could have caused them is an accounting
+# contradiction, not a slow session.
+sed 's/cpu_cow_splits=12/cpu_cow_splits=99999/' "$SCHEMA2" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted more copies than patches"
+fi
+
 echo "terminal performance reporter regressions passed"
