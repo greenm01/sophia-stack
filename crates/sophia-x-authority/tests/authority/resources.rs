@@ -1419,3 +1419,128 @@ fn software_present_rejects_pixmap_without_materialized_pixels() {
     assert!(response.transactions.is_empty());
     assert!(runtime.take_cpu_buffer_update().is_none());
 }
+
+/// A damage list longer than the transport bound patches, and patches exactly.
+///
+/// A busy client -- a browser is the usual one -- reports far more than the
+/// thirty-two rectangles the batch carries. That used to fall back to replacing
+/// the whole presentation buffer, which is the largest copy on this path made
+/// for the client whose buffers are biggest. The list is coalesced to the bound
+/// instead.
+///
+/// The check is equivalence, not size: replaying the coalesced batch must
+/// produce the same pixels a full replacement would. A merged cover is allowed
+/// to be larger than the damage, because the patch is read from the buffer the
+/// client's pixels were already composed into, and a larger rectangle carries
+/// more already-correct bytes. It is not allowed to be smaller, which would
+/// leave a region stale in a frame that is otherwise presentable.
+///
+/// `NC2` in `validation/specula/stable-x-backing-lease-modeling-brief.md`,
+/// which violates `RegistryMatchesStore`.
+#[test]
+fn over_capacity_damage_coalesces_to_a_batch_equivalent_to_replacement() {
+    let namespace = NamespaceId::from_raw(57);
+    let window = XResourceId::new(0x91, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    runtime.apply(XAuthorityRequestPacket {
+        transaction: TransactionId::from_raw(140),
+        namespace,
+        kind: XAuthorityRequestKind::CreateWindow {
+            window,
+            surface: SurfaceId::new(57, 1),
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
+            constraints: SurfaceConstraints {
+                min_size: None,
+                max_size: None,
+            },
+            generation: 1,
+        },
+    });
+
+    // Establish the buffer, and keep a materialized copy alongside so the
+    // batch below can be replayed against the same base the session holds.
+    runtime.apply_core_draw(
+        TransactionId::from_raw(141),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 200,
+        }),
+    );
+    let mut replayed = std::collections::BTreeMap::new();
+    let base = runtime.take_cpu_buffer_update().unwrap();
+    assert!(base.is_replacement(), "the first update establishes a base");
+    base.apply_to(&mut replayed).unwrap();
+
+    // Sixty-four scattered rectangles: twice what the transport carries, and
+    // spread so a merged cover stays well under half the buffer.
+    let scattered = Region {
+        rects: (0..64)
+            .map(|index: i32| Rect {
+                x: (index % 8) * 25,
+                y: (index / 8) * 25,
+                width: 3,
+                height: 3,
+            })
+            .collect(),
+    };
+    runtime.apply_core_draw_with_gc(
+        TransactionId::from_raw(142),
+        namespace,
+        window,
+        scattered,
+        &XGraphicsContextValues {
+            foreground: 0x00ff_8800,
+            ..XGraphicsContextValues::default()
+        },
+    );
+    let update = runtime.take_cpu_buffer_update().unwrap();
+    let XAuthorityCpuBufferUpdate::PatchBatch(batch) = &update else {
+        panic!("a sixty-four-rectangle damage list must still patch: {update:?}");
+    };
+    assert!(
+        batch.patches.len() <= X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS,
+        "a coalesced batch must fit the transport bound, got {}",
+        batch.patches.len()
+    );
+    update.apply_to(&mut replayed).unwrap();
+
+    // Every damaged pixel must have arrived. A cover that dropped a rectangle
+    // leaves exactly this behind: a buffer that is the right size, the right
+    // generation, and stale in one place.
+    let replayed_buffer = replayed.get(&update.handle()).expect("replayed base");
+    let stride = usize::try_from(replayed_buffer.stride).unwrap();
+    let pixel_at = |x: usize, y: usize| -> u32 {
+        let offset = y * stride + x * 4;
+        u32::from_le_bytes(replayed_buffer.bytes[offset..offset + 4].try_into().unwrap())
+    };
+    for index in 0..64usize {
+        let left = (index % 8) * 25;
+        let top = (index / 8) * 25;
+        for y in top..top + 3 {
+            for x in left..left + 3 {
+                assert_eq!(
+                    pixel_at(x, y) & 0x00ff_ffff,
+                    0x00ff_8800,
+                    "rectangle {index} at ({x},{y}) was not carried by the coalesced batch"
+                );
+            }
+        }
+    }
+
+    // And nothing else moved: the first draw left the buffer clear, so a pixel
+    // between the damage rectangles still reads as it did.
+    assert_eq!(
+        pixel_at(12, 12) & 0x00ff_ffff,
+        0,
+        "a pixel outside the damage must not have been repainted"
+    );
+}

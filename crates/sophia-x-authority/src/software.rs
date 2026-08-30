@@ -143,11 +143,7 @@ impl XSoftwareBufferStore {
         }
         let source = self.buffers.get(&source)?;
         let presentation_buffer = self.presentations.get_mut(&presentation)?;
-        let mut presentation_damage = Vec::with_capacity(
-            damage
-                .len()
-                .min(X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS.saturating_add(1)),
-        );
+        let mut presentation_damage = Vec::with_capacity(damage.len());
         for rect in damage {
             if let Some(rect) = copy_buffer_region(
                 &source,
@@ -160,11 +156,46 @@ impl XSoftwareBufferStore {
             }
         }
         presentation_buffer.generation = presentation_buffer.generation.checked_add(1)?;
-        if replace || presentation_damage.len() > X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS {
+        // A busy client is not a reason to resend the window. The transport
+        // carries at most 32 rectangles, and a damage list longer than that
+        // used to fall back to replacing the whole presentation buffer -- which
+        // is the common case for a browser, the one client whose buffers are
+        // largest. Coalescing merges the list down to the bound instead, and
+        // the merged cover is a superset of the damage, so the patch carries
+        // pixels that are already correct in the buffer it is read from.
+        //
+        // The bound itself does not move. It is validated identically on both
+        // sides of the wire, so raising it would have to move the encoder, both
+        // guards, and the renderer's capacity refusal together.
+        if replace {
             return Some(XAuthorityCpuBufferUpdate::Replace(
                 presentation_buffer.clone(),
             ));
         }
+        let presentation_damage =
+            if presentation_damage.len() > X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS {
+                let coalesced =
+                    coalesce_damage(presentation_damage, X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS);
+                // Past a point a merged cover stops being cheaper than the buffer.
+                // Half the area is where it has lost the argument: the batch still
+                // carries per-rectangle headers and the receiver still walks them,
+                // for a saving that is no longer most of the frame.
+                //
+                // Only a coalesced list is measured. A short damage list is sent as
+                // it stands whatever it covers, which is the behaviour every
+                // existing caller and regression already depends on.
+                let buffer_area = usize::try_from(presentation_buffer.size.width)
+                    .ok()?
+                    .saturating_mul(usize::try_from(presentation_buffer.size.height).ok()?);
+                if coverage_area(&coalesced).saturating_mul(2) >= buffer_area {
+                    return Some(XAuthorityCpuBufferUpdate::Replace(
+                        presentation_buffer.clone(),
+                    ));
+                }
+                coalesced
+            } else {
+                presentation_damage
+            };
         let patches = presentation_damage
             .into_iter()
             .map(|rect| packed_patch_region(presentation_buffer, rect))
@@ -613,6 +644,79 @@ fn copy_buffer_region(
 ///
 /// The pixels reach Engine through `present_window_damage`, which composes this
 /// drawable into its toplevel's presentation buffer and publishes that.
+/// Merge a damage list down to at most `limit` rectangles.
+///
+/// Deterministic, because the wire tests replay a recorded sequence and compare
+/// what came out: rectangles are ordered by row then column, split into `limit`
+/// contiguous groups, and each group becomes its bounding box. Sorting by
+/// position first is what makes the groups spatially close, so the boxes stay
+/// near the damage rather than spanning it.
+///
+/// Over-approximating is safe and under-approximating is not. The patches are
+/// read from the presentation buffer *after* the client's pixels were composed
+/// into it, so a larger rectangle carries more already-correct pixels; a
+/// smaller one would leave a region stale in a frame that is otherwise
+/// presentable and self-consistent. `StableBackingLease`'s `RegistryMatchesStore`
+/// is that property, and its second negative control is this function shrinking
+/// a cover below the damage it owes.
+fn coalesce_damage(mut rects: Vec<Rect>, limit: usize) -> Vec<Rect> {
+    if rects.len() <= limit || limit == 0 {
+        return rects;
+    }
+    rects.sort_by_key(|rect| (rect.y, rect.x, rect.width, rect.height));
+    let mut coalesced = Vec::with_capacity(limit);
+    let total = rects.len();
+    for group in 0..limit {
+        // Contiguous groups over the sorted list, sized so every rectangle
+        // lands in exactly one and no group is empty.
+        let start = group.saturating_mul(total) / limit;
+        let end = group.saturating_add(1).saturating_mul(total) / limit;
+        if start >= end {
+            continue;
+        }
+        let mut bounds = rects[start];
+        for rect in &rects[start.saturating_add(1)..end] {
+            bounds = union_rect(bounds, *rect);
+        }
+        coalesced.push(bounds);
+    }
+    coalesced
+}
+
+fn union_rect(left: Rect, right: Rect) -> Rect {
+    let x = left.x.min(right.x);
+    let y = left.y.min(right.y);
+    let right_edge = left
+        .x
+        .saturating_add(left.width)
+        .max(right.x.saturating_add(right.width));
+    let bottom_edge = left
+        .y
+        .saturating_add(left.height)
+        .max(right.y.saturating_add(right.height));
+    Rect {
+        x,
+        y,
+        width: right_edge.saturating_sub(x),
+        height: bottom_edge.saturating_sub(y),
+    }
+}
+
+/// The area a damage list covers, counting overlap twice.
+///
+/// An over-count is the safe direction here: it can only push the decision
+/// toward replacing the buffer, which is always correct and merely less clever.
+fn coverage_area(rects: &[Rect]) -> usize {
+    rects
+        .iter()
+        .map(|rect| {
+            usize::try_from(rect.width.max(0))
+                .unwrap_or(0)
+                .saturating_mul(usize::try_from(rect.height.max(0)).unwrap_or(0))
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
 fn finish_immutable_update(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     handle: u64,
