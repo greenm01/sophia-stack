@@ -54,6 +54,13 @@ impl LiveProductionNativeScanout {
                     self.cursor_initialization_deferrals.saturating_add(1);
                 return Ok(crate::ClassicHardwareCursorUpdate::Deferred);
             }
+            // Only the atomic path can produce this: an ioctl never waits for
+            // a flip. Stated rather than folded into the arm below so that
+            // routing this caller through the atomic path later is a compile
+            // error here instead of a cursor that silently stops moving.
+            crate::LegacyHardwareCursorAdmission::DeferredUpdate => {
+                return Err("the legacy cursor path was told to defer an update".into());
+            }
             crate::LegacyHardwareCursorAdmission::InitializeThenUpdate => {
                 let initialization_started = Instant::now();
                 for group in &mut self.groups {

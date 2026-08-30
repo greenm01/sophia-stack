@@ -3,9 +3,9 @@ mod legacy_cursor {
     use std::io;
 
     use sophia_backend_live::{
-        ClassicHardwareCursorUpdate, LEGACY_HARDWARE_CURSOR_FALLBACK_EDGE,
+        ClassicHardwareCursorUpdate, HardwareCursorPath, LEGACY_HARDWARE_CURSOR_FALLBACK_EDGE,
         LegacyHardwareCursorAdmission, LegacyHardwareCursorController, LegacyHardwareCursorDevice,
-        LegacyHardwareCursorTarget, legacy_hardware_cursor_admission,
+        LegacyHardwareCursorTarget, hardware_cursor_admission, legacy_hardware_cursor_admission,
         resolve_legacy_hardware_cursor_dimensions,
     };
 
@@ -223,6 +223,52 @@ mod legacy_cursor {
             legacy_hardware_cursor_admission(true, true),
             LegacyHardwareCursorAdmission::Update
         );
+    }
+
+    /// The one row the two paths answer differently.
+    ///
+    /// An ioctl moves a cursor whenever it likes; archive `0004` counted
+    /// fifteen updates issued while a page flip was outstanding, with no
+    /// failures. The kernel serializes atomic commits per CRTC, so the same
+    /// move has to wait for the commit in flight -- which is the whole
+    /// substance of the transaction-owner row, reduced to one case of a pure
+    /// function.
+    #[test]
+    fn only_the_atomic_path_defers_a_cursor_update_behind_a_flip() {
+        assert_eq!(
+            hardware_cursor_admission(HardwareCursorPath::AtomicPlane, true, true),
+            LegacyHardwareCursorAdmission::DeferredUpdate
+        );
+        assert_eq!(
+            hardware_cursor_admission(HardwareCursorPath::LegacyIoctl, true, true),
+            LegacyHardwareCursorAdmission::Update,
+            "the legacy path is what archive 0004 proved and does not change"
+        );
+    }
+
+    /// Everything except that one row is shared, including the rule that
+    /// initialization -- which touches every CRTC -- waits for a quiet CRTC
+    /// on either path.
+    #[test]
+    fn both_paths_agree_on_every_other_case() {
+        for path in [
+            HardwareCursorPath::LegacyIoctl,
+            HardwareCursorPath::AtomicPlane,
+        ] {
+            assert_eq!(
+                hardware_cursor_admission(path, false, true),
+                LegacyHardwareCursorAdmission::DeferredInitialization
+            );
+            assert_eq!(
+                hardware_cursor_admission(path, false, false),
+                LegacyHardwareCursorAdmission::InitializeThenUpdate
+            );
+            assert_eq!(
+                hardware_cursor_admission(path, true, false),
+                LegacyHardwareCursorAdmission::Update,
+                "a quiet CRTC takes a cursor update on either path"
+            );
+        }
     }
 
     #[test]

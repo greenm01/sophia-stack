@@ -164,15 +164,63 @@ pub enum LegacyHardwareCursorAdmission {
     InitializeThenUpdate,
     Update,
     DeferredInitialization,
+    /// The cursor has moved, the plane is initialized, and the CRTC is busy.
+    ///
+    /// Only the atomic path can answer this. An ioctl moves a cursor whenever
+    /// it likes -- direct-scanout archive `0004` counted fifteen updates
+    /// issued while a page flip was outstanding -- but the kernel serializes
+    /// atomic commits per CRTC, so the same move must wait for the commit in
+    /// flight and go out when it frees.
+    ///
+    /// Waiting is not dropping. The position supersedes any other still
+    /// pending, and `CursorPlaneTransactionOwner.tla` requires it to reach a
+    /// plane: a cursor left waiting for the next client frame freezes on an
+    /// idle desktop, which is why a cursor-only commit exists at all.
+    DeferredUpdate,
 }
 
+/// Which cursor path the session is driving.
+///
+/// The two answer differently in exactly one case, and keeping them in one
+/// truth table is what makes that visible. The legacy path is what archive
+/// `0004` proved and stays byte-for-byte as it was.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HardwareCursorPath {
+    /// `drmModeSetCursor`/`drmModeMoveCursor`, outside the atomic queue.
+    LegacyIoctl,
+    /// A cursor plane in the per-output atomic request.
+    AtomicPlane,
+}
+
+/// Whether a cursor update may proceed, wait, or must initialize first.
+///
+/// The legacy row that says "update anyway while a flip is in flight" is the
+/// one an atomic commit cannot have; everything else the two paths share.
+pub fn hardware_cursor_admission(
+    path: HardwareCursorPath,
+    initialized: bool,
+    primary_in_flight: bool,
+) -> LegacyHardwareCursorAdmission {
+    match (path, initialized, primary_in_flight) {
+        // Initialization touches every CRTC, which is not something to do
+        // underneath an in-flight flip on either path.
+        (_, false, true) => LegacyHardwareCursorAdmission::DeferredInitialization,
+        (_, false, false) => LegacyHardwareCursorAdmission::InitializeThenUpdate,
+        (HardwareCursorPath::AtomicPlane, true, true) => {
+            LegacyHardwareCursorAdmission::DeferredUpdate
+        }
+        (_, true, _) => LegacyHardwareCursorAdmission::Update,
+    }
+}
+
+/// The legacy path's admission, unchanged.
 pub fn legacy_hardware_cursor_admission(
     initialized: bool,
     primary_in_flight: bool,
 ) -> LegacyHardwareCursorAdmission {
-    match (initialized, primary_in_flight) {
-        (false, true) => LegacyHardwareCursorAdmission::DeferredInitialization,
-        (false, false) => LegacyHardwareCursorAdmission::InitializeThenUpdate,
-        (true, _) => LegacyHardwareCursorAdmission::Update,
-    }
+    hardware_cursor_admission(
+        HardwareCursorPath::LegacyIoctl,
+        initialized,
+        primary_in_flight,
+    )
 }
