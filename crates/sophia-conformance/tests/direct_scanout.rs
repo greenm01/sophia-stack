@@ -453,3 +453,146 @@ fn a_fully_decorated_session_verifies() {
         "{report:?}"
     );
 }
+
+fn cost_record(population: &str, frames: usize, saturated: bool) -> String {
+    format!(
+        "sophia_live_direct_scanout_cost schema=1 population={population} frames={frames} offer_submit_us_min=90 offer_submit_us_p50=120 offer_submit_us_p99=300 offer_submit_us_max=310 submit_flip_frames={frames} submit_flip_us_min=8000 submit_flip_us_p50=8300 submit_flip_us_p99=9000 submit_flip_us_max=9100 saturated={saturated}"
+    )
+}
+
+/// A session that measured both populations, as a cost run produces.
+fn cost_log() -> String {
+    format!(
+        "{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        cost_record("direct", 27, false),
+        cost_record("composed", 15, false)
+    )
+}
+
+fn cost_verification(text: &str) -> Result<Vec<String>, String> {
+    let directory = TempDir::new();
+    let log = write_log(&directory, text);
+    direct_scanout::verify_standalone_logs_with(&[log], true, true)
+}
+
+#[test]
+fn cost_verification_reports_both_populations() {
+    let report = cost_verification(&cost_log()).unwrap();
+    assert!(
+        report.iter().any(|line| {
+            line.contains("sophia_direct_scanout_cost schema=1 status=measured")
+                && line.contains("direct_frames=27")
+                && line.contains("composed_frames=15")
+        }),
+        "{report:?}"
+    );
+}
+
+/// The question is a comparison. One population is an anecdote about direct
+/// frames with nothing to hold it against.
+#[test]
+fn a_run_with_only_one_population_is_refused() {
+    let text = format!(
+        "{}\n{}\n",
+        overlay_log().trim_end(),
+        cost_record("direct", 27, false)
+    );
+    let error = cost_verification(&text).unwrap_err();
+    assert!(error.contains("nothing to compare against"), "{error}");
+}
+
+/// A truncated reservoir describes a prefix of the run. Reporting its
+/// percentiles as the run's would be a quiet lie about what was measured.
+#[test]
+fn a_saturated_population_is_refused() {
+    let text = format!(
+        "{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        cost_record("direct", 4096, true),
+        cost_record("composed", 15, false)
+    );
+    let error = cost_verification(&text).unwrap_err();
+    assert!(error.contains("prefix of the run"), "{error}");
+}
+
+/// A gate asked to measure that finds no records ran a binary that cannot
+/// measure -- the stale-build class `--validate-session-args` exists for.
+#[test]
+fn a_cost_run_that_measured_nothing_is_refused() {
+    let error = cost_verification(&overlay_log()).unwrap_err();
+    assert!(error.contains("measured no frame costs"), "{error}");
+}
+
+/// Runs that predate the instrumentation keep verifying, which is what lets
+/// archives 0001 and 0002 stay in the corpus.
+#[test]
+fn a_run_without_cost_records_still_verifies_when_not_asked() {
+    let directory = TempDir::new();
+    let log = write_log(&directory, &overlay_log());
+    direct_scanout::verify_standalone_logs_with(&[log], true, false).unwrap();
+}
+
+/// Cost records ride through `tracing` like the rest, so the reader must find
+/// them wherever the marker sits.
+#[test]
+fn decorated_cost_records_are_read() {
+    let text = format!(
+        "{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        decorated(&cost_record("direct", 27, false)),
+        decorated(&cost_record("composed", 15, false))
+    );
+    let report = cost_verification(&text).expect("decorated cost records are records");
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("composed_frames=15")),
+        "{report:?}"
+    );
+}
+
+/// A population reported twice would have one summary silently win.
+#[test]
+fn a_population_reported_twice_is_refused() {
+    let text = format!(
+        "{}\n{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        cost_record("direct", 27, false),
+        cost_record("composed", 15, false),
+        cost_record("composed", 2, false)
+    );
+    let error = cost_verification(&text).unwrap_err();
+    assert!(error.contains("reported twice"), "{error}");
+}
+
+/// The gate's `--cost` implies the overlay proof: without the window there is
+/// no composed population to measure.
+#[test]
+fn asking_for_cost_asks_for_the_overlay_that_produces_it() {
+    let probe = direct_scanout_gate::Probe::from_arguments(&["--cost".to_owned()]).unwrap();
+    assert!(probe.cost);
+    assert!(
+        probe.overlay_proof,
+        "a cost run must open the overlay it measures the composed side of"
+    );
+    assert!(
+        probe.hold_seconds >= 35,
+        "and must hold it long enough to have a distribution"
+    );
+}
+
+/// A distribution over no frames is not a measurement. The session's own
+/// emitter omits an empty population rather than reporting zeros, so evidence
+/// claiming one came from something else.
+#[test]
+fn a_population_over_no_frames_is_refused() {
+    let text = format!(
+        "{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        cost_record("direct", 27, false),
+        cost_record("composed", 0, false)
+    );
+    let error = cost_verification(&text).unwrap_err();
+    assert!(error.contains("over no frames"), "{error}");
+}

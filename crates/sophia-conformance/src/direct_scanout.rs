@@ -109,7 +109,7 @@ fn field_value<'a>(record: &'a str, name: &str) -> Option<&'a str> {
         .map(|(_, value)| value)
 }
 
-fn reject_duplicate_fields(record: &str, kind: &str) -> Result<(), String> {
+pub(crate) fn reject_duplicate_fields(record: &str, kind: &str) -> Result<(), String> {
     let mut seen = BTreeSet::new();
     for name in record
         .split_whitespace()
@@ -277,6 +277,20 @@ pub fn verify_standalone_logs_with_overlay(
     logs: &[String],
     require_overlay: bool,
 ) -> Result<Vec<String>, String> {
+    verify_standalone_logs_with(logs, require_overlay, false)
+}
+
+/// The same, additionally requiring both cost populations.
+///
+/// Off by default so archives written before the instrumentation keep
+/// verifying: a run that measured nothing is a different proof, not a failed
+/// one. A run that was *asked* to measure and did not is a stale binary,
+/// which is a failure.
+pub fn verify_standalone_logs_with(
+    logs: &[String],
+    require_overlay: bool,
+    require_cost: bool,
+) -> Result<Vec<String>, String> {
     if logs.is_empty() {
         return Err("no standalone session logs were given".to_owned());
     }
@@ -298,11 +312,16 @@ pub fn verify_standalone_logs_with_overlay(
         }
     }
     let mut report = verify_logs(logs)?;
-    if require_overlay {
+    if require_overlay || require_cost {
         for log in logs {
             let text = std::fs::read_to_string(log)
                 .map_err(|error| format!("could not read {log}: {error}"))?;
-            report.extend(crate::direct_scanout_overlay::check(&text, log)?);
+            if require_overlay {
+                report.extend(crate::direct_scanout_overlay::check(&text, log)?);
+            }
+            if require_cost {
+                report.extend(crate::direct_scanout_cost::check(&text, log)?);
+            }
         }
     }
     report.extend(

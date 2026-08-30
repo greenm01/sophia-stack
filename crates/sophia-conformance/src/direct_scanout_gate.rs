@@ -8,6 +8,16 @@ use std::process::Command;
 
 use crate::{direct_scanout, direct_scanout_archive, profile};
 
+/// How long a cost run holds the overlay, in owner-loop ticks and in the
+/// probe's own seconds.
+///
+/// The composed population only exists inside that window, and the promoted
+/// client repaints on a cursor blink -- so a window sized for the transition
+/// yields a handful of composed frames, which is a story rather than a
+/// distribution.
+const COST_HOLD_TICKS: u32 = 1_200;
+const COST_HOLD_SECONDS: u32 = 35;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Probe {
     pub width: u32,
@@ -17,6 +27,10 @@ pub struct Probe {
     /// Whether the session drives an overlay over a directly scanned frame and
     /// the verification requires the return to composition.
     pub overlay_proof: bool,
+    /// Whether the run measures what frames cost. Implies the overlay proof:
+    /// the composed population only exists while the overlay is up, so
+    /// without it there is nothing to compare a direct frame against.
+    pub cost: bool,
 }
 
 impl Default for Probe {
@@ -27,6 +41,7 @@ impl Default for Probe {
             hold_seconds: 20,
             workload: "kitty".to_owned(),
             overlay_proof: false,
+            cost: false,
         }
     }
 }
@@ -43,12 +58,19 @@ pub struct GateReport {
 impl Probe {
     pub fn from_arguments(arguments: &[String]) -> Result<Self, String> {
         let mut overlay_proof = false;
+        let mut cost = false;
         let arguments = arguments
             .iter()
-            .filter(|argument| {
-                let flag = argument.as_str() == "--overlay-proof";
-                overlay_proof |= flag;
-                !flag
+            .filter(|argument| match argument.as_str() {
+                "--overlay-proof" => {
+                    overlay_proof = true;
+                    false
+                }
+                "--cost" => {
+                    cost = true;
+                    false
+                }
+                _ => true,
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -78,7 +100,14 @@ impl Probe {
                 probe.workload
             ));
         }
-        probe.overlay_proof = overlay_proof;
+        probe.cost = cost;
+        // A cost run is an overlay run that holds the window open long
+        // enough to have a composed population, so asking for one implies
+        // the other rather than requiring both to be spelled.
+        probe.overlay_proof = overlay_proof || cost;
+        if cost {
+            probe.hold_seconds = probe.hold_seconds.max(COST_HOLD_SECONDS);
+        }
         Ok(probe)
     }
 }
@@ -100,6 +129,12 @@ pub fn run_probe(repo: &Path, probe: &Probe, client: Option<&Path>) -> Result<()
         );
     if probe.overlay_proof {
         command.env("SOPHIA_DIRECT_OVERLAY_PROOF", "1");
+    }
+    if probe.cost {
+        command.env(
+            "SOPHIA_DIRECT_OVERLAY_HOLD_TICKS",
+            COST_HOLD_TICKS.to_string(),
+        );
     }
     if let Some(client) = client {
         command.env("SOPHIA_STANDALONE_APP_BIN", client);
@@ -202,9 +237,10 @@ pub fn run_gate_with(repo: &Path, probe: &Probe) -> Result<GateReport, String> {
         core_config: &core,
         desktop_profile: &desktop,
     })?;
-    direct_scanout::verify_standalone_logs_with_overlay(
+    direct_scanout::verify_standalone_logs_with(
         &[evidence.display().to_string()],
         probe.overlay_proof,
+        probe.cost,
     )?;
     let run_root = std::env::var_os("SOPHIA_DIRECT_SCANOUT_RUN_ROOT")
         .map(PathBuf::from)

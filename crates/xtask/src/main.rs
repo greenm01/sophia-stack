@@ -90,6 +90,11 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         {
             direct_scanout::verify_standalone_logs_with_overlay(logs, true).map(print_lines)
         }
+        [command, subject, logs @ ..]
+            if command == "verify" && subject == "direct-scanout-cost" =>
+        {
+            direct_scanout::verify_standalone_logs_with(logs, true, true).map(print_lines)
+        }
         [command, subject, rest @ ..]
             if command == "verify" && subject == "direct-scanout-archive" =>
         {
@@ -157,6 +162,9 @@ fn gate_direct_scanout(arguments: &[String]) -> Result<(), String> {
     println!("Building and running the exact physical-proof binary...");
     if probe.overlay_proof {
         println!("Overlay proof: the session will open an overlay over a direct frame.");
+    }
+    if probe.cost {
+        println!("Cost run: the overlay holds long enough to measure composed frames.");
     }
     let report = direct_scanout_gate::run_gate_with(&repo, &probe)?;
     println!("Sophia commit:  {}", report.source_commit);

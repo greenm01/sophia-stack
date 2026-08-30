@@ -46,6 +46,13 @@ direct-scanout-gate:
 direct-scanout-overlay-gate:
     @cargo --quiet xtask conformance gate direct-scanout --overlay-proof
 
+# Measure whether a direct frame costs less than a composed one, on one head
+# in one session: direct flips outside the overlay window, composed frames
+# inside it. Run from tty3. Holds the overlay far longer than the transition
+# proof does, because a composed population needs to be a distribution.
+direct-scanout-cost-gate:
+    @cargo --quiet xtask conformance gate direct-scanout --cost
+
 # Re-verify an archived direct-scanout run, newest by default.
 direct-scanout-archive run='':
     @cargo --quiet xtask conformance verify direct-scanout-archive "{{ run }}"
