@@ -1511,3 +1511,65 @@ fn the_standalone_single_application_argument_set_still_starts() {
     std::fs::remove_file(&core).unwrap();
     std::fs::remove_file(&desktop).unwrap();
 }
+
+/// Arguments a cursor-flag test can use.
+///
+/// `--native-scanout` is deliberately absent, for the reason the standalone
+/// test above gives: it is gated on an environment variable, and setting one
+/// from a test races every other test in the process. The cursor default is
+/// parsed the same either way -- what native scanout decides is whether the
+/// preference is ever consulted, since only a native session calls
+/// `use_atomic_cursor_plane`.
+fn cursor_flag_arguments() -> Vec<String> {
+    vec![
+        "--session-mode=normal".to_owned(),
+        "--display=:77".to_owned(),
+        "--no-config".to_owned(),
+        "--session-app=probe=/usr/bin/true".to_owned(),
+        "--session-start=probe".to_owned(),
+        "--exit-when-startup-exits".to_owned(),
+    ]
+}
+
+/// The cursor prefers an atomic plane without being asked.
+///
+/// A preference, not a guarantee: the startup probe decides per card, and
+/// one that refuses keeps the legacy ioctl. What changed is what a session
+/// asks for when nobody says otherwise.
+#[test]
+fn the_cursor_prefers_an_atomic_plane_by_default() {
+    let config = PersistentXtermSessionConfig::from_args(&cursor_flag_arguments()).unwrap();
+    assert!(config.atomic_cursor);
+}
+
+/// Asking for both paths is a contradiction, not a precedence puzzle.
+#[test]
+fn the_two_cursor_flags_are_mutually_exclusive() {
+    let mut arguments = cursor_flag_arguments();
+    arguments.extend(["--atomic-cursor".to_owned(), "--legacy-cursor".to_owned()]);
+    let error = PersistentXtermSessionConfig::from_args(&arguments)
+        .expect_err("a session cannot want both cursor paths");
+    assert!(error.to_string().contains("mutually exclusive"), "{error}");
+}
+
+/// Either flag names a hardware path a session without native scanout does
+/// not have. The default simply does not apply there; naming one explicitly
+/// is what gets refused.
+///
+/// The remaining case -- that `--legacy-cursor` sets the preference false on
+/// a session that does have native scanout -- cannot be asserted here for
+/// the environment reason above, and is checked against the release binary
+/// with `--validate-session-args` instead.
+#[test]
+fn the_cursor_flags_need_native_scanout() {
+    for flag in ["--atomic-cursor", "--legacy-cursor"] {
+        let mut arguments = cursor_flag_arguments();
+        arguments.push(flag.to_owned());
+        let error = PersistentXtermSessionConfig::from_args(&arguments)
+            .expect_err("a session without native scanout has no cursor plane to choose");
+        assert!(
+            error.to_string().contains("--native-scanout"),
+            "{flag}: {error}"
+        );
+    }
+}

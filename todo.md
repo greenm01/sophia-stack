@@ -2279,10 +2279,31 @@ other mature compositors are references rather than Sophia runtime components.
   The three earlier archives had asserted this and tested none of it: their
   cursor records read `moves_coalesced=0 max_motion_to_submit_msec=0
   hardware_updates=1`, a cursor initialized once and never moved.
-- [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
+- [x] Replace the bounded legacy cursor baseline only after one per-output KMS
   transaction owner can combine primary and cursor-plane state in the same
   atomic request. Retain bounded cursor-only idle work and the pointer-motion
-  GLX cadence gate.
+  GLX cadence gate. The precondition is archive `0006`, where four of twelve
+  cursor moves rode primary commits as combined requests; the replacement is
+  a continuous-motion shakedown on the atomic path holding 57.97 fps with
+  p95 16.687 ms, no cursor failures, and no commit overlapping a page flip.
+  The same day's accidental legacy run is what it replaces, and is the first
+  legacy evidence under continuous motion rather than twelve synthetic
+  moves: 298 hardware updates, 243 of them overlapping a flip. The atomic
+  path did that work in 56 commits with none -- a five-fold reduction with
+  pacing intact.
+  A native session now prefers the atomic plane without being asked;
+  `--legacy-cursor` opts out, and the two flags are mutually exclusive. The
+  ioctl is not deleted and cannot be: the startup probe decides per card and
+  a refusal keeps it, which is what makes it a fallback rather than dead
+  code.
+  Retained, concretely: bounded cursor-only idle work is the
+  redundant-commit guard plus the model's `CursorWorkBoundedByAvailability`,
+  which bounds commits by CRTC availability rather than by pointer events;
+  and the GLX cadence gate survives holding both paths to their own shapes.
+  That gate needed repairing to survive at all -- it demanded
+  `wm_policy=external` from a benchmark that had become standalone, and
+  matched a resources schema three revisions old, so it could only ever pass
+  against its own fixture.
 - [ ] Replace full immutable CPU presentation replacement for stable
   software-rendered X toplevels with lease-safe damage generations or
   copy-on-write backing. Preserve child composition, bounded storage,

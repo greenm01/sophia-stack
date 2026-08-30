@@ -489,7 +489,21 @@ impl PersistentXtermSessionConfig {
         // path over directly scanned frames, and there is no reason for
         // every session to change before one has shown the atomic path
         // moving a cursor at all.
-        let atomic_cursor = args.iter().any(|arg| arg == "--atomic-cursor");
+        // The cursor rides an atomic plane by default now.
+        //
+        // Archive 0006 showed the owner combining primary and cursor state in
+        // one request on hardware, and a continuous-motion shakedown held 58
+        // fps with p95 inside one refresh while doing the same work in 56
+        // commits that the legacy ioctl took 298 to do -- 243 of which
+        // overlapped a page flip, which is the thing an atomic commit cannot
+        // do and does not need to.
+        //
+        // Still a preference rather than a guarantee: the startup probe
+        // decides per card, and one that refuses keeps the legacy ioctl,
+        // which is why that path is a fallback rather than dead code.
+        let asked_atomic_cursor = args.iter().any(|arg| arg == "--atomic-cursor");
+        let legacy_cursor = args.iter().any(|arg| arg == "--legacy-cursor");
+        let atomic_cursor = !legacy_cursor;
         let direct_cursor_proof = args.iter().any(|arg| arg == "--direct-cursor-proof");
         let direct_overlay_proof = args.iter().any(|arg| arg == "--direct-overlay-proof");
         // How long the overlay stays up. A run proving the transition wants
@@ -792,8 +806,19 @@ impl PersistentXtermSessionConfig {
         if client.is_some() && inject_text.is_some() && expect_client_stdout.is_none() {
             return Err("--client with --inject-text requires --expect-client-stdout".into());
         }
-        if atomic_cursor && (!native_scanout || !normal_session) {
-            return Err("--atomic-cursor requires --native-scanout and --session-mode=normal".into());
+        if asked_atomic_cursor && legacy_cursor {
+            return Err("--atomic-cursor and --legacy-cursor are mutually exclusive".into());
+        }
+        // The flags are about which hardware path a session prefers, and a
+        // session without native scanout has neither. Asked for explicitly,
+        // that is a contradiction worth naming; the default simply does not
+        // apply -- `use_atomic_cursor_plane` is only ever called by a native
+        // session.
+        if (asked_atomic_cursor || legacy_cursor) && (!native_scanout || !normal_session) {
+            return Err(
+                "--atomic-cursor and --legacy-cursor require --native-scanout and --session-mode=normal"
+                    .into(),
+            );
         }
         if direct_cursor_proof && (!native_scanout || !normal_session) {
             return Err(

@@ -612,6 +612,11 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     if [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]]; then
         session_args+=(--atomic-cursor)
     fi
+    # The escape hatch, for a session that wants the ioctl a refused probe
+    # would have given it anyway.
+    if [[ "${SOPHIA_LEGACY_CURSOR:-0}" == 1 ]]; then
+        session_args+=(--legacy-cursor)
+    fi
     session_args+=(
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone
@@ -865,6 +870,7 @@ session_args+=("$@")
 # reporting success. This refuses instead.
 requested_flags=()
 [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]] && requested_flags+=(--atomic-cursor)
+[[ "${SOPHIA_LEGACY_CURSOR:-0}" == 1 ]] && requested_flags+=(--legacy-cursor)
 [[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-cursor-proof)
 [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-overlay-proof)
 for requested in ${requested_flags[@]+"${requested_flags[@]}"}; do
