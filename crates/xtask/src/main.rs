@@ -95,6 +95,12 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
         {
             direct_scanout::verify_standalone_logs_with(logs, true, true).map(print_lines)
         }
+        [command, subject, logs @ ..]
+            if command == "verify" && subject == "direct-scanout-cursor" =>
+        {
+            direct_scanout::verify_standalone_logs_proving(logs, false, false, true)
+                .map(print_lines)
+        }
         [command, subject, rest @ ..]
             if command == "verify" && subject == "direct-scanout-archive" =>
         {

@@ -2238,7 +2238,16 @@ other mature compositors are references rather than Sophia runtime components.
   existed.
 - [ ] Add the hardware cursor plane, with the per-output KMS transaction owner
   the next row introduces. The legacy cursor continues over directly scanned
-  frames on its own ioctl.
+  frames on its own ioctl, which archive `0004` now establishes rather than
+  assumes: twelve cursor positions driven through the same `Pointer::place`
+  entry physical input uses, 519 hardware updates with no failures, the
+  cursor never leaving `legacy_ioctl`, `composed_cursor` still zero, and
+  twenty-six client buffers reaching the plane after the motion stopped.
+  Motion-to-submit peaked at 9 milliseconds, which is the baseline the atomic
+  cursor plane has to match.
+  The three earlier archives had asserted this and tested none of it: their
+  cursor records read `moves_coalesced=0 max_motion_to_submit_msec=0
+  hardware_updates=1`, a cursor initialized once and never moved.
 - [ ] Replace the bounded legacy cursor baseline only after one per-output KMS
   transaction owner can combine primary and cursor-plane state in the same
   atomic request. Retain bounded cursor-only idle work and the pointer-motion

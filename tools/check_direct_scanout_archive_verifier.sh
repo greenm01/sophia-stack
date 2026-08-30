@@ -154,4 +154,25 @@ sed -i "s/^evidence_sha256=.*/evidence_sha256=$(sha256sum "$observed/session.log
 reject "evidence with overlay records verified as an ordinary run" "$observed" \
     "never withdrew"
 
+# The same in the other direction, for the cursor proof: a run whose evidence
+# carries cursor-proof records faces the cursor rules whether or not the
+# manifest names them. Without this, archive 0004 re-verifies as an ordinary
+# direct-scanout run and the claim it was written to test stops being checked.
+declared_cursor="$temp_dir/declared-cursor"
+cp -r "$archive" "$declared_cursor"
+printf 'proof=cursor\n' >>"$declared_cursor/manifest"
+(cd "$declared_cursor" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "a manifest declaring a cursor proof its evidence lacks" "$declared_cursor" \
+    "does not contain"
+
+observed_cursor="$temp_dir/observed-cursor"
+cp -r "$archive" "$observed_cursor"
+printf 'sophia_live_direct_scanout_cursor_proof schema=1 status=started output=1 flips_before=10\n' \
+    >>"$observed_cursor/session.log"
+sed -i "s/^evidence_sha256=.*/evidence_sha256=$(sha256sum "$observed_cursor/session.log" | awk '{ print $1 }')/" \
+    "$observed_cursor/manifest"
+(cd "$observed_cursor" && sha256sum manifest result.kdl session.log >SHA256SUMS)
+reject "evidence with cursor records verified as an ordinary run" "$observed_cursor" \
+    "never finished"
+
 echo "direct scanout archive verifier checks passed"

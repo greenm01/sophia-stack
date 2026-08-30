@@ -212,18 +212,35 @@ pub fn verify_archive(repo: &Path, run: &Path) -> Result<(), String> {
     // archive, and evidence alone would let a plain run that happened to
     // contain a stray record decide its own rules.
     let declared = manifest
-        .iter()
-        .any(|(key, value)| key == "proof" && value == "overlay");
-    let observed = evidence_text.contains("sophia_live_direct_scanout_overlay_proof schema=1 ");
-    if declared && !observed {
-        return Err(format!(
-            "direct-scanout manifest declares an overlay proof its evidence does not contain: {}",
-            run.display()
-        ));
+        .get("proof")
+        .map(|value| value.split(',').collect::<Vec<_>>())
+        .unwrap_or_default();
+    for (kind, marker) in [
+        (
+            "overlay",
+            "sophia_live_direct_scanout_overlay_proof schema=1 ",
+        ),
+        (
+            "cursor",
+            "sophia_live_direct_scanout_cursor_proof schema=1 ",
+        ),
+    ] {
+        if declared.contains(&kind) && !evidence_text.contains(marker) {
+            return Err(format!(
+                "direct-scanout manifest declares a {kind} proof its evidence does not contain: {}",
+                run.display()
+            ));
+        }
     }
-    direct_scanout::verify_standalone_logs_with_overlay(
+    let overlay = declared.contains(&"overlay")
+        || evidence_text.contains("sophia_live_direct_scanout_overlay_proof schema=1 ");
+    let cursor = declared.contains(&"cursor")
+        || evidence_text.contains("sophia_live_direct_scanout_cursor_proof schema=1 ");
+    direct_scanout::verify_standalone_logs_proving(
         &[evidence.display().to_string()],
-        declared || observed,
+        overlay,
+        false,
+        cursor,
     )?;
     Ok(())
 }
@@ -243,13 +260,21 @@ fn write_archive(
     // Which proof this run carried, so a later re-verification applies the
     // rules that promoted it rather than today's default. Read from the
     // evidence, because the evidence is what was proven.
-    let proof = if fs::read_to_string(&session)
-        .map_err(|error| format!("could not read archived evidence: {error}"))?
-        .contains("sophia_live_direct_scanout_overlay_proof schema=1 ")
-    {
-        "proof=overlay\n"
+    let archived = fs::read_to_string(&session)
+        .map_err(|error| format!("could not read archived evidence: {error}"))?;
+    let mut kinds = Vec::new();
+    if archived.contains("sophia_live_direct_scanout_overlay_proof schema=1 ") {
+        kinds.push("overlay");
+    }
+    if archived.contains("sophia_live_direct_scanout_cursor_proof schema=1 ") {
+        kinds.push("cursor");
+    }
+    // A set, because one run can carry more than one proof, and a field that
+    // held only the first would silently drop the rules of the rest.
+    let proof = if kinds.is_empty() {
+        String::new()
     } else {
-        ""
+        format!("proof={}\n", kinds.join(","))
     };
     let manifest = format!(
         "record_schema=1\nrecord_kind=direct_scanout\nrecorded_at_utc={}\nsource_commit={}\nevidence_sha256={}\nsophia_binary_sha256={}\nclient_binary_sha256={}\ncore_config_sha256={}\ndesktop_profile_sha256={}\n{proof}",
