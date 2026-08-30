@@ -27,7 +27,7 @@ pub struct LibdrmNativeAtomicHead {
 
 /// A cursor plane's contribution to one head's part of a request.
 #[cfg(feature = "libdrm-events")]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LibdrmNativeAtomicCursor {
     pub plane: drm::control::plane::Handle,
     pub properties: LibdrmNativeCursorPlanePropertyHandles,

@@ -292,25 +292,8 @@ where
     };
 
     let objects = resource_bundle.into_objects(selected);
-    let request = if policy.allow_modeset {
-        if let Some(vrr_enabled) = policy.vrr_enabled {
-            build_native_primary_plane_atomic_request_with_vrr(
-                objects,
-                property_handles,
-                vrr_enabled,
-            )
-        } else {
-            build_native_primary_plane_atomic_request(objects, property_handles)
-        }
-    } else if let Some(vrr_enabled) = policy.vrr_enabled {
-        build_native_primary_plane_page_flip_atomic_request_with_vrr(
-            objects,
-            property_handles,
-            vrr_enabled,
-        )
-    } else {
-        build_native_primary_plane_page_flip_atomic_request(objects, property_handles)
-    };
+    let request =
+        build_native_primary_plane_atomic_request_for_policy(objects, property_handles, policy);
     let Some(request_owner) = request.request else {
         let destroy = destroy_native_primary_plane_resources(device, resource_bundle);
         let mut result = LibdrmNativePrimaryPlaneScanoutPrepareResult::from_descriptor(

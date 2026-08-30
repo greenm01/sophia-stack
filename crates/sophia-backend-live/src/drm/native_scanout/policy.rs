@@ -19,6 +19,15 @@ pub struct LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
     /// combination unrepresentable, and `page_flip_event` is cleared here so
     /// the two never have to agree twice.
     pub test_only: bool,
+    /// A cursor contribution to carry in this same commit.
+    ///
+    /// The kernel serializes commits per CRTC, so a cursor that moved while
+    /// a frame was going out cannot have its own commit -- it rides this one
+    /// or it waits. Carried on the policy because that is the only parameter
+    /// already threaded from the tick down to the request builder, and
+    /// because `vrr_enabled` above rides it exactly the same way for exactly
+    /// the same reason.
+    pub cursor: Option<LibdrmNativeAtomicCursor>,
 }
 
 impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
@@ -29,6 +38,7 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
             nonblocking: true,
             vrr_enabled: None,
             test_only: false,
+            cursor: None,
         }
     }
 
@@ -39,6 +49,7 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
             nonblocking: true,
             vrr_enabled: None,
             test_only: false,
+            cursor: None,
         }
     }
 
@@ -49,6 +60,7 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
             nonblocking: false,
             vrr_enabled: None,
             test_only: false,
+            cursor: None,
         }
     }
 
@@ -61,6 +73,12 @@ impl LibdrmNativePrimaryPlaneScanoutSubmitPolicy {
 
     pub const fn with_vrr_enabled(mut self, enabled: bool) -> Self {
         self.vrr_enabled = Some(enabled);
+        self
+    }
+
+    /// Carry a cursor into this commit.
+    pub const fn with_cursor(mut self, cursor: LibdrmNativeAtomicCursor) -> Self {
+        self.cursor = Some(cursor);
         self
     }
 

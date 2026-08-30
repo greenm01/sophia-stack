@@ -33,6 +33,7 @@ pub fn build_native_primary_plane_atomic_request(
         properties,
         LibdrmNativeAtomicCommitRequestScope::Modeset,
         None,
+        None,
     )
 }
 
@@ -47,6 +48,7 @@ pub fn build_native_primary_plane_atomic_request_with_vrr(
         properties,
         LibdrmNativeAtomicCommitRequestScope::Modeset,
         Some(enabled),
+        None,
     )
 }
 
@@ -59,6 +61,7 @@ pub fn build_native_primary_plane_page_flip_atomic_request(
         objects,
         properties,
         LibdrmNativeAtomicCommitRequestScope::PageFlip,
+        None,
         None,
     )
 }
@@ -74,15 +77,37 @@ pub fn build_native_primary_plane_page_flip_atomic_request_with_vrr(
         properties,
         LibdrmNativeAtomicCommitRequestScope::PageFlip,
         Some(enabled),
+        None,
     )
 }
 
 #[cfg(feature = "libdrm-events")]
+/// The request a submit policy asks for.
+///
+/// One entry point rather than a wrapper per combination: scope, VRR, and now
+/// the cursor are all things a policy carries, and a function per pairing
+/// would have been eight of them the moment the cursor arrived.
+#[cfg(feature = "libdrm-events")]
+pub fn build_native_primary_plane_atomic_request_for_policy(
+    objects: LibdrmNativePrimaryPlaneObjects,
+    properties: LibdrmNativePrimaryPlanePropertyHandles,
+    policy: LibdrmNativePrimaryPlaneScanoutSubmitPolicy,
+) -> LibdrmNativeAtomicRequestBuildResult {
+    build_native_primary_plane_atomic_request_with_scope(
+        objects,
+        properties,
+        policy.expected_request_scope(),
+        policy.vrr_enabled,
+        policy.cursor,
+    )
+}
+
 fn build_native_primary_plane_atomic_request_with_scope(
     objects: LibdrmNativePrimaryPlaneObjects,
     properties: LibdrmNativePrimaryPlanePropertyHandles,
     scope: LibdrmNativeAtomicCommitRequestScope,
     vrr_enabled: Option<bool>,
+    cursor: Option<LibdrmNativeAtomicCursor>,
 ) -> LibdrmNativeAtomicRequestBuildResult {
     if !is_valid_native_primary_plane_scanout_size(objects.size) {
         return LibdrmNativeAtomicRequestBuildResult {
@@ -130,6 +155,19 @@ fn build_native_primary_plane_atomic_request_with_scope(
         );
     }
     add_primary_plane_properties(&mut request, objects, properties, width, height);
+    // The cursor rides the frame's own commit when it has one to ride. A
+    // cursor that moved while this frame was going out cannot have a commit
+    // of its own -- the kernel serializes them per CRTC -- so this is the
+    // cheap case the owner prefers.
+    if let Some(cursor) = cursor {
+        add_cursor_plane_properties(
+            &mut request,
+            cursor.plane,
+            objects.crtc,
+            cursor.properties,
+            cursor.placement,
+        );
+    }
     if let (Some(enabled), Some(property)) = (vrr_enabled, properties.crtc_vrr_enabled()) {
         request.add_property(
             objects.crtc,

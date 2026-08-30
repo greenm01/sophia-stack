@@ -158,6 +158,21 @@ mod persistent_native_scanout {
         pub enabled: bool,
         pub group: usize,
         pub selection: crate::LibdrmNativePrimaryPlaneSelection,
+        /// Where the cursor should be on this head, not yet committed.
+        ///
+        /// A cell, not a queue: latest wins and supersedes in place. A
+        /// backlog that grew per pointer event would be unbounded by
+        /// construction, which is what `CursorWorkBoundedByAvailability`
+        /// forbids -- a hand moving a mouse produces motion far faster than a
+        /// display retires frames.
+        ///
+        /// `None` means nothing is waiting. The pointer being on another head
+        /// is a *placement* of `None` inside `Some`, which is how a head is
+        /// told to hide rather than told nothing.
+        pub pending_cursor: Option<Option<crate::LibdrmNativeCursorPlacement>>,
+        /// What this head is currently showing, so a redundant commit can be
+        /// skipped and a ghost can be noticed.
+        pub committed_cursor: Option<crate::LibdrmNativeCursorPlacement>,
         pub scale: u32,
         pub refresh_millihz: u32,
         pub transform: sophia_protocol::OutputTransform,
@@ -648,6 +663,8 @@ mod persistent_native_scanout {
                         initial_modeset_submission: None,
                         nonzero_exports: 0,
                         last_submit_report: None,
+                        pending_cursor: None,
+                        committed_cursor: None,
                         displayed_scanout: None,
                         displayed_group_frame: None,
                         scanout_submission: None,

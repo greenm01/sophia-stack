@@ -11,6 +11,7 @@
 //! startup probing, and hardware validation.
 
 mod api;
+mod cursor_transaction_owner;
 mod dependency;
 mod direct_scanout_cost;
 mod drm;
@@ -39,6 +40,7 @@ mod startup;
 
 pub use api::*;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+pub use cursor_transaction_owner::*;
 pub use direct_scanout_cost::*;
 pub use drm::{
     LiveDrmSysfsDiscovery, LiveDrmSysfsDiscoveryConfig, LiveSysfsConnectorRecord,
