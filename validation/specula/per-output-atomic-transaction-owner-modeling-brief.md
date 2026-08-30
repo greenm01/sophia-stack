@@ -275,11 +275,24 @@ which is the existing resource-bundle discipline
 | `DirectFrameSurvivesCursorCommit` | Safety | A cursor commit neither retires the displayed client buffer nor ends the episode | 3 |
 | `NoFrameLostToCursor` | Safety | Every rejected combined commit is followed by a primary commit carrying the same frame | 4 |
 | `CursorWorkBoundedByAvailability` | Safety | Commits are bounded by CRTC availability, not pointer events | 6 |
+| `CursorLeavesNoGhost` | Safety | No two heads show different cursor positions at once | 5 |
 | `PendingCursorEventuallyCommits` | Liveness | A moved cursor eventually reaches a plane | 1, 5 |
 
 ## 6. Findings Pending Verification
 
 ### 6.1 Model-Checkable
+
+**Checked.** `CursorPlaneTransactionOwner.tla` holds at two heads with seven
+controls, each naming the invariant it should. The cursor-only commit kind is
+load-bearing: removing it breaks liveness, because nothing obliges a client
+to draw and a cursor that waits for the next frame freezes on an idle
+desktop. Two invariants had to be restated before they could fail --
+`CursorOnlyCommitPreservesPrimary` compared a value held by `UNCHANGED`
+against itself, and `CursorLeavesNoGhost` first asked whether each head's own
+position was one it had been covered at, which a stale value satisfies. The
+work bound turned out to be implied by the single-commit rule and is kept as
+a stated consequence.
+
 
 - Whether the cursor-only commit kind is load-bearing, or whether riding the
   next primary commit suffices. It should not suffice: with a client

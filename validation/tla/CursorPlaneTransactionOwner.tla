@@ -1,5 +1,5 @@
 ------------------- MODULE CursorPlaneTransactionOwner -------------------
-EXTENDS Naturals
+EXTENDS Naturals, FiniteSets
 
 (***************************************************************************
  * One owner deciding what goes into a CRTC's next atomic commit.           *
@@ -25,6 +25,12 @@ EXTENDS Naturals
  * combined commit must never cost the frame: the retry drops the cursor,   *
  * not the primary.                                                         *
  *                                                                          *
+ * Heads of one card session share the request, which is what mirroring is: *
+ * one commit carries every head's contribution. A cursor is not on every    *
+ * head at once, so a commit also *hides* it on the heads it left -- which   *
+ * is an ioctl today and a property in the request tomorrow, and either way  *
+ * must not disturb what those heads are scanning.                           *
+ *                                                                          *
  * Deliberately not modelled: cursor image content, hotspot, formats and    *
  * sizes (a startup capability probe answers those once, the way the atomic *
  * test answers format questions for direct scanout); cursor framebuffer    *
@@ -33,10 +39,22 @@ EXTENDS Naturals
  * owns; and every duration.                                                *
  *************************************************************************)
 
-CONSTANTS MaxMoves, MaxFrames
+CONSTANTS Heads, MaxMoves, MaxFrames
 
+ASSUME Heads # {}
 ASSUME MaxMoves \in Nat /\ MaxMoves >= 1
 ASSUME MaxFrames \in Nat /\ MaxFrames >= 1
+
+(***************************************************************************
+ * Which heads the cursor projects onto at a given position. Modelled as a  *
+ * function of the position rather than as free choice, because the real    *
+ * projection is deterministic given the pointer and the head layouts       *
+ * (`project_mirror_coordinates`). Alternating parity is enough to make     *
+ * every head both covered and uncovered across a run without inventing     *
+ * geometry the model has no business having.                               *
+ *************************************************************************)
+CoveredBy(position) ==
+    IF position % 2 = 1 THEN Heads ELSE {h \in Heads : h = CHOOSE any \in Heads : TRUE}
 
 (***************************************************************************
  * outstanding  : which commit kind the CRTC is currently busy with, if     *
@@ -46,10 +64,13 @@ ASSUME MaxFrames \in Nat /\ MaxFrames >= 1
  *                cell rather than a queue: a newer move overwrites an      *
  *                uncommitted one, because a backlog that grows per pointer *
  *                event is unbounded by construction.                       *
- * committed    : the cursor position the planes are showing.               *
+ * committed    : per head, the cursor position that head is showing, or 0  *
+ *                when the cursor is not on it. A head the cursor left is   *
+ *                hidden by the same commit that moves it elsewhere.        *
  * pendingFrame : a client frame waiting to be committed.                   *
- * scanned      : which client buffer the primary plane is scanning. This   *
- *                is what a cursor commit must leave alone.                 *
+ * scanned      : per head, which client buffer that head's primary plane   *
+ *                is scanning. This is what a cursor commit must leave      *
+ *                alone -- on every head, including the ones it hides on.   *
  * doubleCommit : set if a commit is ever issued while one is outstanding.  *
  *                The single `outstanding` variable makes that structurally *
  *                impossible, so stating it as an invariant over that       *
@@ -57,7 +78,8 @@ ASSUME MaxFrames \in Nat /\ MaxFrames >= 1
  *                re-evaluates the guard instead, the way PresentFlipOwner- *
  *                ship records a bad flip.                                  *
  * lostFrame    : set if a frame is ever dropped because of the cursor.     *
- * disturbed    : set if a cursor-only commit ever changes what is scanned. *
+ * disturbed    : set if a cursor-only commit ever changes what any head is *
+ *                scanning.                                                 *
  * moves        : pointer motions the environment has produced.             *
  * frames       : client frames the environment has produced.               *
  * commits      : atomic commits issued.                                    *
@@ -74,9 +96,9 @@ Kinds == {"none", "primary", "cursorOnly"}
 Init ==
     /\ outstanding = "none"
     /\ pendingCursor = 0
-    /\ committed = 0
+    /\ committed = [h \in Heads |-> 0]
     /\ pendingFrame = 0
-    /\ scanned = 0
+    /\ scanned = [h \in Heads |-> 0]
     /\ doubleCommit = FALSE
     /\ lostFrame = FALSE
     /\ disturbed = FALSE
@@ -119,9 +141,13 @@ CommitPrimary ==
     /\ outstanding = "none"
     /\ pendingFrame # 0
     /\ outstanding' = "primary"
-    /\ scanned' = pendingFrame
+    /\ scanned' = [h \in Heads |-> pendingFrame]
     /\ pendingFrame' = 0
-    /\ committed' = IF pendingCursor # 0 THEN pendingCursor ELSE committed
+    /\ committed' =
+           IF pendingCursor = 0
+           THEN committed
+           ELSE [h \in Heads |->
+                    IF h \in CoveredBy(pendingCursor) THEN pendingCursor ELSE 0]
     /\ pendingCursor' = 0
     /\ commits' = commits + 1
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
@@ -141,11 +167,12 @@ CommitCursorOnly ==
     /\ pendingCursor # 0
     /\ pendingFrame = 0
     /\ outstanding' = "cursorOnly"
-    /\ committed' = pendingCursor
+    /\ committed' = [h \in Heads |->
+                        IF h \in CoveredBy(pendingCursor) THEN pendingCursor ELSE 0]
     /\ pendingCursor' = 0
     /\ commits' = commits + 1
     /\ scanned' = scanned
-    /\ disturbed' = (disturbed \/ scanned' # scanned)
+    /\ disturbed' = (disturbed \/ \E h \in Heads : scanned'[h] # scanned[h])
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
     /\ UNCHANGED <<pendingFrame, lostFrame, moves, frames, freed>>
 
@@ -175,9 +202,9 @@ CombinedCommitRefused ==
     /\ pendingFrame # 0
     /\ pendingCursor # 0
     /\ outstanding' = "primary"
-    /\ scanned' = pendingFrame
+    /\ scanned' = [h \in Heads |-> pendingFrame]
     /\ pendingFrame' = 0
-    /\ lostFrame' = (lostFrame \/ scanned' # pendingFrame)
+    /\ lostFrame' = (lostFrame \/ \E h \in Heads : scanned'[h] # pendingFrame)
     /\ commits' = commits + 1
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
     /\ UNCHANGED <<pendingCursor, committed, disturbed, moves,
@@ -200,9 +227,9 @@ FairSpec == Spec /\ WF_vars(Owner)
 TypeOK ==
     /\ outstanding \in Kinds
     /\ pendingCursor \in 0..MaxMoves
-    /\ committed \in 0..MaxMoves
+    /\ committed \in [Heads -> 0..MaxMoves]
     /\ pendingFrame \in 0..MaxFrames
-    /\ scanned \in 0..MaxFrames
+    /\ scanned \in [Heads -> 0..MaxFrames]
     /\ doubleCommit \in BOOLEAN
     /\ lostFrame \in BOOLEAN
     /\ disturbed \in BOOLEAN
@@ -221,6 +248,27 @@ OneOutstandingCommitPerCrtc == ~doubleCommit
  * client's buffer, which is the interaction the whole row has to preserve. *
  *************************************************************************)
 CursorOnlyCommitPreservesPrimary == ~disturbed
+
+(***************************************************************************
+ * No head keeps showing a cursor the pointer has left.                     *
+ *                                                                          *
+ * This is the group-specific one. A commit carries every head of the       *
+ * session, so moving the cursor onto one head is also the moment to take   *
+ * it off the others -- the legacy path does exactly that, hiding on every  *
+ * CRTC no longer named by a target. An implementation that updated only    *
+ * the heads it landed on would leave a cursor frozen on the monitor the    *
+ * pointer walked off, which looks like a stuck pointer and is not caught   *
+ * by any of the checks above.                                              *
+ *                                                                          *
+ * Stated as heads agreeing rather than as each head matching its own       *
+ * position's coverage: the first version of this passed its own controls,  *
+ * because a head left showing an old position is still consistent with     *
+ * where that position was covered. What a ghost actually looks like is two *
+ * heads showing different cursors at once.                                 *
+ *************************************************************************)
+CursorLeavesNoGhost ==
+    \A h1, h2 \in Heads :
+        (committed[h1] # 0 /\ committed[h2] # 0) => committed[h1] = committed[h2]
 
 (***************************************************************************
  * A cursor never costs a frame. A refused combined commit retries with the *
