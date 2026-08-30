@@ -71,17 +71,23 @@ where
     /// content was offered and the moment a buffer is ready to submit, while
     /// a direct frame pays only the export path. Which population an export
     /// belongs to is not known until it finishes -- the direct attempt can
-    /// fall back -- so it is read from the flip counter afterwards rather
-    /// than predicted.
+    /// fall back and compose inside this same call -- so it is read
+    /// afterwards rather than predicted.
+    ///
+    /// Read from the *export* counter, not the flip counter. A flip happens
+    /// later, at submit, so a direct frame's flip has not been counted yet
+    /// when its export returns: measuring against it filed every export as
+    /// composed and left the direct population empty, which the cost gate
+    /// then correctly refused as having nothing to compare.
     fn export_rendered_scanout_buffer(
         &mut self,
         target: LiveGbmEglFrameTargetRecord,
     ) -> LiveRenderedScanoutBufferExport<Self::Owner> {
         let offered = self.frame_offered_at.take();
-        let direct_flips_before = self.direct_scanout_flips();
+        let direct_exports_before = self.direct_scanout_exports();
         let export = self.export_rendered_scanout_buffer_measured(target);
         if let Some(offered) = offered {
-            let direct = self.direct_scanout_flips() > direct_flips_before;
+            let direct = self.direct_scanout_exports() > direct_exports_before;
             self.cost.record_offer_to_submit(direct, offered.elapsed());
         }
         export

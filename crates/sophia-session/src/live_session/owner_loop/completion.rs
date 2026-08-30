@@ -871,12 +871,35 @@
     if let Some(native_scanout) = native_scanout.as_ref() {
         let cost = native_scanout.direct_scanout_cost();
         for (population, samples) in [("direct", &cost.direct), ("composed", &cost.composed)] {
-            let (Some(offer), Some(flip)) = (
-                samples.offer_to_submit.summary(),
-                samples.submit_to_flip.summary(),
-            ) else {
+            let offer = samples.offer_to_submit.summary();
+            let flip = samples.submit_to_flip.summary();
+            // Absent means absent: a population with no samples at all never
+            // happened, and belongs in no record. But a population with only
+            // one half *did* happen and was half-measured, which is a defect
+            // in the measuring rather than a fact about the run -- so it is
+            // reported with the empty half showing zero frames, where the
+            // gate can name it. Requiring both halves here instead made the
+            // whole record vanish, and the only symptom was the comparison
+            // reporting no direct frames at all.
+            if offer.is_none() && flip.is_none() {
                 continue;
-            };
+            }
+            let offer = offer.unwrap_or(sophia_backend_live::DirectScanoutCostSummary {
+                frames: 0,
+                min: 0,
+                p50: 0,
+                p99: 0,
+                max: 0,
+                saturated: false,
+            });
+            let flip = flip.unwrap_or(sophia_backend_live::DirectScanoutCostSummary {
+                frames: 0,
+                min: 0,
+                p50: 0,
+                p99: 0,
+                max: 0,
+                saturated: false,
+            });
             crate::session_println!(
                 "sophia_live_direct_scanout_cost schema=1 population={population} frames={} offer_submit_us_min={} offer_submit_us_p50={} offer_submit_us_p99={} offer_submit_us_max={} submit_flip_frames={} submit_flip_us_min={} submit_flip_us_p50={} submit_flip_us_p99={} submit_flip_us_max={} saturated={}",
                 offer.frames,

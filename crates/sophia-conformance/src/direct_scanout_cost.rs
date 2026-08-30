@@ -17,6 +17,7 @@ const MARKER: &str = "sophia_live_direct_scanout_cost schema=1 ";
 pub struct PopulationCost {
     pub population: String,
     pub frames: usize,
+    pub submit_flip_frames: usize,
     pub offer_submit_p50: u32,
     pub offer_submit_p99: u32,
     pub submit_flip_p50: u32,
@@ -65,6 +66,7 @@ pub fn read(text: &str, log: &str) -> Result<Vec<PopulationCost>, String> {
         }
         populations.push(PopulationCost {
             frames: number(record, "frames", log)? as usize,
+            submit_flip_frames: number(record, "submit_flip_frames", log)? as usize,
             offer_submit_p50: number(record, "offer_submit_us_p50", log)?,
             offer_submit_p99: number(record, "offer_submit_us_p99", log)?,
             submit_flip_p50: number(record, "submit_flip_us_p50", log)?,
@@ -96,9 +98,14 @@ pub fn check(text: &str, log: &str) -> Result<Vec<String>, String> {
                 "no {population} frames were measured, so there is nothing to compare against: {log}"
             ));
         };
-        if measured.frames == 0 {
+        if measured.frames == 0 || measured.submit_flip_frames == 0 {
+            // Both halves or neither. A population measured on one side only
+            // is a hole in the instrument, and it is worth naming which side:
+            // the offer half being empty while frames reached glass is what
+            // happens when an export is filed under the wrong population.
             return Err(format!(
-                "the {population} population reported a distribution over no frames: {log}"
+                "the {population} population was measured on only one side ({} offer samples, {} flip samples), so its cost is not comparable: {log}",
+                measured.frames, measured.submit_flip_frames
             ));
         }
         if measured.saturated {

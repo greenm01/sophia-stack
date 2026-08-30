@@ -594,5 +594,25 @@ fn a_population_over_no_frames_is_refused() {
         cost_record("composed", 0, false)
     );
     let error = cost_verification(&text).unwrap_err();
-    assert!(error.contains("over no frames"), "{error}");
+    assert!(error.contains("only one side"), "{error}");
+}
+
+/// The exact shape the first cost run produced: frames reached glass, but
+/// every export was filed under the other population, so one side of the
+/// measurement was empty. The record now shows it instead of vanishing.
+#[test]
+fn a_population_measured_on_only_one_side_is_refused() {
+    let half =
+        cost_record("direct", 0, false).replace("submit_flip_frames=0", "submit_flip_frames=30");
+    let text = format!(
+        "{}\n{}\n{}\n",
+        overlay_log().trim_end(),
+        half,
+        cost_record("composed", 47, false)
+    );
+    let error = cost_verification(&text).unwrap_err();
+    assert!(
+        error.contains("only one side") && error.contains("0 offer samples"),
+        "{error}"
+    );
 }
