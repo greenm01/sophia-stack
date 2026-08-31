@@ -16,6 +16,26 @@ pub struct LivePageFlipCallbackQueueReport {
 }
 
 impl LivePageFlipCallbackQueueReport {
+    pub(crate) fn with_accepted_capacity(capacity: usize) -> Self {
+        Self {
+            accepted_callbacks: Vec::with_capacity(capacity),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn record_observation(
+        &mut self,
+        callback: LivePageFlipCallback,
+        callback_report: LivePageFlipCallbackReport,
+    ) {
+        self.drained = self.drained.saturating_add(1);
+        self.record_decision(callback_report.decision);
+        if callback_report.decision == LivePageFlipCallbackDecision::Accepted {
+            self.last_accepted = Some(callback_report);
+            self.accepted_callbacks.push(callback);
+        }
+    }
+
     fn record_decision(&mut self, decision: LivePageFlipCallbackDecision) {
         match decision {
             LivePageFlipCallbackDecision::Accepted => {
@@ -55,12 +75,7 @@ impl LivePageFlipCallbackQueue {
             match self.receiver.try_recv() {
                 Ok(callback) => {
                     let callback_report = observe(callback);
-                    report.drained = report.drained.saturating_add(1);
-                    report.record_decision(callback_report.decision);
-                    if callback_report.decision == LivePageFlipCallbackDecision::Accepted {
-                        report.last_accepted = Some(callback_report);
-                        report.accepted_callbacks.push(callback);
-                    }
+                    report.record_observation(callback, callback_report);
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {

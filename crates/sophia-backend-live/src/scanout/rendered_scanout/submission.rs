@@ -16,6 +16,13 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
     pub fn into_scanout_buffer(self) -> Owner {
         self.scanout_buffer
     }
+    pub fn completion_fence_status(&self) -> std::io::Result<LibdrmNativeCompletionFenceStatus> {
+        self.primary_plane.completion_fence_status()
+    }
+
+    pub(crate) fn clear_completion_fence(&mut self) {
+        self.primary_plane.clear_completion_fence();
+    }
 
     pub fn map_scanout_buffer<Next>(
         self,

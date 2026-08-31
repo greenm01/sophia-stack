@@ -111,6 +111,7 @@ where
                 plane_crtc_h,
             )
             .with_crtc_vrr_enabled(crtc_properties.get("VRR_ENABLED"))
+            .with_crtc_out_fence_ptr(crtc_properties.get("OUT_FENCE_PTR"))
             .with_plane_in_formats(plane_properties.get("IN_FORMATS")),
         ),
     }

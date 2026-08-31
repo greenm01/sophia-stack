@@ -1,7 +1,7 @@
 use crate::{
-    LIVE_RENDERED_OUTPUT_CAPACITY, LiveBackendRuntimeAssembly, LivePageFlipCallbackQueue,
-    LiveProductionNativeScanout, LiveRendererImportPathStatus, LiveRendererImportStartupStatus,
-    LiveRendererRuntimeObservation, LiveRendererSelectionObservation,
+    LIVE_RENDERED_OUTPUT_CAPACITY, LiveBackendRuntimeAssembly, LiveProductionNativeScanout,
+    LiveRendererImportPathStatus, LiveRendererImportStartupStatus, LiveRendererRuntimeObservation,
+    LiveRendererSelectionObservation,
 };
 use sophia_engine::{HeadlessCompositorBackendAssembly, HeadlessOutput};
 use sophia_protocol::{CommittedSurfaceState, OutputId, Rect};
@@ -70,10 +70,6 @@ impl LiveProductionOutputRuntimeSet {
                 let Some(&primary_head) = head_indices.first() else {
                     return Err("production native output has no head".into());
                 };
-                runtime = runtime.with_page_flip_callback_queue(LivePageFlipCallbackQueue::new(
-                    native_scanout.take_output_receiver(output.id),
-                    64,
-                ));
                 let selection = native_scanout.selection(primary_head);
                 if !runtime.configure_native_output_selection(output.id, selection) {
                     return Err("production native output selection was not registered".into());

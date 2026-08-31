@@ -4,7 +4,6 @@ mod persistent_native_scanout {
     use sophia_engine::{CompositorBackendTickInput, OutputFramePresentationState};
     use sophia_protocol::{OutputId, TransactionId};
     use std::collections::{BTreeMap, BTreeSet};
-    use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
     use std::time::{Duration, Instant};
 
     mod cursor;
@@ -82,11 +81,6 @@ mod persistent_native_scanout {
                 crate::RealAtomicScanoutRenderDeviceDiscovery,
             >,
         >,
-        /// One callback channel per logical output, taken once when its runtime is
-        /// built. Per output rather than per head because a mirror group's heads
-        /// feed one runtime: two queues would make the group's flips arrive as two
-        /// unrelated streams that nothing joins back up.
-        output_callbacks: BTreeMap<OutputId, Receiver<crate::LivePageFlipCallback>>,
         /// Primary presentation and last-head ownership for mirror generations.
         output_lifecycles: BTreeMap<OutputId, LiveProductionMirrorGroupLifecycle>,
         /// Engine-owned prepare/submit/flip barrier for the active generation
@@ -137,8 +131,12 @@ mod persistent_native_scanout {
 
     pub struct LiveProductionNativeGroup {
         pub session: crate::RealAtomicScanoutPageFlipSession,
-        pub sender: SyncSender<crate::LivePageFlipCallback>,
-        pub receiver: Receiver<crate::LivePageFlipCallback>,
+        /// Topology-sized storage reused by the card completion pump.
+        /// The owner drains this before any watchdog can inspect a head.
+        pub callbacks: Vec<crate::LivePageFlipCallback>,
+        /// Kernel timing stays separate because an out-fence completion has no
+        /// kernel vblank timestamp.
+        pub timestamps: Vec<crate::LibdrmKernelPageFlipTimestamp>,
         /// The renderer thread every head on this card shares, once sharing is
         /// on. A group is a card session, which is exactly the DRM device
         /// group the heads render against: one EGL display, one GBM device,
@@ -151,6 +149,26 @@ mod persistent_native_scanout {
         completed_retire: Option<crate::LiveTrackedRenderedPrimaryPlaneScanoutRetireReport>,
         completed_serial: Option<u64>,
         errors: Vec<String>,
+    }
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum LiveProductionKmsCompletionMode {
+        PageFlipPreferred,
+        OutFenceAuthoritative,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum LiveProductionKmsCompletionSource {
+        PageFlipEvent,
+        OutFence,
+    }
+
+    impl LiveProductionKmsCompletionSource {
+        const fn label(self) -> &'static str {
+            match self {
+                Self::PageFlipEvent => "page_flip_event",
+                Self::OutFence => "out_fence",
+            }
+        }
     }
 
     pub struct LiveProductionNativeHead {
@@ -191,9 +209,15 @@ mod persistent_native_scanout {
         pub transform: sophia_protocol::OutputTransform,
         pub mapping: sophia_protocol::OutputHeadMapping,
         pub vrr: sophia_protocol::OutputVrrPolicy,
-        /// Feeds this head's logical output. Every head of a mirror group holds a
-        /// clone of the same sender.
-        pub sender: SyncSender<crate::LivePageFlipCallback>,
+        /// One KMS submission may be outstanding per head, so one decoded
+        /// completion may wait for that owner. A second live completion is a
+        /// terminal saturation error, never a discard.
+        pub pending_callback: Option<crate::LivePageFlipCallback>,
+        pub completion_mode: LiveProductionKmsCompletionMode,
+        pub completion_fence_status: crate::LibdrmNativeCompletionFenceStatus,
+        pub out_fence_retirements: usize,
+        pub late_page_flip_events: usize,
+        pub completion_fence_errors: usize,
         pub output: sophia_engine::HeadlessOutput,
         pub target_generation: u64,
         pub submitted_at: Option<Instant>,
@@ -600,9 +624,6 @@ mod persistent_native_scanout {
                 crate::LiveProductionPageFlipTracker::from_outputs(&presentation_outputs);
             let mut groups = Vec::new();
             let mut heads = Vec::new();
-            let mut output_senders: BTreeMap<OutputId, SyncSender<crate::LivePageFlipCallback>> =
-                BTreeMap::new();
-            let mut output_callbacks = BTreeMap::new();
             let mut exporters = Vec::new();
             for session in sessions.sessions.drain(..) {
                 let group = groups.len();
@@ -629,14 +650,6 @@ mod persistent_native_scanout {
                                     .preferred_xrgb8888_scanout_modifiers_for_selection(selection),
                             ),
                     );
-                    let sender = output_senders
-                        .entry(output_id)
-                        .or_insert_with(|| {
-                            let (sender, receiver) = sync_channel(64);
-                            output_callbacks.insert(output_id, receiver);
-                            sender
-                        })
-                        .clone();
                     heads.push(LiveProductionNativeHead {
                         head: head_id,
                         enabled: true,
@@ -647,7 +660,13 @@ mod persistent_native_scanout {
                         transform: target.transform,
                         mapping: target.mapping,
                         vrr: sophia_protocol::OutputVrrPolicy::Disabled,
-                        sender,
+                        pending_callback: None,
+                        completion_mode: LiveProductionKmsCompletionMode::PageFlipPreferred,
+                        completion_fence_status:
+                            crate::LibdrmNativeCompletionFenceStatus::Unsupported,
+                        out_fence_retirements: 0,
+                        late_page_flip_events: 0,
+                        completion_fence_errors: 0,
                         output: sophia_engine::HeadlessOutput {
                             id: output_id,
                             size,
@@ -707,11 +726,11 @@ mod persistent_native_scanout {
                         })?,
                     });
                 }
-                let (sender, receiver) = sync_channel(64);
+                let callback_capacity = session.heads().len().max(1);
                 groups.push(LiveProductionNativeGroup {
                     session,
-                    sender,
-                    receiver,
+                    callbacks: Vec::with_capacity(callback_capacity),
+                    timestamps: Vec::with_capacity(callback_capacity),
                     renderer_core: None,
                 });
             }
@@ -783,7 +802,6 @@ mod persistent_native_scanout {
                 callback_queue_saturated: 0,
                 nonzero_exports: 0,
                 exporters,
-                output_callbacks,
                 output_lifecycles,
                 output_cohorts: BTreeMap::new(),
                 deferred_mirror_generations: BTreeMap::new(),
@@ -989,16 +1007,17 @@ mod persistent_native_scanout {
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            // The poller's state at the moment of the stall is what attributes
-            // it. An event stuck or dropped inside Sophia leaves pending depth
-            // or a rejected count behind; a poller that is empty, routed, and
-            // last read clean means the completion event never crossed the
-            // card descriptor, and the fault is below this process.
+            // Instantaneous state explains what can retire now; cumulative
+            // counters explain whether this process ever decoded, rejected, or
+            // emitted evidence. An empty final read is not an attribution.
             let diagnostics = self.groups[head.group]
                 .session
                 .page_flip_poller_diagnostics();
+            let cumulative = self.groups[head.group]
+                .session
+                .page_flip_poller_cumulative_diagnostics();
             tracing::error!(
-                "sophia_live_native_page_flip_stall schema=2 status=hard_stall output={} head={} index={} group={} age_ms={} generation={} submissions={} retirements={} callbacks={} ever_retired={} callback_serial={} in_flight_ticks={} submitted_sequence={} peer_age_ms=[{}] poller_pending={} poller_routes={} poller_last_read={:?} poller_last_decoded={} poller_last_rejected={} action=terminate_session",
+                "sophia_live_native_page_flip_stall schema=3 status=hard_stall output={} head={} index={} group={} age_ms={} generation={} submissions={} retirements={} callbacks={} ever_retired={} callback_serial={} in_flight_ticks={} submitted_sequence={} peer_age_ms=[{}] completion_mode={:?} completion_fence={:?} completion_ledger_pending={} out_fence_retirements={} late_page_flip_events={} completion_fence_errors={} poller_pending={} poller_routes={} poller_last_read={:?} poller_last_decoded={} poller_last_rejected={} poller_read_calls={} poller_would_block_reads={} poller_read_failures={} poller_decoded_total={} poller_rejected_total={} poller_emitted_total={} action=terminate_session",
                 head.output.id.raw(),
                 head.head.raw(),
                 index,
@@ -1015,11 +1034,23 @@ mod persistent_native_scanout {
                 head.submitted_sequence
                     .map_or_else(|| "none".to_owned(), |sequence| sequence.to_string()),
                 peers,
+                head.completion_mode,
+                head.completion_fence_status,
+                head.pending_callback.is_some(),
+                head.out_fence_retirements,
+                head.late_page_flip_events,
+                head.completion_fence_errors,
                 diagnostics.pending_callbacks,
                 diagnostics.route_count,
                 diagnostics.last_read_loop.status,
                 diagnostics.last_read_loop.decoded_callbacks,
                 diagnostics.last_read_loop.rejected_callbacks,
+                cumulative.read_calls,
+                cumulative.would_block_reads,
+                cumulative.read_failures,
+                cumulative.decoded_callbacks,
+                cumulative.rejected_callbacks,
+                cumulative.emitted_callbacks,
             );
             Err(format!(
                 "native page flip exceeded the {} ms hard-stall boundary on head {} after {} retirements",
@@ -1118,15 +1149,6 @@ mod persistent_native_scanout {
                 .map(|index| self.heads[index].selection)
         }
 
-        pub fn take_output_receiver(
-            &mut self,
-            output: OutputId,
-        ) -> Receiver<crate::LivePageFlipCallback> {
-            self.output_callbacks
-                .remove(&output)
-                .expect("native page-flip receiver must attach once per logical output")
-        }
-
         pub fn run_tick(
             &mut self,
             output: OutputId,
@@ -1152,13 +1174,11 @@ mod persistent_native_scanout {
                 return Ok(report);
             }
             let index = self.primary_head(output)?;
-            self.ensure_page_flip_progress()?;
             if !self.exporter_mut(output)?.pending_frame() {
                 self.retire_ready_and_retry_cleanup(output, runtime)?;
                 return Ok(runtime.run_tick(input)?);
             }
             let group = self.heads[index].group;
-            self.poll_group_callbacks(group)?;
             // Arm the cursor to ride this frame's commit, when one is
             // pending. The request is being built anyway, so the ride costs
             // nothing -- and it is the only way a cursor moves while frames
@@ -1443,6 +1463,22 @@ mod persistent_native_scanout {
             }
         }
 
+        fn synthesize_out_fence_callback(&mut self, index: usize) -> crate::LivePageFlipCallback {
+            let serial = self.heads[index]
+                .last_callback_serial
+                .unwrap_or_default()
+                .saturating_add(1);
+            self.heads[index].completion_mode =
+                LiveProductionKmsCompletionMode::OutFenceAuthoritative;
+            self.heads[index].out_fence_retirements =
+                self.heads[index].out_fence_retirements.saturating_add(1);
+            crate::LivePageFlipCallback {
+                output: self.heads[index].output.id,
+                head: self.heads[index].head,
+                frame_serial: serial,
+            }
+        }
+
         fn service_mirror_group_retirement(
             &mut self,
             output: OutputId,
@@ -1450,30 +1486,74 @@ mod persistent_native_scanout {
         ) -> LiveProductionMirrorRetirementReport {
             let indices = self.head_indices(output);
             let mut errors = Vec::new();
-            let groups = indices
-                .iter()
-                .map(|index| self.heads[*index].group)
-                .collect::<BTreeSet<_>>();
-            for group in groups {
-                if let Err(error) = self.poll_group_callbacks(group) {
-                    errors.push(format!("mirror callback collection failed: {error}"));
+            // The card pump has already routed at most one completion into
+            // each head's ledger. Admit those physical callbacks without
+            // publishing a per-head logical flip; the group join below is the
+            // only publisher of the output-level event.
+            let mut page_flip_callbacks =
+                crate::LivePageFlipCallbackQueueReport::with_accepted_capacity(indices.len());
+            let mut completion_sources = Vec::with_capacity(indices.len());
+            for head_index in indices.iter().copied() {
+                let completion = self.heads[head_index]
+                    .pending_callback
+                    .take()
+                    .map(|callback| (callback, LiveProductionKmsCompletionSource::PageFlipEvent));
+                let completion = if completion.is_some() {
+                    completion
+                } else {
+                    match self.heads[head_index]
+                        .scanout_submission
+                        .as_ref()
+                        .map(crate::LiveRenderedPrimaryPlaneScanoutSubmission::completion_fence_status)
+                        .transpose()
+                    {
+                        Ok(status) => {
+                            let status = status
+                                .unwrap_or(crate::LibdrmNativeCompletionFenceStatus::Unsupported);
+                            self.heads[head_index].completion_fence_status = status;
+                            if status == crate::LibdrmNativeCompletionFenceStatus::Signaled {
+                                Some((
+                                    self.synthesize_out_fence_callback(head_index),
+                                    LiveProductionKmsCompletionSource::OutFence,
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        Err(error) => {
+                            self.heads[head_index].completion_fence_errors = self.heads[head_index]
+                                .completion_fence_errors
+                                .saturating_add(1);
+                            errors.push(format!(
+                                "mirror head {} completion fence poll failed: {error}",
+                                self.heads[head_index].head.raw(),
+                            ));
+                            None
+                        }
+                    }
+                };
+                let Some((callback, source)) = completion else {
+                    continue;
+                };
+                let observation = runtime.observe_mirror_page_flip_callback(callback);
+                if observation.decision == crate::LivePageFlipCallbackDecision::Accepted {
+                    completion_sources.push(source);
                 }
+                page_flip_callbacks.record_observation(callback, observation);
             }
-
-            // Admit physical callbacks without publishing a per-head logical
-            // page flip. The group lifecycle below publishes only the primary.
-            let page_flip_callbacks = runtime.drain_mirror_page_flip_callback_queue();
             self.callback_rejected = self.callback_rejected.saturating_add(
                 page_flip_callbacks.rejected_unexpected_output
                     + page_flip_callbacks.rejected_stale_frame_serial,
             );
-            self.callback_queue_saturated = self
-                .callback_queue_saturated
-                .saturating_add(usize::from(page_flip_callbacks.max_reached));
 
             let mut completed_retire = None;
             let mut completed_serial = None;
-            for callback in page_flip_callbacks.accepted_callbacks.iter().copied() {
+            for (callback, completion_source) in page_flip_callbacks
+                .accepted_callbacks
+                .iter()
+                .copied()
+                .zip(completion_sources)
+            {
                 let Some(head_index) = self.head_index_for_output_head(output, callback.head)
                 else {
                     self.callback_rejected = self.callback_rejected.saturating_add(1);
@@ -1483,7 +1563,7 @@ mod persistent_native_scanout {
                     ));
                     continue;
                 };
-                let Some(submission) = self.heads[head_index].scanout_submission.take() else {
+                let Some(mut submission) = self.heads[head_index].scanout_submission.take() else {
                     errors.push(format!(
                         "mirror head {} callback has no physical submission",
                         callback.head.raw()
@@ -1503,13 +1583,17 @@ mod persistent_native_scanout {
                     output,
                     callback.head,
                     callback.frame_serial,
-                )) {
+                )) && completion_source
+                    == LiveProductionKmsCompletionSource::PageFlipEvent
+                {
                     self.kernel_page_flip_timestamps =
                         self.kernel_page_flip_timestamps.saturating_add(1);
                     ust
                 } else {
-                    self.kernel_page_flip_timestamp_missing =
-                        self.kernel_page_flip_timestamp_missing.saturating_add(1);
+                    if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
+                        self.kernel_page_flip_timestamp_missing =
+                            self.kernel_page_flip_timestamp_missing.saturating_add(1);
+                    }
                     Self::monotonic_ust_usec()
                 };
                 let submitted_ust_usec = self.heads[head_index].submitted_ust_usec.take();
@@ -1539,6 +1623,7 @@ mod persistent_native_scanout {
                     ));
                     continue;
                 };
+                submission.clear_completion_fence();
                 let previous_frame = self.heads[head_index].displayed_group_frame.replace(frame);
                 if let Some(previous) = self.heads[head_index].displayed_scanout.replace(submission)
                 {
@@ -1612,9 +1697,10 @@ mod persistent_native_scanout {
                     }
                 }
                 tracing::info!(
-                    "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks=1 kernel_sequence={} frame={}",
+                    "sophia_live_native_head_completion schema=1 status=accepted output={} head={} callbacks=1 completion_source={} completion_serial={} frame={}",
                     output.raw(),
                     callback.head.raw(),
+                    completion_source.label(),
                     callback.frame_serial,
                     frame.raw(),
                 );
@@ -2392,7 +2478,6 @@ mod persistent_native_scanout {
                     )
                     .into());
                 }
-                self.ensure_page_flip_progress()?;
                 self.publish_mirror_group_page_flip(output, runtime, retirement.completed_serial);
                 if let Some(completed_serial) = retirement.completed_serial {
                     self.finish_mirror_presentation_cohort(
@@ -2406,14 +2491,48 @@ mod persistent_native_scanout {
                 return Ok(());
             }
             let index = self.primary_head(output)?;
-            self.ensure_page_flip_progress()?;
             let group = self.heads[index].group;
-            self.poll_group_callbacks(group)?;
-            let report = runtime.drain_rendered_primary_plane_page_flip_callbacks_with(
-                self.groups[group].session.card(),
-            );
-            self.observe_callbacks(index, report.page_flip_callbacks.clone());
-            if let Some(retire) = report.rendered_primary_plane_scanout_retire {
+            let mut callbacks = crate::LivePageFlipCallbackQueueReport::with_accepted_capacity(1);
+            let completion = self.heads[index]
+                .pending_callback
+                .take()
+                .map(|callback| (callback, LiveProductionKmsCompletionSource::PageFlipEvent));
+            let completion = if completion.is_some() {
+                completion
+            } else {
+                match runtime.rendered_primary_plane_completion_fence_status_for(output) {
+                    Ok(status) => {
+                        self.heads[index].completion_fence_status = status;
+                        if status == crate::LibdrmNativeCompletionFenceStatus::Signaled {
+                            Some((
+                                self.synthesize_out_fence_callback(index),
+                                LiveProductionKmsCompletionSource::OutFence,
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(error) => {
+                        self.heads[index].completion_fence_errors =
+                            self.heads[index].completion_fence_errors.saturating_add(1);
+                        return Err(format!("native completion fence poll failed: {error}").into());
+                    }
+                }
+            };
+            let mut completion_source = LiveProductionKmsCompletionSource::PageFlipEvent;
+            let retire = completion.and_then(|(callback, source)| {
+                completion_source = source;
+                let observation = runtime.observe_page_flip_callback(callback);
+                callbacks.record_observation(callback, observation);
+                (observation.decision == crate::LivePageFlipCallbackDecision::Accepted).then(|| {
+                    runtime.retire_tracked_rendered_primary_plane_scanout_after_page_flip(
+                        self.groups[group].session.card(),
+                        &observation,
+                    )
+                })
+            });
+            self.observe_callbacks_with_source(index, callbacks, completion_source);
+            if let Some(retire) = retire {
                 self.observe_retire(index, retire);
             }
             Ok(())
@@ -2634,31 +2753,61 @@ mod persistent_native_scanout {
             index: usize,
             report: crate::LivePageFlipCallbackQueueReport,
         ) {
+            self.observe_callbacks_with_source(
+                index,
+                report,
+                LiveProductionKmsCompletionSource::PageFlipEvent,
+            );
+        }
+
+        fn observe_callbacks_with_source(
+            &mut self,
+            index: usize,
+            report: crate::LivePageFlipCallbackQueueReport,
+            completion_source: LiveProductionKmsCompletionSource,
+        ) {
             self.callback_accepted = self.callback_accepted.saturating_add(report.accepted);
             self.heads[index].callback_accepted = self.heads[index]
                 .callback_accepted
                 .saturating_add(report.accepted);
             if report.accepted > 0 {
                 trace_live_native_lifecycle("page_flip_callback_accepted");
-                tracing::info!(
-                    "sophia_live_native_page_flip schema=1 status=callback_accepted output={} callbacks={} kernel_sequence={}",
-                    self.heads[index].output.id.raw(),
-                    report.accepted,
-                    report
-                        .last_accepted
-                        .and_then(|accepted| accepted.event.frame_serial)
-                        .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
-                );
-                tracing::info!(
-                    "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks={} kernel_sequence={}",
-                    self.heads[index].output.id.raw(),
-                    self.heads[index].head.raw(),
-                    report.accepted,
-                    report
-                        .last_accepted
-                        .and_then(|accepted| accepted.event.frame_serial)
-                        .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
-                );
+                if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
+                    tracing::info!(
+                        "sophia_live_native_page_flip schema=1 status=callback_accepted output={} callbacks={} kernel_sequence={}",
+                        self.heads[index].output.id.raw(),
+                        report.accepted,
+                        report
+                            .last_accepted
+                            .and_then(|accepted| accepted.event.frame_serial)
+                            .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
+                    );
+                    tracing::info!(
+                        "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks={} kernel_sequence={}",
+                        self.heads[index].output.id.raw(),
+                        self.heads[index].head.raw(),
+                        report.accepted,
+                        report
+                            .last_accepted
+                            .and_then(|accepted| accepted.event.frame_serial)
+                            .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
+                    );
+                } else {
+                    tracing::info!(
+                        "sophia_live_native_completion schema=1 status=accepted output={} head={} callbacks={} completion_source={} completion_serial={}",
+                        self.heads[index].output.id.raw(),
+                        self.heads[index].head.raw(),
+                        report.accepted,
+                        completion_source.label(),
+                        report
+                            .last_accepted
+                            .and_then(|accepted| accepted.event.frame_serial)
+                            .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
+                    );
+                }
+                self.heads[index].last_callback_serial = report
+                    .last_accepted
+                    .and_then(|accepted| accepted.event.frame_serial);
                 if let Some(checksum) = self.heads[index].submitted_checksum.take() {
                     self.heads[index].presented_logical_checksum = checksum;
                 }
@@ -2687,13 +2836,17 @@ mod persistent_native_scanout {
                     let (presentation_msec, ust) = if let Some(ust) = self
                         .kernel_page_flip_ust
                         .remove(&(output, self.heads[index].head, kernel_sequence))
-                    {
+                        .filter(|_| {
+                            completion_source == LiveProductionKmsCompletionSource::PageFlipEvent
+                        }) {
                         self.kernel_page_flip_timestamps =
                             self.kernel_page_flip_timestamps.saturating_add(1);
                         (ust / 1_000, ust)
                     } else {
-                        self.kernel_page_flip_timestamp_missing =
-                            self.kernel_page_flip_timestamp_missing.saturating_add(1);
+                        if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
+                            self.kernel_page_flip_timestamp_missing =
+                                self.kernel_page_flip_timestamp_missing.saturating_add(1);
+                        }
                         let elapsed = self.presentation_started.elapsed();
                         (
                             u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
@@ -3319,64 +3472,98 @@ mod persistent_native_scanout {
             &mut self,
             group: usize,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let (callbacks, timestamps) = {
-                let group = &mut self.groups[group];
-                let _ = group
-                    .session
-                    .poll_native_page_flip_events(&group.sender, 64, 64);
-                let timestamps = group.session.drain_emitted_kernel_page_flip_timestamps();
-                let mut callbacks = Vec::new();
-                loop {
-                    match group.receiver.try_recv() {
-                        Ok(callback) => callbacks.push(callback),
-                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            return Err("native card callback router disconnected".into());
-                        }
-                    }
-                }
-                (callbacks, timestamps)
+            let callback_capacity = self
+                .heads
+                .iter()
+                .filter(|head| head.enabled && head.group == group)
+                .count()
+                .max(1);
+            let report = {
+                let owner = &mut self.groups[group];
+                owner.callbacks.clear();
+                owner.timestamps.clear();
+                owner.session.collect_native_page_flip_events(
+                    &mut owner.callbacks,
+                    &mut owner.timestamps,
+                    callback_capacity,
+                    callback_capacity,
+                )
             };
-            for mut timestamp in timestamps {
-                let head = self
-                    .heads
-                    .iter()
-                    .find(|head| head.group == group && head.enabled && head.head == timestamp.head)
-                    .ok_or("native timestamp referenced an inactive or unknown head")?;
-                // The libdrm route was created at discovery time. Dynamic
-                // regrouping changes only the logical output, so normalize that
-                // policy identity through the current opaque head owner.
-                timestamp.output = head.output.id;
-                self.kernel_page_flip_ust.insert(
-                    (timestamp.output, timestamp.head, timestamp.frame_serial),
-                    timestamp.ust_usec,
-                );
+            if report.read_loop.status == crate::LibdrmNativeReadLoopStatus::ReadFailed {
+                return Err("native card page-flip read failed".into());
             }
-            for mut callback in callbacks {
-                // By head, not by output. Two heads of a mirror group share an
-                // output, so matching on it delivered both flips to whichever head
-                // came first and left the sibling looking like it never flipped.
-                let Some(head) = self
-                    .heads
-                    .iter()
-                    .find(|head| head.group == group && head.enabled && head.head == callback.head)
-                else {
-                    return Err(format!(
-                        "native callback referenced an unknown head: head={} output={}",
-                        callback.head.raw(),
-                        callback.output.raw(),
-                    )
-                    .into());
-                };
-                callback.output = head.output.id;
-                head.sender
-                    .try_send(callback)
-                    .map_err(|error| match error {
-                        TrySendError::Full(_) => "native output callback queue is full",
-                        TrySendError::Disconnected(_) => {
-                            "native output callback queue is disconnected"
-                        }
-                    })?;
+            let mut callbacks = std::mem::take(&mut self.groups[group].callbacks);
+            let mut timestamps = std::mem::take(&mut self.groups[group].timestamps);
+            let route_result = (|| -> Result<(), Box<dyn std::error::Error>> {
+                for timestamp in &mut timestamps {
+                    let head = self
+                        .heads
+                        .iter()
+                        .find(|head| {
+                            head.group == group && head.enabled && head.head == timestamp.head
+                        })
+                        .ok_or("native timestamp referenced an inactive or unknown head")?;
+                    // The libdrm route was created at discovery time. Dynamic
+                    // regrouping changes only the logical output, so normalize
+                    // that policy identity through the current opaque head.
+                    timestamp.output = head.output.id;
+                    self.kernel_page_flip_ust.insert(
+                        (timestamp.output, timestamp.head, timestamp.frame_serial),
+                        timestamp.ust_usec,
+                    );
+                }
+                for callback in &mut callbacks {
+                    // By head, not by output. Two heads of a mirror group share
+                    // an output, so only the head identifies the physical owner.
+                    let Some(head_index) = self.heads.iter().position(|head| {
+                        head.group == group && head.enabled && head.head == callback.head
+                    }) else {
+                        return Err(format!(
+                            "native callback referenced an unknown head: head={} output={}",
+                            callback.head.raw(),
+                            callback.output.raw(),
+                        )
+                        .into());
+                    };
+                    callback.output = self.heads[head_index].output.id;
+                    if self.heads[head_index].completion_mode
+                        == LiveProductionKmsCompletionMode::OutFenceAuthoritative
+                    {
+                        self.heads[head_index].late_page_flip_events = self.heads[head_index]
+                            .late_page_flip_events
+                            .saturating_add(1);
+                        self.kernel_page_flip_ust.remove(&(
+                            callback.output,
+                            callback.head,
+                            callback.frame_serial,
+                        ));
+                        continue;
+                    }
+                    if self.heads[head_index].pending_callback.is_some() {
+                        self.callback_queue_saturated =
+                            self.callback_queue_saturated.saturating_add(1);
+                        return Err(format!(
+                            "native head completion ledger is full: head={} output={}",
+                            callback.head.raw(),
+                            callback.output.raw(),
+                        )
+                        .into());
+                    }
+                    self.heads[head_index].pending_callback = Some(*callback);
+                }
+                Ok(())
+            })();
+            callbacks.clear();
+            timestamps.clear();
+            self.groups[group].callbacks = callbacks;
+            self.groups[group].timestamps = timestamps;
+            route_result
+        }
+
+        /// Poll every DRM card before any output retirement or watchdog check.
+        pub fn pump_native_completions(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+            for group in 0..self.groups.len() {
+                self.poll_group_callbacks(group)?;
             }
             Ok(())
         }

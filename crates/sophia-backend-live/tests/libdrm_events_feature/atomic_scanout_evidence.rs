@@ -250,7 +250,7 @@ fn native_atomic_scanout_smoke_evidence_records_waiting_retire_on_missing_page_f
             disconnected: false,
             max_reached: false,
         });
-    let waiting_retire = LibdrmNativePrimaryPlaneScanoutRetireResult {
+    let mut waiting_retire = LibdrmNativePrimaryPlaneScanoutRetireResult {
         status: LibdrmNativePrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip,
         destroy: None,
         submission: Some(submission),
@@ -282,7 +282,12 @@ fn native_atomic_scanout_smoke_evidence_records_waiting_retire_on_missing_page_f
     assert_eq!(evidence.retire_destroy, None);
     assert!(!evidence.retire_cleanup_pending);
     assert_eq!(
-        submission.retire(&device).status,
+        waiting_retire
+            .submission
+            .take()
+            .expect("waiting retirement should return the affine submission")
+            .retire(&device)
+            .status,
         LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
     );
 }

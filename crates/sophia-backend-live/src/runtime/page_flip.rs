@@ -83,6 +83,29 @@ where
         report
     }
 
+    /// Admit one physical-head callback without publishing a logical flip.
+    ///
+    /// Mirror-group retirement joins every physical completion before it
+    /// publishes the output-level event. Keeping that policy here preserves
+    /// the output intake's stale-serial checks without recreating a transport
+    /// queue between the card pump and its owner.
+    #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+    pub(crate) fn observe_mirror_page_flip_callback(
+        &mut self,
+        callback: LivePageFlipCallback,
+    ) -> LivePageFlipCallbackReport {
+        let Some(state) = self.outputs.get_mut(callback.output) else {
+            return LivePageFlipCallbackReport {
+                decision: LivePageFlipCallbackDecision::RejectedUnexpectedOutput,
+                event: LivePageFlipEvent {
+                    status: LivePageFlipEventStatus::WaitingForOutput,
+                    frame_serial: None,
+                },
+            };
+        };
+        state.page_flip_callback_intake.observe(callback)
+    }
+
     pub(crate) fn drain_page_flip_callback_queue(&mut self) -> LivePageFlipCallbackQueueReport {
         let Some(queue) = self.page_flip_callback_queue.take() else {
             return LivePageFlipCallbackQueueReport::default();
@@ -114,7 +137,7 @@ where
     // Same gate as above, plus `test`: the module at the foot of this file
     // exercises it whatever features are selected, so gating on the features
     // alone would delete it out from under its own tests.
-    #[cfg(any(test, all(feature = "libdrm-events", feature = "gbm-probe")))]
+    #[cfg(test)]
     pub(crate) fn drain_mirror_page_flip_callback_queue(
         &mut self,
     ) -> LivePageFlipCallbackQueueReport {

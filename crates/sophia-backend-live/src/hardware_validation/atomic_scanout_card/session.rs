@@ -599,6 +599,23 @@ impl RealAtomicScanoutPageFlipSession {
     }
 
     #[cfg(feature = "libdrm-events")]
+    pub fn collect_native_page_flip_events(
+        &mut self,
+        callbacks: &mut Vec<LivePageFlipCallback>,
+        timestamps: &mut Vec<LibdrmKernelPageFlipTimestamp>,
+        max_read: usize,
+        max_emit: usize,
+    ) -> LibdrmNativeReadAndPollReport {
+        self.poller.read_and_collect_page_flip_events(
+            &mut self.reader,
+            callbacks,
+            timestamps,
+            max_read,
+            max_emit,
+        )
+    }
+
+    #[cfg(feature = "libdrm-events")]
     pub fn drain_emitted_kernel_page_flip_timestamps(
         &mut self,
     ) -> Vec<LibdrmKernelPageFlipTimestamp> {
@@ -614,6 +631,13 @@ impl RealAtomicScanoutPageFlipSession {
     #[cfg(feature = "libdrm-events")]
     pub fn page_flip_poller_diagnostics(&self) -> LibdrmNativePollerDiagnostics {
         self.poller.diagnostics()
+    }
+
+    #[cfg(feature = "libdrm-events")]
+    pub fn page_flip_poller_cumulative_diagnostics(
+        &self,
+    ) -> LibdrmNativePollerCumulativeDiagnostics {
+        self.poller.cumulative_diagnostics()
     }
 }
 

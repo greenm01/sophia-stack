@@ -58,6 +58,39 @@ fn native_libdrm_primary_plane_scanout_submit_chains_renderer_descriptor_to_atom
 }
 
 #[test]
+fn native_primary_plane_submission_owns_a_signaled_out_fence_when_supported() {
+    let mut device = full_primary_plane_scanout_device();
+    device.properties.crtc = Ok(LibdrmNativePropertyHandleSet::new([
+        ("MODE_ID", property_handle(102)),
+        ("ACTIVE", property_handle(103)),
+        ("OUT_FENCE_PTR", property_handle(115)),
+    ]));
+
+    let result = submit_native_primary_plane_scanout_from_renderer_descriptor(
+        &device,
+        scanout_descriptor(Size {
+            width: 1280,
+            height: 720,
+        }),
+    );
+    assert_eq!(
+        result.status,
+        LibdrmNativePrimaryPlaneScanoutSubmitStatus::SubmittedWaitingForPageFlip
+    );
+    let submission = result
+        .submission
+        .expect("accepted commit should retain the returned out-fence");
+    assert_eq!(
+        submission.completion_fence_status().unwrap(),
+        LibdrmNativeCompletionFenceStatus::Signaled
+    );
+    assert_eq!(
+        submission.retire(&device).status,
+        LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed
+    );
+}
+
+#[test]
 fn native_primary_plane_preparation_does_not_submit_and_can_be_cancelled() {
     let device = full_primary_plane_scanout_device();
     let selection = select_native_primary_plane_target(&device);

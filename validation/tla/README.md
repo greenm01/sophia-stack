@@ -420,6 +420,25 @@ enabled. Environment actions stay outside fairness and both producers are
 budgeted, so liveness here is a question about arbitration rather than about
 outrunning an unbounded producer.
 
+`PageFlipCompletionPump.tla` isolates the KMS completion boundary that follows
+frame arbitration. One action reads every ready event on a DRM card into one
+bounded ledger cell per physical head; retirement prefers that exact event but
+may use the affine submission's signaled `OUT_FENCE_PTR` sync file when the
+event is absent. The first fence retirement makes fences authoritative for
+that head, so a late event is diagnostic evidence and cannot retire a
+successor. The watchdog runs only after a card pump and every currently ready
+proof has been retired.
+
+The model found an implementation race in its first run: a callback could
+become ready after the ordinary pump but before the hard-stall check. Production
+now performs a second card-scoped collect-and-retire pass only for a head that
+has crossed the deadline, avoiding a second read on normal service cycles. The
+checked two-head, two-generation configuration explores 38,410 generated states
+and 9,846 distinct states to depth 24. It checks one in-flight generation per
+head, exact at-most-once head-scoped retirement, no successor before its
+predecessor, no watchdog while a proof is collectable, and quarantine of late
+events after an out-fence fallback.
+
 `MirrorHeadPacing.tla` states the successor rule for a mirror group's heads,
 and is written before the code that will implement it. `VisualRetirement.tla`
 records today's rule -- a logical output retires when every one of its heads has

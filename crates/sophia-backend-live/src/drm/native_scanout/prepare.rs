@@ -440,6 +440,7 @@ pub fn adopt_prepared_native_topology_head_after_commit(
 ) -> LibdrmNativePrimaryPlaneScanoutSubmission {
     LibdrmNativePrimaryPlaneScanoutSubmission {
         resources: prepared.resources,
+        completion_fence: None,
     }
 }
 
@@ -490,6 +491,32 @@ where
     (status, prepared)
 }
 
+fn submit_atomic_commit_with_optional_out_fence<D>(
+    device: &D,
+    flags: drm::control::AtomicCommitFlags,
+    request: drm::control::atomic::AtomicModeReq,
+    selected: LibdrmNativePrimaryPlaneSelection,
+    properties: LibdrmNativePrimaryPlanePropertyHandles,
+    commit_flags: LibdrmNativeAtomicCommitFlagsReport,
+) -> std::io::Result<Option<OwnedFd>>
+where
+    D: LibdrmNativeAtomicCommitDevice,
+{
+    if let Some(out_fence_property) = properties.crtc_out_fence_ptr().filter(|_| {
+        commit_flags.page_flip_event && commit_flags.nonblocking && !commit_flags.test_only
+    }) {
+        device.submit_atomic_commit_with_out_fence(
+            flags,
+            request,
+            selected.crtc_handle(),
+            out_fence_property,
+        )
+    } else {
+        device.submit_atomic_commit(flags, request)?;
+        Ok(None)
+    }
+}
+
 pub fn submit_prepared_native_primary_plane_scanout<D>(
     device: &D,
     mut prepared: LibdrmNativePrimaryPlanePreparedScanout,
@@ -499,8 +526,19 @@ where
 {
     let (flags, request) = prepared.request.into_native();
     let mut cursor_dropped = false;
-    let mut submit = match device.submit_atomic_commit(flags, request) {
-        Ok(()) => LibdrmNativeAtomicCommitSubmitStatus::Submitted,
+    let mut completion_fence = None;
+    let mut submit = match submit_atomic_commit_with_optional_out_fence(
+        device,
+        flags,
+        request,
+        prepared.selected,
+        prepared.property_handles,
+        prepared.commit_flags,
+    ) {
+        Ok(fence) => {
+            completion_fence = fence;
+            LibdrmNativeAtomicCommitSubmitStatus::Submitted
+        }
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
             LibdrmNativeAtomicCommitSubmitStatus::WouldBlock
         }
@@ -512,9 +550,17 @@ where
     if submit == LibdrmNativeAtomicCommitSubmitStatus::Rejected {
         if let Some(retry) = prepared.retry_without_cursor.take() {
             let (flags, request) = retry.into_native();
-            if device.submit_atomic_commit(flags, request).is_ok() {
+            if let Ok(fence) = submit_atomic_commit_with_optional_out_fence(
+                device,
+                flags,
+                request,
+                prepared.selected,
+                prepared.property_handles,
+                prepared.commit_flags,
+            ) {
                 submit = LibdrmNativeAtomicCommitSubmitStatus::Submitted;
                 cursor_dropped = true;
+                completion_fence = fence;
             }
         }
     }
@@ -540,6 +586,7 @@ where
     if submit == LibdrmNativeAtomicCommitSubmitStatus::Submitted {
         result.submission = Some(LibdrmNativePrimaryPlaneScanoutSubmission {
             resources: prepared.resources,
+            completion_fence,
         });
     } else {
         result.cleanup = destroy_native_primary_plane_resources(device, prepared.resources).cleanup;

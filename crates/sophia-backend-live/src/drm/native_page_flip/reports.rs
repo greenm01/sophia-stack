@@ -53,6 +53,17 @@ pub struct LibdrmNativePollerDiagnostics {
 }
 
 #[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LibdrmNativePollerCumulativeDiagnostics {
+    pub read_calls: usize,
+    pub would_block_reads: usize,
+    pub read_failures: usize,
+    pub decoded_callbacks: usize,
+    pub rejected_callbacks: usize,
+    pub emitted_callbacks: usize,
+}
+
+#[cfg(feature = "libdrm-events")]
 impl From<LibdrmNativePollerDiagnostics> for LiveLibdrmPollerDiagnostics {
     fn from(diagnostics: LibdrmNativePollerDiagnostics) -> Self {
         Self {

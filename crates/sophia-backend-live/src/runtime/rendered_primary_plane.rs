@@ -17,6 +17,18 @@ where
             .get(output)
             .is_some_and(LiveRenderedOutputState::in_flight)
     }
+    pub fn rendered_primary_plane_completion_fence_status_for(
+        &self,
+        output: OutputId,
+    ) -> std::io::Result<LibdrmNativeCompletionFenceStatus> {
+        self.outputs
+            .get(output)
+            .and_then(|state| state.rendered_primary_plane_scanout_submission.as_ref())
+            .map_or(
+                Ok(LibdrmNativeCompletionFenceStatus::Unsupported),
+                LiveRenderedPrimaryPlaneScanoutSubmission::completion_fence_status,
+            )
+    }
 
     pub fn rendered_primary_plane_scanout_cleanup_pending(&self) -> bool {
         self.primary_output_state().cleanup_pending()
@@ -279,7 +291,7 @@ fn retire_tracked_output_after_page_flip<D>(
 where
     D: LibdrmNativePrimaryPlaneResourceDevice,
 {
-    let Some(submission) = state.rendered_primary_plane_scanout_submission.take() else {
+    let Some(mut submission) = state.rendered_primary_plane_scanout_submission.take() else {
         return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
             status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission,
             destroy: None,
@@ -373,6 +385,7 @@ where
     }
 
     state.rendered_primary_plane_scanout_in_flight_ticks = 0;
+    submission.clear_completion_fence();
     let previous = state
         .rendered_primary_plane_displayed_submission
         .replace(submission);

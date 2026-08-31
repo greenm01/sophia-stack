@@ -1,0 +1,18 @@
+[package]
+name = "sophia-drm-out-fence"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+drm = { version = "0.15", default-features = false }
+
+[lints.rust]
+# This crate is the narrow ownership adapter for the kernel ABI. Sophia's
+# backend and policy crates continue to forbid unsafe code.
+unsafe_code = "allow"
+
+[lints.clippy]
+new_without_default = "allow"

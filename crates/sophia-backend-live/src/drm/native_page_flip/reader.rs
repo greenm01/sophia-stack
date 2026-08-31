@@ -7,6 +7,16 @@ use std::{collections::VecDeque, io};
 pub trait LibdrmNativePageFlipReader {
     fn read_ready_page_flip_callbacks(&mut self, max_read: usize)
     -> LibdrmNativePageFlipReadResult;
+
+    fn read_ready_page_flip_callbacks_into(
+        &mut self,
+        max_read: usize,
+        callbacks: &mut Vec<LibdrmNativePageFlipCallback>,
+    ) -> LibdrmNativeReadLoopReport {
+        let result = self.read_ready_page_flip_callbacks(max_read);
+        callbacks.extend(result.callbacks);
+        result.report
+    }
 }
 
 #[cfg(feature = "libdrm-events")]
@@ -114,33 +124,40 @@ where
         &mut self,
         max_read: usize,
     ) -> LibdrmNativePageFlipReadResult {
+        let mut callbacks = Vec::with_capacity(max_read);
+        let report = self.read_ready_page_flip_callbacks_into(max_read, &mut callbacks);
+        LibdrmNativePageFlipReadResult { report, callbacks }
+    }
+
+    fn read_ready_page_flip_callbacks_into(
+        &mut self,
+        max_read: usize,
+        callbacks: &mut Vec<LibdrmNativePageFlipCallback>,
+    ) -> LibdrmNativeReadLoopReport {
         if max_read == 0 {
-            return LibdrmNativePageFlipReadResult {
-                report: LibdrmNativeReadLoopReport::would_block(),
-                callbacks: Vec::new(),
-            };
+            return LibdrmNativeReadLoopReport::would_block();
         }
 
         let events = match self.device.receive_events() {
             Ok(events) => events,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                return LibdrmNativePageFlipReadResult {
-                    report: LibdrmNativeReadLoopReport::would_block(),
-                    callbacks: Vec::new(),
-                };
+                return LibdrmNativeReadLoopReport::would_block();
             }
             Err(_) => {
-                return LibdrmNativePageFlipReadResult {
-                    report: LibdrmNativeReadLoopReport::read_failed(),
-                    callbacks: Vec::new(),
-                };
+                return LibdrmNativeReadLoopReport::read_failed();
             }
         };
 
-        let mut callbacks = Vec::new();
+        let initial_callback_count = callbacks.len();
         let mut rejected_callbacks = 0usize;
 
-        for event in events.take(max_read) {
+        // `receive_events` has already consumed its complete kernel buffer.
+        // Limiting this iterator would silently discard the tail, so the
+        // service budget limits read syscalls instead of events in a returned
+        // batch. `max_read` remains the zero/read admission gate and reserve
+        // hint for generic readers.
+        callbacks.reserve(max_read);
+        for event in events {
             let drm::control::Event::PageFlip(page_flip) = event else {
                 continue;
             };
@@ -151,13 +168,10 @@ where
             }
         }
 
-        LibdrmNativePageFlipReadResult {
-            report: LibdrmNativeReadLoopReport::callbacks_decoded(
-                callbacks.len(),
-                rejected_callbacks,
-            )
-            .unwrap_or_else(LibdrmNativeReadLoopReport::would_block),
-            callbacks,
-        }
+        LibdrmNativeReadLoopReport::callbacks_decoded(
+            callbacks.len().saturating_sub(initial_callback_count),
+            rejected_callbacks,
+        )
+        .unwrap_or_else(LibdrmNativeReadLoopReport::would_block)
     }
 }

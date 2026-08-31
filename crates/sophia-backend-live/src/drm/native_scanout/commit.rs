@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::os::fd::OwnedFd;
 
 pub trait LibdrmNativeAtomicCommitDevice {
     fn submit_atomic_commit(
@@ -6,6 +7,18 @@ pub trait LibdrmNativeAtomicCommitDevice {
         flags: drm::control::AtomicCommitFlags,
         request: drm::control::atomic::AtomicModeReq,
     ) -> io::Result<()>;
+
+    fn submit_atomic_commit_with_out_fence(
+        &self,
+        flags: drm::control::AtomicCommitFlags,
+        request: drm::control::atomic::AtomicModeReq,
+        crtc: drm::control::crtc::Handle,
+        out_fence_property: drm::control::property::Handle,
+    ) -> io::Result<Option<OwnedFd>> {
+        let _ = (crtc, out_fence_property);
+        self.submit_atomic_commit(flags, request)?;
+        Ok(None)
+    }
 }
 
 impl<D> LibdrmNativeAtomicCommitDevice for D
@@ -18,6 +31,22 @@ where
         request: drm::control::atomic::AtomicModeReq,
     ) -> io::Result<()> {
         self.atomic_commit(flags, request)
+    }
+
+    fn submit_atomic_commit_with_out_fence(
+        &self,
+        flags: drm::control::AtomicCommitFlags,
+        request: drm::control::atomic::AtomicModeReq,
+        crtc: drm::control::crtc::Handle,
+        out_fence_property: drm::control::property::Handle,
+    ) -> io::Result<Option<OwnedFd>> {
+        sophia_drm_out_fence::atomic_commit_with_out_fence(
+            self,
+            flags,
+            request,
+            crtc,
+            out_fence_property,
+        )
     }
 }
 

@@ -726,3 +726,68 @@ fn live_runtime_assembly_reports_reduced_native_libdrm_poller_diagnostics() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn native_card_completion_collector_reuses_direct_buffers_and_defers_without_loss() {
+    let authority =
+        LibdrmBackendFdAuthority::new(25).expect("nonzero generation should mint authority token");
+    let slot = LibdrmNativeOutputSlot::new(2).expect("nonzero slot should be valid");
+    let source = LibdrmNativePageFlipSource::from_authority(authority);
+    let mut poller =
+        NativeLibdrmPageFlipEventPoller::new(source).with_routes([LibdrmNativeOutputRoute {
+            slot,
+            output: OutputId::from_raw(7),
+            head: sophia_engine::RenderHeadId::from_raw(1),
+        }]);
+    let mut reader = FakeLibdrmNativePageFlipReader::new([
+        LibdrmNativePageFlipCallback::new(slot, 81),
+        LibdrmNativePageFlipCallback::new(slot, 82),
+        LibdrmNativePageFlipCallback::new(slot, 83),
+    ]);
+    let mut callbacks = Vec::with_capacity(2);
+    let mut timestamps = Vec::with_capacity(2);
+
+    let first = poller.read_and_collect_page_flip_events(
+        &mut reader,
+        &mut callbacks,
+        &mut timestamps,
+        2,
+        1,
+    );
+    assert_eq!(first.poll.callbacks.emitted, 1);
+    assert_eq!(first.poll.callbacks.queued_remaining, 1);
+    assert!(first.poll.callbacks.max_reached);
+    assert_eq!(callbacks[0].frame_serial, 81);
+    assert_eq!(reader.queued_len(), 1);
+
+    callbacks.clear();
+    let second = poller.read_and_collect_page_flip_events(
+        &mut reader,
+        &mut callbacks,
+        &mut timestamps,
+        2,
+        2,
+    );
+    assert_eq!(second.poll.callbacks.emitted, 1);
+    assert_eq!(callbacks[0].frame_serial, 82);
+    assert_eq!(reader.queued_len(), 1);
+
+    callbacks.clear();
+    let third = poller.read_and_collect_page_flip_events(
+        &mut reader,
+        &mut callbacks,
+        &mut timestamps,
+        2,
+        2,
+    );
+    assert_eq!(third.poll.callbacks.emitted, 1);
+    assert_eq!(callbacks[0].frame_serial, 83);
+    assert_eq!(reader.queued_len(), 0);
+    assert_eq!(poller.pending_callback_count(), 0);
+
+    let cumulative = poller.cumulative_diagnostics();
+    assert_eq!(cumulative.read_calls, 2);
+    assert_eq!(cumulative.decoded_callbacks, 3);
+    assert_eq!(cumulative.rejected_callbacks, 0);
+    assert_eq!(cumulative.emitted_callbacks, 3);
+}

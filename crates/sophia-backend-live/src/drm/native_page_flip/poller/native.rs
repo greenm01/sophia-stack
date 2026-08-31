@@ -8,7 +8,9 @@ pub struct NativeLibdrmPageFlipEventPoller {
     routes: Vec<LibdrmNativeOutputRoute>,
     pending_callbacks: VecDeque<LibdrmNativePageFlipCallback>,
     emitted_kernel_timestamps: VecDeque<LibdrmKernelPageFlipTimestamp>,
+    read_scratch: Vec<LibdrmNativePageFlipCallback>,
     last_read_loop: LibdrmNativeReadLoopReport,
+    cumulative: LibdrmNativePollerCumulativeDiagnostics,
 }
 
 impl NativeLibdrmPageFlipEventPoller {
@@ -18,7 +20,9 @@ impl NativeLibdrmPageFlipEventPoller {
             routes: Vec::new(),
             pending_callbacks: VecDeque::new(),
             emitted_kernel_timestamps: VecDeque::new(),
+            read_scratch: Vec::new(),
             last_read_loop: LibdrmNativeReadLoopReport::idle(),
+            cumulative: LibdrmNativePollerCumulativeDiagnostics::default(),
         }
     }
 
@@ -33,6 +37,9 @@ impl NativeLibdrmPageFlipEventPoller {
     pub fn replace_routes(&mut self, routes: impl IntoIterator<Item = LibdrmNativeOutputRoute>) {
         self.routes.clear();
         self.routes.extend(routes);
+        self.pending_callbacks.reserve(self.routes.len());
+        self.emitted_kernel_timestamps.reserve(self.routes.len());
+        self.read_scratch.reserve(self.routes.len());
     }
 
     pub fn inject_callbacks(
@@ -50,12 +57,32 @@ impl NativeLibdrmPageFlipEventPoller {
     where
         R: LibdrmNativePageFlipReader,
     {
-        let result = reader.read_ready_page_flip_callbacks(max_read);
-        self.last_read_loop = result.report;
-        if result.report.status != LibdrmNativeReadLoopStatus::ReadFailed {
-            self.pending_callbacks.extend(result.callbacks);
+        self.read_scratch.clear();
+        let report = reader.read_ready_page_flip_callbacks_into(max_read, &mut self.read_scratch);
+        self.last_read_loop = report;
+        self.cumulative.read_calls = self.cumulative.read_calls.saturating_add(1);
+        self.cumulative.decoded_callbacks = self
+            .cumulative
+            .decoded_callbacks
+            .saturating_add(report.decoded_callbacks);
+        self.cumulative.rejected_callbacks = self
+            .cumulative
+            .rejected_callbacks
+            .saturating_add(report.rejected_callbacks);
+        match report.status {
+            LibdrmNativeReadLoopStatus::WouldBlock => {
+                self.cumulative.would_block_reads =
+                    self.cumulative.would_block_reads.saturating_add(1);
+            }
+            LibdrmNativeReadLoopStatus::ReadFailed => {
+                self.cumulative.read_failures = self.cumulative.read_failures.saturating_add(1);
+            }
+            _ => {}
         }
-        result.report
+        if report.status != LibdrmNativeReadLoopStatus::ReadFailed {
+            self.pending_callbacks.extend(self.read_scratch.drain(..));
+        }
+        report
     }
 
     pub fn read_and_poll_page_flip_events<R>(
@@ -117,6 +144,73 @@ impl NativeLibdrmPageFlipEventPoller {
         self.routes.len()
     }
 
+    pub const fn cumulative_diagnostics(&self) -> LibdrmNativePollerCumulativeDiagnostics {
+        self.cumulative
+    }
+
+    pub fn read_and_collect_page_flip_events<R>(
+        &mut self,
+        reader: &mut R,
+        callbacks: &mut Vec<LivePageFlipCallback>,
+        timestamps: &mut Vec<LibdrmKernelPageFlipTimestamp>,
+        max_read: usize,
+        max_emit: usize,
+    ) -> LibdrmNativeReadAndPollReport
+    where
+        R: LibdrmNativePageFlipReader,
+    {
+        let read_loop = if self.pending_callbacks.is_empty() {
+            self.read_page_flip_events(reader, max_read)
+        } else {
+            self.last_read_loop
+        };
+        if read_loop.status == LibdrmNativeReadLoopStatus::ReadFailed {
+            return LibdrmNativeReadAndPollReport {
+                read_loop,
+                poll: read_loop.into_poll_report(),
+            };
+        }
+
+        let mut emitted = 0usize;
+        let mut rejected = 0usize;
+        for _ in 0..max_emit {
+            let Some(native) = self.pending_callbacks.pop_front() else {
+                break;
+            };
+            let decoded = native.decode(&self.routes);
+            let Some(callback) = decoded.callback else {
+                rejected = rejected.saturating_add(1);
+                continue;
+            };
+            if let Some(ust_usec) = native.kernel_ust_usec() {
+                timestamps.push(LibdrmKernelPageFlipTimestamp {
+                    output: callback.output,
+                    head: callback.head,
+                    frame_serial: callback.frame_serial,
+                    ust_usec,
+                });
+            }
+            callbacks.push(callback);
+            emitted = emitted.saturating_add(1);
+        }
+        self.cumulative.emitted_callbacks =
+            self.cumulative.emitted_callbacks.saturating_add(emitted);
+        self.cumulative.rejected_callbacks =
+            self.cumulative.rejected_callbacks.saturating_add(rejected);
+        let queued_remaining = self.pending_callbacks.len();
+        let source = LivePageFlipCallbackSourceReport {
+            emitted,
+            queued_remaining,
+            backpressure: false,
+            disconnected: false,
+            max_reached: queued_remaining > 0,
+        };
+        LibdrmNativeReadAndPollReport {
+            read_loop,
+            poll: LibdrmPageFlipEventPollReport::from_source_report(source),
+        }
+    }
+
     pub fn diagnostics(&self) -> LibdrmNativePollerDiagnostics {
         LibdrmNativePollerDiagnostics {
             route_count: self.routes.len(),
@@ -162,6 +256,11 @@ impl LibdrmPageFlipEventPoller for NativeLibdrmPageFlipEventPoller {
         for _ in 0..processed_callbacks {
             let _ = self.pending_callbacks.pop_front();
         }
+
+        self.cumulative.emitted_callbacks = self
+            .cumulative
+            .emitted_callbacks
+            .saturating_add(report.poll.callbacks.emitted);
 
         self.last_read_loop = report.read_loop;
         report.poll

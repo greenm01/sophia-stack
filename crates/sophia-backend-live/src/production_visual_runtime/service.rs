@@ -299,7 +299,9 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         scene: &LiveProductionCpuScene,
     ) -> Result<LiveProductionNativeServiceReport, Box<dyn std::error::Error>> {
-        native_scanout.ensure_page_flip_progress()?;
+        // One readiness pass per card, before any output can retire, submit a
+        // successor, or declare its outstanding request stalled.
+        native_scanout.pump_native_completions()?;
         let initial = self.native_output_service_request(native_scanout)?;
         let mut reducer = OutputFrameServiceReducer::begin(&initial)
             .map_err(|error| format!("invalid output frame service state: {error:?}"))?;
@@ -334,8 +336,19 @@ impl LiveProductionVisualRuntime {
                 }
             }
         }
+        // Close the arrival race at the hard-stall boundary without adding a
+        // second DRM read to ordinary service cycles. A head that crossed the
+        // deadline gets one final card-scoped collect-and-retire pass; only an
+        // outstanding request still lacking both proofs may terminate.
+        if native_scanout.page_flip_hard_stall().is_some() {
+            native_scanout.pump_native_completions()?;
+            if let Some(retired) = self.retire_native_scanout(native_scanout)? {
+                retired_present = Some(retired);
+            }
+        }
         let mut retired_software_presents = Vec::new();
         self.drain_retired_software_presents_into(&mut retired_software_presents)?;
+        native_scanout.ensure_page_flip_progress()?;
         Ok(LiveProductionNativeServiceReport {
             ticks,
             retired_present,

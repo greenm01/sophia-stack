@@ -349,7 +349,6 @@ struct LiveProductionNativeInstalledHead {
     transform: sophia_protocol::OutputTransform,
     mapping: sophia_protocol::OutputHeadMapping,
     vrr: sophia_protocol::OutputVrrPolicy,
-    sender: Option<SyncSender<crate::LivePageFlipCallback>>,
     output_frames: OutputFramePresentationState,
 }
 
@@ -2274,13 +2273,6 @@ impl LiveProductionNativeScanout {
             return Err("installed native topology repeats a logical output".into());
         }
 
-        let mut senders = BTreeMap::new();
-        let mut receivers = BTreeMap::new();
-        for output in logical_by_id.keys().copied() {
-            let (sender, receiver) = sync_channel(64);
-            senders.insert(output, sender);
-            receivers.insert(output, receiver);
-        }
         let mut installed = Vec::with_capacity(state.plan.heads.len());
         let mut registry = sophia_engine::EngineHeadRegistry::new();
         for head_plan in &state.plan.heads {
@@ -2357,16 +2349,6 @@ impl LiveProductionNativeScanout {
             {
                 return Err("topology installation resource disposition mismatch".into());
             }
-            let sender = if enabled {
-                Some(
-                    senders
-                        .get(&output)
-                        .ok_or("enabled topology head names an unknown logical output")?
-                        .clone(),
-                )
-            } else {
-                None
-            };
             let physical_output = sophia_engine::HeadlessOutput {
                 id: output,
                 size: selection.size(),
@@ -2400,7 +2382,6 @@ impl LiveProductionNativeScanout {
                 transform,
                 mapping,
                 vrr,
-                sender,
                 output_frames,
             });
         }
@@ -2450,7 +2431,7 @@ impl LiveProductionNativeScanout {
             self.exporters[install.index].discard_pending_frame();
         }
 
-        for mut install in installed {
+        for install in installed {
             self.retire_topology_displayed_owner(install.index);
             let selected = if candidate {
                 state
@@ -2483,9 +2464,10 @@ impl LiveProductionNativeScanout {
                 size: install.selection.size(),
                 scale: install.scale,
             };
-            if let Some(sender) = install.sender.take() {
-                head.sender = sender;
-            }
+            head.pending_callback = None;
+            head.completion_mode = LiveProductionKmsCompletionMode::PageFlipPreferred;
+            head.completion_fence_status = crate::LibdrmNativeCompletionFenceStatus::Unsupported;
+            head.last_callback_serial = None;
             head.pending_content = None;
             head.rendering_content = None;
             head.submitted_content = None;
@@ -2498,7 +2480,6 @@ impl LiveProductionNativeScanout {
         }
         self.logical_outputs = logical_outputs.clone();
         self.presentation_outputs = logical_outputs.len();
-        self.output_callbacks = receivers;
         self.output_lifecycles = lifecycles;
         self.output_cohorts.clear();
         self.deferred_mirror_generations.clear();

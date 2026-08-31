@@ -140,21 +140,32 @@ Required exit:
 The complete bounded run on signed commit
 `d63d0970d8854de0832879d74f3aae1f6d31fb24` exhausted all eight retries: nine
 attempts. The stalled head alternated between the two outputs and stopped after
-85, 415, 440, 10, 48, 2, 118, 325, and 316 retirements. Every attempt reported
-the same below-process signature: `poller_pending=0`, `poller_routes=2`,
-`poller_last_read=WouldBlock`, `poller_last_decoded=0`, and
-`poller_last_rejected=0`. No callback was queued, decoded, or rejected inside
-Sophia while the peer head had continued to retire.
+85, 415, 440, 10, 48, 2, 118, 325, and 316 retirements. Each terminal sample
+found an empty final read and no pending poller callback. That observation does
+not attribute the loss below Sophia: it says only that one nonblocking read was
+empty after the old relay and watchdog ordering had already run.
 
-The gate correctly failed `page_flip_stall_retry_budget` with a complete empty
-kernel delta and clean bounded recovery on all nine attempts. None reached
-schema-4 progress or the visual prompt. This is conclusive for the unchanged
-local kernel/DRM state: repeating the same gate cannot satisfy the product exit.
+The completion path is now a card-scoped pump into one bounded ledger cell per
+physical head; it consumes the complete libdrm event iterator, retires before
+watchdog evaluation, and performs a second collect-and-retire pass only at the
+hard-stall boundary. Ordinary nonblocking commits also retain the CRTC's
+`OUT_FENCE_PTR` sync file with the affine submission. A page-flip event remains
+preferred; if it is absent and the fence signals, the head switches to
+authoritative fences and quarantines late events so none can retire a
+successor. Stall schema 3 records cumulative reads, decodes, rejections,
+emissions, ledger state, fence state, completion mode, and late events.
 
-Do not repeat this physical gate until the local DRM/KMS event-delivery state is
-repaired or materially changed. Then run one clean signed candidate and retain
-its passing schema-4 report. Do not close this row from the offline real-xterm
-regression or any failed physical attempt.
+`PageFlipCompletionPump.tla` checks two heads and two generations through
+38,410 generated / 9,846 distinct states to depth 24. Its first run exposed the
+arrival race between an ordinary pump and the watchdog, which produced the
+deadline-only rescue pass above. The libdrm integration surface passes all 277
+tests, including direct bounded collection without channels and owned out-fence
+readiness.
+
+Outstanding: build and sign this candidate, then run one clean physical
+terminal gate. Retain a passing schema-4 report to close CP-14.1. If it fails,
+use schema-3 cumulative and completion-source fields to classify that run; do
+not return to blind retries or infer a kernel fault from `WouldBlock` alone.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

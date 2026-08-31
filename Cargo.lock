@@ -886,6 +886,7 @@ dependencies = [
  "input",
  "libseat",
  "rustix",
+ "sophia-drm-out-fence",
  "sophia-engine",
  "sophia-protocol",
  "sophia-renderer-live",
@@ -936,6 +937,13 @@ version = "0.1.0"
 dependencies = [
  "sha2",
  "sophia-engine",
+]
+
+[[package]]
+name = "sophia-drm-out-fence"
+version = "0.1.0"
+dependencies = [
+ "drm",
 ]
 
 [[package]]

@@ -600,6 +600,21 @@ impl LibdrmNativeAtomicCommitDevice for FakeNativePrimaryPlaneScanoutDevice {
         }
         clone_io_result(&self.submit)
     }
+
+    fn submit_atomic_commit_with_out_fence(
+        &self,
+        flags: drm::control::AtomicCommitFlags,
+        request: drm::control::atomic::AtomicModeReq,
+        _crtc: drm::control::crtc::Handle,
+        _out_fence_property: drm::control::property::Handle,
+    ) -> io::Result<Option<OwnedFd>> {
+        self.submit_atomic_commit(flags, request)?;
+        Ok(Some(
+            std::fs::File::open("/dev/null")
+                .expect("test host should expose /dev/null")
+                .into(),
+        ))
+    }
 }
 
 impl FakeNativePrimaryPlaneScanoutDevice {

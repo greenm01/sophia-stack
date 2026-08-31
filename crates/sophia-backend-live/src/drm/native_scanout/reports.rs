@@ -161,7 +161,7 @@ pub enum LibdrmNativePrimaryPlaneScanoutSubmitStatus {
     AtomicSubmitFailed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct LibdrmNativePrimaryPlaneScanoutRetireResult {
     pub status: LibdrmNativePrimaryPlaneScanoutRetireStatus,
     pub destroy: Option<LibdrmNativePrimaryPlaneResourceDestroyStatus>,

@@ -4,6 +4,7 @@ pub struct LibdrmNativePrimaryPlanePropertyHandles {
     pub(crate) crtc_mode_id: drm::control::property::Handle,
     pub(crate) crtc_active: drm::control::property::Handle,
     pub(crate) crtc_vrr_enabled: Option<drm::control::property::Handle>,
+    pub(crate) crtc_out_fence_ptr: Option<drm::control::property::Handle>,
     pub(crate) plane_fb_id: drm::control::property::Handle,
     pub(crate) plane_crtc_id: drm::control::property::Handle,
     pub(crate) plane_src_x: drm::control::property::Handle,
@@ -39,6 +40,7 @@ impl LibdrmNativePrimaryPlanePropertyHandles {
             crtc_mode_id,
             crtc_active,
             crtc_vrr_enabled: None,
+            crtc_out_fence_ptr: None,
             plane_fb_id,
             plane_crtc_id,
             plane_src_x,
@@ -68,9 +70,20 @@ impl LibdrmNativePrimaryPlanePropertyHandles {
         self.crtc_vrr_enabled = crtc_vrr_enabled;
         self
     }
+    pub const fn with_crtc_out_fence_ptr(
+        mut self,
+        crtc_out_fence_ptr: Option<drm::control::property::Handle>,
+    ) -> Self {
+        self.crtc_out_fence_ptr = crtc_out_fence_ptr;
+        self
+    }
 
     pub const fn crtc_vrr_enabled(&self) -> Option<drm::control::property::Handle> {
         self.crtc_vrr_enabled
+    }
+
+    pub const fn crtc_out_fence_ptr(&self) -> Option<drm::control::property::Handle> {
+        self.crtc_out_fence_ptr
     }
 
     pub const fn plane_in_formats(&self) -> Option<drm::control::property::Handle> {
