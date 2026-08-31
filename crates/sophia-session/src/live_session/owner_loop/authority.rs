@@ -28,7 +28,12 @@
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
         let output_topology_quarantined = active_output_topology_preparation.is_some();
-        let authority_batch = if output_topology_quarantined {
+        let authority_batch = if session_quiescence
+            .as_ref()
+            .is_some_and(|quiescence| quiescence.frontend_authority_drained)
+        {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        } else if output_topology_quarantined {
             // The owner alone can observe frame retirement. Preserve authority
             // batches at their existing bounded queues until topology either
             // commits or rolls back.
@@ -730,7 +735,20 @@
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                return Err("persistent X authority transaction channel disconnected".into());
+                if let Some(quiescence) = session_quiescence.as_mut() {
+                    if !quiescence.frontend_authority_drained {
+                        quiescence.mark_frontend_authority_drained();
+                        crate::session_println!(
+                            "sophia_live_session_quiescence schema=1 status=frontend_drained reason={} elapsed_msec={}",
+                            quiescence.reason,
+                            quiescence.elapsed(Instant::now()).as_millis(),
+                        );
+                    }
+                } else {
+                    return Err(
+                        "persistent X authority transaction channel disconnected".into()
+                    );
+                }
             }
         }
 

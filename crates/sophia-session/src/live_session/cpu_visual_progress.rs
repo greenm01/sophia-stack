@@ -148,6 +148,14 @@ impl CpuVisualProgress {
         }
     }
 
+    pub(super) fn pending_updates(&self) -> usize {
+        usize::from(self.pending.is_some())
+    }
+
+    pub(super) fn is_settled(&self) -> bool {
+        self.pending.is_none()
+    }
+
     pub(super) fn record(&self, completed_at: Instant, startup_ready_msec: u128) -> String {
         let observed_msec = self.ready_at.map_or(0, |ready| {
             completed_at.saturating_duration_since(ready).as_millis()

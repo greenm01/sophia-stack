@@ -186,3 +186,62 @@ impl InputDeliveryPhase<'_> {
         Ok(())
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+struct SessionQuiescence {
+    reason: &'static str,
+    started_at: Instant,
+    deadline: Instant,
+    frontend_authority_drained: bool,
+}
+
+impl SessionQuiescence {
+    fn new(reason: &'static str, now: Instant, timeout: Duration) -> Self {
+        Self {
+            reason,
+            started_at: now,
+            deadline: now + timeout,
+            frontend_authority_drained: false,
+        }
+    }
+
+    fn mark_frontend_authority_drained(&mut self) {
+        self.frontend_authority_drained = true;
+    }
+
+    fn decision(
+        &self,
+        now: Instant,
+        snapshot: SessionQuiescenceSnapshot,
+    ) -> SessionQuiescenceDecision {
+        if self.frontend_authority_drained
+            && snapshot.pending_authority_batches == 0
+            && !snapshot.cpu_update_pending
+            && !snapshot.native_work_pending
+        {
+            SessionQuiescenceDecision::Complete
+        } else if now >= self.deadline {
+            SessionQuiescenceDecision::TimedOut
+        } else {
+            SessionQuiescenceDecision::Pending
+        }
+    }
+
+    fn elapsed(&self, now: Instant) -> Duration {
+        now.saturating_duration_since(self.started_at)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct SessionQuiescenceSnapshot {
+    pending_authority_batches: usize,
+    cpu_update_pending: bool,
+    native_work_pending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SessionQuiescenceDecision {
+    Pending,
+    Complete,
+    TimedOut,
+}

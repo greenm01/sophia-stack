@@ -162,10 +162,28 @@ deadline-only rescue pass above. The libdrm integration surface passes all 277
 tests, including direct bounded collection without channels and owned out-fence
 readiness.
 
-Outstanding: build and sign this candidate, then run one clean physical
-terminal gate. Retain a passing schema-4 report to close CP-14.1. If it fails,
-use schema-3 cumulative and completion-source fields to classify that run; do
-not return to blind retries or infer a kernel fault from `WouldBlock` alone.
+The first post-pump physical candidate displayed continuous xterm progress but
+timed out during teardown before asking for visual confirmation. The lifecycle
+stopped while joining the frontend with one CPU update still pending and
+thousands of X-authority backpressure waits. The root cause was ownership: each
+worker fed a separate sequencer with an unbounded reorder map, while session
+exit had neither a complete drain predicate nor a cancellation path that
+remained reachable through the frontend join.
+
+X Authority now enforces transaction order through a shared bounded coordinator:
+each producer owns at most one current envelope, condition-variable wakeups
+replace reorder polling, and `StopAndDisconnect` reaches every blocked producer.
+`StopAccepting` closes admission without dropping accepted client work. Session
+exit now enters a two-second quiescence phase and completes only after frontend
+authority, accepted batches, CPU visual progress, and native presentation work
+all drain; timeout names the remaining owners and forces cancellation.
+`XAuthorityShutdown.tla` checks the split transition system, while exact negative
+controls prove premature exit and unbounded producer ownership are detected.
+
+Outstanding: complete production checks, build and sign this candidate, then
+run exactly one clean physical terminal gate. The gate always records separate
+machine and operator-visual verdicts and never retries. Retain a passing schema-4
+report to close CP-14.1; diagnose any failed archive before another physical run.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

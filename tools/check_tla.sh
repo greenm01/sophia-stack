@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission ContinuousContentPresentation; do
+for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -51,6 +51,42 @@ for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBa
             -config "$model.cfg" \
             "$model.tla"
     )
+done
+
+for control in \
+    XAuthorityShutdownPrematureExit \
+    XAuthorityShutdownUnboundedIngress; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/XAuthorityShutdown.tla" "$control_dir/"
+    cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (
+        cd "$control_dir"
+        java -XX:+UseParallelGC -jar "$JAR_PATH" \
+            -deadlock \
+            -workers 1 \
+            -fp 0 \
+            -config "$control.cfg" \
+            XAuthorityShutdown.tla
+    ) >"$log" 2>&1; then
+        echo "TLA+ negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        XAuthorityShutdownPrematureExit)
+            grep -Fq 'Invariant NoUncancellableEgress is violated.' "$log" || {
+                echo "TLA+ premature-exit control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+        XAuthorityShutdownUnboundedIngress)
+            grep -Fq 'Invariant BoundedProducerOwnership is violated.' "$log" || {
+                echo "TLA+ unbounded-ingress control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+    esac
 done
 
 # These configurations deliberately weaken exactly one progress or identity

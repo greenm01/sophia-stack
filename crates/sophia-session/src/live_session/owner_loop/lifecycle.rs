@@ -400,13 +400,13 @@
                 }
                 primary_child_exited = true;
                 if config.exit_when_startup_exits {
-                    break;
+                    begin_session_quiescence!("startup_application_exit");
                 }
             } else {
                 if status.success()
                     && successful_primary_exit_ends_session(config.input_proof_requested())
                 {
-                    break;
+                    begin_session_quiescence!("successful_primary_exit");
                 }
                 // The proof helper intentionally exits after displaying its
                 // received text. Keep the session and secondary terminal alive so
@@ -713,7 +713,7 @@
         if output_topology_owner.input_quarantined() {
             input_routing_mode = PhysicalInputRoutingMode::ShortcutsOnly;
         }
-        if runtime_deadline_key_drain.is_draining() {
+        if runtime_deadline_key_drain.is_draining() || session_quiescence.is_some() {
             input_routing_mode = PhysicalInputRoutingMode::Suppressed;
         }
         let empty_explicit_projections = [];
@@ -1222,7 +1222,7 @@
                 .max_ticks
                 .is_some_and(|max_ticks| metrics.session_ticks >= max_ticks)
             {
-                break;
+                begin_session_quiescence!("tick_limit");
             }
             metrics.session_ticks = metrics.session_ticks.saturating_add(1);
         }

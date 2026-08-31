@@ -796,12 +796,20 @@ fn routed_service_cancellation_releases_authority_backpressured_worker() {
         }
     };
     assert_eq!(waiting.client, Some(XServerFrontendClientId::from_raw(1)));
+    drop(client);
+    service_sender
+        .send(XServerFrontendServiceCommand::StopAccepting)
+        .unwrap();
+    assert!(matches!(
+        done_receiver.recv_timeout(Duration::from_millis(50)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    ));
     service_sender
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
         .unwrap();
     done_receiver
         .recv_timeout(Duration::from_secs(1))
-        .expect("service cancellation left the authority observer blocked")
+        .expect("post-drain cancellation left the authority producer blocked")
         .unwrap();
     server.join().unwrap();
     let terminal = telemetry_receiver.try_iter().collect::<Vec<_>>();
@@ -820,7 +828,6 @@ fn routed_service_cancellation_releases_authority_backpressured_worker() {
     // Keep the owner receiver alive until after the worker exits: this proves
     // service cancellation, rather than channel disconnection, released it.
     drop(transaction_receiver);
-    drop(client);
     drop(service_sender);
     std::fs::remove_file(&socket_path).unwrap();
 }

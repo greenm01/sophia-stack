@@ -275,170 +275,339 @@ pub fn run_x_server_frontend_routed_until_stopped(
 /// transition before exercising shutdown without inferring worker state from
 /// socket timing.
 #[cfg(unix)]
-struct XAuthorityEgressEnvelope {
+struct XAuthorityBoundedEgressEnvelope {
     transaction: TransactionId,
     batch: Option<XAuthorityObservedTransactionBatch>,
+    client: Option<XServerFrontendClientId>,
+    observed_batch: bool,
+    waiting_since: Option<Instant>,
 }
 
 #[cfg(unix)]
-fn send_x_authority_egress_envelope(
-    sender: &SyncSender<XAuthorityEgressEnvelope>,
-    mut envelope: XAuthorityEgressEnvelope,
-    cancellation: &AtomicBool,
-) -> Result<(), X11SetupSocketError> {
-    loop {
-        if cancellation.load(Ordering::Acquire) {
-            return Err(X11SetupSocketError::service_shutdown(
-                "authority egress enqueue cancelled",
-            ));
+impl XAuthorityBoundedEgressEnvelope {
+    fn new(
+        transaction: TransactionId,
+        batch: Option<XAuthorityObservedTransactionBatch>,
+    ) -> Self {
+        let client = batch.as_ref().and_then(|batch| batch.client);
+        let observed_batch = batch.is_some();
+        Self {
+            transaction,
+            batch,
+            client,
+            observed_batch,
+            waiting_since: None,
         }
-        match sender.try_send(envelope) {
-            Ok(()) => return Ok(()),
-            Err(TrySendError::Full(pending)) => envelope = pending,
-            Err(TrySendError::Disconnected(_)) => {
-                return Err(X11SetupSocketError::new(
-                    "authority egress sequencer disconnected",
-                ));
-            }
-        }
-        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
 #[cfg(unix)]
-fn run_x_authority_egress_sequencer(
-    receiver: Receiver<XAuthorityEgressEnvelope>,
+#[derive(Clone, Copy, Debug)]
+struct XAuthorityOrderedEgressReport {
+    tickets_advanced: u64,
+    batches_delivered: u64,
+    peak_waiting_producers: usize,
+    wait_episodes: u64,
+    resumed: u64,
+    cancelled: u64,
+}
+
+#[cfg(unix)]
+struct XAuthorityOrderedEgressState {
+    next_ticket: u64,
+    waiting_producers: usize,
+    report: XAuthorityOrderedEgressReport,
+}
+
+#[cfg(unix)]
+impl Default for XAuthorityOrderedEgressState {
+    fn default() -> Self {
+        Self {
+            next_ticket: 1,
+            waiting_producers: 0,
+            report: XAuthorityOrderedEgressReport {
+                tickets_advanced: 0,
+                batches_delivered: 0,
+                peak_waiting_producers: 0,
+                wait_episodes: 0,
+                resumed: 0,
+                cancelled: 0,
+            },
+        }
+    }
+}
+
+#[cfg(unix)]
+struct XAuthorityOrderedEgress {
     sender: SyncSender<XAuthorityObservedTransactionBatch>,
     cancellation: Arc<AtomicBool>,
+    transport_disconnected: AtomicBool,
+    state: Mutex<XAuthorityOrderedEgressState>,
+    turn: Condvar,
     telemetry: Arc<XAuthorityBackpressureObserver>,
-) -> Result<(), X11SetupSocketError> {
-    let mut expected = 1_u64;
-    let mut input_disconnected = false;
-    let mut pending = BTreeMap::<u64, Option<XAuthorityObservedTransactionBatch>>::new();
-    let mut output = None::<(XAuthorityObservedTransactionBatch, Instant)>;
-    let mut waiting = CapacityStallLedger::<u64>::default();
-    loop {
-        loop {
-            match receiver.try_recv() {
-                Ok(envelope) => {
-                    let ticket = envelope.transaction.raw();
-                    if ticket < expected || pending.insert(ticket, envelope.batch).is_some() {
-                        return Err(X11SetupSocketError::new(
-                            "authority egress received a duplicate or stale ticket",
-                        ));
-                    }
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    input_disconnected = true;
-                    break;
-                }
-            }
-        }
+}
 
-        while output.is_none() {
-            let Some(batch) = pending.remove(&expected) else { break };
-            expected = expected.saturating_add(1);
-            if let Some(batch) = batch {
-                output = Some((batch, Instant::now()));
-            }
+#[cfg(unix)]
+impl XAuthorityOrderedEgress {
+    fn new(
+        sender: SyncSender<XAuthorityObservedTransactionBatch>,
+        cancellation: Arc<AtomicBool>,
+        telemetry: Arc<XAuthorityBackpressureObserver>,
+    ) -> Self {
+        Self {
+            sender,
+            cancellation,
+            transport_disconnected: AtomicBool::new(false),
+            state: Mutex::new(XAuthorityOrderedEgressState::default()),
+            turn: Condvar::new(),
+            telemetry,
         }
+    }
 
-        if cancellation.load(Ordering::Acquire) {
-            if let Some((batch, started)) = output.take() {
-                telemetry(XAuthorityBackpressureTelemetry {
-                    kind: XAuthorityBackpressureTelemetryKind::Shutdown,
-                    client: batch.client,
-                    transaction: batch.transaction,
-                    waited: started.elapsed(),
-                    failure: Some(XAuthorityBackpressureFailure::Cancelled),
-                });
-            }
-            for batch in pending.values().flatten() {
-                telemetry(XAuthorityBackpressureTelemetry {
-                    kind: XAuthorityBackpressureTelemetryKind::Shutdown,
-                    client: batch.client,
-                    transaction: batch.transaction,
-                    waited: Duration::ZERO,
-                    failure: Some(XAuthorityBackpressureFailure::Cancelled),
-                });
-            }
+    fn cancel(&self) {
+        self.cancellation.store(true, Ordering::Release);
+        self.turn.notify_all();
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+    }
+
+    fn transport_disconnected(&self) -> bool {
+        self.transport_disconnected.load(Ordering::Acquire)
+    }
+
+    fn state(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, XAuthorityOrderedEgressState>, X11SetupSocketError> {
+        self.state
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("authority egress order lock poisoned"))
+    }
+
+    fn begin_wait(
+        &self,
+        envelope: &mut XAuthorityBoundedEgressEnvelope,
+    ) -> Result<(), X11SetupSocketError> {
+        if envelope.waiting_since.is_some() {
             return Ok(());
         }
+        envelope.waiting_since = Some(Instant::now());
+        let mut state = self.state()?;
+        state.waiting_producers = state.waiting_producers.saturating_add(1);
+        state.report.wait_episodes = state.report.wait_episodes.saturating_add(1);
+        state.report.peak_waiting_producers = state
+            .report
+            .peak_waiting_producers
+            .max(state.waiting_producers);
+        drop(state);
+        if envelope.observed_batch {
+            (self.telemetry)(XAuthorityBackpressureTelemetry {
+                kind: XAuthorityBackpressureTelemetryKind::Wait,
+                client: envelope.client,
+                transaction: envelope.transaction,
+                waited: Duration::ZERO,
+                failure: None,
+            });
+        }
+        Ok(())
+    }
 
-        if let Some((batch, started)) = output.take() {
-            let client = batch.client;
-            let transaction = batch.transaction;
-            match sender.try_send(batch) {
-                Ok(()) => {
-                    if waiting.end_stall(&transaction.raw()) {
-                        telemetry(XAuthorityBackpressureTelemetry {
-                            kind: XAuthorityBackpressureTelemetryKind::Resume,
-                            client,
-                            transaction,
-                            waited: started.elapsed(),
-                            failure: None,
-                        });
-                    }
+    fn finish_wait(
+        &self,
+        envelope: &mut XAuthorityBoundedEgressEnvelope,
+        kind: XAuthorityBackpressureTelemetryKind,
+        failure: Option<XAuthorityBackpressureFailure>,
+    ) -> Result<(), X11SetupSocketError> {
+        let waiting_since = envelope.waiting_since.take();
+        let waited = waiting_since.map_or(Duration::ZERO, |started| started.elapsed());
+        if waiting_since.is_some()
+            || matches!(kind, XAuthorityBackpressureTelemetryKind::Shutdown)
+        {
+            let mut state = self.state()?;
+            if waiting_since.is_some() {
+                state.waiting_producers = state.waiting_producers.saturating_sub(1);
+            }
+            match kind {
+                XAuthorityBackpressureTelemetryKind::Resume if waiting_since.is_some() => {
+                    state.report.resumed = state.report.resumed.saturating_add(1);
                 }
+                XAuthorityBackpressureTelemetryKind::Shutdown => {
+                    state.report.cancelled = state.report.cancelled.saturating_add(1);
+                }
+                XAuthorityBackpressureTelemetryKind::Resume
+                | XAuthorityBackpressureTelemetryKind::Wait
+                | XAuthorityBackpressureTelemetryKind::TransportFailure => {}
+            }
+        }
+        if envelope.observed_batch
+            && (waiting_since.is_some() || failure.is_some())
+        {
+            (self.telemetry)(XAuthorityBackpressureTelemetry {
+                kind,
+                client: envelope.client,
+                transaction: envelope.transaction,
+                waited,
+                failure,
+            });
+        }
+        Ok(())
+    }
+
+    fn cancel_envelope(
+        &self,
+        envelope: &mut XAuthorityBoundedEgressEnvelope,
+    ) -> Result<(), X11SetupSocketError> {
+        self.finish_wait(
+            envelope,
+            XAuthorityBackpressureTelemetryKind::Shutdown,
+            Some(XAuthorityBackpressureFailure::Cancelled),
+        )
+    }
+
+    fn advance(
+        &self,
+        envelope: &mut XAuthorityBoundedEgressEnvelope,
+        delivered_batch: bool,
+    ) -> Result<(), X11SetupSocketError> {
+        let ticket = envelope.transaction.raw();
+        let mut state = self.state()?;
+        if ticket != state.next_ticket {
+            return Err(X11SetupSocketError::new(
+                "authority egress advanced a stale or out-of-order ticket",
+            ));
+        }
+        state.next_ticket = state.next_ticket.checked_add(1).ok_or_else(|| {
+            X11SetupSocketError::new("authority egress transaction ticket exhausted")
+        })?;
+        state.report.tickets_advanced = state.report.tickets_advanced.saturating_add(1);
+        if delivered_batch {
+            state.report.batches_delivered = state.report.batches_delivered.saturating_add(1);
+        }
+        drop(state);
+        self.finish_wait(
+            envelope,
+            XAuthorityBackpressureTelemetryKind::Resume,
+            None,
+        )?;
+        self.turn.notify_all();
+        Ok(())
+    }
+
+    fn submit_blocking(
+        &self,
+        mut envelope: XAuthorityBoundedEgressEnvelope,
+    ) -> Result<(), X11SetupSocketError> {
+        loop {
+            if self.cancelled() {
+                self.cancel_envelope(&mut envelope)?;
+                return Err(X11SetupSocketError::service_shutdown(
+                    "authority egress submission cancelled",
+                ));
+            }
+            let state = self.state()?;
+            let ticket = envelope.transaction.raw();
+            if ticket < state.next_ticket {
+                return Err(X11SetupSocketError::new(
+                    "authority egress received a duplicate or stale ticket",
+                ));
+            }
+            if ticket > state.next_ticket {
+                drop(state);
+                self.begin_wait(&mut envelope)?;
+                let state = self.state()?;
+                if self.cancelled() || ticket <= state.next_ticket {
+                    drop(state);
+                    continue;
+                }
+                let state = self
+                    .turn
+                    .wait(state)
+                    .map_err(|_| X11SetupSocketError::new("authority egress order lock poisoned"))?;
+                drop(state);
+                continue;
+            }
+            drop(state);
+            let Some(batch) = envelope.batch.take() else {
+                return self.advance(&mut envelope, false);
+            };
+            match self.sender.try_send(batch) {
+                Ok(()) => return self.advance(&mut envelope, true),
                 Err(TrySendError::Full(batch)) => {
-                    if waiting.begin_stall(transaction.raw()) {
-                        telemetry(XAuthorityBackpressureTelemetry {
-                            kind: XAuthorityBackpressureTelemetryKind::Wait,
-                            client,
-                            transaction,
-                            waited: Duration::ZERO,
-                            failure: None,
-                        });
-                    }
-                    output = Some((batch, started));
-                    // Later consecutive batches are causally waiting behind
-                    // this full boundary even though they cannot overtake it.
-                    for batch in pending.values().flatten() {
-                        if waiting.begin_stall(batch.transaction.raw()) {
-                            telemetry(XAuthorityBackpressureTelemetry {
-                                kind: XAuthorityBackpressureTelemetryKind::Wait,
-                                client: batch.client,
-                                transaction: batch.transaction,
-                                waited: Duration::ZERO,
-                                failure: None,
-                            });
-                        }
-                    }
+                    envelope.batch = Some(batch);
+                    self.begin_wait(&mut envelope)?;
                 }
-                Err(TrySendError::Disconnected(_)) => {
-                    telemetry(XAuthorityBackpressureTelemetry {
-                        kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
-                        client,
-                        transaction,
-                        waited: started.elapsed(),
-                        failure: Some(XAuthorityBackpressureFailure::Disconnected),
-                    });
-                    for batch in pending.values().flatten() {
-                        telemetry(XAuthorityBackpressureTelemetry {
-                            kind: XAuthorityBackpressureTelemetryKind::TransportFailure,
-                            client: batch.client,
-                            transaction: batch.transaction,
-                            waited: Duration::ZERO,
-                            failure: Some(XAuthorityBackpressureFailure::Disconnected),
-                        });
-                    }
+                Err(TrySendError::Disconnected(batch)) => {
+                    envelope.batch = Some(batch);
+                    self.transport_disconnected.store(true, Ordering::Release);
+                    self.cancel();
+                    self.finish_wait(
+                        &mut envelope,
+                        XAuthorityBackpressureTelemetryKind::TransportFailure,
+                        Some(XAuthorityBackpressureFailure::Disconnected),
+                    )?;
                     return Err(X11SetupSocketError::new(
                         "X authority observed transaction channel is disconnected",
                     ));
                 }
             }
+            std::thread::sleep(Duration::from_millis(1));
         }
+    }
 
-        if input_disconnected && output.is_none() && pending.is_empty() {
-            return Ok(());
+    fn try_submit(
+        &self,
+        mut envelope: XAuthorityBoundedEgressEnvelope,
+    ) -> Result<Option<XAuthorityBoundedEgressEnvelope>, X11SetupSocketError> {
+        if self.cancelled() {
+            self.cancel_envelope(&mut envelope)?;
+            return Ok(None);
         }
-        if input_disconnected && output.is_none() && !pending.contains_key(&expected) {
+        let state = self.state()?;
+        let ticket = envelope.transaction.raw();
+        if ticket < state.next_ticket {
             return Err(X11SetupSocketError::new(
-                "authority egress closed with a missing transaction ticket",
+                "authority egress received a duplicate or stale ticket",
             ));
         }
-        std::thread::sleep(Duration::from_millis(1));
+        if ticket > state.next_ticket {
+            drop(state);
+            self.begin_wait(&mut envelope)?;
+            return Ok(Some(envelope));
+        }
+        drop(state);
+        let Some(batch) = envelope.batch.take() else {
+            self.advance(&mut envelope, false)?;
+            return Ok(None);
+        };
+        match self.sender.try_send(batch) {
+            Ok(()) => {
+                self.advance(&mut envelope, true)?;
+                Ok(None)
+            }
+            Err(TrySendError::Full(batch)) => {
+                envelope.batch = Some(batch);
+                self.begin_wait(&mut envelope)?;
+                Ok(Some(envelope))
+            }
+            Err(TrySendError::Disconnected(batch)) => {
+                envelope.batch = Some(batch);
+                self.transport_disconnected.store(true, Ordering::Release);
+                self.cancel();
+                self.finish_wait(
+                    &mut envelope,
+                    XAuthorityBackpressureTelemetryKind::TransportFailure,
+                    Some(XAuthorityBackpressureFailure::Disconnected),
+                )?;
+                Err(X11SetupSocketError::new(
+                    "X authority observed transaction channel is disconnected",
+                ))
+            }
+        }
+    }
+
+    fn report(&self) -> Result<XAuthorityOrderedEgressReport, X11SetupSocketError> {
+        Ok(self.state()?.report)
     }
 }
 
@@ -457,78 +626,43 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .set_input_authority(broker.registry.input_authority.clone());
-    let observation_cancellation = Arc::new(AtomicBool::new(false));
-    let worker_observation_cancellation = observation_cancellation.clone();
-    let (egress_sender, egress_receiver) =
-        sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
-    let egress_cancellation = observation_cancellation.clone();
-    let egress_backpressure_observer = backpressure_observer.clone();
-    let (egress_completion_sender, egress_completion_receiver) =
-        std::sync::mpsc::sync_channel(1);
-    let egress_thread = std::thread::spawn(move || {
-        let result = run_x_authority_egress_sequencer(
-            egress_receiver,
-            transaction_sender,
-            egress_cancellation,
-            egress_backpressure_observer,
-        );
-        let _ = egress_completion_sender.send(
-            result
-                .as_ref()
-                .map(|_| ())
-                .map_err(std::string::ToString::to_string),
-        );
-        result
-    });
-    let dispatch_egress_sender = egress_sender.clone();
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let ordered_egress = Arc::new(XAuthorityOrderedEgress::new(
+        transaction_sender,
+        cancellation,
+        backpressure_observer,
+    ));
+    let worker_egress = ordered_egress.clone();
     let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-        let envelope = XAuthorityEgressEnvelope {
-            transaction: trace.transaction,
-            batch: XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace),
-        };
-        send_x_authority_egress_envelope(
-            &dispatch_egress_sender,
-            envelope,
-            &worker_observation_cancellation,
-        )
+        worker_egress.submit_blocking(XAuthorityBoundedEgressEnvelope::new(
+            trace.transaction,
+            XAuthorityObservedTransactionBatch::from_dispatch_observation(&trace),
+        ))
     });
     let mut accepting = true;
-    let mut pending_raster_egress = None::<XAuthorityEgressEnvelope>;
+    let mut pending_raster_egress = None::<XAuthorityBoundedEgressEnvelope>;
     let mut raster_fallbacks = XRasterFallbackCoalescer::default();
-    let mut egress_finished = false;
     let service_result: Result<(), X11SetupSocketError> = (|| {
         loop {
             let mut progressed = false;
-            match (!egress_finished).then(|| egress_completion_receiver.try_recv()) {
-                None => {}
-                Some(Ok(Err(error))) => {
-                    return Err(X11SetupSocketError::new(format!(
-                        "authority egress failed: {error}"
-                    )));
-                }
-                Some(Ok(Ok(()))) if observation_cancellation.load(Ordering::Acquire) => {
-                    egress_finished = true;
-                }
-                Some(Ok(Ok(()))) => {
-                    return Err(X11SetupSocketError::new(
-                        "authority egress stopped before the frontend",
-                    ));
-                }
-                Some(Err(TryRecvError::Empty)) => {}
-                Some(Err(TryRecvError::Disconnected)) => {
-                    return Err(X11SetupSocketError::new(
-                        "authority egress completion channel disconnected",
-                    ));
-                }
-            }
             match service_commands.try_recv() {
-                Ok(XServerFrontendServiceCommand::StopAccepting)
-                | Err(TryRecvError::Disconnected) => accepting = false,
-                Ok(XServerFrontendServiceCommand::StopAndDisconnect) => {
+                Ok(XServerFrontendServiceCommand::StopAccepting) => {
+                    if accepting {
+                        accepting = false;
+                        progressed = true;
+                    }
+                }
+                Ok(XServerFrontendServiceCommand::StopAndDisconnect)
+                | Err(TryRecvError::Disconnected) => {
                     accepting = false;
-                    observation_cancellation.store(true, Ordering::Release);
-                    frontend.shutdown_all_client_workers()?;
-                    progressed = true;
+                    if !ordered_egress.cancelled() {
+                        ordered_egress.cancel();
+                        if let Some(mut envelope) = pending_raster_egress.take() {
+                            ordered_egress.cancel_envelope(&mut envelope)?;
+                        }
+                        frontend.shutdown_all_client_workers()?;
+                        progressed = true;
+                    }
                 }
                 Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
                     progressed |= frontend.revoke_admission(admission)?;
@@ -561,81 +695,75 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                 Err(TryRecvError::Empty) => {}
             }
 
-            if observation_cancellation.load(Ordering::Acquire) {
-                pending_raster_egress = None;
-            }
-            if pending_raster_egress.is_none() {
-                match broker.try_recv_raster_requirements() {
-                    Ok(requirements) => {
-                        let transaction = frontend.state.allocate_transaction()?;
-                        let response = frontend
-                            .state
-                            .runtime
-                            .lock()
-                            .map_err(|_| {
-                                X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                            })?
-                            .apply_surface_raster_requirements(transaction, &requirements);
-                        match response {
-                            Ok(crate::XSurfaceRasterOutcome::Satisfied(response)) => {
-                                raster_fallbacks.report_satisfied(
-                                    &requirements,
-                                    response.identity.source_content_generation,
-                                );
-                                let batch = XAuthorityObservedTransactionBatch::from_raster_response(
-                                    *response,
-                                );
-                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
-                                    transaction,
-                                    batch: Some(batch),
-                                });
-                            }
-                            Ok(crate::XSurfaceRasterOutcome::SampledFallback {
-                                cause,
-                                observed_content_generation,
-                            }) => {
-                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
-                                    transaction,
-                                    batch: None,
-                                });
-                                raster_fallbacks.report(
-                                    &requirements,
+            if !ordered_egress.cancelled() {
+                if pending_raster_egress.is_none() {
+                    match broker.try_recv_raster_requirements() {
+                        Ok(requirements) => {
+                            let transaction = frontend.state.allocate_transaction()?;
+                            let response = frontend
+                                .state
+                                .runtime
+                                .lock()
+                                .map_err(|_| {
+                                    X11SetupSocketError::new(
+                                        "X11 authority runtime lock poisoned",
+                                    )
+                                })?
+                                .apply_surface_raster_requirements(transaction, &requirements);
+                            match response {
+                                Ok(crate::XSurfaceRasterOutcome::Satisfied(response)) => {
+                                    raster_fallbacks.report_satisfied(
+                                        &requirements,
+                                        response.identity.source_content_generation,
+                                    );
+                                    let batch =
+                                        XAuthorityObservedTransactionBatch::from_raster_response(
+                                            *response,
+                                        );
+                                    pending_raster_egress =
+                                        Some(XAuthorityBoundedEgressEnvelope::new(
+                                            transaction,
+                                            Some(batch),
+                                        ));
+                                }
+                                Ok(crate::XSurfaceRasterOutcome::SampledFallback {
                                     cause,
                                     observed_content_generation,
-                                );
+                                }) => {
+                                    pending_raster_egress =
+                                        Some(XAuthorityBoundedEgressEnvelope::new(
+                                            transaction,
+                                            None,
+                                        ));
+                                    raster_fallbacks.report(
+                                        &requirements,
+                                        cause,
+                                        observed_content_generation,
+                                    );
+                                }
+                                Err(error) => {
+                                    pending_raster_egress =
+                                        Some(XAuthorityBoundedEgressEnvelope::new(
+                                            transaction,
+                                            None,
+                                        ));
+                                    tracing::warn!(
+                                        "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
+                                        requirements.surface,
+                                        requirements.committed_content_generation,
+                                        requirements.requirement_generation,
+                                    );
+                                }
                             }
-                            Err(error) => {
-                                // One surface's demand must never end the
-                                // server. Answer it with the canonical raster
-                                // and keep serving every other client.
-                                pending_raster_egress = Some(XAuthorityEgressEnvelope {
-                                    transaction,
-                                    batch: None,
-                                });
-                                tracing::warn!(
-                                    "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
-                                    requirements.surface,
-                                    requirements.committed_content_generation,
-                                    requirements.requirement_generation,
-                                );
-                            }
+                            progressed = true;
                         }
-                        progressed = true;
+                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
                     }
-                    Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
                 }
-            }
-            if let Some(envelope) = pending_raster_egress.take() {
-                match egress_sender.try_send(envelope) {
-                    Ok(()) => progressed = true,
-                    Err(TrySendError::Full(envelope)) => {
-                        pending_raster_egress = Some(envelope);
-                    }
-                    Err(TrySendError::Disconnected(_)) => {
-                        return Err(X11SetupSocketError::new(
-                            "authority egress sequencer disconnected",
-                        ));
-                    }
+                if let Some(envelope) = pending_raster_egress.take() {
+                    let was_waiting = envelope.waiting_since.is_some();
+                    pending_raster_egress = ordered_egress.try_submit(envelope)?;
+                    progressed |= !was_waiting && pending_raster_egress.is_none();
                 }
             }
 
@@ -650,6 +778,8 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                     }
                     progressed = true;
                 }
+            }
+            if !ordered_egress.cancelled() {
                 let routed = broker
                     .route_pending()
                     .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
@@ -658,6 +788,11 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
             let workers_before_reap = frontend.active_client_worker_count();
             frontend.poll_client_workers()?;
             progressed |= workers_before_reap != frontend.active_client_worker_count();
+            if ordered_egress.transport_disconnected() {
+                return Err(X11SetupSocketError::new(
+                    "X authority observed transaction channel is disconnected",
+                ));
+            }
 
             if !accepting
                 && frontend.active_client_worker_count() == 0
@@ -670,9 +805,15 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
             }
         }
     })();
+
     let mut cleanup_failures = Vec::new();
     if service_result.is_err() {
-        observation_cancellation.store(true, Ordering::Release);
+        ordered_egress.cancel();
+        if let Some(mut envelope) = pending_raster_egress.take()
+            && let Err(error) = ordered_egress.cancel_envelope(&mut envelope)
+        {
+            cleanup_failures.push(format!("pending raster cancellation failed: {error}"));
+        }
         if let Err(error) = frontend.shutdown_all_client_workers() {
             cleanup_failures.push(format!("worker shutdown failed: {error}"));
         }
@@ -681,17 +822,32 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         }
     }
     drop(observer);
-    drop(egress_sender);
-    let egress_result = egress_thread.join().unwrap_or_else(|_| {
-        Err(X11SetupSocketError::new(
-            "authority egress sequencer panicked",
-        ))
-    });
-    match service_result {
-        Ok(()) => egress_result,
-        Err(original) => {
-            if let Err(error) = egress_result {
-                cleanup_failures.push(format!("authority egress failed: {error}"));
+    let report = ordered_egress.report();
+    let status = if service_result.is_err() {
+        "error"
+    } else if ordered_egress.cancelled() {
+        "cancelled"
+    } else {
+        "drained"
+    };
+    if let Ok(report) = report.as_ref() {
+        tracing::info!(
+            "sophia_x11_authority_egress schema=1 status={} tickets_advanced={} batches_delivered={} peak_waiting_producers={} wait_episodes={} resumed={} cancelled={}",
+            status,
+            report.tickets_advanced,
+            report.batches_delivered,
+            report.peak_waiting_producers,
+            report.wait_episodes,
+            report.resumed,
+            report.cancelled,
+        );
+    }
+    match (service_result, report) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Ok(()), Err(error)) => Err(error),
+        (Err(original), report) => {
+            if let Err(error) = report {
+                cleanup_failures.push(format!("authority egress report failed: {error}"));
             }
             Err(original.with_cleanup_failures(cleanup_failures))
         }

@@ -143,6 +143,7 @@ const SESSION_COMPLETION_TIMEOUT_MSEC: u64 = 5_000;
 const SESSION_POLICY_RESPONSE_TIMEOUT_MSEC: u64 = 4_000;
 const SESSION_APP_ADMISSION_TIMEOUT_MSEC: u64 = 12_000;
 const SESSION_INPUT_DELIVERY_TIMEOUT_MSEC: u64 = 1_000;
+const SESSION_QUIESCENCE_TIMEOUT_MSEC: u64 = 2_000;
 const SESSION_SEAT_RAW: u64 = 1;
 const SESSION_KEYBOARD_DEVICE_RAW: u64 = 1;
 const SESSION_POINTER_DEVICE_RAW: u64 = 2;
@@ -999,14 +1000,28 @@ pub(crate) fn run_persistent_xterm_session(
     // Stop frontend routing before terminating its clients. Pointer motion can
     // leave a bounded burst in the Engine ingress queue; killing xterm first
     // turns that normal shutdown backlog into a client-queue disconnect.
-    let _ = service_command_sender.send(XServerFrontendServiceCommand::StopAccepting);
+    let intake_status =
+        match service_command_sender.send(XServerFrontendServiceCommand::StopAccepting) {
+            Ok(()) => "requested",
+            Err(_) => "already_stopped",
+        };
+    crate::session_println!(
+        "sophia_live_session_lifecycle schema=1 status=frontend_intake_stop command={intake_status}"
+    );
     drop(input_sender);
     drop(control_sender);
     crate::session_println!("sophia_live_session_lifecycle schema=1 status=stopping_clients");
     if let Err(error) = process.terminate() {
         outer_cleanup_failures.push(format!("session client cleanup failed: {error}"));
     }
-    let _ = service_command_sender.send(XServerFrontendServiceCommand::StopAndDisconnect);
+    let cancellation_status =
+        match service_command_sender.send(XServerFrontendServiceCommand::StopAndDisconnect) {
+            Ok(()) => "requested",
+            Err(_) => "already_stopped",
+        };
+    crate::session_println!(
+        "sophia_live_session_lifecycle schema=1 status=frontend_cancellation command={cancellation_status}"
+    );
     crate::session_println!("sophia_live_session_lifecycle schema=1 status=joining_frontend");
     match server
         .take()

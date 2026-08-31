@@ -525,6 +525,7 @@ fn run_session_loop_inner(
     let mut startup_surface_presentations = StartupSurfacePresentationEvidence::default();
     let mut startup_ready_reported = false;
     let mut cpu_visual_progress = CpuVisualProgress::default();
+    let mut session_quiescence = None::<SessionQuiescence>;
     // Inert unless the session asked for it; see `direct_overlay_proof`.
     let mut direct_overlay_proof =
         crate::live_session::direct_overlay_proof::DirectOverlayProof::new(
@@ -604,6 +605,33 @@ fn run_session_loop_inner(
                 observed_wm_restart_count = restart_count;
                 revoke_floating_pointer_interaction!("policy_restart");
                 revoke_chrome_captures!("policy_restart");
+            }
+        }};
+    }
+
+    macro_rules! begin_session_quiescence {
+        ($reason:literal) => {{
+            if session_quiescence.is_none() {
+                let now = Instant::now();
+                if let Err(error) =
+                    frontend_service_sender.send(XServerFrontendServiceCommand::StopAccepting)
+                {
+                    return Err(format!(
+                        "failed to stop frontend admission for session quiescence: {error}"
+                    )
+                    .into());
+                }
+                terminal_client_intake_stopped = true;
+                session_quiescence = Some(SessionQuiescence::new(
+                    $reason,
+                    now,
+                    Duration::from_millis(SESSION_QUIESCENCE_TIMEOUT_MSEC),
+                ));
+                crate::session_println!(
+                    "sophia_live_session_quiescence schema=1 status=started reason={} timeout_msec={}",
+                    $reason,
+                    SESSION_QUIESCENCE_TIMEOUT_MSEC,
+                );
             }
         }};
     }

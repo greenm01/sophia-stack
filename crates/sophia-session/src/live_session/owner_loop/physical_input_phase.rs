@@ -1145,6 +1145,59 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         include!("authority.rs");
         include!("input_proof.rs");
         service_session_controls!();
+        if let Some(quiescence) = session_quiescence.as_ref() {
+            let now = Instant::now();
+            let native_work_pending = match (runtime.as_ref(), native_scanout.as_ref()) {
+                (Some(runtime), Some(native_scanout)) => native_frame_service_requires_owner_progress(
+                    &runtime.native_output_service_request(native_scanout)?,
+                ),
+                _ => false,
+            };
+            let snapshot = SessionQuiescenceSnapshot {
+                pending_authority_batches: pending_authority_batches
+                    .len()
+                    .saturating_add(usize::from(initial_authority_batch.is_some())),
+                cpu_update_pending: !cpu_visual_progress.is_settled(),
+                native_work_pending,
+            };
+            match quiescence.decision(now, snapshot) {
+                SessionQuiescenceDecision::Pending => {}
+                SessionQuiescenceDecision::Complete => {
+                    crate::session_println!(
+                        "sophia_live_session_quiescence schema=1 status=complete reason={} elapsed_msec={} authority_pending=0 cpu_pending=0 native_pending=false",
+                        quiescence.reason,
+                        quiescence.elapsed(now).as_millis(),
+                    );
+                    break 'session;
+                }
+                SessionQuiescenceDecision::TimedOut => {
+                    let cancellation = match frontend_service_sender
+                        .send(XServerFrontendServiceCommand::StopAndDisconnect)
+                    {
+                        Ok(()) => "requested",
+                        Err(_) => "frontend_already_stopped",
+                    };
+                    crate::session_println!(
+                        "sophia_live_session_quiescence schema=1 status=timed_out reason={} elapsed_msec={} authority_pending={} cpu_pending={} native_pending={} cancellation={}",
+                        quiescence.reason,
+                        quiescence.elapsed(now).as_millis(),
+                        snapshot.pending_authority_batches,
+                        cpu_visual_progress.pending_updates(),
+                        snapshot.native_work_pending,
+                        cancellation,
+                    );
+                    return Err(format!(
+                        "session quiescence timed out: reason={} frontend_drained={} authority_pending={} cpu_pending={} native_pending={}",
+                        quiescence.reason,
+                        quiescence.frontend_authority_drained,
+                        snapshot.pending_authority_batches,
+                        cpu_visual_progress.pending_updates(),
+                        snapshot.native_work_pending,
+                    )
+                    .into());
+                }
+            }
+        }
     }
     Ok(())
 })();

@@ -25,11 +25,15 @@ fn latest_wins_updates_are_all_accounted_after_retirement() {
     progress.observe_ready(ready, 2, Some(100), 60_000);
 
     progress.observe_updates(3, ready + Duration::from_millis(10));
+    assert_eq!(progress.pending_updates(), 1);
+    assert!(!progress.is_settled());
     progress.observe_composition(101, ready + Duration::from_millis(12));
     progress.observe_updates(2, ready + Duration::from_millis(20));
     progress.observe_composition(102, ready + Duration::from_millis(22));
     progress.observe_primary_state(3, Some(102), 60_000, ready + Duration::from_millis(30));
 
+    assert_eq!(progress.pending_updates(), 0);
+    assert!(progress.is_settled());
     let record = progress.record(ready + Duration::from_millis(40), 125);
     assert!(record.contains("post_startup_updates=5"));
     assert!(record.contains("accounted_updates=5"));

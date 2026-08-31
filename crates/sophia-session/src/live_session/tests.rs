@@ -21,15 +21,15 @@ use super::{
     ResizeSyncCapability, SECONDARY_POINTER_WITNESS_SCRIPT, SESSION_APP_ADMISSION_TIMEOUT_MSEC,
     SESSION_POLICY_RESPONSE_TIMEOUT_MSEC, SESSION_PROTOCOL_ERROR_TALLY_MAX_ENTRIES,
     SHELL_SWITCHER_SHORTCUT_ACTION, SessionFatalCleanupEvidence, SessionPointerPlacement,
-    SessionProcessGuard, SessionProtocolErrorTally, Size, Transform, XPresentCadence,
-    authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
-    authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
-    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
-    completed_pointer_gesture_geometry, current_cpu_frame_is_presented,
-    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
-    independent_native_output_presented, initial_session_focus_candidate,
-    input_baseline_is_presented, is_shell_switcher_shortcut, live_transaction_observed_size,
-    live_transaction_raster_size, live_transaction_visual_evidence,
+    SessionProcessGuard, SessionProtocolErrorTally, SessionQuiescence, SessionQuiescenceDecision,
+    SessionQuiescenceSnapshot, Size, Transform, XPresentCadence, authority_batch_has_engine_work,
+    authority_batch_is_pure_content, authority_merge_run_len, authority_transaction_count,
+    authority_wait_timeout, center_geometry_without_scaling, clamp_floating_pointer_outline,
+    clear_client_pressed_keys_state_only, completed_pointer_gesture_geometry,
+    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
+    global_runtime_deadline_ends_session, independent_native_output_presented,
+    initial_session_focus_candidate, input_baseline_is_presented, is_shell_switcher_shortcut,
+    live_transaction_observed_size, live_transaction_raster_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
     native_frame_service_should_preempt_authority, native_session_exported_pixels,
@@ -544,6 +544,47 @@ fn successful_primary_exit_keeps_requested_input_proof_alive() {
     assert!(!successful_primary_exit_ends_session(true));
 }
 
+#[test]
+fn session_quiescence_requires_frontend_authority_cpu_and_native_drain() {
+    let started = Instant::now();
+    let mut quiescence = SessionQuiescence::new("test", started, Duration::from_millis(20));
+    let drained = SessionQuiescenceSnapshot::default();
+
+    assert_eq!(
+        quiescence.decision(started + Duration::from_millis(1), drained),
+        SessionQuiescenceDecision::Pending
+    );
+    quiescence.mark_frontend_authority_drained();
+    assert_eq!(
+        quiescence.decision(
+            started + Duration::from_millis(2),
+            SessionQuiescenceSnapshot {
+                pending_authority_batches: 1,
+                cpu_update_pending: true,
+                native_work_pending: true,
+            },
+        ),
+        SessionQuiescenceDecision::Pending
+    );
+    assert_eq!(
+        quiescence.decision(started + Duration::from_millis(20), drained),
+        SessionQuiescenceDecision::Complete,
+        "settlement at the deadline must beat cancellation"
+    );
+
+    let mut blocked = SessionQuiescence::new("test", started, Duration::from_millis(20));
+    blocked.mark_frontend_authority_drained();
+    assert_eq!(
+        blocked.decision(
+            started + Duration::from_millis(20),
+            SessionQuiescenceSnapshot {
+                cpu_update_pending: true,
+                ..SessionQuiescenceSnapshot::default()
+            },
+        ),
+        SessionQuiescenceDecision::TimedOut
+    );
+}
 #[test]
 fn fatal_client_cleanup_preserves_error_after_pending_mirror_callback_drains() {
     let original = "session client exited during live session with status exit status: 83";

@@ -193,6 +193,24 @@ Removing supersession from the fairness assumption violates the settlement
 property, which is what shows that property is now carried by work that
 advances.
 
+`XAuthorityShutdown.tla` joins the two sides of terminal settlement that the
+continuous-content model deliberately leaves separate: producer ownership at
+the X Authority/Engine boundary and retirement of the final accepted CPU
+update. Producers hold at most one current transaction, exact-ticket delivery
+preserves order without a relay-owned collection, and forced cancellation
+remains reachable while any producer is held. Normal completion additionally
+requires the frontend channel, local authority queue, pending CPU update, and
+native in-flight work to be empty.
+
+The checked configuration explores 751 generated states and 302 distinct
+states to depth 19. Two retained negative configurations reproduce the original
+service exit while producer work remains and unbounded relay-style ingress;
+they must violate `NoUncancellableEgress` and `BoundedProducerOwnership`,
+respectively. `tools/check_tla.sh` verifies both exact failures. Scenario
+correspondence, Rust regressions, and implementation-only deadline checks are
+recorded in
+`validation/specula/x-authority-shutdown-modeling-brief.md`.
+
 `PresentFrameOwnership.tla` isolates the output-frame association needed by
 software Present. It allows an unrelated frame to submit and retire before the
 Present frame, but requires feedback to remain false until the exact bound

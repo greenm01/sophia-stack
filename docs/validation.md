@@ -490,21 +490,19 @@ bursts before xterm's process-level safety timeout. The independent 30-second
 watchdog bounds the complete session. Let the xterm exit automatically; the
 logout shortcut intentionally produces an incomplete benchmark.
 
-The wrapper retains and retries up to eight page-flip stalls only when schema-2
-attribution proves the completion event never crossed the card descriptor:
-the poller must be empty, routed, last read `WouldBlock`, and report zero decoded
-or rejected callbacks. Every failed attempt remains under `attempt-NNN/`.
-Before each retry, the wrapper pauses on the originating TTY until the operator
-presses Enter; the next session creates a fresh recovery guard, so press and
-release Ctrl-Alt-Backspace again when its safety prompt appears. The initial
-guard keeps the session launcher's 30-second default; retry guards wait up to
-120 seconds so an operator can return after reviewing the retained attempt.
-`SOPHIA_TERMINAL_RETRY_ARM_TIMEOUT_SECONDS` may set that retry-only wait from
-one through 300 seconds. Only the final attempt is promoted to the archive root
-and evaluated. A pending or rejected callback, another benchmark failure, or
-exhaustion of the bounded budget fails immediately.
-`SOPHIA_TERMINAL_MAX_STALL_RETRIES` may lower the
-budget or raise it no higher than 32.
+The wrapper runs exactly one physical attempt under `attempt-001/`, promotes
+that attempt's artifacts to the archive root, and never retries. After the
+benchmark returns, it always asks the operator whether the centered xterm
+scrolled continuously, even when the machine path failed. The schema-2
+`terminal-gate-result` records independent `machine-status` and
+`visual-status` verdicts; the overall result passes only when both pass.
+
+A page-flip stall remains retained evidence for diagnosis. It is not an
+automatic retry classification: a clean final `WouldBlock` observation does
+not establish where an earlier completion was lost, and repeating unchanged
+physical state cannot repair teardown or event-delivery defects. Run the gate
+again only after the retained evidence is diagnosed and the relevant code or
+system state has materially changed.
 
 The trailing `sophia_terminal_performance schema=4` report retains those
 resource, patch, damage, client-metadata, failure, drain, and composition-budget
@@ -530,9 +528,9 @@ tools/report_sophia_terminal_performance.sh
 
 If the machine locks or the report fails, retain the standalone session,
 launcher, input-guard, recovery, lifecycle, and protected kernel logs. The
-wrapper may repeat only the attributed below-process stall above; do not repeat
-any other failed physical takeover until its evidence is diagnosed. This
-benchmark does not establish Xserver parity. Optional X Present cadence remains a
+wrapper never retries a failed physical takeover; diagnose its retained
+evidence before running another candidate. This benchmark does not establish
+Xserver parity. Optional X Present cadence remains a
 diagnostic; the gate's screen-progress authority is the session's exact primary
 composition and KMS-retirement evidence.
 

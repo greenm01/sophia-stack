@@ -292,7 +292,7 @@
             pending_wm_update: pending_wm_update.is_some(),
         }) == SessionLogoutDrainDecision::Complete
         {
-            break;
+            begin_session_quiescence!("logout_complete");
         }
         if input_presented_latency.is_none()
             && input_pixel_change
@@ -325,6 +325,6 @@
             && (!config.expect_physical_pointer || pointer_pixel_change)
             && (!config.application_proof_requested() || primary_child_exited)
         {
-            break;
+            begin_session_quiescence!("input_proof_complete");
         }
 }
