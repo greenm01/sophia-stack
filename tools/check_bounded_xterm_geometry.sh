@@ -24,6 +24,10 @@ printf '%s\n' \
     'while [ "$#" -gt 0 ]; do' \
     '    if [ "$1" = -e ]; then' \
     '        shift' \
+    '        if [ -n "${SOPHIA_FAKE_XTERM_ORPHAN:-}" ]; then' \
+    '            "$@" >/dev/null &' \
+    '            exit 1' \
+    '        fi' \
     '        if [ -n "${SOPHIA_FAKE_XTERM_STALL:-}" ]; then' \
     '            fifo="${TMPDIR:-/tmp}/sophia-fake-xterm-$$.fifo"' \
     '            mkfifo "$fifo" || exit 3' \
@@ -162,5 +166,26 @@ stalled_iterations="$(field "$stalled_line" iterations)" ||
     fail "backpressured completion lacks iterations"
 ((stalled_iterations > 0)) ||
     fail "backpressured probe reported no completed scrollback bursts"
+
+# A dead X server can make xterm exit while its command child remains alive and
+# still owns the caller's stderr pipe. The probe must notice that its xterm
+# parent vanished and stop the nested 20-second producer promptly; otherwise
+# the terminal gate appears to hang after greetd has already been restored.
+SECONDS=0
+set +e
+orphaned_output="$(
+    SOPHIA_FAKE_XTERM_ORPHAN=1 \
+    SOPHIA_XTERM_BIN="$FAKE_XTERM" \
+    SOPHIA_XTERM_DURATION_SECONDS=20 \
+        "$PROBE" 2>&1
+)"
+orphaned_status=$?
+set -e
+((orphaned_status != 0)) ||
+    fail "probe accepted an xterm that orphaned its command child"
+((SECONDS < 5)) ||
+    fail "orphaned producer retained the caller pipe until its workload deadline"
+[[ "$orphaned_output" == *"xterm exited with status 1"* ]] ||
+    fail "orphaned xterm failure was not reported: '$orphaned_output'"
 
 echo "bounded xterm geometry regressions passed"

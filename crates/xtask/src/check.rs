@@ -63,6 +63,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         &["--self-test"],
     )?;
     for tool in [
+        "tools/check_bounded_xterm_geometry.sh",
         "tools/check_live_record_schema_readers.sh",
         "tools/check_direct_scanout_verifier.sh",
         "tools/check_direct_scanout_archive_verifier.sh",

@@ -101,6 +101,27 @@ count_file="$3"
 interval_seconds="$4"
 : >"$count_file"
 set +e
+workload_pid=
+parent_watchdog_pid=
+cleanup_children() {
+    if [ -n "$parent_watchdog_pid" ]; then
+        kill "$parent_watchdog_pid" 2>/dev/null || true
+        wait "$parent_watchdog_pid" 2>/dev/null || true
+        parent_watchdog_pid=
+    fi
+    if [ -n "$workload_pid" ]; then
+        # GNU timeout forwards TERM to the producer it owns. This matters when
+        # the X server disappears: xterm can leave its command child outside
+        # the session application's process group, and that orphan otherwise
+        # retains the gate's log pipe until duration_seconds expires.
+        kill -TERM "$workload_pid" 2>/dev/null || true
+        wait "$workload_pid" 2>/dev/null || true
+        workload_pid=
+    fi
+}
+trap 'trap - HUP INT TERM; cleanup_children; exit 143' HUP INT TERM
+trap cleanup_children EXIT
+
 timeout --signal=TERM --kill-after=1 "$duration_seconds" sh -c '
     lines_per_iteration="$1"
     count_file="$2"
@@ -112,8 +133,29 @@ timeout --signal=TERM --kill-after=1 "$duration_seconds" sh -c '
         printf "%s\n" "$iterations" >"$count_file"
         sleep "$interval_seconds"
     done
-' sh "$lines_per_iteration" "$count_file" "$interval_seconds"
+' sh "$lines_per_iteration" "$count_file" "$interval_seconds" &
+workload_pid="$!"
+
+# xterm normally owns this shell until the bounded workload exits. If xterm or
+# its X server dies first, detect the vanished parent and stop the independently
+# timed producer immediately instead of holding an inherited log descriptor for
+# the remainder of the workload window.
+xterm_parent_pid="$PPID"
+(
+    while kill -0 "$xterm_parent_pid" 2>/dev/null; do
+        sleep 0.05
+    done
+    kill -TERM "$workload_pid" 2>/dev/null || true
+) </dev/null >/dev/null 2>&1 &
+parent_watchdog_pid="$!"
+
+wait "$workload_pid"
 workload_status="$?"
+workload_pid=
+kill "$parent_watchdog_pid" 2>/dev/null || true
+wait "$parent_watchdog_pid" 2>/dev/null || true
+parent_watchdog_pid=
+trap - EXIT HUP INT TERM
 set -e
 case "$workload_status" in
     124|137|143) ;;

@@ -137,23 +137,24 @@ Required exit:
 - show sustained source and physical-retirement progress at refresh-relative
   latency on the physical terminal workload.
 
-Two physical attempts on signed commit `32b555b6` ended before the visual
-prompt on the host's known lost-vblank path: first head 1 after 307 retirements,
-then head 2 after 41. Both had an empty, routed, clean poller while the peer head
-continued. The runner now retains and retries only that attributed
-below-process signature within a bounded budget. The first bounded run on
-signed commit `44297a21` retained the same host signature on head 1 after four
-retirements. Its retry then failed before graphics takeover because the
-operator had left TTY3 and the new session's recovery guard was not armed
-within 30 seconds. The runner now pauses for operator readiness before creating
-each fresh recovery guard. The repeat on signed commit `5617d780` recorded
-all three retry-handoff states, but its nested guard also expired after 30
-seconds; attempt 1 had the same attributed host stall on head 2 after 246
-retirements. Retry guards now retain a bounded 120-second arm window after
-operator readiness. Outstanding: rerun the guarded
-TTY3 terminal gate, confirm that xterm scrolls continuously, and retain its
-passing schema-4 report. Do not close this row from the offline real-xterm
-regression or these failed physical attempts.
+The complete bounded run on signed commit
+`d63d0970d8854de0832879d74f3aae1f6d31fb24` exhausted all eight retries: nine
+attempts. The stalled head alternated between the two outputs and stopped after
+85, 415, 440, 10, 48, 2, 118, 325, and 316 retirements. Every attempt reported
+the same below-process signature: `poller_pending=0`, `poller_routes=2`,
+`poller_last_read=WouldBlock`, `poller_last_decoded=0`, and
+`poller_last_rejected=0`. No callback was queued, decoded, or rejected inside
+Sophia while the peer head had continued to retire.
+
+The gate correctly failed `page_flip_stall_retry_budget` with a complete empty
+kernel delta and clean bounded recovery on all nine attempts. None reached
+schema-4 progress or the visual prompt. This is conclusive for the unchanged
+local kernel/DRM state: repeating the same gate cannot satisfy the product exit.
+
+Do not repeat this physical gate until the local DRM/KMS event-delivery state is
+repaired or materially changed. Then run one clean signed candidate and retain
+its passing schema-4 report. Do not close this row from the offline real-xterm
+regression or any failed physical attempt.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 
