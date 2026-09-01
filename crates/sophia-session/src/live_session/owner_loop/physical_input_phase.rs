@@ -1204,10 +1204,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
 if let Err(error) = session_loop_result {
     let original = error.to_string();
     terminal_runtime_error = Some(original.clone());
-    match frontend_service_sender.send(XServerFrontendServiceCommand::StopAccepting) {
-        Ok(()) => terminal_client_intake_stopped = true,
-        Err(error) => terminal_client_cleanup_failures
-            .push(format!("frontend intake stop failed: {error}")),
+    if let Err(error) = stop_frontend_intake(
+        frontend_service_sender,
+        &mut terminal_client_intake_stopped,
+    ) {
+        terminal_client_cleanup_failures.push(format!("frontend intake stop failed: {error}"));
     }
     crate::session_println!(
         "sophia_live_session_runtime_fatal schema=1 status=detected source=owner_loop action=bounded_cleanup error={original:?}"

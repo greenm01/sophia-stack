@@ -17,13 +17,13 @@ fail() {
 
 report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" status=pass "* ]] || fail "pass fixture did not pass"
-[[ "$report" == *" schema=4 "* ]] || fail "missing schema"
+[[ "$report" == *" schema=5 "* ]] || fail "missing schema"
 [[ "$report" == *" workload=xterm-cpu "* ]] || fail "missing workload"
 [[ "$report" == *" duration_seconds=20 "* ]] || fail "missing duration"
 [[ "$report" == *" surface_width=500 surface_height=500 "* ]] || fail "missing surface size"
-[[ "$report" == *" lines_per_iteration=8 interval_msec=16 "* ]] ||
+[[ "$report" == *" lines_per_iteration=1 interval_msec=16 "* ]] ||
     fail "missing paced workload"
-[[ "$report" == *" client_lines=9600 "* ]] || fail "missing client lines"
+[[ "$report" == *" client_lines=1200 "* ]] || fail "missing client lines"
 [[ "$report" == *" cpu_patch_updates=539 "* ]] || fail "missing patch updates"
 [[ "$report" == *" cpu_payload_bytes=13271040 "* ]] || fail "missing payload bytes"
 [[ "$report" == *" cpu_max_compose_msec=4 "* ]] || fail "missing compose max"
@@ -34,8 +34,12 @@ report="$("$REPORTER" "$FIXTURE")"
     fail "missing post-startup progress"
 [[ "$report" == *" changed_primary_retirements=480 "* ]] ||
     fail "missing changed retirement count"
+[[ "$report" == *" source_max_gap_usec=16403 source_gap_budget_usec=48000 "* ]] ||
+    fail "missing source cadence budget"
 [[ "$report" == *" retirement_deadline_usec=34334 "* ]] ||
     fail "missing two-refresh retirement deadline"
+[[ "$report" == *" display_max_gap_usec=33097 display_gap_budget_usec=34334 "* ]] ||
+    fail "missing display cadence budget"
 [[ "$report" == *" last_retirement_to_completion_msec=84 "* ]] ||
     fail "missing final display-progress boundary"
 
@@ -67,16 +71,16 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted fewer than three changed retirements"
 fi
 
-sed 's/source_max_gap_msec=50/source_max_gap_msec=1001/' \
+sed 's/source_max_gap_usec=16403/source_max_gap_usec=48001/' \
     "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
-    fail "reporter accepted a one-second CPU source stall"
+    fail "reporter accepted a source gap above its cadence budget"
 fi
 
-sed 's/display_max_gap_msec=50/display_max_gap_msec=1001/' \
+sed 's/display_max_gap_usec=33097/display_max_gap_usec=34335/' \
     "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
-    fail "reporter accepted a one-second changed-retirement stall"
+    fail "reporter accepted a display gap above its two-refresh budget"
 fi
 
 sed 's/first_retirement_after_ready_msec=32/first_retirement_after_ready_msec=1001/' \
@@ -127,12 +131,12 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
 fi
 
 # Fails closed when the client did not run the benchmark's declared cadence.
-sed 's/interval_msec=16 lines=9600/interval_msec=17 lines=9600/' \
+sed 's/interval_msec=16 lines=1200/interval_msec=17 lines=1200/' \
     "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted mismatched client pacing"
 fi
-sed 's/lines=9600/lines=9601/' "$FIXTURE" >"$MUTATED"
+sed 's/lines=1200/lines=1201/' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted inconsistent client line totals"
 fi

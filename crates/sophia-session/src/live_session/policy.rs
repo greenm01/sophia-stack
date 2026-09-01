@@ -531,30 +531,6 @@ fn batch_transaction_identity_count(batch: &XAuthorityObservedTransactionBatch) 
     identities.len()
 }
 
-/// Buffers immediately available batches without blocking.
-///
-/// A `try_recv` returning `Empty` means nothing is ready now, so the drain
-/// ends there rather than spinning: the next iteration sees whatever arrives,
-/// and spinning would couple owner latency to producer scheduling.
-fn drain_queued_authority_batches(
-    receiver: &std::sync::mpsc::Receiver<XAuthorityObservedTransactionBatch>,
-    queued: &mut VecDeque<XAuthorityObservedTransactionBatch>,
-    capacity: usize,
-    budget: Duration,
-) -> Result<(), &'static str> {
-    let started = Instant::now();
-    while queued.len() < capacity && started.elapsed() < budget {
-        match receiver.try_recv() {
-            Ok(batch) => queued.push_back(batch),
-            Err(std::sync::mpsc::TryRecvError::Empty) => break,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                return Err("persistent X authority transaction channel disconnected");
-            }
-        }
-    }
-    Ok(())
-}
-
 struct SessionActionExecutionContext<'a> {
     config: &'a PersistentXtermSessionConfig,
     xauthority: &'a std::path::Path,

@@ -1,4 +1,8 @@
 #![cfg(test)]
+
+#[path = "../../tests/support/live_session_shutdown.rs"]
+mod live_session_shutdown;
+
 use super::metadata_broker::resolve_live_broker_toplevel_action;
 use super::metadata_shell::live_shell_activation_surfaces;
 use super::startup_readiness::startup_required_submission_for_head;

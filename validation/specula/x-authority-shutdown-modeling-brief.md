@@ -61,14 +61,20 @@ Source and regression:
 The successful client exit closes frontend admission but does not end Engine
 ownership. The owner continues to receive all producer-held batches, compose
 the latest update, service native output, and observe exact primary retirement.
-Only frontend drain, an empty local authority queue, no pending CPU update, and
-no native work permit completion.
+The frontend disconnect may be discovered by the blocking receive or while an
+opportunistic drain buffers its final queued batches. Both paths use one
+transition: disconnect is fatal before quiescence and marks frontend drain
+during quiescence. Only frontend drain, an empty local authority queue, no
+pending CPU update, and no native work permit completion.
 
 Source and regression:
 
 - `crates/sophia-session/src/live_session/owner_loop_state.rs`,
   `SessionQuiescence::decision`;
-- `owner_loop/authority.rs` and `owner_loop/physical_input_phase.rs`;
+- `live_session/shutdown.rs`, `owner_loop/authority.rs`, and
+  `owner_loop/physical_input_phase.rs`;
+- `live_session_shutdown::opportunistic_drain_preserves_final_batch_before_disconnect`;
+- `live_session_shutdown::quiescence_accepts_disconnect_only_after_buffered_work_settles`;
 - `live_session::tests::session_quiescence_requires_frontend_authority_cpu_and_native_drain`;
 - `live_session::cpu_visual_progress::tests::latest_wins_updates_are_all_accounted_after_retirement`.
 
@@ -105,7 +111,7 @@ Source and regression:
 | `Produce` | traced X worker or raster producer creates one envelope |
 | `DeliverExpected` | `submit_blocking` or `try_submit` advances the next ticket |
 | `StopAccepting` | service command closes only new admission |
-| `CloseDrainedFrontend` | no active workers and no pending raster envelope |
+| `CloseDrainedFrontend` | no active workers or raster envelope; owner observes disconnect through blocking receive or opportunistic drain |
 | `ComposeLatest` | owner composes the newest accepted CPU state |
 | `RetireExact` | primary native retirement updates `CpuVisualProgress` |
 | `FinishNormal` | `SessionQuiescenceDecision::Complete` |
@@ -144,6 +150,9 @@ A control that passes, or fails for another reason, fails the repository gate.
   transaction identity even after a delivered batch moves into the channel.
 - `StopAccepting` continues routing already-owned clients while refusing new
   admission.
+- Blocking and opportunistic channel-disconnect discovery must share one
+  classifier; a final buffered batch remains pending after frontend drain
+  until ordinary Engine settlement retires it.
 - Quiescence suppresses new physical input and gives complete settlement at
   the deadline precedence over cancellation.
 - Timeout telemetry names authority, CPU, and native blockers before issuing

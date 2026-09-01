@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Terminal CPU-path throughput reporter. Reduces a bounded xterm standalone
-# session log to one fail-closed sophia_terminal_performance schema=4 line.
+# session log to one fail-closed sophia_terminal_performance schema=5 line.
 # Unlike the vkcube/glxgears reporters (GPU DRI3 flip path), this asserts the
 # software-Present (CPU) evidence: positive immutable patch-batch traffic,
 # continuous post-readiness visual progress, bounded CPU compose time, and clean
@@ -111,10 +111,11 @@ client_timed_exit="$(rendering_performance_field "$client" timed_exit)" ||
 # all of them happened in the first 150ms before the terminal stopped changing.
 # This compositor-owned record accounts every accepted post-readiness update and
 # ties the latest non-superseded content to primary-plane retirement.
-progress_count="$(grep -Ec '^sophia_live_cpu_visual_progress schema=1 status=complete ' "$SESSION_LOG" || true)"
+progress_count="$(grep -Ec '^sophia_live_cpu_visual_progress schema=(1|2) status=complete ' "$SESSION_LOG" || true)"
 ((progress_count == 1)) ||
     fail "expected exactly one CPU visual-progress record, found $progress_count"
-progress="$(grep -E '^sophia_live_cpu_visual_progress schema=1 status=complete ' "$SESSION_LOG")"
+progress="$(grep -E '^sophia_live_cpu_visual_progress schema=(1|2) status=complete ' "$SESSION_LOG")"
+progress_schema="$(positive_field "$progress" schema)"
 post_startup_updates="$(positive_field "$progress" post_startup_updates)"
 post_startup_compositions="$(positive_field "$progress" compositions)"
 primary_retirements="$(positive_field "$progress" primary_retirements)"
@@ -133,6 +134,13 @@ last_retirement_after_ready_msec="$(nonnegative_field "$progress" last_retiremen
 display_max_gap_msec="$(nonnegative_field "$progress" display_max_gap_msec)"
 max_update_to_retirement_usec="$(nonnegative_field "$progress" max_update_to_retirement_usec)"
 refresh_millihz="$(positive_field "$progress" refresh_millihz)"
+if ((progress_schema >= 2)); then
+    source_max_gap_usec="$(nonnegative_field "$progress" source_max_gap_usec)"
+    display_max_gap_usec="$(nonnegative_field "$progress" display_max_gap_usec)"
+else
+    source_max_gap_usec=$((source_max_gap_msec * 1000))
+    display_max_gap_usec=$((display_max_gap_msec * 1000))
+fi
 
 ((changed_primary_retirements >= 3)) ||
     fail "fewer than three changed post-readiness primary retirements"
@@ -150,10 +158,6 @@ refresh_millihz="$(positive_field "$progress" refresh_millihz)"
     fail "first CPU source progress arrived more than one second after readiness"
 ((last_source_to_completion_msec <= 1000)) ||
     fail "CPU source stopped more than one second before session completion"
-((source_max_gap_msec <= 1000)) ||
-    fail "CPU source progress stalled for more than one second"
-((display_max_gap_msec <= 1000)) ||
-    fail "changed primary retirement stalled for more than one second"
 ((first_retirement_after_ready_msec <= 1000)) ||
     fail "first changed primary retirement arrived more than one second after readiness"
 ((last_retirement_after_ready_msec <= observed_msec)) ||
@@ -167,6 +171,15 @@ last_retirement_to_completion_msec=$((observed_msec - last_retirement_after_read
 # plus one millisecond for timestamp quantization.
 refresh_interval_usec=$(((1000000000 + refresh_millihz - 1) / refresh_millihz))
 retirement_deadline_usec=$((2 * refresh_interval_usec + 1000))
+display_gap_budget_usec=$retirement_deadline_usec
+source_gap_budget_usec=$((3 * interval_msec * 1000))
+if ((source_gap_budget_usec < retirement_deadline_usec)); then
+    source_gap_budget_usec=$retirement_deadline_usec
+fi
+((source_max_gap_usec <= source_gap_budget_usec)) ||
+    fail "CPU source progress exceeded its cadence budget"
+((display_max_gap_usec <= display_gap_budget_usec)) ||
+    fail "changed primary retirement exceeded its two-refresh cadence budget"
 ((max_update_to_retirement_usec <= retirement_deadline_usec)) ||
     fail "latest non-superseded CPU update missed the two-refresh retirement deadline"
 
@@ -246,4 +259,4 @@ fi
 native_retirements="$(positive_field "$completion" native_retirements)"
 
 printf '%s\n' \
-    "sophia_terminal_performance schema=4 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints post_startup_updates=$post_startup_updates post_startup_compositions=$post_startup_compositions changed_primary_retirements=$changed_primary_retirements presented_updates=$presented_updates superseded_updates=$superseded_updates source_max_gap_msec=$source_max_gap_msec first_retirement_after_ready_msec=$first_retirement_after_ready_msec display_max_gap_msec=$display_max_gap_msec last_retirement_to_completion_msec=$last_retirement_to_completion_msec max_update_to_retirement_usec=$max_update_to_retirement_usec retirement_deadline_usec=$retirement_deadline_usec present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec cpu_cow_splits=$cpu_cow_splits cpu_resident_buffers_peak=$cpu_resident_buffers_peak cpu_resident_bytes_peak=$cpu_resident_bytes_peak"
+    "sophia_terminal_performance schema=5 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints post_startup_updates=$post_startup_updates post_startup_compositions=$post_startup_compositions changed_primary_retirements=$changed_primary_retirements presented_updates=$presented_updates superseded_updates=$superseded_updates source_max_gap_msec=$source_max_gap_msec source_max_gap_usec=$source_max_gap_usec source_gap_budget_usec=$source_gap_budget_usec first_retirement_after_ready_msec=$first_retirement_after_ready_msec display_max_gap_msec=$display_max_gap_msec display_max_gap_usec=$display_max_gap_usec display_gap_budget_usec=$display_gap_budget_usec last_retirement_to_completion_msec=$last_retirement_to_completion_msec max_update_to_retirement_usec=$max_update_to_retirement_usec retirement_deadline_usec=$retirement_deadline_usec present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec cpu_cow_splits=$cpu_cow_splits cpu_resident_buffers_peak=$cpu_resident_buffers_peak cpu_resident_bytes_peak=$cpu_resident_bytes_peak"

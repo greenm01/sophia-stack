@@ -82,7 +82,9 @@ StopAccepting ==
                     ownerDraining, cancelled>>
 
 CloseDrainedFrontend ==
-(** server.rs: routed frontend's drained return condition. **)
+(** server.rs: routed frontend drain; live_session/shutdown.rs classifies the
+    resulting disconnect identically from blocking receive and opportunistic
+    drain. **)
     /\ phase = "quiescing"
     /\ held = {}
     /\ frontendOpen

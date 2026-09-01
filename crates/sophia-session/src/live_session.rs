@@ -93,6 +93,7 @@ mod native_retirement;
 mod policy_transport_worker;
 mod process_supervision;
 mod proof_artifacts;
+mod shutdown;
 mod startup_readiness;
 mod x_frontend;
 
@@ -111,6 +112,10 @@ use process_supervision::{
     terminate_session_child,
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
+use shutdown::{
+    AuthorityIngressState, drain_queued_authority_batches, observe_authority_ingress,
+    stop_frontend_intake,
+};
 use startup_readiness::{
     StartupHeadRequirement, StartupSurfacePresentationEvidence, all_startup_outputs_presented,
     independent_native_output_presented, logical_startup_output_progress,

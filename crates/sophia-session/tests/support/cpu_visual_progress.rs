@@ -73,9 +73,12 @@ fn cadence_fields_measure_post_ready_source_and_display_gaps() {
     }
 
     let record = progress.record(ready + Duration::from_millis(900), 50);
+    assert!(record.contains("schema=2"));
     assert!(record.contains("changed_primary_retirements=3"));
     assert!(record.contains("source_max_gap_msec=450"));
+    assert!(record.contains("source_max_gap_usec=450000"));
     assert!(record.contains("display_max_gap_msec=450"));
+    assert!(record.contains("display_max_gap_usec=450000"));
     assert!(record.contains("last_source_to_completion_msec=100"));
     assert!(record.contains("pending_updates=0"));
 }

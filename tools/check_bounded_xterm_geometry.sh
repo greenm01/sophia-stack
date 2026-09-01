@@ -92,7 +92,7 @@ for pair in 500x500 1x1 100x100 2000x2000 5000x5000 100000x100000; do
     ((cols >= 1)) || fail "cols<1 for ${pair}: $cols"
     ((rows >= 1)) || fail "rows<1 for ${pair}: $rows"
     ((bytes > 0)) || fail "buffer_bytes<=0 for ${pair}: $bytes"
-    ((lines == 8)) || fail "unexpected default line batch for ${pair}: $lines"
+    ((lines == 1)) || fail "unexpected default line batch for ${pair}: $lines"
     ((interval == 16)) || fail "unexpected default interval for ${pair}: $interval"
     ((bytes < CAP_BYTES)) ||
         fail "intent ${pair} resolves to ${bytes} bytes, at/over the ${CAP_BYTES} cap"

@@ -479,7 +479,7 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
             xterm_duration="${SOPHIA_XTERM_DURATION_SECONDS:-20}"
             xterm_width="${SOPHIA_XTERM_WIDTH:-500}"
             xterm_height="${SOPHIA_XTERM_HEIGHT:-500}"
-            xterm_lines="${SOPHIA_XTERM_LINES:-8}"
+            xterm_lines="${SOPHIA_XTERM_LINES:-1}"
             xterm_interval_msec="${SOPHIA_XTERM_INTERVAL_MSEC:-16}"
             [[ "$xterm_duration" =~ ^[1-9][0-9]*$ ]] || {
                 echo "SOPHIA_XTERM_DURATION_SECONDS must be a positive integer." >&2

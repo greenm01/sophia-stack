@@ -482,9 +482,11 @@ guard, recovery, performance report, and kernel-log delta under
 from a logged-in local TTY3, arm Ctrl-Alt-Backspace when prompted, and confirm
 the centered xterm scrolls continuously. The default 20-second, 500-by-500
 pixel intent resolves against the pinned `6x13` font rather than being passed
-to xterm as character cells. It emits eight lines every 16 ms, avoiding an
-unbounded producer burst while keeping the software-Present path continuously
-active. An inner process-external timer bounds the producer even when terminal
+to xterm as character cells. It emits one line every 16 ms so visible motion
+maps cleanly to the display cadence. `SOPHIA_XTERM_LINES=8` retains the previous
+burst workload as an explicit stress override; it is not the visual default.
+Both profiles keep the software-Present path continuously active. An inner
+process-external timer bounds the producer even when terminal
 backpressure blocks a write, and its incremental count preserves completed
 bursts before xterm's process-level safety timeout. The independent 30-second
 watchdog bounds the complete session. Let the xterm exit automatically; the
@@ -504,18 +506,18 @@ physical state cannot repair teardown or event-delivery defects. Run the gate
 again only after the retained evidence is diagnosed and the relevant code or
 system state has materially changed.
 
-The trailing `sophia_terminal_performance schema=4` report retains those
+The trailing `sophia_terminal_performance schema=5` report retains those
 resource, patch, damage, client-metadata, failure, drain, and composition-budget
 checks and additionally requires exactly one
-`sophia_live_cpu_visual_progress schema=1 status=complete` record. Post-readiness
-updates must balance exactly as presented plus superseded with zero pending or
-discarded updates. At least three content-changing primary retirements must
-occur; the first update and first changed retirement must follow readiness
-within one second; source and display gaps may not exceed one second; and the
-last update and last changed retirement must precede completion by no more than
-one second. The largest accepted-update-to-exact-retirement latency may not
-exceed two periods of the session's reported refresh plus one millisecond of
-integer tolerance. A startup-only burst cannot pass.
+`sophia_live_cpu_visual_progress schema=2 status=complete` record with exact
+microsecond gap fields. Post-readiness updates must balance exactly as presented
+plus superseded with zero pending or discarded updates. At least three
+content-changing primary retirements must occur. The first and final source and
+display observations retain their one-second liveness bounds. During steady
+state, the source gap budget is the greater of three configured producer
+intervals or two refresh periods plus one millisecond; the display gap and
+accepted-update-to-exact-retirement budgets are two refresh periods plus one
+millisecond. A startup-only burst cannot pass.
 
 The default composition budget remains 25 ms;
 `SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive integer and is

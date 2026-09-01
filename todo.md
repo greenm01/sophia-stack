@@ -118,10 +118,10 @@ scroll. X Authority now emits `NoExpose` according to the GC's
 `graphics_exposures` flag, and the sustained real-xterm regression reaches 541
 runtime commits and CPU buffers without an X error. The live session now emits
 bounded post-readiness intake, composition, exact primary-retirement, latest-
-wins accounting, cadence, and latency evidence. The schema-4 terminal reporter
-refuses startup-only progress, gaps over one second, fewer than three changed
-retirements, unaccounted updates, or update-to-retirement latency beyond two
-refresh periods.
+wins accounting, cadence, and latency evidence. The schema-5 terminal reporter
+refuses startup-only progress, refresh-relative source or display gaps, fewer
+than three changed retirements, unaccounted updates, or update-to-retirement
+latency beyond two refresh periods.
 
 Required exit:
 
@@ -180,10 +180,23 @@ all drain; timeout names the remaining owners and forces cancellation.
 `XAuthorityShutdown.tla` checks the split transition system, while exact negative
 controls prove premature exit and unbounded producer ownership are detected.
 
-Outstanding: complete production checks, build and sign this candidate, then
-run exactly one clean physical terminal gate. The gate always records separate
-machine and operator-visual verdicts and never retries. Retain a passing schema-4
-report to close CP-14.1; diagnose any failed archive before another physical run.
+The physical run on signed commit `de032461b5b648191af7a9dc58de64c3f309816c`
+proved that the bounded authority coordinator now drains promptly, but exposed a
+separate owner-loop classification bug. An opportunistic `try_recv` drain treated
+the frontend channel disconnect as fatal even though quiescence treats the same
+disconnect as its normal drained signal. Runtime cleanup then sent a duplicate
+`StopAccepting` to the already closed frontend and reported a second false error.
+The owner now uses one typed disconnect classifier for blocking and opportunistic
+receives, preserves final queued work, and stops frontend intake idempotently.
+That run also retained 16-33 ms source/display cadence; the perceived burstiness
+matched the old eight-lines-per-refresh probe, so the visual gate now defaults to
+one line every 16 ms and keeps eight lines as an explicit stress override.
+
+Software, regression, reporter, and formal production checks are complete.
+Outstanding: commit and sign this candidate, then run exactly one clean physical
+terminal gate. The gate always records separate machine and operator-visual
+verdicts and never retries. Retain a passing schema-5 report to close CP-14.1;
+diagnose any failed archive before another physical run.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

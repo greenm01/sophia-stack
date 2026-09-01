@@ -169,7 +169,7 @@ impl CpuVisualProgress {
             .last_update_after_ready
             .map(|last| observed_msec.saturating_sub(last.as_millis()));
         format!(
-            "sophia_live_cpu_visual_progress schema=1 status=complete post_startup_updates={} compositions={} primary_retirements={} changed_primary_retirements={} presented_updates={} superseded_updates={} pending_updates={} discarded_updates=0 accounted_updates={} startup_ready_msec={} observed_msec={} first_update_after_ready_msec={} last_update_after_ready_msec={} last_source_to_completion_msec={} source_max_gap_msec={} first_retirement_after_ready_msec={} last_retirement_after_ready_msec={} display_max_gap_msec={} max_update_to_retirement_usec={} refresh_millihz={}",
+            "sophia_live_cpu_visual_progress schema=2 status=complete post_startup_updates={} compositions={} primary_retirements={} changed_primary_retirements={} presented_updates={} superseded_updates={} pending_updates={} discarded_updates=0 accounted_updates={} startup_ready_msec={} observed_msec={} first_update_after_ready_msec={} last_update_after_ready_msec={} last_source_to_completion_msec={} source_max_gap_msec={} source_max_gap_usec={} first_retirement_after_ready_msec={} last_retirement_after_ready_msec={} display_max_gap_msec={} display_max_gap_usec={} max_update_to_retirement_usec={} refresh_millihz={}",
             self.accepted_updates,
             self.compositions,
             self.primary_retirements,
@@ -184,9 +184,11 @@ impl CpuVisualProgress {
             optional_millis(self.last_update_after_ready),
             optional_u128(last_source_to_completion_msec),
             self.source_max_gap.as_millis(),
+            self.source_max_gap.as_micros(),
             optional_millis(self.first_retirement_after_ready),
             optional_millis(self.last_retirement_after_ready),
             self.display_max_gap.as_millis(),
+            self.display_max_gap.as_micros(),
             self.max_update_to_retirement.as_micros(),
             self.refresh_millihz,
         )

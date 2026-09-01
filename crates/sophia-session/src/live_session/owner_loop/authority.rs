@@ -86,11 +86,16 @@
         }
         match authority_batch {
             Ok(batch) => {
-                drain_queued_authority_batches(
+                let ingress = drain_queued_authority_batches(
                     &authority_receiver,
                     &mut pending_authority_batches,
                     AUTHORITY_DRAIN_CAPACITY,
                     Duration::from_millis(2),
+                );
+                observe_authority_ingress(
+                    ingress,
+                    &mut session_quiescence,
+                    Instant::now(),
                 )?;
                 // Commit everything the client has already produced in one
                 // cycle. Composing per batch made a burst of draws cost one
@@ -607,11 +612,16 @@
                 // turn see the whole backlog and merge it, instead of
                 // discovering one batch at a time.
                 if !output_topology_quarantined {
-                    drain_queued_authority_batches(
+                    let ingress = drain_queued_authority_batches(
                         &authority_receiver,
                         &mut pending_authority_batches,
                         AUTHORITY_DRAIN_CAPACITY,
                         Duration::from_millis(2),
+                    );
+                    observe_authority_ingress(
+                        ingress,
+                        &mut session_quiescence,
+                        Instant::now(),
                     )?;
                     let expired = layout.expire_pending(&mut session_controls)?;
                     if let Some(result) = expired {
@@ -734,22 +744,11 @@
                     })?;
                 }
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                if let Some(quiescence) = session_quiescence.as_mut() {
-                    if !quiescence.frontend_authority_drained {
-                        quiescence.mark_frontend_authority_drained();
-                        crate::session_println!(
-                            "sophia_live_session_quiescence schema=1 status=frontend_drained reason={} elapsed_msec={}",
-                            quiescence.reason,
-                            quiescence.elapsed(Instant::now()).as_millis(),
-                        );
-                    }
-                } else {
-                    return Err(
-                        "persistent X authority transaction channel disconnected".into()
-                    );
-                }
-            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => observe_authority_ingress(
+                AuthorityIngressState::Disconnected,
+                &mut session_quiescence,
+                Instant::now(),
+            )?,
         }
 
         if !physical_input_completion_reported

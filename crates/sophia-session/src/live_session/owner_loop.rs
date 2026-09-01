@@ -613,15 +613,15 @@ fn run_session_loop_inner(
         ($reason:literal) => {{
             if session_quiescence.is_none() {
                 let now = Instant::now();
-                if let Err(error) =
-                    frontend_service_sender.send(XServerFrontendServiceCommand::StopAccepting)
-                {
+                if let Err(error) = stop_frontend_intake(
+                    frontend_service_sender,
+                    &mut terminal_client_intake_stopped,
+                ) {
                     return Err(format!(
                         "failed to stop frontend admission for session quiescence: {error}"
                     )
                     .into());
                 }
-                terminal_client_intake_stopped = true;
                 session_quiescence = Some(SessionQuiescence::new(
                     $reason,
                     now,
