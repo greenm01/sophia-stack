@@ -308,12 +308,14 @@ fn production_authority_batch(
         groups[index]
             .transactions
             .extend(released.transactions.iter().cloned());
-        groups[index].cpu_buffer_updates.extend(
-            released
-                .cpu_buffer_updates
-                .iter()
-                .map(renderer_cpu_buffer_update),
-        );
+        let cpu_buffer_updates = released
+            .cpu_buffer_updates
+            .iter()
+            .map(|update| production_cpu_buffer_update(&released.transactions, update))
+            .collect::<Result<Vec<_>, _>>()?;
+        groups[index]
+            .cpu_buffer_updates
+            .extend(cpu_buffer_updates);
         groups[index].present_submissions.extend(
             released
                 .present_submissions
@@ -360,22 +362,9 @@ fn production_authority_batch(
         groups[index].transactions.push(transaction.clone());
     }
     for update in &batch.cpu_buffer_updates {
-        let transaction = batch
-            .transactions
-            .iter()
-            .find(|transaction| {
-                transaction.content.variants().iter().any(|variant| {
-                    matches!(
-                        variant.source,
-                        BufferSource::CpuBuffer { handle } if handle == update.handle()
-                    )
-                })
-            })
-            .ok_or("CPU update has no surface transaction")?;
-        let index = production_authority_group_index(&mut groups, transaction.transaction);
-        groups[index]
-            .cpu_buffer_updates
-            .push(renderer_cpu_buffer_update(update));
+        let update = production_cpu_buffer_update(&batch.transactions, update)?;
+        let index = production_authority_group_index(&mut groups, update.identity.transaction);
+        groups[index].cpu_buffer_updates.push(update);
     }
     if !batch.removed_surfaces.is_empty() {
         let index = production_authority_group_index(&mut groups, batch.transaction);
@@ -467,6 +456,31 @@ fn production_software_present_submission(
         acquire_fence: submission.acquire_fence,
         idle_fence: submission.idle_fence,
     })
+}
+
+fn production_cpu_buffer_update(
+    transactions: &[sophia_protocol::SurfaceTransaction],
+    update: &sophia_x_authority::XAuthorityCpuBufferUpdate,
+) -> Result<sophia_backend_live::LiveProductionCpuBufferUpdate, &'static str> {
+    let mut owners = transactions.iter().filter(|transaction| {
+        transaction.content.variants().iter().any(|variant| {
+            matches!(
+                variant.source,
+                BufferSource::CpuBuffer { handle } if handle == update.handle()
+            )
+        })
+    });
+    let owner = owners
+        .next()
+        .ok_or("CPU update has no surface transaction")?;
+    if owners.next().is_some() {
+        return Err("CPU update has multiple surface transactions");
+    }
+    Ok(sophia_backend_live::LiveProductionCpuBufferUpdate::new(
+        owner.transaction,
+        owner.surface,
+        renderer_cpu_buffer_update(update),
+    ))
 }
 
 fn production_authority_group_index(

@@ -628,7 +628,7 @@ fn run_session_loop_inner(
                     Duration::from_millis(SESSION_QUIESCENCE_TIMEOUT_MSEC),
                 ));
                 crate::session_println!(
-                    "sophia_live_session_quiescence schema=1 status=started reason={} timeout_msec={}",
+                    "sophia_live_session_quiescence schema=2 status=started reason={} timeout_msec={}",
                     $reason,
                     SESSION_QUIESCENCE_TIMEOUT_MSEC,
                 );

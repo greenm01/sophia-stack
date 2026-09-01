@@ -47,7 +47,7 @@ pub(super) fn observe_authority_ingress(
     if !quiescence.frontend_authority_drained {
         quiescence.mark_frontend_authority_drained();
         crate::session_println!(
-            "sophia_live_session_quiescence schema=1 status=frontend_drained reason={} elapsed_msec={}",
+            "sophia_live_session_quiescence schema=2 status=frontend_drained reason={} elapsed_msec={}",
             quiescence.reason,
             quiescence.elapsed(now).as_millis(),
         );

@@ -55,7 +55,8 @@ done
 
 for control in \
     XAuthorityShutdownPrematureExit \
-    XAuthorityShutdownUnboundedIngress; do
+    XAuthorityShutdownUnboundedIngress \
+    XAuthorityShutdownRemovalWithoutSettlement; do
     control_dir="$TEMP_DIR/$control"
     mkdir "$control_dir"
     cp "$MODEL_DIR/XAuthorityShutdown.tla" "$control_dir/"
@@ -83,6 +84,12 @@ for control in \
         XAuthorityShutdownUnboundedIngress)
             grep -Fq 'Invariant BoundedProducerOwnership is violated.' "$log" || {
                 echo "TLA+ unbounded-ingress control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+        XAuthorityShutdownRemovalWithoutSettlement)
+            grep -Fq 'Invariant PendingHasLiveOwner is violated.' "$log" || {
+                echo "TLA+ removal-without-settlement control failed for the wrong reason" >&2
                 exit 1
             }
             ;;

@@ -2,15 +2,15 @@
 
 use sophia_backend_live::{
     LivePresentBufferDisposition, LivePresentProtocolFeedback, LiveProductionAuthorityBatch,
-    LiveProductionAuthorityGroup, LiveProductionCursorPresentation, LiveProductionCycleRequest,
-    LiveProductionDmaBufRegistration, LiveProductionFenceRegistration, LiveProductionNativeFrameId,
-    LiveProductionNativeRetirementOwner, LiveProductionNativeSubmissionOwner,
-    LiveProductionPresentDisposition, LiveProductionPresentSubmission,
-    LiveProductionScanoutContent, LiveProductionSoftwarePresentFrameObservation,
-    LiveProductionSoftwarePresentFramePhase, LiveProductionSoftwarePresentFrameTransition,
-    LiveProductionSoftwarePresentSubmission, LiveProductionVisualRuntime,
-    reduce_live_production_native_retirement_owner, reduce_live_production_native_submission_owner,
-    reduce_software_present_frame_observation,
+    LiveProductionAuthorityGroup, LiveProductionCpuBufferUpdate, LiveProductionCursorPresentation,
+    LiveProductionCycleRequest, LiveProductionDmaBufRegistration, LiveProductionFenceRegistration,
+    LiveProductionNativeFrameId, LiveProductionNativeRetirementOwner,
+    LiveProductionNativeSubmissionOwner, LiveProductionPresentDisposition,
+    LiveProductionPresentSubmission, LiveProductionScanoutContent,
+    LiveProductionSoftwarePresentFrameObservation, LiveProductionSoftwarePresentFramePhase,
+    LiveProductionSoftwarePresentFrameTransition, LiveProductionSoftwarePresentSubmission,
+    LiveProductionVisualRuntime, reduce_live_production_native_retirement_owner,
+    reduce_live_production_native_submission_owner, reduce_software_present_frame_observation,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -195,7 +195,10 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
                     timeout_msec: 250,
                     previous_committed_generation: 0,
                 }],
-                cpu_buffer_updates: updates,
+                cpu_buffer_updates: updates
+                    .into_iter()
+                    .map(|update| LiveProductionCpuBufferUpdate::new(transaction, surface, update))
+                    .collect(),
                 removed_surfaces: vec![surface],
                 present_submissions: Vec::new(),
                 software_present_submissions: Vec::new(),
@@ -330,14 +333,18 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
         groups: vec![LiveProductionAuthorityGroup {
             transaction,
             transactions: vec![surface_transaction.clone()],
-            cpu_buffer_updates: vec![LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
-                handle: 72,
-                size,
-                stride: 8,
-                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 1,
-                bytes: Arc::new(vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff]),
-            })],
+            cpu_buffer_updates: vec![LiveProductionCpuBufferUpdate::new(
+                transaction,
+                surface,
+                LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    handle: 72,
+                    size,
+                    stride: 8,
+                    format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                    generation: 1,
+                    bytes: Arc::new(vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0xff]),
+                }),
+            )],
             removed_surfaces: Vec::new(),
             present_submissions: Vec::new(),
             software_present_submissions: vec![LiveProductionSoftwarePresentSubmission {
@@ -374,7 +381,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
     }];
     let mut scene = LiveProductionCpuScene::new(size);
     let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
-    let (submission, committed) = runtime
+    let (submission, committed, progress) = runtime
         .run_cpu_production_cycle(LiveProductionCycleRequest {
             batch: &batch,
             scene: &mut scene,
@@ -394,6 +401,13 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
 
     assert!(submission.composed);
     assert_eq!(committed.len(), 1);
+    let owner = progress.latest_update.expect("accepted update owner");
+    assert_eq!(owner.transaction, transaction);
+    assert_eq!(owner.surface, surface);
+    assert_eq!(owner.handle, 72);
+    assert_eq!(owner.generation, 1);
+    assert_eq!(progress.primary_logical_target_checksum, None);
+    assert_eq!(progress.accepted_updates, 1);
     assert!(scene.surface_has_visual_detail(&committed, surface));
     let mut outcomes = Vec::new();
     runtime.drain_present_feedback_into(&mut outcomes).unwrap();

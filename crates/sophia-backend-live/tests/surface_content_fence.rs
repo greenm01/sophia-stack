@@ -1,6 +1,6 @@
 use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
-    LiveProductionAuthorityGroup,
+    LiveProductionAuthorityGroup, LiveProductionCpuBufferUpdate,
 };
 use sophia_engine::{
     AuthorityTransactionIntake, HeadlessEngine, ProductionSessionCoordinator,
@@ -114,19 +114,72 @@ fn production_group_matches_cpu_updates_to_every_content_variant() {
     ] {
         authority
             .cpu_buffer_updates
-            .push(LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
-                handle,
-                size,
-                stride: u32::try_from(size.width * 4).unwrap(),
-                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                generation: 1,
-                bytes: Arc::new(vec![
-                    0;
-                    usize::try_from(size.width * size.height * 4).unwrap()
-                ]),
-            }));
+            .push(LiveProductionCpuBufferUpdate::new(
+                transaction,
+                surface,
+                LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                    handle,
+                    size,
+                    stride: u32::try_from(size.width * 4).unwrap(),
+                    format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                    generation: 1,
+                    bytes: Arc::new(vec![
+                        0;
+                        usize::try_from(size.width * size.height * 4).unwrap()
+                    ]),
+                }),
+            ));
     }
+
     authority.validate().unwrap();
+}
+#[test]
+fn production_group_rejects_every_mismatched_cpu_update_owner_field() {
+    let surface = SurfaceId::new(79, 1);
+    let transaction = TransactionId::from_raw(798);
+    let update = LiveProductionCpuBufferUpdate::new(
+        transaction,
+        surface,
+        LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+            handle: transaction.raw(),
+            size: Size {
+                width: 1,
+                height: 1,
+            },
+            stride: 4,
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            generation: 1,
+            bytes: Arc::new(vec![0; 4]),
+        }),
+    );
+    let malformed = [
+        {
+            let mut update = update.clone();
+            update.identity.transaction = TransactionId::from_raw(799);
+            update
+        },
+        {
+            let mut update = update.clone();
+            update.identity.surface = SurfaceId::new(80, 1);
+            update
+        },
+        {
+            let mut update = update.clone();
+            update.identity.handle = transaction.raw().saturating_add(1);
+            update
+        },
+        {
+            let mut update = update;
+            update.identity.generation = 2;
+            update
+        },
+    ];
+
+    for update in malformed {
+        let mut authority = group(transaction.raw(), surface);
+        authority.cpu_buffer_updates.push(update);
+        assert!(authority.validate().is_err());
+    }
 }
 
 #[test]
@@ -140,17 +193,21 @@ fn in_flight_present_defers_only_later_work_for_the_same_surface() {
     let mut later_firefox = group(800, firefox);
     later_firefox
         .cpu_buffer_updates
-        .push(LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
-            handle: 800,
-            size: sophia_protocol::Size {
-                width: 1,
-                height: 1,
-            },
-            stride: 4,
-            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-            generation: 2,
-            bytes: Arc::new(vec![1, 2, 3, 4]),
-        }));
+        .push(LiveProductionCpuBufferUpdate::new(
+            later_firefox.transaction,
+            firefox,
+            LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 800,
+                size: sophia_protocol::Size {
+                    width: 1,
+                    height: 1,
+                },
+                stride: 4,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 2,
+                bytes: Arc::new(vec![1, 2, 3, 4]),
+            }),
+        ));
     later_firefox.validate().unwrap();
     let unrelated_kitty = group(801, kitty);
     assert_eq!(

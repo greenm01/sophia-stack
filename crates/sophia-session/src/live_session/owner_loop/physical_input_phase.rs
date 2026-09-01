@@ -1145,6 +1145,17 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         include!("authority.rs");
         include!("input_proof.rs");
         service_session_controls!();
+        // Reduce primary retirement once after every independently scheduled
+        // service phase. Branch-local latency sampling stays at the event
+        // source, while CPU settlement observes one coherent owner-loop state.
+        if let Some(head) = native_scanout.as_ref().and_then(|native| native.heads.first()) {
+            cpu_visual_progress.observe_primary_state(
+                head.presented_submissions,
+                presented_logical_checksum(head.presented_content),
+                head.refresh_millihz,
+                Instant::now(),
+            );
+        }
         if let Some(quiescence) = session_quiescence.as_ref() {
             let now = Instant::now();
             let native_work_pending = match (runtime.as_ref(), native_scanout.as_ref()) {
@@ -1164,13 +1175,39 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 SessionQuiescenceDecision::Pending => {}
                 SessionQuiescenceDecision::Complete => {
                     crate::session_println!(
-                        "sophia_live_session_quiescence schema=1 status=complete reason={} elapsed_msec={} authority_pending=0 cpu_pending=0 native_pending=false",
+                        "sophia_live_session_quiescence schema=2 status=complete reason={} elapsed_msec={} authority_pending=0 cpu_pending=0 native_pending=false pending_transaction=none pending_surface=none pending_handle=none pending_generation=none pending_target_checksum=none",
                         quiescence.reason,
                         quiescence.elapsed(now).as_millis(),
                     );
                     break 'session;
                 }
                 SessionQuiescenceDecision::TimedOut => {
+                    // Quiescence normally remains pending for many owner turns.
+                    // Materialize diagnostic strings only on its terminal
+                    // failure path, not in the steady drain loop.
+                    let pending_identity = cpu_visual_progress.pending_identity();
+                    let pending_transaction = pending_identity.map_or_else(
+                        || "none".to_owned(),
+                        |identity| identity.transaction.raw().to_string(),
+                    );
+                    let pending_surface = pending_identity.map_or_else(
+                        || "none".to_owned(),
+                        |identity| identity.surface.index().to_string(),
+                    );
+                    let pending_handle = pending_identity.map_or_else(
+                        || "none".to_owned(),
+                        |identity| identity.handle.to_string(),
+                    );
+                    let pending_generation = pending_identity.map_or_else(
+                        || "none".to_owned(),
+                        |identity| identity.generation.to_string(),
+                    );
+                    let pending_target_checksum = cpu_visual_progress
+                        .pending_target_checksum()
+                        .map_or_else(
+                            || "none".to_owned(),
+                            |checksum| checksum.to_string(),
+                        );
                     let cancellation = match frontend_service_sender
                         .send(XServerFrontendServiceCommand::StopAndDisconnect)
                     {
@@ -1178,21 +1215,31 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         Err(_) => "frontend_already_stopped",
                     };
                     crate::session_println!(
-                        "sophia_live_session_quiescence schema=1 status=timed_out reason={} elapsed_msec={} authority_pending={} cpu_pending={} native_pending={} cancellation={}",
+                        "sophia_live_session_quiescence schema=2 status=timed_out reason={} elapsed_msec={} authority_pending={} cpu_pending={} native_pending={} cancellation={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={}",
                         quiescence.reason,
                         quiescence.elapsed(now).as_millis(),
                         snapshot.pending_authority_batches,
                         cpu_visual_progress.pending_updates(),
                         snapshot.native_work_pending,
                         cancellation,
+                        pending_transaction,
+                        pending_surface,
+                        pending_handle,
+                        pending_generation,
+                        pending_target_checksum,
                     );
                     return Err(format!(
-                        "session quiescence timed out: reason={} frontend_drained={} authority_pending={} cpu_pending={} native_pending={}",
+                        "session quiescence timed out: reason={} frontend_drained={} authority_pending={} cpu_pending={} native_pending={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={}",
                         quiescence.reason,
                         quiescence.frontend_authority_drained,
                         snapshot.pending_authority_batches,
                         cpu_visual_progress.pending_updates(),
                         snapshot.native_work_pending,
+                        pending_transaction,
+                        pending_surface,
+                        pending_handle,
+                        pending_generation,
+                        pending_target_checksum,
                     )
                     .into());
                 }

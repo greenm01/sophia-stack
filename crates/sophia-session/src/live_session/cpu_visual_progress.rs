@@ -1,8 +1,12 @@
+use sophia_backend_live::{
+    LiveProductionCpuProgress, LiveProductionCpuUpdateIdentity, LiveProductionScanoutContent,
+};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug)]
 struct PendingCpuUpdate {
     accepted_at: Instant,
+    identity: LiveProductionCpuUpdateIdentity,
     target_checksum: Option<u64>,
 }
 
@@ -18,6 +22,8 @@ pub(super) struct CpuVisualProgress {
     presented_updates: u64,
     superseded_updates: u64,
     compositions: u64,
+    lifecycle_superseded_updates: u64,
+    native_target_bindings: u64,
     primary_retirements: u64,
     changed_primary_retirements: u64,
     pending: Option<PendingCpuUpdate>,
@@ -33,6 +39,12 @@ pub(super) struct CpuVisualProgress {
     previous_retirement_after_ready: Option<Duration>,
     display_max_gap: Duration,
     max_update_to_retirement: Duration,
+}
+
+pub(super) fn presented_logical_checksum(
+    content: Option<LiveProductionScanoutContent>,
+) -> Option<u64> {
+    content.and_then(LiveProductionScanoutContent::logical_checksum)
 }
 
 impl CpuVisualProgress {
@@ -52,41 +64,53 @@ impl CpuVisualProgress {
         self.refresh_millihz = refresh_millihz;
     }
 
-    pub(super) fn observe_updates(&mut self, count: usize, now: Instant) {
+    pub(super) fn observe_production(
+        &mut self,
+        progress: &LiveProductionCpuProgress,
+        now: Instant,
+    ) {
         let Some(ready_at) = self.ready_at else {
             return;
         };
-        let Ok(count) = u64::try_from(count) else {
+        let count = u64::try_from(progress.accepted_updates).unwrap_or(u64::MAX);
+        if count != 0 {
+            let Some(identity) = progress.latest_update else {
+                return;
+            };
+            let elapsed = now.saturating_duration_since(ready_at);
+            self.accepted_updates = self.accepted_updates.saturating_add(count);
+            if self.pending.take().is_some() {
+                self.superseded_updates = self.superseded_updates.saturating_add(1);
+            }
+            self.superseded_updates = self
+                .superseded_updates
+                .saturating_add(count.saturating_sub(1));
+            self.pending = Some(PendingCpuUpdate {
+                accepted_at: now,
+                identity,
+                target_checksum: None,
+            });
+            self.first_update_after_ready.get_or_insert(elapsed);
+            if let Some(previous) = self.previous_update_after_ready {
+                self.source_max_gap = self.source_max_gap.max(elapsed.saturating_sub(previous));
+            }
+            self.previous_update_after_ready = Some(elapsed);
+            self.last_update_after_ready = Some(elapsed);
+        }
+
+        if self.pending.is_some_and(|pending| {
+            progress
+                .removed_surfaces
+                .contains(&pending.identity.surface)
+        }) {
+            self.pending = None;
+            self.superseded_updates = self.superseded_updates.saturating_add(1);
+            self.lifecycle_superseded_updates = self.lifecycle_superseded_updates.saturating_add(1);
+        }
+
+        let Some(checksum) = progress.primary_logical_target_checksum else {
             return;
         };
-        if count == 0 {
-            return;
-        }
-
-        let elapsed = now.saturating_duration_since(ready_at);
-        self.accepted_updates = self.accepted_updates.saturating_add(count);
-        if self.pending.take().is_some() {
-            self.superseded_updates = self.superseded_updates.saturating_add(1);
-        }
-        self.superseded_updates = self
-            .superseded_updates
-            .saturating_add(count.saturating_sub(1));
-        self.pending = Some(PendingCpuUpdate {
-            accepted_at: now,
-            target_checksum: None,
-        });
-        self.first_update_after_ready.get_or_insert(elapsed);
-        if let Some(previous) = self.previous_update_after_ready {
-            self.source_max_gap = self.source_max_gap.max(elapsed.saturating_sub(previous));
-        }
-        self.previous_update_after_ready = Some(elapsed);
-        self.last_update_after_ready = Some(elapsed);
-    }
-
-    pub(super) fn observe_composition(&mut self, checksum: u64, now: Instant) {
-        if self.ready_at.is_none() {
-            return;
-        }
         self.compositions = self.compositions.saturating_add(1);
         let Some(mut pending) = self.pending.take() else {
             return;
@@ -98,6 +122,7 @@ impl CpuVisualProgress {
         pending.target_checksum = Some(checksum);
         pending.accepted_at = pending.accepted_at.min(now);
         self.pending = Some(pending);
+        self.native_target_bindings = self.native_target_bindings.saturating_add(1);
     }
 
     pub(super) fn observe_primary_state(
@@ -156,6 +181,14 @@ impl CpuVisualProgress {
         self.pending.is_none()
     }
 
+    pub(super) fn pending_identity(&self) -> Option<LiveProductionCpuUpdateIdentity> {
+        self.pending.map(|pending| pending.identity)
+    }
+
+    pub(super) fn pending_target_checksum(&self) -> Option<u64> {
+        self.pending.and_then(|pending| pending.target_checksum)
+    }
+
     pub(super) fn record(&self, completed_at: Instant, startup_ready_msec: u128) -> String {
         let observed_msec = self.ready_at.map_or(0, |ready| {
             completed_at.saturating_duration_since(ready).as_millis()
@@ -169,13 +202,15 @@ impl CpuVisualProgress {
             .last_update_after_ready
             .map(|last| observed_msec.saturating_sub(last.as_millis()));
         format!(
-            "sophia_live_cpu_visual_progress schema=2 status=complete post_startup_updates={} compositions={} primary_retirements={} changed_primary_retirements={} presented_updates={} superseded_updates={} pending_updates={} discarded_updates=0 accounted_updates={} startup_ready_msec={} observed_msec={} first_update_after_ready_msec={} last_update_after_ready_msec={} last_source_to_completion_msec={} source_max_gap_msec={} source_max_gap_usec={} first_retirement_after_ready_msec={} last_retirement_after_ready_msec={} display_max_gap_msec={} display_max_gap_usec={} max_update_to_retirement_usec={} refresh_millihz={}",
+            "sophia_live_cpu_visual_progress schema=3 status=complete post_startup_updates={} compositions={} native_target_bindings={} primary_retirements={} changed_primary_retirements={} presented_updates={} superseded_updates={} lifecycle_superseded_updates={} pending_updates={} discarded_updates=0 accounted_updates={} startup_ready_msec={} observed_msec={} first_update_after_ready_msec={} last_update_after_ready_msec={} last_source_to_completion_msec={} source_max_gap_msec={} source_max_gap_usec={} first_retirement_after_ready_msec={} last_retirement_after_ready_msec={} display_max_gap_msec={} display_max_gap_usec={} max_update_to_retirement_usec={} refresh_millihz={}",
             self.accepted_updates,
             self.compositions,
+            self.native_target_bindings,
             self.primary_retirements,
             self.changed_primary_retirements,
             self.presented_updates,
             self.superseded_updates,
+            self.lifecycle_superseded_updates,
             pending_updates,
             accounted_updates,
             startup_ready_msec,

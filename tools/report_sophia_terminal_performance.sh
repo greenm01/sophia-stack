@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Terminal CPU-path throughput reporter. Reduces a bounded xterm standalone
-# session log to one fail-closed sophia_terminal_performance schema=5 line.
+# session log to one fail-closed sophia_terminal_performance schema=6 line.
 # Unlike the vkcube/glxgears reporters (GPU DRI3 flip path), this asserts the
 # software-Present (CPU) evidence: positive immutable patch-batch traffic,
 # continuous post-readiness visual progress, bounded CPU compose time, and clean
@@ -111,10 +111,10 @@ client_timed_exit="$(rendering_performance_field "$client" timed_exit)" ||
 # all of them happened in the first 150ms before the terminal stopped changing.
 # This compositor-owned record accounts every accepted post-readiness update and
 # ties the latest non-superseded content to primary-plane retirement.
-progress_count="$(grep -Ec '^sophia_live_cpu_visual_progress schema=(1|2) status=complete ' "$SESSION_LOG" || true)"
+progress_count="$(grep -Ec '^sophia_live_cpu_visual_progress schema=(1|2|3) status=complete ' "$SESSION_LOG" || true)"
 ((progress_count == 1)) ||
     fail "expected exactly one CPU visual-progress record, found $progress_count"
-progress="$(grep -E '^sophia_live_cpu_visual_progress schema=(1|2) status=complete ' "$SESSION_LOG")"
+progress="$(grep -E '^sophia_live_cpu_visual_progress schema=(1|2|3) status=complete ' "$SESSION_LOG")"
 progress_schema="$(positive_field "$progress" schema)"
 post_startup_updates="$(positive_field "$progress" post_startup_updates)"
 post_startup_compositions="$(positive_field "$progress" compositions)"
@@ -128,6 +128,14 @@ accounted_updates="$(positive_field "$progress" accounted_updates)"
 observed_msec="$(positive_field "$progress" observed_msec)"
 first_update_after_ready_msec="$(nonnegative_field "$progress" first_update_after_ready_msec)"
 last_source_to_completion_msec="$(nonnegative_field "$progress" last_source_to_completion_msec)"
+native_target_bindings=0
+lifecycle_superseded_updates=0
+if ((progress_schema >= 3)); then
+    native_target_bindings="$(nonnegative_field "$progress" native_target_bindings)"
+    lifecycle_superseded_updates="$(
+        nonnegative_field "$progress" lifecycle_superseded_updates
+    )"
+fi
 source_max_gap_msec="$(nonnegative_field "$progress" source_max_gap_msec)"
 first_retirement_after_ready_msec="$(nonnegative_field "$progress" first_retirement_after_ready_msec)"
 last_retirement_after_ready_msec="$(nonnegative_field "$progress" last_retirement_after_ready_msec)"
@@ -156,6 +164,14 @@ fi
     fail "presented/superseded/pending update settlement does not balance"
 ((first_update_after_ready_msec <= 1000)) ||
     fail "first CPU source progress arrived more than one second after readiness"
+if ((progress_schema >= 3)); then
+    ((native_target_bindings <= post_startup_compositions)) ||
+        fail "native target bindings exceed queued logical compositions"
+    ((presented_updates <= native_target_bindings)) ||
+        fail "presented updates exceed exact native target bindings"
+    ((lifecycle_superseded_updates <= superseded_updates)) ||
+        fail "lifecycle supersessions exceed all superseded updates"
+fi
 ((last_source_to_completion_msec <= 1000)) ||
     fail "CPU source stopped more than one second before session completion"
 ((first_retirement_after_ready_msec <= 1000)) ||
@@ -259,4 +275,4 @@ fi
 native_retirements="$(positive_field "$completion" native_retirements)"
 
 printf '%s\n' \
-    "sophia_terminal_performance schema=5 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints post_startup_updates=$post_startup_updates post_startup_compositions=$post_startup_compositions changed_primary_retirements=$changed_primary_retirements presented_updates=$presented_updates superseded_updates=$superseded_updates source_max_gap_msec=$source_max_gap_msec source_max_gap_usec=$source_max_gap_usec source_gap_budget_usec=$source_gap_budget_usec first_retirement_after_ready_msec=$first_retirement_after_ready_msec display_max_gap_msec=$display_max_gap_msec display_max_gap_usec=$display_max_gap_usec display_gap_budget_usec=$display_gap_budget_usec last_retirement_to_completion_msec=$last_retirement_to_completion_msec max_update_to_retirement_usec=$max_update_to_retirement_usec retirement_deadline_usec=$retirement_deadline_usec present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec cpu_cow_splits=$cpu_cow_splits cpu_resident_buffers_peak=$cpu_resident_buffers_peak cpu_resident_bytes_peak=$cpu_resident_bytes_peak"
+    "sophia_terminal_performance schema=6 status=pass workload=xterm-cpu duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height lines_per_iteration=$lines_per_iteration interval_msec=$interval_msec client_lines=$client_lines client_iterations=$client_iterations native_retirements=$native_retirements cpu_updates=$cpu_updates cpu_replacements=$cpu_replacements cpu_patch_updates=$cpu_patch_updates cpu_patch_rects=$cpu_patch_rects cpu_payload_bytes=$cpu_payload_bytes cpu_max_compose_msec=$cpu_max_compose_msec cpu_compose_budget_msec=$COMPOSE_BUDGET_MSEC composition_target_reuses=$composition_target_reuses partial_repaints=$partial_repaints full_repaints=$full_repaints post_startup_updates=$post_startup_updates post_startup_compositions=$post_startup_compositions native_target_bindings=$native_target_bindings changed_primary_retirements=$changed_primary_retirements presented_updates=$presented_updates superseded_updates=$superseded_updates lifecycle_superseded_updates=$lifecycle_superseded_updates source_max_gap_msec=$source_max_gap_msec source_max_gap_usec=$source_max_gap_usec source_gap_budget_usec=$source_gap_budget_usec first_retirement_after_ready_msec=$first_retirement_after_ready_msec display_max_gap_msec=$display_max_gap_msec display_max_gap_usec=$display_max_gap_usec display_gap_budget_usec=$display_gap_budget_usec last_retirement_to_completion_msec=$last_retirement_to_completion_msec max_update_to_retirement_usec=$max_update_to_retirement_usec retirement_deadline_usec=$retirement_deadline_usec present_samples=$present_samples present_fps=$present_fps p95_frame_msec=$p95_frame_msec cpu_cow_splits=$cpu_cow_splits cpu_resident_buffers_peak=$cpu_resident_buffers_peak cpu_resident_bytes_peak=$cpu_resident_bytes_peak"

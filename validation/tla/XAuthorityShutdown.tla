@@ -13,7 +13,8 @@ EXTENDS Naturals, FiniteSets
  * collection: MaxProducers therefore bounds all ordered egress outside the *
  * Engine channel. StopAndDisconnect remains executable while a producer   *
  * waits, and normal completion remains unavailable until the exact latest  *
- * accepted update has retired or has been superseded.                     *
+ * accepted update has retired or has been superseded, including explicit  *
+ * lifecycle supersession when its owning surface is removed.              *
  *************************************************************************)
 
 CONSTANTS MaxProducers, MaxUpdates
@@ -27,11 +28,11 @@ Phases == {"running", "quiescing", "cancelling", "done"}
 
 VARIABLES phase, issued, held, delivered, accepted, superseded,
           composed, inFlight, presented, frontendOpen, commandResponsive,
-          ownerDraining, cancelled
+          ownerDraining, cancelled, surfaceLive
 
 vars == <<phase, issued, held, delivered, accepted, superseded,
           composed, inFlight, presented, frontendOpen, commandResponsive,
-          ownerDraining, cancelled>>
+          ownerDraining, cancelled, surfaceLive>>
 
 Pending == accepted \ (presented \cup superseded)
 
@@ -49,6 +50,7 @@ Init ==
     /\ commandResponsive = TRUE
     /\ ownerDraining = TRUE
     /\ cancelled = FALSE
+    /\ surfaceLive = TRUE
 
 Produce ==
 (** x11_socket/connection/server.rs: X11CoreTraceObserver producer callback. **)
@@ -59,7 +61,7 @@ Produce ==
     /\ held' = held \cup {issued + 1}
     /\ UNCHANGED <<phase, delivered, accepted, superseded, composed,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    ownerDraining, cancelled>>
+                    ownerDraining, cancelled, surfaceLive>>
 
 DeliverExpected ==
 (** server.rs: XAuthorityOrderedEgress::submit_blocking/try_submit. **)
@@ -71,7 +73,7 @@ DeliverExpected ==
     /\ superseded' = superseded \cup Pending
     /\ UNCHANGED <<phase, issued, composed, inFlight, presented,
                     frontendOpen, commandResponsive, ownerDraining,
-                    cancelled>>
+                    cancelled, surfaceLive>>
 
 StopAccepting ==
 (** server.rs: XServerFrontendServiceCommand::StopAccepting branch. **)
@@ -79,7 +81,7 @@ StopAccepting ==
     /\ phase' = "quiescing"
     /\ UNCHANGED <<issued, held, delivered, accepted, superseded, composed,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    ownerDraining, cancelled>>
+                    ownerDraining, cancelled, surfaceLive>>
 
 CloseDrainedFrontend ==
 (** server.rs: routed frontend drain; live_session/shutdown.rs classifies the
@@ -91,29 +93,32 @@ CloseDrainedFrontend ==
     /\ frontendOpen' = FALSE
     /\ commandResponsive' = FALSE
     /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
-                    composed, inFlight, presented, ownerDraining, cancelled>>
+                    composed, inFlight, presented, ownerDraining, cancelled,
+                    surfaceLive>>
 
 (** live_session/owner_loop/authority_production.rs: latest-wins composition. **)
 ComposeLatest ==
+    /\ surfaceLive
     /\ Pending # {}
     /\ LET latest == CHOOSE update \in Pending :
                          \A other \in Pending : other <= update
        IN composed' = latest
     /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    ownerDraining, cancelled>>
+                    ownerDraining, cancelled, surfaceLive>>
 
-SubmitLatest ==
 (** live_session visual runtime: native submission service. **)
+SubmitLatest ==
+    /\ surfaceLive
     /\ composed \in Pending
     /\ inFlight = 0
     /\ inFlight' = composed
     /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
                     composed, presented, frontendOpen, commandResponsive,
-                    ownerDraining, cancelled>>
+                    ownerDraining, cancelled, surfaceLive>>
 
+(** owner_loop/physical_input_phase.rs: exact primary retirement observation. **)
 RetireExact ==
-(** live_session/owner_loop/authority.rs: exact primary retirement observation. **)
     /\ inFlight # 0
     /\ presented' = IF inFlight \in Pending
                      THEN presented \cup {inFlight}
@@ -121,10 +126,21 @@ RetireExact ==
     /\ inFlight' = 0
     /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
                     composed, frontendOpen, commandResponsive, ownerDraining,
-                    cancelled>>
+                    cancelled, surfaceLive>>
 
-FinishNormal ==
+(** A committed surface removal lifecycle-supersedes its pending update. **)
+RemoveSurface ==
+    /\ phase = "quiescing"
+    /\ held = {}
+    /\ Pending # {}
+    /\ surfaceLive
+    /\ surfaceLive' = FALSE
+    /\ superseded' = superseded \cup Pending
+    /\ UNCHANGED <<phase, issued, held, delivered, accepted, composed,
+                    inFlight, presented, frontendOpen, commandResponsive,
+                    ownerDraining, cancelled>>
 (** owner_loop/physical_input_phase.rs: SessionQuiescenceDecision::Complete. **)
+FinishNormal ==
     /\ phase = "quiescing"
     /\ ~frontendOpen
     /\ held = {}
@@ -134,7 +150,7 @@ FinishNormal ==
     /\ ownerDraining' = FALSE
     /\ UNCHANGED <<issued, held, delivered, accepted, superseded, composed,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    cancelled>>
+                    cancelled, surfaceLive>>
 
 StopAndDisconnect ==
 (** server.rs: StopAndDisconnect plus coordinator-wide cancellation. **)
@@ -146,7 +162,7 @@ StopAndDisconnect ==
     /\ commandResponsive' = FALSE
     /\ cancelled' = TRUE
     /\ UNCHANGED <<issued, delivered, accepted, superseded, composed,
-                    inFlight, presented, ownerDraining>>
+                    inFlight, presented, ownerDraining, surfaceLive>>
 
 FinishCancelled ==
     /\ phase = "cancelling"
@@ -154,7 +170,7 @@ FinishCancelled ==
     /\ ownerDraining' = FALSE
     /\ UNCHANGED <<issued, held, delivered, accepted, superseded, composed,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    cancelled>>
+                    cancelled, surfaceLive>>
 
 Next ==
     \/ Produce
@@ -164,6 +180,7 @@ Next ==
     \/ ComposeLatest
     \/ SubmitLatest
     \/ RetireExact
+    \/ RemoveSurface
     \/ FinishNormal
     \/ StopAndDisconnect
     \/ FinishCancelled
@@ -173,7 +190,9 @@ Spec == Init /\ [][Next]_vars
 (***************************************************************************
  * Negative controls. PrematureServiceExit is the physical failure: the     *
  * command loop disappears with producer-held work, so cancellation can no  *
- * longer release it. ProduceWithoutBound recreates the relay-owned growth. *
+ * longer release it. ProduceWithoutBound recreates relay-owned growth.     *
+ * RemoveWithoutSettlement proves removal cannot silently abandon pending  *
+ * visible work.                                                           *
  *************************************************************************)
 PrematureServiceExit ==
     /\ phase = "quiescing"
@@ -182,7 +201,8 @@ PrematureServiceExit ==
     /\ frontendOpen' = FALSE
     /\ commandResponsive' = FALSE
     /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
-                    composed, inFlight, presented, ownerDraining, cancelled>>
+                    composed, inFlight, presented, ownerDraining, cancelled,
+                    surfaceLive>>
 
 ProduceWithoutBound ==
     /\ phase = "running"
@@ -191,10 +211,20 @@ ProduceWithoutBound ==
     /\ held' = held \cup {issued + 1}
     /\ UNCHANGED <<phase, delivered, accepted, superseded, composed,
                     inFlight, presented, frontendOpen, commandResponsive,
-                    ownerDraining, cancelled>>
+                    ownerDraining, cancelled, surfaceLive>>
 
 PrematureExitNext == Next \/ PrematureServiceExit
 PrematureExitSpec == Init /\ [][PrematureExitNext]_vars
+
+RemoveWithoutSettlement ==
+    /\ phase = "quiescing"
+    /\ held = {}
+    /\ Pending # {}
+    /\ surfaceLive
+    /\ surfaceLive' = FALSE
+    /\ UNCHANGED <<phase, issued, held, delivered, accepted, superseded,
+                    composed, inFlight, presented, frontendOpen,
+                    commandResponsive, ownerDraining, cancelled>>
 
 UnboundedIngressNext ==
     \/ ProduceWithoutBound
@@ -209,6 +239,8 @@ UnboundedIngressNext ==
     \/ FinishCancelled
 
 UnboundedIngressSpec == Init /\ [][UnboundedIngressNext]_vars
+RemovalWithoutSettlementNext == Next \/ RemoveWithoutSettlement
+RemovalWithoutSettlementSpec == Init /\ [][RemovalWithoutSettlementNext]_vars
 
 TypeOK ==
     /\ phase \in Phases
@@ -224,12 +256,12 @@ TypeOK ==
     /\ commandResponsive \in BOOLEAN
     /\ ownerDraining \in BOOLEAN
     /\ cancelled \in BOOLEAN
-
+    /\ surfaceLive \in BOOLEAN
 OrderedDelivery == delivered = Cardinality(accepted)
 BoundedProducerOwnership == Cardinality(held) <= MaxProducers
 SettlementsAreDisjoint == presented \intersect superseded = {}
 AcceptedUpdatesAccounted == accepted = presented \cup superseded \cup Pending
 NormalCompletionIsSettled == phase = "done" /\ ~cancelled => Pending = {}
 NoUncancellableEgress == held # {} => commandResponsive
-
+PendingHasLiveOwner == Pending = {} \/ surfaceLive
 =============================================================================

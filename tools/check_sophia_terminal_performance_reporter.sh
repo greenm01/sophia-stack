@@ -17,7 +17,7 @@ fail() {
 
 report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" status=pass "* ]] || fail "pass fixture did not pass"
-[[ "$report" == *" schema=5 "* ]] || fail "missing schema"
+[[ "$report" == *" schema=6 "* ]] || fail "missing schema"
 [[ "$report" == *" workload=xterm-cpu "* ]] || fail "missing workload"
 [[ "$report" == *" duration_seconds=20 "* ]] || fail "missing duration"
 [[ "$report" == *" surface_width=500 surface_height=500 "* ]] || fail "missing surface size"
@@ -34,6 +34,10 @@ report="$("$REPORTER" "$FIXTURE")"
     fail "missing post-startup progress"
 [[ "$report" == *" changed_primary_retirements=480 "* ]] ||
     fail "missing changed retirement count"
+[[ "$report" == *" native_target_bindings=500 "* ]] ||
+    fail "missing exact native target bindings"
+[[ "$report" == *" lifecycle_superseded_updates=1 "* ]] ||
+    fail "missing lifecycle supersession count"
 [[ "$report" == *" source_max_gap_usec=16403 source_gap_budget_usec=48000 "* ]] ||
     fail "missing source cadence budget"
 [[ "$report" == *" retirement_deadline_usec=34334 "* ]] ||
@@ -81,6 +85,18 @@ sed 's/display_max_gap_usec=33097/display_max_gap_usec=34335/' \
     "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     fail "reporter accepted a display gap above its two-refresh budget"
+fi
+
+sed 's/native_target_bindings=500/native_target_bindings=479/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted more presented updates than native target bindings"
+fi
+
+sed 's/lifecycle_superseded_updates=1/lifecycle_superseded_updates=61/' \
+    "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    fail "reporter accepted lifecycle supersessions above all supersessions"
 fi
 
 sed 's/first_retirement_after_ready_msec=32/first_retirement_after_ready_msec=1001/' \

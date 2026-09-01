@@ -506,18 +506,29 @@ physical state cannot repair teardown or event-delivery defects. Run the gate
 again only after the retained evidence is diagnosed and the relevant code or
 system state has materially changed.
 
-The trailing `sophia_terminal_performance schema=5` report retains those
+The trailing `sophia_terminal_performance schema=6` report retains those
 resource, patch, damage, client-metadata, failure, drain, and composition-budget
 checks and additionally requires exactly one
-`sophia_live_cpu_visual_progress schema=2 status=complete` record with exact
+`sophia_live_cpu_visual_progress schema=3 status=complete` record with exact
 microsecond gap fields. Post-readiness updates must balance exactly as presented
-plus superseded with zero pending or discarded updates. At least three
-content-changing primary retirements must occur. The first and final source and
-display observations retain their one-second liveness bounds. During steady
-state, the source gap budget is the greater of three configured producer
-intervals or two refresh periods plus one millisecond; the display gap and
-accepted-update-to-exact-retirement budgets are two refresh periods plus one
-millisecond. A startup-only burst cannot pass.
+plus superseded with zero pending or discarded updates. The record separately
+names native logical-target bindings and lifecycle supersessions. Bindings may
+not exceed logical compositions, presentations may not exceed bindings, and
+lifecycle supersessions may not exceed all supersessions.
+
+An accepted update carries exact transaction, surface, handle, and generation
+identity. Only ready, admitted work may enter the ledger. A target is bound only
+after logical CPU or head-composition content is actually queued. Retirement
+reads the presented content variant's own logical checksum rather than the
+head's retained numeric checksum; mixed and retained-mixed content can neither
+acquire nor inherit a logical target. Removing the same surface
+lifecycle-supersedes its pending update, while an unrelated removal cannot
+settle it. At least three content-changing primary retirements must occur. The
+first and final source and display observations retain their one-second liveness
+bounds. During steady state, the source gap budget is the greater of three
+configured producer intervals or two refresh periods plus one millisecond; the
+display gap and accepted-update-to-exact-retirement budgets are two refresh
+periods plus one millisecond. A startup-only burst cannot pass.
 
 The default composition budget remains 25 ms;
 `SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive integer and is

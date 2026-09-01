@@ -254,6 +254,7 @@ pub struct LiveProductionVisualRuntime {
     shutdown_present_rejections: usize,
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
+    last_primary_logical_target_checksum: Option<u64>,
     raster_requirements: sophia_engine::SurfaceRasterRequirementTracker,
     indicator_strip_cache: std::cell::RefCell<sophia_renderer_live::IndicatorStripRasterCache>,
     text_cache: std::cell::RefCell<sophia_renderer_live::CompositorTextRasterCache>,
@@ -353,6 +354,7 @@ impl LiveProductionVisualRuntime {
             shutdown_present_rejections: 0,
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
+            last_primary_logical_target_checksum: None,
             raster_requirements: Default::default(),
             indicator_strip_cache: Default::default(),
             text_cache: Default::default(),
@@ -468,6 +470,7 @@ impl LiveProductionVisualRuntime {
         (
             LiveProductionCpuCycleSubmission<crate::LiveBackendRuntimeTickReport>,
             Vec<CommittedSurfaceState>,
+            LiveProductionCpuProgress,
         ),
         Box<dyn std::error::Error>,
     > {
@@ -492,6 +495,7 @@ impl LiveProductionVisualRuntime {
             .observe_authority_resource_registrations(authority_envelope)?;
         let batch = self.ready_surface_content_batch(authority_envelope)?;
         let _ = self.reject_superseded_surface_content()?;
+        let mut cpu_progress = authority_batch_cpu_progress(&batch);
         let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
@@ -598,6 +602,7 @@ impl LiveProductionVisualRuntime {
         self.observe_content_ordered_resource_releases(authority_envelope);
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
+        let primary_output = outputs.primary_output();
         let event_count = authority_transaction_count_for_groups(&rebased_groups);
         let surface_metadata = self.surface_metadata.clone();
         let head_plan_order = self.presentation_order.clone();
@@ -611,6 +616,8 @@ impl LiveProductionVisualRuntime {
         let text_cache = &self.text_cache;
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
+        let primary_logical_target = std::cell::Cell::new(None);
+        let primary_logical_target_ref = &primary_logical_target;
         let mut adapter = LiveProductionCpuCycleAdapter::new(
             scene,
             &self.presentation_order,
@@ -727,6 +734,17 @@ impl LiveProductionVisualRuntime {
                                         trace_live_head_composition_plan(plan);
                                     }
                                     if initialize_native {
+                                        let logical_target = plans
+                                            .first()
+                                            .map(|plan| plan.logical_content_checksum);
+                                        if plans.iter().any(|plan| {
+                                            Some(plan.logical_content_checksum) != logical_target
+                                        }) {
+                                            return Err(
+                                                "native heads disagree on logical content checksum"
+                                                    .into(),
+                                            );
+                                        }
                                         let prepared = plans
                                             .iter()
                                             .map(|plan| {
@@ -759,6 +777,9 @@ impl LiveProductionVisualRuntime {
                                                 output_id,
                                                 prepared,
                                             )?;
+                                        }
+                                        if Some(output_id) == primary_output {
+                                            primary_logical_target_ref.set(logical_target);
                                         }
                                     }
                                     if runtime.rendered_primary_plane_scanout_in_flight() {
@@ -793,6 +814,7 @@ impl LiveProductionVisualRuntime {
                 )
             })?;
         drop(adapter);
+        cpu_progress.bind_primary_logical_target(primary_logical_target.get());
         if software_present_frame_required {
             if !report.submission.composed {
                 return Err("software Present did not produce an immutable composed frame".into());
@@ -811,14 +833,20 @@ impl LiveProductionVisualRuntime {
         if !native_enabled {
             self.publish_committed_input_layers();
         }
-        Ok((report.submission, report.committed_surfaces))
+        Ok((report.submission, report.committed_surfaces, cpu_progress))
     }
 
     pub fn run_gpu_production_cycle(
         &mut self,
         request: LiveProductionCycleRequest<'_>,
-    ) -> Result<(LiveProductionCpuSubmission, Vec<CommittedSurfaceState>), Box<dyn std::error::Error>>
-    {
+    ) -> Result<
+        (
+            LiveProductionCpuSubmission,
+            Vec<CommittedSurfaceState>,
+            LiveProductionCpuProgress,
+        ),
+        Box<dyn std::error::Error>,
+    > {
         let LiveProductionCycleRequest {
             batch,
             scene,
@@ -836,6 +864,8 @@ impl LiveProductionVisualRuntime {
         } = request;
         let native_enabled = native_scanout.is_some();
         let batch = self.ready_surface_content_batch(batch)?;
+        self.last_primary_logical_target_checksum = None;
+        let mut cpu_progress = authority_batch_cpu_progress(&batch);
         let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
         write_cpu_buffer_residency(
@@ -912,6 +942,7 @@ impl LiveProductionVisualRuntime {
             wm_update,
         )?;
         let software_present_frame_required = !self.software_presents_unframed.is_empty();
+        cpu_progress.bind_primary_logical_target(self.last_primary_logical_target_checksum);
         if software_present_frame_required {
             let committed_surfaces = self.committed_surfaces().to_vec();
             let presentation_order =
@@ -947,6 +978,7 @@ impl LiveProductionVisualRuntime {
                 },
             },
             committed_surfaces,
+            cpu_progress,
         ))
     }
 
@@ -1066,13 +1098,19 @@ impl LiveProductionVisualRuntime {
         } else {
             None
         };
-        self.run_prepared_authority_transactions(
+        let primary_logical_target_checksum = primary_head_logical_target_checksum(
+            self.outputs.primary_output(),
+            native_head_frames.as_deref(),
+        )?;
+        let tick = self.run_prepared_authority_transactions(
             prepared,
             authority_transaction_count_for_groups(&authority_groups),
             native_scanout,
             native_head_frames,
             wm_update,
-        )
+        )?;
+        self.last_primary_logical_target_checksum = primary_logical_target_checksum;
+        Ok(tick)
     }
 
     pub fn run_cpu_repaint(
@@ -1290,8 +1328,50 @@ fn authority_batch_cpu_buffer_updates(
     batch
         .groups
         .iter()
-        .flat_map(|group| group.cpu_buffer_updates.iter().cloned())
+        .flat_map(|group| {
+            group
+                .cpu_buffer_updates
+                .iter()
+                .map(|update| update.update.clone())
+        })
         .collect()
+}
+
+fn authority_batch_cpu_progress(batch: &LiveProductionAuthorityBatch) -> LiveProductionCpuProgress {
+    let mut progress = LiveProductionCpuProgress::default();
+    for group in &batch.groups {
+        for update in &group.cpu_buffer_updates {
+            progress.accepted_updates = progress.accepted_updates.saturating_add(1);
+            progress.latest_update = Some(update.identity);
+        }
+        progress
+            .removed_surfaces
+            .extend(group.removed_surfaces.iter().copied());
+    }
+    progress
+}
+
+fn primary_head_logical_target_checksum(
+    primary_output: Option<OutputId>,
+    frames: Option<&[(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)]>,
+) -> Result<Option<u64>, &'static str> {
+    let (Some(primary_output), Some(frames)) = (primary_output, frames) else {
+        return Ok(None);
+    };
+    let Some((_, frames)) = frames.iter().find(|(output, _)| *output == primary_output) else {
+        return Ok(None);
+    };
+    let Some(first) = frames.first() else {
+        return Ok(None);
+    };
+    let checksum = first.logical_content_checksum;
+    if frames
+        .iter()
+        .any(|frame| frame.logical_content_checksum != checksum)
+    {
+        return Err("native heads disagree on logical content checksum");
+    }
+    Ok(Some(checksum))
 }
 
 fn authority_group_present_owners(

@@ -674,13 +674,6 @@
                     head.presented_submission_ust_usec,
                     head.presented_page_flip_ust_usec,
                 );
-                cpu_visual_progress.observe_primary_state(
-                    head.presented_submissions,
-                    head.presented_content
-                        .map(|_| head.presented_logical_checksum),
-                    head.refresh_millihz,
-                    Instant::now(),
-                );
             }
             metrics.runtime_surfaces =
                 u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
@@ -1082,8 +1075,7 @@
                 .map_or((0, None, 0), |head| {
                     (
                         head.presented_submissions,
-                        head.presented_content
-                            .map(|_| head.presented_logical_checksum),
+                        presented_logical_checksum(head.presented_content),
                         head.refresh_millihz,
                     )
                 });

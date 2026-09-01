@@ -278,8 +278,7 @@
         if let Some(head) = native_scanout.heads.first() {
             cpu_visual_progress.observe_primary_state(
                 head.presented_submissions,
-                head.presented_content
-                    .map(|_| head.presented_logical_checksum),
+                presented_logical_checksum(head.presented_content),
                 head.refresh_millihz,
                 Instant::now(),
             );

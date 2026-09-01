@@ -662,3 +662,42 @@ fn submitted_gpu_present_blocks_a_cpu_frame_from_superseding_it() {
         true, false, false, false, false,
     ));
 }
+
+#[test]
+fn only_logical_scene_content_can_own_a_cpu_progress_target() {
+    let frame = sophia_backend_live::LiveProductionNativeFrameId::from_raw(91);
+    assert_eq!(
+        LiveProductionScanoutContent::Cpu {
+            frame,
+            checksum: 41,
+        }
+        .logical_checksum(),
+        Some(41),
+    );
+    assert_eq!(
+        LiveProductionScanoutContent::HeadComposition {
+            frame,
+            logical_content_checksum: 42,
+            nonzero_rgb_pixels: 1,
+        }
+        .logical_checksum(),
+        Some(42),
+    );
+    assert_eq!(
+        LiveProductionScanoutContent::MixedPresent {
+            frame,
+            transaction: TransactionId::from_raw(92),
+            nonzero_rgb_pixels: 1,
+        }
+        .logical_checksum(),
+        None,
+    );
+    assert_eq!(
+        LiveProductionScanoutContent::RetainedMixed {
+            frame,
+            nonzero_rgb_pixels: 1,
+        }
+        .logical_checksum(),
+        None,
+    );
+}

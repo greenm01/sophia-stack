@@ -104,23 +104,14 @@
                     native_scanout.is_some(),
                     defer_cpu_frame,
                 );
-                let accepted_cpu_updates = production_batch
-                    .groups
-                    .iter()
-                    .map(|group| group.cpu_buffer_updates.len())
-                    .sum();
-                cpu_visual_progress.observe_updates(
-                    accepted_cpu_updates,
-                    Instant::now(),
-                );
                 let indicator_publication = wm_session
                     .as_ref()
                     .and_then(LiveWmSession::indicator_publication);
-                let (_tick, report, committed_surfaces, composed, compose_elapsed) =
+                let (_tick, report, committed_surfaces, composed, compose_elapsed, cpu_progress) =
                     if !production_batch.has_dma_buf_present_submissions()
                         && !runtime.released_surface_content_requires_gpu()
                     {
-                        let (submission, committed_surfaces) =
+                        let (submission, committed_surfaces, cpu_progress) =
                             runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
                                 scene: &mut scene,
@@ -145,9 +136,10 @@
                             committed_surfaces,
                             submission.composed,
                             submission.compose_elapsed,
+                            cpu_progress,
                         )
                     } else {
-                        let (submission, committed_surfaces) =
+                        let (submission, committed_surfaces, cpu_progress) =
                             runtime.run_gpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
                                 scene: &mut scene,
@@ -172,8 +164,10 @@
                             committed_surfaces,
                             submission.composed,
                             submission.compose_elapsed,
+                            cpu_progress,
                         )
                     };
+                cpu_visual_progress.observe_production(&cpu_progress, Instant::now());
                 if let Some(ring) = runtime.take_focus_ring_observation() {
                     crate::session_println!(
                         "sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface={} generation={} primitives={}",
@@ -196,7 +190,6 @@
                     );
                 }
                 if composed {
-                    cpu_visual_progress.observe_composition(report.checksum, Instant::now());
                     metrics.max_compose = metrics.max_compose.max(compose_elapsed);
                     metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);
                 } else {

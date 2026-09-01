@@ -87,7 +87,7 @@ pub(crate) mod direct_overlay_proof;
 pub(super) mod input_guard;
 mod metadata_broker;
 mod metadata_shell;
-use cpu_visual_progress::CpuVisualProgress;
+use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
 mod policy_transport_worker;

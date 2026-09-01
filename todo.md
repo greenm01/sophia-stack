@@ -118,7 +118,7 @@ scroll. X Authority now emits `NoExpose` according to the GC's
 `graphics_exposures` flag, and the sustained real-xterm regression reaches 541
 runtime commits and CPU buffers without an X error. The live session now emits
 bounded post-readiness intake, composition, exact primary-retirement, latest-
-wins accounting, cadence, and latency evidence. The schema-5 terminal reporter
+wins accounting, cadence, and latency evidence. The schema-6 terminal reporter
 refuses startup-only progress, refresh-relative source or display gaps, fewer
 than three changed retirements, unaccounted updates, or update-to-retirement
 latency beyond two refresh periods.
@@ -192,11 +192,39 @@ That run also retained 16-33 ms source/display cadence; the perceived burstiness
 matched the old eight-lines-per-refresh probe, so the visual gate now defaults to
 one line every 16 ms and keeps eight lines as an explicit stress override.
 
-Software, regression, reporter, and formal production checks are complete.
-Outstanding: commit and sign this candidate, then run exactly one clean physical
-terminal gate. The gate always records separate machine and operator-visual
-verdicts and never retries. Retain a passing schema-5 report to close CP-14.1;
-diagnose any failed archive before another physical run.
+The next physical run, on signed commit
+`ad7e56eb65f6e5b78304e2bfa3f36ef3f88e3f78`, passed operator visual
+confirmation but timed out quiescence with `authority_pending=0`,
+`native_pending=false`, and exactly one CPU update pending. The accepted
+update had been inferred to own a logical CPU scene checksum. After xterm exit,
+surface removal instead queued `RetainedMixed`, which intentionally has no
+logical checksum, so the old checksum-only tracker had no transition that could
+settle the removed surface's update.
+
+CPU progress now carries exact transaction, surface, handle, and generation
+identity from admitted ready groups. It binds retirement only to logical CPU or
+head-composition content that was actually queued successfully. Retirement
+likewise reads the presented content variant's own logical checksum; mixed and
+retained-mixed content cannot inherit a target. A committed surface
+removal lifecycle-supersedes only the pending update with that surface identity.
+Primary retirement is observed once per owner-loop turn after all producers,
+eliminating phase-order-dependent double settlement. The tracker remains a
+bounded scalar ledger. Progress schema 3 and terminal report schema 6 expose
+native-target bindings and lifecycle supersession, while quiescence schema 2
+names any pending update identity and target.
+
+`XAuthorityShutdown.tla` models exact settlement on removal. Its new negative
+control removes a surface without settling its update and must violate
+`PendingHasLiveOwner`. Deterministic Rust regressions cover ready-versus-
+deferred admission, exact target binding, same-surface removal, unrelated
+removal, accept-and-remove in one cycle, and single retirement observation.
+
+The canonical `cargo xtask check` production gate and the complete pinned TLA+
+corpus, including the new exact negative control, pass. Outstanding: commit and
+sign the candidate, then run exactly one clean physical terminal gate. The gate
+records separate machine and operator-visual verdicts and never retries. Retain
+a passing schema-6 report to close CP-14.1; diagnose any failed archive before
+another physical run.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

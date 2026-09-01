@@ -47,6 +47,62 @@ pub struct LiveProductionSoftwarePresentSubmission {
     pub idle_fence: Option<FenceHandle>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionCpuUpdateIdentity {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub handle: u64,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveProductionCpuBufferUpdate {
+    pub identity: LiveProductionCpuUpdateIdentity,
+    pub update: crate::LiveCpuBufferUpdate,
+}
+
+impl LiveProductionCpuBufferUpdate {
+    pub fn new(
+        transaction: TransactionId,
+        surface: SurfaceId,
+        update: crate::LiveCpuBufferUpdate,
+    ) -> Self {
+        let identity = LiveProductionCpuUpdateIdentity {
+            transaction,
+            surface,
+            handle: update.handle(),
+            generation: update.generation(),
+        };
+        Self { identity, update }
+    }
+
+    pub const fn handle(&self) -> u64 {
+        self.identity.handle
+    }
+
+    pub const fn generation(&self) -> u64 {
+        self.identity.generation
+    }
+}
+
+/// Bounded progress facts from the exact groups admitted by the content
+/// stream in one production cycle.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LiveProductionCpuProgress {
+    pub accepted_updates: usize,
+    pub latest_update: Option<LiveProductionCpuUpdateIdentity>,
+    pub removed_surfaces: Vec<SurfaceId>,
+    /// Set only when the primary logical output actually queued a CPU or head
+    /// composition frame with this logical checksum.
+    pub primary_logical_target_checksum: Option<u64>,
+}
+
+impl LiveProductionCpuProgress {
+    pub fn bind_primary_logical_target(&mut self, checksum: Option<u64>) {
+        self.primary_logical_target_checksum = checksum;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LiveProductionAuthorityBatch {
     /// Ordered atomic transaction groups carried by this bounded intake
@@ -64,7 +120,7 @@ pub struct LiveProductionAuthorityGroup {
     pub transaction: TransactionId,
     pub transactions: Vec<SurfaceTransaction>,
     /// Pixel mutations are ordered with the transaction that publishes them.
-    pub cpu_buffer_updates: Vec<crate::LiveCpuBufferUpdate>,
+    pub cpu_buffer_updates: Vec<LiveProductionCpuBufferUpdate>,
     pub removed_surfaces: Vec<SurfaceId>,
     pub present_submissions: Vec<LiveProductionPresentSubmission>,
     pub software_present_submissions: Vec<LiveProductionSoftwarePresentSubmission>,
@@ -104,17 +160,25 @@ impl LiveProductionAuthorityGroup {
             return Err("production authority group mixes DMA-BUF and software Presents");
         }
         for update in &self.cpu_buffer_updates {
+            if update.identity.transaction != self.transaction
+                || update.handle() != update.update.handle()
+                || update.generation() != update.update.generation()
+            {
+                return Err("production CPU update has a mismatched owner identity");
+            }
             let matches = self
                 .transactions
                 .iter()
                 .filter(|transaction| {
-                    transaction.content.variants().iter().any(|variant| {
-                        matches!(
-                            variant.source,
-                            sophia_protocol::BufferSource::CpuBuffer { handle }
-                                if handle == update.handle()
-                        )
-                    })
+                    transaction.transaction == update.identity.transaction
+                        && transaction.surface == update.identity.surface
+                        && transaction.content.variants().iter().any(|variant| {
+                            matches!(
+                                variant.source,
+                                sophia_protocol::BufferSource::CpuBuffer { handle }
+                                    if handle == update.handle()
+                            )
+                        })
                 })
                 .count();
             if matches != 1 {
