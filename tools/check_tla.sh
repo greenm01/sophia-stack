@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
+for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing LegacyWmProjection LegacyWmResponseBoundary PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -52,6 +52,29 @@ for model in VisualRetirement VisualRetirementSlots VisualDamageHistory StableBa
             "$model.tla"
     )
 done
+
+control=PageFlipPresentationTrackerMixedClock
+control_dir="$TEMP_DIR/$control"
+mkdir "$control_dir"
+cp "$MODEL_DIR/PageFlipPresentationTracker.tla" "$control_dir/"
+cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+log="$control_dir/control.log"
+if (
+    cd "$control_dir"
+    java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock \
+        -workers 1 \
+        -fp 0 \
+        -config "$control.cfg" \
+        PageFlipPresentationTracker.tla
+) >"$log" 2>&1; then
+    echo "TLA+ negative control unexpectedly passed: $control" >&2
+    exit 1
+fi
+grep -Fq 'Invariant PhysicalTrackerOwnerAgreement is violated.' "$log" || {
+    echo "TLA+ mixed-clock control failed for the wrong reason" >&2
+    exit 1
+}
 
 for control in \
     XAuthorityShutdownPrematureExit \

@@ -79,7 +79,6 @@ fi
 [[ -n "$XTERM_BIN" && -x "$XTERM_BIN" ]] ||
     fail "xterm is not installed"
 command -v timeout >/dev/null || fail "timeout is unavailable"
-command -v seq >/dev/null || fail "seq is unavailable"
 command -v sleep >/dev/null || fail "sleep is unavailable"
 
 COUNT_FILE="$(mktemp)"
@@ -89,9 +88,9 @@ trap 'rm -f "$COUNT_FILE" "$INNER_SCRIPT"' EXIT
 # The inner workload uses its own process-external timer and records every
 # completed scrollback burst to $3. A wall-clock test inside the producer is
 # insufficient: when xterm applies backpressure, the shell can remain blocked
-# in seq(1) past that test and never finalize the count file. The nested timeout
-# interrupts that blocked producer, after which the xterm-owned shell exits
-# normally and leaves deterministic completed-burst evidence. Small, regularly
+# while writing past that test and never finalize the count file. The nested
+# timeout interrupts that producer; the xterm-owned shell then exits normally
+# and leaves deterministic completed-burst evidence. Small, regularly
 # paced batches avoid turning one shell write into more ordered visual facts
 # than the bounded authority channel can preserve at once.
 cat >"$INNER_SCRIPT" <<'INNER'
@@ -127,8 +126,25 @@ timeout --signal=TERM --kill-after=1 "$duration_seconds" sh -c '
     count_file="$2"
     interval_seconds="$3"
     iterations=0
+    # This full-period 16-bit LCG makes each line look unrelated to the last
+    # while keeping physical evidence reproducible. Its bounded arithmetic is
+    # safe in every POSIX shell, and ten values fill most of the default xterm
+    # row without adding an external random-number generator.
+    visual_state=19753
     while :; do
-        seq 1 "$lines_per_iteration"
+        line=0
+        while [ "$line" -lt "$lines_per_iteration" ]; do
+            set --
+            visual_field=0
+            while [ "$visual_field" -lt 10 ]; do
+                visual_state=$(( (visual_state * 25173 + 13849) % 65536 ))
+                set -- "$@" "$visual_state"
+                visual_field=$(( visual_field + 1 ))
+            done
+            printf "%05d %05d %05d %05d %05d %05d %05d %05d %05d %05d\n" \
+                "$@"
+            line=$(( line + 1 ))
+        done
         iterations=$(( iterations + 1 ))
         printf "%s\n" "$iterations" >"$count_file"
         sleep "$interval_seconds"

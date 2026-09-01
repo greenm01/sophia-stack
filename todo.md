@@ -219,12 +219,41 @@ control removes a surface without settling its update and must violate
 deferred admission, exact target binding, same-surface removal, unrelated
 removal, accept-and-remove in one cycle, and single retirement observation.
 
-The canonical `cargo xtask check` production gate and the complete pinned TLA+
-corpus, including the new exact negative control, pass. Outstanding: commit and
-sign the candidate, then run exactly one clean physical terminal gate. The gate
-records separate machine and operator-visual verdicts and never retries. Retain
-a passing schema-6 report to close CP-14.1; diagnose any failed archive before
-another physical run.
+The physical terminal gate on signed commit
+`168cb9a2dc82fed0d67e1bc20195275e88addd19` passed operator visual
+confirmation and proved that authority, CPU, and native ownership now quiesce
+in 25 ms with no pending update. Machine completion still failed with 1,055
+page-flip phase rejections and 1,054 overlap rejections. Output 2 first retired
+141 kernel page-flip events, then 1,055 authoritative out-fences. The first
+out-fence completion used session-relative elapsed time after the tracker had
+observed an absolute kernel monotonic timestamp, so cadence validation rejected
+the backward epoch jump and left the logical owner pending. Every later
+physical frame retired, but the stranded tracker owner produced the secondary
+overlap/phase cascade.
+
+All completion proofs now reduce through one timestamp decision and use
+`CLOCK_MONOTONIC` UST for missing-kernel and out-fence fallbacks. The tracker
+derives milliseconds from that UST, making mismatched timestamp units
+unrepresentable at its API. A physically accepted completion retires its exact
+logical owner before cadence validation is returned, so one malformed timing
+sample remains fatal without stranding cleanup or manufacturing thousands of
+secondary failures. Exact submit and completion rejection kinds are logged.
+
+`PageFlipPresentationTracker.tla` requires physical and logical presentation
+ownership to agree across completion-source changes. Its positive model passes
+28 generated / 12 distinct states to depth 7; the mixed-clock control is
+accepted only when it violates `PhysicalTrackerOwnerAgreement`. External Rust
+regressions cover source transitions, stale kernel evidence, and cadence
+rejection without owner leakage.
+
+The visual probe now emits deterministic changing ten-number lines instead of
+the literal `1`, preserving one-line/16-ms pacing and exact iteration
+accounting while making stale frames obvious. The canonical `cargo xtask check`
+production gate and complete pinned TLA+ corpus pass.
+
+Outstanding: commit and sign this candidate, then run exactly one clean
+physical terminal gate. Retain a machine-and-visual passing schema-6 archive to
+close CP-14.1; diagnose any failed archive before another physical run.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Offline regression for tools/probes/run_bounded_xterm.sh geometry resolution.
-# Requires no TTY, GPU, X server, or xterm binary: it drives the probe's
-# dry-run geometry mode and asserts the pixel->cell conversion never produces a
+# Offline regression for tools/probes/run_bounded_xterm.sh geometry and bounded
+# workload. Requires no TTY, GPU, X server, or xterm binary: it drives the
+# probe through an xterm-shaped test double and asserts that the deterministic
+# visual lines change while the pixel->cell conversion never produces a
 # window whose CPU buffer approaches X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES.
 #
 # This guards the terminal-benchmark hard-lock regression: passing the pixel
@@ -140,8 +141,44 @@ paced_iterations="$(field "$paced_line" iterations)" ||
 ((paced_lines == paced_batch * paced_iterations)) ||
     fail "paced probe line total is inconsistent: '$paced_line'"
 
+# Each completed visual line must be dense enough to expose stale presentation,
+# differ from its predecessor, and remain reproducible across physical runs.
+# Exact first lines catch accidental dependence on a random source or shell PID.
+first_visual=
+second_visual=
+third_visual=
+previous_visual=
+visual_count=0
+while IFS= read -r visual_line; do
+    [[ "$visual_line" =~ ^[0-9]{5}(\ [0-9]{5}){9}$ ]] ||
+        fail "paced probe emitted a malformed visual line: '$visual_line'"
+    if [[ -n "$previous_visual" && "$visual_line" == "$previous_visual" ]]; then
+        fail "paced probe repeated a visual line: '$visual_line'"
+    fi
+    visual_count=$((visual_count + 1))
+    [[ -n "$first_visual" ]] || first_visual="$visual_line"
+    if ((visual_count == 2)); then
+        second_visual="$visual_line"
+    fi
+    if ((visual_count == 3)); then
+        third_visual="$visual_line"
+    fi
+    previous_visual="$visual_line"
+done < <(grep -E '^[0-9]{5}( [0-9]{5}){9}$' <<<"$paced_output")
+((visual_count >= 2)) || fail "paced probe emitted fewer than two visual lines"
+[[ "$first_visual" == \
+    "34486 40071 56556 59509 12018 28787 37448 22529 53358 34463" ]] ||
+    fail "paced probe's first visual line is not deterministic: '$first_visual'"
+[[ "$second_visual" == \
+    "50916 34765 50986 27403 63168 41945 44838 59831 56796 06181" ]] ||
+    fail "paced probe's second visual line is not deterministic: '$second_visual'"
+[[ -n "$third_visual" && "$third_visual" != "$first_visual" ]] ||
+    fail "paced probe reset its visual sequence between iterations"
+((visual_count >= paced_lines && visual_count <= paced_lines + paced_batch)) ||
+    fail "paced probe visual/count bounds are inconsistent: visuals=$visual_count completion='$paced_line'"
+
 # A terminal that stops consuming its pty must not strand the producer inside
-# seq(1) until the outer xterm safety deadline. The independent inner timer
+# a write until the outer xterm safety deadline. The independent inner timer
 # must stop the blocked producer, retain at least one completed burst, and let
 # xterm finalize normally.
 SECONDS=0

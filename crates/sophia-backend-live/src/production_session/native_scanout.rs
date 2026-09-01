@@ -108,7 +108,6 @@ mod persistent_native_scanout {
         next_frame_id: u64,
         next_head_candidate_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
-        pub presentation_started: Instant,
         pub kernel_page_flip_timestamps: usize,
         pub kernel_page_flip_timestamp_missing: usize,
         kernel_page_flip_ust: BTreeMap<(OutputId, sophia_engine::RenderHeadId, u64), u64>,
@@ -168,6 +167,41 @@ mod persistent_native_scanout {
                 Self::PageFlipEvent => "page_flip_event",
                 Self::OutFence => "out_fence",
             }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct LiveProductionCompletionTimestamp {
+        pub ust_usec: u64,
+        pub used_kernel_timestamp: bool,
+        pub missing_kernel_timestamp: bool,
+    }
+
+    pub const fn reduce_live_production_completion_timestamp(
+        source: LiveProductionKmsCompletionSource,
+        kernel_ust_usec: Option<u64>,
+        monotonic_fallback_ust_usec: u64,
+    ) -> LiveProductionCompletionTimestamp {
+        match (source, kernel_ust_usec) {
+            (LiveProductionKmsCompletionSource::PageFlipEvent, Some(ust_usec)) => {
+                LiveProductionCompletionTimestamp {
+                    ust_usec,
+                    used_kernel_timestamp: true,
+                    missing_kernel_timestamp: false,
+                }
+            }
+            (LiveProductionKmsCompletionSource::PageFlipEvent, None) => {
+                LiveProductionCompletionTimestamp {
+                    ust_usec: monotonic_fallback_ust_usec,
+                    used_kernel_timestamp: false,
+                    missing_kernel_timestamp: true,
+                }
+            }
+            (LiveProductionKmsCompletionSource::OutFence, _) => LiveProductionCompletionTimestamp {
+                ust_usec: monotonic_fallback_ust_usec,
+                used_kernel_timestamp: false,
+                missing_kernel_timestamp: false,
+            },
         }
     }
 
@@ -811,7 +845,6 @@ mod persistent_native_scanout {
                 next_frame_id: 1,
                 next_head_candidate_id: 1,
                 production_page_flips,
-                presentation_started: Instant::now(),
                 kernel_page_flip_timestamps: 0,
                 kernel_page_flip_timestamp_missing: 0,
                 kernel_page_flip_ust: BTreeMap::new(),
@@ -1347,9 +1380,14 @@ mod persistent_native_scanout {
                             content,
                             frame,
                         );
-                        if self.production_page_flips.submit(output, cycle).is_err() {
+                        if let Err(error) = self.production_page_flips.submit(output, cycle) {
                             self.vsync_overlap_rejections =
                                 self.vsync_overlap_rejections.saturating_add(1);
+                            tracing::error!(
+                                "sophia_live_native_pacing schema=1 status=submit_rejected output={} submission={} error={error:?}",
+                                output.raw(),
+                                cycle,
+                            );
                         }
                     }
                     Status::ScanoutExportPending => {
@@ -1579,23 +1617,12 @@ mod persistent_native_scanout {
                     continue;
                 }
                 self.heads[head_index].last_callback_serial = Some(callback.frame_serial);
-                let callback_ust = if let Some(ust) = self.kernel_page_flip_ust.remove(&(
+                let callback_ust = self.completion_ust_usec(
                     output,
                     callback.head,
                     callback.frame_serial,
-                )) && completion_source
-                    == LiveProductionKmsCompletionSource::PageFlipEvent
-                {
-                    self.kernel_page_flip_timestamps =
-                        self.kernel_page_flip_timestamps.saturating_add(1);
-                    ust
-                } else {
-                    if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
-                        self.kernel_page_flip_timestamp_missing =
-                            self.kernel_page_flip_timestamp_missing.saturating_add(1);
-                    }
-                    Self::monotonic_ust_usec()
-                };
+                    completion_source,
+                );
                 let submitted_ust_usec = self.heads[head_index].submitted_ust_usec.take();
                 let submit_to_page_flip = submitted_ust_usec
                     .and_then(|submitted| callback_ust.checked_sub(submitted))
@@ -1751,7 +1778,6 @@ mod persistent_native_scanout {
                         if let Err(error) = self.production_page_flips.observe_page_flip(
                             output,
                             logical_serial,
-                            logical_ust / 1_000,
                             logical_ust,
                         ) {
                             self.page_flip_phase_rejections =
@@ -2833,26 +2859,12 @@ mod persistent_native_scanout {
                     .last_accepted
                     .and_then(|accepted| accepted.event.frame_serial)
                 {
-                    let (presentation_msec, ust) = if let Some(ust) = self
-                        .kernel_page_flip_ust
-                        .remove(&(output, self.heads[index].head, kernel_sequence))
-                        .filter(|_| {
-                            completion_source == LiveProductionKmsCompletionSource::PageFlipEvent
-                        }) {
-                        self.kernel_page_flip_timestamps =
-                            self.kernel_page_flip_timestamps.saturating_add(1);
-                        (ust / 1_000, ust)
-                    } else {
-                        if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
-                            self.kernel_page_flip_timestamp_missing =
-                                self.kernel_page_flip_timestamp_missing.saturating_add(1);
-                        }
-                        let elapsed = self.presentation_started.elapsed();
-                        (
-                            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
-                            u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
-                        )
-                    };
+                    let ust = self.completion_ust_usec(
+                        output,
+                        self.heads[index].head,
+                        kernel_sequence,
+                        completion_source,
+                    );
                     let submitted_ust_usec = self.heads[index].submitted_ust_usec.take();
                     let submit_to_page_flip = submitted_ust_usec
                         .and_then(|submitted| ust.checked_sub(submitted))
@@ -2878,13 +2890,19 @@ mod persistent_native_scanout {
                         self.heads[index].presented_direct,
                         submit_to_page_flip,
                     );
-                    if self
-                        .production_page_flips
-                        .observe_page_flip(output, kernel_sequence, presentation_msec, ust)
-                        .is_err()
+                    if let Err(error) =
+                        self.production_page_flips
+                            .observe_page_flip(output, kernel_sequence, ust)
                     {
                         self.page_flip_phase_rejections =
                             self.page_flip_phase_rejections.saturating_add(1);
+                        tracing::error!(
+                            "sophia_live_native_pacing schema=1 status=completion_rejected output={} kernel_sequence={} completion_source={} ust_usec={} error={error:?}",
+                            output.raw(),
+                            kernel_sequence,
+                            completion_source.label(),
+                            ust,
+                        );
                     }
                 }
             }
@@ -2894,6 +2912,41 @@ mod persistent_native_scanout {
             self.callback_queue_saturated = self
                 .callback_queue_saturated
                 .saturating_add(usize::from(report.max_reached));
+        }
+
+        fn completion_ust_usec(
+            &mut self,
+            output: OutputId,
+            head: sophia_engine::RenderHeadId,
+            sequence: u64,
+            source: LiveProductionKmsCompletionSource,
+        ) -> u64 {
+            // Always consume a matching timestamp record. An out-fence is
+            // authoritative once selected, so a late kernel event must not
+            // leave timing evidence resident after its physical owner retires.
+            let kernel_ust = self.kernel_page_flip_ust.remove(&(output, head, sequence));
+            let needs_fallback =
+                source == LiveProductionKmsCompletionSource::OutFence || kernel_ust.is_none();
+            let timestamp = reduce_live_production_completion_timestamp(
+                source,
+                kernel_ust,
+                needs_fallback
+                    .then(Self::monotonic_ust_usec)
+                    .unwrap_or_default(),
+            );
+            if timestamp.used_kernel_timestamp {
+                self.kernel_page_flip_timestamps =
+                    self.kernel_page_flip_timestamps.saturating_add(1);
+            }
+            if timestamp.missing_kernel_timestamp {
+                self.kernel_page_flip_timestamp_missing =
+                    self.kernel_page_flip_timestamp_missing.saturating_add(1);
+            }
+            // Kernel page-flip UST and every fallback share the
+            // CLOCK_MONOTONIC epoch. Session-relative elapsed time would jump
+            // backward when a head changes to authoritative out-fence
+            // completion and would strand the logical presentation owner.
+            timestamp.ust_usec
         }
 
         fn monotonic_ust_usec() -> u64 {
@@ -3579,8 +3632,9 @@ mod persistent_native_scanout {
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use persistent_native_scanout::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LivePersistentRenderMetrics,
-    LiveProductionCpuFrameQueueStatus, LiveProductionDirectScanoutTotals,
-    LiveProductionHeadCompositionFrame, LiveProductionMirrorGenerationQueue,
+    LiveProductionCompletionTimestamp, LiveProductionCpuFrameQueueStatus,
+    LiveProductionDirectScanoutTotals, LiveProductionHeadCompositionFrame,
+    LiveProductionKmsCompletionSource, LiveProductionMirrorGenerationQueue,
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
     LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
     LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
@@ -3597,11 +3651,12 @@ pub use persistent_native_scanout::{
     live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
     live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
     project_live_production_published_topology, project_mirror_output_damage_snapshot,
-    project_native_cursor_logical_viewport, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_head_render_target, reduce_live_production_mirror_generation_queue,
-    reduce_live_production_page_flip_watchdog, reduce_live_production_retained_scene_queue,
-    reduce_live_production_semantic_startup_barrier, validate_live_head_composition_frame_batch,
-    validate_live_production_rollback_topology, validate_live_production_topology_frames,
+    project_native_cursor_logical_viewport, reduce_live_production_completion_timestamp,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
+    reduce_live_production_mirror_generation_queue, reduce_live_production_page_flip_watchdog,
+    reduce_live_production_retained_scene_queue, reduce_live_production_semantic_startup_barrier,
+    validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
+    validate_live_production_topology_frames,
 };
 
 #[derive(Debug)]

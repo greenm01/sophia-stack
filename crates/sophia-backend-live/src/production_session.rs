@@ -160,7 +160,6 @@ impl LiveProductionPageFlipTracker {
         &mut self,
         output: OutputId,
         sequence: u64,
-        presentation_msec: u64,
         ust: u64,
     ) -> Result<(), LiveProductionPageFlipTrackerError> {
         let (cycle, frame_serial) = self
@@ -168,18 +167,22 @@ impl LiveProductionPageFlipTracker {
             .get(&output)
             .copied()
             .ok_or(LiveProductionPageFlipTrackerError::MissingCycle { output })?;
-        match self
+        let feedback = self
             .presentation
-            .observe_page_flip(output, sequence, presentation_msec)
-        {
-            OutputPresentationFeedback::Accepted { .. } => {}
-            outcome => return Err(LiveProductionPageFlipTrackerError::Feedback(outcome)),
-        }
+            .observe_page_flip(output, sequence, ust / 1_000);
         match self.presentation.retire(output, frame_serial) {
-            OutputPresentationRetire::Retired { .. } => {}
+            OutputPresentationRetire::Retired { .. } => {
+                // A page flip accepted by the physical owner has released
+                // this exact logical submission even when its cadence sample
+                // is invalid. Do not strand ownership and turn one timing
+                // fault into an overlap/phase cascade.
+                self.pending.remove(&output);
+            }
             outcome => return Err(LiveProductionPageFlipTrackerError::Retirement(outcome)),
         }
-        self.pending.remove(&output);
+        if !matches!(feedback, OutputPresentationFeedback::Accepted { .. }) {
+            return Err(LiveProductionPageFlipTrackerError::Feedback(feedback));
+        }
         self.retirements.push_back(ProductionRetirement {
             cycle,
             retirement: LiveProductionPageFlipRetirement {
