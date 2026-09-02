@@ -254,7 +254,7 @@ pub struct LiveProductionVisualRuntime {
     shutdown_present_rejections: usize,
     cpu_buffer_residency: Vec<u64>,
     recent_cpu_buffer_updates: VecDeque<u64>,
-    last_primary_logical_target_checksum: Option<u64>,
+    last_primary_logical_target: Option<LiveProductionCpuTarget>,
     raster_requirements: sophia_engine::SurfaceRasterRequirementTracker,
     indicator_strip_cache: std::cell::RefCell<sophia_renderer_live::IndicatorStripRasterCache>,
     text_cache: std::cell::RefCell<sophia_renderer_live::CompositorTextRasterCache>,
@@ -354,7 +354,7 @@ impl LiveProductionVisualRuntime {
             shutdown_present_rejections: 0,
             cpu_buffer_residency: Vec::with_capacity(16),
             recent_cpu_buffer_updates: VecDeque::with_capacity(RECENT_CPU_BUFFER_UPDATE_CAPACITY),
-            last_primary_logical_target_checksum: None,
+            last_primary_logical_target: None,
             raster_requirements: Default::default(),
             indicator_strip_cache: Default::default(),
             text_cache: Default::default(),
@@ -765,21 +765,23 @@ impl LiveProductionVisualRuntime {
                                             })
                                             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>(
                                             )?;
-                                        if needs_initialization {
+                                        let queued_target = if needs_initialization {
                                             native_scanout.initialize_head_composition(
                                                 output_id,
                                                 runtime,
                                                 prepared,
                                             )?;
                                             initialized_here = true;
+                                            None
                                         } else {
-                                            native_scanout.queue_head_composition_frames(
-                                                output_id,
-                                                prepared,
-                                            )?;
-                                        }
+                                            let frame = native_scanout
+                                                .queue_head_composition_frames(output_id, prepared)?;
+                                            logical_target.map(|checksum| {
+                                                LiveProductionCpuTarget::new(frame, checksum)
+                                            })
+                                        };
                                         if Some(output_id) == primary_output {
-                                            primary_logical_target_ref.set(logical_target);
+                                            primary_logical_target_ref.set(queued_target);
                                         }
                                     }
                                     if runtime.rendered_primary_plane_scanout_in_flight() {
@@ -864,7 +866,7 @@ impl LiveProductionVisualRuntime {
         } = request;
         let native_enabled = native_scanout.is_some();
         let batch = self.ready_surface_content_batch(batch)?;
-        self.last_primary_logical_target_checksum = None;
+        self.last_primary_logical_target = None;
         let mut cpu_progress = authority_batch_cpu_progress(&batch);
         let mut updates = authority_batch_cpu_buffer_updates(&batch);
         record_recent_cpu_buffer_updates(&mut self.recent_cpu_buffer_updates, &updates);
@@ -942,7 +944,7 @@ impl LiveProductionVisualRuntime {
             wm_update,
         )?;
         let software_present_frame_required = !self.software_presents_unframed.is_empty();
-        cpu_progress.bind_primary_logical_target(self.last_primary_logical_target_checksum);
+        cpu_progress.bind_primary_logical_target(self.last_primary_logical_target);
         if software_present_frame_required {
             let committed_surfaces = self.committed_surfaces().to_vec();
             let presentation_order =
@@ -1098,19 +1100,15 @@ impl LiveProductionVisualRuntime {
         } else {
             None
         };
-        let primary_logical_target_checksum = primary_head_logical_target_checksum(
-            self.outputs.primary_output(),
-            native_head_frames.as_deref(),
-        )?;
-        let tick = self.run_prepared_authority_transactions(
+        let run = self.run_prepared_authority_transactions_with_targets(
             prepared,
             authority_transaction_count_for_groups(&authority_groups),
             native_scanout,
             native_head_frames,
             wm_update,
         )?;
-        self.last_primary_logical_target_checksum = primary_logical_target_checksum;
-        Ok(tick)
+        self.last_primary_logical_target = run.primary_logical_target;
+        Ok(run.report)
     }
 
     pub fn run_cpu_repaint(
@@ -1349,29 +1347,6 @@ fn authority_batch_cpu_progress(batch: &LiveProductionAuthorityBatch) -> LivePro
             .extend(group.removed_surfaces.iter().copied());
     }
     progress
-}
-
-fn primary_head_logical_target_checksum(
-    primary_output: Option<OutputId>,
-    frames: Option<&[(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)]>,
-) -> Result<Option<u64>, &'static str> {
-    let (Some(primary_output), Some(frames)) = (primary_output, frames) else {
-        return Ok(None);
-    };
-    let Some((_, frames)) = frames.iter().find(|(output, _)| *output == primary_output) else {
-        return Ok(None);
-    };
-    let Some(first) = frames.first() else {
-        return Ok(None);
-    };
-    let checksum = first.logical_content_checksum;
-    if frames
-        .iter()
-        .any(|frame| frame.logical_content_checksum != checksum)
-    {
-        return Err("native heads disagree on logical content checksum");
-    }
-    Ok(Some(checksum))
 }
 
 fn authority_group_present_owners(

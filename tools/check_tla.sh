@@ -126,6 +126,7 @@ for control in \
     ContinuousContentPresentationNoDrainFairness \
     ContinuousContentPresentationNoCompositionFairness \
     ContinuousContentPresentationUnaccountedSupersession \
+    ContinuousContentPresentationNativeOwnerSupersession \
     ContinuousContentPresentationStaleRetirement; do
     control_dir="$TEMP_DIR/$control"
     mkdir "$control_dir"
@@ -154,6 +155,12 @@ for control in \
         ContinuousContentPresentationUnaccountedSupersession)
             grep -Fq 'Invariant AllAcceptedUpdatesAccounted is violated.' "$log" || {
                 echo "TLA+ supersession control failed for the wrong reason" >&2
+                exit 1
+            }
+            ;;
+        ContinuousContentPresentationNativeOwnerSupersession)
+            grep -Fq 'Invariant NativeOwnersAreNotSuperseded is violated.' "$log" || {
+                echo "TLA+ native-owner supersession control failed for the wrong reason" >&2
                 exit 1
             }
             ;;

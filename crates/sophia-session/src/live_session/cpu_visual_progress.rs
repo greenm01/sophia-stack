@@ -1,5 +1,6 @@
 use sophia_backend_live::{
-    LiveProductionCpuProgress, LiveProductionCpuUpdateIdentity, LiveProductionScanoutContent,
+    LiveProductionCpuProgress, LiveProductionCpuTarget, LiveProductionCpuUpdateIdentity,
+    LiveProductionNativeFrameId, LiveProductionNativeScanout, LiveProductionScanoutContent,
 };
 use std::time::{Duration, Instant};
 
@@ -7,14 +8,21 @@ use std::time::{Duration, Instant};
 struct PendingCpuUpdate {
     accepted_at: Instant,
     identity: LiveProductionCpuUpdateIdentity,
-    target_checksum: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QueuedCpuUpdate {
+    accepted_at: Instant,
+    identity: LiveProductionCpuUpdateIdentity,
+    target: LiveProductionCpuTarget,
 }
 
 /// Bounded evidence that post-readiness CPU content keeps reaching glass.
 ///
-/// CPU updates are latest-wins. Every accepted update is therefore settled as
-/// presented, superseded by a newer update, or still pending. A clean terminal
-/// performance proof requires the last category to be empty after native drain.
+/// CPU updates are latest-wins only until native queueing transfers ownership.
+/// Queued updates remain identified by frame until that frame retires or leaves
+/// every native owner. A clean terminal proof requires no unbound or queued
+/// update after native drain.
 #[derive(Debug, Default)]
 pub(super) struct CpuVisualProgress {
     ready_at: Option<Instant>,
@@ -27,6 +35,7 @@ pub(super) struct CpuVisualProgress {
     primary_retirements: u64,
     changed_primary_retirements: u64,
     pending: Option<PendingCpuUpdate>,
+    queued: Vec<QueuedCpuUpdate>,
     last_seen_submissions: usize,
     last_presented_checksum: Option<u64>,
     refresh_millihz: u32,
@@ -46,6 +55,7 @@ pub(super) fn presented_logical_checksum(
 ) -> Option<u64> {
     content.and_then(LiveProductionScanoutContent::logical_checksum)
 }
+const MAX_QUEUED_CPU_UPDATES: usize = 16;
 
 impl CpuVisualProgress {
     pub(super) fn observe_ready(
@@ -68,15 +78,15 @@ impl CpuVisualProgress {
         &mut self,
         progress: &LiveProductionCpuProgress,
         now: Instant,
-    ) {
+    ) -> Result<(), &'static str> {
         let Some(ready_at) = self.ready_at else {
-            return;
+            return Ok(());
         };
         let count = u64::try_from(progress.accepted_updates).unwrap_or(u64::MAX);
         if count != 0 {
-            let Some(identity) = progress.latest_update else {
-                return;
-            };
+            let identity = progress
+                .latest_update
+                .ok_or("CPU progress accepted updates without a latest identity")?;
             let elapsed = now.saturating_duration_since(ready_at);
             self.accepted_updates = self.accepted_updates.saturating_add(count);
             if self.pending.take().is_some() {
@@ -88,7 +98,6 @@ impl CpuVisualProgress {
             self.pending = Some(PendingCpuUpdate {
                 accepted_at: now,
                 identity,
-                target_checksum: None,
             });
             self.first_update_after_ready.get_or_insert(elapsed);
             if let Some(previous) = self.previous_update_after_ready {
@@ -98,102 +107,163 @@ impl CpuVisualProgress {
             self.last_update_after_ready = Some(elapsed);
         }
 
+        let mut lifecycle_superseded = 0usize;
         if self.pending.is_some_and(|pending| {
             progress
                 .removed_surfaces
                 .contains(&pending.identity.surface)
         }) {
             self.pending = None;
-            self.superseded_updates = self.superseded_updates.saturating_add(1);
-            self.lifecycle_superseded_updates = self.lifecycle_superseded_updates.saturating_add(1);
+            lifecycle_superseded = lifecycle_superseded.saturating_add(1);
         }
+        if !progress.removed_surfaces.is_empty() {
+            let before = self.queued.len();
+            self.queued
+                .retain(|queued| !progress.removed_surfaces.contains(&queued.identity.surface));
+            lifecycle_superseded =
+                lifecycle_superseded.saturating_add(before.saturating_sub(self.queued.len()));
+        }
+        let lifecycle_superseded = u64::try_from(lifecycle_superseded).unwrap_or(u64::MAX);
+        self.superseded_updates = self.superseded_updates.saturating_add(lifecycle_superseded);
+        self.lifecycle_superseded_updates = self
+            .lifecycle_superseded_updates
+            .saturating_add(lifecycle_superseded);
 
-        let Some(checksum) = progress.primary_logical_target_checksum else {
-            return;
+        let Some(target) = progress.primary_logical_target else {
+            return Ok(());
         };
         self.compositions = self.compositions.saturating_add(1);
-        let Some(mut pending) = self.pending.take() else {
+        if self.pending.is_none() {
+            return Ok(());
+        }
+        if self.last_presented_checksum == Some(target.logical_checksum)
+            || self
+                .queued
+                .iter()
+                .any(|queued| queued.target.frame == target.frame)
+        {
+            self.pending = None;
+            self.superseded_updates = self.superseded_updates.saturating_add(1);
+            return Ok(());
+        }
+        if self.queued.len() >= MAX_QUEUED_CPU_UPDATES {
+            return Err("CPU visual target owner capacity exceeded");
+        }
+        let pending = self
+            .pending
+            .take()
+            .expect("checked pending CPU update exists");
+        self.queued.push(QueuedCpuUpdate {
+            accepted_at: pending.accepted_at.min(now),
+            identity: pending.identity,
+            target,
+        });
+        self.native_target_bindings = self.native_target_bindings.saturating_add(1);
+        Ok(())
+    }
+
+    pub(super) fn observe_native_scanout(
+        &mut self,
+        native_scanout: &LiveProductionNativeScanout,
+        now: Instant,
+    ) {
+        let Some(head) = native_scanout.heads.first() else {
             return;
         };
-        if self.last_presented_checksum == Some(checksum) {
-            self.superseded_updates = self.superseded_updates.saturating_add(1);
-            return;
-        }
-        pending.target_checksum = Some(checksum);
-        pending.accepted_at = pending.accepted_at.min(now);
-        self.pending = Some(pending);
-        self.native_target_bindings = self.native_target_bindings.saturating_add(1);
+        let output = head.output.id;
+        self.observe_primary_state(
+            head.presented_submissions,
+            head.presented_content,
+            head.refresh_millihz,
+            now,
+            |frame| native_scanout.output_owns_frame(output, frame),
+        );
     }
 
     pub(super) fn observe_primary_state(
         &mut self,
         presented_submissions: usize,
-        presented_checksum: Option<u64>,
+        presented_content: Option<LiveProductionScanoutContent>,
         refresh_millihz: u32,
         now: Instant,
+        mut frame_is_owned: impl FnMut(LiveProductionNativeFrameId) -> bool,
     ) {
         let Some(ready_at) = self.ready_at else {
             return;
         };
         self.refresh_millihz = refresh_millihz;
-        if presented_submissions <= self.last_seen_submissions {
-            return;
-        }
-        let retired = presented_submissions.saturating_sub(self.last_seen_submissions);
-        self.last_seen_submissions = presented_submissions;
-        self.primary_retirements = self
-            .primary_retirements
-            .saturating_add(u64::try_from(retired).unwrap_or(u64::MAX));
+        if presented_submissions > self.last_seen_submissions {
+            let retired = presented_submissions.saturating_sub(self.last_seen_submissions);
+            self.last_seen_submissions = presented_submissions;
+            self.primary_retirements = self
+                .primary_retirements
+                .saturating_add(u64::try_from(retired).unwrap_or(u64::MAX));
 
-        let changed =
-            presented_checksum.is_some() && presented_checksum != self.last_presented_checksum;
-        self.last_presented_checksum = presented_checksum;
-        if !changed {
-            return;
+            let presented_checksum = presented_logical_checksum(presented_content);
+            let changed =
+                presented_checksum.is_some() && presented_checksum != self.last_presented_checksum;
+            self.last_presented_checksum = presented_checksum;
+
+            if let Some(content) = presented_content
+                && let Some(index) = self.queued.iter().position(|queued| {
+                    queued.target.frame == content.frame()
+                        && Some(queued.target.logical_checksum) == content.logical_checksum()
+                })
+            {
+                let queued = self.queued.remove(index);
+                self.presented_updates = self.presented_updates.saturating_add(1);
+                self.max_update_to_retirement = self
+                    .max_update_to_retirement
+                    .max(now.saturating_duration_since(queued.accepted_at));
+            }
+
+            if changed {
+                let elapsed = now.saturating_duration_since(ready_at);
+                self.changed_primary_retirements =
+                    self.changed_primary_retirements.saturating_add(1);
+                self.first_retirement_after_ready.get_or_insert(elapsed);
+                if let Some(previous) = self.previous_retirement_after_ready {
+                    self.display_max_gap =
+                        self.display_max_gap.max(elapsed.saturating_sub(previous));
+                }
+                self.previous_retirement_after_ready = Some(elapsed);
+                self.last_retirement_after_ready = Some(elapsed);
+            }
         }
 
-        let elapsed = now.saturating_duration_since(ready_at);
-        self.changed_primary_retirements = self.changed_primary_retirements.saturating_add(1);
-        self.first_retirement_after_ready.get_or_insert(elapsed);
-        if let Some(previous) = self.previous_retirement_after_ready {
-            self.display_max_gap = self.display_max_gap.max(elapsed.saturating_sub(previous));
-        }
-        self.previous_retirement_after_ready = Some(elapsed);
-        self.last_retirement_after_ready = Some(elapsed);
-
-        if self
-            .pending
-            .is_some_and(|pending| pending.target_checksum == presented_checksum)
-        {
-            let pending = self.pending.take().expect("matching pending update exists");
-            self.presented_updates = self.presented_updates.saturating_add(1);
-            self.max_update_to_retirement = self
-                .max_update_to_retirement
-                .max(now.saturating_duration_since(pending.accepted_at));
-        }
+        let before = self.queued.len();
+        self.queued
+            .retain(|queued| frame_is_owned(queued.target.frame));
+        self.superseded_updates = self.superseded_updates.saturating_add(
+            u64::try_from(before.saturating_sub(self.queued.len())).unwrap_or(u64::MAX),
+        );
     }
 
     pub(super) fn pending_updates(&self) -> usize {
-        usize::from(self.pending.is_some())
+        usize::from(self.pending.is_some()).saturating_add(self.queued.len())
     }
 
     pub(super) fn is_settled(&self) -> bool {
-        self.pending.is_none()
+        self.pending.is_none() && self.queued.is_empty()
     }
 
     pub(super) fn pending_identity(&self) -> Option<LiveProductionCpuUpdateIdentity> {
-        self.pending.map(|pending| pending.identity)
+        self.pending
+            .map(|pending| pending.identity)
+            .or_else(|| self.queued.first().map(|queued| queued.identity))
     }
 
     pub(super) fn pending_target_checksum(&self) -> Option<u64> {
-        self.pending.and_then(|pending| pending.target_checksum)
+        self.queued
+            .first()
+            .map(|queued| queued.target.logical_checksum)
     }
 
     pub(super) fn record(&self, completed_at: Instant, startup_ready_msec: u128) -> String {
         let observed_msec = self.ready_at.map_or(0, |ready| {
             completed_at.saturating_duration_since(ready).as_millis()
         });
-        let pending_updates = u64::from(self.pending.is_some());
+        let pending_updates = u64::try_from(self.pending_updates()).unwrap_or(u64::MAX);
         let accounted_updates = self
             .presented_updates
             .saturating_add(self.superseded_updates)

@@ -275,14 +275,7 @@
                 cleanup_failures.push(format!("native completion drain failed: {error}"));
             }
         }
-        if let Some(head) = native_scanout.heads.first() {
-            cpu_visual_progress.observe_primary_state(
-                head.presented_submissions,
-                presented_logical_checksum(head.presented_content),
-                head.refresh_millihz,
-                Instant::now(),
-            );
-        }
+        cpu_visual_progress.observe_native_scanout(native_scanout, Instant::now());
         if detach_established {
             match native_scanout.clear_renderer_images() {
                 Ok(evicted_renderer_images) => {

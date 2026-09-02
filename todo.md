@@ -248,12 +248,49 @@ rejection without owner leakage.
 
 The visual probe now emits deterministic changing ten-number lines instead of
 the literal `1`, preserving one-line/16-ms pacing and exact iteration
-accounting while making stale frames obvious. The canonical `cargo xtask check`
-production gate and complete pinned TLA+ corpus pass.
+accounting while making stale frames obvious.
 
-Outstanding: commit and sign this candidate, then run exactly one clean
-physical terminal gate. Retain a machine-and-visual passing schema-6 archive to
-close CP-14.1; diagnose any failed archive before another physical run.
+The next physical terminal gate, on signed commit
+`59ea3b002f2df2a30974c325724b5c7969861842`, passed operator visual
+confirmation and every native pacing invariant. It retired 2,391 native frames
+with zero overlap, phase, callback-rejection, protocol, or cleanup errors.
+Machine completion failed only because `presented_updates=0`: all 7,107
+accepted post-startup updates were reported superseded despite 3,204 successful
+composition bindings and 1,192 primary retirements, 1,191 of which changed
+content. The maximum display gap remained 18.858 ms.
+
+The tracker still held one scalar pending update after production had
+transferred that update to an exact queued native frame. The next accepted
+update latest-wins superseded the scalar even though the older frame remained
+pending, rendering, submitted, or awaiting callback reduction. A retirement
+could therefore display real changing content while finding no matching
+logical owner. The earlier single presented update was scheduling luck, not a
+durable contract.
+
+CPU progress now separates one unbound latest-wins update from a bounded set of
+exact native owners. A successful native queue returns a typed frame identity
+paired with its logical checksum. Later intake may supersede only the unbound
+cell. Exact frame-and-checksum retirement presents its matching owner; surface
+removal lifecycle-settles matching owners; and any queued frame absent from all
+mirror-aware native owner cells is explicitly superseded. The owner query is
+allocation-free and covers deferred mirror generations, pending, rendering,
+submitted, presented, prepared, submitted-group, and displayed-group state.
+More than 16 simultaneous queued CPU owners fails closed instead of growing
+unboundedly.
+
+`ContinuousContentPresentation.tla` now models unbound and native-owned
+identities separately. `NativeOwnersAreNotSuperseded` prevents intake from
+revoking composed, in-flight, or callback-owned frames, and a dedicated
+negative control recreates the failed gate's ownership split. External Rust
+regressions prove two queued generations retire by exact identity and prove a
+frame that leaves every native owner settles as superseded.
+The exact repair candidate passes `cargo xtask check` and the complete pinned
+TLA+ corpus.
+
+
+Outstanding: after this repair is signed, run exactly one clean physical
+terminal gate. Retain a machine-and-visual passing schema-6 archive to close
+CP-14.1; diagnose any failed archive before another physical run.
 
 ### CP-14.2 — Same-hardware comparison (`NEXT`)
 

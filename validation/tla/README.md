@@ -147,28 +147,32 @@ Scenario correspondence and the implementation-only checks are recorded in
 `validation/specula/stable-x-backing-lease-modeling-brief.md`.
 
 `ContinuousContentPresentation.tla` owns the post-readiness software-content
-pipeline that the physical terminal gate measures. It keeps intake,
-latest-content composition, native submission, kernel flip, and exact callback
-reduction as separate actions. Every accepted update must be exactly one of
-presented, superseded, or pending; pending is bounded to the latest accepted
-generation; a presented update must belong to the retired set; and pipeline
-identities must have been accepted. Under weak fairness for every productive
-stage and each exact callback, the final bounded source update eventually
-settles. Timing is intentionally absent: the schema-4 empirical gate owns
-one-second source/display gaps and the two-refresh update-to-retirement bound.
+pipeline that the physical terminal gate measures. It keeps unbound intake,
+native-owned composition, submission, kernel flip, and exact callback reduction
+as separate actions. Latest-wins applies only to the unbound identity. Multiple
+composed, in-flight, or callback-owned generations may coexist, and intake may
+not supersede them. Every accepted update must be presented, superseded, or
+held by an exact pipeline owner; a presented update must belong to the retired
+set; and every pipeline identity must have been accepted. Under weak fairness
+for each productive stage and exact callback, the final bounded source update
+eventually settles. Timing is intentionally absent: the schema-3 empirical gate
+owns one-second source/display gaps and the two-refresh
+update-to-retirement bound.
 
-The checked configuration explores 646 generated states and 316 distinct states
-to depth 22. Four retained executable negative configurations make the model's
+The checked configuration explores 142 generated states and 82 distinct states
+to depth 16. Five retained executable negative configurations make the model's
 assumptions observable rather than documentary:
 
 - removing exact callback-drain fairness violates the temporal property;
 - removing composition fairness violates the temporal property;
-- accepting a successor without accounting the superseded pending update
-  violates `AllAcceptedUpdatesAccounted`; and
+- accepting a successor without accounting the superseded unbound update
+  violates `AllAcceptedUpdatesAccounted`;
+- superseding a composed, in-flight, or callback-owned generation during intake
+  violates `NativeOwnersAreNotSuperseded`; and
 - allowing a stale callback to present the latest pending update violates
   `PresentedUpdatesRetired`.
 
-`tools/check_tla.sh` requires those four runs to fail with their exact expected
+`tools/check_tla.sh` requires those five runs to fail with their exact expected
 TLC signatures. A negative control that starts passing is therefore a checker
 failure, not a model improvement.
 

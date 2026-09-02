@@ -1,3 +1,4 @@
+use crate::LiveProductionNativeFrameId;
 use sophia_engine::RenderHeadId;
 use sophia_protocol::{OutputId, TransactionId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,19 +30,6 @@ pub fn finish_live_production_native_initialization(
             "native output initialization failed: {error}; rollback failed: {rollback}"
         )
         .into()),
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LiveProductionNativeFrameId(u64);
-
-impl LiveProductionNativeFrameId {
-    pub const fn from_raw(raw: u64) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u64 {
-        self.0
     }
 }
 

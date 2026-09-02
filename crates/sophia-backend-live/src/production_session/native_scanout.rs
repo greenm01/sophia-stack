@@ -3494,6 +3494,51 @@ mod persistent_native_scanout {
                 .map(LiveProductionScanoutContent::frame)
         }
 
+        /// Whether an exact logical frame still has a native owner.
+        ///
+        /// CPU progress uses this after each production/service turn. A frame
+        /// remains live while it is deferred, active in a mirror cohort, or held
+        /// by any physical-head queue stage. Once it disappears from all of
+        /// those cells without retiring, latest-wins supersession is proven.
+        pub fn output_owns_frame(
+            &self,
+            output: OutputId,
+            frame: LiveProductionNativeFrameId,
+        ) -> bool {
+            if self
+                .deferred_mirror_generations
+                .get(&output)
+                .is_some_and(|generation| generation.frame == frame)
+            {
+                return true;
+            }
+            if self
+                .output_lifecycles
+                .get(&output)
+                .is_some_and(|lifecycle| {
+                    lifecycle.active_frame() == Some(frame)
+                        || lifecycle.generation_is_scanned(frame)
+                })
+            {
+                return true;
+            }
+            self.head_indices(output).into_iter().any(|index| {
+                let head = &self.heads[index];
+                [
+                    head.pending_content,
+                    head.rendering_content,
+                    head.submitted_content,
+                    head.presented_content,
+                ]
+                .into_iter()
+                .flatten()
+                .any(|content| content.frame() == frame)
+                    || head.prepared_group_frame == Some(frame)
+                    || head.submitted_group_frame == Some(frame)
+                    || head.displayed_group_frame == Some(frame)
+            })
+        }
+
         pub fn stable_present(&self, output: OutputId, transaction: TransactionId) -> bool {
             self.primary_head_index(output).is_some_and(|index| {
                 live_production_scanout_is_stable_present(
@@ -3636,8 +3681,8 @@ pub use persistent_native_scanout::{
     LiveProductionDirectScanoutTotals, LiveProductionHeadCompositionFrame,
     LiveProductionKmsCompletionSource, LiveProductionMirrorGenerationQueue,
     LiveProductionMirrorGroupBegin, LiveProductionMirrorGroupLifecycle,
-    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameId,
-    LiveProductionNativeFrameRetirement, LiveProductionNativeHead, LiveProductionNativeScanout,
+    LiveProductionMirrorHeadTransition, LiveProductionNativeFrameRetirement,
+    LiveProductionNativeHead, LiveProductionNativeScanout,
     LiveProductionNativeTopologyApplyCoordinator, LiveProductionNativeTopologyApplyPhase,
     LiveProductionNativeTopologyApplyTransition, LiveProductionNativeTopologyCandidateResource,
     LiveProductionNativeTopologyCurrentHead, LiveProductionNativeTopologyDisposition,

@@ -406,7 +406,7 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
     assert_eq!(owner.surface, surface);
     assert_eq!(owner.handle, 72);
     assert_eq!(owner.generation, 1);
-    assert_eq!(progress.primary_logical_target_checksum, None);
+    assert_eq!(progress.primary_logical_target, None);
     assert_eq!(progress.accepted_updates, 1);
     assert!(scene.surface_has_visual_detail(&committed, surface));
     let mut outcomes = Vec::new();

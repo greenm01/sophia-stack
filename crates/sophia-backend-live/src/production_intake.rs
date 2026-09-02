@@ -4,6 +4,19 @@ use sophia_protocol::{
 };
 use std::os::fd::OwnedFd;
 use std::sync::Arc;
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+
+pub struct LiveProductionNativeFrameId(u64);
+
+impl LiveProductionNativeFrameId {
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct LiveProductionDmaBufRegistration {
@@ -85,6 +98,26 @@ impl LiveProductionCpuBufferUpdate {
     }
 }
 
+/// Exact native frame queued for the newest accepted CPU update.
+///
+/// The frame identity is the retirement owner. A logical checksum alone cannot
+/// distinguish two queued frames that draw the same pixels or keep an older
+/// queued frame alive when a newer authority update arrives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionCpuTarget {
+    pub frame: LiveProductionNativeFrameId,
+    pub logical_checksum: u64,
+}
+
+impl LiveProductionCpuTarget {
+    pub const fn new(frame: LiveProductionNativeFrameId, logical_checksum: u64) -> Self {
+        Self {
+            frame,
+            logical_checksum,
+        }
+    }
+}
+
 /// Bounded progress facts from the exact groups admitted by the content
 /// stream in one production cycle.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -93,13 +126,13 @@ pub struct LiveProductionCpuProgress {
     pub latest_update: Option<LiveProductionCpuUpdateIdentity>,
     pub removed_surfaces: Vec<SurfaceId>,
     /// Set only when the primary logical output actually queued a CPU or head
-    /// composition frame with this logical checksum.
-    pub primary_logical_target_checksum: Option<u64>,
+    /// composition frame with this exact native identity.
+    pub primary_logical_target: Option<LiveProductionCpuTarget>,
 }
 
 impl LiveProductionCpuProgress {
-    pub fn bind_primary_logical_target(&mut self, checksum: Option<u64>) {
-        self.primary_logical_target_checksum = checksum;
+    pub fn bind_primary_logical_target(&mut self, target: Option<LiveProductionCpuTarget>) {
+        self.primary_logical_target = target;
     }
 }
 

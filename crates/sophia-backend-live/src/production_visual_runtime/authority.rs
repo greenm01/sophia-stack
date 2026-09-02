@@ -1,5 +1,10 @@
 use super::*;
 
+pub(super) struct LiveProductionPreparedAuthorityRun {
+    pub(super) report: crate::LiveBackendRuntimeTickReport,
+    pub(super) primary_logical_target: Option<LiveProductionCpuTarget>,
+}
+
 fn replaceable_deferred_present_surface(group: &LiveProductionAuthorityGroup) -> Option<SurfaceId> {
     let [submission] = group.present_submissions.as_slice() else {
         return None;
@@ -480,17 +485,18 @@ impl LiveProductionVisualRuntime {
         })
     }
 
-    pub fn run_prepared_authority_transactions(
+    pub(super) fn run_prepared_authority_transactions_with_targets(
         &mut self,
         prepared: LiveProductionPreparedAuthorityBatch,
         event_count: usize,
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
         native_head_frames: Option<Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>>,
         wm_update: Option<WmTransactionUpdate>,
-    ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+    ) -> Result<LiveProductionPreparedAuthorityRun, Box<dyn std::error::Error>> {
         let native_enabled = native_scanout.is_some();
         let output_count = self.outputs.output_count();
         let production = &self.production;
+        let primary_output = self.outputs.primary_output();
         let outputs = &mut self.outputs;
         let surface_metadata = &self.surface_metadata;
         let native_head_frames_requested = native_head_frames.is_some();
@@ -508,6 +514,8 @@ impl LiveProductionVisualRuntime {
         if native_head_frames_requested && !native_enabled {
             return Err("native head composition was provided without native scanout".into());
         }
+        let primary_logical_target = std::cell::Cell::new(None);
+        let primary_logical_target_ref = &primary_logical_target;
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, committed: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
@@ -532,7 +540,26 @@ impl LiveProductionVisualRuntime {
                     Some(native_scanout) => {
                         if let Some(frames) = native_head_frames.remove(&output_id) {
                             if outputs.native_initialized(output_id) {
-                                native_scanout.queue_head_composition_frames(output_id, frames)?;
+                                let Some(logical_checksum) =
+                                    frames.first().map(|frame| frame.logical_content_checksum)
+                                else {
+                                    return Err("native head composition is empty".into());
+                                };
+                                if frames
+                                    .iter()
+                                    .any(|frame| frame.logical_content_checksum != logical_checksum)
+                                {
+                                    return Err(
+                                        "native heads disagree on logical content checksum".into(),
+                                    );
+                                }
+                                let frame = native_scanout
+                                    .queue_head_composition_frames(output_id, frames)?;
+                                if Some(output_id) == primary_output {
+                                    primary_logical_target_ref.set(Some(
+                                        LiveProductionCpuTarget::new(frame, logical_checksum),
+                                    ));
+                                }
                             } else {
                                 outputs.initialize_native_head_composition(
                                     native_scanout,
@@ -563,10 +590,32 @@ impl LiveProductionVisualRuntime {
         if !native_head_frames.is_empty() {
             return Err("native head composition named an unknown logical output".into());
         }
+        let primary_logical_target = primary_logical_target.get();
         if !native_enabled {
             self.publish_committed_input_layers();
         }
-        Ok(report)
+        Ok(LiveProductionPreparedAuthorityRun {
+            report,
+            primary_logical_target,
+        })
+    }
+
+    pub fn run_prepared_authority_transactions(
+        &mut self,
+        prepared: LiveProductionPreparedAuthorityBatch,
+        event_count: usize,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_head_frames: Option<Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>>,
+        wm_update: Option<WmTransactionUpdate>,
+    ) -> Result<crate::LiveBackendRuntimeTickReport, Box<dyn std::error::Error>> {
+        self.run_prepared_authority_transactions_with_targets(
+            prepared,
+            event_count,
+            native_scanout,
+            native_head_frames,
+            wm_update,
+        )
+        .map(|run| run.report)
     }
 
     pub fn run_authority_transactions(

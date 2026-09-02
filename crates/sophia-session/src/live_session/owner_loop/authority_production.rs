@@ -167,7 +167,10 @@
                             cpu_progress,
                         )
                     };
-                cpu_visual_progress.observe_production(&cpu_progress, Instant::now());
+                cpu_visual_progress.observe_production(&cpu_progress, Instant::now())?;
+                if let Some(native_scanout) = native_scanout.as_ref() {
+                    cpu_visual_progress.observe_native_scanout(native_scanout, Instant::now());
+                }
                 if let Some(ring) = runtime.take_focus_ring_observation() {
                     crate::session_println!(
                         "sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface={} generation={} primitives={}",

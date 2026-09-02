@@ -1148,13 +1148,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         // Reduce primary retirement once after every independently scheduled
         // service phase. Branch-local latency sampling stays at the event
         // source, while CPU settlement observes one coherent owner-loop state.
-        if let Some(head) = native_scanout.as_ref().and_then(|native| native.heads.first()) {
-            cpu_visual_progress.observe_primary_state(
-                head.presented_submissions,
-                presented_logical_checksum(head.presented_content),
-                head.refresh_millihz,
-                Instant::now(),
-            );
+        if let Some(native_scanout) = native_scanout.as_ref() {
+            cpu_visual_progress.observe_native_scanout(native_scanout, Instant::now());
         }
         if let Some(quiescence) = session_quiescence.as_ref() {
             let now = Instant::now();
