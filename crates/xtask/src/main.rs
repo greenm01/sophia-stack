@@ -135,12 +135,51 @@ fn run_conformance(arguments: &[String]) -> Result<(), String> {
 fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
     let repo = workspace_root()?;
     match arguments {
-        [command, run, kernel, mesa, gpu] if command == "prepare" => {
-            desktop_comparison::prepare(&repo, Path::new(run), kernel, mesa, gpu).map(print_lines)
+        [command, source, prefix] if command == "install-reference" => {
+            desktop_comparison::install_reference(
+                &repo,
+                Path::new(source),
+                Path::new(prefix),
+            )
+            .map(print_lines)
         }
-        [command, run, sample] if command == "run" => {
-            desktop_comparison::run_sample(&repo, Path::new(run), Path::new(sample))
+        [command, run] if command == "prepare" => {
+            desktop_comparison::prepare(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "status" => {
+            desktop_comparison::status(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "preflight" => {
+            desktop_comparison::preflight(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "capture" => {
+            desktop_comparison::capture_next(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run, pid, crtc] if command == "attest" => {
+            let supervisor_pid = pid
+                .parse::<u32>()
+                .map_err(|_| "session supervisor PID is not an integer".to_owned())?;
+            let crtc = crtc
+                .parse::<u64>()
+                .map_err(|_| "session CRTC is not an integer".to_owned())?;
+            desktop_comparison::attest_session(
+                &repo,
+                Path::new(run),
+                supervisor_pid,
+                crtc,
+            )
+            .map(print_lines)
+        }
+        [command, run, attempt] if command == "replay" => {
+            desktop_comparison::replay_attempt(Path::new(run), Path::new(attempt))
+                .map(|replay| vec![replay.sample_record])
                 .map(print_lines)
+        }
+        [command, kind, seconds] if command == "workload" && kind == "kitty-stream" => {
+            let seconds = seconds
+                .parse::<u64>()
+                .map_err(|_| "kitty-stream duration is not an integer".to_owned())?;
+            desktop_comparison::run_stream(seconds)
         }
         [command, run] if command == "verify" => {
             desktop_comparison::verify(&repo, Path::new(run)).map(print_lines)
@@ -149,9 +188,9 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             desktop_comparison::report(&repo, Path::new(run)).map(print_lines)
         }
         [command, ..] => Err(format!(
-            "desktop-comparison {command:?} has invalid arguments; expected prepare RUN KERNEL MESA GPU, run RUN SAMPLE_LOG, verify RUN, or report RUN"
+            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, status, attest, preflight, capture, replay, verify, or report"
         )),
-        [] => Err("desktop-comparison needs prepare, run, verify, or report".to_owned()),
+        [] => Err("desktop-comparison needs install-reference, prepare, status, attest, preflight, capture, replay, verify, or report".to_owned()),
     }
 }
 
@@ -339,11 +378,16 @@ usage: cargo xtask <command>
   conformance verify direct-scanout-archive [RUN]
       Re-verify one archive, or the newest archive when RUN is omitted.
 
-  conformance desktop-comparison prepare RUN KERNEL MESA GPU
-  conformance desktop-comparison run RUN SAMPLE_LOG
+  conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
+  conformance desktop-comparison prepare RUN
+  conformance desktop-comparison status RUN
+  conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+  conformance desktop-comparison preflight RUN
+  conformance desktop-comparison capture RUN
+  conformance desktop-comparison replay RUN ATTEMPT
   conformance desktop-comparison verify RUN
   conformance desktop-comparison report RUN
-      Prepare, bind, verify, and reduce the diagnostic native desktop matrix.
+      Prepare, inspect, replay, verify, and reduce the diagnostic native desktop matrix.
 
 compatibility aliases: session-args, check-profiles, verify direct-scanout
 profiles: xmonad hagia native standalone kitty

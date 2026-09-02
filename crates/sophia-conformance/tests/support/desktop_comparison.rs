@@ -35,11 +35,11 @@ fn prepared_run(root: &Path) -> (PathBuf, String) {
     fs::create_dir(run.join("samples")).unwrap();
     let candidate = git_output(&repo, &["rev-parse", "HEAD"]).unwrap();
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=1 status=prepared diagnostic_only=true source_commit={candidate}\n"
+        "desktop_comparison_manifest schema=2 status=prepared diagnostic_only=true source_commit={candidate}\n"
     );
     for config in CONFIGS {
         manifest.push_str(&format!(
-            "desktop_comparison_input schema=1 path={config} sha256={}\n",
+            "desktop_comparison_input schema=2 path={config} sha256={}\n",
             digest_file(&repo.join(config)).unwrap()
         ));
     }
@@ -47,7 +47,7 @@ fn prepared_run(root: &Path) -> (PathBuf, String) {
     let encoded = schedule()
         .iter()
         .map(|item| format!(
-            "desktop_comparison_schedule schema=1 order={} stack={} workload={} repetition={} backend=native\n",
+            "desktop_comparison_schedule schema=2 order={} stack={} workload={} repetition={} backend=native\n",
             item.order, item.stack, item.workload, item.repetition
         ))
         .collect::<String>();
@@ -164,5 +164,276 @@ fn duplicate_sample_fields_fail_closed() {
     let error = run_sample(&repo, &run, &incoming).unwrap_err();
     assert!(error.contains("repeats field crashes"));
 
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn raw_capture_attempt(root: &Path, item: &ScheduledSample, candidate: &str) -> PathBuf {
+    let attempt = root.join("raw-attempt");
+    if attempt.exists() {
+        fs::remove_dir_all(&attempt).unwrap();
+    }
+    fs::create_dir(&attempt).unwrap();
+    let version = match item.stack.as_str() {
+        "sophia" => candidate,
+        "xlibre-xmonad" => XLIBRE_COMMIT,
+        "niri" => NIRI_VERSION,
+        _ => unreachable!(),
+    };
+    fs::write(
+        attempt.join("attempt.kdl"),
+        format!(
+            "desktop_comparison_attempt schema=1 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec=60000 crashes=0 sample_loss=0 teardown=clean\n",
+            item.order,
+            item.stack,
+            item.workload,
+            item.repetition,
+            version,
+            TOPOLOGY,
+            KITTY_VERSION,
+            FIREFOX_VERSION,
+        ),
+    )
+    .unwrap();
+    let resources = (1..=60u64)
+        .map(|seq| {
+            format!(
+                "desktop_comparison_resource schema=1 seq={seq} monotonic_usec={} processes=4 pss_kib=200000 rss_kib=220000 anonymous_kib=120000 private_dirty_kib=80000 cpu_msec={} minor_faults={} major_faults=0 threads=12 fds=80\n",
+                seq * 1_000_000,
+                seq * 10,
+                seq * 2,
+            )
+        })
+        .collect::<String>();
+    fs::write(attempt.join("resources.log"), resources).unwrap();
+    let frames = (1..=121u64)
+        .map(|seq| {
+            format!(
+                "desktop_comparison_kernel_frame schema=1 seq={seq} crtc=41 ust_usec={}\n",
+                1_000_000 + (seq - 1) * 16_667,
+            )
+        })
+        .collect::<String>();
+    fs::write(attempt.join("kernel-frames.log"), frames).unwrap();
+    fs::write(
+        attempt.join("workload.log"),
+        "desktop_comparison_workload schema=1 status=complete launch_usec=100000 settle_usec=200000 resize_samples=0 resize_p50_usec=0 resize_p95_usec=0 resize_p99_usec=0 resize_max_usec=0\n",
+    )
+    .unwrap();
+    fs::write(
+        attempt.join("native.log"),
+        "desktop_comparison_native_timing schema=1 availability=available source=x-present samples=120\n",
+    )
+    .unwrap();
+    attempt
+}
+
+#[test]
+fn raw_capture_replays_from_complete_monotonic_populations() {
+    let root = temporary_root("raw-replay");
+    let (run, candidate) = prepared_run(&root);
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let replay = replay_attempt(&run, &attempt).unwrap();
+    assert_eq!(replay.order, 1);
+    assert!(
+        replay
+            .sample_record
+            .starts_with("desktop_comparison_sample schema=2 status=complete order=1 ")
+    );
+    assert!(replay.sample_record.contains("resource_samples=60"));
+    assert!(replay.sample_record.contains("frame_samples=120"));
+    assert!(replay.sample_record.contains("frame_p95_usec=16667"));
+    assert!(replay.sample_record.contains("native_timing=available"));
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn raw_capture_rejects_truncation_and_nonmonotonic_kernel_time() {
+    let root = temporary_root("raw-mutations");
+    let (run, candidate) = prepared_run(&root);
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    fs::write(
+        attempt.join("resources.log"),
+        "desktop_comparison_resource schema=1 seq=1 monotonic_usec=1 processes=1 pss_kib=1 rss_kib=1 anonymous_kib=1 private_dirty_kib=1 cpu_msec=0 minor_faults=0 major_faults=0 threads=1 fds=1\n",
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("truncated")
+    );
+
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let resources = fs::read_to_string(attempt.join("resources.log")).unwrap();
+    fs::write(
+        attempt.join("resources.log"),
+        resources.replace(
+            "seq=30 monotonic_usec=30000000",
+            "seq=30 monotonic_usec=30800000",
+        ),
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("cadence drifted")
+    );
+
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let frames = fs::read_to_string(attempt.join("kernel-frames.log")).unwrap();
+    fs::write(
+        attempt.join("kernel-frames.log"),
+        frames.replace(
+            "seq=3 crtc=41 ust_usec=1033334",
+            "seq=3 crtc=41 ust_usec=1010000",
+        ),
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("strictly monotonic")
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn status_refuses_a_nonprefix_schedule() {
+    let root = temporary_root("status-order");
+    let (run, candidate) = prepared_run(&root);
+    let repo = repo();
+    let item = schedule().remove(1);
+    let incoming = root.join("incoming-second.log");
+    fs::write(&incoming, sample_record(&item, &candidate)).unwrap();
+    run_sample(&repo, &run, &incoming).unwrap();
+    assert!(
+        status(&repo, &run)
+            .unwrap_err()
+            .contains("contiguous schedule prefix")
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn bind_archives_raw_evidence_and_rejects_later_tampering() {
+    let root = temporary_root("raw-bind");
+    let (run, candidate) = prepared_run(&root);
+    let repo = repo();
+    let manifest_path = run.join("manifest.kdl");
+    let manifest = fs::read_to_string(&manifest_path).unwrap().replacen(
+        "diagnostic_only=true",
+        "diagnostic_only=true raw_capture_required=true",
+        1,
+    );
+    fs::write(&manifest_path, manifest).unwrap();
+    fs::create_dir(run.join("attempts")).unwrap();
+    rewrite_checksums(&run, &[]).unwrap();
+
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let records = bind_attempt(&repo, &run, &attempt).unwrap();
+    assert!(records[0].contains("desktop_comparison_bind schema=2 status=complete"));
+    assert!(status(&repo, &run).unwrap()[0].contains("next_order=2"));
+
+    let archived = run.join("attempts").join(format!(
+        "{:02}-{}-{}-{}",
+        item.order, item.stack, item.workload, item.repetition
+    ));
+    let extra = archived.join("unowned.log");
+    fs::write(&extra, "unowned\n").unwrap();
+    assert!(
+        status(&repo, &run)
+            .unwrap_err()
+            .contains("unowned or non-file")
+    );
+    fs::remove_file(extra).unwrap();
+    fs::write(archived.join("resources.log"), "tampered\n").unwrap();
+    assert!(
+        status(&repo, &run)
+            .unwrap_err()
+            .contains("attempt checksum mismatch")
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn local_capture_parsers_reject_malformed_kernel_time() {
+    capture_owner::parse_proc_stat(
+        "123 (name with ) marker) S 10 0 0 0 0 0 0 11 0 3 0 7 5 0 0 0 0 4 0 99 0 0",
+    )
+    .unwrap();
+
+    let root = temporary_root("kernel-normalize");
+    let raw = root.join("trace.raw");
+    let normalized = root.join("kernel-frames.log");
+    fs::write(
+        &raw,
+        "worker 10.000000: drm_vblank_event_delivered: crtc=41, seq=1\n\
+         worker 10.016667: drm_vblank_event_delivered: crtc=42, seq=9\n\
+         worker 10.016668: drm_vblank_event_delivered: crtc=41, seq=2\n\
+         worker 10.033335: drm_vblank_event_delivered: crtc=41, seq=3\n",
+    )
+    .unwrap();
+    capture_owner::normalize_kernel_trace(&raw, &normalized, 41).unwrap();
+    let evidence = fs::read_to_string(&normalized).unwrap();
+    assert_eq!(evidence.lines().count(), 3);
+    assert!(evidence.contains("seq=3 crtc=41 ust_usec=10033335"));
+
+    fs::write(&raw, "CPU: 0 [LOST 4 EVENTS]\n").unwrap();
+    let lost = root.join("lost.log");
+    assert!(
+        capture_owner::normalize_kernel_trace(&raw, &lost, 41)
+            .unwrap_err()
+            .contains("lost events")
+    );
+
+    fs::write(
+        &raw,
+        "worker 10.000000: drm_vblank_event_delivered: crtc=41\n\
+         worker 9.000000: drm_vblank_event_delivered: crtc=41\n\
+         worker 11.000000: drm_vblank_event_delivered: crtc=41\n",
+    )
+    .unwrap();
+    let second = root.join("invalid.log");
+    assert!(
+        capture_owner::normalize_kernel_trace(&raw, &second, 41)
+            .unwrap_err()
+            .contains("strictly monotonic")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn partial_capture_and_unpinned_reference_install_fail_closed() {
+    let root = temporary_root("partial-capture");
+    let (run, _) = prepared_run(&root);
+    let repo = repo();
+    let incoming = run.join("incoming");
+    fs::create_dir(&incoming).unwrap();
+    fs::create_dir(incoming.join("row.partial")).unwrap();
+    assert!(
+        status(&repo, &run)
+            .unwrap_err()
+            .contains("partial comparison capture")
+    );
+
+    let relative = Path::new("relative-prefix");
+    assert!(
+        install_reference(&repo, &repo, relative)
+            .unwrap_err()
+            .contains("must be absolute")
+    );
+    let prefix = root.join("reference");
+    assert!(
+        install_reference(&repo, &repo, &prefix)
+            .unwrap_err()
+            .contains("must be pinned")
+    );
+    assert!(!prefix.exists());
     fs::remove_dir_all(root).unwrap();
 }

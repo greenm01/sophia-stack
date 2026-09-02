@@ -22,14 +22,15 @@
 /// Slow enough that sampling is not itself the workload, fast enough that a
 /// bounded gate produces a population a halves comparison can use: a
 /// twelve-minute run yields well over a hundred samples.
-const RESOURCE_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+pub(crate) const RESOURCE_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// The most samples one session records.
 ///
-/// At five seconds this is an hour of sampling. A longer session keeps running
-/// and stops sampling, and says so: the alternative is an unbounded record
-/// stream in a soak, which is the shape of leak this file exists to detect.
-const RESOURCE_SAMPLE_CAPACITY: u64 = 720;
+/// At five seconds this covers two hours plus ten minutes of teardown margin.
+/// A longer session keeps running and stops sampling, and says so: the
+/// alternative is an unbounded record stream in a soak, which is the shape of
+/// leak this file exists to detect.
+pub(crate) const RESOURCE_SAMPLE_CAPACITY: u64 = 1_560;
 
 /// Bounded periodic sampling of the session's resource gauges.
 ///
@@ -106,9 +107,9 @@ impl LiveResourceSampler {
     /// The population this session produced, reported without a verdict.
     ///
     /// `saturated=true` means sampling stopped before the session did, so the
-    /// samples describe the first hour rather than the whole run. A verifier
-    /// that reasoned over them as if they covered the session would be reading
-    /// a truncated population as a complete one.
+    /// samples describe only the bounded prefix rather than the whole run. A
+    /// verifier that reasoned over them as if they covered the session would
+    /// be reading a truncated population as a complete one.
     fn report(&self) {
         crate::session_println!(
             "sophia_live_resource_steady_state schema=1 status=complete samples={} saturated={} interval_msec={}",

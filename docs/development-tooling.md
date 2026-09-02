@@ -58,8 +58,12 @@ cargo xtask conformance verify direct-scanout-cursor LOG
 cargo xtask conformance verify direct-scanout-archive [RUN]
 cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
 cargo xtask conformance gate direct-scanout [PROOF]
-cargo xtask conformance desktop-comparison prepare RUN KERNEL MESA GPU
-cargo xtask conformance desktop-comparison run RUN SAMPLE_LOG
+cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
+cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison status RUN
+cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+cargo xtask conformance desktop-comparison preflight RUN
+cargo xtask conformance desktop-comparison capture RUN
 cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 sophia session run [OPTIONS]
@@ -80,9 +84,12 @@ the default atomic path rather than selecting it. Each has a matching
 The desktop comparison is a diagnostic 39-sample matrix, not a relative
 release gate. Its typed conformance owner requires a clean signed candidate,
 pins and hashes configuration plus hardware/software identities, rotates stack
-order across three short repetitions, binds every raw sample by checksum, and
-requires one two-hour soak per stack. TTY and display-manager takeover remain a
-minimal local adapter outside the typed evidence contract.
+order across three 60-second repetitions, owns workload/process/resource
+lifetime, replays kernel-DRM and workload populations, binds every sealed raw
+attempt by checksum, and requires one two-hour soak per stack. The operator
+selects the named local greetd session explicitly. The code neither switches
+display managers nor contacts another host; tracefs privilege is isolated in
+one fixed-name, user-directory-validating shell adapter.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.

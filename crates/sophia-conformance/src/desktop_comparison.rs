@@ -1,5 +1,11 @@
 //! Typed orchestration and evidence reduction for the diagnostic desktop matrix.
 
+mod capture;
+mod capture_owner;
+mod host;
+
+pub use capture::{CaptureReplay, replay_attempt};
+pub use capture_owner::{attest_session, capture_next, install_reference, preflight, run_stream};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -12,35 +18,62 @@ pub const NIRI_VERSION: &str = "26.04";
 pub const KITTY_VERSION: &str = "0.48.2";
 pub const FIREFOX_VERSION: &str = "154";
 pub const TOPOLOGY: &str = "DP-1:2560x1440@60000+DP-2:1920x1080@60000";
+pub const XMONAD_VERSION: &str = "0.18.1";
+pub const XMONAD_CONTRIB_VERSION: &str = "0.18.2";
 
-const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
-const SHORT_WORKLOADS: [&str; 4] = ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
-const CONFIGS: [&str; 4] = [
+pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
+pub(crate) const SHORT_WORKLOADS: [&str; 4] =
+    ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
+pub(crate) const CONFIGS: [&str; 9] = [
     "validation/desktop-comparison/config/sophia.kdl",
     "validation/desktop-comparison/config/xlibre-xmonad.kdl",
     "validation/desktop-comparison/config/niri.kdl",
     "validation/desktop-comparison/firefox/index.html",
+    "validation/desktop-comparison/firefox/user.js",
+    "tools/desktop_comparison_tracefs.sh",
+    "validation/desktop-comparison/profiles/hagia.kdl",
+    "validation/desktop-comparison/profiles/niri.kdl",
+    "validation/desktop-comparison/profiles/xmonad.hs",
 ];
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ScheduledSample {
-    order: usize,
-    stack: String,
-    workload: String,
-    repetition: u8,
+pub struct ScheduledSample {
+    pub order: usize,
+    pub stack: String,
+    pub workload: String,
+    pub repetition: u8,
 }
 
 #[derive(Clone, Debug)]
 struct Sample {
     scheduled: ScheduledSample,
     duration_msec: u64,
+    processes: u64,
     pss_peak_kib: u64,
     rss_peak_kib: u64,
+    anonymous_peak_kib: u64,
+    private_dirty_peak_kib: u64,
     cpu_msec: u64,
+    minor_faults: u64,
+    major_faults: u64,
+    threads_peak: u64,
+    fds_peak: u64,
+    launch_msec: u64,
+    settle_msec: u64,
+    resize_msec: u64,
     frame_mean_usec: u64,
+    frame_p50_usec: u64,
+    frame_p95_usec: u64,
+    frame_p99_usec: u64,
+    frame_max_usec: u64,
 }
 
-pub fn prepare(
+pub fn prepare(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    let identity = host::detect()?;
+    prepare_with_identity(repo, run, &identity.kernel, &identity.mesa, &identity.gpu)
+}
+
+fn prepare_with_identity(
     repo: &Path,
     run: &Path,
     kernel: &str,
@@ -70,22 +103,24 @@ pub fn prepare(
 
     fs::create_dir_all(run.join("samples"))
         .map_err(|error| format!("could not create comparison run: {error}"))?;
+    fs::create_dir(run.join("attempts"))
+        .map_err(|error| format!("could not create comparison attempt root: {error}"))?;
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=1 status=prepared diagnostic_only=true source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}\n"
+        "desktop_comparison_manifest schema=2 status=prepared diagnostic_only=true raw_capture_required=true source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}\n"
     );
     manifest.push_str(&format!(
-        "desktop_comparison_stack schema=1 id=sophia version={source_commit} backend=native\n"
+        "desktop_comparison_stack schema=2 id=sophia version={source_commit} backend=native\n"
     ));
     manifest.push_str(&format!(
-        "desktop_comparison_stack schema=1 id=xlibre-xmonad version={XLIBRE_COMMIT} xmonad=0.18.1.9 backend=native\n"
+        "desktop_comparison_stack schema=2 id=xlibre-xmonad version={XLIBRE_COMMIT} xmonad={XMONAD_VERSION} xmonad_contrib={XMONAD_CONTRIB_VERSION} backend=native\n"
     ));
     manifest.push_str(&format!(
-        "desktop_comparison_stack schema=1 id=niri version={NIRI_VERSION} path=/usr/bin/niri backend=native\n"
+        "desktop_comparison_stack schema=2 id=niri version={NIRI_VERSION} path=/usr/bin/niri backend=native\n"
     ));
     for config in CONFIGS {
         let path = repo.join(config);
         manifest.push_str(&format!(
-            "desktop_comparison_input schema=1 path={config} sha256={}\n",
+            "desktop_comparison_input schema=2 path={config} sha256={}\n",
             digest_file(&path)?
         ));
     }
@@ -95,22 +130,95 @@ pub fn prepare(
     let mut encoded = String::new();
     for item in &schedule {
         encoded.push_str(&format!(
-            "desktop_comparison_schedule schema=1 order={} stack={} workload={} repetition={} backend=native\n",
+            "desktop_comparison_schedule schema=2 order={} stack={} workload={} repetition={} backend=native\n",
             item.order, item.stack, item.workload, item.repetition
         ));
     }
     write_new(&run.join("schedule.kdl"), encoded.as_bytes())?;
     rewrite_checksums(run, &[])?;
     Ok(vec![format!(
-        "desktop_comparison_prepare schema=1 status=complete run={} source_commit={} samples={}",
+        "desktop_comparison_prepare schema=2 status=complete run={} source_commit={} samples={}",
         run.display(),
         source_commit,
         schedule.len()
     )])
 }
+pub fn status(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    verify_prepared_inputs(repo, run)?;
+    verify_checksums(run)?;
+    verify_no_pending_capture(run)?;
+    let observed = observed_samples(run)?;
+    verify_raw_attempts(run, &observed)?;
+    match next_scheduled(run)? {
+        Some(item) => Ok(vec![format!(
+            "desktop_comparison_status schema=1 status=pending completed={} total={} next_order={} next_stack={} next_workload={} next_repetition={}",
+            item.order.saturating_sub(1),
+            schedule().len(),
+            item.order,
+            item.stack,
+            item.workload,
+            item.repetition,
+        )]),
+        None => Ok(vec![format!(
+            "desktop_comparison_status schema=1 status=complete completed={} total={}",
+            schedule().len(),
+            schedule().len(),
+        )]),
+    }
+}
+
+fn verify_no_pending_capture(run: &Path) -> Result<(), String> {
+    let incoming = run.join("incoming");
+    if incoming.exists()
+        && fs::read_dir(&incoming)
+            .map_err(|error| format!("could not inspect pending captures: {error}"))?
+            .next()
+            .is_some()
+    {
+        return Err(format!(
+            "partial comparison capture requires diagnosis: {}",
+            incoming.display()
+        ));
+    }
+    Ok(())
+}
+
+fn observed_samples(run: &Path) -> Result<BTreeSet<ScheduledSample>, String> {
+    let candidate = source_commit(run)?;
+    let mut observed = BTreeSet::new();
+    for entry in sample_paths(run)? {
+        let source = fs::read_to_string(&entry)
+            .map_err(|error| format!("could not read {}: {error}", entry.display()))?;
+        let sample = parse_sample(&source, &candidate)?;
+        if !observed.insert(sample.scheduled.clone()) {
+            return Err("comparison contains a duplicate scheduled sample".to_owned());
+        }
+    }
+    Ok(observed)
+}
+
+pub fn next_scheduled(run: &Path) -> Result<Option<ScheduledSample>, String> {
+    let expected = schedule();
+    let observed = observed_samples(run)?;
+    for (index, item) in expected.iter().enumerate() {
+        if !observed.contains(item) {
+            if expected[index.saturating_add(1)..]
+                .iter()
+                .any(|later| observed.contains(later))
+            {
+                return Err("comparison samples are not a contiguous schedule prefix".to_owned());
+            }
+            return Ok(Some(item.clone()));
+        }
+    }
+    if observed.len() != expected.len() {
+        return Err("comparison contains an unexpected scheduled sample".to_owned());
+    }
+    Ok(None)
+}
 
 /// Ingest one native-stack adapter log and bind it to the prepared schedule.
-pub fn run_sample(repo: &Path, run: &Path, raw_log: &Path) -> Result<Vec<String>, String> {
+fn run_sample(repo: &Path, run: &Path, raw_log: &Path) -> Result<Vec<String>, String> {
     verify_prepared_inputs(repo, run)?;
     verify_checksums(run)?;
     let source = fs::read_to_string(raw_log)
@@ -154,21 +262,112 @@ pub fn run_sample(repo: &Path, run: &Path, raw_log: &Path) -> Result<Vec<String>
     )])
 }
 
+pub fn bind_attempt(repo: &Path, run: &Path, raw_attempt: &Path) -> Result<Vec<String>, String> {
+    verify_prepared_inputs(repo, run)?;
+    verify_checksums(run)?;
+    let observed = observed_samples(run)?;
+    verify_raw_attempts(run, &observed)?;
+    let next = next_scheduled(run)?
+        .ok_or_else(|| "desktop comparison matrix is already complete".to_owned())?;
+    let preview = replay_attempt(run, raw_attempt)?;
+    if preview.order != next.order
+        || preview.stack != next.stack
+        || preview.workload != next.workload
+        || preview.repetition != next.repetition
+    {
+        return Err(format!(
+            "capture does not match next schedule row: expected order={} stack={} workload={} repetition={}",
+            next.order, next.stack, next.workload, next.repetition
+        ));
+    }
+    let attempt_root = run.join("attempts");
+    fs::create_dir_all(&attempt_root)
+        .map_err(|error| format!("could not create attempt root: {error}"))?;
+    let destination = attempt_root.join(format!(
+        "{:02}-{}-{}-{}",
+        next.order, next.stack, next.workload, next.repetition
+    ));
+    let archived = capture::archive_attempt(run, raw_attempt, &destination)?;
+    if archived != preview {
+        return Err("archived comparison attempt differs from its source replay".to_owned());
+    }
+    let mut lines = run_sample(repo, run, &destination.join("result.kdl"))?;
+    lines.insert(
+        0,
+        format!(
+            "desktop_comparison_bind schema=2 status=complete order={} stack={} workload={} repetition={} attempt={}",
+            next.order,
+            next.stack,
+            next.workload,
+            next.repetition,
+            destination.display(),
+        ),
+    );
+    Ok(lines)
+}
+fn raw_capture_required(run: &Path) -> Result<bool, String> {
+    let manifest = fs::read_to_string(run.join("manifest.kdl"))
+        .map_err(|error| format!("comparison manifest is missing: {error}"))?;
+    Ok(manifest.lines().next().is_some_and(|line| {
+        line.split_ascii_whitespace()
+            .any(|token| token == "raw_capture_required=true")
+    }))
+}
+
+fn verify_raw_attempts(
+    run: &Path,
+    observed_samples: &BTreeSet<ScheduledSample>,
+) -> Result<(), String> {
+    if !raw_capture_required(run)? {
+        return Ok(());
+    }
+    let root = run.join("attempts");
+    let entries = fs::read_dir(&root)
+        .map_err(|error| format!("comparison attempt root is missing: {error}"))?;
+    let mut observed_attempts = BTreeSet::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("could not read comparison attempt: {error}"))?;
+        if !entry.path().is_dir()
+            || entry
+                .file_name()
+                .to_str()
+                .is_none_or(|name| name.ends_with(".partial"))
+        {
+            return Err("comparison attempt root contains an unsealed entry".to_owned());
+        }
+        let replay = capture::verify_archived_attempt(run, &entry.path())?;
+        let scheduled = ScheduledSample {
+            order: replay.order,
+            stack: replay.stack.clone(),
+            workload: replay.workload.clone(),
+            repetition: replay.repetition,
+        };
+        if !observed_attempts.insert(scheduled.clone()) {
+            return Err("comparison contains duplicate raw attempt evidence".to_owned());
+        }
+        let sample_path = run.join("samples").join(&scheduled.stack).join(format!(
+            "{}-{}.log",
+            scheduled.workload, scheduled.repetition
+        ));
+        let bound = fs::read_to_string(&sample_path)
+            .map_err(|error| format!("bound sample is missing for raw attempt: {error}"))?;
+        if bound != format!("{}\n", replay.sample_record) {
+            return Err("bound sample does not match its raw attempt replay".to_owned());
+        }
+    }
+    if observed_attempts != *observed_samples {
+        return Err("raw attempt set does not cover the bound sample matrix".to_owned());
+    }
+    Ok(())
+}
+
 pub fn verify(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     verify_prepared_inputs(repo, run)?;
     verify_checksums(run)?;
-    let candidate = source_commit(run)?;
+    verify_no_pending_capture(run)?;
     let expected = schedule();
     let expected_set = expected.iter().cloned().collect::<BTreeSet<_>>();
-    let mut observed = BTreeSet::new();
-    for entry in sample_paths(run)? {
-        let source = fs::read_to_string(&entry)
-            .map_err(|error| format!("could not read {}: {error}", entry.display()))?;
-        let sample = parse_sample(&source, &candidate)?;
-        if !observed.insert(sample.scheduled.clone()) {
-            return Err("comparison contains a duplicate scheduled sample".to_owned());
-        }
-    }
+    let observed = observed_samples(run)?;
     if observed != expected_set {
         let missing = expected_set.difference(&observed).count();
         let unexpected = observed.difference(&expected_set).count();
@@ -176,8 +375,9 @@ pub fn verify(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             "comparison matrix is incomplete: missing={missing} unexpected={unexpected}"
         ));
     }
+    verify_raw_attempts(run, &observed)?;
     Ok(vec![format!(
-        "desktop_comparison_verify schema=1 status=complete diagnostic_only=true samples={} relative_performance_gate=false",
+        "desktop_comparison_verify schema=2 status=complete diagnostic_only=true samples={} relative_performance_gate=false",
         observed.len()
     )])
 }
@@ -204,18 +404,32 @@ pub fn report(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             samples.iter().map(field).fold(0u64, u64::saturating_add) / count
         };
         lines.push(format!(
-            "desktop_comparison_report schema=1 status=diagnostic stack={stack} workload={workload} samples={count} duration_mean_msec={} pss_peak_mean_kib={} rss_peak_mean_kib={} cpu_mean_msec={} frame_mean_usec={} verdict=none",
+            "desktop_comparison_report schema=2 status=diagnostic stack={stack} workload={workload} samples={count} duration_mean_msec={} processes_peak_mean={} pss_peak_mean_kib={} rss_peak_mean_kib={} anonymous_peak_mean_kib={} private_dirty_peak_mean_kib={} cpu_mean_msec={} minor_faults_mean={} major_faults_mean={} threads_peak_mean={} fds_peak_mean={} launch_mean_msec={} settle_mean_msec={} resize_p95_mean_msec={} frame_mean_usec={} frame_p50_mean_usec={} frame_p95_mean_usec={} frame_p99_mean_usec={} frame_max_mean_usec={} crashes=0 sample_loss=0 verdict=none",
             sum(|sample| sample.duration_msec),
+            sum(|sample| sample.processes),
             sum(|sample| sample.pss_peak_kib),
             sum(|sample| sample.rss_peak_kib),
+            sum(|sample| sample.anonymous_peak_kib),
+            sum(|sample| sample.private_dirty_peak_kib),
             sum(|sample| sample.cpu_msec),
+            sum(|sample| sample.minor_faults),
+            sum(|sample| sample.major_faults),
+            sum(|sample| sample.threads_peak),
+            sum(|sample| sample.fds_peak),
+            sum(|sample| sample.launch_msec),
+            sum(|sample| sample.settle_msec),
+            sum(|sample| sample.resize_msec),
             sum(|sample| sample.frame_mean_usec),
+            sum(|sample| sample.frame_p50_usec),
+            sum(|sample| sample.frame_p95_usec),
+            sum(|sample| sample.frame_p99_usec),
+            sum(|sample| sample.frame_max_usec),
         ));
     }
     Ok(lines)
 }
 
-fn schedule() -> Vec<ScheduledSample> {
+pub fn schedule() -> Vec<ScheduledSample> {
     let mut result = Vec::new();
     let mut order = 1usize;
     for workload in SHORT_WORKLOADS {
@@ -247,7 +461,10 @@ fn schedule() -> Vec<ScheduledSample> {
 fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
     let records = source
         .lines()
-        .filter(|line| line.starts_with("desktop_comparison_sample schema=1 status=complete "))
+        .filter(|line| {
+            line.starts_with("desktop_comparison_sample schema=1 status=complete ")
+                || line.starts_with("desktop_comparison_sample schema=2 status=complete ")
+        })
         .collect::<Vec<_>>();
     if records.len() != 1 {
         return Err(format!(
@@ -256,6 +473,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         ));
     }
     let fields = fields(records[0])?;
+    let schema = fields.get("schema").copied().unwrap_or_default();
     let required = |name| {
         fields
             .get(name)
@@ -291,11 +509,50 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
             ));
         }
     }
+    if schema == "2" {
+        for (name, expected) in [("frame_source", "kernel_drm"), ("teardown", "clean")] {
+            if required(name)? != expected {
+                return Err(format!(
+                    "sample {name} does not match the raw-capture contract"
+                ));
+            }
+        }
+    }
     let numeric = |name| {
         required(name)?
             .parse::<u64>()
             .map_err(|_| format!("sample {name} is not an integer"))
     };
+    let compatible_numeric = |name: &str, fallback: u64| {
+        fields.get(name).map_or(Ok(fallback), |value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| format!("sample {name} is not an integer"))
+        })
+    };
+    if schema == "2" {
+        for name in [
+            "resource_samples",
+            "anonymous_peak_kib",
+            "private_dirty_peak_kib",
+            "minor_faults",
+            "major_faults",
+            "resize_samples",
+            "resize_p50_usec",
+            "resize_p95_usec",
+            "resize_p99_usec",
+            "resize_max_usec",
+            "frame_p50_usec",
+            "frame_p95_usec",
+            "frame_p99_usec",
+            "frame_max_usec",
+            "native_samples",
+        ] {
+            let _ = numeric(name)?;
+        }
+        let _ = required("native_timing")?;
+        let _ = required("native_source")?;
+    }
     let duration_msec = numeric("duration_msec")?;
     let minimum_duration = match workload {
         "kitty-60s" => 60_000,
@@ -330,10 +587,24 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
                 .map_err(|_| "sample repetition is too large")?,
         },
         duration_msec,
+        processes: numeric("processes")?,
         pss_peak_kib: numeric("pss_peak_kib")?,
         rss_peak_kib: numeric("rss_peak_kib")?,
+        anonymous_peak_kib: compatible_numeric("anonymous_peak_kib", 0)?,
+        private_dirty_peak_kib: compatible_numeric("private_dirty_peak_kib", 0)?,
         cpu_msec: numeric("cpu_msec")?,
+        minor_faults: compatible_numeric("minor_faults", 0)?,
+        major_faults: compatible_numeric("major_faults", 0)?,
+        threads_peak: numeric("threads_peak")?,
+        fds_peak: numeric("fds_peak")?,
+        launch_msec: numeric("launch_msec")?,
+        settle_msec: numeric("settle_msec")?,
+        resize_msec: numeric("resize_msec")?,
         frame_mean_usec: numeric("frame_mean_usec")?,
+        frame_p50_usec: compatible_numeric("frame_p50_usec", numeric("frame_mean_usec")?)?,
+        frame_p95_usec: compatible_numeric("frame_p95_usec", numeric("frame_mean_usec")?)?,
+        frame_p99_usec: compatible_numeric("frame_p99_usec", numeric("frame_mean_usec")?)?,
+        frame_max_usec: compatible_numeric("frame_max_usec", numeric("frame_mean_usec")?)?,
     })
 }
 
@@ -358,7 +629,7 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     let expected_schedule = schedule()
         .iter()
         .map(|item| format!(
-            "desktop_comparison_schedule schema=1 order={} stack={} workload={} repetition={} backend=native\n",
+            "desktop_comparison_schedule schema=2 order={} stack={} workload={} repetition={} backend=native\n",
             item.order, item.stack, item.workload, item.repetition
         ))
         .collect::<String>();
@@ -367,7 +638,7 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     }
     for config in CONFIGS {
         let expected = format!(
-            "desktop_comparison_input schema=1 path={config} sha256={}",
+            "desktop_comparison_input schema=2 path={config} sha256={}",
             digest_file(&repo.join(config))?
         );
         if !manifest.lines().any(|line| line == expected) {
@@ -379,7 +650,7 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn source_commit(run: &Path) -> Result<String, String> {
+pub(crate) fn source_commit(run: &Path) -> Result<String, String> {
     let manifest = fs::read_to_string(run.join("manifest.kdl"))
         .map_err(|error| format!("comparison manifest is missing: {error}"))?;
     let first = manifest
@@ -443,7 +714,7 @@ fn append_checksum(run: &Path, relative: &Path) -> Result<(), String> {
     .map_err(|error| format!("could not append comparison checksum: {error}"))
 }
 
-fn verify_checksums(run: &Path) -> Result<(), String> {
+pub(crate) fn verify_checksums(run: &Path) -> Result<(), String> {
     let checksums = fs::read_to_string(run.join("checksums.sha256"))
         .map_err(|error| format!("comparison checksums are missing: {error}"))?;
     let mut paths = BTreeSet::new();

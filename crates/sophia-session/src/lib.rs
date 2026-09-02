@@ -44,6 +44,14 @@ pub mod support;
 
 #[cfg(feature = "native-session")]
 mod live_session;
+/// Cadence of the bounded native-session resource evidence population.
+#[cfg(feature = "native-session")]
+pub const LIVE_RESOURCE_SAMPLE_INTERVAL: std::time::Duration =
+    live_session::RESOURCE_SAMPLE_INTERVAL;
+
+/// Maximum native-session resource samples retained before saturation.
+#[cfg(feature = "native-session")]
+pub const LIVE_RESOURCE_SAMPLE_CAPACITY: u64 = live_session::RESOURCE_SAMPLE_CAPACITY;
 
 #[cfg(feature = "native-session")]
 pub fn run_from_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {

@@ -116,29 +116,35 @@ Required exit:
 - classify the comparison as diagnostic. Sophia's absolute correctness,
   authority, and refresh-relative latency gates remain authoritative.
 
-The typed manifest, rotated schedule, signed-candidate admission, checksum
-ledger, 39-sample completeness verifier, and diagnostic reducer are implemented
-under `cargo xtask conformance desktop-comparison`; their five focused
-fail-closed tests pass. The matrix remains twelve short samples per stack plus
-one two-hour soak per stack, and relative results always report `verdict=none`.
+The acquisition contract is implemented under
+`cargo xtask conformance desktop-comparison`. A clean signed preparation
+detects host identity and hashes the descriptors, three isolated profiles,
+Firefox fixture/profile, and tracefs adapter. `status` exposes only the exact
+next row; `attest` binds its active owner-only local supervisor; `preflight`
+checks the pinned tools and kernel event source; and `capture` owns the
+workload, process trees, one-second resource series, narrow privileged DRM
+trace, teardown, raw replay, and atomic bind.
 
-A readiness audit found the missing acquisition layer: the repository has no
-native adapter that emits `desktop_comparison_sample`; `run` only ingests an
-already completed `SAMPLE_LOG`. Hand-authoring those logs is not acceptable
-evidence. Before preparing the physical matrix, add one typed capture owner
-that:
+Each attempt retains exact raw resource, kernel-frame, workload, native-timing,
+and attempt records plus a derived schema-2 result and internal ledger. Replay
+requires uniform 60-second short windows, the two-hour soak, 120 resize
+observations, contiguous/monotonic populations, zero crash/loss, and clean
+teardown. Partial attempts block progress. Eleven focused tests cover matrix
+rotation, legacy/schema-2 parsing, raw replay, bind/archive integrity,
+truncation, reordering, identity/failure mutations, non-prefix order, kernel
+normalization, and later tampering. Reports retain resource, allocation,
+latency, and frame distributions with `verdict=none`.
 
-- reads the prepared manifest and exact next schedule row rather than accepting
-  caller-supplied identity;
-- owns workload and descendant-process lifetime, common monotonic resource
-  sampling, and retained raw observations while using only narrow stack-specific
-  frame-timing adapters; and
-- emits exactly one atomic completion record only after duration, crash, sample-
-  loss, and teardown checks pass, with mutation tests for truncated, reordered,
-  mismatched, and partially written captures.
+Outstanding physical work:
 
-Outstanding: implement and replay-prove that capture path, then prepare and
-retain the physical matrix on one machine.
+1. provision XLibre from pinned clean commit `56be9f4320ef` in a dedicated
+   prefix; the installed `/usr/bin/Xorg` is not XLibre evidence;
+2. prepare the run from the final clean signed Sophia candidate;
+3. explicitly select each named local greetd stack and capture all 39 scheduled
+   rows on this machine; and
+4. retain and verify the complete matrix. The Sophia two-hour raw run may also
+   satisfy CP-14.3 only if the same evidence independently passes the current
+   soak verifier.
 
 ### CP-14.3 — Close Milestone 14 (`NEXT`)
 
@@ -151,9 +157,10 @@ and no change to Sophia's native-X authority model.
 
 The current-soak verifier now requires a nonsaturated five-second resource
 series, at least 120 contiguous samples, and flat settled peaks with zero
-tolerance for accounted resources. Historical installed archives explicitly use
-the archive policy and remain reproducible. A fresh two-hour current run remains
-required; no fixture or historical archive closes this row.
+tolerance for accounted resources. The native sampler now holds 1,560 samples,
+covering two hours plus ten minutes without saturation. Historical installed
+archives explicitly use the archive policy and remain reproducible. A fresh
+two-hour current run remains required; no fixture or historical archive closes
 
 ### CP-15.1 — Native protocol-family lifecycle audit (`NEXT`)
 

@@ -88,3 +88,27 @@ check-layout:
 # Run the canonical offline, non-hardware repository gate.
 check:
     @cargo --quiet xtask check
+
+# Prepare the signed, immutable diagnostic matrix.
+desktop-comparison-prepare run:
+    @cargo --quiet xtask conformance desktop-comparison prepare "{{ run }}"
+
+# Read the exact next row before selecting its local greetd session.
+desktop-comparison-status run:
+    @cargo --quiet xtask conformance desktop-comparison status "{{ run }}"
+
+# Bind the active local supervisor and DP-1 CRTC to the exact next row.
+desktop-comparison-attest run supervisor_pid crtc:
+    @cargo --quiet xtask conformance desktop-comparison attest "{{ run }}" "{{ supervisor_pid }}" "{{ crtc }}"
+
+# Check session, tool, topology, profile, and kernel-timing readiness.
+desktop-comparison-preflight run:
+    @cargo --quiet xtask conformance desktop-comparison preflight "{{ run }}"
+
+# Capture and seal exactly one row. This may prompt for tracefs-only sudo.
+desktop-comparison-capture run:
+    @cargo --quiet xtask conformance desktop-comparison capture "{{ run }}"
+
+# Register a clean pinned XLibre prefix and compile the isolated xmonad profile.
+desktop-comparison-install-reference xlibre_source prefix:
+    @cargo --quiet xtask conformance desktop-comparison install-reference "{{ xlibre_source }}" "{{ prefix }}"

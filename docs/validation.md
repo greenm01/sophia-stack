@@ -633,29 +633,40 @@ Milestone 14's broader same-hardware comparison is a separate diagnostic matrix
 owned by typed conformance code:
 
 ```sh
-cargo xtask conformance desktop-comparison prepare RUN KERNEL MESA GPU
-cargo xtask conformance desktop-comparison run RUN SAMPLE_LOG
+cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
+cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison status RUN
+cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+cargo xtask conformance desktop-comparison preflight RUN
+cargo xtask conformance desktop-comparison capture RUN
 cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 ```
 
 Preparation refuses a dirty or unsigned Sophia candidate. It hashes the
-repository-owned stack configurations and local Firefox fixture, pins the
+repository-owned stack configurations, isolated profiles, capture adapter, and
+local Firefox fixture, pins the
 candidate and reference-stack identities, and records the common two-output
-topology plus operator-supplied kernel, Mesa, and GPU identities. The schedule
+topology plus detected kernel, Mesa, and GPU identities. The schedule
 rotates Sophia, XLibre+xmonad, and niri across three repetitions of Kitty 60 s,
-the offline Firefox fixture, resize, and a 16-Kitty launch burst, then requires
+the loopback-only animated Firefox fixture, 120 resize requests, and a 16-Kitty
+launch burst, then requires
 one two-hour soak for each stack: 39 raw samples total.
 
-Each native-stack adapter emits exactly one
-`desktop_comparison_sample schema=1 status=complete` record. `run` verifies its
-schedule position, backend, topology, executable versions, duration, resource
-and frame populations, crash count, and sample-loss count before copying the
-raw log under a deterministic path and extending its checksum ledger. `verify`
-requires the exact complete matrix; `report` emits stack/workload means with
-`verdict=none`. Reference performance is never a Sophia correctness threshold.
-The repository-owned inputs and adapter boundary are documented in
-`validation/desktop-comparison/README.md`.
+`attest` admits an owner-only local supervisor record derived from the exact
+next row. `capture` accepts no caller identity, owns the workload and common
+process-tree sampler, and uses a private tracefs instance for authoritative
+kernel DRM completion timestamps. It emits five raw inputs; passive replay
+derives the sole schema-2 sample only after duration, resource cadence, frame
+monotonicity, resize population, crash, sample-loss, and teardown checks pass.
+The sealed attempt has an exact file set and internal checksums; the run ledger
+separately binds its result to the typed schedule. A partial capture blocks all
+later progress until diagnosed.
+
+`verify` requires the exact complete matrix. `report` retains memory,
+allocation, CPU/fault, process/thread/fd, launch/settle/resize, and kernel-frame
+distribution fields with `verdict=none`. Reference performance is never a
+Sophia correctness threshold. Full local-session and XLibre admission details
 
 For the visible xmonad/KMS proof, run
 `tools/start_sophia_xmonad_vkcube_recovery_tty3.sh`, launch

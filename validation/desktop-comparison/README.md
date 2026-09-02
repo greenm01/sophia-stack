@@ -1,40 +1,121 @@
-# Desktop comparison inputs
+# Desktop comparison
 
-These files are the repository-owned inputs for the Milestone 14 diagnostic
-comparison. `sophia-conformance` hashes them into each prepared run. A result is
-invalid if the files change after preparation.
+This directory owns the immutable inputs and isolated profiles for the
+Milestone 14 same-hardware diagnostic. Preparation hashes every descriptor,
+profile, workload input, and privileged adapter into the run manifest. Changing
+any of them after preparation invalidates the run.
 
-The matrix is diagnostic, not a release race. Relative speed or memory use does
-not pass or fail Sophia. Verification fails only for an incomplete matrix,
-identity/topology mismatch, crash, sample loss, non-native backend, or corrupt
-raw evidence.
+The comparison is not a release race. Reference speed or memory use never
+passes or fails Sophia. Verification fails for incomplete or reordered rows,
+identity/topology mismatch, crash, sample loss, premature process exit,
+truncated resource or kernel timing populations, dirty teardown, partial
+capture, or corrupt evidence.
 
-The pinned stacks are:
+## Pinned matrix
+
+The stacks are:
 
 - the clean, signed Sophia candidate with native Hagia WM and shell policy;
-- XLibre source commit `56be9f4320ef` with xmonad `0.18.1.9`; and
+- XLibre source commit `56be9f4320ef121dc5d4bc40a6365d995512d3bc`
+  with xmonad `0.18.1` and xmonad-contrib `0.18.2`; and
 - `/usr/bin/niri` `26.04`.
 
-Every stack uses Kitty `0.48.2`, Firefox `154`, and the same extended topology:
-DP-1 at 2560×1440@60 followed by DP-2 at 1920×1080@60. The hardware manifest
-also records the kernel, Mesa, and GPU identities supplied by the operator.
+Every row uses Kitty `0.48.2`, Firefox `154`, DP-1 at
+2560×1440@60, and DP-2 at 1920×1080@60, with the workload on DP-1.
+The repository-owned profiles under `profiles/` replace personal Hagia, niri,
+and xmonad configuration for the matrix. Animations are disabled and comparison
+windows are floating where the reference stack supports a rule.
 
-Four short workloads run three times each in rotated stack order: a 60-second
-Kitty stream, the local Firefox fixture, an interactive resize sequence, and a
-16-Kitty launch burst. The two-hour steady-state soak runs once per stack. Each
-native stack adapter must emit one `desktop_comparison_sample schema=1` record;
-xtask binds the raw log and its checksum to the prepared schedule.
+Four 60-second workloads run three times per stack in rotated order: a visibly
+changing Kitty stream, the loopback-only animated Firefox fixture with a fresh
+profile and readiness beacon, 120 Kitty resize requests, and a 16-Kitty launch
+burst. One two-hour Kitty soak follows for each stack. This is 39 rows.
+
+## Local row workflow
+
+Prepare once from the clean signed candidate:
 
 ```sh
-cargo xtask conformance desktop-comparison prepare RUN KERNEL MESA GPU
-cargo xtask conformance desktop-comparison run RUN SAMPLE_LOG
+cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison status RUN
+```
+
+For each row, read `status`, explicitly select the named local greetd session,
+and launch that stack with its repository profile. Do not let this workflow
+switch display managers, use SSH, or select a different machine.
+
+Inside the selected session, attest the actual compositor/X server supervisor
+and DP-1's active DRM CRTC, then run preflight and capture:
+
+```sh
+cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+cargo xtask conformance desktop-comparison preflight RUN
+cargo xtask conformance desktop-comparison capture RUN
+```
+
+`attest` derives the stack and version from the exact next schedule row. It
+refuses a foreign-UID process, a supervisor executable that cannot implement
+that stack, PID reuse, and XLibre without the pinned-prefix identity file. It
+publishes one mode-0600 record below
+`$XDG_RUNTIME_DIR/sophia-desktop-comparison/`. `capture` accepts no caller
+stack, version, topology, workload, duration, or output identity.
+
+`capture` prompts through `sudo` only for
+`tools/desktop_comparison_tracefs.sh`. That adapter validates its fixed
+artifact names and user-owned attempt directory, creates a private tracefs
+instance, enables DRM vblank delivery tracepoints, and cleans the instance on
+every exit. Kernel DRM completion timestamps are authoritative. Native
+stack timing is retained only as a diagnostic availability record and never
+replaces missing kernel evidence.
+
+The Rust owner launches and tears down the fixed workload, samples the union of
+the attested supervisor tree and owned workload trees once per second, records
+PSS/RSS/anonymous/private-dirty memory, CPU and fault deltas, processes,
+threads, and descriptors, and derives frame and resize distributions. It seals
+the row only after raw replay succeeds. Failed captures remain under
+`RUN/incoming/`; that intentionally blocks status, capture, verify, and report
+until the partial evidence is diagnosed.
+
+Replay and final reduction do not need the original desktop session:
+
+```sh
+cargo xtask conformance desktop-comparison replay RUN ATTEMPT
 cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 ```
 
-`run` ingests a completed native-stack adapter log. TTY/display-manager takeover
-remains outside Rust because it needs local privilege and recovery traps; sample
-identity, scheduling, completeness, checksums, and reduction remain typed Rust.
-Every ingestion rechecks previously bound checksums before creating its own
-immutable sample path, so a damaged early capture stops the matrix immediately
-rather than surviving until the final verification.
+Each sealed attempt contains exactly five raw inputs, the derived schema-2
+sample, and an internal checksum ledger. The run ledger separately binds that
+sample to its schedule path. Report rows preserve resource/allocation, launch,
+settle, resize, and kernel-frame populations and always end in `verdict=none`.
+
+## Profile admission
+
+Use absolute paths when launching sessions:
+
+- Sophia: set `SOPHIA_DESKTOP_PROFILE` to `profiles/hagia.kdl`; do not allow
+  the installed launcher to fall back to `~/.config/hagia/config.kdl`.
+- niri: launch with `niri --config profiles/niri.kdl` (or the equivalent
+  `NIRI_CONFIG` setting). Validate it with
+  `niri validate -c profiles/niri.kdl`.
+- XLibre+xmonad: build XLibre from the pinned clean source into a dedicated
+  prefix, then register that source/prefix and compile the isolated xmonad:
+
+  ```sh
+  cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
+  ```
+
+  Installation refuses a dirty or wrong source revision, a server that identifies
+  as X.Org, mismatched xmonad core/contrib libraries, or an existing
+  xmonad/identity artifact. GHC object files remain in a temporary directory
+  below the prefix and are removed before installation completes. The installer
+  writes the XLibre commit, both runtime-library versions, and xmonad-profile
+  digest beside the newly compiled executable. Attestation and preflight require
+  those sidecars and exactly one owned xmonad.
+
+  The host launcher reports `0.18.1.9`, but that is its executable-package
+  version, not the standalone profile's linked runtime. The compiled comparison
+  executable must itself report xmonad `0.18.1`.
+
+The host's current `/usr/bin/Xorg` is not evidence for the XLibre row. The
+exact XLibre prefix must exist before preparing the physical matrix.
