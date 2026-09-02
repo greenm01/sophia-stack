@@ -74,8 +74,9 @@ Status vocabulary:
   buffer-age damage, refresh-relative input latency, one shared renderer worker
   per DRM group, direct scanout, return to composition on overlay/effect
   activation, direct-versus-composed measurements, and the atomic cursor path.
-  Continuous software-content presentation and the comparison/soak contracts
-  are implemented; their fresh physical evidence remains.
+  Continuous software-content presentation is closed by one signed physical
+  machine-and-visual pass. The comparison and current-soak contracts are
+  implemented; their physical evidence remains.
 
 Latest retained Milestone 14 evidence:
 
@@ -88,7 +89,7 @@ Latest retained Milestone 14 evidence:
 | Direct scanout | archives `0001`–`0003`: eligibility, effect fallback, and same-session cost |
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
-| CPU continuity | sustained real-xterm regression: 541 runtime commits and CPU buffers, no X error |
+| CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -100,199 +101,7 @@ before changing any product default.
 
 ## Critical Path
 
-### CP-14.1 — Stable X backing and continuous presentation (`NOW`)
-
-- [ ] Replace full immutable CPU presentation replacement for stable
-  software-rendered X toplevels with lease-safe copy-on-write backing, and prove
-  sustained post-readiness content reaches physical retirement.
-
-Backing implementation, formal proof, and hardware mechanism evidence are
-complete. `StableBackingLease.tla` carries six negative controls; the backing is
-`Arc`-backed copy-on-write end to end; over-bound damage coalesces; and derived
-density variants preserve patches. The retained terminal run reported 63 of 64
-updates as patches, two COW splits, and one resident registry buffer.
-
-That run also exposed a pre-existing frozen-output path. Successful core X
-`CopyArea` omitted the required `NoExpose`, so xterm waited after its first
-scroll. X Authority now emits `NoExpose` according to the GC's
-`graphics_exposures` flag, and the sustained real-xterm regression reaches 541
-runtime commits and CPU buffers without an X error. The live session now emits
-bounded post-readiness intake, composition, exact primary-retirement, latest-
-wins accounting, cadence, and latency evidence. The schema-6 terminal reporter
-refuses startup-only progress, refresh-relative source or display gaps, fewer
-than three changed retirements, unaccounted updates, or update-to-retirement
-latency beyond two refresh periods.
-
-Required exit:
-
-- preserve child composition and exact admission extents;
-- keep historical handles immutable until their last presentation lease
-  retires;
-- bound generations, backing storage, damage history, and fallback behavior;
-- model the lifetime transition before changing it and retain every
-  implementation-relevant counterexample as a deterministic regression;
-- prove no warmed steady-state allocation growth on the retained workload;
-- account every accepted post-readiness CPU update as presented, superseded, or
-  pending, with no pending update at completion; and
-- show sustained source and physical-retirement progress at refresh-relative
-  latency on the physical terminal workload.
-
-The complete bounded run on signed commit
-`d63d0970d8854de0832879d74f3aae1f6d31fb24` exhausted all eight retries: nine
-attempts. The stalled head alternated between the two outputs and stopped after
-85, 415, 440, 10, 48, 2, 118, 325, and 316 retirements. Each terminal sample
-found an empty final read and no pending poller callback. That observation does
-not attribute the loss below Sophia: it says only that one nonblocking read was
-empty after the old relay and watchdog ordering had already run.
-
-The completion path is now a card-scoped pump into one bounded ledger cell per
-physical head; it consumes the complete libdrm event iterator, retires before
-watchdog evaluation, and performs a second collect-and-retire pass only at the
-hard-stall boundary. Ordinary nonblocking commits also retain the CRTC's
-`OUT_FENCE_PTR` sync file with the affine submission. A page-flip event remains
-preferred; if it is absent and the fence signals, the head switches to
-authoritative fences and quarantines late events so none can retire a
-successor. Stall schema 3 records cumulative reads, decodes, rejections,
-emissions, ledger state, fence state, completion mode, and late events.
-
-`PageFlipCompletionPump.tla` checks two heads and two generations through
-38,410 generated / 9,846 distinct states to depth 24. Its first run exposed the
-arrival race between an ordinary pump and the watchdog, which produced the
-deadline-only rescue pass above. The libdrm integration surface passes all 277
-tests, including direct bounded collection without channels and owned out-fence
-readiness.
-
-The first post-pump physical candidate displayed continuous xterm progress but
-timed out during teardown before asking for visual confirmation. The lifecycle
-stopped while joining the frontend with one CPU update still pending and
-thousands of X-authority backpressure waits. The root cause was ownership: each
-worker fed a separate sequencer with an unbounded reorder map, while session
-exit had neither a complete drain predicate nor a cancellation path that
-remained reachable through the frontend join.
-
-X Authority now enforces transaction order through a shared bounded coordinator:
-each producer owns at most one current envelope, condition-variable wakeups
-replace reorder polling, and `StopAndDisconnect` reaches every blocked producer.
-`StopAccepting` closes admission without dropping accepted client work. Session
-exit now enters a two-second quiescence phase and completes only after frontend
-authority, accepted batches, CPU visual progress, and native presentation work
-all drain; timeout names the remaining owners and forces cancellation.
-`XAuthorityShutdown.tla` checks the split transition system, while exact negative
-controls prove premature exit and unbounded producer ownership are detected.
-
-The physical run on signed commit `de032461b5b648191af7a9dc58de64c3f309816c`
-proved that the bounded authority coordinator now drains promptly, but exposed a
-separate owner-loop classification bug. An opportunistic `try_recv` drain treated
-the frontend channel disconnect as fatal even though quiescence treats the same
-disconnect as its normal drained signal. Runtime cleanup then sent a duplicate
-`StopAccepting` to the already closed frontend and reported a second false error.
-The owner now uses one typed disconnect classifier for blocking and opportunistic
-receives, preserves final queued work, and stops frontend intake idempotently.
-That run also retained 16-33 ms source/display cadence; the perceived burstiness
-matched the old eight-lines-per-refresh probe, so the visual gate now defaults to
-one line every 16 ms and keeps eight lines as an explicit stress override.
-
-The next physical run, on signed commit
-`ad7e56eb65f6e5b78304e2bfa3f36ef3f88e3f78`, passed operator visual
-confirmation but timed out quiescence with `authority_pending=0`,
-`native_pending=false`, and exactly one CPU update pending. The accepted
-update had been inferred to own a logical CPU scene checksum. After xterm exit,
-surface removal instead queued `RetainedMixed`, which intentionally has no
-logical checksum, so the old checksum-only tracker had no transition that could
-settle the removed surface's update.
-
-CPU progress now carries exact transaction, surface, handle, and generation
-identity from admitted ready groups. It binds retirement only to logical CPU or
-head-composition content that was actually queued successfully. Retirement
-likewise reads the presented content variant's own logical checksum; mixed and
-retained-mixed content cannot inherit a target. A committed surface
-removal lifecycle-supersedes only the pending update with that surface identity.
-Primary retirement is observed once per owner-loop turn after all producers,
-eliminating phase-order-dependent double settlement. The tracker remains a
-bounded scalar ledger. Progress schema 3 and terminal report schema 6 expose
-native-target bindings and lifecycle supersession, while quiescence schema 2
-names any pending update identity and target.
-
-`XAuthorityShutdown.tla` models exact settlement on removal. Its new negative
-control removes a surface without settling its update and must violate
-`PendingHasLiveOwner`. Deterministic Rust regressions cover ready-versus-
-deferred admission, exact target binding, same-surface removal, unrelated
-removal, accept-and-remove in one cycle, and single retirement observation.
-
-The physical terminal gate on signed commit
-`168cb9a2dc82fed0d67e1bc20195275e88addd19` passed operator visual
-confirmation and proved that authority, CPU, and native ownership now quiesce
-in 25 ms with no pending update. Machine completion still failed with 1,055
-page-flip phase rejections and 1,054 overlap rejections. Output 2 first retired
-141 kernel page-flip events, then 1,055 authoritative out-fences. The first
-out-fence completion used session-relative elapsed time after the tracker had
-observed an absolute kernel monotonic timestamp, so cadence validation rejected
-the backward epoch jump and left the logical owner pending. Every later
-physical frame retired, but the stranded tracker owner produced the secondary
-overlap/phase cascade.
-
-All completion proofs now reduce through one timestamp decision and use
-`CLOCK_MONOTONIC` UST for missing-kernel and out-fence fallbacks. The tracker
-derives milliseconds from that UST, making mismatched timestamp units
-unrepresentable at its API. A physically accepted completion retires its exact
-logical owner before cadence validation is returned, so one malformed timing
-sample remains fatal without stranding cleanup or manufacturing thousands of
-secondary failures. Exact submit and completion rejection kinds are logged.
-
-`PageFlipPresentationTracker.tla` requires physical and logical presentation
-ownership to agree across completion-source changes. Its positive model passes
-28 generated / 12 distinct states to depth 7; the mixed-clock control is
-accepted only when it violates `PhysicalTrackerOwnerAgreement`. External Rust
-regressions cover source transitions, stale kernel evidence, and cadence
-rejection without owner leakage.
-
-The visual probe now emits deterministic changing ten-number lines instead of
-the literal `1`, preserving one-line/16-ms pacing and exact iteration
-accounting while making stale frames obvious.
-
-The next physical terminal gate, on signed commit
-`59ea3b002f2df2a30974c325724b5c7969861842`, passed operator visual
-confirmation and every native pacing invariant. It retired 2,391 native frames
-with zero overlap, phase, callback-rejection, protocol, or cleanup errors.
-Machine completion failed only because `presented_updates=0`: all 7,107
-accepted post-startup updates were reported superseded despite 3,204 successful
-composition bindings and 1,192 primary retirements, 1,191 of which changed
-content. The maximum display gap remained 18.858 ms.
-
-The tracker still held one scalar pending update after production had
-transferred that update to an exact queued native frame. The next accepted
-update latest-wins superseded the scalar even though the older frame remained
-pending, rendering, submitted, or awaiting callback reduction. A retirement
-could therefore display real changing content while finding no matching
-logical owner. The earlier single presented update was scheduling luck, not a
-durable contract.
-
-CPU progress now separates one unbound latest-wins update from a bounded set of
-exact native owners. A successful native queue returns a typed frame identity
-paired with its logical checksum. Later intake may supersede only the unbound
-cell. Exact frame-and-checksum retirement presents its matching owner; surface
-removal lifecycle-settles matching owners; and any queued frame absent from all
-mirror-aware native owner cells is explicitly superseded. The owner query is
-allocation-free and covers deferred mirror generations, pending, rendering,
-submitted, presented, prepared, submitted-group, and displayed-group state.
-More than 16 simultaneous queued CPU owners fails closed instead of growing
-unboundedly.
-
-`ContinuousContentPresentation.tla` now models unbound and native-owned
-identities separately. `NativeOwnersAreNotSuperseded` prevents intake from
-revoking composed, in-flight, or callback-owned frames, and a dedicated
-negative control recreates the failed gate's ownership split. External Rust
-regressions prove two queued generations retire by exact identity and prove a
-frame that leaves every native owner settles as superseded.
-The exact repair candidate passes `cargo xtask check` and the complete pinned
-TLA+ corpus.
-
-
-Outstanding: after this repair is signed, run exactly one clean physical
-terminal gate. Retain a machine-and-visual passing schema-6 archive to close
-CP-14.1; diagnose any failed archive before another physical run.
-
-### CP-14.2 — Same-hardware comparison (`NEXT`)
+### CP-14.2 — Same-hardware comparison (`NOW`)
 
 - [ ] Run identical Kitty, Firefox, resize, launch-burst, and soak workloads
   against Sophia, XLibre+xmonad, and a mature Wayland compositor on the same
@@ -307,13 +116,29 @@ Required exit:
 - classify the comparison as diagnostic. Sophia's absolute correctness,
   authority, and refresh-relative latency gates remain authoritative.
 
-The typed orchestration is complete under
-`cargo xtask conformance desktop-comparison`: preparation requires a clean,
-signed Sophia candidate and pins repository inputs, binaries, topology, kernel,
-Mesa, and GPU; ingestion binds checksummed raw logs to a rotated schedule; and
-verification requires all 39 samples. The matrix is twelve short samples per
-stack plus one two-hour soak per stack. Relative results always report
-`verdict=none`. Outstanding: run and retain the physical matrix on one machine.
+The typed manifest, rotated schedule, signed-candidate admission, checksum
+ledger, 39-sample completeness verifier, and diagnostic reducer are implemented
+under `cargo xtask conformance desktop-comparison`; their five focused
+fail-closed tests pass. The matrix remains twelve short samples per stack plus
+one two-hour soak per stack, and relative results always report `verdict=none`.
+
+A readiness audit found the missing acquisition layer: the repository has no
+native adapter that emits `desktop_comparison_sample`; `run` only ingests an
+already completed `SAMPLE_LOG`. Hand-authoring those logs is not acceptable
+evidence. Before preparing the physical matrix, add one typed capture owner
+that:
+
+- reads the prepared manifest and exact next schedule row rather than accepting
+  caller-supplied identity;
+- owns workload and descendant-process lifetime, common monotonic resource
+  sampling, and retained raw observations while using only narrow stack-specific
+  frame-timing adapters; and
+- emits exactly one atomic completion record only after duration, crash, sample-
+  loss, and teardown checks pass, with mutation tests for truncated, reordered,
+  mismatched, and partially written captures.
+
+Outstanding: implement and replay-prove that capture path, then prepare and
+retain the physical matrix on one machine.
 
 ### CP-14.3 — Close Milestone 14 (`NEXT`)
 

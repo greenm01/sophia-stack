@@ -4,6 +4,33 @@ This file archives completed and prototype roadmap items that previously lived
 in `todo.md`. Keep active work in `todo.md`; keep detailed rationale and
 validation evidence in `docs/research-log.md`.
 
+## 2026-09-01 Milestone 14 Stable X Backing And Continuous Presentation
+
+- [x] Replaced full immutable CPU presentation replacement for stable
+  software-rendered X toplevels with lease-safe `Arc` copy-on-write backing,
+  bounded damage history, and patch-preserving density derivation.
+- [x] Restored sustained real-xterm progress by delivering core X `NoExpose`,
+  bounding authority sequencing and shutdown, and requiring exact accepted-
+  update ownership through surface removal, native queueing, and retirement.
+- [x] Unified page-flip and out-fence completion under one bounded card pump
+  and absolute monotonic clock, preserving exact logical retirement even when
+  cadence validation rejects a sample.
+- [x] Bound latest-wins to the unqueued CPU cell; queued native frames retain
+  exact owners until presentation, lifecycle settlement, or proof that every
+  native owner released the frame.
+- [x] Passed the single-attempt physical terminal gate on signed commit
+  `b9f0735ae3de0ab3f963fe19d6d117e0cbe6d403`: all 7,116 accepted
+  post-startup updates were accounted, 1,190 were presented, 5,926 were
+  superseded, none remained pending, and machine and visual verdicts passed.
+
+Run `20260902T002500Z` retained a 16.586 ms maximum source gap, 18.825 ms
+maximum display gap, and 31.737 ms maximum update-to-retirement latency on the
+60 Hz physical workload, with clean authority, protocol, native-presentation,
+and teardown state. This closes CP-14.1 only. The same-hardware comparison and
+fresh two-hour current soak remain the active Milestone 14 exit evidence.
+
+---
+
 ## 2026-08-11 Milestone 12 Frozen Classical-WM Compatibility Baseline
 
 - [x] Closed the intended xmonad desktop configuration: the packaged 0.18
