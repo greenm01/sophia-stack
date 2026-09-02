@@ -10,7 +10,7 @@ mod trace;
 mod workload;
 
 pub use reference::install_reference;
-use trace::{TraceOwner, tracefs_root};
+use trace::{TraceOwner, probe_tracefs};
 use workload::WorkloadOwner;
 pub use workload::run_stream;
 
@@ -190,9 +190,7 @@ pub fn preflight(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             helper.display()
         ));
     }
-    let tracefs = tracefs_root().ok_or(
-        "kernel DRM timing is unavailable: tracefs or drm_vblank_event_delivered is missing",
-    )?;
+    let tracefs = probe_tracefs(&helper)?;
     Ok(vec![format!(
         "desktop_comparison_preflight schema=1 status=ready order={} stack={} workload={} repetition={} session={} tracefs={} frame_source=kernel_drm",
         scheduled.order,
@@ -223,12 +221,14 @@ pub fn capture_next(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     }
     fs::create_dir_all(&incoming)
         .map_err(|error| format!("could not create pending capture root: {error}"))?;
+    protect_owner_directory(&incoming)?;
     let attempt = incoming.join(format!(
         "{:02}-{}-{}-{}.partial",
         scheduled.order, scheduled.stack, scheduled.workload, scheduled.repetition
     ));
     fs::create_dir(&attempt)
         .map_err(|error| format!("could not create pending capture: {error}"))?;
+    protect_owner_directory(&attempt)?;
 
     let measured = measure(repo, run, &attempt, &scheduled, &attestation);
     let result = match measured {
@@ -863,6 +863,11 @@ fn require_token(name: &str, value: &str) -> Result<(), String> {
     }
 }
 
+fn protect_owner_directory(path: &Path) -> Result<(), String> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("could not protect {}: {error}", path.display()))
+}
+
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
     OpenOptions::new()
         .write(true)
@@ -879,5 +884,32 @@ fn elapsed_micros(started: Instant) -> u64 {
 fn sleep_until(deadline: Instant) {
     if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
         thread::sleep(remaining);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::protect_owner_directory;
+    use std::fs;
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn capture_directory_is_tightened_independently_of_umask() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "sophia-desktop-comparison-mode-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).expect("test directory should be created");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o775))
+            .expect("test mode should be widened");
+        protect_owner_directory(&path).expect("capture mode should be protected");
+        let mode = fs::metadata(&path).expect("mode should be readable").mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        fs::remove_dir(&path).expect("test directory should be removed");
     }
 }

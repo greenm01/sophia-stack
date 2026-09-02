@@ -654,14 +654,17 @@ launch burst, then requires
 one two-hour soak for each stack: 39 raw samples total.
 
 `attest` admits an owner-only local supervisor record derived from the exact
-next row. `capture` accepts no caller identity, owns the workload and common
-process-tree sampler, and uses a private tracefs instance for authoritative
-kernel DRM completion timestamps. It emits five raw inputs; passive replay
-derives the sole schema-2 sample only after duration, resource cadence, frame
-monotonicity, resize population, crash, sample-loss, and teardown checks pass.
-The sealed attempt has an exact file set and internal checksums; the run ledger
-separately binds its result to the typed schedule. A partial capture blocks all
-later progress until diagnosed.
+next row. Privileged preflight confirms the DRM completion tracepoint before
+creating an attempt, even when tracefs is root-private. `capture` accepts no
+caller identity, owns an isolated workload and common process-tree sampler,
+and uses a private tracefs instance for authoritative kernel DRM completion
+timestamps. Kitty control sockets live in a short owner-only runtime
+namespace and never load personal Kitty configuration. Capture emits five raw
+inputs; passive replay derives the sole schema-2 sample only after duration,
+resource cadence, frame monotonicity, resize population, crash, sample-loss,
+and teardown checks pass. The sealed attempt has an exact file set and internal
+checksums; the run ledger separately binds its result to the typed schedule. A
+partial capture blocks all later progress until diagnosed.
 
 `verify` requires the exact complete matrix. `report` retains memory,
 allocation, CPU/fault, process/thread/fd, launch/settle/resize, and kernel-frame

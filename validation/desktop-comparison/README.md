@@ -60,13 +60,19 @@ publishes one mode-0600 record below
 `$XDG_RUNTIME_DIR/sophia-desktop-comparison/`. `capture` accepts no caller
 stack, version, topology, workload, duration, or output identity.
 
-`capture` prompts through `sudo` only for
-`tools/desktop_comparison_tracefs.sh`. That adapter validates its fixed
-artifact names and user-owned attempt directory, creates a private tracefs
-instance, enables DRM vblank delivery tracepoints, and cleans the instance on
-every exit. Kernel DRM completion timestamps are authoritative. Native
-stack timing is retained only as a diagnostic availability record and never
-replaces missing kernel evidence.
+`preflight` and `capture` prompt through `sudo` only for
+`tools/desktop_comparison_tracefs.sh`. Preflight asks that narrow adapter to
+confirm the tracepoint before an attempt directory exists, including on hosts
+whose tracefs tree is root-private. Capture validates fixed artifact names and
+an owner-only attempt directory, creates a private tracefs instance, enables
+DRM vblank delivery tracepoints, and cleans the instance on every exit. Kernel
+DRM completion timestamps are authoritative. Native stack timing is retained
+only as a diagnostic availability record and never replaces missing kernel
+evidence.
+
+Kitty workloads ignore personal configuration and keep their remote-control
+sockets in a mode-0700 namespace below `$XDG_RUNTIME_DIR`; the owner refuses a
+socket path that exceeds Linux's pathname limit before launching Kitty.
 
 The Rust owner launches and tears down the fixed workload, samples the union of
 the attested supervisor tree and owned workload trees once per second, records

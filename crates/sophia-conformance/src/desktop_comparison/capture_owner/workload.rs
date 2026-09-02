@@ -4,6 +4,8 @@ use super::{READY_TIMEOUT, ScheduledSample, elapsed_micros, timing_population, w
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::ffi::OsStrExt as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
@@ -13,10 +15,13 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
+const UNIX_SOCKET_PATH_MAX_BYTES: usize = 107;
+
 pub(super) struct WorkloadOwner {
     children: Vec<Child>,
     roots: Vec<u32>,
     sockets: Vec<PathBuf>,
+    socket_namespace: Option<PathBuf>,
     firefox: Option<FixtureServer>,
     resize: Option<thread::JoinHandle<Result<Vec<u64>, String>>>,
     resize_requested: bool,
@@ -37,6 +42,7 @@ impl WorkloadOwner {
             children: Vec::new(),
             roots: Vec::new(),
             sockets: Vec::new(),
+            socket_namespace: None,
             firefox: None,
             resize: None,
             resize_requested: scheduled.workload == "resize",
@@ -44,18 +50,24 @@ impl WorkloadOwner {
             settle_usec: 0,
             finished: false,
         };
+        if matches!(
+            scheduled.workload.as_str(),
+            "kitty-60s" | "resize" | "soak-2h" | "kitty-burst-16"
+        ) {
+            owner.socket_namespace = Some(create_kitty_socket_namespace()?);
+        }
         match scheduled.workload.as_str() {
             "firefox-local" => owner.launch_firefox(repo, attempt)?,
             "kitty-burst-16" => {
                 for index in 0..16 {
-                    owner.launch_kitty(attempt, duration, index)?;
+                    owner.launch_kitty(duration, index)?;
                 }
                 for socket in &owner.sockets {
                     wait_kitty(socket)?;
                 }
             }
             "kitty-60s" | "resize" | "soak-2h" => {
-                owner.launch_kitty(attempt, duration, 0)?;
+                owner.launch_kitty(duration, 0)?;
                 wait_kitty(&owner.sockets[0])?;
             }
             _ => return Err("prepared schedule contains an unknown workload".to_owned()),
@@ -65,16 +77,16 @@ impl WorkloadOwner {
         Ok(owner)
     }
 
-    fn launch_kitty(
-        &mut self,
-        attempt: &Path,
-        duration: Duration,
-        index: usize,
-    ) -> Result<(), String> {
-        let socket = attempt.join(format!("kitty-{index}.sock"));
+    fn launch_kitty(&mut self, duration: Duration, index: usize) -> Result<(), String> {
+        let namespace = self
+            .socket_namespace
+            .as_deref()
+            .ok_or("Kitty workload has no private runtime namespace")?;
+        let socket = kitty_socket_path(namespace, index)?;
         let executable = std::env::current_exe()
             .map_err(|error| format!("could not identify xtask executable: {error}"))?;
         let child = Command::new("kitty")
+            .args(["--config", "NONE"])
             .arg("--listen-on")
             .arg(format!("unix:{}", socket.display()))
             .arg("--override")
@@ -203,9 +215,7 @@ impl WorkloadOwner {
                 .map_err(|error| format!("could not reap owned comparison workload: {error}"))?;
         }
         self.firefox.take();
-        for socket in &self.sockets {
-            let _ = fs::remove_file(socket);
-        }
+        self.cleanup_kitty_namespace();
         let (p50, p95, p99, maximum) = timing_population(&resize);
         write_new(
             &attempt.join("workload.log"),
@@ -224,6 +234,15 @@ impl WorkloadOwner {
         self.finished = true;
         Ok(())
     }
+
+    fn cleanup_kitty_namespace(&mut self) {
+        for socket in &self.sockets {
+            let _ = fs::remove_file(socket);
+        }
+        if let Some(namespace) = self.socket_namespace.take() {
+            let _ = fs::remove_dir(namespace);
+        }
+    }
 }
 
 impl Drop for WorkloadOwner {
@@ -233,8 +252,40 @@ impl Drop for WorkloadOwner {
                 let _ = child.kill();
                 let _ = child.wait();
             }
+            self.cleanup_kitty_namespace();
         }
     }
+}
+
+fn create_kitty_socket_namespace() -> Result<PathBuf, String> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .ok_or("XDG_RUNTIME_DIR is unset; Kitty control sockets need a private runtime")?;
+    if !runtime.is_absolute() {
+        return Err("XDG_RUNTIME_DIR must be absolute for Kitty control sockets".to_owned());
+    }
+    let root = runtime.join("sophia-desktop-comparison");
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("could not create Kitty runtime root: {error}"))?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("could not protect Kitty runtime root: {error}"))?;
+    let namespace = root.join(format!("workload-{}", std::process::id()));
+    fs::create_dir(&namespace)
+        .map_err(|error| format!("could not create private Kitty socket namespace: {error}"))?;
+    fs::set_permissions(&namespace, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("could not protect Kitty socket namespace: {error}"))?;
+    Ok(namespace)
+}
+
+fn kitty_socket_path(namespace: &Path, index: usize) -> Result<PathBuf, String> {
+    let socket = namespace.join(format!("kitty-{index}.sock"));
+    let bytes = socket.as_os_str().as_bytes().len();
+    if bytes > UNIX_SOCKET_PATH_MAX_BYTES {
+        return Err(format!(
+            "Kitty control socket path is {bytes} bytes; Linux permits at most {UNIX_SOCKET_PATH_MAX_BYTES}"
+        ));
+    }
+    Ok(socket)
 }
 
 struct FixtureServer {
@@ -369,4 +420,26 @@ pub fn run_stream(seconds: u64) -> Result<(), String> {
         thread::sleep(Duration::from_millis(16));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UNIX_SOCKET_PATH_MAX_BYTES, kitty_socket_path};
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn runtime_socket_path_stays_within_the_linux_limit() {
+        let namespace =
+            Path::new("/run/user/4294967295/sophia-desktop-comparison/workload-4294967295");
+        let socket = kitty_socket_path(namespace, 15).expect("comparison socket should fit");
+        assert!(socket.as_os_str().as_bytes().len() <= UNIX_SOCKET_PATH_MAX_BYTES);
+    }
+
+    #[test]
+    fn excessive_socket_path_is_refused_before_kitty_launch() {
+        let namespace = PathBuf::from("/tmp").join("x".repeat(UNIX_SOCKET_PATH_MAX_BYTES));
+        let error = kitty_socket_path(&namespace, 0).expect_err("long socket must be refused");
+        assert!(error.contains("Linux permits at most 107"));
+    }
 }

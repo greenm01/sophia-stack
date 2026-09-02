@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/live_session_surface.sh
+source "$ROOT_DIR/tools/lib/live_session_surface.sh"
+
 (( $# == 1 )) || {
     echo "usage: tools/activate_live_session_release.sh INSTALLED_RELEASE_DIR" >&2
     exit 1
@@ -80,96 +84,17 @@ fi
 )
 "$release/tools/verify_packaged_policy.sh" "$release"
 
-commands=(
-    sophia-session
-    sophia-kitty-session
-    sophia-firefox-proof
-    sophia-xterm-proof
-    sophia-truecolor-proof
-    sophia-recovery-proof
-    sophia-native-chrome-proof
-    sophia-status
-    sophia-stop
-    sophia-soak-progress
-    sophia-rollback
-    sophia-run-cycles
-    sophia-setup-uinput
-    sophia-record-run
-    sophia-record-fallback-run
-    sophia-record-emergency-run
-    sophia-record-watchdog-run
-    sophia-record-native-chrome-run
-    sophia-record-firefox-run
-    sophia-verify-login-cycle
-    sophia-verify-cycles
-    sophia-verify-emergency
-    sophia-verify-fallback
-    sophia-verify-watchdog
-    sophia-verify-native-chrome
-    sophia-verify-firefox-runs
-    sophia-verify-xterm-runs
-    sophia-verify-truecolor-runs
-    sophia-verify-xmobar-work-area
-    sophia-verify-soak
-)
-if [[ "$hagia_included" == true ]]; then
-    commands+=(
-        sophia-hagia-session
-        sophia-hagia-promotion-session
-        sophia-record-hagia-run
-        sophia-verify-hagia
-        sophia-verify-hagia-promotion
-    )
-fi
-
-desktops=(
-    sophia sophia-kitty sophia-firefox-proof sophia-recovery-proof
-    sophia-native-chrome-proof sophia-cycle-proof
-)
-if [[ "$hagia_included" == true ]]; then
-    desktops+=(sophia-hagia sophia-hagia-promotion)
-fi
-
-# Finish every release-specific check before changing the active installation.
-for command in "${commands[@]}"; do
-    [[ -x "$release/bin/$command" ]] || {
-        echo "Release is missing operator command: $command" >&2
-        exit 1
-    }
-done
-for desktop in "${desktops[@]}"; do
-    [[ -f "$release/share/wayland-sessions/$desktop.desktop" ]] || {
-        echo "Release is missing session entry: $desktop.desktop" >&2
-        exit 1
-    }
-done
-
-install -d -m 755 "$SESSION_DIR" "$COMMAND_DIR"
-for command in "${commands[@]}"; do
-    ln -sfn "$PREFIX/current/bin/$command" "$COMMAND_DIR/$command"
-done
-
-sed_prefix="${PREFIX//\\/\\\\}"
-sed_prefix="${sed_prefix//&/\\&}"
-sed_prefix="${sed_prefix//|/\\|}"
-desktop_temps=()
 current_temp=""
 previous_temp=""
 cleanup() {
     local path
-    for path in "${desktop_temps[@]}" "$current_temp" "$previous_temp"; do
+    for path in "$current_temp" "$previous_temp"; do
         [[ -z "$path" ]] || rm -f -- "$path"
     done
 }
 trap cleanup EXIT
-for desktop in "${desktops[@]}"; do
-    desktop_temp="$SESSION_DIR/.$desktop.desktop.$$"
-    desktop_temps+=("$desktop_temp")
-    sed "s|@SOPHIA_INSTALL_PREFIX@|$sed_prefix|g" \
-        "$release/share/wayland-sessions/$desktop.desktop" >"$desktop_temp"
-    chmod 644 "$desktop_temp"
-    mv -f "$desktop_temp" "$SESSION_DIR/$desktop.desktop"
-done
+
+sophia_surface_install "$release" "$PREFIX" "$SESSION_DIR" "$COMMAND_DIR"
 
 old_current="$(readlink "$PREFIX/current" 2>/dev/null || true)"
 old_current_path="$(readlink -f "$PREFIX/current" 2>/dev/null || true)"
@@ -190,7 +115,7 @@ trap - EXIT
 echo "Activated Sophia release: $release_id"
 echo "Current: $PREFIX/current"
 echo "Session entries:"
-for desktop in "${desktops[@]}"; do
+for desktop in "${SOPHIA_SURFACE_DESKTOPS[@]}"; do
     echo "  $SESSION_DIR/$desktop.desktop"
 done
-echo "Operator commands: ${commands[*]}"
+echo "Operator commands: ${SOPHIA_SURFACE_COMMANDS[*]}"

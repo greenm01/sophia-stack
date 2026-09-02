@@ -129,11 +129,14 @@ Each attempt retains exact raw resource, kernel-frame, workload, native-timing,
 and attempt records plus a derived schema-2 result and internal ledger. Replay
 requires uniform 60-second short windows, the two-hour soak, 120 resize
 observations, contiguous/monotonic populations, zero crash/loss, and clean
-teardown. Partial attempts block progress. Eleven focused tests cover matrix
-rotation, legacy/schema-2 parsing, raw replay, bind/archive integrity,
+teardown. Partial attempts block progress. Focused and unit regressions cover
+matrix rotation, legacy/schema-2 parsing, raw replay, bind/archive integrity,
 truncation, reordering, identity/failure mutations, non-prefix order, kernel
-normalization, and later tampering. Reports retain resource, allocation,
-latency, and frame distributions with `verdict=none`.
+normalization, later tampering, owner-only capture modes, strict privileged
+tracefs-probe records, isolated Kitty configuration, and bounded runtime socket
+paths. Reports retain resource, allocation, latency, and frame distributions
+with `verdict=none`. The first physical attempt failed closed before row 1 and
+is documented in `docs/research-log.md`; no comparison evidence was admitted.
 
 Outstanding physical work:
 

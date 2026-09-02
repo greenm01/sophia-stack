@@ -54,7 +54,8 @@ make_artifact() {
         "$artifact/share/sophia-policy/xmonad" \
         "$artifact/share/wayland-sessions" \
         "$artifact/target/release" \
-        "$artifact/tools/fixtures"
+        "$artifact/tools/fixtures" \
+        "$artifact/tools/lib"
     install -m 644 "$ROOT_DIR/docs/operations.md" \
         "$artifact/share/doc/sophia/operations.md"
     for command in "${OPERATOR_COMMANDS[@]}"; do
@@ -77,6 +78,8 @@ make_artifact() {
     done
     install -m 755 "$ROOT_DIR/tools/stop_sophia_session.sh" \
         "$artifact/tools/stop_sophia_session.sh"
+    install -m 644 "$ROOT_DIR/tools/lib/live_session_surface.sh" \
+        "$artifact/tools/lib/live_session_surface.sh"
     install -m 755 "$ROOT_DIR/tools/verify_packaged_policy.sh" \
         "$artifact/tools/verify_packaged_policy.sh"
     printf '#!/usr/bin/env bash\necho xmonad_0.18.1\n' \
@@ -229,13 +232,18 @@ grep -Fq "Exec=$PREFIX/current/bin/sophia-run-cycles" \
 for command in "${OPERATOR_COMMANDS[@]}"; do
     [[ "$(readlink "$COMMAND_DIR/$command")" == "$PREFIX/current/bin/$command" ]]
 done
+printf '[Desktop Entry]\nExec=/foreign-hagia-session\n' \
+    >"$SESSION_DIR/sophia-hagia.desktop"
+ln -s /foreign-hagia-command "$COMMAND_DIR/sophia-hagia-session"
 
 env "${install_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$second"
 [[ "$(readlink "$PREFIX/current")" == releases/0002 ]]
 [[ "$(readlink "$PREFIX/previous")" == releases/0001 ]]
-env SOPHIA_INSTALL_PREFIX="$PREFIX" "$COMMAND_DIR/sophia-rollback"
+env "${install_env[@]}" "$COMMAND_DIR/sophia-rollback"
 [[ "$(readlink "$PREFIX/current")" == releases/0001 ]]
 [[ "$(readlink "$PREFIX/previous")" == releases/0002 ]]
+grep -Fqx 'Exec=/foreign-hagia-session' "$SESSION_DIR/sophia-hagia.desktop"
+[[ "$(readlink "$COMMAND_DIR/sophia-hagia-session")" == /foreign-hagia-command ]]
 [[ -f "$PREFIX/current/share/doc/sophia/operations.md" ]]
 hagia_prefix="$TEMP_DIR/hagia/prefix"
 hagia_sessions="$TEMP_DIR/hagia/sessions"
@@ -255,9 +263,29 @@ for command in sophia-hagia-session sophia-hagia-promotion-session \
     sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
     [[ "$(readlink "$hagia_commands/$command")" == "$hagia_prefix/current/bin/$command" ]]
 done
-env SOPHIA_INSTALL_PREFIX="$hagia_prefix" "$hagia_commands/sophia-rollback"
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" "$hagia_commands/sophia-rollback"
 [[ "$(readlink "$hagia_prefix/current")" == releases/0001 ]]
 [[ "$(readlink "$hagia_prefix/previous")" == releases/0003 ]]
+for desktop in sophia-hagia sophia-hagia-promotion; do
+    [[ ! -e "$hagia_sessions/$desktop.desktop" ]]
+done
+for command in sophia-hagia-session sophia-hagia-promotion-session \
+    sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
+    [[ ! -e "$hagia_commands/$command" && ! -L "$hagia_commands/$command" ]]
+done
+env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
+    SOPHIA_COMMAND_DIR="$hagia_commands" "$hagia_commands/sophia-rollback"
+[[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
+[[ "$(readlink "$hagia_prefix/previous")" == releases/0001 ]]
+grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-session" \
+    "$hagia_sessions/sophia-hagia.desktop"
+grep -Fq "Exec=$hagia_prefix/current/bin/sophia-hagia-promotion-session" \
+    "$hagia_sessions/sophia-hagia-promotion.desktop"
+for command in sophia-hagia-session sophia-hagia-promotion-session \
+    sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
+    [[ "$(readlink "$hagia_commands/$command")" == "$hagia_prefix/current/bin/$command" ]]
+done
 rm -f "$hagia_sessions/sophia-hagia-promotion.desktop"
 ln -sfn /missing "$hagia_commands/sophia-hagia-promotion-session"
 env SOPHIA_INSTALL_PREFIX="$hagia_prefix" SOPHIA_SESSION_DIR="$hagia_sessions" \
@@ -402,7 +430,10 @@ env \
 [[ "$(readlink "$current_prefix/current")" == "releases/$current_release" ]]
 grep -Fxq "commit=$current_commit" "$current_prefix/current/manifest"
 [[ -f "$current_prefix/current/share/doc/sophia/operations.md" ]]
-env SOPHIA_INSTALL_PREFIX="$current_prefix" "$current_command_dir/sophia-rollback"
+env SOPHIA_INSTALL_PREFIX="$current_prefix" \
+    SOPHIA_SESSION_DIR="$current_session_dir" \
+    SOPHIA_COMMAND_DIR="$current_command_dir" \
+    "$current_command_dir/sophia-rollback"
 [[ "$(readlink "$current_prefix/current")" == releases/0001 ]]
 env \
     SOPHIA_ARTIFACT_ROOT="$current_artifact_root" \

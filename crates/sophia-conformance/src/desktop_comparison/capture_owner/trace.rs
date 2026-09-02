@@ -7,14 +7,36 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub(super) fn tracefs_root() -> Option<PathBuf> {
-    ["/sys/kernel/tracing", "/sys/kernel/debug/tracing"]
-        .into_iter()
-        .map(PathBuf::from)
-        .find(|root| {
-            root.join("events/drm/drm_vblank_event_delivered/enable")
-                .is_file()
-        })
+pub(super) fn probe_tracefs(helper: &Path) -> Result<PathBuf, String> {
+    let output = Command::new("sudo")
+        .arg("--")
+        .arg(helper)
+        .arg("--probe")
+        .stdin(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|error| format!("could not run privileged tracefs probe: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "privileged tracefs probe failed: {}",
+            output.status
+        ));
+    }
+    parse_tracefs_probe(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_tracefs_probe(source: &str) -> Result<PathBuf, String> {
+    const PREFIX: &str = "desktop_comparison_tracefs_probe schema=1 status=ready tracefs=";
+    const SUFFIX: &str = " event=drm_vblank_event_delivered";
+    let record = source.trim();
+    let root = record
+        .strip_prefix(PREFIX)
+        .and_then(|value| value.strip_suffix(SUFFIX))
+        .ok_or("privileged tracefs probe returned an invalid record")?;
+    match root {
+        "/sys/kernel/tracing" | "/sys/kernel/debug/tracing" => Ok(PathBuf::from(root)),
+        _ => Err("privileged tracefs probe returned an unexpected root".to_owned()),
+    }
 }
 
 pub(super) struct TraceOwner {
@@ -119,5 +141,28 @@ impl Drop for TraceOwner {
         }
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_tracefs_probe;
+    use std::path::PathBuf;
+
+    #[test]
+    fn tracefs_probe_admits_only_exact_known_records() {
+        for root in ["/sys/kernel/tracing", "/sys/kernel/debug/tracing"] {
+            let record = format!(
+                "desktop_comparison_tracefs_probe schema=1 status=ready tracefs={root} event=drm_vblank_event_delivered\n"
+            );
+            assert_eq!(
+                parse_tracefs_probe(&record).expect("known tracefs root should pass"),
+                PathBuf::from(root)
+            );
+        }
+        assert!(parse_tracefs_probe(
+            "desktop_comparison_tracefs_probe schema=1 status=ready tracefs=/tmp event=drm_vblank_event_delivered"
+        )
+        .is_err());
     }
 }

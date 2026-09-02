@@ -2,14 +2,39 @@
 # Narrow root adapter for one local desktop-comparison kernel timing capture.
 set -eu
 
+require_sudo_root() {
+    if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_UID:-}" ]; then
+        echo "desktop comparison tracefs adapter must run through sudo" >&2
+        exit 77
+    fi
+}
+
+find_trace_root() {
+    for candidate in /sys/kernel/tracing /sys/kernel/debug/tracing; do
+        if [ -f "$candidate/events/drm/drm_vblank_event_delivered/enable" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [ "$#" -eq 1 ] && [ "$1" = --probe ]; then
+    require_sudo_root
+    trace_root="$(find_trace_root || true)"
+    if [ -z "$trace_root" ]; then
+        echo "drm_vblank_event_delivered tracepoint is unavailable" >&2
+        exit 69
+    fi
+    printf 'desktop_comparison_tracefs_probe schema=1 status=ready tracefs=%s event=drm_vblank_event_delivered\n' "$trace_root"
+    exit 0
+fi
+
 if [ "$#" -ne 4 ]; then
-    echo "usage: desktop_comparison_tracefs.sh OUTPUT READY START STOP" >&2
+    echo "usage: desktop_comparison_tracefs.sh --probe | OUTPUT READY START STOP" >&2
     exit 64
 fi
-if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_UID:-}" ]; then
-    echo "desktop comparison tracefs adapter must run through sudo" >&2
-    exit 77
-fi
+require_sudo_root
 
 output=$1
 ready=$2
@@ -45,13 +70,7 @@ if [ -e "$output" ] || [ -e "$ready" ] || [ -e "$start" ] || [ -e "$stop" ]; the
     exit 73
 fi
 
-trace_root=
-for candidate in /sys/kernel/tracing /sys/kernel/debug/tracing; do
-    if [ -f "$candidate/events/drm/drm_vblank_event_delivered/enable" ]; then
-        trace_root=$candidate
-        break
-    fi
-done
+trace_root="$(find_trace_root || true)"
 if [ -z "$trace_root" ]; then
     echo "drm_vblank_event_delivered tracepoint is unavailable" >&2
     exit 69

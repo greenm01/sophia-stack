@@ -57,6 +57,13 @@ desktop entries, and re-activates it without overwriting release content. The
 explicit recovery form is
 `tools/activate_live_session_release.sh /opt/sophia/releases/RELEASE_ID`; it
 refuses artifacts and any directory outside that exact installed-release path.
+Activation and the packaged rollback command share the same installed-surface
+reconciliation. Rollback verifies the target release's checksums and packaged
+policy before switching `current`, then restores exactly that release's command
+links and greetd entries. Selecting a release without Hagia removes stale
+Sophia-managed Hagia entries; a file or link at an optional path is preserved
+when its target does not exactly match Sophia's managed installation path.
+
 The artifact manifest records the configured xmonad and xmobar source
 identities plus their configuration and executable digests. A schema-5 Hagia
 artifact also records the signed Hagia source commit and canonical default
