@@ -18159,11 +18159,43 @@ Pre-display candidate, checksum, and executable admission passed independently.
 The gate had launched `start_sophia_tty3.sh` as an asynchronous subshell. In
 non-interactive Bash, an asynchronous command without job control receives
 standard input from `/dev/null` unless the script supplies an explicit
-redirection. The established launcher therefore failed its `-t 0` contract
-before its logging boundary, matching the observed absence of new evidence.
+redirection. The established launcher could therefore fail its `-t 0` contract
+before its logging boundary. That matched the observed absence of new evidence,
+but did not uniquely identify the failing pre-launch stage.
 
 The gate now captures the path returned by `tty`, admits only `/dev/tty3`, and
 redirects the asynchronous launcher stdin from that same device. This keeps
 terminal recovery and input-guard ownership on the already-validated local
 TTY. A launcher-safety regression prevents the explicit stdin contract from
 being removed.
+
+## 2026-09-03: comparison pre-launch failure becomes attributable
+
+The replacement run prepared from signed candidate `5cfbb314` repeated the
+same status-1 wrapper failure before sealing row 1. It again created no attempt
+and did not cross the launcher's old logging boundary. That falsifies the claim
+that absence of the launcher log alone located the failure at asynchronous
+standard input: candidate admission, TTY admission, tracefs admission, and
+launcher admission all previously shared the same evidence-free interval.
+
+The adapter now opens the validated operator terminal in its foreground parent,
+checks that descriptor with `-t`, and gives the asynchronous Sophia launcher a
+duplicate of that already-open descriptor. The child verifies that it still
+resolves to the admitted terminal before it invokes the established launcher.
+This removes a child-side device reopen and makes failure to acquire the
+terminal synchronous and explicit.
+
+The adapter also writes an owner-only
+`~/.local/state/sophia/desktop-comparison/gate-last.log`. Structured stage
+records cover TTY, candidate, tracefs, stack, and Sophia-launch admission; an
+`ERR` trap retains the exact unexpected command, line, and status. Expected
+failures retain their stage and detail, the tracefs probe reports its captured
+status and output, and an early launcher logging boundary retains a rejected
+launcher invocation. The journal contains controller state only, not
+application identity or measured evidence, and remains outside immutable run
+contents.
+
+An integration regression invokes the adapter with null standard input and
+requires both a direct terminal error and the structured TTY-admission record.
+Focused launcher tests and shell parsing pass. No physical row has yet exercised
+this hardened boundary, so the comparison remains at zero sealed rows.

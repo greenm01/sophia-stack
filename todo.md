@@ -163,7 +163,7 @@ Implementation is complete; remaining critical-path work:
 - [x] fail closed unless trusted passive observation binds the capture-owned
   workload to focused, visible DP-1 placement without disclosing application
   identity to the blind WM, with hidden/foreign negative regressions;
-- [ ] commit and sign the corrected candidate, then prepare a fresh run using
+- [x] commit and sign the corrected candidate, then prepare a fresh run using
   the already provisioned pinned XLibre prefix and isolated reference profiles;
 - [ ] run the unified one-row TTY3 gate for all 39 scheduled rows on this
   machine; and

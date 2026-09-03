@@ -17,6 +17,8 @@ case "$SESSION_PROFILE" in
         ;;
 esac
 LAUNCH_LOG="/tmp/sophia-${SESSION_PROFILE}-tty${TARGET_VT}-launch.log"
+exec > >(tee "$LAUNCH_LOG") 2>&1
+echo "Retaining complete launcher output in $LAUNCH_LOG"
 
 if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
     echo "Switch to tty$TARGET_VT, log in, then run:" >&2
@@ -37,9 +39,6 @@ if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
 fi
 origin_tty="$(tty)"
 origin_vt="${origin_tty#/dev/tty}"
-
-exec > >(tee "$LAUNCH_LOG") 2>&1
-echo "Retaining complete launcher output in $LAUNCH_LOG"
 
 display_manager=""
 graphical_processes=(river niri sway Hyprland kwin_wayland Xorg)

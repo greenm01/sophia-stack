@@ -11,6 +11,14 @@ const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
 const ACTIVATOR: &str = include_str!("../../../tools/activate_live_session_release.sh");
 const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
 
+fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("sophia-{label}-{}-{nonce}", std::process::id()))
+}
+
 fn offset(needle: &str) -> usize {
     SESSION_LAUNCHER
         .find(needle)
@@ -132,7 +140,9 @@ fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
 fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_SESSION_STARTUP=none"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_sophia_session EXIT"));
-    assert!(DESKTOP_COMPARISON_GATE.contains(") <\"$operator_tty\" &"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("exec {operator_tty_fd}<\"$operator_tty\""));
+    assert!(DESKTOP_COMPARISON_GATE.contains(") <&\"$operator_tty_fd\" &"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("gate-last.log"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_niri EXIT"));
@@ -141,6 +151,38 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(!DESKTOP_COMPARISON_GATE.to_ascii_lowercase().contains("ssh"));
     assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
     assert!(SESSION_LAUNCHER.contains("sophia_append_session_terminal_registration_args"));
+}
+
+#[test]
+fn desktop_comparison_gate_records_a_non_tty_admission_failure() {
+    let root = unique_temp_dir("comparison-no-tty");
+    let runtime = root.join("runtime");
+    let state = root.join("state");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let gate = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/desktop_comparison_tty3.sh");
+    let output = std::process::Command::new("bash")
+        .arg(gate)
+        .arg(root.join("unused-run"))
+        .env("SOPHIA_DESKTOP_COMPARISON_XTASK", "/bin/true")
+        .env("XDG_RUNTIME_DIR", &runtime)
+        .env("XDG_STATE_HOME", &state)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("standard input is not a terminal")
+    );
+    let diagnostic =
+        std::fs::read_to_string(state.join("sophia/desktop-comparison/gate-last.log")).unwrap();
+    assert!(diagnostic.contains("status=entered stage=tty-admission"));
+    assert!(diagnostic.contains("status=failed stage=tty-admission"));
+
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

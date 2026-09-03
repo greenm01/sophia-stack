@@ -1,9 +1,35 @@
 #!/usr/bin/env bash
 # Narrow TTY/session adapter for one typed desktop-comparison schedule row.
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+diagnostic_root="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/desktop-comparison"
+mkdir -p "$diagnostic_root"
+chmod 700 "$diagnostic_root"
+diagnostic_log="$diagnostic_root/gate-last.log"
+: >"$diagnostic_log"
+chmod 600 "$diagnostic_log"
+gate_stage=initialization
+record_gate_stage() {
+    gate_stage=$1
+    printf 'desktop_comparison_gate schema=1 status=entered stage=%s\n' "$gate_stage" \
+        >>"$diagnostic_log"
+}
+record_unexpected_failure() {
+    local status=$1 line=$2 command=$3
+    printf 'desktop_comparison_gate schema=1 status=failed stage=%s line=%s exit=%s command=%q\n' \
+        "$gate_stage" "$line" "$status" "$command" >>"$diagnostic_log"
+}
+trap 'record_unexpected_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
+
+fail() {
+    echo "desktop comparison: $*" >&2
+    printf 'desktop_comparison_gate schema=1 status=failed stage=%s detail=%q\n' \
+        "$gate_stage" "$*" >>"$diagnostic_log"
+    exit 1
+}
+
 xtask="${SOPHIA_DESKTOP_COMPARISON_XTASK:-}"
 trace_helper="$repo/tools/desktop_comparison_tracefs.sh"
 niri_bin="${SOPHIA_DESKTOP_COMPARISON_NIRI_BIN:-/usr/bin/niri}"
@@ -14,7 +40,8 @@ xlibre_modules="$xlibre_prefix/lib/xorg/modules/xlibre-25"
 hagia_bin="${SOPHIA_DESKTOP_COMPARISON_HAGIA_BIN:-$repo/../hagia/hagia}"
 hagia_shell="${SOPHIA_DESKTOP_COMPARISON_HAGIA_SHELL_BIN:-$repo/../hagia/hagia_shell}"
 sophia_bin="${SOPHIA_DESKTOP_COMPARISON_SOPHIA_BIN:-$repo/target/release/sophia}"
-runtime_root="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is unset}"
+runtime_root="${XDG_RUNTIME_DIR:-}"
+[[ -n $runtime_root ]] || fail "XDG_RUNTIME_DIR is unset"
 adapter_root="$runtime_root/sophia-desktop-comparison-adapter"
 mkdir -p "$adapter_root"
 chmod 700 "$adapter_root"
@@ -53,11 +80,6 @@ trap cleanup_sophia_session EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-fail() {
-    echo "desktop comparison: $*" >&2
-    exit 1
-}
 
 owned_for_executable() {
     local expected process pid executable process_uid
@@ -236,14 +258,17 @@ run_xlibre_child() {
 }
 
 run_sophia() {
-    local run=$1 workload=$2 result=0
+    local run=$1 workload=$2 result=0 launcher_status=0 child_tty=
     local session_log="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/hagia-session/session.log"
     local watchdog=300
     [[ $workload != soak-2h ]] || watchdog=7500
 
-    # Non-interactive Bash otherwise gives an asynchronous command /dev/null.
-    # Keep the established launcher bound to the already-validated operator TTY.
+    record_gate_stage sophia-launch
     (
+        [[ -t 0 ]] || fail "Sophia launcher stdin is not a terminal"
+        child_tty=$(tty) || fail "Sophia launcher could not resolve its terminal"
+        [[ $child_tty == "$operator_tty" ]] \
+            || fail "Sophia launcher terminal changed before startup"
         export SOPHIA_TTY_PROFILE=hagia
         export SOPHIA_TTY_NUMBER=3
         export SOPHIA_BIN="$sophia_bin"
@@ -254,12 +279,19 @@ run_sophia() {
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
         export SOPHIA_BUILD_SESSION=false
         exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$hagia_shell"
-    ) <"$operator_tty" &
+    ) <&"$operator_tty_fd" &
     sophia_launcher=$!
 
     for _ in {1..600}; do
-        kill -0 "$sophia_launcher" 2>/dev/null \
-            || fail "Sophia launcher exited during startup; inspect /tmp/sophia-hagia-tty3-launch.log"
+        if ! kill -0 "$sophia_launcher" 2>/dev/null; then
+            if wait "$sophia_launcher"; then
+                launcher_status=0
+            else
+                launcher_status=$?
+            fi
+            sophia_launcher=
+            fail "Sophia launcher exited during startup with status $launcher_status; inspect /tmp/sophia-hagia-tty3-launch.log"
+        fi
         supervisors=()
         while read -r pid; do
             [[ -n $pid ]] || continue
@@ -320,22 +352,36 @@ fi
 [[ $# -eq 1 ]] || fail "usage: desktop_comparison_tty3.sh RUN"
 run=$1
 [[ -x $xtask ]] || fail "the invoking xtask executable was not provided"
-operator_tty=$(tty)
+record_gate_stage tty-admission
+[[ -t 0 ]] || fail "standard input is not a terminal; invoke the gate directly from tty3"
+operator_tty=$(tty) || fail "could not resolve the operator terminal"
 [[ $operator_tty == /dev/tty3 ]] || fail "run this one-row gate from tty3"
 [[ $(< /sys/class/tty/tty0/active) == tty3 ]] || fail "tty3 must be the active VT"
+operator_tty_fd=
+exec {operator_tty_fd}<"$operator_tty" \
+    || fail "could not open the validated operator terminal"
+[[ -t $operator_tty_fd ]] || fail "the validated operator terminal descriptor is not a TTY"
 command -v jq >/dev/null || fail "jq is not installed"
 
+record_gate_stage candidate-admission
 status=$("$xtask" conformance desktop-comparison status "$run")
 printf '%s\n' "$status"
 next_stack=$(sed -n 's/.* next_stack=\([^ ]*\).*/\1/p' <<<"$status")
 next_workload=$(sed -n 's/.* next_workload=\([^ ]*\).*/\1/p' <<<"$status")
 [[ -n $next_stack && -n $next_workload ]] || fail "comparison matrix has no pending row"
 
+record_gate_stage tracefs-admission
 if ! mountpoint -q /sys/kernel/tracing; then
     sudo mount -t tracefs tracefs /sys/kernel/tracing
 fi
-sudo -- "$trace_helper" --probe
+if trace_probe=$(sudo -- "$trace_helper" --probe 2>&1); then
+    printf '%s\n' "$trace_probe"
+else
+    trace_status=$?
+    fail "tracefs probe failed with status $trace_status: $trace_probe"
+fi
 
+record_gate_stage stack-admission
 case "$next_stack" in
     sophia)
         [[ -x $sophia_bin ]] || fail "release Sophia binary is missing; build it before the gate"
