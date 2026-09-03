@@ -1,8 +1,12 @@
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 use sophia_backend_live::{
     LiveProductionCompletionTimestamp, LiveProductionKmsCompletionSource,
+    reduce_live_production_completion_timestamp,
+};
+use sophia_backend_live::{
     LiveProductionOutputRuntimeAdapter, LiveProductionPageFlipRetirement,
     LiveProductionPageFlipTracker, LiveProductionPageFlipTrackerError,
-    LiveProductionPresentationAdapter, reduce_live_production_completion_timestamp,
+    LiveProductionPresentationAdapter,
 };
 use sophia_engine::{
     EngineHeadRegistry, HeadRenderTarget, OutputPresentationFeedback, OutputPresentationSchedule,
@@ -174,6 +178,7 @@ fn page_flip_tracker_accepts_source_changes_in_one_monotonic_clock_domain() {
     assert_eq!(tracker.submit(output, 3), Ok(3));
 }
 
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 #[test]
 fn completion_sources_share_one_monotonic_timestamp_domain() {
     let kernel_ust = 604_000_000_000;
@@ -224,6 +229,7 @@ fn completion_sources_share_one_monotonic_timestamp_domain() {
     assert!(out_fence.ust_usec < missing_kernel.ust_usec);
 }
 
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 #[test]
 fn out_fence_completion_ignores_a_stale_kernel_timestamp() {
     let timestamp = reduce_live_production_completion_timestamp(

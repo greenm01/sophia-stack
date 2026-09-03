@@ -1,3 +1,5 @@
+#![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+
 //! The rules the cursor transaction owner follows, and why each exists.
 
 use sophia_backend_live::{

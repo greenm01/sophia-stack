@@ -18133,3 +18133,17 @@ index is resolved through the Rust DRM API instead of `/tmp/crtc`. The new path
 has passed offline compile, replay, mutation, launcher, and shell-syntax checks.
 It has not yet passed a physical row, so CP-14.2 remains open for a clean signed
 candidate, fresh preparation, all 39 rows, and final verification.
+
+## 2026-09-03: restore the backend default-feature boundary
+
+The repository-wide default-feature test exposed stale native-presentation
+exports in `sophia-backend-live`. The `presentation` module was correctly
+limited to `libdrm-events` plus `gbm-probe`, but its public re-export was not;
+the cursor transaction owner had the inverse mismatch, with a gated re-export
+but an unconditional module declaration. Their native-only integration tests
+also imported those APIs in default builds.
+
+The module declarations, public exports, imports, and individual native
+completion tests now use the same two-feature boundary. Generic production
+session coverage remains active in default builds rather than gating the whole
+test file. Both the default backend suite and its all-features suite pass, so

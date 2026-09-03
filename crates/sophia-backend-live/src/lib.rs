@@ -11,6 +11,7 @@
 //! startup probing, and hardware validation.
 
 mod api;
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod cursor_transaction_owner;
 mod dependency;
 mod direct_scanout_cost;
@@ -48,6 +49,7 @@ pub use drm::{
 };
 #[cfg(feature = "drm-hotplug")]
 pub use drm::{LiveDrmTopologyMonitor, LiveDrmTopologyMonitorStats, LiveDrmTopologyRescanNotice};
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub use presentation::*;
 pub use production_cpu_cycle::*;
 pub use production_intake::*;
