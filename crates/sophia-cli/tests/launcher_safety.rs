@@ -132,6 +132,7 @@ fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
 fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_SESSION_STARTUP=none"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_sophia_session EXIT"));
+    assert!(DESKTOP_COMPARISON_GATE.contains(") <\"$operator_tty\" &"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_niri EXIT"));

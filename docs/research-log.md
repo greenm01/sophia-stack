@@ -18147,3 +18147,23 @@ The module declarations, public exports, imports, and individual native
 completion tests now use the same two-feature boundary. Generic production
 session coverage remains active in default builds rather than gating the whole
 test file. Both the default backend suite and its all-features suite pass, so
+the next signed comparison candidate can be prepared without carrying a known
+workspace compile failure.
+
+## 2026-09-03: first schema-3 row exposed asynchronous TTY stdin loss
+
+The first physical `cp14-schema3` row ended at the `justfile` line-98 recipe
+wrapper. It sealed no row and produced no new Sophia session or attempt logs.
+Pre-display candidate, checksum, and executable admission passed independently.
+
+The gate had launched `start_sophia_tty3.sh` as an asynchronous subshell. In
+non-interactive Bash, an asynchronous command without job control receives
+standard input from `/dev/null` unless the script supplies an explicit
+redirection. The established launcher therefore failed its `-t 0` contract
+before its logging boundary, matching the observed absence of new evidence.
+
+The gate now captures the path returned by `tty`, admits only `/dev/tty3`, and
+redirects the asynchronous launcher stdin from that same device. This keeps
+terminal recovery and input-guard ownership on the already-validated local
+TTY. A launcher-safety regression prevents the explicit stdin contract from
+being removed.

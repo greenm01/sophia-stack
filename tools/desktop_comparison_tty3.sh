@@ -241,6 +241,8 @@ run_sophia() {
     local watchdog=300
     [[ $workload != soak-2h ]] || watchdog=7500
 
+    # Non-interactive Bash otherwise gives an asynchronous command /dev/null.
+    # Keep the established launcher bound to the already-validated operator TTY.
     (
         export SOPHIA_TTY_PROFILE=hagia
         export SOPHIA_TTY_NUMBER=3
@@ -252,7 +254,7 @@ run_sophia() {
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
         export SOPHIA_BUILD_SESSION=false
         exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$hagia_shell"
-    ) &
+    ) <"$operator_tty" &
     sophia_launcher=$!
 
     for _ in {1..600}; do
@@ -318,7 +320,8 @@ fi
 [[ $# -eq 1 ]] || fail "usage: desktop_comparison_tty3.sh RUN"
 run=$1
 [[ -x $xtask ]] || fail "the invoking xtask executable was not provided"
-[[ $(tty) == /dev/tty3 ]] || fail "run this one-row gate from tty3"
+operator_tty=$(tty)
+[[ $operator_tty == /dev/tty3 ]] || fail "run this one-row gate from tty3"
 [[ $(< /sys/class/tty/tty0/active) == tty3 ]] || fail "tty3 must be the active VT"
 command -v jq >/dev/null || fail "jq is not installed"
 
