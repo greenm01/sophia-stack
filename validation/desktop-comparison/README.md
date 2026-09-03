@@ -13,13 +13,13 @@ capture, or corrupt evidence.
 
 ## Acquisition status
 
-Physical acquisition is paused. Run `cp14` mechanically sealed rows 1 through
-15, but the ordinary Sophia launcher retained the operator's Kitty inside the
-measured supervisor tree and Hagia could leave the capture-owned workload
-off-screen. Readiness and DRM-vblank records did not detect that mismatch. Do
-not continue or cite that run as comparison evidence. The replacement gate in
-`todo.md` requires a terminal-free Sophia launch and passive DP-1 visibility
-proof; `docs/research-log.md` retains the diagnosis and row disposition.
+Run `cp14` remains preserved but invalid: its first 15 rows predate the
+terminal-free visibility contract. The replacement acquisition is implemented
+as one typed TTY3 gate. It starts every stack without an operator application,
+runs the controller outside the measured supervisor tree, and requires passive
+workload-owned focus and visibility on DP-1 before and throughout measurement.
+Physical validation and a fresh 39-row run remain outstanding. Do not continue
+or cite `cp14`; schema-3 admission rejects it explicitly.
 
 ## Pinned matrix
 
@@ -50,25 +50,32 @@ cargo xtask conformance desktop-comparison prepare RUN
 cargo xtask conformance desktop-comparison status RUN
 ```
 
-For each row, read `status`, explicitly select the named local greetd session,
-and launch that stack with its repository profile. Do not let this workflow
-switch display managers, use SSH, or select a different machine.
-
-Inside the selected session, attest the actual compositor/X server supervisor
-and DP-1's active DRM CRTC, then run preflight and capture:
+For each row, switch to TTY3, log in, and run one command:
 
 ```sh
-cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
-cargo xtask conformance desktop-comparison preflight RUN
-cargo xtask conformance desktop-comparison capture RUN
+just desktop-comparison-row RUN
+# equivalent:
+cargo xtask conformance desktop-comparison gate RUN
 ```
+
+`gate` revalidates the exact clean prepared commit and builds the release
+Sophia candidate before graphical takeover, then verifies the six prepared
+stack/policy/shell executable digests. It reads only the next typed row,
+launches the matching local terminal-free Sophia, XLibre+xmonad, or niri
+session with the repository profile, checks the fixed topology, attests the
+actual supervisor, resolves DP-1's active CRTC through DRM, captures and seals
+one row, tears the session down, and returns to TTY3. It never uses SSH.
+Sophia's adapter may stop and restore the local display manager because Sophia
+owns DRM directly; failure cleanup retains that restoration path.
 
 `attest` derives the stack and version from the exact next schedule row. It
 refuses a foreign-UID process, a supervisor executable that cannot implement
 that stack, PID reuse, and XLibre without the pinned-prefix identity file. It
 publishes one mode-0600 record below
-`$XDG_RUNTIME_DIR/sophia-desktop-comparison/`. `capture` accepts no caller
-stack, version, topology, workload, duration, or output identity.
+`$XDG_RUNTIME_DIR/sophia-desktop-comparison/`. Automatic attestation accepts
+only `RUN SUPERVISOR_PID`; the explicit CRTC form remains diagnostic.
+`capture` accepts no caller stack, version, topology, workload, duration, or
+output identity.
 
 `preflight` and `capture` prompt through `sudo` only for
 `tools/desktop_comparison_tracefs.sh`. Preflight asks that narrow adapter to
@@ -92,6 +99,13 @@ the row only after raw replay succeeds. Failed captures remain under
 `RUN/incoming/`; that intentionally blocks status, capture, verify, and report
 until the partial evidence is diagnosed.
 
+The trusted conformance owner correlates X11 `_NET_WM_PID` or niri IPC PIDs
+against start-time-bound workload roots, but persists only normalized counts
+and placement/focus booleans. No title, class, PID, or application identity
+crosses Sophia's blind WM boundary or enters the evidence. Baseline must contain
+zero application toplevels; settled and one-second records must contain an
+owned, focused, visible DP-1 toplevel and zero foreign application toplevels.
+
 Replay and final reduction do not need the original desktop session:
 
 ```sh
@@ -100,10 +114,11 @@ cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 ```
 
-Each sealed attempt contains exactly five raw inputs, the derived schema-2
-sample, and an internal checksum ledger. The run ledger separately binds that
-sample to its schedule path. Report rows preserve resource/allocation, launch,
-settle, resize, and kernel-frame populations and always end in `verdict=none`.
+Each sealed attempt contains exactly six raw inputs, including
+`visibility.log`, the derived schema-3 sample, and an internal checksum ledger.
+The run ledger separately binds that sample to its schedule path. Report rows
+preserve resource/allocation, launch, settle, resize, and kernel-frame
+populations and always end in `verdict=none`.
 
 ## Profile admission
 

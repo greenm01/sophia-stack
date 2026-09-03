@@ -1,5 +1,6 @@
 //! Repository-owned desktop-comparison workloads.
 
+use super::visibility::ProcessIdentity;
 use super::{READY_TIMEOUT, ScheduledSample, elapsed_micros, timing_population, write_new};
 use std::fs;
 use std::io::{Read as _, Write as _};
@@ -25,6 +26,7 @@ pub(super) struct WorkloadOwner {
     firefox: Option<FixtureServer>,
     resize: Option<thread::JoinHandle<Result<Vec<u64>, String>>>,
     resize_requested: bool,
+    launched_at: Instant,
     launch_usec: u64,
     settle_usec: u64,
     finished: bool,
@@ -46,6 +48,7 @@ impl WorkloadOwner {
             firefox: None,
             resize: None,
             resize_requested: scheduled.workload == "resize",
+            launched_at: launched,
             launch_usec: 0,
             settle_usec: 0,
             finished: false,
@@ -184,6 +187,18 @@ impl WorkloadOwner {
 
     pub(super) fn root_pids(&self) -> impl Iterator<Item = u32> + '_ {
         self.roots.iter().copied()
+    }
+
+    pub(super) fn root_identities(&self) -> Result<Vec<ProcessIdentity>, String> {
+        self.roots
+            .iter()
+            .copied()
+            .map(ProcessIdentity::read)
+            .collect()
+    }
+
+    pub(super) fn mark_visible(&mut self) {
+        self.settle_usec = elapsed_micros(self.launched_at);
     }
 
     pub(super) fn exited_early(&mut self) -> Result<bool, String> {

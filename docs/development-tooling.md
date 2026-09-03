@@ -60,8 +60,9 @@ cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
 cargo xtask conformance gate direct-scanout [PROOF]
 cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
 cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
-cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
 cargo xtask conformance desktop-comparison preflight RUN
 cargo xtask conformance desktop-comparison capture RUN
 cargo xtask conformance desktop-comparison verify RUN
@@ -83,13 +84,18 @@ the default atomic path rather than selecting it. Each has a matching
 
 The desktop comparison is a diagnostic 39-sample matrix, not a relative
 release gate. Its typed conformance owner requires a clean signed candidate,
-pins and hashes configuration plus hardware/software identities, rotates stack
-order across three 60-second repetitions, owns workload/process/resource
-lifetime, replays kernel-DRM and workload populations, binds every sealed raw
-attempt by checksum, and requires one two-hour soak per stack. The operator
-selects the named local greetd session explicitly. The code neither switches
-display managers nor contacts another host; tracefs privilege is isolated in
-one fixed-name, user-directory-validating shell adapter.
+pins and hashes configuration, stack executables, and hardware/software
+identities, rotates stack order across three 60-second repetitions, and owns
+workload/process/resource lifetime. It replays kernel-DRM, visibility, and
+workload populations, binds every sealed raw attempt by checksum, and requires
+one two-hour soak per stack.
+`desktop-comparison gate` is the typed one-row entry point. Its shell adapter
+owns only TTY3 checks, local compositor/X-server launch, bounded teardown, VT
+recovery, and tracefs privilege; stack/workload choice, admission, sampling,
+replay, and binding remain in Rust. The gate launches no operator application,
+never contacts another host, and runs its controller outside the measured
+supervisor tree. Sophia's direct-DRM path may stop and restore the local display
+manager.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.

@@ -121,24 +121,30 @@ Required exit:
 
 The acquisition contract is implemented under
 `cargo xtask conformance desktop-comparison`. A clean signed preparation
-detects host identity and hashes the descriptors, three isolated profiles,
-Firefox fixture/profile, and tracefs adapter. `status` exposes only the exact
-next row; `attest` binds its active owner-only local supervisor; `preflight`
-checks the pinned tools and kernel event source; and `capture` owns the
-workload, process trees, one-second resource series, narrow privileged DRM
-trace, teardown, raw replay, and atomic bind.
+detects host identity and hashes the descriptors, isolated profiles, Firefox
+fixture/profile, tracefs adapter, all stack-launch adapters, and the six stack,
+policy, and shell executables. `gate` is the single TTY3 row owner: it
+revalidates the clean prepared checkout and release
+build before takeover, chooses the typed next stack, launches no operator
+application, keeps the controller outside the measured supervisor tree,
+resolves DP-1's active CRTC, and owns capture plus teardown. `attest`,
+`preflight`, `capture`, `replay`, `verify`, and `report` remain
+separately callable diagnostics.
 
-Each attempt retains exact raw resource, kernel-frame, workload, native-timing,
-and attempt records plus a derived schema-2 result and internal ledger. Replay
-requires uniform 60-second short windows, the two-hour soak, 120 resize
-observations, contiguous/monotonic populations, zero crash/loss, and clean
-teardown. Partial attempts block progress. Focused and unit regressions cover
-matrix rotation, legacy/schema-2 parsing, raw replay, bind/archive integrity,
-truncation, reordering, identity/failure mutations, non-prefix order, kernel
-normalization, later tampering, owner-only capture modes, strict privileged
-tracefs-probe records, isolated Kitty configuration, and bounded runtime socket
-paths. Reports retain resource, allocation, latency, and frame distributions
-with `verdict=none`.
+Each attempt retains exact raw visibility, resource, kernel-frame, workload,
+native-timing, and attempt records plus a derived schema-3 result and internal
+ledger. Replay requires an empty application baseline; a capture-owned,
+focused, visible DP-1 toplevel with zero foreign application toplevels at
+settlement and every sample; uniform 60-second short windows; the two-hour
+soak; 120 resize observations; contiguous/monotonic populations; zero
+crash/loss; and clean teardown. Correlation consumes PID/start identity only
+inside trusted conformance code and persists no application identity. Partial
+attempts block progress. Regression coverage includes ready-but-hidden and
+foreign-window rejection, legacy-run refusal, raw replay/archive integrity,
+matrix/order mutation, kernel normalization, owner-only modes, tracefs probe
+records, isolated Kitty configuration, and bounded runtime socket paths.
+Reports retain resource, allocation, latency, and frame distributions with
+`verdict=none`.
 
 The first physical attempt failed closed before row 1 and is documented in
 `docs/research-log.md`. A later run on signed candidate `00deb788` sealed the
@@ -150,20 +156,20 @@ have no equivalent client. Readiness and DRM-vblank evidence do not prove a
 visible workload, so Sophia rows 1, 6, 8, 10, and 15 are biased and the complete
 prefix is non-promotable. Acquisition is paused before row 16.
 
-Outstanding physical work:
+Implementation is complete; remaining critical-path work:
 
-1. replace Sophia's operator-terminal acquisition with a terminal-free session
-   and a capture controller outside the measured supervisor tree;
-2. fail closed unless a trusted passive observation binds the capture-owned
-   workload to a visible DP-1 placement, without disclosing application
-   identity to the blind WM, and retain a ready-but-hidden negative regression;
-3. prepare a fresh run from the resulting clean signed Sophia candidate, using
-   the already provisioned pinned XLibre prefix and isolated reference profiles;
-4. explicitly select each named local stack and capture all 39 scheduled rows
-   on this machine; and
-5. retain and verify the complete matrix. The Sophia two-hour raw run may also
-   satisfy CP-14.3 only if the same evidence independently passes the current
-   soak verifier.
+- [x] replace Sophia's operator-terminal acquisition with a terminal-free
+  session and a capture controller outside the measured supervisor tree;
+- [x] fail closed unless trusted passive observation binds the capture-owned
+  workload to focused, visible DP-1 placement without disclosing application
+  identity to the blind WM, with hidden/foreign negative regressions;
+- [ ] commit and sign the corrected candidate, then prepare a fresh run using
+  the already provisioned pinned XLibre prefix and isolated reference profiles;
+- [ ] run the unified one-row TTY3 gate for all 39 scheduled rows on this
+  machine; and
+- [ ] retain and verify the complete matrix. The Sophia two-hour raw run may
+  also satisfy CP-14.3 only if the same evidence independently passes the
+  current soak verifier.
 
 ### CP-14.3 — Close Milestone 14 (`NEXT`)
 

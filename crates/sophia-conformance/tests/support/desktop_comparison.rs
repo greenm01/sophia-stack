@@ -35,7 +35,7 @@ fn prepared_run(root: &Path) -> (PathBuf, String) {
     fs::create_dir(run.join("samples")).unwrap();
     let candidate = git_output(&repo, &["rev-parse", "HEAD"]).unwrap();
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=2 status=prepared diagnostic_only=true source_commit={candidate}\n"
+        "desktop_comparison_manifest schema=3 status=prepared diagnostic_only=true acquisition=terminal_free_visible source_commit={candidate}\n"
     );
     for config in CONFIGS {
         manifest.push_str(&format!(
@@ -182,7 +182,7 @@ fn raw_capture_attempt(root: &Path, item: &ScheduledSample, candidate: &str) -> 
     fs::write(
         attempt.join("attempt.kdl"),
         format!(
-            "desktop_comparison_attempt schema=1 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec=60000 crashes=0 sample_loss=0 teardown=clean\n",
+            "desktop_comparison_attempt schema=2 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec=60000 controller_outside_supervisor=true visibility_samples=60 crashes=0 sample_loss=0 teardown=clean\n",
             item.order,
             item.stack,
             item.workload,
@@ -194,6 +194,17 @@ fn raw_capture_attempt(root: &Path, item: &ScheduledSample, candidate: &str) -> 
         ),
     )
     .unwrap();
+    let mut visibility = String::from(
+        "desktop_comparison_visibility schema=1 phase=baseline seq=0 monotonic_usec=0 owned_toplevels=0 visible_dp1=0 foreign_toplevels=0 focused_visible_dp1=false\n\
+         desktop_comparison_visibility schema=1 phase=settled seq=0 monotonic_usec=0 owned_toplevels=1 visible_dp1=1 foreign_toplevels=0 focused_visible_dp1=true\n",
+    );
+    for seq in 1..=60u64 {
+        visibility.push_str(&format!(
+            "desktop_comparison_visibility schema=1 phase=sample seq={seq} monotonic_usec={} owned_toplevels=1 visible_dp1=1 foreign_toplevels=0 focused_visible_dp1=true\n",
+            seq * 1_000_000,
+        ));
+    }
+    fs::write(attempt.join("visibility.log"), visibility).unwrap();
     let resources = (1..=60u64)
         .map(|seq| {
             format!(
@@ -238,7 +249,7 @@ fn raw_capture_replays_from_complete_monotonic_populations() {
     assert!(
         replay
             .sample_record
-            .starts_with("desktop_comparison_sample schema=2 status=complete order=1 ")
+            .starts_with("desktop_comparison_sample schema=3 status=complete order=1 ")
     );
     assert!(replay.sample_record.contains("resource_samples=60"));
     assert!(replay.sample_record.contains("frame_samples=120"));
@@ -296,6 +307,67 @@ fn raw_capture_rejects_truncation_and_nonmonotonic_kernel_time() {
             .unwrap_err()
             .contains("strictly monotonic")
     );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn raw_capture_rejects_missing_focus_and_foreign_windows() {
+    let root = temporary_root("visibility-mutations");
+    let (run, candidate) = prepared_run(&root);
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let visibility_path = attempt.join("visibility.log");
+    let visibility = fs::read_to_string(&visibility_path).unwrap();
+    fs::write(
+        &visibility_path,
+        visibility.replacen(
+            "phase=sample seq=30 monotonic_usec=30000000 owned_toplevels=1 visible_dp1=1 foreign_toplevels=0 focused_visible_dp1=true",
+            "phase=sample seq=30 monotonic_usec=30000000 owned_toplevels=1 visible_dp1=1 foreign_toplevels=0 focused_visible_dp1=false",
+            1,
+        ),
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("lacks focused workload ownership")
+    );
+
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let visibility_path = attempt.join("visibility.log");
+    let visibility = fs::read_to_string(&visibility_path).unwrap();
+    fs::write(
+        &visibility_path,
+        visibility.replacen(
+            "phase=sample seq=30 monotonic_usec=30000000 owned_toplevels=1 visible_dp1=1 foreign_toplevels=0",
+            "phase=sample seq=30 monotonic_usec=30000000 owned_toplevels=1 visible_dp1=1 foreign_toplevels=1",
+            1,
+        ),
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("foreign application toplevel")
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn legacy_manifest_is_preserved_but_not_admitted() {
+    let root = temporary_root("legacy-manifest");
+    let (run, _) = prepared_run(&root);
+    let manifest_path = run.join("manifest.kdl");
+    let manifest = fs::read_to_string(&manifest_path).unwrap().replacen(
+        "schema=3 status=prepared diagnostic_only=true acquisition=terminal_free_visible",
+        "schema=2 status=prepared diagnostic_only=true",
+        1,
+    );
+    fs::write(manifest_path, manifest).unwrap();
+    let error = status(&repo(), &run).unwrap_err();
+    assert!(error.contains("predates the terminal-free visibility contract"));
 
     fs::remove_dir_all(root).unwrap();
 }

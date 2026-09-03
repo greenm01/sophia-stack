@@ -93,6 +93,10 @@ check:
 desktop-comparison-prepare run:
     @cargo --quiet xtask conformance desktop-comparison prepare "{{ run }}"
 
+# Launch, capture, seal, and tear down exactly the next row from tty3.
+desktop-comparison-row run:
+    @cargo --quiet xtask conformance desktop-comparison gate "{{ run }}"
+
 # Read the exact next row before selecting its local greetd session.
 desktop-comparison-status run:
     @cargo --quiet xtask conformance desktop-comparison status "{{ run }}"

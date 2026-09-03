@@ -7,7 +7,8 @@ use sha2::Digest as _;
 use std::fs;
 use std::path::Path;
 
-const ATTEMPT_PREFIX: &str = "desktop_comparison_attempt schema=1 status=measured ";
+const ATTEMPT_PREFIX: &str = "desktop_comparison_attempt schema=2 status=measured ";
+const VISIBILITY_PREFIX: &str = "desktop_comparison_visibility schema=1 ";
 const RESOURCE_PREFIX: &str = "desktop_comparison_resource schema=1 ";
 const KERNEL_FRAME_PREFIX: &str = "desktop_comparison_kernel_frame schema=1 ";
 const WORKLOAD_PREFIX: &str = "desktop_comparison_workload schema=1 status=complete ";
@@ -113,6 +114,7 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         ("kitty", KITTY_VERSION),
         ("firefox", FIREFOX_VERSION),
         ("teardown", "clean"),
+        ("controller_outside_supervisor", "true"),
         ("crashes", "0"),
         ("sample_loss", "0"),
     ] {
@@ -135,6 +137,14 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
     }
 
     let (resource_samples, resources) = replay_resources(attempt, duration_msec)?;
+    let visibility_samples = replay_visibility(attempt, resource_samples)?;
+    if number(&attempt_fields, "visibility_samples")?
+        != u64::try_from(visibility_samples).unwrap_or(u64::MAX)
+    {
+        return Err(
+            "capture attempt visibility_samples does not match visibility evidence".to_owned(),
+        );
+    }
     let frames = replay_kernel_frames(attempt)?;
     let workload_source = read_one(attempt.join("workload.log"), WORKLOAD_PREFIX)?;
     let workload_fields = owned_fields(&workload_source)?;
@@ -171,7 +181,7 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
     let native_source_name = required(&native_fields, "source")?;
 
     let sample_record = format!(
-        "desktop_comparison_sample schema=2 status=complete order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} resource_samples={} processes={} pss_peak_kib={} rss_peak_kib={} anonymous_peak_kib={} private_dirty_peak_kib={} cpu_msec={} minor_faults={} major_faults={} threads_peak={} fds_peak={} launch_msec={} settle_msec={} resize_msec={} resize_samples={} resize_p50_usec={} resize_p95_usec={} resize_p99_usec={} resize_max_usec={} frame_source=kernel_drm frame_samples={} frame_mean_usec={} frame_p50_usec={} frame_p95_usec={} frame_p99_usec={} frame_max_usec={} native_timing={} native_source={} native_samples={} crashes=0 sample_loss=0 teardown=clean",
+        "desktop_comparison_sample schema=3 status=complete order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} visible_dp1=true focused_owned=true foreign_toplevels=0 resource_samples={} processes={} pss_peak_kib={} rss_peak_kib={} anonymous_peak_kib={} private_dirty_peak_kib={} cpu_msec={} minor_faults={} major_faults={} threads_peak={} fds_peak={} launch_msec={} settle_msec={} resize_msec={} resize_samples={} resize_p50_usec={} resize_p95_usec={} resize_p99_usec={} resize_max_usec={} frame_source=kernel_drm frame_samples={} frame_mean_usec={} frame_p50_usec={} frame_p95_usec={} frame_p99_usec={} frame_max_usec={} native_timing={} native_source={} native_samples={} crashes=0 sample_loss=0 teardown=clean",
         scheduled.order,
         scheduled.stack,
         scheduled.workload,
@@ -181,6 +191,7 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         KITTY_VERSION,
         FIREFOX_VERSION,
         duration_msec,
+        visibility_samples,
         resource_samples,
         resources.processes,
         resources.pss_kib,
@@ -217,6 +228,77 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         repetition,
         sample_record,
     })
+}
+
+fn replay_visibility(attempt: &Path, resource_samples: usize) -> Result<usize, String> {
+    let records = read_records(attempt.join("visibility.log"), VISIBILITY_PREFIX)?;
+    let expected_records = resource_samples.saturating_add(2);
+    if records.len() != expected_records {
+        return Err(format!(
+            "visibility series has {} records; expected {expected_records}",
+            records.len()
+        ));
+    }
+
+    let baseline = &records[0];
+    if required(baseline, "phase")? != "baseline"
+        || number(baseline, "seq")? != 0
+        || number(baseline, "monotonic_usec")? != 0
+        || number(baseline, "owned_toplevels")? != 0
+        || number(baseline, "visible_dp1")? != 0
+        || number(baseline, "foreign_toplevels")? != 0
+        || required(baseline, "focused_visible_dp1")? != "false"
+    {
+        return Err("visibility baseline is not an empty application tree".to_owned());
+    }
+
+    let settled = &records[1];
+    if required(settled, "phase")? != "settled"
+        || number(settled, "seq")? != 0
+        || number(settled, "monotonic_usec")? != 0
+    {
+        return Err("visibility settled record is malformed".to_owned());
+    }
+    require_visible_observation(settled)?;
+
+    let mut previous_usec = 0;
+    for (index, record) in records.iter().skip(2).enumerate() {
+        let expected = u64::try_from(index + 1).unwrap_or(u64::MAX);
+        if required(record, "phase")? != "sample" || number(record, "seq")? != expected {
+            return Err("visibility sample sequence is not contiguous from one".to_owned());
+        }
+        let monotonic_usec = number(record, "monotonic_usec")?;
+        if monotonic_usec <= previous_usec {
+            return Err("visibility sample clock is not strictly monotonic".to_owned());
+        }
+        let expected_usec = expected.saturating_mul(1_000_000);
+        if monotonic_usec.abs_diff(expected_usec) > 500_000 {
+            return Err(format!(
+                "visibility sample cadence drifted outside 500ms at sequence {expected}"
+            ));
+        }
+        require_visible_observation(record)?;
+        previous_usec = monotonic_usec;
+    }
+    Ok(resource_samples)
+}
+
+fn require_visible_observation(
+    record: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    if number(record, "owned_toplevels")? == 0 {
+        return Err("visibility evidence has no workload-owned toplevel".to_owned());
+    }
+    if number(record, "visible_dp1")? == 0 {
+        return Err("visibility evidence has no workload-owned DP-1 toplevel".to_owned());
+    }
+    if number(record, "foreign_toplevels")? != 0 {
+        return Err("visibility evidence contains a foreign application toplevel".to_owned());
+    }
+    if required(record, "focused_visible_dp1")? != "true" {
+        return Err("visibility evidence lacks focused workload ownership on DP-1".to_owned());
+    }
+    Ok(())
 }
 
 fn replay_resources(attempt: &Path, duration_msec: u64) -> Result<(usize, ResourcePeak), String> {
@@ -398,8 +480,9 @@ fn micros_to_millis(value: u64) -> u64 {
     value.saturating_add(999) / 1_000
 }
 
-pub(crate) const RAW_ATTEMPT_FILES: [&str; 5] = [
+pub(crate) const RAW_ATTEMPT_FILES: [&str; 6] = [
     "attempt.kdl",
+    "visibility.log",
     "resources.log",
     "kernel-frames.log",
     "workload.log",

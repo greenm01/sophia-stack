@@ -12,9 +12,15 @@ if sophia_resolve_session_terminal_kind /usr/bin/unknown >/dev/null 2>&1; then
     exit 1
 fi
 
+registered_args=()
+sophia_append_session_terminal_registration_args registered_args kitty /usr/bin/kitty
+[[ " ${registered_args[*]} " == *' --session-app=terminal=/usr/bin/kitty '* ]]
+[[ " ${registered_args[*]} " != *' --session-start=terminal '* ]]
+
 kitty_args=()
 sophia_append_session_terminal_base_args kitty_args kitty /usr/bin/kitty
 sophia_append_session_terminal_title_args kitty_args kitty 'Sophia Xmonad TTY3'
+[[ " ${kitty_args[*]} " == *' --session-start=terminal '* ]]
 [[ " ${kitty_args[*]} " == *' --session-app-arg=terminal=--config '* ]]
 [[ " ${kitty_args[*]} " == *' --session-app-arg=terminal=linux_display_server=x11 '* ]]
 [[ " ${kitty_args[*]} " == *' --session-app-arg=terminal=--title '* ]]

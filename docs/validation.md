@@ -635,8 +635,9 @@ owned by typed conformance code:
 ```sh
 cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
 cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
-cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
 cargo xtask conformance desktop-comparison preflight RUN
 cargo xtask conformance desktop-comparison capture RUN
 cargo xtask conformance desktop-comparison verify RUN
@@ -653,18 +654,23 @@ the loopback-only animated Firefox fixture, 120 resize requests, and a 16-Kitty
 launch burst, then requires
 one two-hour soak for each stack: 39 raw samples total.
 
-`attest` admits an owner-only local supervisor record derived from the exact
-next row. Privileged preflight confirms the DRM completion tracepoint before
-creating an attempt, even when tracefs is root-private. `capture` accepts no
-caller identity, owns an isolated workload and common process-tree sampler,
-and uses a private tracefs instance for authoritative kernel DRM completion
-timestamps. Kitty control sockets live in a short owner-only runtime
-namespace and never load personal Kitty configuration. Capture emits five raw
-inputs; passive replay derives the sole schema-2 sample only after duration,
-resource cadence, frame monotonicity, resize population, crash, sample-loss,
-and teardown checks pass. The sealed attempt has an exact file set and internal
-checksums; the run ledger separately binds its result to the typed schedule. A
-partial capture blocks all later progress until diagnosed.
+`gate` owns one complete TTY3 row: it checks the clean prepared commit, builds
+before display takeover, selects only the next typed stack, launches it without
+an operator application, attests its supervisor, resolves DP-1's active CRTC,
+captures, and tears down. `attest` publishes an owner-only local record.
+Privileged preflight confirms the DRM completion tracepoint before creating an
+attempt, even when tracefs is root-private. `capture` rejects a controller or
+workload launcher inside the measured supervisor tree, owns an isolated
+workload and common process-tree sampler, and uses a private tracefs instance
+for authoritative kernel DRM completion timestamps. Kitty control sockets
+live in a short owner-only runtime namespace and never load personal Kitty
+configuration. Capture emits six raw inputs. Passive replay derives the sole
+schema-3 sample only after the normalized visibility series proves an empty
+baseline plus focused workload ownership on DP-1 with zero foreign toplevels,
+and duration, resource cadence, frame monotonicity, resize population, crash,
+sample-loss, and teardown checks pass. The sealed attempt has an exact file set
+and internal checksums; the run ledger separately binds its result to the typed
+schedule. A partial capture blocks all later progress until diagnosed.
 
 `verify` requires the exact complete matrix. `report` retains memory,
 allocation, CPU/fault, process/thread/fd, launch/settle/resize, and kernel-frame

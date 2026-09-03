@@ -10,6 +10,7 @@
 //! reliable; the string-building has not.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 mod check;
 
@@ -144,7 +145,11 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             .map(print_lines)
         }
         [command, run] if command == "prepare" => {
+            build_release_sophia(&repo)?;
             desktop_comparison::prepare(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "gate" => {
+            gate_desktop_comparison(&repo, Path::new(run))
         }
         [command, run] if command == "status" => {
             desktop_comparison::status(&repo, Path::new(run)).map(print_lines)
@@ -154,6 +159,13 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
         }
         [command, run] if command == "capture" => {
             desktop_comparison::capture_next(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run, pid] if command == "attest" => {
+            let supervisor_pid = pid
+                .parse::<u32>()
+                .map_err(|_| "session supervisor PID is not an integer".to_owned())?;
+            desktop_comparison::attest_session_auto(&repo, Path::new(run), supervisor_pid)
+                .map(print_lines)
         }
         [command, run, pid, crtc] if command == "attest" => {
             let supervisor_pid = pid
@@ -188,10 +200,62 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             desktop_comparison::report(&repo, Path::new(run)).map(print_lines)
         }
         [command, ..] => Err(format!(
-            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, status, attest, preflight, capture, replay, verify, or report"
+            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, gate, status, attest, preflight, capture, replay, verify, or report"
         )),
-        [] => Err("desktop-comparison needs install-reference, prepare, status, attest, preflight, capture, replay, verify, or report".to_owned()),
+        [] => Err("desktop-comparison needs install-reference, prepare, gate, status, attest, preflight, capture, replay, verify, or report".to_owned()),
     }
+}
+
+fn gate_desktop_comparison(repo: &Path, run: &Path) -> Result<(), String> {
+    desktop_comparison::status(repo, run)?;
+    desktop_comparison::require_candidate_checkout(repo, run)?;
+    build_release_sophia(repo)?;
+    desktop_comparison::require_candidate_checkout(repo, run)?;
+    desktop_comparison::verify_prepared_binaries(repo, run)?;
+    let adapter = repo.join("tools/desktop_comparison_tty3.sh");
+    if !adapter.is_file() {
+        return Err(format!(
+            "desktop-comparison TTY adapter is missing: {}",
+            adapter.display()
+        ));
+    }
+    let xtask = std::env::current_exe()
+        .map_err(|error| format!("could not identify the running xtask: {error}"))?;
+    let status = Command::new(&adapter)
+        .arg(run)
+        .env("SOPHIA_DESKTOP_COMPARISON_XTASK", xtask)
+        .status()
+        .map_err(|error| format!("could not start {}: {error}", adapter.display()))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "desktop-comparison one-row gate exited with {status}"
+        ))
+    }
+}
+
+fn build_release_sophia(repo: &Path) -> Result<(), String> {
+    let build = Command::new("cargo")
+        .current_dir(repo)
+        .args([
+            "build",
+            "--quiet",
+            "--offline",
+            "--release",
+            "-p",
+            "sophia-cli",
+            "--features",
+            "native-session",
+        ])
+        .status()
+        .map_err(|error| format!("could not build the release Sophia candidate: {error}"))?;
+    if !build.success() {
+        return Err(format!(
+            "release Sophia candidate build exited with {build}"
+        ));
+    }
+    Ok(())
 }
 
 fn run_direct_scanout(arguments: &[String]) -> Result<(), String> {
@@ -380,8 +444,9 @@ usage: cargo xtask <command>
 
   conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
   conformance desktop-comparison prepare RUN
+  conformance desktop-comparison gate RUN
   conformance desktop-comparison status RUN
-  conformance desktop-comparison attest RUN SUPERVISOR_PID CRTC
+  conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
   conformance desktop-comparison preflight RUN
   conformance desktop-comparison capture RUN
   conformance desktop-comparison replay RUN ATTEMPT

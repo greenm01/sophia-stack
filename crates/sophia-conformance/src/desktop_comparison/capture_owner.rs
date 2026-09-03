@@ -5,12 +5,15 @@
 //! samples the common process population, normalizes kernel DRM completion
 //! events, and binds only a replayable raw attempt.
 
+mod crtc;
 mod reference;
 mod trace;
+mod visibility;
 mod workload;
 
 pub use reference::install_reference;
 use trace::{TraceOwner, probe_tracefs};
+use visibility::{VisibilityProbe, format_record, process_descends_from};
 use workload::WorkloadOwner;
 pub use workload::run_stream;
 
@@ -67,6 +70,16 @@ pub(super) struct ProcStat {
     major_faults: u64,
     threads: u64,
 }
+
+pub fn attest_session_auto(
+    repo: &Path,
+    run: &Path,
+    supervisor_pid: u32,
+) -> Result<Vec<String>, String> {
+    let crtc = crtc::resolve_dp1_crtc()?;
+    attest_session(repo, run, supervisor_pid, crtc)
+}
+
 pub fn attest_session(
     repo: &Path,
     run: &Path,
@@ -106,6 +119,13 @@ pub fn attest_session(
             scheduled.stack
         ));
     }
+    let identity_field = match scheduled.stack.as_str() {
+        "sophia" => "sophia_sha256",
+        "xlibre-xmonad" => "xlibre_sha256",
+        "niri" => "niri_sha256",
+        _ => unreachable!(),
+    };
+    require_executable_digest(&executable, &manifest_identity(run, identity_field)?)?;
     if scheduled.stack == "xlibre-xmonad" {
         let prefix = executable
             .parent()
@@ -177,7 +197,7 @@ pub fn preflight(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     let attestation_path = session_attestation_path()?;
     let attestation = read_attestation(&attestation_path)?;
     validate_session(run, &scheduled, &attestation)?;
-    validate_active_profile(repo, &attestation)?;
+    validate_active_profile(repo, run, &attestation)?;
     require_tool_version("kitty", &["--version"], KITTY_VERSION)?;
     require_tool_version("firefox", &["--version"], FIREFOX_VERSION)?;
     if scheduled.stack == "niri" {
@@ -257,6 +277,24 @@ fn measure(
     } else {
         Duration::from_secs(60)
     };
+    if process_descends_from(std::process::id(), attestation.supervisor_pid)? {
+        return Err(
+            "comparison capture controller must run outside the measured supervisor tree"
+                .to_owned(),
+        );
+    }
+    let mut visibility = VisibilityProbe::connect(&scheduled.stack)?;
+    let baseline_visibility = visibility.observe(&[])?;
+    baseline_visibility.require_empty()?;
+    let mut visibility_log = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(attempt.join("visibility.log"))
+        .map_err(|error| format!("could not create visibility evidence: {error}"))?;
+    visibility_log
+        .write_all(format_record("baseline", 0, 0, baseline_visibility).as_bytes())
+        .map_err(|error| format!("could not write visibility baseline: {error}"))?;
+
     let raw_trace = attempt.join("kernel-trace.raw");
     let mut trace = TraceOwner::start(
         &repo.join("tools/desktop_comparison_tracefs.sh"),
@@ -264,6 +302,20 @@ fn measure(
         &raw_trace,
     )?;
     let mut workload = WorkloadOwner::launch(repo, attempt, scheduled, duration)?;
+    let workload_identities = workload.root_identities()?;
+    for identity in &workload_identities {
+        if process_descends_from(identity.pid(), attestation.supervisor_pid)? {
+            return Err(
+                "comparison workload launcher entered the measured supervisor tree".to_owned(),
+            );
+        }
+    }
+    let settled_visibility = visibility.wait_visible(&workload_identities, READY_TIMEOUT)?;
+    workload.mark_visible();
+    visibility_log
+        .write_all(format_record("settled", 0, 0, settled_visibility).as_bytes())
+        .map_err(|error| format!("could not write settled visibility evidence: {error}"))?;
+
     trace.begin()?;
     workload.begin_measured_work()?;
 
@@ -271,7 +323,7 @@ fn measure(
     let clock_ticks = clock_ticks_per_second()?;
     let mut roots = BTreeSet::from([attestation.supervisor_pid]);
     roots.extend(workload.root_pids());
-    roots.extend(stack_auxiliary_roots(repo, &scheduled.stack)?);
+    roots.extend(stack_auxiliary_roots(repo, run, &scheduled.stack)?);
     let baseline = sample_process_population(Path::new("/proc"), &roots)?;
     let mut resources = OpenOptions::new()
         .write(true)
@@ -286,11 +338,19 @@ fn measure(
         if workload.exited_early()? {
             return Err("comparison workload exited before its measured window".to_owned());
         }
+        let monotonic_usec = elapsed_micros(started);
+        let observed_visibility = visibility.observe(&workload_identities)?;
+        observed_visibility.require_visible()?;
+        visibility_log
+            .write_all(
+                format_record("sample", sequence, monotonic_usec, observed_visibility).as_bytes(),
+            )
+            .map_err(|error| format!("could not append visibility evidence: {error}"))?;
         let snapshot = sample_process_population(Path::new("/proc"), &roots)?;
         writeln!(
             resources,
             "desktop_comparison_resource schema=1 seq={sequence} monotonic_usec={} processes={} pss_kib={} rss_kib={} anonymous_kib={} private_dirty_kib={} cpu_msec={} minor_faults={} major_faults={} threads={} fds={}",
-            elapsed_micros(started),
+            monotonic_usec,
             snapshot.processes,
             snapshot.pss_kib,
             snapshot.rss_kib,
@@ -304,6 +364,9 @@ fn measure(
         )
         .map_err(|error| format!("could not append resource evidence: {error}"))?;
     }
+    visibility_log
+        .sync_all()
+        .map_err(|error| format!("could not sync visibility evidence: {error}"))?;
     resources
         .sync_all()
         .map_err(|error| format!("could not sync resource evidence: {error}"))?;
@@ -336,7 +399,7 @@ fn measure(
     write_new(
         &attempt.join("attempt.kdl"),
         format!(
-            "desktop_comparison_attempt schema=1 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} crashes=0 sample_loss=0 teardown=clean\n",
+            "desktop_comparison_attempt schema=2 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} crashes=0 sample_loss=0 teardown=clean\n",
             scheduled.order,
             scheduled.stack,
             scheduled.workload,
@@ -346,6 +409,7 @@ fn measure(
             KITTY_VERSION,
             FIREFOX_VERSION,
             duration_msec,
+            samples,
         )
         .as_bytes(),
     )
@@ -380,14 +444,30 @@ fn validate_session(
     validate_supervisor(attestation)
 }
 
-fn validate_active_profile(repo: &Path, attestation: &SessionAttestation) -> Result<(), String> {
+fn validate_active_profile(
+    repo: &Path,
+    run: &Path,
+    attestation: &SessionAttestation,
+) -> Result<(), String> {
     let expected = expected_profile(repo, &attestation.stack)?;
     match attestation.stack.as_str() {
         "sophia" => {
             let observed =
                 process_environment(attestation.supervisor_pid, "SOPHIA_DESKTOP_PROFILE")
                     .ok_or("Sophia supervisor does not expose SOPHIA_DESKTOP_PROFILE")?;
-            require_same_path(&observed, &expected, "Sophia desktop profile")
+            require_same_path(&observed, &expected, "Sophia desktop profile")?;
+            require_descendant_executable(
+                run,
+                attestation.supervisor_pid,
+                "hagia",
+                "hagia_sha256",
+            )?;
+            require_descendant_executable(
+                run,
+                attestation.supervisor_pid,
+                "hagia_shell",
+                "hagia_shell_sha256",
+            )
         }
         "niri" => {
             if let Some(observed) = process_environment(attestation.supervisor_pid, "NIRI_CONFIG") {
@@ -405,8 +485,48 @@ fn validate_active_profile(repo: &Path, attestation: &SessionAttestation) -> Res
                 Err("niri supervisor is not using the repository comparison profile".to_owned())
             }
         }
-        "xlibre-xmonad" => stack_auxiliary_roots(repo, &attestation.stack).map(|_| ()),
+        "xlibre-xmonad" => stack_auxiliary_roots(repo, run, &attestation.stack).map(|_| ()),
         _ => Err("active session names an unknown comparison stack".to_owned()),
+    }
+}
+
+fn require_descendant_executable(
+    run: &Path,
+    supervisor: u32,
+    executable_name: &str,
+    digest_field: &str,
+) -> Result<(), String> {
+    let expected = manifest_identity(run, digest_field)?;
+    let mut observed = 0usize;
+    for entry in fs::read_dir("/proc")
+        .map_err(|error| format!("could not enumerate {executable_name} processes: {error}"))?
+    {
+        let entry = entry
+            .map_err(|error| format!("could not inspect {executable_name} process: {error}"))?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(executable) = fs::read_link(entry.path().join("exe")) else {
+            continue;
+        };
+        if executable.file_name().and_then(|name| name.to_str()) != Some(executable_name)
+            || !process_descends_from(pid, supervisor)?
+        {
+            continue;
+        }
+        require_executable_digest(&executable, &expected)?;
+        observed = observed.saturating_add(1);
+    }
+    if observed == 1 {
+        Ok(())
+    } else {
+        Err(format!(
+            "comparison requires exactly one prepared {executable_name} descendant; found {observed}"
+        ))
     }
 }
 
@@ -445,7 +565,7 @@ fn require_same_path(observed: &Path, expected: &Path, name: &str) -> Result<(),
     }
 }
 
-fn stack_auxiliary_roots(repo: &Path, stack: &str) -> Result<Vec<u32>, String> {
+fn stack_auxiliary_roots(repo: &Path, run: &Path, stack: &str) -> Result<Vec<u32>, String> {
     if stack != "xlibre-xmonad" {
         return Ok(Vec::new());
     }
@@ -488,6 +608,7 @@ fn stack_auxiliary_roots(repo: &Path, stack: &str) -> Result<Vec<u32>, String> {
     }
     let executable = fs::read_link(format!("/proc/{}/exe", roots[0]))
         .map_err(|error| format!("could not identify xmonad executable: {error}"))?;
+    require_executable_digest(&executable, &manifest_identity(run, "xmonad_sha256")?)?;
     let prefix = executable
         .parent()
         .and_then(Path::parent)
@@ -523,6 +644,47 @@ fn stack_auxiliary_roots(repo: &Path, stack: &str) -> Result<Vec<u32>, String> {
         );
     }
     Ok(roots)
+}
+
+fn manifest_identity(run: &Path, name: &str) -> Result<String, String> {
+    let source = fs::read_to_string(run.join("manifest.kdl"))
+        .map_err(|error| format!("comparison manifest is missing: {error}"))?;
+    let first = source
+        .lines()
+        .next()
+        .ok_or("comparison manifest is empty")?;
+    let value = record_fields(first)?
+        .get(name)
+        .cloned()
+        .ok_or_else(|| format!("comparison manifest lacks {name}"))?;
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(format!(
+            "comparison manifest {name} is not lowercase SHA-256"
+        ));
+    }
+    Ok(value)
+}
+
+fn require_executable_digest(executable: &Path, expected: &str) -> Result<(), String> {
+    let bytes = fs::read(executable).map_err(|error| {
+        format!(
+            "could not hash comparison executable {}: {error}",
+            executable.display()
+        )
+    })?;
+    let observed = format!("{:x}", sha2::Sha256::digest(bytes));
+    if observed == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "comparison executable digest mismatch: {}",
+            executable.display()
+        ))
+    }
 }
 
 fn validate_supervisor(attestation: &SessionAttestation) -> Result<(), String> {

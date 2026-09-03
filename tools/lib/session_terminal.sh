@@ -17,10 +17,10 @@ sophia_resolve_session_terminal_kind() {
     esac
 }
 
-sophia_append_session_terminal_base_args() {
+sophia_append_session_terminal_registration_args() {
     local destination="$1" kind="$2" executable="$3"
     local -n arguments="$destination"
-    arguments+=("--session-app=terminal=$executable" --session-start=terminal)
+    arguments+=("--session-app=terminal=$executable")
     case "$kind" in
         kitty)
             arguments+=(
@@ -45,6 +45,14 @@ sophia_append_session_terminal_base_args() {
             return 1
             ;;
     esac
+}
+
+sophia_append_session_terminal_base_args() {
+    local destination="$1" kind="$2" executable="$3"
+    local -n arguments="$destination"
+    sophia_append_session_terminal_registration_args \
+        "$destination" "$kind" "$executable"
+    arguments+=(--session-start=terminal)
 }
 
 sophia_append_session_terminal_title_args() {

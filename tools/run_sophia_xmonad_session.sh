@@ -19,6 +19,7 @@ REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
+SESSION_STARTUP="${SOPHIA_SESSION_STARTUP:-terminal}"
 SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
 INPUT_GUARD_ARM_TIMEOUT_SECONDS="${SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS:-30}"
 SESSION_HANDOFF="${SOPHIA_SESSION_HANDOFF:-display_manager}"
@@ -54,6 +55,14 @@ if [[ "$SESSION_PROFILE" != standalone
     && "$SESSION_PROFILE" != hagia
     && "$SESSION_PROFILE" != kitty ]]; then
     echo "SOPHIA_TTY_PROFILE must be standalone, xmonad, native, hagia, or kitty." >&2
+    exit 1
+fi
+if [[ "$SESSION_STARTUP" != terminal && "$SESSION_STARTUP" != none ]]; then
+    echo "SOPHIA_SESSION_STARTUP must be terminal or none." >&2
+    exit 1
+fi
+if [[ "$SESSION_STARTUP" == none && "$SESSION_PROFILE" != hagia ]]; then
+    echo "A terminal-free normal session is supported only by the Hagia comparison profile." >&2
     exit 1
 fi
 if [[ -n "$SESSION_WATCHDOG_SECONDS"
@@ -536,8 +545,10 @@ session_args=(
     --display="$DISPLAY_NAME"
     --native-scanout
     "${input_source_args[@]}"
-    --startup-ready-timeout-ms=8000
 )
+if [[ "$SESSION_STARTUP" != none ]]; then
+    session_args+=(--startup-ready-timeout-ms=8000)
+fi
 if [[ "$SESSION_PROFILE" == standalone ]]; then
     standalone_direct_scanout=0
     if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
@@ -739,8 +750,13 @@ for spec in sys.argv[1:]:
         )
     fi
 else
-    sophia_append_session_terminal_base_args \
-        session_args "$terminal_kind" "$terminal_bin"
+    if [[ "$SESSION_STARTUP" == none ]]; then
+        sophia_append_session_terminal_registration_args \
+            session_args "$terminal_kind" "$terminal_bin"
+    else
+        sophia_append_session_terminal_base_args \
+            session_args "$terminal_kind" "$terminal_bin"
+    fi
     if [[ "$TRUECOLOR_PROOF" == true ]]; then
         session_args+=(
             "--session-app-arg=terminal=$ROOT_DIR/tools/fixtures/truecolor_kitty_probe.sh"

@@ -1,5 +1,6 @@
 const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_session.sh");
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
+const DESKTOP_COMPARISON_GATE: &str = include_str!("../../../tools/desktop_comparison_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
 const INSTALLED_HAGIA: &str = include_str!("../../../tools/installed/sophia-hagia-session");
 const INSTALLED_HAGIA_PROMOTION: &str =
@@ -125,6 +126,20 @@ fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
     assert!(TTY3_LAUNCHER.contains("origin_vt=\"${origin_tty#/dev/tty}\""));
     assert!(restore_manager < reactivate_tty);
     assert!(TTY3_LAUNCHER.contains("active_vt=\"$(fgconsole 2>/dev/null || true)\""));
+}
+
+#[test]
+fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
+    assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_SESSION_STARTUP=none"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_sophia_session EXIT"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_niri EXIT"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_xmonad EXIT"));
+    assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));
+    assert!(!DESKTOP_COMPARISON_GATE.to_ascii_lowercase().contains("ssh"));
+    assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
+    assert!(SESSION_LAUNCHER.contains("sophia_append_session_terminal_registration_args"));
 }
 
 #[test]

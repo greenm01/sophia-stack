@@ -5,11 +5,14 @@ mod capture_owner;
 mod host;
 
 pub use capture::{CaptureReplay, replay_attempt};
-pub use capture_owner::{attest_session, capture_next, install_reference, preflight, run_stream};
+pub use capture_owner::{
+    attest_session, attest_session_auto, capture_next, install_reference, preflight, run_stream,
+};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -24,13 +27,16 @@ pub const XMONAD_CONTRIB_VERSION: &str = "0.18.2";
 pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
 pub(crate) const SHORT_WORKLOADS: [&str; 4] =
     ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
-pub(crate) const CONFIGS: [&str; 9] = [
+pub(crate) const CONFIGS: [&str; 12] = [
     "validation/desktop-comparison/config/sophia.kdl",
     "validation/desktop-comparison/config/xlibre-xmonad.kdl",
     "validation/desktop-comparison/config/niri.kdl",
     "validation/desktop-comparison/firefox/index.html",
     "validation/desktop-comparison/firefox/user.js",
     "tools/desktop_comparison_tracefs.sh",
+    "tools/desktop_comparison_tty3.sh",
+    "tools/run_sophia_xmonad_session.sh",
+    "tools/lib/session_terminal.sh",
     "validation/desktop-comparison/profiles/hagia.kdl",
     "validation/desktop-comparison/profiles/niri.kdl",
     "validation/desktop-comparison/profiles/xmonad.hs",
@@ -66,6 +72,65 @@ struct Sample {
     frame_p95_usec: u64,
     frame_p99_usec: u64,
     frame_max_usec: u64,
+}
+
+fn comparison_binaries(repo: &Path) -> Result<[(&'static str, PathBuf); 6], String> {
+    let configured =
+        |name: &str, fallback: PathBuf| std::env::var_os(name).map_or(fallback, PathBuf::from);
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or("HOME is unset; reference binary defaults cannot be resolved")?;
+    let xlibre_prefix = configured(
+        "SOPHIA_DESKTOP_COMPARISON_XLIBRE_PREFIX",
+        home.join(".local/opt/xlibre-56be9f4320ef"),
+    );
+    let binaries = [
+        (
+            "sophia_sha256",
+            configured(
+                "SOPHIA_DESKTOP_COMPARISON_SOPHIA_BIN",
+                repo.join("target/release/sophia"),
+            ),
+        ),
+        (
+            "hagia_sha256",
+            configured(
+                "SOPHIA_DESKTOP_COMPARISON_HAGIA_BIN",
+                repo.join("../hagia/hagia"),
+            ),
+        ),
+        (
+            "hagia_shell_sha256",
+            configured(
+                "SOPHIA_DESKTOP_COMPARISON_HAGIA_SHELL_BIN",
+                repo.join("../hagia/hagia_shell"),
+            ),
+        ),
+        ("xlibre_sha256", xlibre_prefix.join("bin/Xorg")),
+        ("xmonad_sha256", xlibre_prefix.join("bin/xmonad")),
+        (
+            "niri_sha256",
+            configured(
+                "SOPHIA_DESKTOP_COMPARISON_NIRI_BIN",
+                PathBuf::from("/usr/bin/niri"),
+            ),
+        ),
+    ];
+    for (name, path) in &binaries {
+        let metadata = fs::metadata(path).map_err(|error| {
+            format!(
+                "comparison binary {name} is unavailable at {}: {error}",
+                path.display()
+            )
+        })?;
+        if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+            return Err(format!(
+                "comparison binary {name} is not executable: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(binaries)
 }
 
 pub fn prepare(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
@@ -105,8 +170,12 @@ fn prepare_with_identity(
         .map_err(|error| format!("could not create comparison run: {error}"))?;
     fs::create_dir(run.join("attempts"))
         .map_err(|error| format!("could not create comparison attempt root: {error}"))?;
+    let mut binary_fields = String::new();
+    for (name, path) in comparison_binaries(repo)? {
+        binary_fields.push_str(&format!(" {name}={}", digest_file(&path)?));
+    }
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=2 status=prepared diagnostic_only=true raw_capture_required=true source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}\n"
+        "desktop_comparison_manifest schema=3 status=prepared diagnostic_only=true raw_capture_required=true acquisition=terminal_free_visible source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}{binary_fields}\n"
     );
     manifest.push_str(&format!(
         "desktop_comparison_stack schema=2 id=sophia version={source_commit} backend=native\n"
@@ -137,12 +206,45 @@ fn prepare_with_identity(
     write_new(&run.join("schedule.kdl"), encoded.as_bytes())?;
     rewrite_checksums(run, &[])?;
     Ok(vec![format!(
-        "desktop_comparison_prepare schema=2 status=complete run={} source_commit={} samples={}",
+        "desktop_comparison_prepare schema=3 status=complete run={} source_commit={} samples={}",
         run.display(),
         source_commit,
         schedule.len()
     )])
 }
+pub fn require_candidate_checkout(repo: &Path, run: &Path) -> Result<(), String> {
+    let expected = source_commit(run)?;
+    let observed = git_output(repo, &["rev-parse", "HEAD"])?;
+    if observed != expected {
+        return Err(format!(
+            "comparison candidate checkout mismatch: expected {expected}, observed {observed}"
+        ));
+    }
+    require_clean_worktree(&git_output(repo, &["status", "--porcelain"])?)
+}
+
+pub fn verify_prepared_binaries(repo: &Path, run: &Path) -> Result<(), String> {
+    let manifest = fs::read_to_string(run.join("manifest.kdl"))
+        .map_err(|error| format!("comparison manifest is missing: {error}"))?;
+    let first = manifest
+        .lines()
+        .next()
+        .ok_or("comparison manifest is empty")?;
+    let identities = fields(first)?;
+    for (name, path) in comparison_binaries(repo)? {
+        let expected = identities
+            .get(name)
+            .ok_or_else(|| format!("comparison manifest lacks {name}"))?;
+        if digest_file(&path)? != *expected {
+            return Err(format!(
+                "prepared comparison binary changed: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn status(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     verify_prepared_inputs(repo, run)?;
     verify_checksums(run)?;
@@ -464,6 +566,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         .filter(|line| {
             line.starts_with("desktop_comparison_sample schema=1 status=complete ")
                 || line.starts_with("desktop_comparison_sample schema=2 status=complete ")
+                || line.starts_with("desktop_comparison_sample schema=3 status=complete ")
         })
         .collect::<Vec<_>>();
     if records.len() != 1 {
@@ -509,7 +612,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
             ));
         }
     }
-    if schema == "2" {
+    if matches!(schema, "2" | "3") {
         for (name, expected) in [("frame_source", "kernel_drm"), ("teardown", "clean")] {
             if required(name)? != expected {
                 return Err(format!(
@@ -530,7 +633,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
                 .map_err(|_| format!("sample {name} is not an integer"))
         })
     };
-    if schema == "2" {
+    if matches!(schema, "2" | "3") {
         for name in [
             "resource_samples",
             "anonymous_peak_kib",
@@ -552,6 +655,23 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         }
         let _ = required("native_timing")?;
         let _ = required("native_source")?;
+    }
+    if schema == "3" {
+        for (name, expected) in [
+            ("controller_outside_supervisor", "true"),
+            ("visible_dp1", "true"),
+            ("focused_owned", "true"),
+            ("foreign_toplevels", "0"),
+        ] {
+            if required(name)? != expected {
+                return Err(format!(
+                    "sample {name} does not match the visibility contract"
+                ));
+            }
+        }
+        if numeric("visibility_samples")? == 0 {
+            return Err("sample visibility_samples must be positive".to_owned());
+        }
     }
     let duration_msec = numeric("duration_msec")?;
     let minimum_duration = match workload {
@@ -624,6 +744,14 @@ fn fields(line: &str) -> Result<BTreeMap<&str, &str>, String> {
 fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     let manifest = fs::read_to_string(run.join("manifest.kdl"))
         .map_err(|error| format!("comparison manifest is missing: {error}"))?;
+    let acquisition = manifest.lines().next().unwrap_or_default();
+    if !acquisition.starts_with("desktop_comparison_manifest schema=3 status=prepared ")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == "acquisition=terminal_free_visible")
+    {
+        return Err("comparison run predates the terminal-free visibility contract".to_owned());
+    }
     let schedule_file = fs::read_to_string(run.join("schedule.kdl"))
         .map_err(|error| format!("comparison schedule is missing: {error}"))?;
     let expected_schedule = schedule()
