@@ -75,8 +75,10 @@ Status vocabulary:
   per DRM group, direct scanout, return to composition on overlay/effect
   activation, direct-versus-composed measurements, and the atomic cursor path.
   Continuous software-content presentation is closed by one signed physical
-  machine-and-visual pass. The comparison and current-soak contracts are
-  implemented; their physical evidence remains.
+  machine-and-visual pass. The mechanical comparison capture/replay contract is
+  implemented, but its first matrix acquisition exposed an unverified visible-
+  workload boundary and a Sophia-only launcher client. That physical evidence
+  is diagnostic and cannot be promoted.
 
 Latest retained Milestone 14 evidence:
 
@@ -90,6 +92,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
+| Comparison acquisition | run `cp14` paused after 15 sealed rows: Sophia's five rows retained a launcher Kitty and did not prove that the owned workload was visible on DP-1; zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -135,17 +138,30 @@ truncation, reordering, identity/failure mutations, non-prefix order, kernel
 normalization, later tampering, owner-only capture modes, strict privileged
 tracefs-probe records, isolated Kitty configuration, and bounded runtime socket
 paths. Reports retain resource, allocation, latency, and frame distributions
-with `verdict=none`. The first physical attempt failed closed before row 1 and
-is documented in `docs/research-log.md`; no comparison evidence was admitted.
+with `verdict=none`.
+
+The first physical attempt failed closed before row 1 and is documented in
+`docs/research-log.md`. A later run on signed candidate `00deb788` sealed the
+first 15 rows, but the operator did not see Firefox during Sophia row 15.
+Investigation found that the Sophia launcher keeps the Kitty used to invoke
+capture inside the measured supervisor tree, while Hagia preserves focus on
+that terminal and can leave the owned workload off-screen. Reference sessions
+have no equivalent client. Readiness and DRM-vblank evidence do not prove a
+visible workload, so Sophia rows 1, 6, 8, 10, and 15 are biased and the complete
+prefix is non-promotable. Acquisition is paused before row 16.
 
 Outstanding physical work:
 
-1. provision XLibre from pinned clean commit `56be9f4320ef` in a dedicated
-   prefix; the installed `/usr/bin/Xorg` is not XLibre evidence;
-2. prepare the run from the final clean signed Sophia candidate;
-3. explicitly select each named local greetd stack and capture all 39 scheduled
-   rows on this machine; and
-4. retain and verify the complete matrix. The Sophia two-hour raw run may also
+1. replace Sophia's operator-terminal acquisition with a terminal-free session
+   and a capture controller outside the measured supervisor tree;
+2. fail closed unless a trusted passive observation binds the capture-owned
+   workload to a visible DP-1 placement, without disclosing application
+   identity to the blind WM, and retain a ready-but-hidden negative regression;
+3. prepare a fresh run from the resulting clean signed Sophia candidate, using
+   the already provisioned pinned XLibre prefix and isolated reference profiles;
+4. explicitly select each named local stack and capture all 39 scheduled rows
+   on this machine; and
+5. retain and verify the complete matrix. The Sophia two-hour raw run may also
    satisfy CP-14.3 only if the same evidence independently passes the current
    soak verifier.
 

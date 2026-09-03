@@ -11,6 +11,16 @@ identity/topology mismatch, crash, sample loss, premature process exit,
 truncated resource or kernel timing populations, dirty teardown, partial
 capture, or corrupt evidence.
 
+## Acquisition status
+
+Physical acquisition is paused. Run `cp14` mechanically sealed rows 1 through
+15, but the ordinary Sophia launcher retained the operator's Kitty inside the
+measured supervisor tree and Hagia could leave the capture-owned workload
+off-screen. Readiness and DRM-vblank records did not detect that mismatch. Do
+not continue or cite that run as comparison evidence. The replacement gate in
+`todo.md` requires a terminal-free Sophia launch and passive DP-1 visibility
+proof; `docs/research-log.md` retains the diagnosis and row disposition.
+
 ## Pinned matrix
 
 The stacks are:
