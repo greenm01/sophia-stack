@@ -71,6 +71,10 @@ Preparation verifies the exact pinned Kitty, Firefox, and niri versions before
 creating a run. `gate` repeats that mutable-host check, revalidates the exact
 clean prepared commit, and builds the release Sophia candidate before graphical
 takeover, then verifies the six prepared stack/policy/shell executable digests.
+Preparation creates the run, sample, and attempt roots as mode-0700 directories
+and its manifest, schedule, and checksum ledger as mode-0600 files, independent
+of the caller's umask. Every later operation revalidates that owner and mode
+boundary before trusting a checksum; permission drift fails closed.
 Capture repeats the version check so a package upgrade during a run fails
 closed. The gate reads only the next typed row,
 launches the matching local terminal-free Sophia, XLibre+xmonad, or niri

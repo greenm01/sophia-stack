@@ -209,6 +209,8 @@ work:
   sequences, preserve nested gate diagnostics, and add the excluded cursor
   qualification;
 - [x] land the cursor and evidence corrections in a clean signed candidate;
+- [x] make the prepared comparison root and its identity/checksum records
+  owner-only independent of umask, and reject later ownership or mode drift;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
   continuing;

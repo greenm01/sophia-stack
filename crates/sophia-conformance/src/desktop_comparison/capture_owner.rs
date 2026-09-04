@@ -21,8 +21,8 @@ pub use workload::run_stream;
 
 use super::{
     FIREFOX_VERSION, KITTY_VERSION, NIRI_VERSION, ScheduledSample, TOPOLOGY, XLIBRE_COMMIT,
-    XMONAD_CONTRIB_VERSION, XMONAD_VERSION, bind_attempt, next_scheduled, source_commit, status,
-    verify_host_tool_versions,
+    XMONAD_CONTRIB_VERSION, XMONAD_VERSION, bind_attempt, current_uid, next_scheduled,
+    source_commit, status, verify_host_tool_versions,
 };
 use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -955,17 +955,6 @@ fn read_attestation(path: &Path) -> Result<SessionAttestation, String> {
         native_timing,
         native_source,
     })
-}
-
-fn current_uid() -> Result<u32, String> {
-    let status = fs::read_to_string("/proc/self/status")
-        .map_err(|error| format!("could not read current process identity: {error}"))?;
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("Uid:"))
-        .and_then(|rest| rest.split_ascii_whitespace().next())
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| "current process identity lacks a numeric UID".to_owned())
 }
 
 /// Sample overlapping populations in one `/proc` pass.

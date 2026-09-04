@@ -13,7 +13,9 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{
+    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
+};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -24,6 +26,9 @@ pub const FIREFOX_VERSION: &str = "155";
 pub const TOPOLOGY: &str = "DP-1:2560x1440@60000+DP-2:1920x1080@60000";
 pub const XMONAD_VERSION: &str = "0.18.1";
 pub const XMONAD_CONTRIB_VERSION: &str = "0.18.2";
+
+const OWNER_DIRECTORY_MODE: u32 = 0o700;
+const OWNER_FILE_MODE: u32 = 0o600;
 
 pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
 pub(crate) const SHORT_WORKLOADS: [&str; 4] =
@@ -258,10 +263,7 @@ fn prepare_with_identity(
         return Err("desktop comparison requires a signed Sophia candidate".to_owned());
     }
 
-    fs::create_dir_all(run.join("samples"))
-        .map_err(|error| format!("could not create comparison run: {error}"))?;
-    fs::create_dir(run.join("attempts"))
-        .map_err(|error| format!("could not create comparison attempt root: {error}"))?;
+    create_private_run_storage(run)?;
     let mut binary_fields = String::new();
     for (name, path) in comparison_binaries(repo)? {
         binary_fields.push_str(&format!(" {name}={}", digest_file(&path)?));
@@ -921,6 +923,7 @@ fn fields(line: &str) -> Result<BTreeMap<&str, &str>, String> {
 }
 
 fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
+    verify_private_run_storage(run)?;
     let manifest = fs::read_to_string(run.join("manifest.kdl"))
         .map_err(|error| format!("comparison manifest is missing: {error}"))?;
     let acquisition = manifest.lines().next().unwrap_or_default();
@@ -1009,8 +1012,7 @@ fn rewrite_checksums(run: &Path, extra: &[PathBuf]) -> Result<(), String> {
             relative.display()
         ));
     }
-    fs::write(run.join("checksums.sha256"), output)
-        .map_err(|error| format!("could not write comparison checksums: {error}"))
+    write_private(&run.join("checksums.sha256"), output.as_bytes())
 }
 
 fn append_checksum(run: &Path, relative: &Path) -> Result<(), String> {
@@ -1050,12 +1052,84 @@ pub(crate) fn verify_checksums(run: &Path) -> Result<(), String> {
 }
 
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    OpenOptions::new()
+    let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(OWNER_FILE_MODE)
         .open(path)
-        .and_then(|mut file| file.write_all(bytes))
-        .map_err(|error| format!("could not create {}: {error}", path.display()))
+        .map_err(|error| format!("could not create {}: {error}", path.display()))?;
+    file.set_permissions(fs::Permissions::from_mode(OWNER_FILE_MODE))
+        .and_then(|()| file.write_all(bytes))
+        .map_err(|error| format!("could not protect or write {}: {error}", path.display()))
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(OWNER_FILE_MODE)
+        .open(path)
+        .map_err(|error| format!("could not create {}: {error}", path.display()))?;
+    file.set_permissions(fs::Permissions::from_mode(OWNER_FILE_MODE))
+        .and_then(|()| file.write_all(bytes))
+        .map_err(|error| format!("could not protect or write {}: {error}", path.display()))
+}
+
+fn create_private_run_storage(run: &Path) -> Result<(), String> {
+    create_private_directory(run, true, "comparison run")?;
+    create_private_directory(&run.join("samples"), false, "comparison sample root")?;
+    create_private_directory(&run.join("attempts"), false, "comparison attempt root")
+}
+
+fn create_private_directory(path: &Path, recursive: bool, name: &str) -> Result<(), String> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(recursive).mode(OWNER_DIRECTORY_MODE);
+    builder
+        .create(path)
+        .map_err(|error| format!("could not create {name}: {error}"))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(OWNER_DIRECTORY_MODE))
+        .map_err(|error| format!("could not protect {name}: {error}"))
+}
+
+fn verify_private_run_storage(run: &Path) -> Result<(), String> {
+    for path in [run.to_path_buf(), run.join("samples"), run.join("attempts")] {
+        verify_private_path(&path, true, OWNER_DIRECTORY_MODE)?;
+    }
+    for path in [
+        run.join("manifest.kdl"),
+        run.join("schedule.kdl"),
+        run.join("checksums.sha256"),
+    ] {
+        verify_private_path(&path, false, OWNER_FILE_MODE)?;
+    }
+    Ok(())
+}
+
+fn verify_private_path(path: &Path, directory: bool, expected_mode: u32) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "comparison storage metadata failed for {}: {error}",
+            path.display()
+        )
+    })?;
+    let expected_kind = if directory {
+        "directory"
+    } else {
+        "regular file"
+    };
+    let right_kind = if directory {
+        metadata.file_type().is_dir()
+    } else {
+        metadata.file_type().is_file()
+    };
+    if !right_kind || metadata.uid() != current_uid()? || metadata.mode() & 0o777 != expected_mode {
+        return Err(format!(
+            "comparison storage must be an owner-only {expected_kind} with mode {expected_mode:04o}: {}",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn digest_file(path: &Path) -> Result<String, String> {
@@ -1079,6 +1153,17 @@ fn require_clean_worktree(status: &str) -> Result<(), String> {
     } else {
         Err("desktop comparison requires a clean Sophia worktree".to_owned())
     }
+}
+
+fn current_uid() -> Result<u32, String> {
+    let status = fs::read_to_string("/proc/self/status")
+        .map_err(|error| format!("could not read current process identity: {error}"))?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))
+        .and_then(|rest| rest.split_ascii_whitespace().next())
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| "current process identity lacks a numeric UID".to_owned())
 }
 
 fn git_output(repo: &Path, arguments: &[&str]) -> Result<String, String> {

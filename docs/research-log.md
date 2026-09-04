@@ -18442,3 +18442,24 @@ schema-8 record correctly says `revision_freeze=false`, and this gate covers
 `sophia_wm_v1`, not the complete WM, shell, and output protocol family. The
 role-by-role lifecycle audit and one family-level conformance entry point
 remain separate work after the active Milestone 14 comparison gate.
+
+## 2026-09-04: comparison preparation must make its own immutability boundary
+
+The first post-correction run was prepared successfully, but an explicit mode
+check before physical takeover found its root, sample root, and attempt root at
+`0775` and its manifest, schedule, and checksum ledger at `0664`. Preparation
+had used ordinary directory creation and `fs::write`, so the host's `0002`
+umask silently made the claimed immutable evidence group-writable. Checksums do
+not establish integrity when the same writer can replace both an artifact and
+its checksum.
+
+Preparation now creates the three directories with mode `0700` and the three
+identity files with mode `0600`, then sets those exact modes independently of
+umask. Status, gate, capture, binding, verification, and reporting all pass
+through the same storage check and reject a symlink, wrong owner, wrong file
+kind, or later mode drift before trusting the ledger. Current-UID discovery is
+shared with session-attestation admission rather than duplicated. A regression
+checks both creation and post-preparation widening. Its temporary roots include
+a time nonce because sandboxed test processes may reuse a PID; a retained
+failure therefore cannot poison the next run. The zero-row permissive run is
+retained under a rejected name and must never receive physical evidence.

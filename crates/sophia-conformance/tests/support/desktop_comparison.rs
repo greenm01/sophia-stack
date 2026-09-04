@@ -1,6 +1,7 @@
 #![cfg(test)]
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -35,8 +36,12 @@ fn repo() -> PathBuf {
 
 fn temporary_root(label: &str) -> PathBuf {
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should follow epoch")
+        .as_nanos();
     let root = std::env::temp_dir().join(format!(
-        "sophia-desktop-comparison-{label}-{}-{sequence}",
+        "sophia-desktop-comparison-{label}-{}-{sequence}-{nonce}",
         std::process::id()
     ));
     fs::create_dir(&root).expect("temporary root is unique");
@@ -54,8 +59,7 @@ fn prepared_run_for_lane(
 ) -> (PathBuf, String) {
     let repo = repo();
     let run = root.join("run");
-    fs::create_dir(&run).unwrap();
-    fs::create_dir(run.join("samples")).unwrap();
+    create_private_run_storage(&run).unwrap();
     let candidate = git_output(&repo, &["rev-parse", "HEAD"]).unwrap();
     let mut manifest = format!(
         "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true acquisition=terminal_free_visible lane={lane} optional_soak=separate source_commit={candidate}\n"
@@ -66,7 +70,7 @@ fn prepared_run_for_lane(
             digest_file(&repo.join(config)).unwrap()
         ));
     }
-    fs::write(run.join("manifest.kdl"), manifest).unwrap();
+    write_new(&run.join("manifest.kdl"), manifest.as_bytes()).unwrap();
     let encoded = scheduled
         .iter()
         .map(|item| format!(
@@ -74,9 +78,40 @@ fn prepared_run_for_lane(
             item.order, item.stack, item.workload, item.repetition
         ))
         .collect::<String>();
-    fs::write(run.join("schedule.kdl"), encoded).unwrap();
+    write_new(&run.join("schedule.kdl"), encoded.as_bytes()).unwrap();
     rewrite_checksums(&run, &[]).unwrap();
     (run, candidate)
+}
+
+#[test]
+fn prepared_storage_is_owner_only_and_later_mode_drift_fails_closed() {
+    let root = temporary_root("private-storage");
+    let (run, _) = prepared_run(&root);
+
+    for path in [&run, &run.join("samples"), &run.join("attempts")] {
+        let metadata = fs::metadata(path).unwrap();
+        assert_eq!(metadata.uid(), current_uid().unwrap());
+        assert_eq!(metadata.mode() & 0o777, OWNER_DIRECTORY_MODE);
+    }
+    for path in [
+        run.join("manifest.kdl"),
+        run.join("schedule.kdl"),
+        run.join("checksums.sha256"),
+    ] {
+        let metadata = fs::metadata(path).unwrap();
+        assert_eq!(metadata.uid(), current_uid().unwrap());
+        assert_eq!(metadata.mode() & 0o777, OWNER_FILE_MODE);
+    }
+    assert!(status(&repo(), &run).unwrap()[0].contains("status=pending"));
+
+    fs::set_permissions(&run, fs::Permissions::from_mode(0o770)).unwrap();
+    assert!(
+        status(&repo(), &run)
+            .unwrap_err()
+            .contains("owner-only directory")
+    );
+    fs::set_permissions(&run, fs::Permissions::from_mode(OWNER_DIRECTORY_MODE)).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
 
 fn sample_record(item: &ScheduledSample, candidate: &str) -> String {
@@ -543,7 +578,6 @@ fn bind_archives_raw_evidence_and_rejects_later_tampering() {
         1,
     );
     fs::write(&manifest_path, manifest).unwrap();
-    fs::create_dir(run.join("attempts")).unwrap();
     rewrite_checksums(&run, &[]).unwrap();
 
     let item = schedule().remove(0);
