@@ -93,6 +93,20 @@ which is self-contained: the frozen spec, a generated C codec, a worked
 client, and checksums. Hagia is the full-width reference.
 `docs/sophia-wm-api.md` and `docs/wm-v1-freeze-surface.md` own the details.
 
+Don't mistake this rung for a lesser desktop. What makes niri daily-drivable
+isn't that the compositor does everything; it's that the environment around
+the window manager is complete — clipboard, screenshots, screen capture,
+notifications all work. Sophia gives the WM rung the same completeness
+through portals and the session, and the window manager reaches them without
+gaining an inch of authority: its keybindings map to opaque session-operation
+slots. It asks for slot N; the session decides what slot N does; anything
+that moves data gets a portal decision behind it. Hagia already spawns a
+terminal, launches a browser, closes a window, and logs out this way. Lock,
+screenshot, wallpaper, and audio ride the same pattern and are queued. The
+target for Hagia plus Narthex is exactly this product: a complete,
+daily-drivable, niri-class desktop where the WM owns policy, portals own
+data, and nothing owns more than its job requires.
+
 **A shell** — bar, launcher, switcher, notifications; the Noctalia class. One
 binary speaking `sophia_shell_v1`, launched by the session into its own
 protection domain. Revision 1 carries a single capability, the descriptor
