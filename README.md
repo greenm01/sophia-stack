@@ -4,7 +4,7 @@ Sophia is a modern, atomic X11 desktop system. Its protocol-neutral visual engin
 
 One way to describe the design is a constitutional cathedral with bazaar edges. The core is planned as one coherent system, but no component has unchecked power. The Engine controls pixels and physical input, the protocol frontend applies X11 rules, and the window manager chooses layout policy. Their interfaces define and limit those roles.
 
-Around that core, window managers, shells, protocol frontends, and portal policies can be replaced or developed independently. The core enforces safety and presentation rules; components at the edges decide how the desktop behaves.
+Around that core, window managers, shells, protocol frontends, and portal policies can be replaced or developed independently. The core enforces safety and presentation rules; components at the edges decide how the desktop behaves. If you want to build one of those edges — a tiling window manager, a shell, or a full desktop environment — start with [Building on Sophia](docs/building-on-sophia.md).
 
 Sophia's current product path is native X11. It preserves a classic shared-X profile for trusted applications and adds isolated namespaces for clients that should not share authority.
 
@@ -81,6 +81,8 @@ Layout policy belongs in an external process. Because the window manager sits ou
 Sophia assumes clients are untrusted and places them in isolated namespaces. A classic shared-X profile can be used to run trusted applications in a single namespace, preserving the traditional X11 object model. However, an untrusted application cannot inspect or send events to a trusted namespace without an explicit, user-granted portal handoff. Cross-namespace lookups fail closed by default.
 
 ## Documentation
+
+[Building on Sophia](docs/building-on-sophia.md) is the map for third-party developers: which component owns what, which protocol each piece speaks, and how a window manager, a shell, or a full desktop environment composes from them.
 
 For detailed design specifications, architectural guides, security policies, and research logs, see [docs/README.md](docs/README.md).
 
