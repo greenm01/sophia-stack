@@ -18178,12 +18178,12 @@ that absence of the launcher log alone located the failure at asynchronous
 standard input: candidate admission, TTY admission, tracefs admission, and
 launcher admission all previously shared the same evidence-free interval.
 
-The adapter now opens the validated operator terminal in its foreground parent,
-checks that descriptor with `-t`, and gives the asynchronous Sophia launcher a
-duplicate of that already-open descriptor. The child verifies that it still
-resolves to the admitted terminal before it invokes the established launcher.
-This removes a child-side device reopen and makes failure to acquire the
-terminal synchronous and explicit.
+The next adapter version tried to open the validated operator terminal in its
+foreground parent, checked that descriptor with `-t`, and gave the asynchronous
+Sophia launcher a duplicate. The child verified that it still resolved to the
+admitted terminal before it invoked the established launcher. This made a
+failure to acquire the terminal synchronous and explicit, but it still reopened
+the device path.
 
 The adapter also writes an owner-only
 `~/.local/state/sophia/desktop-comparison/gate-last.log`. Structured stage
@@ -18199,3 +18199,30 @@ An integration regression invokes the adapter with null standard input and
 requires both a direct terminal error and the structured TTY-admission record.
 Focused launcher tests and shell parsing pass. No physical row has yet exercised
 this hardened boundary, so the comparison remains at zero sealed rows.
+
+## 2026-09-04: comparison launcher retains the inherited TTY lease
+
+The next signed candidate `7fea8dbb` failed at the newly attributable
+`tty-admission` stage with `could not open the validated operator terminal`.
+The invoking shell had already proved that standard input was tty3 and that tty3
+was the active VT. After the attempt, `/dev/tty3` was owned by `root:tty` with
+mode `0620`, and the invoking user was not a member of `tty`. The login shell
+could continue using the descriptor inherited during login, but a new pathname
+open was correctly denied.
+
+Both earlier fixes reopened `/dev/tty3`: first inside the asynchronous child,
+where the failure was invisible before the launcher log, and then in the
+foreground parent, where the stage journal finally exposed it. Bash's
+asynchronous `/dev/null` substitution requires preserving an existing
+descriptor, not reacquiring the device.
+
+The gate now duplicates its already-validated standard input with
+`exec {operator_tty_fd}<&0`, checks that the duplicate is still a terminal,
+and resolves `tty` through that descriptor to prove its identity did not
+change. The asynchronous child receives the duplicate as standard input and
+performs its existing identity check before launch. The gate neither changes
+device ownership or permissions nor broadens user group or sudo policy.
+
+Launcher-safety coverage requires inherited-descriptor duplication and rejects
+the pathname-open spelling that caused the failure. The null-standard-input
+regression and structured gate journal remain intact.

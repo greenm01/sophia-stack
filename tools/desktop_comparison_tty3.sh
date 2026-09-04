@@ -357,10 +357,15 @@ record_gate_stage tty-admission
 operator_tty=$(tty) || fail "could not resolve the operator terminal"
 [[ $operator_tty == /dev/tty3 ]] || fail "run this one-row gate from tty3"
 [[ $(< /sys/class/tty/tty0/active) == tty3 ]] || fail "tty3 must be the active VT"
+# Login already admitted this inherited descriptor. Reopening the device path
+# can fail after its ownership returns to root:tty, even while fd 0 remains valid.
 operator_tty_fd=
-exec {operator_tty_fd}<"$operator_tty" \
-    || fail "could not open the validated operator terminal"
+exec {operator_tty_fd}<&0 || fail "could not duplicate the inherited operator terminal"
 [[ -t $operator_tty_fd ]] || fail "the validated operator terminal descriptor is not a TTY"
+operator_tty_fd_tty=$(tty <&"$operator_tty_fd") \
+    || fail "could not resolve the duplicated operator terminal"
+[[ $operator_tty_fd_tty == "$operator_tty" ]] \
+    || fail "the duplicated operator terminal changed identity"
 command -v jq >/dev/null || fail "jq is not installed"
 
 record_gate_stage candidate-admission
