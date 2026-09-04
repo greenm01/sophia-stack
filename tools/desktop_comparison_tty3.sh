@@ -39,6 +39,10 @@ fail() {
     exit 1
 }
 
+run_xtask_logged() {
+    "$xtask" "$@" 2>&1 | tee -a "$diagnostic_log"
+}
+
 xtask="${SOPHIA_DESKTOP_COMPARISON_XTASK:-}"
 trace_helper="$repo/tools/desktop_comparison_tracefs.sh"
 niri_bin="${SOPHIA_DESKTOP_COMPARISON_NIRI_BIN:-/usr/bin/niri}"
@@ -124,15 +128,15 @@ owned_for_executable() {
 
 attest_capture() {
     local run=$1 supervisor=$2
-    "$xtask" conformance desktop-comparison attest "$run" "$supervisor"
-    "$xtask" conformance desktop-comparison capture "$run"
+    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor"
+    run_xtask_logged conformance desktop-comparison capture "$run"
 }
 
 attest_qualify_capture() {
     local run=$1 supervisor=$2
-    "$xtask" conformance desktop-comparison attest "$run" "$supervisor"
-    "$xtask" conformance desktop-comparison qualify "$run"
-    "$xtask" conformance desktop-comparison capture "$run"
+    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor"
+    run_xtask_logged conformance desktop-comparison qualify "$run"
+    run_xtask_logged conformance desktop-comparison capture "$run"
 }
 
 require_x_topology() {
@@ -513,5 +517,5 @@ case "$next_stack" in
 esac
 
 record_gate_stage post-teardown-finalization
-"$xtask" conformance desktop-comparison finalize "$run"
-"$xtask" conformance desktop-comparison status "$run"
+run_xtask_logged conformance desktop-comparison finalize "$run"
+run_xtask_logged conformance desktop-comparison status "$run"

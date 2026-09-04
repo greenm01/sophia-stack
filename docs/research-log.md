@@ -18613,3 +18613,30 @@ the exact position it committed, preserving any newer latest-wins value, and a
 native CPU deadline repaint explicitly excludes cursor pixels while the KMS
 plane owns them. Focused all-feature scheduler and cursor-owner tests pass; a
 fresh signed physical run remains required to validate the visible result.
+
+## 2026-09-04: comparison qualification must be admitted before timed capture
+
+The first Sophia row of owner-only run `cp14-schema4-07effa0a`, bound to signed
+candidate `07effa0a`, completed its physical 60-second workload but remained a
+partial diagnostic. It retained 60 resource samples, an empty visibility
+baseline, one focused and visible DP-1 workload at settlement and all 60
+samples, one complete workload record, and 3,600 contiguous single-delivery
+kernel frames. It did not create `measurement.kdl`, and the live-session cursor
+qualification file was absent afterwards. The filesystem boundary therefore
+places the failure after workload and trace normalization but before the final
+measurement record; the intact manifest and writable attempt directory isolate
+the late qualification re-read as the supported cause. The old gate copied
+only its outer `return 1` to the durable log, so the precise inner error printed
+on the takeover TTY was lost. No row was sealed or promoted.
+
+Capture had validated the excluded cursor qualification only after the timed
+workload. That evidence belongs to the live runtime directory, while the row
+belongs to the durable owner-only run. Capture now validates and snapshots the
+qualification before it creates a partial directory or starts the timer, then
+passes the immutable fields into measurement assembly. Missing or mismatched
+qualification consequently fails immediately without consuming a minute or
+leaving a partial. The TTY adapter also tees every typed attestation,
+qualification, capture, finalization, and final-status result into
+`gate-last.log` under `pipefail`, preserving the actual conformance-owner error
+without weakening its exit status. The diagnostic partial remains immutable;
+the correction requires a new signed candidate and prepared run.

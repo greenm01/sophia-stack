@@ -182,6 +182,16 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("operator_tty_fd_tty=$(tty <&\"$operator_tty_fd\")"));
     assert!(!DESKTOP_COMPARISON_GATE.contains("operator_tty_fd}<\"$operator_tty\""));
     assert!(DESKTOP_COMPARISON_GATE.contains("gate-last.log"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("run_xtask_logged()"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("2>&1 | tee -a \"$diagnostic_log\""));
+    assert!(
+        DESKTOP_COMPARISON_GATE
+            .contains("run_xtask_logged conformance desktop-comparison capture \"$run\"")
+    );
+    assert!(
+        DESKTOP_COMPARISON_GATE
+            .contains("run_xtask_logged conformance desktop-comparison finalize \"$run\"")
+    );
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison qualify"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison finalize"));

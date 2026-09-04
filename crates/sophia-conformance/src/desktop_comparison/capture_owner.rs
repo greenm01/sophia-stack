@@ -246,6 +246,11 @@ pub fn capture_next(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             incoming.display()
         ));
     }
+    // Cursor qualification belongs to the live session, not the durable run.
+    // Admit and snapshot it before creating a partial or starting the timed
+    // measurement so runtime cleanup cannot invalidate an otherwise complete
+    // row after the workload has run.
+    let qualification = qualification::measurement_fields(run, &scheduled, &attestation)?;
     fs::create_dir_all(&incoming)
         .map_err(|error| format!("could not create pending capture root: {error}"))?;
     protect_owner_directory(&incoming)?;
@@ -257,7 +262,14 @@ pub fn capture_next(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
         .map_err(|error| format!("could not create pending capture: {error}"))?;
     protect_owner_directory(&attempt)?;
 
-    let measured = measure(repo, run, &attempt, &scheduled, &attestation);
+    let measured = measure(
+        repo,
+        run,
+        &attempt,
+        &scheduled,
+        &attestation,
+        &qualification,
+    );
     match measured {
         Ok(()) => Ok(vec![format!(
             "desktop_comparison_capture schema=2 status=staged order={} stack={} workload={} repetition={} path={}",
@@ -351,6 +363,7 @@ fn measure(
     attempt: &Path,
     scheduled: &ScheduledSample,
     attestation: &SessionAttestation,
+    qualification: &str,
 ) -> Result<(), String> {
     let duration = if scheduled.workload == "soak-2h" {
         Duration::from_secs(2 * 60 * 60)
@@ -499,7 +512,6 @@ fn measure(
         "niri" => NIRI_VERSION,
         _ => return Err("prepared schedule contains an unknown stack".to_owned()),
     };
-    let qualification = qualification::measurement_fields(run, scheduled, attestation)?;
     write_new(
         &attempt.join("measurement.kdl"),
         format!(

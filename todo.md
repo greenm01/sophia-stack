@@ -92,8 +92,13 @@ Status vocabulary:
   observation still found mouse-dependent Kitty cadence. The remaining cause
   was protocol and KMS ordering: X Present reported transaction IDs as MSCs,
   and input could issue a blocking cursor-only atomic commit before ready
-  Present feedback. Both are corrected in code and await a fresh signed
-  physical run. No comparison evidence is promotable yet.
+  Present feedback. Signed candidate `07effa0a` then completed a fresh physical
+  60-second Sophia workload with continuous focused visibility and 3,600
+  contiguous kernel frames, but the row failed after sampling when capture
+  attempted to re-read now-missing live-session qualification evidence.
+  Qualification is now admitted before timed capture and nested gate output
+  is durable. A new signed physical run is required. No comparison evidence
+  is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -107,7 +112,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` failed closed at 0/36 on cursor-plane reconstruction and stale focus; `cp14-schema4-d0b10a2c` is a retained 0/36 partial launch diagnostic. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` failed closed at 0/36 on cursor-plane reconstruction and stale focus; `cp14-schema4-d0b10a2c` and `cp14-schema4-07effa0a` are retained 0/36 partial diagnostics. The latter completed 60/60 visibility/resource samples and 3,600 contiguous kernel frames before a late qualification re-read failed. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -254,12 +259,18 @@ work:
   completion, make transaction IDs correlation-only, give primary submission
   and feedback priority over cursor-only DRM service, preserve a superseding
   cursor cell, and keep hardware-cursor pixels out of native CPU repaints;
+- [x] inspect the resulting signed physical Sophia attempt: the workload stayed
+  focused and visible for 60/60 samples with 3,600 contiguous 60 Hz kernel
+  frames, but late re-reading of volatile cursor qualification prevented
+  `measurement.kdl` and retained the row as a partial diagnostic;
+- [x] admit and snapshot live-session qualification before creating a partial
+  or starting the timed workload, and preserve each nested conformance result
+  in the durable TTY gate log;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `8a3f3802` corrected profile staging; its first Sophia
-  attempt was invalidated by an operator VT switch during measurement, but the
-  partial observation exposed the remaining Present-clock/cursor-ordering bug.
-  This needs a fresh signed candidate after the code correction;
+  continuing. Candidate `07effa0a` physically passed the corrected Sophia
+  workload but did not seal a row because of the now-corrected late
+  qualification read. This needs a fresh signed candidate and prepared run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row
