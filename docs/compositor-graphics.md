@@ -295,7 +295,20 @@ rather than risking stale pixels.
 Animations are Engine-clocked state. The Engine or session reducer determines
 the semantic state for each frame; the renderer only draws that immutable
 state. The WM, metadata broker, and renderer do not drive independent animation
-timelines.
+timelines. Primary-plane content is coalesced by a monotonic deadline derived
+from the active output refresh. Authority commits may replace the pending
+state, but unrelated input wakeups cannot create, postpone, or accelerate that
+deadline. Pointer motion reaches the independently retired hardware cursor
+path immediately; when a software cursor is required it enters the same
+bounded primary repaint as other visual state.
+
+Cursor styling follows the same ownership rule. Configuration selects a theme,
+nominal size, and semantic shape; the trusted session resolves one bounded,
+immutable asset and passes its pixels and hotspot to both render backends. A
+renderer never looks up theme names, and a WM or shell never supplies cursor
+pixels or KMS state. Xcursor animation currently resolves deterministically to
+its first closest-size frame and reports the ignored-frame count; independent
+animated cursor scheduling is not yet part of the public visual vocabulary.
 
 ## Text And Metadata Safety
 
@@ -341,6 +354,14 @@ content, client titles, paths, or texture bytes.
   software-cursor changes in one bounded output snapshot attached to the
   corresponding pixels. The same accepted-submit/page-flip ledger advances
   that snapshot.
+- Engine owns a refresh-relative primary-frame pacer. Busy content is
+  latest-wins until the monotonic deadline, while physical-input turns remain
+  outside that cadence; reduced session evidence reports deferred batches,
+  deadline repaints, and the effective interval.
+- The live cursor uses one validated immutable asset for CPU composition and
+  hardware upload. The default is the canonical X11 core `left_ptr`; standard
+  Xcursor themes and semantic shapes are configurable with a bounded static
+  first-frame fallback.
 - Engine reduces combined output damage into bounded `skip`, `partial`, or
   fail-safe `full` repaint plans after output clipping and exact rectangular
   coalescing. Native evidence separately reports compositor damage, combined

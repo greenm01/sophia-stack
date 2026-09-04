@@ -12,6 +12,7 @@ compositor {
         frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
     }
     chrome-limits max-width=64
+    cursor theme="x11-core" size=16 shape="left_ptr"
 }
 namespace profile="classic-shared"
 diagnostics verbose=#false

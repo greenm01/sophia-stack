@@ -219,6 +219,32 @@ fn missing_logical_target_never_fabricates_retirement() {
 }
 
 #[test]
+fn deadline_repaint_binds_the_latest_previously_deferred_update() {
+    let ready = Instant::now();
+    let surface = SurfaceId::new(1, 1);
+    let mut progress = CpuVisualProgress::default();
+    progress.observe_ready(ready, 0, None, 60_000);
+    progress
+        .observe_production(
+            &production(1, Some(identity(1, surface)), Vec::new(), None),
+            ready + Duration::from_millis(1),
+        )
+        .unwrap();
+
+    progress
+        .observe_production(
+            &production(0, None, Vec::new(), target(7, 77)),
+            ready + Duration::from_millis(17),
+        )
+        .unwrap();
+
+    assert_eq!(progress.pending_target_checksum(), Some(77));
+    let record = progress.record(ready + Duration::from_millis(18), 0);
+    assert!(record.contains("native_target_bindings=1"));
+    assert!(record.contains("pending_updates=1"));
+}
+
+#[test]
 fn same_cycle_update_and_surface_removal_is_lifecycle_settled() {
     let ready = Instant::now();
     let surface = SurfaceId::new(1, 1);

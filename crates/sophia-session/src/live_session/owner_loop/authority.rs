@@ -12,7 +12,12 @@
             native_frame_service_deadline_armed = true;
             native_frame_idle_service_cycles = 0;
         }
-        let native_frame_service_preemption = native_frame_service_request
+        let paced_repaint_preemption = runtime.is_some()
+            && native_scanout.is_some()
+            && !native_frame_service_preempted_previous_cycle
+            && primary_frame_pacer.repaint_due(Instant::now());
+        let native_frame_service_preemption = paced_repaint_preemption
+            || native_frame_service_request
             .as_ref()
             .is_some_and(|request| {
                 native_frame_service_should_preempt_authority(
@@ -65,12 +70,16 @@
                 })
                 .map_or_else(
                     || {
-                        authority_receiver.recv_timeout(authority_wait_timeout(
+                        let now = Instant::now();
+                        let maximum = authority_wait_timeout(
                             physical_input.is_some(),
                             cursor_updates.dirty,
                             session_controls.pending_len() != 0
                                 || explicit_pointer_grabs.pending() != 0,
-                        ))
+                        );
+                        authority_receiver.recv_timeout(
+                            primary_frame_pacer.cap_wait(now, maximum),
+                        )
                     },
                     Ok,
                 )
@@ -119,7 +128,7 @@
                 // A merged cycle already commits every available batch, so a
                 // deferred frame is only correct when the bound, not the
                 // queue, ended the run.
-                let defer_cpu_frame = runtime.is_some()
+                let overload_defer_cpu_frame = runtime.is_some()
                     && merge_run_len >= AUTHORITY_MERGE_RUN_LIMIT
                     && pending_authority_batches
                         .front()
@@ -594,6 +603,23 @@
                     production_batch.released_dma_bufs.extend(part.released_dma_bufs);
                     production_batch.released_fences.extend(part.released_fences);
                 }
+                // Primary cadence owns CPU-composed pixels only. A DMA-BUF
+                // presentation has its own release/presentation timing and
+                // must never arm a later synthetic CPU repaint.
+                let cpu_cadence_eligible = !production_batch.has_dma_buf_present_submissions()
+                    && runtime
+                        .as_ref()
+                        .is_none_or(|runtime| !runtime.released_surface_content_requires_gpu());
+                let cadence_defer_cpu_frame = runtime.is_some()
+                    && native_scanout.is_some()
+                    && cpu_cadence_eligible
+                    && primary_frame_pacer
+                        .defer_production(Instant::now(), overload_defer_cpu_frame);
+                let defer_cpu_frame = overload_defer_cpu_frame || cadence_defer_cpu_frame;
+                if cadence_defer_cpu_frame {
+                    metrics.cadence_deferred_batches =
+                        metrics.cadence_deferred_batches.saturating_add(1);
+                }
                 if merge_run_len > 1 {
                     metrics.merged_batches = metrics
                         .merged_batches
@@ -657,6 +683,37 @@
                         && layout.pending.is_none()
                     {
                         runtime.release_layout_deferred_presentations();
+                    }
+                    let repaint_now = Instant::now();
+                    if layout.pending.is_none()
+                        && native_scanout.output_topology_preparation_phase().is_none()
+                        && primary_frame_pacer.repaint_due(repaint_now)
+                    {
+                        let raised_surface = layout
+                            .top_client_positioned_surface()
+                            .or_else(|| focus.focused_surface(seat));
+                        let repaint = runtime.run_cpu_repaint(
+                            &mut scene,
+                            raised_surface,
+                            pointer.position(),
+                            &outputs,
+                            native_scanout,
+                        )?;
+                        let mut repaint_progress =
+                            sophia_backend_live::LiveProductionCpuProgress::default();
+                        repaint_progress
+                            .bind_primary_logical_target(repaint.primary_logical_target);
+                        cpu_visual_progress
+                            .observe_production(&repaint_progress, repaint_now)?;
+                        primary_frame_pacer.observe_repaint(repaint_now);
+                        metrics.cadence_repaints = metrics.cadence_repaints.saturating_add(1);
+                        metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);
+                        metrics.max_compose = metrics.max_compose.max(repaint.compose_elapsed);
+                        tracing::trace!(
+                            "sophia_live_primary_pacer schema=1 status=repainted checksum={} interval_usec={}",
+                            repaint.composition.checksum,
+                            primary_frame_interval.as_micros(),
+                        );
                     }
                     let service = runtime.service_native(native_scanout, &scene)?;
                     last_native_frame_service = Instant::now();

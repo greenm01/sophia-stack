@@ -14,6 +14,7 @@ sophia-protocol = { path = "../sophia-protocol" }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", optional = true }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 vello_cpu = { version = "=0.2.0", default-features = false, features = ["std", "text", "u8_pipeline"] }
+xcursor.workspace = true
 
 [features]
 default = []

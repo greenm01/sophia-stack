@@ -186,6 +186,11 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison qualify"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison finalize"));
     assert!(DESKTOP_COMPARISON_GATE.contains("xmonad-$(uname -m)-linux"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison cursor-theme"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("export XCURSOR_THEME=sophia-x11-core"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("xsetroot -cursor_name left_ptr"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_CORE_CONFIG="));
+    assert!(DESKTOP_COMPARISON_GATE.contains("Sophia did not attest the prepared cursor asset"));
     assert!(DESKTOP_COMPARISON_GATE.contains("internal_mode=false"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
     assert!(DESKTOP_COMPARISON_GATE.contains("^SOPHIA-1 connected primary"));
@@ -198,6 +203,7 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));
     assert!(!DESKTOP_COMPARISON_GATE.to_ascii_lowercase().contains("ssh"));
     assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
+    assert!(SESSION_LAUNCHER.contains("--config=$SOPHIA_CORE_CONFIG"));
     assert!(SESSION_LAUNCHER.contains("sophia_append_session_terminal_registration_args"));
 }
 

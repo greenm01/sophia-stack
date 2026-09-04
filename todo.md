@@ -84,7 +84,14 @@ Status vocabulary:
   cursor crossed between them. Withdrawal of the qualification window then
   exposed a stale focused-surface identity in the public policy snapshot. The
   producer, wire codec, and Engine validation now enforce one complete-snapshot
-  focus invariant; no comparison evidence is promotable yet.
+  focus invariant. The subsequent zero-row `cp14-schema4-d0b10a2c` attempt is
+  retained as a partial launch diagnostic. Manual observation also exposed two
+  presentation gaps now corrected in code: authority turns could compose
+  outside a refresh deadline, making input wake patterns affect perceived
+  stream cadence, and the cursor used a Sophia-only bitmap. Primary content is
+  now deadline-coalesced independently of input, and one configurable bounded
+  cursor asset feeds both CPU and KMS paths. No comparison evidence is
+  promotable yet; the corrections still need the physical three-stack check.
 
 Latest retained Milestone 14 evidence:
 
@@ -98,7 +105,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` then failed closed at 0/36 on cursor-plane reconstruction and stale focus respectively. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` failed closed at 0/36 on cursor-plane reconstruction and stale focus; `cp14-schema4-d0b10a2c` is a retained 0/36 partial launch diagnostic. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -229,6 +236,15 @@ work:
 - [x] sanitize snapshot focus from the same live surface set and reject stale,
   cross-output, non-focusable, or minimized focus at both the protocol codec
   and Engine authority boundaries;
+- [x] decouple primary content cadence from input turns with one
+  refresh-relative latest-wins deadline, retain immediate hardware-cursor
+  service, and cover still-versus-moving input schedules deterministically;
+- [x] replace the renderer-private cursor bitmap with one bounded immutable
+  Engine asset, configurable standard Xcursor lookup, validated hotspot and
+  static-frame handling, and the canonical X11 core `left_ptr` fallback;
+- [x] pin the comparison's Sophia core profile and canonical cursor digest,
+  materialize the same pixels as an owner-only Xcursor theme for niri, and
+  select XLibre's matching core cursor without reading personal configuration;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
   continuing;

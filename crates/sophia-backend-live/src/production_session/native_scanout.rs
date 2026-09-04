@@ -576,6 +576,22 @@ mod persistent_native_scanout {
             )
         }
 
+        /// Builds the native owner with one already-resolved compositor cursor.
+        /// The backend receives pixels, never a theme name or styling policy.
+        #[cfg(feature = "seat-control")]
+        pub fn new_with_seat_mirroring_mapping_and_cursor(
+            opener: &crate::LiveSeatDeviceOpener,
+            grouping: &crate::NativeMirrorGrouping,
+            mapping: sophia_protocol::OutputHeadMapping,
+            cursor: sophia_engine::CursorAsset,
+        ) -> Result<Self, Box<dyn std::error::Error>> {
+            let mut scanout = Self::new_with_seat_mirroring_and_mapping(opener, grouping, mapping)?;
+            for group in &mut scanout.groups {
+                group.session.set_hardware_cursor_asset(cursor.clone())?;
+            }
+            Ok(scanout)
+        }
+
         fn new_with_selection(
             selection: crate::RealAtomicScanoutSelectionSet,
             grouping: &crate::NativeMirrorGrouping,

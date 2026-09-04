@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use sophia_engine::CompositorRgb8;
+use sophia_engine::{CompositorRgb8, CursorAsset, x11_core_left_ptr_cursor};
 use sophia_protocol::{Point, Rect, Region, Size};
 
 use crate::{LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888, LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888};
@@ -268,12 +268,31 @@ pub fn compose_live_cpu_frame_ref_with_cursor(
     layers: &[LiveCpuCompositionLayerRef<'_>],
     cursor_position: Option<Point>,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_frame_ref_with_cursor_asset(
+        output_size,
+        layers,
+        cursor_position,
+        default_cursor_asset(),
+    )
+}
+
+pub fn compose_live_cpu_frame_ref_with_cursor_asset(
+    output_size: Size,
+    layers: &[LiveCpuCompositionLayerRef<'_>],
+    cursor_position: Option<Point>,
+    cursor_asset: &CursorAsset,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
     let elements = layers
         .iter()
         .copied()
         .map(LiveCpuCompositionElementRef::Layer)
         .collect::<Vec<_>>();
-    compose_live_cpu_display_list_frame(output_size, &elements, cursor_position)
+    compose_live_cpu_display_list_frame_with_cursor_asset(
+        output_size,
+        &elements,
+        cursor_position,
+        cursor_asset,
+    )
 }
 
 /// Lowers one renderer-neutral ordered display list into the CPU reference
@@ -283,11 +302,50 @@ pub fn compose_live_cpu_display_list_frame(
     elements: &[LiveCpuCompositionElementRef<'_>],
     cursor_position: Option<Point>,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
-    compose_live_cpu_display_list_frame_with_metrics(
+    compose_live_cpu_display_list_frame_with_cursor_asset(
+        output_size,
+        elements,
+        cursor_position,
+        default_cursor_asset(),
+    )
+}
+
+pub fn compose_live_cpu_display_list_frame_with_cursor_asset(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    cursor_asset: &CursorAsset,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset(
         output_size,
         elements,
         cursor_position,
         LiveCpuFrameMetricsMode::ExactPixels,
+        None,
+        None,
+        cursor_asset,
+    )
+}
+
+fn default_cursor_asset() -> &'static CursorAsset {
+    static ASSET: OnceLock<CursorAsset> = OnceLock::new();
+    ASSET.get_or_init(|| x11_core_left_ptr_cursor(1))
+}
+
+fn compose_live_cpu_display_list_frame_with_default_cursor(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    metrics_mode: LiveCpuFrameMetricsMode,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset(
+        output_size,
+        elements,
+        cursor_position,
+        metrics_mode,
+        None,
+        None,
+        default_cursor_asset(),
     )
 }
 
@@ -297,12 +355,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics(
     cursor_position: Option<Point>,
     metrics_mode: LiveCpuFrameMetricsMode,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
-    compose_live_cpu_display_list_frame_with_metrics_reusing(
+    compose_live_cpu_display_list_frame_with_default_cursor(
         output_size,
         elements,
         cursor_position,
         metrics_mode,
-        None,
     )
 }
 
@@ -333,6 +390,26 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
     metrics_mode: LiveCpuFrameMetricsMode,
     reusable_bytes: Option<Arc<Vec<u8>>>,
     repaint_damage: Option<&Region>,
+) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset(
+        output_size,
+        elements,
+        cursor_position,
+        metrics_mode,
+        reusable_bytes,
+        repaint_damage,
+        default_cursor_asset(),
+    )
+}
+
+pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset(
+    output_size: Size,
+    elements: &[LiveCpuCompositionElementRef<'_>],
+    cursor_position: Option<Point>,
+    metrics_mode: LiveCpuFrameMetricsMode,
+    reusable_bytes: Option<Arc<Vec<u8>>>,
+    repaint_damage: Option<&Region>,
+    cursor_asset: &CursorAsset,
 ) -> Result<LiveCpuCompositionReport, LiveCpuCompositionError> {
     let width = usize::try_from(output_size.width)
         .ok()
@@ -407,7 +484,7 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
                 composed_elements[index] |= composed;
             }
             if let Some(position) = cursor_position {
-                compose_software_cursor_clipped(&mut frame, position, clip);
+                compose_software_cursor_clipped(&mut frame, position, clip, cursor_asset);
             }
         }
         layers_composed = composed_elements
@@ -435,11 +512,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
             }
         }
         if let Some(position) = cursor_position {
-            compose_software_cursor(&mut frame, position);
+            compose_software_cursor(&mut frame, position, cursor_asset);
         }
     }
     let (nonzero_evidence, checksum) =
-        composition_evidence_metrics(output_size, elements, cursor_position);
+        composition_evidence_metrics(output_size, elements, cursor_position, cursor_asset);
     let nonzero_pixel_bytes = match metrics_mode {
         LiveCpuFrameMetricsMode::ExactPixels => cpu_frame_metrics(&frame.bytes).0,
         LiveCpuFrameMetricsMode::DamageScopedEvidence => nonzero_evidence,
@@ -477,6 +554,7 @@ fn composition_evidence_metrics(
     output_size: Size,
     elements: &[LiveCpuCompositionElementRef<'_>],
     cursor_position: Option<Point>,
+    cursor_asset: &CursorAsset,
 ) -> (usize, u64) {
     let mut checksum = 0xcbf2_9ce4_8422_2325u64;
     for value in [
@@ -525,6 +603,12 @@ fn composition_evidence_metrics(
         checksum = evidence_hash(checksum, position.x.to_bits());
         checksum = evidence_hash(checksum, position.y.to_bits());
         nonzero_evidence = nonzero_evidence.saturating_add(1);
+        for bytes in cursor_asset.digest().bytes().chunks_exact(8) {
+            checksum = evidence_hash(
+                checksum,
+                u64::from_le_bytes(bytes.try_into().expect("eight-byte digest chunk")),
+            );
+        }
     }
     (nonzero_evidence, checksum)
 }
@@ -585,32 +669,16 @@ fn compose_solid_rect_clipped(
     true
 }
 
-pub const DEFAULT_CURSOR_EDGE: usize = 16;
-pub const DEFAULT_CURSOR_HOTSPOT: (i32, i32) = (0, 0);
-pub const DEFAULT_CURSOR_SHAPE: [&[u8]; DEFAULT_CURSOR_EDGE] = [
-    b"##..............",
-    b"#W#.............",
-    b"#WW#............",
-    b"#WWW#...........",
-    b"#WWWW#..........",
-    b"#WWWWW#.........",
-    b"#WWWWWW#........",
-    b"#WWWWWWW#.......",
-    b"#WWWWWWWW#......",
-    b"#WWWWW#####.....",
-    b"#WWW#W#.........",
-    b"#WW#.#W#........",
-    b"#W#..#W#........",
-    b"##...#WW#.......",
-    b"#....#WW#.......",
-    b".....#WW#.......",
-];
-
-fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point) {
-    compose_software_cursor_clipped(frame, position, output_rect(frame.size));
+fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point, asset: &CursorAsset) {
+    compose_software_cursor_clipped(frame, position, output_rect(frame.size), asset);
 }
 
-fn compose_software_cursor_clipped(frame: &mut LiveCpuComposedFrame, position: Point, clip: Rect) {
+fn compose_software_cursor_clipped(
+    frame: &mut LiveCpuComposedFrame,
+    position: Point,
+    clip: Rect,
+    asset: &CursorAsset,
+) {
     if !position.x.is_finite()
         || !position.y.is_finite()
         || position.x < f64::from(i32::MIN)
@@ -620,23 +688,60 @@ fn compose_software_cursor_clipped(frame: &mut LiveCpuComposedFrame, position: P
     {
         return;
     }
-    let origin_x = position.x.floor() as i32;
-    let origin_y = position.y.floor() as i32;
+    let origin_x = (position.x.floor().min(f64::from(i32::MAX)) as i32)
+        .saturating_sub(i32::try_from(asset.hotspot().0).unwrap_or(i32::MAX));
+    let origin_y = (position.y.floor().min(f64::from(i32::MAX)) as i32)
+        .saturating_sub(i32::try_from(asset.hotspot().1).unwrap_or(i32::MAX));
 
-    for (row, pixels) in DEFAULT_CURSOR_SHAPE.iter().enumerate() {
-        for (column, pixel) in pixels.iter().enumerate() {
-            let color = match pixel {
-                b'W' => [0xff, 0xff, 0xff, 0xff],
-                b'#' => [0, 0, 0, 0xff],
-                _ => continue,
-            };
+    let width = usize::try_from(asset.width()).unwrap_or(0);
+    for (row, pixels) in asset
+        .pixels()
+        .chunks_exact(width.saturating_mul(4))
+        .enumerate()
+    {
+        for (column, color) in pixels.chunks_exact(4).enumerate() {
+            if color[3] == 0 {
+                continue;
+            }
             let x = origin_x.saturating_add(i32::try_from(column).unwrap_or(i32::MAX));
             let y = origin_y.saturating_add(i32::try_from(row).unwrap_or(i32::MAX));
             if rect_contains_point(clip, x, y) {
-                put_pixel(frame, x, y, color);
+                blend_premultiplied_pixel(frame, x, y, color.try_into().expect("four-byte pixel"));
             }
         }
     }
+}
+
+fn blend_premultiplied_pixel(frame: &mut LiveCpuComposedFrame, x: i32, y: i32, source: [u8; 4]) {
+    if source[3] == u8::MAX {
+        put_pixel(frame, x, y, source);
+        return;
+    }
+    let Some(target) = pixel_mut(frame, x, y) else {
+        return;
+    };
+    let inverse_alpha = u16::from(u8::MAX - source[3]);
+    for channel in 0..3 {
+        let background = u16::from(target[channel]);
+        let foreground = u16::from(source[channel]);
+        target[channel] = foreground
+            .saturating_add((background * inverse_alpha + 127) / 255)
+            .min(255) as u8;
+    }
+    target[3] = u8::MAX;
+}
+
+fn pixel_mut(frame: &mut LiveCpuComposedFrame, x: i32, y: i32) -> Option<&mut [u8]> {
+    let x = usize::try_from(x).ok()?;
+    let y = usize::try_from(y).ok()?;
+    let width = usize::try_from(frame.size.width).ok()?;
+    let height = usize::try_from(frame.size.height).ok()?;
+    let stride = usize::try_from(frame.stride).ok()?;
+    if x >= width || y >= height {
+        return None;
+    }
+    let offset = y.checked_mul(stride)?.checked_add(x.checked_mul(4)?)?;
+    Arc::get_mut(&mut frame.bytes)?.get_mut(offset..offset.checked_add(4)?)
 }
 
 fn put_pixel(frame: &mut LiveCpuComposedFrame, x: i32, y: i32, pixel: [u8; 4]) {

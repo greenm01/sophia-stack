@@ -11,6 +11,8 @@ pub const SOPHIA_CONFIG_MAX_WM_ACTIONS: usize = 256;
 pub const SOPHIA_CONFIG_MAX_WM_BINDINGS: usize = 256;
 pub const SOPHIA_CONFIG_MAX_WORKSPACES: usize = 64;
 pub const SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH: u32 = 64;
+pub const SOPHIA_CONFIG_MAX_CURSOR_NAME_BYTES: usize = 64;
+pub const SOPHIA_CONFIG_MAX_CURSOR_SIZE: u32 = 128;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ConfigGeneration(u64);
@@ -144,6 +146,23 @@ impl ChromePolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CursorConfig {
+    pub theme: String,
+    pub size: u32,
+    pub shape: String,
+}
+
+impl Default for CursorConfig {
+    fn default() -> Self {
+        Self {
+            theme: "x11-core".to_owned(),
+            size: 16,
+            shape: "left_ptr".to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApplicationConfig {
     pub id: u64,
     pub name: String,
@@ -260,6 +279,7 @@ pub struct CoreConfigSnapshot {
     pub outputs: Vec<OutputConfig>,
     pub fallback_chrome: ChromePolicy,
     pub max_chrome_width: u32,
+    pub cursor: CursorConfig,
     pub namespace_profile: String,
     pub external_wm: Option<ExternalWmConfig>,
     pub verbose_diagnostics: bool,
@@ -323,6 +343,7 @@ pub struct CoreConfigDelta {
     pub applications_changed: bool,
     pub repeat_changed: bool,
     pub chrome_changed: bool,
+    pub cursor_changed: bool,
     pub diagnostics_changed: bool,
     pub restart_required: bool,
 }
@@ -334,12 +355,14 @@ impl CoreConfigDelta {
             repeat_changed: active.input.repeat != candidate.input.repeat,
             chrome_changed: active.fallback_chrome != candidate.fallback_chrome
                 || active.max_chrome_width != candidate.max_chrome_width,
+            cursor_changed: active.cursor != candidate.cursor,
             diagnostics_changed: active.verbose_diagnostics != candidate.verbose_diagnostics,
             restart_required: active.input.source != candidate.input.source
                 || active.input.xkb != candidate.input.xkb
                 || active.outputs != candidate.outputs
                 || active.namespace_profile != candidate.namespace_profile
-                || active.external_wm != candidate.external_wm,
+                || active.external_wm != candidate.external_wm
+                || active.cursor != candidate.cursor,
         }
     }
 
@@ -347,6 +370,7 @@ impl CoreConfigDelta {
         !self.applications_changed
             && !self.repeat_changed
             && !self.chrome_changed
+            && !self.cursor_changed
             && !self.diagnostics_changed
             && !self.restart_required
     }

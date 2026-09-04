@@ -166,12 +166,13 @@ macro_rules! service_core_config_reload {
                             );
                         }
                         crate::session_println!(
-                            "sophia_config_reload schema=1 status=applied generation={} digest={} applications_changed={} repeat_changed={} chrome_changed={} diagnostics_changed={}",
+                            "sophia_config_reload schema=2 status=applied generation={} digest={} applications_changed={} repeat_changed={} chrome_changed={} cursor_changed={} diagnostics_changed={}",
                             report.generation.raw(),
                             snapshot.digest,
                             report.delta.applications_changed,
                             report.delta.repeat_changed,
                             report.delta.chrome_changed,
+                            report.delta.cursor_changed,
                             report.delta.diagnostics_changed,
                         );
                     }
@@ -184,9 +185,11 @@ macro_rules! service_core_config_reload {
                             .pending_restart()
                             .expect("pending restart disposition retains candidate");
                         crate::session_println!(
-                            "sophia_config_reload schema=1 status=pending_restart generation={} digest={}",
+                            "sophia_config_reload schema=2 status=pending_restart generation={} digest={} cursor_changed={} restart_required={}",
                             report.generation.raw(),
                             pending.digest,
+                            report.delta.cursor_changed,
+                            report.delta.restart_required,
                         );
                     }
                     Ok(report) => {

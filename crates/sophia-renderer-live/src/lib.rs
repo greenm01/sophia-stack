@@ -18,6 +18,7 @@ pub use sophia_renderer_native_egl::{
 mod buffer_registry;
 mod cpu_buffer_registry;
 mod cpu_composition;
+mod cursor_theme;
 mod frame_target;
 mod import;
 mod indicator_strip;
@@ -39,6 +40,7 @@ mod shared_buffer;
 pub use buffer_registry::*;
 pub use cpu_buffer_registry::*;
 pub use cpu_composition::*;
+pub use cursor_theme::*;
 pub use frame_target::*;
 pub use import::*;
 pub use indicator_strip::*;

@@ -26,6 +26,62 @@ fn tool_version_matching_requires_a_complete_version_token() {
     assert!(!version_output_matches("Mozilla Firefox 1155.0", "155"));
 }
 
+#[test]
+fn canonical_cursor_theme_is_standard_bounded_and_owner_only() {
+    let root = temporary_root("cursor-theme");
+    let theme_root = root.join("themes");
+    let record = write_x11_core_cursor_theme(&theme_root).unwrap();
+    let asset = sophia_engine::x11_core_left_ptr_cursor(1);
+    let cursor = theme_root
+        .join("sophia-x11-core")
+        .join("cursors")
+        .join("left_ptr");
+    let bytes = fs::read(&cursor).unwrap();
+
+    assert_eq!(&bytes[..4], b"Xcur");
+    assert_eq!(
+        u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+        0xfffd_0002
+    );
+    assert_eq!(
+        u32::from_le_bytes(bytes[44..48].try_into().unwrap()),
+        asset.width()
+    );
+    assert_eq!(
+        u32::from_le_bytes(bytes[48..52].try_into().unwrap()),
+        asset.height()
+    );
+    assert_eq!(&bytes[64..], asset.pixels());
+    assert!(record[0].contains(&asset.digest().to_string()));
+    assert_eq!(
+        fs::metadata(&cursor).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        fs::metadata(cursor.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700,
+    );
+    write_x11_core_cursor_theme(&theme_root).expect("an exact retry is idempotent");
+    fs::write(
+        theme_root
+            .join("sophia-x11-core")
+            .join("cursors")
+            .join("arrow"),
+        b"changed",
+    )
+    .unwrap();
+    assert!(
+        write_x11_core_cursor_theme(&theme_root)
+            .unwrap_err()
+            .contains("not the prepared asset")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -61,8 +117,9 @@ fn prepared_run_for_lane(
     let run = root.join("run");
     create_private_run_storage(&run).unwrap();
     let candidate = git_output(&repo, &["rev-parse", "HEAD"]).unwrap();
+    let cursor_digest = sophia_engine::x11_core_left_ptr_cursor(1).digest();
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true acquisition=terminal_free_visible lane={lane} optional_soak=separate source_commit={candidate}\n"
+        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true acquisition=terminal_free_visible lane={lane} optional_soak=separate source_commit={candidate} cursor_theme=sophia-x11-core cursor_size=16 cursor_shape=left_ptr cursor_sha256={cursor_digest}\n"
     );
     for config in CONFIGS {
         manifest.push_str(&format!(
@@ -543,7 +600,7 @@ fn legacy_manifest_is_preserved_but_not_admitted() {
     );
     fs::write(manifest_path, manifest).unwrap();
     let error = status(&repo(), &run).unwrap_err();
-    assert!(error.contains("predates the terminal-free visibility and optional-soak contract"));
+    assert!(error.contains("predates the terminal-free visibility, pinned-cursor"));
 
     fs::remove_dir_all(root).unwrap();
 }

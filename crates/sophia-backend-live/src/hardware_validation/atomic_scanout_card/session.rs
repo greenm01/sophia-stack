@@ -27,6 +27,8 @@ pub struct RealAtomicScanoutPageFlipSession {
     cursor_controller: LegacyHardwareCursorController<drm::control::crtc::Handle>,
     #[cfg(feature = "gbm-probe")]
     cursor_crtcs_sanitized: bool,
+    #[cfg(feature = "gbm-probe")]
+    cursor_asset: sophia_engine::CursorAsset,
 }
 
 #[cfg(feature = "gbm-probe")]
@@ -71,6 +73,26 @@ impl LegacyHardwareCursorDevice for RealLegacyHardwareCursorDevice<'_> {
 }
 
 impl RealAtomicScanoutPageFlipSession {
+    #[cfg(feature = "gbm-probe")]
+    pub fn set_hardware_cursor_asset(
+        &mut self,
+        asset: sophia_engine::CursorAsset,
+    ) -> io::Result<()> {
+        if self.cursor_buffer.is_some() || self.cursor_framebuffer.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "hardware cursor asset is already in use",
+            ));
+        }
+        self.cursor_asset = asset;
+        Ok(())
+    }
+
+    #[cfg(feature = "gbm-probe")]
+    pub const fn hardware_cursor_hotspot(&self) -> (u32, u32) {
+        self.cursor_asset.hotspot()
+    }
+
     #[cfg(feature = "gbm-probe")]
     fn discover_atomic_cursor_planes(&self) -> io::Result<Vec<RealAtomicCursorPlane>> {
         let mut cursor_planes = Vec::new();
@@ -286,12 +308,12 @@ impl RealAtomicScanoutPageFlipSession {
             let dimensions = self
                 .cursor_dimensions
                 .ok_or_else(|| io::Error::other("hardware cursor dimensions are unavailable"))?;
-            let raster_edge = u32::try_from(sophia_renderer_live::DEFAULT_CURSOR_EDGE)
-                .map_err(|_| io::Error::other("cursor raster edge exceeds u32"))?;
-            if dimensions.width < raster_edge || dimensions.height < raster_edge {
+            let raster_width = self.cursor_asset.width();
+            let raster_height = self.cursor_asset.height();
+            if dimensions.width < raster_width || dimensions.height < raster_height {
                 return Err(io::Error::other(format!(
                     "driver cursor dimensions {}x{} are smaller than the {}x{} cursor raster",
-                    dimensions.width, dimensions.height, raster_edge, raster_edge,
+                    dimensions.width, dimensions.height, raster_width, raster_height,
                 )));
             }
             let mut buffer = self.card.create_dumb_buffer(
@@ -304,19 +326,18 @@ impl RealAtomicScanoutPageFlipSession {
             {
                 let mut mapping = self.card.map_dumb_buffer(&mut buffer)?;
                 mapping.fill(0);
-                for (y, row) in sophia_renderer_live::DEFAULT_CURSOR_SHAPE
-                    .iter()
+                let raster_stride = usize::try_from(raster_width)
+                    .ok()
+                    .and_then(|width| width.checked_mul(4))
+                    .ok_or_else(|| io::Error::other("cursor raster stride overflow"))?;
+                for (y, row) in self
+                    .cursor_asset
+                    .pixels()
+                    .chunks_exact(raster_stride)
                     .enumerate()
                 {
-                    for (x, pixel) in row.iter().copied().enumerate() {
-                        let color = match pixel {
-                            b'W' => [0xff, 0xff, 0xff, 0xff],
-                            b'#' => [0x00, 0x00, 0x00, 0xff],
-                            _ => continue,
-                        };
-                        let offset = y * pitch + x * 4;
-                        mapping[offset..offset + 4].copy_from_slice(&color);
-                    }
+                    let offset = y * pitch;
+                    mapping[offset..offset + raster_stride].copy_from_slice(row);
                 }
             }
             self.cursor_buffer = Some(buffer);
@@ -764,6 +785,8 @@ impl RealAtomicScanoutCardSelection {
                 cursor_controller: LegacyHardwareCursorController::default(),
                 #[cfg(feature = "gbm-probe")]
                 cursor_crtcs_sanitized: false,
+                #[cfg(feature = "gbm-probe")]
+                cursor_asset: sophia_engine::x11_core_left_ptr_cursor(1),
             }),
         }
     }
@@ -908,6 +931,8 @@ impl RealAtomicScanoutSelectionSet {
                 cursor_controller: LegacyHardwareCursorController::default(),
                 #[cfg(feature = "gbm-probe")]
                 cursor_crtcs_sanitized: false,
+                #[cfg(feature = "gbm-probe")]
+                cursor_asset: sophia_engine::x11_core_left_ptr_cursor(1),
             });
         }
         let output_count = usize::try_from(next_output.saturating_sub(1)).unwrap_or(usize::MAX);

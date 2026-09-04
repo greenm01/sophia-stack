@@ -33,7 +33,7 @@ const OWNER_FILE_MODE: u32 = 0o600;
 pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
 pub(crate) const SHORT_WORKLOADS: [&str; 4] =
     ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
-pub(crate) const CONFIGS: [&str; 14] = [
+pub(crate) const CONFIGS: [&str; 15] = [
     "validation/desktop-comparison/config/sophia.kdl",
     "validation/desktop-comparison/config/xlibre-xmonad.kdl",
     "validation/desktop-comparison/config/niri.kdl",
@@ -45,10 +45,108 @@ pub(crate) const CONFIGS: [&str; 14] = [
     "tools/run_sophia_session.sh",
     "tools/sophia_tty_mode.py",
     "tools/lib/session_terminal.sh",
+    "validation/desktop-comparison/profiles/core.kdl",
     "validation/desktop-comparison/profiles/hagia.kdl",
     "validation/desktop-comparison/profiles/niri.kdl",
     "validation/desktop-comparison/profiles/xmonad.hs",
 ];
+
+/// Materializes the canonical Engine cursor as a standard Xcursor theme for
+/// comparison stacks that consume the freedesktop cursor interface.
+pub fn write_x11_core_cursor_theme(root: &Path) -> Result<Vec<String>, String> {
+    let asset = sophia_engine::x11_core_left_ptr_cursor(1);
+    let theme_root = root.join("sophia-x11-core");
+    let theme = theme_root.join("cursors");
+    for directory in [root, theme_root.as_path(), theme.as_path()] {
+        fs::DirBuilder::new()
+            .recursive(false)
+            .mode(OWNER_DIRECTORY_MODE)
+            .create(directory)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })
+            .map_err(|error| format!("could not create comparison cursor theme: {error}"))?;
+        let metadata = fs::symlink_metadata(directory)
+            .map_err(|error| format!("could not inspect comparison cursor theme: {error}"))?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(format!(
+                "comparison cursor theme path is not a real directory: {}",
+                directory.display()
+            ));
+        }
+        fs::set_permissions(directory, fs::Permissions::from_mode(OWNER_DIRECTORY_MODE))
+            .map_err(|error| format!("could not protect comparison cursor theme: {error}"))?;
+    }
+
+    let mut bytes = Vec::with_capacity(28 + 36 + asset.pixels().len());
+    bytes.extend_from_slice(b"Xcur");
+    push_xcursor_u32(&mut bytes, 16);
+    push_xcursor_u32(&mut bytes, 0x0001_0000);
+    push_xcursor_u32(&mut bytes, 1);
+    push_xcursor_u32(&mut bytes, 0xfffd_0002);
+    push_xcursor_u32(&mut bytes, 16);
+    push_xcursor_u32(&mut bytes, 28);
+    push_xcursor_u32(&mut bytes, 36);
+    push_xcursor_u32(&mut bytes, 0xfffd_0002);
+    push_xcursor_u32(&mut bytes, 16);
+    push_xcursor_u32(&mut bytes, 1);
+    push_xcursor_u32(&mut bytes, asset.width());
+    push_xcursor_u32(&mut bytes, asset.height());
+    push_xcursor_u32(&mut bytes, asset.hotspot().0);
+    push_xcursor_u32(&mut bytes, asset.hotspot().1);
+    push_xcursor_u32(&mut bytes, 0);
+    bytes.extend_from_slice(asset.pixels());
+
+    for name in ["left_ptr", "default", "arrow"] {
+        let path = theme.join(name);
+        let created = OpenOptions::new()
+            .create(true)
+            .create_new(true)
+            .write(true)
+            .mode(OWNER_FILE_MODE)
+            .open(&path);
+        match created {
+            Ok(mut file) => {
+                file.write_all(&bytes)
+                    .and_then(|()| file.sync_all())
+                    .map_err(|error| format!("could not seal {}: {error}", path.display()))?;
+                fs::set_permissions(&path, fs::Permissions::from_mode(OWNER_FILE_MODE))
+                    .map_err(|error| format!("could not protect {}: {error}", path.display()))?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&path)
+                    .map_err(|error| format!("could not inspect {}: {error}", path.display()))?;
+                if !metadata.is_file()
+                    || metadata.file_type().is_symlink()
+                    || metadata.permissions().mode() & 0o777 != OWNER_FILE_MODE
+                    || fs::read(&path)
+                        .map_err(|error| format!("could not verify {}: {error}", path.display()))?
+                        != bytes
+                {
+                    return Err(format!(
+                        "existing comparison cursor asset is not the prepared asset: {}",
+                        path.display()
+                    ));
+                }
+            }
+            Err(error) => {
+                return Err(format!("could not create {}: {error}", path.display()));
+            }
+        }
+    }
+    Ok(vec![format!(
+        "desktop_comparison_cursor schema=1 status=materialized theme=sophia-x11-core size=16 shape=left_ptr digest={}",
+        asset.digest(),
+    )])
+}
+
+fn push_xcursor_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ScheduledSample {
@@ -268,8 +366,9 @@ fn prepare_with_identity(
     for (name, path) in comparison_binaries(repo)? {
         binary_fields.push_str(&format!(" {name}={}", digest_file(&path)?));
     }
+    let cursor_digest = sophia_engine::x11_core_left_ptr_cursor(1).digest();
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true raw_capture_required=true acquisition=terminal_free_visible lane={} optional_soak=separate source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}{binary_fields}\n",
+        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true raw_capture_required=true acquisition=terminal_free_visible lane={} optional_soak=separate source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION} cursor_theme=sophia-x11-core cursor_size=16 cursor_shape=left_ptr cursor_sha256={cursor_digest}{binary_fields}\n",
         lane.token(),
     );
     manifest.push_str(&format!(
@@ -927,6 +1026,10 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     let manifest = fs::read_to_string(run.join("manifest.kdl"))
         .map_err(|error| format!("comparison manifest is missing: {error}"))?;
     let acquisition = manifest.lines().next().unwrap_or_default();
+    let expected_cursor_digest = format!(
+        "cursor_sha256={}",
+        sophia_engine::x11_core_left_ptr_cursor(1).digest()
+    );
     if !acquisition.starts_with("desktop_comparison_manifest schema=4 status=prepared ")
         || !acquisition
             .split_ascii_whitespace()
@@ -934,9 +1037,21 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
         || !acquisition
             .split_ascii_whitespace()
             .any(|field| field == "optional_soak=separate")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == "cursor_theme=sophia-x11-core")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == "cursor_size=16")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == "cursor_shape=left_ptr")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == expected_cursor_digest)
     {
         return Err(
-            "comparison run predates the terminal-free visibility and optional-soak contract"
+            "comparison run predates the terminal-free visibility, pinned-cursor, and optional-soak contract"
                 .to_owned(),
         );
     }

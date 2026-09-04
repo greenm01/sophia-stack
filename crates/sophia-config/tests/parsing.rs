@@ -27,6 +27,7 @@ compositor {
         frame enabled=#false width=0 focused-color="#70b7ff" unfocused-color="#303030"
     }
     chrome-limits max-width=12
+    cursor theme="Adwaita" size=24 shape="text"
 }
 namespace profile="classic-shared"
 external-wm executable="/usr/bin/hagia" {
@@ -72,6 +73,9 @@ fn parses_complete_core_snapshot() {
     assert_eq!(snapshot.outputs.len(), 1);
     assert_eq!(snapshot.fallback_chrome.focus_ring.width, 3);
     assert_eq!(snapshot.max_chrome_width, 12);
+    assert_eq!(snapshot.cursor.theme, "Adwaita");
+    assert_eq!(snapshot.cursor.size, 24);
+    assert_eq!(snapshot.cursor.shape, "text");
     assert_eq!(
         snapshot.external_wm.as_ref().map(|wm| wm.interface),
         Some(ExternalWmInterface::SophiaWmV1)
@@ -208,6 +212,54 @@ fn rejects_default_chrome_outside_tighter_limit() {
         parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL),
         Err(ConfigParseError::Schema(message)) if message.contains("exceeds")
     ));
+}
+
+#[test]
+fn cursor_configuration_is_bounded_and_semantic() {
+    for (replacement, expected) in [
+        (
+            "cursor theme=\"../personal\" size=24 shape=\"text\"",
+            "unsupported character",
+        ),
+        (
+            "cursor theme=\"Adwaita\" size=0 shape=\"text\"",
+            "must be in",
+        ),
+        (
+            "cursor theme=\"Adwaita\" size=129 shape=\"text\"",
+            "must be in",
+        ),
+        (
+            "cursor theme=\"Adwaita\" size=24 shape=\"renderer-private\"",
+            "unsupported semantic cursor shape",
+        ),
+    ] {
+        let source = CORE.replace(
+            "cursor theme=\"Adwaita\" size=24 shape=\"text\"",
+            replacement,
+        );
+        let error = parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL)
+            .expect_err("invalid cursor config must fail closed");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn cursor_change_is_staged_as_one_restart_candidate() {
+    let active =
+        parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid active config");
+    let mut state = CoreConfigState::from_snapshot(active);
+    let candidate = CORE.replace("shape=\"text\"", "shape=\"pointer\"");
+
+    let report = state
+        .reload(candidate.as_bytes())
+        .expect("valid cursor candidate");
+
+    assert_eq!(report.disposition, ReloadDisposition::PendingRestart);
+    assert!(report.delta.cursor_changed);
+    assert!(report.delta.restart_required);
+    assert_eq!(state.active().cursor.shape, "text");
+    assert_eq!(state.pending_restart().unwrap().cursor.shape, "pointer");
 }
 
 #[test]

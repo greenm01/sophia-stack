@@ -193,6 +193,9 @@
                     );
                 }
                 if composed {
+                    if cpu_cadence_eligible {
+                        primary_frame_pacer.observe_production(Instant::now(), true);
+                    }
                     metrics.max_compose = metrics.max_compose.max(compose_elapsed);
                     metrics.cpu_compositions = metrics.cpu_compositions.saturating_add(1);
                 } else {

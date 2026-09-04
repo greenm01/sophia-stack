@@ -298,4 +298,6 @@ pub struct LiveProductionCpuSubmission {
     pub composition: crate::LiveCpuCompositionReport,
     pub composed: bool,
     pub compose_elapsed: std::time::Duration,
+    /// Exact primary native target when this submission queued one.
+    pub primary_logical_target: Option<LiveProductionCpuTarget>,
 }

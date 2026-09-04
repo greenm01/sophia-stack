@@ -14,6 +14,7 @@ sophia-engine = { path = "../sophia-engine" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
+sophia-renderer-live = { path = "../sophia-renderer-live" }
 sophia-wm-demo = { path = "../sophia-wm-demo" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }

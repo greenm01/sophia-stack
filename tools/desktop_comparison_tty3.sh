@@ -55,6 +55,13 @@ adapter_root="$runtime_root/sophia-desktop-comparison-adapter"
 mkdir -p "$adapter_root"
 chmod 700 "$adapter_root"
 
+prepare_cursor_theme() {
+    "$xtask" conformance desktop-comparison cursor-theme "$adapter_root/cursor-themes"
+    export XCURSOR_PATH="$adapter_root/cursor-themes"
+    export XCURSOR_THEME=sophia-x11-core
+    export XCURSOR_SIZE=16
+}
+
 sophia_launcher=
 sophia_supervisor=
 cleanup_sophia_session() {
@@ -274,6 +281,8 @@ run_xlibre_child() {
     trap 'exit 130' INT
     trap 'exit 143' TERM
     require_x_topology
+    command -v xsetroot >/dev/null || fail "xsetroot is required to pin the XLibre core cursor"
+    xsetroot -cursor_name left_ptr
     ewmh_ready=false
     for _ in {1..300}; do
         if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
@@ -293,13 +302,15 @@ run_xlibre_child() {
 }
 
 run_sophia() {
-    local run=$1 workload=$2 result=0 launcher_status=0 child_tty= max_runtime_ms=95000
+    local run=$1 workload=$2 result=0 launcher_status=0 child_tty= max_runtime_ms=95000 cursor_digest=
     local session_log="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/hagia-session/session.log"
     local watchdog=125
     if [[ $workload == soak-2h ]]; then
         watchdog=7265
         max_runtime_ms=7235000
     fi
+    cursor_digest=$(sed -n '1s/.* cursor_sha256=\([^ ]*\).*/\1/p' "$run/manifest.kdl")
+    [[ $cursor_digest =~ ^[0-9a-f]{64}$ ]] || fail "comparison manifest lacks a cursor digest"
 
     record_gate_stage sophia-launch
     (
@@ -312,6 +323,7 @@ run_sophia() {
         export SOPHIA_BIN="$sophia_bin"
         export SOPHIA_HAGIA_BIN="$hagia_bin"
         export SOPHIA_HAGIA_SHELL_BIN="$narthex_bin"
+        export SOPHIA_CORE_CONFIG="$repo/validation/desktop-comparison/profiles/core.kdl"
         export SOPHIA_DESKTOP_PROFILE="$repo/validation/desktop-comparison/profiles/hagia.kdl"
         export SOPHIA_SESSION_STARTUP=none
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
@@ -353,6 +365,10 @@ run_sophia() {
             "$session_log" 2>/dev/null; then
         result=1
         echo "desktop comparison: terminal-free Sophia did not become ready" >&2
+    elif ! grep -Eq "^sophia_live_cursor_asset schema=1 .*effective_theme=x11-core .*effective_size=16 .*effective_shape=left_ptr .*digest=$cursor_digest .*fallback=\"none\"$" \
+        "$session_log" 2>/dev/null; then
+        result=1
+        echo "desktop comparison: Sophia did not attest the prepared cursor asset" >&2
     else
         shopt -s nullglob
         authorities=("$runtime_root"/.sophia-Xauthority-"$sophia_supervisor"-77-*)
@@ -429,6 +445,7 @@ operator_tty_fd_tty=$(tty <&"$operator_tty_fd") \
 [[ $operator_tty_fd_tty == "$operator_tty" ]] \
     || fail "the duplicated operator terminal changed identity"
 command -v jq >/dev/null || fail "jq is not installed"
+prepare_cursor_theme
 
 record_gate_stage candidate-admission
 status=$("$xtask" conformance desktop-comparison status "$run")

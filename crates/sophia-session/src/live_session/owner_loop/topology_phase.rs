@@ -89,12 +89,13 @@
 
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
-                LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
+                LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                     &controller.device_opener(),
                     &mirror_grouping,
                     initial_head_mapping,
+                    config.cursor_resolution.asset.clone(),
                 )
-                    .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())
             }
             None => Err("DRM topology rescan lost its seat controller".to_owned()),
         };
@@ -272,6 +273,7 @@
                 &outputs,
                 native,
             )?;
+            primary_frame_pacer.observe_repaint(Instant::now());
             tracing::info!(
                 "sophia_live_output_topology schema=2 status=repaint_forced transition={} presentation_baseline={presentation_baseline} checksum={} reason=policy_committed",
                 output_topology_owner.transition,

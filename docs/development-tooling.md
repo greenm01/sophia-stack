@@ -102,7 +102,12 @@ supervisor tree. The first Sophia row runs a four-target physical cursor
 qualification before measurement. Capture then stages the row; `finalize`
 checks that the exact supervisor has exited before it records clean teardown,
 replays, and seals the evidence. Sophia's direct-DRM path may stop and restore
-the local display manager.
+the local display manager. The prepared manifest also binds the canonical
+cursor digest and repository-owned Sophia core configuration. The gate
+materializes those Engine pixels as an owner-only standard Xcursor theme for
+niri, selects XLibre's matching core `left_ptr`, and refuses a Sophia session
+that does not attest the same configured asset. Personal cursor configuration
+therefore cannot change a comparison row.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.

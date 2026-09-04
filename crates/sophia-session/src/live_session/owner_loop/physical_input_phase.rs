@@ -1029,6 +1029,15 @@ macro_rules! publish_resumed_topology_transport {
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
+let primary_refresh_millihz = native_scanout
+    .as_ref()
+    .and_then(|native| native.heads.first())
+    .map_or(60_000, |head| head.refresh_millihz)
+    .max(1);
+let mut primary_frame_interval = Duration::from_micros(
+    (1_000_000_000_u64 / u64::from(primary_refresh_millihz)).max(1),
+);
+let mut primary_frame_pacer = sophia_engine::PrimaryFramePacer::new(primary_frame_interval);
 // Samples the gauges the completion record reports once, so a verifier can ask
 // whether they grew rather than only whether they drained.
 let mut resource_sampler = LiveResourceSampler::new(started);
@@ -1036,6 +1045,19 @@ let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        if let Some(refresh_millihz) = native_scanout
+            .as_ref()
+            .and_then(|native| native.heads.first())
+            .map(|head| head.refresh_millihz.max(1))
+        {
+            let interval = Duration::from_micros(
+                (1_000_000_000_u64 / u64::from(refresh_millihz)).max(1),
+            );
+            if interval != primary_frame_interval {
+                primary_frame_interval = interval;
+                primary_frame_pacer.set_interval(Instant::now(), interval);
+            }
+        }
         // Before any phase runs, so a sample describes a settled loop rather
         // than a moment inside one. The gauge reads walk a map and read
         // /proc, which is why they happen on a cadence rather than per pass.

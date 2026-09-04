@@ -102,6 +102,7 @@ struct PersistentXtermSessionConfig {
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
     surface_chrome_style: sophia_engine::SurfaceChromeStyle,
+    cursor_resolution: sophia_renderer_live::CursorResolution,
     verbose_diagnostics: bool,
     inject_output_size: Option<Size>,
     inject_surface_resize: Option<Size>,
@@ -178,6 +179,14 @@ impl PersistentXtermSessionConfig {
         };
         let core_config_state = sophia_config::CoreConfigState::load(&core_config_source)?;
         let core_snapshot = core_config_state.active();
+        let cursor_shape = sophia_engine::CursorShape::parse(&core_snapshot.cursor.shape)
+            .ok_or("validated core config has an unknown cursor shape")?;
+        let cursor_resolution = sophia_renderer_live::resolve_cursor_theme(
+            &core_snapshot.cursor.theme,
+            core_snapshot.cursor.size,
+            cursor_shape,
+            core_snapshot.generation.raw(),
+        );
         let explicit_desktop_profile = arg_value(args, "--desktop-profile").map(Into::into);
         if no_config && explicit_desktop_profile.is_some() {
             return Err("--no-config and --desktop-profile are mutually exclusive".into());
@@ -929,6 +938,7 @@ impl PersistentXtermSessionConfig {
             desktop_profile,
             desktop_profile_activation: sophia_config::DesktopProfileActivationModel::default(),
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
+            cursor_resolution,
             verbose_diagnostics: core_snapshot.verbose_diagnostics,
             core_config_source,
             core_config_state,

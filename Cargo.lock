@@ -983,6 +983,7 @@ name = "sophia-engine"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sha2",
  "sophia-portal",
  "sophia-protocol",
  "sophia-runtime",
@@ -1018,6 +1019,7 @@ dependencies = [
  "sophia-renderer-native-egl",
  "sophia-xshmfence",
  "vello_cpu",
+ "xcursor",
 ]
 
 [[package]]
@@ -1054,6 +1056,7 @@ dependencies = [
  "sophia-engine",
  "sophia-portal",
  "sophia-protocol",
+ "sophia-renderer-live",
  "sophia-runtime",
  "sophia-wm-demo",
  "sophia-x-authority",
@@ -1490,6 +1493,12 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+
+[[package]]
+name = "xcursor"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "163b33ed8786455e2fa5d72f554057ce3f3182425434f756cd39c99839d88e23"
 
 [[package]]
 name = "xkbcommon"

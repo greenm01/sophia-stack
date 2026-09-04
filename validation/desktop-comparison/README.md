@@ -35,6 +35,11 @@ Every row uses Kitty `0.48.2`, Firefox `155`, DP-1 at
 The repository-owned profiles under `profiles/` replace personal Hagia, niri,
 and xmonad configuration for the matrix. Animations are disabled and comparison
 windows are floating where the reference stack supports a rule.
+The matrix also pins the public-domain X11 core-font `left_ptr` at nominal size
+16. Sophia consumes it through the repository-owned core profile, niri through
+an owner-only Xcursor theme materialized by the typed conformance owner, and
+XLibre through its native core cursor. The manifest binds the cursor asset
+digest; no stack reads a personal cursor preference.
 
 Four short workloads run three times per stack in rotated order: a visibly
 changing Kitty stream, the loopback-only animated Firefox fixture with a fresh

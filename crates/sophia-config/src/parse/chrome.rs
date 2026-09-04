@@ -1,10 +1,12 @@
 use super::*;
 
-pub(super) fn parse_compositor(node: &KdlNode) -> Result<(ChromePolicy, u32), ConfigParseError> {
+pub(super) fn parse_compositor(
+    node: &KdlNode,
+) -> Result<(ChromePolicy, u32, CursorConfig), ConfigParseError> {
     exact_shape(node, 0, &[], true)?;
     let children = children(node)?;
-    validate_root_names(children, &["chrome-fallback", "chrome-limits"])?;
-    require_singletons(children, &["chrome-fallback", "chrome-limits"])?;
+    validate_root_names(children, &["chrome-fallback", "chrome-limits", "cursor"])?;
+    require_singletons(children, &["chrome-fallback", "chrome-limits", "cursor"])?;
     let max = children
         .get("chrome-limits")
         .map(|limits| {
@@ -26,7 +28,60 @@ pub(super) fn parse_compositor(node: &KdlNode) -> Result<(ChromePolicy, u32), Co
     if style.clearance() > max {
         return schema_error("chrome fallback width exceeds configured maximum");
     }
-    Ok((style, max))
+    let cursor = children
+        .get("cursor")
+        .map(parse_cursor)
+        .transpose()?
+        .unwrap_or_default();
+    Ok((style, max, cursor))
+}
+
+fn parse_cursor(node: &KdlNode) -> Result<CursorConfig, ConfigParseError> {
+    exact_shape(node, 0, &["theme", "size", "shape"], false)?;
+    let theme = required_string_property(node, "theme", 1, SOPHIA_CONFIG_MAX_CURSOR_NAME_BYTES)?;
+    let shape = required_string_property(node, "shape", 1, SOPHIA_CONFIG_MAX_CURSOR_NAME_BYTES)?;
+    if !theme.bytes().all(cursor_name_byte) {
+        return schema_error("cursor theme contains an unsupported character");
+    }
+    if sophia_engine_cursor_shape_name(shape).is_none() {
+        return schema_error(format!("unsupported semantic cursor shape {shape:?}"));
+    }
+    Ok(CursorConfig {
+        theme: theme.to_owned(),
+        size: integer_property_u32(node, "size", 1, SOPHIA_CONFIG_MAX_CURSOR_SIZE)?,
+        shape: shape.to_owned(),
+    })
+}
+
+const fn cursor_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+}
+
+// Keep the config dialect protocol-neutral. These names map to Engine's
+// semantic CursorShape at the session boundary; arbitrary renderer names do
+// not cross configuration as hidden policy.
+fn sophia_engine_cursor_shape_name(name: &str) -> Option<()> {
+    matches!(
+        name,
+        "left_ptr"
+            | "default"
+            | "text"
+            | "xterm"
+            | "pointer"
+            | "hand2"
+            | "move"
+            | "fleur"
+            | "wait"
+            | "watch"
+            | "crosshair"
+            | "ew-resize"
+            | "sb_h_double_arrow"
+            | "ns-resize"
+            | "sb_v_double_arrow"
+            | "nwse-resize"
+            | "nesw-resize"
+    )
+    .then_some(())
 }
 
 pub(super) fn parse_chrome_policy(

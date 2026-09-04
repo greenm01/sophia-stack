@@ -978,6 +978,7 @@ impl LiveProductionVisualRuntime {
                 } else {
                     compose_started.elapsed()
                 },
+                primary_logical_target: cpu_progress.primary_logical_target,
             },
             committed_surfaces,
             cpu_progress,
@@ -1135,10 +1136,13 @@ impl LiveProductionVisualRuntime {
         self.record_focus_ring_observation(&committed, true)?;
         let head_batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
         let output_count = self.outputs.output_count();
+        let primary_output = self.outputs.primary_output();
         let production = &self.production;
         let surface_metadata = &self.surface_metadata;
         let outputs = &mut self.outputs;
         let mut head_batches = head_batches.into_iter().collect::<BTreeMap<_, _>>();
+        let primary_logical_target = std::cell::Cell::new(None);
+        let primary_logical_target_ref = &primary_logical_target;
         let mut adapter = crate::LiveProductionOutputRuntimeAdapter::new(
             output_count,
             |index, snapshot: &[CommittedSurfaceState]| -> Result<_, Box<dyn std::error::Error>> {
@@ -1148,8 +1152,22 @@ impl LiveProductionVisualRuntime {
                 let frames = head_batches
                     .remove(&output_id)
                     .ok_or("CPU repaint omitted a logical-output head cohort")?;
+                let logical_checksum = frames
+                    .first()
+                    .map(|frame| frame.logical_content_checksum)
+                    .ok_or("CPU repaint produced an empty head cohort")?;
+                if frames
+                    .iter()
+                    .any(|frame| frame.logical_content_checksum != logical_checksum)
+                {
+                    return Err("CPU repaint heads disagree on logical content checksum".into());
+                }
                 if outputs.native_initialized(output_id) {
-                    native_scanout.queue_head_composition_frames(output_id, frames)?;
+                    let frame = native_scanout.queue_head_composition_frames(output_id, frames)?;
+                    if Some(output_id) == primary_output {
+                        primary_logical_target_ref
+                            .set(Some(LiveProductionCpuTarget::new(frame, logical_checksum)));
+                    }
                 } else {
                     outputs.initialize_native_head_composition(
                         native_scanout,
@@ -1178,11 +1196,14 @@ impl LiveProductionVisualRuntime {
             .into_iter()
             .next()
             .ok_or("persistent backend runtime has no outputs")?;
+        let primary_logical_target = primary_logical_target.get();
+        self.last_primary_logical_target = primary_logical_target;
         Ok(LiveProductionCpuSubmission {
             tick,
             composition,
             composed: true,
             compose_elapsed: compose_started.elapsed(),
+            primary_logical_target,
         })
     }
 

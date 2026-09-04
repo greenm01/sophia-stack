@@ -13,6 +13,8 @@
         software_present_submissions_observed: _,
         cpu_compositions,
         coalesced_batches,
+        cadence_deferred_batches,
+        cadence_repaints,
         merged_batches,
         max_merge_run,
         backend_ticks,
@@ -958,7 +960,8 @@
         cpu_visual_progress.record(Instant::now(), startup_ready_msec.unwrap_or_default())
     );
     crate::session_println!(
-        "sophia_live_session_scheduler schema=1 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches} merged_batches={merged_batches} max_merge_run={max_merge_run}"
+        "sophia_live_session_scheduler schema=2 authority_batches={batches} cpu_compositions={cpu_compositions} coalesced_batches={coalesced_batches} cadence_deferred_batches={cadence_deferred_batches} cadence_repaints={cadence_repaints} frame_interval_usec={} merged_batches={merged_batches} max_merge_run={max_merge_run}",
+        primary_frame_interval.as_micros(),
     );
     crate::session_println!(
         "sophia_live_owner_timing schema=2 status=complete max_child_reap_msec={} max_input_phase_msec={}",

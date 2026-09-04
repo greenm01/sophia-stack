@@ -546,6 +546,13 @@ session_args=(
     --native-scanout
     "${input_source_args[@]}"
 )
+if [[ "$SESSION_PROFILE" != standalone && -n "${SOPHIA_CORE_CONFIG:-}" ]]; then
+    [[ "$SOPHIA_CORE_CONFIG" == /* && -f "$SOPHIA_CORE_CONFIG" ]] || {
+        echo "SOPHIA_CORE_CONFIG must be an absolute existing path." >&2
+        exit 1
+    }
+    session_args+=("--config=$SOPHIA_CORE_CONFIG")
+fi
 if [[ "$SESSION_STARTUP" != none ]]; then
     session_args+=(--startup-ready-timeout-ms=8000)
 fi

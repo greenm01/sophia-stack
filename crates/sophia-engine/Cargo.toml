@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 rustix = { workspace = true, features = ["net", "std"] }
+sha2.workspace = true
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }

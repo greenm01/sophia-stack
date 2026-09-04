@@ -17,7 +17,27 @@ The default user files are:
 the application registry, startup applications, physical input source, XKB
 RMLVO, repeat timing, output policy, namespace profile, external-WM launch
 specification, diagnostic policy, and fallback compositor chrome plus hard
-chrome limits.
+chrome limits. Cursor theme, nominal size, and semantic shape are compositor
+mechanism too; they are not WM or shell rendering policy.
+
+The compositor section accepts one bounded cursor selection:
+
+```kdl
+compositor {
+    cursor theme="x11-core" size=16 shape="left_ptr"
+}
+```
+
+`theme` is a 1–64 byte identifier, `size` is 1–128, and `shape` is one of the
+public semantic roles (`left_ptr`, `text`, `pointer`, `move`, `wait`,
+`crosshair`, or a supported resize role). The trusted session resolves the
+selection once to immutable premultiplied pixels, dimensions, hotspot,
+generation, and SHA-256 identity. CPU composition and the KMS cursor backend
+consume that same asset; neither chooses a theme. A missing, malformed,
+oversized, or over-deep Xcursor theme falls back visibly in diagnostics to the
+built-in public-domain X11 core-font `left_ptr`. That built-in is the compiled
+default and matches `XCreateFontCursor(XC_left_ptr)` rather than a
+Sophia-specific drawing.
 
 A registered session application may set `placement-class=N`, where `N` is a
 nonzero opaque `u64`. For an action-launched application, the session attaches
@@ -281,8 +301,8 @@ Core reload is whole-file atomic:
 - application registry changes affect later launches;
 - repeat timing applies only after the shortcut/key ledger is idle;
 - fallback chrome and diagnostics apply live;
-- input source, XKB, outputs, namespace, and external-WM launch changes mark
-  the entire candidate `pending_restart`;
+- input source, XKB, outputs, namespace, cursor asset, and external-WM launch
+  changes mark the entire candidate `pending_restart`;
 - a pending-restart candidate does not partially apply its otherwise-live
   fields.
 

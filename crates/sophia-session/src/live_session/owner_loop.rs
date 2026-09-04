@@ -317,6 +317,28 @@ fn run_session_loop_inner(
         Option<sophia_backend_live::LiveDrmTopologyRescanNotice> = None;
     let mut output_topology_policy_commit_baseline = 0u64;
     let mut scene = LiveProductionCpuScene::new(output.size);
+    scene.set_cursor_asset(config.cursor_resolution.asset.clone());
+    let cursor_fallback = config
+        .cursor_resolution
+        .fallback_reason
+        .as_deref()
+        .unwrap_or("none");
+    crate::session_println!(
+        "sophia_live_cursor_asset schema=1 requested_theme={} effective_theme={} requested_size={} effective_size={} requested_shape={} effective_shape={} width={} height={} hotspot_x={} hotspot_y={} digest={} animation_frames_ignored={} fallback={:?}",
+        config.cursor_resolution.requested_theme,
+        config.cursor_resolution.effective_theme,
+        config.cursor_resolution.requested_size,
+        config.cursor_resolution.effective_nominal_size,
+        config.core_config_state.active().cursor.shape,
+        config.cursor_resolution.shape.name(),
+        config.cursor_resolution.asset.width(),
+        config.cursor_resolution.asset.height(),
+        config.cursor_resolution.asset.hotspot().0,
+        config.cursor_resolution.asset.hotspot().1,
+        config.cursor_resolution.asset.digest(),
+        config.cursor_resolution.ignored_animation_frames,
+        cursor_fallback,
+    );
     if initialize_empty_runtime {
         scene.compose(&[], None, None)?;
     }

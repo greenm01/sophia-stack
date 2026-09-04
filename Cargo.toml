@@ -59,3 +59,4 @@ rustix = { version = "1.1", default-features = false, features = ["fs", "process
 sha2 = "0.10.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+xcursor = "0.3.10"

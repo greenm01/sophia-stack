@@ -10,8 +10,8 @@ use crate::{
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuComposedFrame,
     LiveCpuCompositionElementRef, LiveCpuCompositionLayer, LiveCpuCompositionLayerRef,
     LiveCpuCompositionReport, LiveCpuFrameMetricsMode,
-    compose_live_cpu_display_list_frame_with_metrics_reusing_damage, compose_live_cpu_frame,
-    compose_live_cpu_frame_ref_with_cursor,
+    compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset,
+    compose_live_cpu_frame, compose_live_cpu_frame_ref_with_cursor_asset,
 };
 
 const RETAINED_PRIMARY_CPU_FRAME_CAPACITY: usize = 3;
@@ -50,6 +50,7 @@ pub struct LiveProductionCpuScene {
     secondary_output_frames: Vec<(usize, HeadlessOutput, LiveProductionComposedFrame)>,
     indicator_strip_cache: crate::IndicatorStripRasterCache,
     text_cache: crate::CompositorTextRasterCache,
+    cursor_asset: sophia_engine::CursorAsset,
 }
 
 impl LiveProductionCpuScene {
@@ -68,7 +69,21 @@ impl LiveProductionCpuScene {
             secondary_output_frames: Vec::new(),
             indicator_strip_cache: Default::default(),
             text_cache: Default::default(),
+            cursor_asset: sophia_engine::x11_core_left_ptr_cursor(1),
         }
+    }
+
+    pub fn set_cursor_asset(&mut self, asset: sophia_engine::CursorAsset) -> bool {
+        if self.cursor_asset == asset {
+            return false;
+        }
+        self.cursor_asset = asset;
+        self.force_full_repaint();
+        true
+    }
+
+    pub const fn cursor_asset(&self) -> &sophia_engine::CursorAsset {
+        &self.cursor_asset
     }
 
     /// Rebind composition to a replacement primary output while retaining
@@ -264,11 +279,14 @@ impl LiveProductionCpuScene {
         if output.size != self.output_size {
             return Err("CPU scene output descriptor has a mismatched size".into());
         }
+        let (hotspot_x, hotspot_y) = self.cursor_asset.hotspot();
         let cursor_geometry = cursor_position.map(|position| Rect {
-            x: position.x.floor() as i32,
-            y: position.y.floor() as i32,
-            width: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
-            height: i32::try_from(crate::DEFAULT_CURSOR_EDGE).unwrap_or(i32::MAX),
+            x: (position.x.floor() as i32)
+                .saturating_sub(i32::try_from(hotspot_x).unwrap_or(i32::MAX)),
+            y: (position.y.floor() as i32)
+                .saturating_sub(i32::try_from(hotspot_y).unwrap_or(i32::MAX)),
+            width: i32::try_from(self.cursor_asset.width()).unwrap_or(i32::MAX),
+            height: i32::try_from(self.cursor_asset.height()).unwrap_or(i32::MAX),
         });
         let current_output_damage_snapshot = output_frame_damage_snapshot(
             output,
@@ -419,13 +437,14 @@ impl LiveProductionCpuScene {
             LiveCpuFrameMetricsMode::ExactPixels
         };
         self.last_report = Some(
-            compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
+            compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_cursor_asset(
                 self.output_size,
                 &elements,
                 cursor_position,
                 metrics_mode,
                 reusable_bytes,
                 repaint_damage.as_ref(),
+                &self.cursor_asset,
             )
             .map_err(|error| {
                 format!("persistent CPU display-list composition failed: {error:?}")
@@ -537,8 +556,13 @@ impl LiveProductionCpuScene {
             })
             .collect::<Vec<_>>();
         self.last_report = Some(
-            compose_live_cpu_frame_ref_with_cursor(self.output_size, &layers, cursor_position)
-                .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
+            compose_live_cpu_frame_ref_with_cursor_asset(
+                self.output_size,
+                &layers,
+                cursor_position,
+                &self.cursor_asset,
+            )
+            .map_err(|error| format!("persistent CPU composition failed: {error:?}"))?,
         );
         self.last_output_damage_snapshot = None;
         self.retained_primary_frames.clear();

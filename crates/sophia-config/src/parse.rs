@@ -7,12 +7,13 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     ApplicationConfig, ChromePolicy, ConfigDigest, ConfigGeneration, CoreConfigSnapshot,
-    ExternalWmConfig, ExternalWmInterface, FocusRingStyle, FrameStyle, InputConfig,
+    CursorConfig, ExternalWmConfig, ExternalWmInterface, FocusRingStyle, FrameStyle, InputConfig,
     InputSourceConfig, OutputConfig, RepeatConfig, Rgb8, SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH,
     SOPHIA_CONFIG_MAX_APPLICATIONS, SOPHIA_CONFIG_MAX_ARGUMENT_BYTES, SOPHIA_CONFIG_MAX_ARGUMENTS,
-    SOPHIA_CONFIG_MAX_OUTPUTS, SOPHIA_CONFIG_MAX_WM_ACTIONS, SOPHIA_CONFIG_MAX_WM_BINDINGS,
-    SOPHIA_CONFIG_MAX_WORKSPACES, SOPHIA_CONFIG_SCHEMA_VERSION, SessionConfig, WmActionBehavior,
-    WmActionConfig, WmBindingConfig, WmConfigSnapshot, WmLayoutKind, XkbConfig,
+    SOPHIA_CONFIG_MAX_CURSOR_NAME_BYTES, SOPHIA_CONFIG_MAX_CURSOR_SIZE, SOPHIA_CONFIG_MAX_OUTPUTS,
+    SOPHIA_CONFIG_MAX_WM_ACTIONS, SOPHIA_CONFIG_MAX_WM_BINDINGS, SOPHIA_CONFIG_MAX_WORKSPACES,
+    SOPHIA_CONFIG_SCHEMA_VERSION, SessionConfig, WmActionBehavior, WmActionConfig, WmBindingConfig,
+    WmConfigSnapshot, WmLayoutKind, XkbConfig,
 };
 
 #[path = "parse/chrome.rs"]
@@ -95,13 +96,14 @@ pub fn parse_core_config(
         .map(parse_outputs)
         .transpose()?
         .unwrap_or_default();
-    let (fallback_chrome, max_chrome_width) = document
+    let (fallback_chrome, max_chrome_width, cursor) = document
         .get("compositor")
         .map(parse_compositor)
         .transpose()?
         .unwrap_or((
             ChromePolicy::default(),
             SOPHIA_CONFIG_COMPILED_MAX_CHROME_WIDTH,
+            CursorConfig::default(),
         ));
     let namespace_profile = document
         .get("namespace")
@@ -126,6 +128,7 @@ pub fn parse_core_config(
         outputs,
         fallback_chrome,
         max_chrome_width,
+        cursor,
         namespace_profile,
         external_wm,
         verbose_diagnostics,

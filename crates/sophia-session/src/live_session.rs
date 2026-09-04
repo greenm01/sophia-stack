@@ -359,10 +359,11 @@ pub(crate) fn run_persistent_xterm_session(
     let mut native_scanout = seat_controller
         .as_ref()
         .map(|controller| {
-            LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
+            LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                 &controller.device_opener(),
                 &mirror_grouping,
                 initial_head_mapping,
+                config.cursor_resolution.asset.clone(),
             )
         })
         .transpose()?;

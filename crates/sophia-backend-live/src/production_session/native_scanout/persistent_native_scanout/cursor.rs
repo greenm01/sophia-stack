@@ -162,6 +162,13 @@ impl LiveProductionNativeScanout {
         // hide rather than left alone -- a head with nothing said to it is
         // how a cursor ends up showing on two monitors at once.
         let mut head_positions = BTreeMap::<usize, (i32, i32)>::new();
+        let (hotspot_x, hotspot_y) = self
+            .groups
+            .first()
+            .map(|group| group.session.hardware_cursor_hotspot())
+            .ok_or("hardware cursor has no card group")?;
+        let hotspot_x = i32::try_from(hotspot_x).map_err(|_| "cursor hotspot exceeds i32")?;
+        let hotspot_y = i32::try_from(hotspot_y).map_err(|_| "cursor hotspot exceeds i32")?;
         if let Some((output, logical_x, logical_y, logical_size)) =
             project_native_cursor_logical_viewport(position, logical_viewports)?
         {
@@ -176,11 +183,13 @@ impl LiveProductionNativeScanout {
                 ) else {
                     continue;
                 };
-                head_positions.insert(head_index, (head_x, head_y));
+                let cursor_x = head_x.saturating_sub(hotspot_x);
+                let cursor_y = head_y.saturating_sub(hotspot_y);
+                head_positions.insert(head_index, (cursor_x, cursor_y));
                 targets
                     .entry(head.group)
                     .or_default()
-                    .push((head.selection, head_x, head_y));
+                    .push((head.selection, cursor_x, cursor_y));
             }
         }
         if self.cursor_path == crate::HardwareCursorPath::AtomicPlane {

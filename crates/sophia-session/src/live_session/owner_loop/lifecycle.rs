@@ -97,11 +97,13 @@
                             }
                             Err(error) => {
                                 seat_release_prepared = false;
-                                let mut resumed = LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
-                                    &controller.device_opener(),
-                                    mirror_grouping,
-                                    initial_head_mapping,
-                                )?;
+                                let mut resumed =
+                                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
+                                        &controller.device_opener(),
+                                        mirror_grouping,
+                                        initial_head_mapping,
+                                        config.cursor_resolution.asset.clone(),
+                                    )?;
                                 if resumed.outputs() != outputs {
                                     schedule_output_topology_rebuild!("switch_rejected", true);
                                     drop(resumed);
@@ -175,11 +177,12 @@
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
-                    &controller.device_opener(),
-                    &mirror_grouping,
-                    initial_head_mapping,
-                )?;
+                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
+                        &controller.device_opener(),
+                        &mirror_grouping,
+                        initial_head_mapping,
+                        config.cursor_resolution.asset.clone(),
+                    )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("switch_timeout", true);
                     drop(resumed);
@@ -284,11 +287,12 @@
             if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
                 crate::session_println!("sophia_live_seat schema=1 status=acquire_pending");
                 let mut resumed =
-                    LiveProductionNativeScanout::new_with_seat_mirroring_and_mapping(
-                    &controller.device_opener(),
-                    &mirror_grouping,
-                    initial_head_mapping,
-                )?;
+                    LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
+                        &controller.device_opener(),
+                        &mirror_grouping,
+                        initial_head_mapping,
+                        config.cursor_resolution.asset.clone(),
+                    )?;
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("seat_resume", true);
                     drop(resumed);

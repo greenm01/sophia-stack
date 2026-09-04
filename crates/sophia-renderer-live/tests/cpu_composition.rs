@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use sophia_engine::{
-    CompositorDisplayCommand, CompositorDisplayList, CompositorRgb8, HeadlessOutput,
+    CompositorDisplayCommand, CompositorDisplayList, CompositorRgb8, CursorAsset, HeadlessOutput,
+    x11_core_left_ptr_cursor,
 };
 use sophia_protocol::{
     BufferSource, CommittedSurfaceState, OutputId, Point, Rect, Region, Size, SurfaceId,
 };
 use sophia_renderer_live::{
-    DEFAULT_CURSOR_EDGE, DEFAULT_CURSOR_HOTSPOT, DEFAULT_CURSOR_SHAPE,
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferPatch, LiveCpuBufferSource,
     LiveCpuBufferSourceRef, LiveCpuBufferUpdate, LiveCpuCompositionElementRef,
     LiveCpuCompositionLayer, LiveCpuCompositionLayerRef, LiveCpuFrameMetricsMode,
@@ -15,7 +15,7 @@ use sophia_renderer_live::{
     compose_live_cpu_display_list_frame_with_metrics_reusing,
     compose_live_cpu_display_list_frame_with_metrics_reusing_damage, compose_live_cpu_frame,
     compose_live_cpu_frame_ref, compose_live_cpu_frame_ref_with_cursor,
-    project_live_cpu_composed_frame,
+    compose_live_cpu_frame_ref_with_cursor_asset, project_live_cpu_composed_frame,
 };
 
 #[test]
@@ -435,22 +435,52 @@ fn borrowed_composition_draws_a_high_contrast_software_cursor() {
         compose_live_cpu_frame_ref_with_cursor(size, &[layer], Some(Point { x: 2.8, y: 3.2 }))
             .unwrap();
 
-    let outline = (3 * 16 + 2) * 4;
-    let white = (4 * 16 + 3) * 4;
-    assert_eq!(&report.frame.bytes[white..white + 4], &[0xff; 4]);
-    assert_eq!(&report.frame.bytes[outline..outline + 4], &[0, 0, 0, 0xff]);
+    assert!(
+        report
+            .frame
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel == [0xff; 4])
+    );
+    assert!(
+        report
+            .frame
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel == [0, 0, 0, 0xff])
+    );
     assert_ne!(report.checksum, baseline.checksum);
 }
 
 #[test]
 fn default_cursor_asset_has_stable_dimensions_and_hotspot() {
-    assert_eq!(DEFAULT_CURSOR_EDGE, 16);
-    assert_eq!(DEFAULT_CURSOR_HOTSPOT, (0, 0));
-    assert_eq!(DEFAULT_CURSOR_SHAPE.len(), DEFAULT_CURSOR_EDGE);
-    assert!(DEFAULT_CURSOR_SHAPE.iter().all(|row| {
-        row.len() == DEFAULT_CURSOR_EDGE
-            && row.iter().all(|pixel| matches!(pixel, b'.' | b'#' | b'W'))
-    }));
+    let cursor = x11_core_left_ptr_cursor(1);
+    assert_eq!((cursor.width(), cursor.height()), (10, 16));
+    assert_eq!(cursor.hotspot(), (1, 1));
+    assert_eq!(cursor.pixels().len(), 10 * 16 * 4);
+}
+
+#[test]
+fn software_cursor_uses_the_resolved_asset_hotspot() {
+    let mut pixels = vec![0; 2 * 2 * 4];
+    pixels[12..16].copy_from_slice(&[0x10, 0x20, 0x30, 0xff]);
+    let cursor = CursorAsset::new(2, 2, 1, 1, 1, pixels).unwrap();
+    let report = compose_live_cpu_frame_ref_with_cursor_asset(
+        Size {
+            width: 5,
+            height: 5,
+        },
+        &[],
+        Some(Point { x: 3.0, y: 3.0 }),
+        &cursor,
+    )
+    .unwrap();
+    let offset = (3 * 5 + 3) * 4;
+
+    assert_eq!(
+        &report.frame.bytes[offset..offset + 4],
+        &[0x10, 0x20, 0x30, 0xff]
+    );
 }
 
 #[test]
