@@ -86,8 +86,8 @@ Reserved space is distributed unevenly:
 
 Eleven of the twenty-one messages carry one reserved `u16`. `ProjectionRequest`'s
 former `reserved_cause` slot is now `interaction_axis`; the other `reserved` field
-remains zero-checked. `capabilities` is a `u64` with bits 0 through 9 assigned,
-leaving 54.
+remains zero-checked. `capabilities` is a `u64` with bits 0 through 10 assigned,
+leaving 53.
 
 **Six of the eight record kinds have no reserved space at all.** Any new
 per-output, per-surface, per-placement, or per-indicator fact is therefore either

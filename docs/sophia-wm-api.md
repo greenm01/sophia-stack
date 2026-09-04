@@ -65,10 +65,17 @@ requested capabilities. `ServerWelcome` selects a supported revision and
 capability subset and supplies a server-owned connection epoch plus effective
 limits.
 
-Capabilities are orthogonal and fail closed. The initial set covers registered
-bindings, opaque session actions, reduced pointer interactions, and bounded
-Engine chrome policy. Unsupported bits reject negotiation. An operation is
-legal only when its selected revision and negotiated capability admit it.
+Capabilities are orthogonal and fail closed at the point of use. The initial
+set covers registered bindings, opaque session actions, reduced pointer
+interactions, and bounded Engine chrome policy. Unsupported bits do not reject
+negotiation: the server intersects the requested set with what it offers and
+returns the result, so a client must read `ServerWelcome.capabilities` and
+treat any missing bit as unavailable. The wire has no negotiation-error
+message, which makes the intersection deliberate — a silently dropped
+connection would be the only alternative, and it would explain nothing. An
+operation is legal only when its selected revision and negotiated capability
+admit it; using an unnegotiated capability fails the operation, not the
+handshake.
 
 Revision 2 separates action registration from physical shortcut ownership.
 The policy client advertises a bounded catalog containing one nonzero opaque
