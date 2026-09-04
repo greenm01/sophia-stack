@@ -884,6 +884,13 @@ elif [[ "$SESSION_PROFILE" == hagia ]]; then
         --wm-process="$SOPHIA_HAGIA_BIN"
         --wm-interface=sophia_wm_v1
     )
+    # Name the shell explicitly. The installed launcher already resolves this
+    # path; without passing it the session falls back to deriving a basename
+    # beside the WM, which silently ties the installed desktop to whatever the
+    # shell executable happens to be called.
+    if [[ -n "${SOPHIA_HAGIA_SHELL_BIN:-}" ]]; then
+        session_args+=("--shell-process=$SOPHIA_HAGIA_SHELL_BIN")
+    fi
     session_args+=(
         "--session-app=browser=$hagia_browser_bin"
         --session-app-arg=browser=--no-remote

@@ -91,7 +91,7 @@ require_sha256 xmobar_config_sha256 "$(sha256sum "$xmobar_config" | awk '{print 
 case "$(field hagia_included)" in
     true)
         hagia="$release/target/release/hagia"
-        hagia_shell="$release/target/release/hagia-shell"
+        hagia_shell="$release/target/release/narthex"
         for executable in "$hagia" "$hagia_shell"; do
             [[ -x "$executable" ]] || {
                 echo "Packaged Hagia executable is missing: $executable" >&2

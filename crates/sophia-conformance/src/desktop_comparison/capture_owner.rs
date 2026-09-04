@@ -569,8 +569,8 @@ fn validate_active_profile(
             require_descendant_executable(
                 run,
                 attestation.supervisor_pid,
-                "hagia_shell",
-                "hagia_shell_sha256",
+                "narthex",
+                "narthex_sha256",
             )
         }
         "niri" => {
@@ -655,8 +655,8 @@ fn required_stack_identities(
             identities.push(sole_descendant_identity(
                 run,
                 attestation.supervisor_pid,
-                "hagia_shell",
-                "hagia_shell_sha256",
+                "narthex",
+                "narthex_sha256",
             )?);
         }
         "xlibre-xmonad" => {

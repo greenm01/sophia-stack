@@ -48,9 +48,14 @@ if [[ -n "$hagia_bin" && ! -x "$hagia_bin" ]]; then
     exit 1
 fi
 if [[ -n "$hagia_bin" && -z "$hagia_shell_bin" ]]; then
-    hagia_shell_bin="$(dirname "$hagia_bin")/hagia-shell"
-    if [[ ! -x "$hagia_shell_bin" && -x "$(dirname "$hagia_bin")/hagia_shell" ]]; then
-        hagia_shell_bin="$(dirname "$hagia_bin")/hagia_shell"
+    hagia_shell_bin="$(dirname "$hagia_bin")/narthex"
+    if [[ ! -x "$hagia_shell_bin" ]]; then
+        for candidate in hagia-shell hagia_shell; do
+            if [[ -x "$(dirname "$hagia_bin")/$candidate" ]]; then
+                hagia_shell_bin="$(dirname "$hagia_bin")/$candidate"
+                break
+            fi
+        done
     fi
 fi
 if [[ -n "$hagia_bin" && ! -x "$hagia_shell_bin" ]]; then
@@ -111,7 +116,7 @@ install -m 755 "$xmobar_bin" "$artifact/target/release/xmobar"
 install -m 755 tools/installed/sophia-session "$artifact/bin/sophia-session"
 if [[ -n "$hagia_bin" ]]; then
     install -m 755 "$hagia_bin" "$artifact/target/release/hagia"
-    install -m 755 "$hagia_shell_bin" "$artifact/target/release/hagia-shell"
+    install -m 755 "$hagia_shell_bin" "$artifact/target/release/narthex"
     install -m 755 tools/installed/sophia-hagia-session \
         "$artifact/bin/sophia-hagia-session"
     install -m 755 tools/installed/sophia-hagia-promotion-session \

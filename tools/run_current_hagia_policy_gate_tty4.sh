@@ -86,9 +86,11 @@ desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"
 
 if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
     || -n "$(git -C "$HAGIA_ROOT" status --short)" \
+    || -n "$(git -C "$NARTHEX_ROOT" status --short)" \
     || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$sophia_commit" \
-    || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$hagia_commit" ]]; then
-    echo "Sophia or Hagia source identity changed during the physical-proof build." >&2
+    || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$hagia_commit" \
+    || "$(git -C "$NARTHEX_ROOT" rev-parse HEAD)" != "$narthex_commit" ]]; then
+    echo "Sophia, Hagia, or Narthex source identity changed during the physical-proof build." >&2
     exit 1
 fi
 git -C "$ROOT_DIR" verify-commit "$sophia_commit" >/dev/null 2>&1 || {

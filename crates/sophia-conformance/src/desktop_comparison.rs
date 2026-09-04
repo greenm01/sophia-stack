@@ -132,10 +132,10 @@ fn comparison_binaries(repo: &Path) -> Result<[(&'static str, PathBuf); 6], Stri
             ),
         ),
         (
-            "hagia_shell_sha256",
+            "narthex_sha256",
             configured(
-                "SOPHIA_DESKTOP_COMPARISON_HAGIA_SHELL_BIN",
-                repo.join("../hagia/hagia_shell"),
+                "SOPHIA_DESKTOP_COMPARISON_NARTHEX_BIN",
+                repo.join("../narthex/narthex"),
             ),
         ),
         ("xlibre_sha256", xlibre_prefix.join("bin/Xorg")),

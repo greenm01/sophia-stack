@@ -640,7 +640,7 @@ impl PersistentXtermSessionConfig {
                         let parent = process
                             .parent()
                             .expect("an absolute executable has a parent");
-                        parent.join("hagia-shell").to_string_lossy().into_owned()
+                        parent.join("narthex").to_string_lossy().into_owned()
                     })
                 })
             })

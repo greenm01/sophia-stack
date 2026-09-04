@@ -47,7 +47,7 @@ xserver="$xlibre_prefix/bin/Xorg"
 xmonad="$xlibre_prefix/bin/xmonad"
 xlibre_modules="$xlibre_prefix/lib/xorg/modules/xlibre-25"
 hagia_bin="${SOPHIA_DESKTOP_COMPARISON_HAGIA_BIN:-$repo/../hagia/hagia}"
-hagia_shell="${SOPHIA_DESKTOP_COMPARISON_HAGIA_SHELL_BIN:-$repo/../hagia/hagia_shell}"
+narthex_bin="${SOPHIA_DESKTOP_COMPARISON_NARTHEX_BIN:-$repo/../narthex/narthex}"
 sophia_bin="${SOPHIA_DESKTOP_COMPARISON_SOPHIA_BIN:-$repo/target/release/sophia}"
 runtime_root="${XDG_RUNTIME_DIR:-}"
 [[ -n $runtime_root ]] || fail "XDG_RUNTIME_DIR is unset"
@@ -311,12 +311,12 @@ run_sophia() {
         export SOPHIA_TTY_NUMBER=3
         export SOPHIA_BIN="$sophia_bin"
         export SOPHIA_HAGIA_BIN="$hagia_bin"
-        export SOPHIA_HAGIA_SHELL_BIN="$hagia_shell"
+        export SOPHIA_HAGIA_SHELL_BIN="$narthex_bin"
         export SOPHIA_DESKTOP_PROFILE="$repo/validation/desktop-comparison/profiles/hagia.kdl"
         export SOPHIA_SESSION_STARTUP=none
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
         export SOPHIA_BUILD_SESSION=false
-        exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$hagia_shell" \
+        exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$narthex_bin" \
             --max-runtime-ms="$max_runtime_ms"
     ) <&"$operator_tty_fd" &
     sophia_launcher=$!
@@ -452,7 +452,7 @@ record_gate_stage stack-admission
 case "$next_stack" in
     sophia)
         [[ -x $sophia_bin ]] || fail "release Sophia binary is missing; build it before the gate"
-        [[ -x $hagia_bin && -x $hagia_shell ]] || fail "Hagia comparison binaries are missing"
+        [[ -x $hagia_bin && -x $narthex_bin ]] || fail "Hagia and Narthex comparison binaries are missing"
         run_sophia "$run" "$next_workload"
         ;;
     xlibre-xmonad)

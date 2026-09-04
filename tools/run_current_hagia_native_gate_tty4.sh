@@ -41,7 +41,7 @@ fi
 sophia_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 hagia_commit="$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
 narthex_commit="$(git -C "$NARTHEX_ROOT" rev-parse HEAD)"
-for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; do
+for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit" "$NARTHEX_ROOT:$narthex_commit"; do
     repo="${repo_and_commit%:*}"
     commit="${repo_and_commit##*:}"
     git -C "$repo" verify-commit "$commit" >/dev/null 2>&1 || {
@@ -57,9 +57,9 @@ done
 # repositories, none of which involves a remote. Where a commit has been pushed
 # is a publishing question, not an evidence one.
 hagia_bin="${TMPDIR:-/tmp}/hagia-native-${hagia_commit:0:12}"
-hagia_shell_bin="${TMPDIR:-/tmp}/hagia-native-shell-${hagia_commit:0:12}"
+hagia_shell_bin="${TMPDIR:-/tmp}/narthex-native-${narthex_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-native-nimcache-${hagia_commit:0:12}"
-hagia_shell_nimcache="${TMPDIR:-/tmp}/hagia-native-shell-nimcache-${hagia_commit:0:12}"
+hagia_shell_nimcache="${TMPDIR:-/tmp}/narthex-native-nimcache-${narthex_commit:0:12}"
 
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
