@@ -11,6 +11,14 @@ fn topology_plan_selection(
     )
 }
 
+fn topology_plan_selection_with_cursor(
+    raw: u32,
+    size: sophia_protocol::Size,
+) -> sophia_backend_live::LibdrmNativePrimaryPlaneSelection {
+    topology_plan_selection(raw, size)
+        .with_cursor_plane(drm::control::from_u32(raw + 300).unwrap())
+}
+
 fn topology_plan_mode() -> drm::control::Mode {
     drm::control::Mode::from(drm_ffi::drm_mode_modeinfo::default())
 }
@@ -43,7 +51,7 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
             head_one,
             0,
             output_one,
-            topology_plan_selection(1, large),
+            topology_plan_selection_with_cursor(1, large),
             4,
         ),
         LiveProductionNativeTopologyCurrentHead::new(
@@ -103,8 +111,15 @@ fn live_native_topology_plan_resolves_every_enabled_and_disabled_head_without_mu
     assert!(matches!(
         plan.heads[0].disposition,
         LiveProductionNativeTopologyDisposition::Enabled { output, selection, .. }
-            if output == output_one && selection.size() == large
+            if output == output_one
+                && selection.size() == large
+                && selection.cursor_plane() == current[0].selection.cursor_plane()
     ));
+    assert_eq!(
+        plan.heads[0].previous_selection.cursor_plane(),
+        current[0].selection.cursor_plane(),
+        "candidate and rollback routes must retain the discovered cursor plane"
+    );
     assert_eq!(
         plan.heads[1].disposition,
         LiveProductionNativeTopologyDisposition::Disabled

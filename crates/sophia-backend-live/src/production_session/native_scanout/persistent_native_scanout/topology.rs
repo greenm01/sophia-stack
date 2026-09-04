@@ -969,13 +969,21 @@ pub fn plan_live_production_native_topology(
                 let mode = resolve_mode(current, target.timing)?.ok_or(
                     LiveProductionNativeTopologyPlanError::ModeUnavailable(current.head),
                 )?;
-                let selection = crate::LibdrmNativePrimaryPlaneSelection::new(
+                let mut selection = crate::LibdrmNativePrimaryPlaneSelection::new(
                     current.selection.connector_handle(),
                     current.selection.crtc_handle(),
                     current.selection.plane_handle(),
                     target.native_size,
                     Some(mode),
                 );
+                // An output-policy transaction changes mode and logical
+                // binding; it does not rediscover the fixed KMS route. Keep
+                // the cursor plane selected beside that route. Dropping it
+                // here would leave an already-admitted atomic cursor path
+                // without a plane immediately after the topology commits.
+                if let Some(cursor) = current.selection.cursor_plane() {
+                    selection = selection.with_cursor_plane(cursor);
+                }
                 (
                     target.target_generation,
                     LiveProductionNativeTopologyDisposition::Enabled {

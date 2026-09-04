@@ -77,10 +77,11 @@ Status vocabulary:
   activation, direct-versus-composed measurements, and the atomic cursor path.
   Continuous software-content presentation is closed by one signed physical
   machine-and-visual pass. The comparison capture/replay contract is now
-  teardown-aware and separates stack from workload cost. Its latest two-row
-  diagnostic exposed a Sophia atomic-cursor progress hole, an XMonad
-  self-replacement failure, and duplicate DRM trace deliveries. Those rows are
-  retained for diagnosis only; no comparison evidence is promotable yet.
+  teardown-aware and separates stack from workload cost. Its latest owner-only
+  run failed closed before row 1 when an output-policy commit dropped the
+  selected atomic cursor plane from reconstructed KMS head state. That
+  transition now preserves the discovered plane; no comparison evidence is
+  promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -94,7 +95,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36, but row 1 had a visually frozen cursor and row 2 lost XMonad while XLibre stayed alive; both are diagnostic only. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only `cp14-schema4-ba438555` then failed closed at 0/36 when its first output-policy commit lost the selected cursor plane. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -211,6 +212,13 @@ work:
 - [x] land the cursor and evidence corrections in a clean signed candidate;
 - [x] make the prepared comparison root and its identity/checksum records
   owner-only independent of umask, and reject later ownership or mode drift;
+- [x] stop after the first owner-only Sophia attempt and diagnose its bounded
+  runtime failure: candidate topology reconstruction retained the fixed
+  connector, CRTC, and primary plane but discarded the discovered cursor
+  plane, invalidating the already-selected atomic cursor path after commit;
+- [x] preserve the cursor plane across output-policy candidate and rollback
+  selections and cover that KMS-route invariant through the public topology
+  planner;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
   continuing;
