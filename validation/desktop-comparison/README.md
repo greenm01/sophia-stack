@@ -30,7 +30,7 @@ The stacks are:
   with xmonad `0.18.1` and xmonad-contrib `0.18.2`; and
 - `/usr/bin/niri` `26.04`.
 
-Every row uses Kitty `0.48.2`, Firefox `154`, DP-1 at
+Every row uses Kitty `0.48.2`, Firefox `155`, DP-1 at
 2560×1440@60, and DP-2 at 1920×1080@60, with the workload on DP-1.
 The repository-owned profiles under `profiles/` replace personal Hagia, niri,
 and xmonad configuration for the matrix. Animations are disabled and comparison
@@ -134,7 +134,7 @@ cargo xtask conformance desktop-comparison report RUN
 ```
 
 Each sealed attempt contains exactly six raw inputs, including
-`visibility.log`, the derived schema-3 sample, and an internal checksum ledger.
+`visibility.log`, the derived schema-4 sample, and an internal checksum ledger.
 The run ledger separately binds that sample to its schedule path. Report rows
 preserve resource/allocation, launch, settle, resize, and kernel-frame
 populations and always end in `verdict=none`.
