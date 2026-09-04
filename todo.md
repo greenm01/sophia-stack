@@ -421,6 +421,12 @@ tranche with a named driver and exit gate.
   launcher action; add lock, screenshot, wallpaper, and audio through their
   owning shell/session capabilities.
 
+### Developer outreach
+
+- Publish `docs/building-on-sophia.md` as a public web page. Low priority until
+  the project is ready to advertise; the checked-in document is authoritative
+  and the page is a rendering of it, not a fork.
+
 ### Portals and confined applications
 
 - Promote a confined daily-driver group only after Kitty and Firefox pass their
