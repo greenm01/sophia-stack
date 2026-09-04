@@ -143,6 +143,48 @@ shell that loads plugins is trusting them with everything it has, and Sophia
 neither knows nor cares. What Sophia guarantees is the blast radius — a rogue
 plugin gets the shell's capability set, not the desktop.
 
+### A Desktop Is a Composition, Not a Second Platform
+
+On traditional Linux, the distance between a niri-class environment and a
+KDE-class one is architectural. The desktop environment brings its own
+compositor, its own session manager, its own config daemon, its own portal
+backends — a parallel platform, not a window manager with additions. And the
+real difference between the two was never the feature list; it's who does the
+integrating. In a WM environment, the user assembles the parts and wires them
+together. In a desktop environment, the project ships a tested-together whole:
+one settings system every component reads, a GUI that writes it, changes that
+propagate live, sessions that restore your applications and not just your
+windows.
+
+On Sophia, the architecture stops varying. Engine, session, portals, and
+broker are fixed, and both a WM environment and a full desktop are
+compositions of the same parts over the same wires. The integration glue that
+makes a desktop feel whole — traditionally a soup of session bus daemons — is
+the platform itself: the profile for configuration, session-operation slots
+for actions, portals for data, the broker for metadata. Even the WM rung
+inherits it, which is why that rung is complete rather than spartan.
+
+The unified settings system is usually the deepest thing separating the two,
+and Sophia already has one. The desktop profile carries seven typed authority
+sections — policy, shell, shortcut, session, input, output, broker — with
+digests, validation, and a full prepare–activate–rollback activation
+machine, model-checked in TLA+. What's missing is only the front half: a
+settings application that writes the profile. The propagation half, the hard
+half, exists.
+
+So the honest distance from the WM rung to a full desktop is five items, in
+rough dependency order: the content-mode shell (`sophia_shell_v1` r2, the
+gating item), a bounded status feed so rich panels have something to show, a
+settings application, application-session restore in the session authority,
+and a theming story across applications — the one genuinely unsolved item,
+since applications are protocol clients and their toolkits theme themselves.
+
+Which yields a sentence no other platform gets to write: on Sophia, a desktop
+environment is a superset composition, not a second platform. Moving from
+niri-class to KDE-class changes what you ship — never how it's wired — and
+the climb is also the trust gradient: a complete confined desktop at the
+bottom rung, more expressiveness for more granted trust above it.
+
 ## The Menu-Export Portal
 
 The per-application menu bar, macOS and Unity style, is the one classic
