@@ -9,6 +9,13 @@ wins when prose disagrees.
   project invariants, hard non-goals, compatibility admission, and amendment
   rules. It does not override the normative architecture documents yet.
 
+## Orientation
+
+- [Building on Sophia](building-on-sophia.md) is the map for third-party
+  developers: which component owns what, which protocol each piece speaks, and
+  how a window manager, a shell, or a full desktop environment composes from
+  them. Start here; every section links to the document that owns its detail.
+
 ## Normative Architecture
 
 - [Architecture](architecture.md) defines process ownership and the boundaries
