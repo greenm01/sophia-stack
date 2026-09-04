@@ -92,7 +92,11 @@ Status vocabulary:
   egress drained in 18 ms, but the owner stranded one buffered authority batch
   after observing EOF. The owner now consumes accepted work after ingress
   closes and includes accepted coordinator work in its completion barrier.
-  A clean signed physical Firefox canary and fresh comparison run are required;
+  Signed candidate `2823807e` subsequently passed the short Firefox canary:
+  changing nonblack browser pixels, exact native retirement, and clean logout
+  in 43 ms. Its saved capture verifies after fixing compatibility-launch
+  double counting and recognizing committed CPU admission without requiring
+  a standing-target successor. A fresh comparison run is still required;
   no current comparison evidence is promotable.
 
 Latest retained Milestone 14 evidence:
@@ -288,8 +292,11 @@ work:
   teardown; reproduce and fix EOF suppressing already-buffered authority work,
   preserve bounded native service, and require coordinator settlement before
   successful shutdown;
-- [ ] pass one short physical Sophia Firefox canary and prepare a fresh
-  comparison run;
+- [x] pass one short physical Sophia Firefox canary: `2823807e`, clean logout
+  in 43 ms, zero pending authority/coordinator/CPU/native work, and zero
+  remaining application groups or frontend workers; fix both reader assumptions
+  against the retained capture without another physical run;
+- [ ] prepare a fresh pinned comparison run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

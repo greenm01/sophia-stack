@@ -4,7 +4,83 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE="$ROOT_DIR/tools/fixtures/physical_firefox_rendering_pass.log"
 TEMP_FILE="$(mktemp)"
-trap 'rm -f -- "$TEMP_FILE"' EXIT
+CPU_FIXTURE="$(mktemp)"
+trap 'rm -f -- "$TEMP_FILE" "$CPU_FIXTURE"' EXIT
+
+# Model the production launch emitter: schema 2 followed by its schema-1
+# compatibility echo. Keep legacy-only and schema-2-only readers covered too.
+launch_fixture() {
+    awk -v mode="$1" '
+        /status=started id=browser source=action/ {
+            print "sophia_session_app schema=2 status=started id=browser source=action transaction=2"
+            if (mode == "modern") next
+        }
+        { print }
+    ' "${2:-$FIXTURE}"
+}
+
+expect_failure() {
+    if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; then
+        echo "rendering verifier accepted $1" >&2
+        exit 1
+    fi
+}
+
+for mode in paired modern; do
+    launch_fixture "$mode" >"$TEMP_FILE"
+    "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"
+done
+
+# CPU backing admission commits directly; it does not require a synthetic
+# standing-target Present successor. Pixel/native-retirement proof is unchanged.
+awk '
+    /status=recovery_extent_cleared/ {
+        sub(/reason=admission_present_retired/, "reason=cpu_admission_committed")
+        print
+        print "sophia_live_visual_admission schema=1 status=committed transaction=1200 surface=6291459 source=cpu_backing_snapshot"
+        next
+    }
+    /source=standing_target_recovery/ || /status=visual_committed transaction=1201/ { next }
+    { print }
+' "$FIXTURE" >"$CPU_FIXTURE"
+"$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$CPU_FIXTURE"
+launch_fixture paired "$CPU_FIXTURE" >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"
+# Tracing from other owners can appear between the two launch records.
+launch_fixture paired "$CPU_FIXTURE" | sed \
+    -e '/schema=2 status=started/a unrelated renderer diagnostic' \
+    -e 's/^/2026-09-04 INFO module: /' >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"
+
+for mutation in \
+    '/sophia_live_visual_admission/d' \
+    '/sophia_live_visual_admission/s/surface=6291459/surface=999/' \
+    '/sophia_live_visual_admission/s/transaction=1200/transaction=0/' \
+    's/source=cpu_backing_snapshot/source=unknown/' \
+    's/reason=cpu_admission_committed/reason=unknown/' \
+    '/sophia_native_composition_region_frame/d' \
+    '/sophia_live_native_head_page_flip/d' \
+    '/status=recovery_extent_cleared/p'; do
+    sed -e "$mutation" "$CPU_FIXTURE" >"$TEMP_FILE"
+    expect_failure "invalid CPU admission: $mutation"
+done
+# Admission before the clear cannot settle a later recovery obligation.
+awk '/sophia_live_visual_admission/ { admission = $0; next }
+    /status=recovery_extent_cleared/ { clear = $0; next }
+    /sophia_live_head_content_geometry/ && clear { print admission; print clear; clear = "" }
+    { print }' "$CPU_FIXTURE" >"$TEMP_FILE"
+expect_failure 'CPU admission preceding its recovery clear'
+
+for mutation in \
+    '/schema=2 status=started/s/transaction=2/transaction=3/' \
+    '/schema=2 status=started/s/transaction=2/transaction=0/' \
+    '/schema=2 status=started/s/schema=2/schema=99/' \
+    '/schema=2 status=started/p' \
+    '/schema=2 status=started/ { p; s/transaction=2/transaction=3/; }' \
+    '/schema=1 status=started id=browser/p'; do
+    launch_fixture paired | sed -e "$mutation" >"$TEMP_FILE"
+    expect_failure "invalid or repeated launch: $mutation"
+done
 
 "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$FIXTURE"
 grep -Ev 'status=recovery_extent_(retained|cleared)|source=standing_target_recovery' \
@@ -15,6 +91,7 @@ for pattern in \
     'status=page_ready title_bytes=249' \
     'status=recovery_extent_cleared' \
     'source=standing_target_recovery' \
+    'status=visual_committed transaction=1201' \
     'sophia_native_composition_region_frame' \
     'sophia_live_head_content_geometry' \
     'sophia_live_head_composition_queue' \

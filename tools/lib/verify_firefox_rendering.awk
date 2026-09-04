@@ -9,6 +9,21 @@ function fail(message) {
 function positive(value) { return value ~ /^[1-9][0-9]*$/ }
 function scene_key() { return f["output"] SUBSEP f["head"] SUBSEP f["scene_generation"] }
 function frame_key() { return f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
+function action_launch() {
+    # The current emitter writes schema 2, then one schema-1 compatibility
+    # echo. Consume only that echo; another launch must still fail the gate.
+    if (f["schema"] == 1 && launch_echo && f["id"] == launch_id && observed < launch) {
+        launch_echo = 0
+        return
+    }
+    if (f["schema"] != 1 && f["schema"] != 2) fail("unsupported action launch schema")
+    if (f["schema"] == 2 && !positive(f["transaction"])) fail("invalid action launch transaction")
+    launches++
+    launch = NR
+    launch_id = f["id"]
+    launch_echo = f["schema"] == 2
+    launch_transaction = launch_echo ? "transaction:" f["transaction"] : ""
+}
 {
     # Accept production tracing prefixes, but only parse stable schema records.
     if ($0 ~ /(^Error:|panicked at|status=(failed|degraded|timed_out|hard_stall|head_lost)([[:space:]]|$))/)
@@ -25,12 +40,14 @@ function frame_key() { return f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
     if (event == "sophia_session_app" && status == "started") {
         if (f["id"] == "terminal" && f["source"] == "startup") terminals++
         if ((f["id"] == "browser" || f["id"] == "firefox") && f["source"] == "action") {
-            launches++
-            launch = NR
+            action_launch()
         }
     }
     if (event == "sophia_session_app" && status == "surface_observed" && f["source"] == "action") {
         if (!launch || !positive(f["surface"])) fail("surface without its action launch")
+        if (launch_transaction != "" && launch_transaction != "transaction:" f["transaction"])
+            fail("surface transaction does not match its action launch")
+        launch_echo = 0
         surfaces++
         browser = f["surface"]
         observed = NR
@@ -42,7 +59,12 @@ function frame_key() { return f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
     if (event == "sophia_live_wm" && status == "restarted" && launch) restarts++
     if (event == "sophia_live_resize_epoch" && f["surface"] == browser) {
         if (status == "recovery_extent_retained") fail("retained fallback extent")
-        if (status == "recovery_extent_cleared") clears++
+        if (status == "recovery_extent_cleared") {
+            clears++
+            if (f["reason"] == "cpu_admission_committed") cpu_clear = NR
+            else if (f["reason"] == "admission_present_retired") present_clears++
+            else fail("unsupported admission recovery reason")
+        }
         if (status == "visual_armed" && f["source"] == "standing_target_recovery") {
             successors++
             successor = f["transaction"]
@@ -51,6 +73,9 @@ function frame_key() { return f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
         if (status == "visual_committed" && successor && f["transaction"] == successor &&
             successor_size == f["width"] "x" f["height"]) successor_retired = NR
     }
+    if (event == "sophia_live_visual_admission" && f["schema"] == 1 && status == "committed" &&
+        f["surface"] == browser && cpu_clear && !complete &&
+        positive(f["transaction"]) && f["source"] == "cpu_backing_snapshot") cpu_admitted = NR
     if (event == "sophia_live_head_content_geometry" && status == "selected" &&
         ready && !complete && f["surface"] == browser) {
         split(f["target"], geometry, "[_x]")
@@ -109,7 +134,11 @@ END {
     if (!ready || !complete || !presents) fail("missing readiness, surface retirement, or completion")
     if (length(retired_frames) < 2 || length(retired_checksums) < 2)
         fail("need two changing nonblack browser frames with exact native retirement")
-    if (restarts > 1 || clears > 1 || successors != clears || (clears && !successor_retired))
+    # CPU backing can commit without a standing-target successor. Present-based
+    # recovery still owes one, and every observed successor must retire.
+    if (restarts > 1 || clears > 1 || successors > clears ||
+        (present_clears && successors != 1) || (successors && !successor_retired) ||
+        (cpu_clear && cpu_admitted <= cpu_clear))
         fail("repeated or unfinished layout recovery")
     if (!health || !layout || !cleanup) fail("session, layout, or application cleanup did not drain")
 }
