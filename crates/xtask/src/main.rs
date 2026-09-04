@@ -469,5 +469,5 @@ usage: cargo xtask <command>
       Prepare, inspect, replay, verify, and reduce the diagnostic native desktop matrix.
 
 compatibility aliases: session-args, check-profiles, verify direct-scanout
-profiles: xmonad hagia native standalone kitty
+profiles: hagia native standalone kitty
 ";

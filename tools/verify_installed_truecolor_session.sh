@@ -2,7 +2,7 @@
 set -euo pipefail
 
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-LOG_DIR="${SOPHIA_XMONAD_LOG_DIR:-$STATE_HOME/sophia/xmonad-session}"
+LOG_DIR="${SOPHIA_HAGIA_LOG_DIR:-$STATE_HOME/sophia/hagia-session}"
 SESSION_LOG="${1:-$LOG_DIR/session.log}"
 GUARD_LOG="${2:-$LOG_DIR/input-guard.log}"
 RECOVERY_LOG="${3:-$LOG_DIR/recovery.log}"
@@ -43,8 +43,8 @@ if grep -Eqi '(^Error:|panicked at|^sophia_[^[:space:]]+ .*status=(failed|degrad
 fi
 require_line \
     '^sophia_live_session schema=7 status=running .*native_presentation=enabled .*physical_input=enabled .*wm_policy=external ' \
-    "$SESSION_LOG" "the installed proof did not run under the external xmonad policy"
-for app in terminal palette statusbar; do
+    "$SESSION_LOG" "the installed proof did not run under native Hagia policy"
+for app in terminal palette; do
     require_line "^sophia_session_app schema=1 status=started id=${app} source=startup$" \
         "$SESSION_LOG" "startup application is missing: $app"
 done
@@ -172,8 +172,8 @@ require_line '^sophia_session_input_guard schema=1 status=armed$' "$GUARD_LOG" \
 if grep -Eq '^sophia_session_input_guard schema=1 status=triggered$' "$GUARD_LOG"; then
     fail "the proof used emergency recovery instead of normal logout"
 fi
-recovery="$(grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' "$RECOVERY_LOG" | tail -n 1 || true)"
-[[ -n "$recovery" ]] || fail "normal xmonad TTY recovery is missing"
+recovery="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$RECOVERY_LOG" | tail -n 1 || true)"
+[[ -n "$recovery" ]] || fail "normal Hagia TTY recovery is missing"
 for assignment in termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none; do
     key="${assignment%%=*}"
     expected="${assignment#*=}"

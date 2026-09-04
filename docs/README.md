@@ -80,8 +80,9 @@ candidates that role may exchange.
 
 - [Sophia X Server Frontend](sophia-x-authority.md) records the native X11
   frontend boundary, implemented surface, and remaining production gaps.
-- [Sophia X11 WM Bridge](sophia-x11-wm-bridge.md) records the optional legacy-WM
-  policy adapter. It is not an application authority.
+- [Sophia Window Manager API](sophia-wm-api.md) defines the native,
+  language-neutral spatial-policy protocol. Legacy X11 WMs are porting
+  references, not supported Sophia policy clients.
 - [Renderer Import Boundary](renderer-import-boundary.md), [Live Backend
   Dependency Policy](live-backend-dependency-policy.md), and [Live Session
   Bootstrap](live-session-bootstrap.md) define backend/runtime seams.

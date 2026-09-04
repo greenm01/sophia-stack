@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY="$ROOT_DIR/tools/verify_installed_login_cycle.sh"
-SESSION="$ROOT_DIR/tools/fixtures/physical_xmonad_hardware_smoke_session_pass.log"
-GUARD="$ROOT_DIR/tools/fixtures/physical_xmonad_hardware_smoke_guard_pass.log"
-RECOVERY="$ROOT_DIR/tools/fixtures/physical_xmonad_hardware_smoke_recovery_pass.log"
+SESSION="$ROOT_DIR/tools/fixtures/installed_xterm_session_pass.log"
+GUARD="$ROOT_DIR/tools/fixtures/installed_truecolor_input_guard_pass.log"
+RECOVERY="$ROOT_DIR/tools/fixtures/installed_truecolor_recovery_pass.log"
 TEMP_FILE="$(mktemp)"
 trap 'rm -f -- "$TEMP_FILE"' EXIT
 
@@ -24,7 +24,7 @@ if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     exit 1
 fi
 
-grep -Fv 'status=session_action_committed transaction=6 action=Logout' \
+grep -Fv 'status=session_action_committed transaction=2 action=Logout' \
     "$SESSION" >"$TEMP_FILE"
 if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     echo "login-cycle verifier accepted a session without normal logout" >&2
@@ -35,7 +35,7 @@ if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     echo "login-cycle verifier accepted only one output summary" >&2
     exit 1
 fi
-sed 's/elapsed_msec=650/elapsed_msec=8001/' "$SESSION" >"$TEMP_FILE"
+sed 's/elapsed_msec=314/elapsed_msec=8001/' "$SESSION" >"$TEMP_FILE"
 if "$VERIFY" "$TEMP_FILE" "$GUARD" "$RECOVERY" >/dev/null 2>&1; then
     echo "login-cycle verifier accepted slow startup" >&2
     exit 1

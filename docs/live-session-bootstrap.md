@@ -86,7 +86,7 @@ and requires one Ctrl-Alt-Backspace chord to arm the independent recovery
 guard. A second chord terminates the session without depending on Sophia input
 routing.
 
-The profile starts one Kitty without xmonad, uses libinput `seat0`, removes
+The profile starts one Kitty without a WM or shell, uses libinput `seat0`, removes
 Wayland variables, and disables desktop-service bus activation for this
 single-application gate. The first focused application frame must reach native
 presentation within eight seconds; failure
@@ -212,20 +212,6 @@ page-flip retirement, xterm pixel export/input change, no callback rejection,
 and no in-flight frame or cleanup debt. Evidence defaults to
 `/tmp/sophia-qemu-session.log`; build artifacts stay under ignored `.qemu/`.
 
-For a manually controlled guest, run the dedicated interactive command from a
-graphical terminal:
-
-```sh
-tools/qemu_xmonad_interactive.sh
-```
-
-It opens a private Unix-domain VNC viewer and does not inherit the unattended
-soak's timer, injected bridge restart, or scripted input. Super-Shift-Q performs
-the normal guest logout and poweroff. The guest disables Q35's legacy
-`vmmouse`, keeping viewer input on the declared relative virtio mouse. Its
-reduced evidence is written to `/tmp/sophia-qemu-xmonad-interactive.log`; raw
-input values are consumed through a FIFO and are never retained.
-
 ### Optional Remote Hardware Target
 
 When the development workstation must keep its graphical session, use a second
@@ -308,7 +294,7 @@ Current evidence:
 - `x-authority-xterm-input-smoke` proves bounded core key events change a later
   real xterm buffer generation;
 - physical keyboard routing to a focused X client passes the exact AMD TTY
-  proof; the combined real-xmonad physical operator gate remains open.
+  proof; integrated desktop qualification belongs to the native Hagia gate.
 
 Current terminal proof:
 

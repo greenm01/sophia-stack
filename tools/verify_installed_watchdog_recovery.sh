@@ -2,7 +2,7 @@
 set -euo pipefail
 
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-SESSION_DIR="$STATE_HOME/sophia/xmonad-session"
+SESSION_DIR="$STATE_HOME/sophia/hagia-session"
 SESSION_LOG="${1:-$SESSION_DIR/session.log}"
 GUARD_LOG="${2:-$SESSION_DIR/input-guard.log}"
 RECOVERY_LOG="${3:-$SESSION_DIR/recovery.log}"
@@ -56,10 +56,10 @@ if grep -Fq 'status=triggered' "$GUARD_LOG"; then
 fi
 
 recovery="$(
-    grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' "$RECOVERY_LOG" |
+    grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$RECOVERY_LOG" |
         tail -n 1
 )"
-[[ -n "$recovery" ]] || fail "schema-3 xmonad recovery record is missing"
+[[ -n "$recovery" ]] || fail "schema-3 Hagia recovery record is missing"
 require_eq "$recovery" termios_restored true
 require_eq "$recovery" emergency true
 require_eq "$recovery" session_shutdown watchdog_term

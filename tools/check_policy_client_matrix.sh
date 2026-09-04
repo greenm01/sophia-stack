@@ -12,11 +12,9 @@ HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 cd "$ROOT_DIR"
 tools/check_policy_protocol.sh
 cargo test --offline -q -p sophia-wm-demo
-cargo test --offline -q -p sophia-x11-wm-bridge
-tools/check_xmonad_public_policy.sh
 
 cd "$HAGIA_ROOT"
 SOPHIA_STACK_ROOT="$ROOT_DIR" nimble test -y
 
 printf '%s\n' \
-    'sophia_policy_client_matrix schema=7 status=complete public_wire_clients=rust,c,hagia,xmonad-bridge behavior_scenarios=11 sequential=true reconnect_restart=true x11_bridge_behavior_scenarios=11 revision_freeze=false'
+    'sophia_policy_client_matrix schema=8 status=complete public_wire_clients=rust,c,hagia behavior_scenarios=11 sequential=true reconnect_restart=true revision_freeze=false'

@@ -15,9 +15,10 @@ sophia_bin="$work/sophia"
 hagia_bin="$work/hagia"
 cp /usr/bin/true "$sophia_bin"
 cp /usr/bin/false "$hagia_bin"
-core_config="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
-# This fixture exists in the signed parent commit, allowing the archive test to
-# exercise commit-blob verification before the new proof profile is committed.
+# These fixtures exist in the signed parent commit, allowing the archive test
+# to exercise commit-blob verification while config-path changes are still
+# uncommitted in the working tree.
+core_config="$ROOT_DIR/tools/fixtures/direct_scanout_core.kdl"
 desktop_profile="$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl"
 connectors="$work/connectors.txt"
 printf '%s\n' \
@@ -162,7 +163,7 @@ if SOPHIA_HAGIA_ROOT="$hagia_root" "$ARCHIVE_VERIFIER" "$run_dir" >/dev/null 2>&
 fi
 
 cp "$work/manifest" "$run_dir/manifest"
-sed -i 's|^desktop_profile_path=.*|desktop_profile_path=tools/config/sophia-xmonad/desktop.kdl|' "$run_dir/manifest"
+sed -i 's|^desktop_profile_path=.*|desktop_profile_path=validation/desktop-comparison/profiles/hagia.kdl|' "$run_dir/manifest"
 (
     cd "$run_dir"
     sha256sum connectors.txt core.kdl desktop-profile.kdl manifest result.kdl rollback.log success.log >SHA256SUMS

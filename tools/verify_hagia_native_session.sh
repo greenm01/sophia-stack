@@ -4,7 +4,7 @@ set -euo pipefail
 # Verifies one native Hagia session against the bounded product workflow on the
 # roadmap's critical path: three terminal launches, a visible focus-next, one
 # close, and a normal logout, with Sophia's WM and shell protocols carrying all
-# of it and no xmonad compatibility bridge in the session.
+# of it.
 #
 # The promotion this evidence supports is the three native frame slots, so the
 # schema-7 block is checked as a balance rather than as a set of present fields:
@@ -94,11 +94,6 @@ profile_line="$(grep -E '^sophia_live_desktop_profile schema=1 status=loaded ' "
 [[ "$(field "$profile_line" root_sha256)" == "$profile_sha256" ]] ||
     fail "the loaded desktop profile is not the one bound to this run"
 
-# This is the native path. The compatibility bridge has its own gates; a bridge
-# record here means the session under test was not the one being promoted.
-if grep -Eq 'sophia-x11-wm-bridge|legacy WM did not configure' "$evidence"; then
-    fail "evidence contains xmonad compatibility bridge activity"
-fi
 if grep -Eq '(^Error:|panicked at|status=(failed|degraded)([[:space:]]|$))' "$evidence"; then
     fail "evidence contains a Sophia error, panic, or degraded status"
 fi
@@ -131,10 +126,9 @@ launch_admissions="$(count '^sophia_session_app schema=2 status=admitted source=
 # three launches and laid them out in one late batch is not the ordered commit
 # path this gate promotes.
 #
-# `layout_committed` is the record this path produces. Workspace projections
-# belong to the compatibility bridge's flattened active-workspace view; a native
-# session emits none at all, so requiring them would describe a session that
-# cannot exist here.
+# `layout_committed` is the record this path produces. Hagia's workspace model
+# remains private policy state, so requiring a separate workspace projection
+# would describe a protocol surface that does not exist here.
 mapfile -t launch_lines < <(
     grep -nE '^sophia_live_wm schema=1 status=session_action_committed transaction=[1-9][0-9]* action=LaunchTerminal$' \
         "$evidence" | cut -d: -f1

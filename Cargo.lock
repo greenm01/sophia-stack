@@ -1089,17 +1089,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sophia-x11-wm-bridge"
-version = "0.1.0"
-dependencies = [
- "sophia-engine",
- "sophia-protocol",
- "sophia-wm-demo",
- "sophia-x-authority",
- "tracing",
-]
-
-[[package]]
 name = "sophia-xshmfence"
 version = "0.1.0"
 dependencies = [

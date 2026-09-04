@@ -1,4 +1,0 @@
-packages: .
-
-offline: True
-write-ghc-environment-files: never

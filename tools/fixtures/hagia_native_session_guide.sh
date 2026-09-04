@@ -4,7 +4,7 @@ set -eu
 # The native-session guide. It drives the bounded product workflow that
 # `todo.md` puts on the critical path -- three terminal launches, a visible
 # focus-next, one close, and a normal logout -- through Sophia's own WM and
-# shell protocols, with no xmonad compatibility bridge anywhere in the session.
+# shell protocols.
 #
 # It runs inside the startup Kitty and advances only on committed telemetry, so
 # every screen the operator sees corresponds to a fact Sophia recorded rather

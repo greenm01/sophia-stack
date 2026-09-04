@@ -202,13 +202,11 @@ or protocol state.
 
 A stale reply is also a private-model lifetime boundary. The external WM may
 have already applied that request to speculative state, so later work must not
-continue against the same model. A monolithic stateful policy such as Hagia is
-stopped and reseeded from committed Engine state. The xmonad compatibility
-process has a narrower boundary: it drops and rebuilds its subordinate private
-synthetic-X adapter from the fresh snapshot while retaining the authenticated
-public connection. The bundled Rust proof policy is a stateless pure projection
-of each received snapshot and therefore needs no private-model rebuild. In all
-three cases, no speculative policy state survives `RejectedStale` or `TimedOut`.
+continue against the same model. A stateful policy such as Hagia is stopped and
+reseeded from committed Engine state. The bundled Rust proof policy is a
+stateless pure projection of each received snapshot and therefore needs no
+private-model rebuild. In either case, no speculative policy state survives
+`RejectedStale` or `TimedOut`.
 `RejectedInvalid` and `Disconnected` remain fatal transport outcomes.
 
 Owner completion evidence separates child-reap and physical-input phase maxima
@@ -280,8 +278,8 @@ tick. `runtime_driver` owns CPU cycle order, per-submission Present preparation
 against committed visual state, the prepared retirement commit-before-feedback gate, and dynamic
 asynchronous KMS phase order from reduced observations. Backend-live executes
 requested retire, Present-schedule, and pending-submit phases; it is not a
-second phase coordinator. The production session-loop architecture target and
-unattended xmonad daily-driver gate are complete.
+second phase coordinator. The production session-loop architecture target is
+complete; native Hagia/Narthex evidence owns current desktop qualification.
 
 The production target is one protocol-neutral session coordinator in
 `sophia-engine::runtime_driver`. It owns the ordered visual state machine while
@@ -434,11 +432,8 @@ matching WM response is inset through the inverse operation exactly once.
 Chrome therefore cannot turn an exact recovery constraint into a smaller
 client configure.
 
-The legacy-X11 WM bridge translates those same generic constraints into
-synthetic ICCCM `WM_NORMAL_HINTS`. A manage-time constraint-profile change
-replaces the private synthetic window so an unmodified legacy WM reevaluates
-its ordinary size-hint policy. Native WMs consume the same WM API facts without
-the ICCCM translation.
+Native WMs consume the same generic constraints through `sophia_wm_v1` and
+decide policy without application identity or X11 root-window authority.
 
 ### Configure, Visual-Candidate, And Rendering State
 
@@ -517,9 +512,9 @@ must never be recreated as pending merely because its Present arrived late.
 
 Niri supplies a compatible policy precedent, not Sophia's transaction model:
 fixed client constraints can cause a window to open floating. Sophia publishes
-generic exact constraints through the blind WM API; an unmodified legacy WM
-may float the constrained node through ordinary ICCCM behavior. Engine never
-selects a floating position or inspects application identity.
+generic exact constraints through the blind WM protocol; a native policy may
+float the constrained node. Engine never selects a floating position or
+inspects application identity.
 
 Admission quarantine follows the same order. The selected complete Present
 supersedes older groups whose content it fully covers; older Presents receive
@@ -996,9 +991,9 @@ usual window-manager vocabulary is a poor fit. The packets carry geometry,
 capabilities, and state; the policy process keeps its own trees, columns,
 stacks, or other private model.
 
-A complete environment is not folded into that role. For example, xmonad or
-qtile may occupy the policy slot with only a small companion shell. An
-Xfce-style environment divides work among spatial policy, panels and
+A complete environment is not folded into that role. For example, a native
+port of a tiling or floating policy may occupy the policy slot with only a
+small companion shell. An Xfce-style environment divides work among spatial policy, panels and
 decorations, session services, portals, and ordinary applications. A future
 Sophia-native compositor/Engine protocol would still meet these same authority
 boundaries. The examples differ in form, not in who is allowed to own input,
@@ -1054,9 +1049,8 @@ client-positioned surface. The reduced work rectangle is policy input for
 managed surfaces. A fullscreen managed placement remains a full-output
 allocation; fixed Tier-0 chrome is composited above it. Nonfullscreen siblings,
 including maximized placements, remain confined to the reduced work rectangle.
-Native Sophia WMs and the optional X11 WM bridge receive the same `bounds`
-field, so neither Engine nor the bridge contains an xmobar, xmonad, dock, or
-toolkit branch.
+Every native Sophia WM receives the same `bounds` field, so Engine contains no
+WM-, shell-, dock-, or toolkit-specific branch.
 
 Manage state such as size, focus, fullscreen, and workspace assignment is
 separate from compositor-only render state such as position, z-order, crop,
@@ -1098,10 +1092,10 @@ Engine owns validation, rendering, damage, per-head projection, and hit-testing.
 Icons stay in the sanitized descriptor table and are not rendered by this
 slice.
 
-The optional [X11 WM Bridge](sophia-x11-wm-bridge.md) may present a synthetic
-X11 facade to a legacy WM such as xmonad while speaking the normal blind Sophia
-WM protocol. It is policy compatibility, not an application X server or a path
-around namespace boundaries.
+Sophia does not emulate an X11 root-window environment for legacy WMs. WM and
+shell developers port policy to `sophia_wm_v1` and `sophia_shell_v1` directly.
+The separate X Authority remains an application frontend and cannot be used as
+a policy backdoor.
 
 ## Namespaces And Portals
 
@@ -1143,16 +1137,16 @@ credentials, titles, PIDs, paths, payloads, icons, or buffer contents.
 ## Development Order
 
 The native-X foundations, production session loop, paired software/GPU gates,
-namespace and portal reference flows, xmonad policy bridge, and Firefox
-daily-driver workload are complete. The session can now explicitly install
+namespace and portal reference flows, native Hagia policy, and Firefox
+daily-driver workload are complete. The session can explicitly install
 Hagia through `sophia_wm_v1`: it binds and authenticates the endpoint before
 spawn, sends complete Engine snapshots, stages complete projections in the
 canonical reducer, and promotes them only with frontend/renderable-content
 settlement. Policy replacement advances the connection epoch and preserves the
 last committed layout while the replacement reconstructs its private state.
-The removed API v7 transport cannot be selected or reached. The xmonad
-compatibility profile is a public revision-3 peer, and its workspace model is
-contained inside the private bridge rather than Engine.
+The removed API v7 transport cannot be selected or reached. New policy clients
+must implement the public protocol directly; no compatibility transport or
+legacy-WM profile is part of the product.
 
 New X11 compatibility remains probe-driven; future application protocols are
 outside the active roadmap. XLibre and Wayland stay archived unless a later
@@ -1175,5 +1169,5 @@ the independently versioned `sophia_wm_v1` interface described in the
 from the [Sophia Native Protocol Family](sophia-policy-ipc.md). Engine
 owns physical shortcut matching, projection validation, visibility, focus
 authority, and opaque
-session actions. Native Sophia WMs consume this contract directly; legacy X11
-WMs require the metadata-blind compatibility bridge and a bounded profile.
+session actions. Native Sophia WMs consume this contract directly. Existing
+window managers must port their policy to the language-neutral protocol.

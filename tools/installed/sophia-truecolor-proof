@@ -16,4 +16,4 @@ export SOPHIA_TRUECOLOR_PROOF=true
 export SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions
 export SOPHIA_TERMINAL_BIN="$kitty_bin"
 export SOPHIA_TERMINAL_KIND=kitty
-exec "$RELEASE_DIR/bin/sophia-session" "$@"
+exec "$RELEASE_DIR/bin/sophia-hagia-session" "$@"

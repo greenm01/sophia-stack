@@ -58,7 +58,7 @@ if "$VERIFY" "$SESSION" "$TEMP_FILE" "$RECOVERY" >/dev/null 2>&1; then
     echo "fallback verifier accepted emergency guard recovery" >&2
     exit 1
 fi
-sed 's/profile=kitty/profile=xmonad/' "$RECOVERY" >"$TEMP_FILE"
+sed 's/profile=kitty/profile=hagia/' "$RECOVERY" >"$TEMP_FILE"
 if "$VERIFY" "$SESSION" "$GUARD" "$TEMP_FILE" >/dev/null 2>&1; then
     echo "fallback verifier accepted the wrong recovery profile" >&2
     exit 1

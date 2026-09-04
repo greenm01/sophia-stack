@@ -208,8 +208,8 @@ done
 # by construction, because the kernel serializes commits per CRTC and the
 # cursor waits instead. Keeping them would have failed the atomic path for
 # behaving correctly.
-# The benchmark runs a standalone session; the gate was written when it ran
-# under xmonad and still demanded wm_policy=external, which a standalone
+# The benchmark runs a standalone session; an older gate still demanded an
+# external policy client, which a standalone
 # session never reports. That made the gate unrunnable through its own
 # benchmark script -- it could only ever pass against its fixture.
 #

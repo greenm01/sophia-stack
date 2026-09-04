@@ -3,8 +3,8 @@ set -euo pipefail
 
 # The native Hagia session gate. It proves the bounded product workflow --
 # three terminal launches, a visible focus-next, one close, and a normal logout
-# -- across Sophia's own WM and shell protocols, with no xmonad compatibility
-# bridge in the session. A passing run promotes the three native frame slots.
+# -- across Sophia's own WM and shell protocols. A passing run promotes the
+# three native frame slots.
 #
 # Unlike the switcher gate, this one runs the session through the ordinary
 # `hagia` runner profile rather than launching `sophia session run` itself.

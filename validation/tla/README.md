@@ -347,23 +347,6 @@ revokes a saturated recipient epoch rather than replaying ordered input. Its
 bounded configuration explores 23,582,243 generated states and 241,549
 distinct states to depth 20.
 
-`LegacyWmProjection.tla` models exact complete-snapshot replacement, direct
-workspace assignment, workspace activation, and delayed private Configure or
-Focus requests. It requires cached membership to remain unique, mapping to
-equal the authoritative active-workspace projection, and translation to expose
-only currently mapped surfaces. Weak fairness also requires the finite request
-backlog to settle. The bounded configuration explores 32,563 generated states
-and 2,106 distinct states to depth 11.
-
-`LegacyWmResponseBoundary.tla` models the compatibility limit imposed by an
-unmodified legacy WM: its X requests carry no Sophia transaction identity.
-Successful collection therefore requires a validated registered grab and a
-final quiet boundary. A hard deadline fails and quarantines the process;
-restart clears every private reply stage before later work begins. The model
-requires every emitted reply to belong to its collecting request. Its bounded
-configuration explores 27,667 generated states and 9,489 distinct states to
-depth 42.
-
 `PixelSilentAdmission.tla` distinguishes presentation intent from complete
 pixels. A first timeout without a safe extent preserves the standing target,
 owner loop, and one bounded retry. Later pixels may complete admission;
@@ -638,18 +621,9 @@ the current owning Rust boundaries as follows:
 | `SuccessorDirectRetires`, `SuccessorComposedRetires` | page-flip retirement of the following frame, which is what destroys the displayed bundle |
 | `CompleteFlip` | the `Flip` Present disposition, reserved today and unreachable from the copy path |
 | `effectActive`, `episode` | an overlay or resolved effect in the frame candidate; no Rust counterpart until the provider registry lands |
-| `PrimeAdmission` | `PersistentLiveLayout::prime_admission_extent` selecting complete safe pixels before the first blind-WM target |
-| `IssueConfigure`, `IssueFocus` | delayed synthetic requests emitted by the legacy WM process |
-| `ReplaceProjection` | `X11WmBridgeState::replace_active_workspace_projection` replacing cached membership and the complete mapped-window projection |
-| `AssignWorkspace` | `X11WmBridgeState::assign_workspace` updating cached membership before mapping reconciliation |
-| `SwitchWorkspace` | `X11WmBridgeState::activate_workspace_into` selecting the exact cached workspace membership |
-| `TranslateConfigure`, `TranslateFocus` | `X11WmBridgeState::translate_legacy_requests_for_output` filtering requests through the current mapped-window set |
-| `BeginRequest`, `ValidateGrab`, `ObserveQuietBoundary`, `CompleteRequest` | registered private xmonad action validation, `LegacyX11WmBridgeRuntime::handle_request_once`, and `collect_legacy_responses` |
 | `BeginFrontendGrab`, `ConfirmFrontendGrab`, `RejectFrontendGrab` | provisional `ApplicationRouteLeaseState`, `XAuthorityRoutedInput::route_lease`, and sanitized `XAuthorityRouteLeaseUpdate` feedback |
 | `RequestLeaseRelease`, `AcknowledgeLeaseRelease` | exact Engine release state plus `XAuthorityRouteLeaseRelease` and frontend grab teardown acknowledgement |
 | `SecurityTransition`, stale queued route rejection | shared input control epoch, `advance_security_epoch`, and epoch-stamped bounded frontend ingress |
-| `ReachHardDeadline` | response collection returning an error before any normal response is encoded |
-| `Restart` | live-session supervision replacing the failed bridge process and reseeding committed state |
 | `BeginLayout`, `FirstSilentTimeout` | admission staging and `LiveWmLayoutManager::expire_pending` retaining a pixel-silent retry |
 | `RestartAndReseed`, `WithdrawSilentAdmission` | live-session WM recovery and bounded admission retry accounting |
 | `ObservePixels`, `CommitPixels` | Engine safe-pixel observation and ordinary exact-candidate layout settlement |

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-LOG_DIR="${SOPHIA_XMONAD_LOG_DIR:-$STATE_HOME/sophia/xmonad-session}"
+LOG_DIR="${SOPHIA_HAGIA_LOG_DIR:-$STATE_HOME/sophia/hagia-session}"
 SESSION_LOG="${1:-$LOG_DIR/session.log}"
 GUARD_LOG="${2:-$LOG_DIR/input-guard.log}"
 RECOVERY_LOG="${3:-$LOG_DIR/recovery.log}"
@@ -110,7 +110,7 @@ if grep -Eq '^sophia_session_input_guard schema=1 status=triggered$' "$GUARD_LOG
     fail "cycle used emergency recovery instead of normal logout"
 fi
 recovery="$({
-    grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' "$RECOVERY_LOG" || true
+    grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$RECOVERY_LOG" || true
 } | tail -n 1)"
 [[ -n "$recovery" ]] || fail "normal TTY recovery is missing"
 require_eq "$recovery" termios_restored true

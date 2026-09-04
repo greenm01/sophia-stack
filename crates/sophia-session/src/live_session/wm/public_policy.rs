@@ -1529,7 +1529,7 @@ fn public_policy_surface_snapshots(
         // the spatial policy can act on. The public protocol field is instead
         // the authority's window-state generation: using the raster identity
         // here made ordinary Kitty drawing retire an in-flight layout as stale
-        // and forced a stateful xmonad adapter rebuild for nearly every frame.
+        // and forced a stateful policy client rebuild for nearly every frame.
         let state_generation = layout
             .authority_surface_facts
             .get(&surface)

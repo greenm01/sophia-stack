@@ -31,7 +31,7 @@ DISPLAY_NAME="${SOPHIA_MIXED_DISPLAY:-:294}"
 EVIDENCE="${SOPHIA_MIXED_EVIDENCE:-}"
 EVIDENCE_LATEST="${SOPHIA_MIXED_EVIDENCE_LATEST:-/tmp/sophia-mixed-output.log}"
 TTY_REQUIRED="${SOPHIA_MIXED_TTY:-/dev/tty4}"
-CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
+CORE_CONFIG="$ROOT_DIR/tools/config/sophia/core.kdl"
 DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl"
 
 usage() {

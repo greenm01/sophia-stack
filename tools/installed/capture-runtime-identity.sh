@@ -76,15 +76,13 @@ input_identity="$(
     fi
     printf 'sophia_runtime_identity schema=2 kind=application name=xterm version=%s digest=%s\n' \
         "$xterm_version" "$(digest_or_unavailable "$xterm")"
-    printf 'sophia_runtime_identity schema=2 kind=application name=xmonad version=packaged digest=%s\n' \
-        "$(digest_or_unavailable "$release_dir/target/release/xmonad")"
-    printf 'sophia_runtime_identity schema=2 kind=application name=xmobar version=packaged digest=%s\n' \
-        "$(digest_or_unavailable "$release_dir/target/release/xmobar")"
     printf 'sophia_runtime_identity schema=2 kind=application name=sophia-wm-demo version=%s digest=%s\n' \
         "$release_version" \
         "$(digest_or_unavailable "$release_dir/target/release/sophia-wm-demo")"
     printf 'sophia_runtime_identity schema=2 kind=application name=hagia version=packaged digest=%s\n' \
         "$(digest_or_unavailable "$release_dir/target/release/hagia")"
+    printf 'sophia_runtime_identity schema=2 kind=application name=narthex version=packaged digest=%s\n' \
+        "$(digest_or_unavailable "$release_dir/target/release/narthex")"
     printf 'sophia_runtime_identity schema=2 kind=input seat=seat0 names_sha256=%s\n' \
         "$input_identity"
     shopt -s nullglob

@@ -224,7 +224,7 @@ fn public_policy_child_executable_grant_is_explicit_and_read_only() {
 
     assert!(
         PersistentXtermSessionConfig::from_args(&[
-            "--wm-process-executable-grant=/opt/sophia/xmonad".to_owned(),
+            "--wm-process-executable-grant=/opt/sophia/native-wm".to_owned(),
         ])
         .unwrap_err()
         .to_string()
@@ -233,7 +233,7 @@ fn public_policy_child_executable_grant_is_explicit_and_read_only() {
     assert!(
         PersistentXtermSessionConfig::from_args(&[
             "--wm-process=/usr/bin/true".to_owned(),
-            "--wm-process-executable-grant=relative/xmonad".to_owned(),
+            "--wm-process-executable-grant=relative/native-wm".to_owned(),
         ])
         .unwrap_err()
         .to_string()
@@ -905,7 +905,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
 #[test]
 fn mixed_output_gate_apps_satisfy_probe_profile() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let core = root.join("tools/config/sophia-xmonad/core.kdl");
+    let core = root.join("tools/config/sophia/core.kdl");
     let desktop = root.join("tools/fixtures/mixed_output_probe.kdl");
     let config = PersistentXtermSessionConfig::from_args(&[
         format!("--config={}", core.display()),
@@ -947,7 +947,7 @@ fn mixed_output_gate_apps_satisfy_probe_profile() {
 #[test]
 fn frame_fed_output_gate_admits_hagias_complete_session_operation_catalog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let core = root.join("tools/config/sophia-xmonad/core.kdl");
+    let core = root.join("tools/config/sophia/core.kdl");
     let desktop = root.join("tools/fixtures/frame_fed_output_proof.kdl");
     let config = PersistentXtermSessionConfig::from_args(&[
         format!("--config={}", core.display()),

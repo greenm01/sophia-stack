@@ -1,1 +1,0 @@
-sophia_tty_recovery schema=3 profile=xmonad kd_mode_before=text kd_mode_after=text termios_restored=true emergency=false

@@ -1,4 +1,4 @@
-const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_xmonad_session.sh");
+const SESSION_LAUNCHER: &str = include_str!("../../../tools/run_sophia_session.sh");
 const TTY3_LAUNCHER: &str = include_str!("../../../tools/start_sophia_tty3.sh");
 const DESKTOP_COMPARISON_GATE: &str = include_str!("../../../tools/desktop_comparison_tty3.sh");
 const INSTALLED_SESSION: &str = include_str!("../../../tools/installed/sophia-session");
@@ -99,8 +99,8 @@ fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
     assert!(SESSION_LAUNCHER.contains("$firefox_m10_profile_dir/user.js"));
     assert!(SESSION_LAUNCHER.contains("browser.tabs.remote.autostart"));
     assert!(SESSION_LAUNCHER.contains("fission.autostart"));
-    assert!(SESSION_LAUNCHER.contains("--session-app-arg=firefox=--profile"));
-    assert!(SESSION_LAUNCHER.contains("--session-app-arg=firefox=$firefox_m10_profile_dir"));
+    assert!(SESSION_LAUNCHER.contains("--session-app-arg=browser=--profile"));
+    assert!(SESSION_LAUNCHER.contains("--session-app-arg=browser=$firefox_m10_profile_dir"));
     assert!(SESSION_LAUNCHER.contains("GDK_BACKEND=x11"));
     assert!(SESSION_LAUNCHER.contains("MOZ_ENABLE_WAYLAND=0"));
     assert!(SESSION_LAUNCHER.contains("MOZ_FORCE_DISABLE_E10S=1"));
@@ -256,7 +256,7 @@ fn installed_hagia_separates_personal_and_packaged_promotion_profiles() {
 #[test]
 fn installed_watchdog_is_fixed_and_opt_in() {
     assert!(INSTALLED_RECOVERY.contains("SOPHIA_SESSION_WATCHDOG_SECONDS=45"));
-    assert!(INSTALLED_RECOVERY.contains("$RELEASE_DIR/bin/sophia-session"));
+    assert!(INSTALLED_RECOVERY.contains("$RELEASE_DIR/bin/sophia-hagia-session"));
     assert!(!INSTALLED_SESSION.contains("export SOPHIA_SESSION_WATCHDOG_SECONDS="));
 }
 

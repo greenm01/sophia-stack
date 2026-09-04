@@ -2,7 +2,7 @@
 //!
 //! Portal code is intentionally off the compositor hot path. It turns
 //! namespaced transfer requests into bounded commands that the runtime or
-//! X bridge can execute without granting the policy code raw X authority.
+//! X Authority adapter can execute without granting policy code raw X authority.
 
 mod broker;
 mod clipboard;

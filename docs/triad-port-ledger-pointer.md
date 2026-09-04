@@ -48,8 +48,7 @@ defines the freeze surface. Trusted one-shot launch placement and frame-fed
 output activation are implemented and proven. Frame-fed physical archive `0001`
 binds Sophia `870ba46ae231081220b982ecc3a5a95517df7a90` and Hagia
 `a83c8fa022a4ceff5d8b96a01c46052bbd8ba64a`; the shared reconnect/restart
-corpus, public xmonad migration, and immutable archived revision-3 client also
-pass.
+corpus and immutable archived revision-3 client also pass.
 
 Shell surface policy left Hagia on 2026-09-04 for `sophia-org/narthex`, a
 separate client with a strictly smaller capability. The rows below record the
@@ -68,9 +67,9 @@ icons, and persistent Tier-1 panels are explicit post-freeze work.
 - **API v7 is removed.** The retained output row and revision-3 freeze
   conditions closed first. The client-hosted socket, codecs, demo server,
   Engine transport, and selectable configuration value are gone. Shortcut
-  matching remains protocol-neutral in Engine, while the workspace model now
-  belongs only to the private X11 compatibility bridge. The public Hagia and
-  archived-client gates remain the regression boundary.
+  matching remains protocol-neutral in Engine, while workspace models belong
+  to native policy clients. The public Hagia and archived-client gates remain
+  the regression boundary.
 - **Several items filed under `todo.md`'s Post-Promotion Capability Roadmap are
   already completed the freeze path.** Protection-domain enforcement, the
   redacted status feed, explicit-grab reduction, and frame-fed atomic

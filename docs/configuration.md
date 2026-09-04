@@ -52,12 +52,10 @@ to an application identity. Both layouts consume the same metadata-blind node
 snapshot and remain subject to Engine constraint reconciliation and atomic
 admission.
 
-An external WM does not consume `wm.kdl`. A generic compatibility profile may
-name its own native configuration. Sophia's installed xmonad profile is
-stricter: the release contains the checked-in policy executable and rejects
-mutable `~/.config/xmonad` or home-source discovery. In either case, the
-compatibility bridge crosses the same blind, versioned Sophia WM API, and a WM
-never overrides or mutates `config.kdl`.
+An external WM does not consume `wm.kdl`; it owns its native configuration and
+speaks the blind, versioned `sophia_wm_v1` protocol directly. A WM never
+overrides or mutates `config.kdl`. Sophia provides no legacy-WM compatibility
+profile or synthetic X11 policy environment.
 
 Hagia sessions additionally use the unified desktop profile at
 `${XDG_CONFIG_HOME:-$HOME/.config}/hagia/config.kdl`. An explicit
@@ -379,19 +377,9 @@ chrome-set observation can advance. Intermediate retired frames remain visible
 for three seconds so the physical proof can be inspected instead of merely
 logged.
 
-The external-WM half uses the core domain:
-
-```sh
-tools/start_sophia_xmonad_config_reload_tty3.sh
-```
-
-It proves that the chrome-blind xmonad bridge uses core fallback chrome, a
-live-safe width edit applies atomically, a namespace edit remains wholly
-pending restart, an invalid edit retains the active value, and no native-WM
-reload record appears. Both launchers retain a commit-bearing ordered sequence
-log. Validate their verifier logic without physical hardware with:
+The proof retains a commit-bearing ordered sequence log. Validate its verifier
+logic without physical hardware with:
 
 ```sh
 tools/check_sophia_native_chrome_verifier.sh
-tools/check_sophia_xmonad_config_reload_verifier.sh
 ```

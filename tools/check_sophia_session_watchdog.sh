@@ -19,7 +19,7 @@ export SOPHIA_MANAGE_KEYD=false
 export SOPHIA_SESSION_WATCHDOG_SECONDS=1
 
 set +e
-script -qefc "$ROOT_DIR/tools/run_sophia_xmonad_session.sh" /dev/null \
+script -qefc "$ROOT_DIR/tools/run_sophia_session.sh" /dev/null \
     >"$TEST_ROOT/launcher.log" 2>&1
 status=$?
 set -e

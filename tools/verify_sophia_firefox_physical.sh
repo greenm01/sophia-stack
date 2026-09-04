@@ -2,7 +2,7 @@
 set -euo pipefail
 
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-LOG_DIR="${SOPHIA_XMONAD_LOG_DIR:-$STATE_HOME/sophia/xmonad-session}"
+LOG_DIR="${SOPHIA_HAGIA_LOG_DIR:-$STATE_HOME/sophia/hagia-session}"
 SESSION_LOG="${1:-$LOG_DIR/session.log}"
 GUARD_LOG="${2:-$LOG_DIR/input-guard.log}"
 RECOVERY_LOG="${3:-$LOG_DIR/recovery.log}"
@@ -80,7 +80,7 @@ if grep -Eq 'stage_complete stage=(clipboard|primary) |checkpoint=(clipboard_pee
     fail "promotion replayed focused CLIPBOARD or PRIMARY work"
 fi
 grep -Eq '^sophia_live_wm schema=1 status=ready adapter=external socket=private restarts=0$' \
-    "$SESSION_LOG" || fail "external xmonad policy never became ready"
+    "$SESSION_LOG" || fail "native Hagia policy never became ready"
 grep -Eq '^sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled ' \
     "$SESSION_LOG" || fail "two-output native ownership was not established"
 grep -Eq '^sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2$' \
@@ -467,7 +467,7 @@ if awk -v first="$refocus_line" -v last="$dialog_line" '
         ($0 ~ /^sophia_live_wm .*status=layout_timeout / || $0 ~ /^sophia_live_wm .*status=restarted /) { found=1 }
     END { exit !found }
 ' "$SESSION_LOG"; then
-    fail "Firefox modal interaction timed out or restarted the WM bridge"
+    fail "Firefox modal interaction timed out or restarted WM policy"
 fi
 (( refocus_line < dialog_ready_line
     && dialog_ready_line < dialog_line
@@ -527,8 +527,8 @@ grep -Eq '^sophia_session_input_guard schema=1 status=armed$' \
 if grep -Eq '^sophia_session_input_guard schema=1 status=triggered$' "$GUARD_LOG"; then
     fail "run used emergency recovery instead of normal logout"
 fi
-recovery="$(grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' "$RECOVERY_LOG" | tail -n 1)"
-[[ -n "$recovery" ]] || fail "xmonad TTY recovery record is missing"
+recovery="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$RECOVERY_LOG" | tail -n 1)"
+[[ -n "$recovery" ]] || fail "Hagia TTY recovery record is missing"
 for assignment in termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none; do
     require_eq "$recovery" "${assignment%%=*}" "${assignment#*=}"
 done

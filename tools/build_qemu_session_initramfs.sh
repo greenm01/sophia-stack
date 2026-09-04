@@ -6,12 +6,6 @@ OUT_DIR="${SOPHIA_QEMU_OUT_DIR:-$ROOT_DIR/.qemu}"
 KERNEL_VERSION="${SOPHIA_QEMU_KERNEL_VERSION:-$(uname -r)}"
 KERNEL_IMAGE="${SOPHIA_QEMU_KERNEL:-/boot/vmlinuz-$KERNEL_VERSION}"
 INITRAMFS="${SOPHIA_QEMU_INITRAMFS:-$OUT_DIR/sophia-$KERNEL_VERSION.img}"
-IMAGE_PROFILE="${SOPHIA_QEMU_IMAGE_PROFILE:-base}"
-
-if [[ "$IMAGE_PROFILE" != base && "$IMAGE_PROFILE" != m8 && "$IMAGE_PROFILE" != rendering ]]; then
-    echo "SOPHIA_QEMU_IMAGE_PROFILE must be base, m8, or rendering" >&2
-    exit 1
-fi
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -27,8 +21,6 @@ require_command dracut
 require_command zenity
 require_command xterm
 require_command readlink
-require_command file
-require_command ldd
 require_command lsinitrd
 
 if [[ ! -r "$KERNEL_IMAGE" ]]; then
@@ -42,20 +34,9 @@ fi
 
 mkdir -p "$OUT_DIR" "$OUT_DIR/dracut-tmp"
 
-BRIDGE_BIN="$ROOT_DIR/target/release/sophia-x11-wm-bridge"
-XMONAD_BIN="${SOPHIA_XMONAD_BIN:-}"
-if [[ -z "$XMONAD_BIN" ]] && command -v xmonad >/dev/null 2>&1; then
-    XMONAD_BIN="$(command -v xmonad)"
-fi
-if [[ -n "$XMONAD_BIN" && ! -x "$XMONAD_BIN" ]]; then
-    echo "configured xmonad binary is not executable: $XMONAD_BIN" >&2
-    exit 1
-fi
-XMONAD_INCLUDE=()
-[[ -z "$XMONAD_BIN" ]] || XMONAD_INCLUDE=(--include "$XMONAD_BIN" /usr/bin/xmonad)
 (
     cd "$ROOT_DIR"
-    cargo build --release --offline -p sophia-cli -p sophia-x11-wm-bridge --features native-session
+    cargo build --release --offline -p sophia-cli --features native-session
 )
 
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
@@ -73,136 +54,12 @@ runtime_files=(
     /usr/lib/libudev.so.1
     /usr/bin/zenity
 )
-extra_includes=(
-    --include "$ROOT_DIR/tools/fixtures/qemu_resize_storm_client.sh" /usr/bin/sophia-resize-storm-client
-)
+extra_includes=()
 required_guest_paths=(
     /usr/bin/dbus-daemon
     /usr/bin/dbus-run-session
-    /usr/bin/sophia-resize-storm-client
     /usr/share/dbus-1/session.conf
 )
-if [[ "$IMAGE_PROFILE" == m8 ]]; then
-    extra_includes+=(--include "$ROOT_DIR/tools/fixtures/qemu_zenity_launcher.sh" /usr/bin/sophia-zenity-launcher)
-    FIREFOX_BIN="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
-    VKCUBE_BIN="${SOPHIA_VKCUBE_BIN:-$(command -v vkcube || true)}"
-    LVP_ICD="${SOPHIA_LVP_ICD:-/usr/share/vulkan/icd.d/lvp_icd.x86_64.json}"
-    if [[ -z "$FIREFOX_BIN" || ! -x "$FIREFOX_BIN" ]]; then
-        echo "The M8 QEMU profile requires Firefox; set SOPHIA_FIREFOX_BIN." >&2
-        exit 1
-    fi
-    if [[ -z "$VKCUBE_BIN" || ! -x "$VKCUBE_BIN" ]]; then
-        echo "The M8 QEMU profile requires vkcube; install Vulkan-Tools or set SOPHIA_VKCUBE_BIN." >&2
-        exit 1
-    fi
-    if [[ ! -r "$LVP_ICD" ]]; then
-        echo "The M8 QEMU profile requires Mesa Lavapipe; install mesa-vulkan-lavapipe or set SOPHIA_LVP_ICD." >&2
-        exit 1
-    fi
-    LVP_LIBRARY="$(sed -n 's/.*"library_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$LVP_ICD" | head -n 1)"
-    [[ -n "$LVP_LIBRARY" ]] || { echo "Lavapipe ICD has no library_path" >&2; exit 1; }
-    [[ "$LVP_LIBRARY" = /* ]] || LVP_LIBRARY="/usr/lib/$LVP_LIBRARY"
-    [[ -r "$LVP_LIBRARY" ]] || { echo "Lavapipe library is missing: $LVP_LIBRARY" >&2; exit 1; }
-    firefox_dependencies=()
-    while IFS= read -r elf; do
-        if ! file -b "$elf" | grep -q '^ELF '; then
-            continue
-        fi
-        dependency_report="$(ldd "$elf" 2>&1 || true)"
-        if grep -q 'not found' <<<"$dependency_report"; then
-            echo "Firefox dependency resolution failed for $elf:" >&2
-            grep 'not found' <<<"$dependency_report" >&2
-            exit 1
-        fi
-        while IFS= read -r dependency; do
-            [[ -z "$dependency" ]] || firefox_dependencies+=("$dependency")
-        done < <(awk '
-            $2 == "=>" && $3 ~ /^\// { print $3 }
-            $1 ~ /^\// { print $1 }
-        ' <<<"$dependency_report")
-    done < <(find /usr/lib/firefox -type f -print)
-    mapfile -t firefox_dependencies < <(printf '%s\n' "${firefox_dependencies[@]}" | sort -u)
-    runtime_files+=("$FIREFOX_BIN" "$VKCUBE_BIN" /usr/lib/libvulkan.so.1 "$LVP_LIBRARY" "${firefox_dependencies[@]}")
-    extra_includes+=(
-        --include /usr/lib/firefox /usr/lib/firefox
-        --include "$LVP_ICD" /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-        --include "$ROOT_DIR/tools/fixtures/firefox_m8_local_page.html" /usr/share/sophia/firefox_m8_local_page.html
-    )
-    required_guest_paths+=(
-        /usr/bin/firefox
-        /usr/bin/vkcube
-        /usr/bin/xmonad
-        /usr/lib/libplds4.so
-        /usr/lib/libplc4.so
-        /usr/lib/libnspr4.so
-        /usr/lib/libnss3.so
-        /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-        /usr/share/sophia/firefox_m8_local_page.html
-    )
-fi
-if [[ "$IMAGE_PROFILE" == rendering ]]; then
-    require_command cc
-    require_command pkg-config
-    GLXGEARS_BIN="${SOPHIA_GLXGEARS_BIN:-$(command -v glxgears || true)}"
-    [[ -x "$GLXGEARS_BIN" ]] || {
-        echo "The rendering QEMU profile requires glxgears; set SOPHIA_GLXGEARS_BIN." >&2
-        exit 1
-    }
-    XMOBAR_BIN="${SOPHIA_XMOBAR_BIN:-$($ROOT_DIR/tools/resolve_sophia_xmobar.sh)}"
-    [[ -x "$XMOBAR_BIN" ]] || {
-        echo "The rendering QEMU profile requires xmobar; set SOPHIA_XMOBAR_BIN." >&2
-        exit 1
-    }
-    GLX_VENDOR_LIBRARY=/usr/lib/libGLX_mesa.so.0
-    [[ -r "$GLX_VENDOR_LIBRARY" ]] || {
-        echo "The rendering QEMU profile requires Mesa GLX: $GLX_VENDOR_LIBRARY" >&2
-        exit 1
-    }
-    OVERLOAD_CLIENT_BIN="$OUT_DIR/qemu-present-overload-client"
-    read -r -a overload_client_flags <<<"$(pkg-config --cflags --libs gbm xcb xcb-dri3 xcb-present)"
-    cc -std=c11 -O2 -Wall -Wextra -Werror \
-        "$ROOT_DIR/tools/probes/qemu_present_overload_client.c" \
-        -o "$OVERLOAD_CLIENT_BIN" \
-        "${overload_client_flags[@]}"
-    runtime_files+=("$GLX_VENDOR_LIBRARY")
-    # libGLX loads Mesa's vendor library dynamically, so resolve that library
-    # separately from the executable dependency graph.
-    for executable in "$GLXGEARS_BIN" "$XMOBAR_BIN" "$GLX_VENDOR_LIBRARY" "$OVERLOAD_CLIENT_BIN"; do
-        dependency_report="$(ldd "$executable" 2>&1 || true)"
-        if grep -q 'not found' <<<"$dependency_report"; then
-            echo "Rendering dependency resolution failed for $executable:" >&2
-            grep 'not found' <<<"$dependency_report" >&2
-            exit 1
-        fi
-        while IFS= read -r dependency; do
-            [[ -z "$dependency" ]] || runtime_files+=("$dependency")
-        done < <(awk '
-            $2 == "=>" && $3 ~ /^\// { print $3 }
-            $1 ~ /^\// { print $1 }
-        ' <<<"$dependency_report")
-    done
-    extra_includes+=(
-        --include "$GLXGEARS_BIN" /usr/bin/glxgears
-        --include "$XMOBAR_BIN" /usr/bin/xmobar
-        --include "$OVERLOAD_CLIENT_BIN" /usr/bin/sophia-present-overload-client
-        --include "$ROOT_DIR/tools/fixtures/qemu_idle_glxgears_client.sh" /usr/bin/sophia-idle-glxgears-client
-        --include "$ROOT_DIR/tools/fixtures/qemu_render_contention_xmobar.config" /usr/share/sophia/qemu_render_contention_xmobar.config
-        --include /usr/lib/locale/C.utf8 /usr/lib/locale/C.utf8
-        --include /usr/share/X11/locale /usr/share/X11/locale
-        --include /usr/share/fonts/TTF/DejaVuSansMono.ttf /usr/share/fonts/TTF/DejaVuSansMono.ttf
-    )
-    required_guest_paths+=(
-        /usr/bin/glxgears
-        /usr/bin/sophia-present-overload-client
-        /usr/bin/sophia-idle-glxgears-client
-        /usr/bin/xmobar
-        /usr/lib/locale/C.utf8/LC_CTYPE
-        /usr/share/X11/locale/locale.dir
-        /usr/share/fonts/TTF/DejaVuSansMono.ttf
-        /usr/bin/xmonad
-        /usr/share/sophia/qemu_render_contention_xmobar.config
-    )
-fi
 install_files=()
 runtime_files+=("$(command -v xterm)")
 for file in "${runtime_files[@]}"; do
@@ -223,8 +80,6 @@ dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
     --install "/bin/sh /usr/bin/chmod /usr/bin/mount /usr/bin/modprobe /usr/bin/pidof /usr/bin/poweroff /usr/bin/sleep /usr/bin/sync ${install_files[*]}" \
     --include "$ROOT_DIR/tools/qemu_guest_init.sh" /sbin/sophia-qemu-init \
     --include "$SOPHIA_BIN" /usr/bin/sophia \
-    --include "$BRIDGE_BIN" /usr/bin/sophia-x11-wm-bridge \
-    "${XMONAD_INCLUDE[@]}" \
     "${extra_includes[@]}" \
     --include /usr/lib/dri /usr/lib/dri \
     --include /usr/lib/gbm /usr/lib/gbm \
@@ -244,7 +99,7 @@ dracut --force --no-hostonly --no-hostonly-cmdline --no-early-microcode \
 initramfs_listing="$(lsinitrd "$INITRAMFS")"
 for guest_path in "${required_guest_paths[@]}"; do
     if ! grep -Fq " ${guest_path#/}" <<<"$initramfs_listing"; then
-        echo "$IMAGE_PROFILE initramfs is missing required path: $guest_path" >&2
+        echo "initramfs is missing required path: $guest_path" >&2
         exit 1
     fi
 done

@@ -37,7 +37,7 @@ pub(crate) const CONFIGS: [&str; 14] = [
     "tools/desktop_comparison_tracefs.sh",
     "tools/desktop_comparison_tty3.sh",
     "tools/start_sophia_tty3.sh",
-    "tools/run_sophia_xmonad_session.sh",
+    "tools/run_sophia_session.sh",
     "tools/sophia_tty_mode.py",
     "tools/lib/session_terminal.sh",
     "validation/desktop-comparison/profiles/hagia.kdl",

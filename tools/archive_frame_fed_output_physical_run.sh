@@ -17,7 +17,7 @@ run_root="${SOPHIA_FRAME_FED_OUTPUT_RUN_ROOT:-$state_home/sophia/promotion/frame
 sophia_bin="${SOPHIA_FRAME_FED_OUTPUT_SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 hagia_bin="${SOPHIA_FRAME_FED_OUTPUT_HAGIA_BIN:-}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
-core_config="${SOPHIA_FRAME_FED_OUTPUT_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia-xmonad/core.kdl}"
+core_config="${SOPHIA_FRAME_FED_OUTPUT_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia/core.kdl}"
 desktop_profile="${SOPHIA_FRAME_FED_OUTPUT_DESKTOP_PROFILE:-$ROOT_DIR/tools/fixtures/frame_fed_output_proof.kdl}"
 
 "$ROOT_DIR/tools/verify_frame_fed_output_evidence.sh" \

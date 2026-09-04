@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
-CORE_CONFIG="$ROOT_DIR/tools/config/sophia-xmonad/core.kdl"
+CORE_CONFIG="$ROOT_DIR/tools/config/sophia/core.kdl"
 DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/frame_fed_output_proof.kdl"
 KITTY_BIN="${SOPHIA_FRAME_FED_OUTPUT_KITTY:-$(command -v kitty || true)}"
 SEAT="${SOPHIA_FRAME_FED_OUTPUT_SEAT:-seat0}"

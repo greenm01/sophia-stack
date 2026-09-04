@@ -48,8 +48,8 @@ A complete Hagia environment would probably be a small family of components:
 
 This is not needless process splitting. These roles receive different
 information and exercise different powers. Keeping them distinct allows Hagia,
-xmonad, qtile, an Xfce-style environment, and a future all-Sophia desktop to use
-the same protocol family without granting them all compositor authority.
+native ports of existing WMs, an Xfce-style environment, and a future all-Sophia
+desktop to use the same protocol family without granting them all compositor authority.
 
 “Sophia native” should therefore describe a family of narrow interfaces, not
 one large engine protocol.
@@ -457,8 +457,7 @@ next complete Sophia snapshot before proposing anything. After that candidate
 first commits, Hagia emits one geometry-free `PolicyDirty` request for the
 complete live output set and verifies the resulting fresh cycle at the next
 private generation. Sophia's installed physical-workload proof has passed for
-this retained slice; the old xmonad session is regression evidence, not a
-prerequisite. Broader Triad parity, configuration recovery, and the shared
+this retained slice. Broader Triad parity, configuration recovery, and the shared
 revision-freeze corpus remain separate gates.
 
 The live Sophia session supplies `HAGIA_POLICY_CHECKPOINT` inside its
@@ -627,8 +626,8 @@ Hagia is on the right side of the boundary if these statements remain true:
    vocabulary without making them Sophia concepts.
 5. No protocol grants a component data merely because an earlier monolithic
    window manager happened to possess it.
-6. A C client and the Rust X11 WM bridge can implement the same public wire
-   without importing Hagia, Nim, River, or Triad types.
+6. Independent C and Rust clients can implement the same public wire without
+   importing Hagia, Nim, River, or Triad types.
 
 ## Relationship to Triad
 

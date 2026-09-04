@@ -7,4 +7,4 @@ RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 # Keep the deadline opt-in: an ordinary desktop session must not expire.
 export SOPHIA_SESSION_WATCHDOG_SECONDS=45
 export SOPHIA_INSTALLED_ATTEMPT_MODE=watchdog
-exec "$RELEASE_DIR/bin/sophia-session" "$@"
+exec "$RELEASE_DIR/bin/sophia-hagia-session" "$@"

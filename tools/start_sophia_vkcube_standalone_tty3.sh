@@ -7,7 +7,7 @@ export SOPHIA_SESSION_VERBOSE_TRACE=true
 
 printf '%s\n' \
     'Standalone vkcube isolation proof:' \
-    '  1. Sophia launches vkcube directly; Kitty, xmonad, and xmobar are absent.' \
+    '  1. Sophia launches vkcube directly; no WM or shell process is present.' \
     '  2. Confirm a centered natural-size window displays the spinning cube.' \
     '  3. Press Super+Shift+Q for normal logout.' \
     '  4. Press Ctrl+Alt+Backspace only for emergency recovery.' \

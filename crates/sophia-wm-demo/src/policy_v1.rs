@@ -115,8 +115,8 @@ impl From<IpcCodecError> for PolicyV1ClientError {
     }
 }
 
-/// Public revision-3 reference client shared by the conformance host and the
-/// xmonad compatibility adapter.
+/// Public revision-3 reference client shared by the conformance host and
+/// native Sophia policy clients.
 pub struct PolicyV1Client {
     stream: UnixStream,
     connection_epoch: u64,

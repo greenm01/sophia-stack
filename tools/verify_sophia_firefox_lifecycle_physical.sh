@@ -2,7 +2,7 @@
 set -euo pipefail
 
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-SESSION_LOG="${1:-${SOPHIA_XMONAD_LOG_DIR:-$STATE_HOME/sophia/xmonad-session}/session.log}"
+SESSION_LOG="${1:-${SOPHIA_HAGIA_LOG_DIR:-$STATE_HOME/sophia/hagia-session}/session.log}"
 
 fail() { echo "focused Firefox lifecycle verification failed: $*" >&2; exit 1; }
 line() { grep -nE "$1" "$SESSION_LOG" | sed -n "${2:-1}p" | cut -d: -f1 || true; }

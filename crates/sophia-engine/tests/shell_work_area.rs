@@ -352,7 +352,7 @@ fn a_rejected_bundle_preserves_the_presented_claim() {
 fn shell_bands_compose_with_x_side_struts_in_one_reduction() {
     use sophia_protocol::{AxisSpan, OutputReservation, SurfaceId, SurfaceOutputReservations};
     let (root, outputs) = two_outputs();
-    // An xmobar-style strut at the top of the first output, plus a shell bar
+    // A client-side strut at the top of the first output, plus a shell bar
     // at its bottom: one reduction subtracts both.
     let strut = SurfaceOutputReservations {
         surface: SurfaceId::new(1, 1),

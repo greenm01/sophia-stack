@@ -11,7 +11,7 @@ prefix="$TEMP_DIR/prefix"
 release="$prefix/releases/diagnostic-test"
 mkdir -p "$state_home" "$runtime_dir" "$release"
 chmod 700 "$state_home" "$runtime_dir"
-session_state="$state_home/sophia/xmonad-session"
+session_state="$state_home/sophia/native-session"
 install -d -m 700 "$session_state"
 printf 'prior lifecycle\n' >"$session_state/lifecycle.log"
 printf 'prior guard\n' >"$session_state/input-guard.log"
@@ -27,13 +27,14 @@ env \
     SOPHIA_INSTALLED_COMMIT=0123456789abcdef \
     SOPHIA_BUILD_SESSION=false \
     SOPHIA_MANAGE_KEYD=false \
-    "$ROOT_DIR/tools/run_sophia_xmonad_session.sh" \
+    SOPHIA_TTY_PROFILE=native \
+    "$ROOT_DIR/tools/run_sophia_session.sh" \
     </dev/null >"$TEMP_DIR/runner.out" 2>"$TEMP_DIR/runner.err"
 runner_status=$?
 set -e
 [[ "$runner_status" == 1 ]]
 
-lifecycle="$state_home/sophia/xmonad-session/lifecycle.log"
+lifecycle="$state_home/sophia/native-session/lifecycle.log"
 grep -Fxq 'prior lifecycle' "$lifecycle.previous"
 grep -Fxq 'prior guard' "$session_state/input-guard.log.previous"
 grep -Fxq 'prior recovery' "$session_state/recovery.log.previous"

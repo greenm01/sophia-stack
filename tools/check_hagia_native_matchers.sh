@@ -640,15 +640,6 @@ sed 's/wm_restarts=0/wm_restarts=1/' "$evidence" >"$restarted"
 reject_mutation "a session whose WM restarted" "$restarted" \
     "completion does not contain wm_restarts=0"
 
-# The compatibility bridge has its own gates.
-bridged="$temp_dir/bridged.log"
-cp "$evidence" "$bridged"
-printf '%s\n' \
-    'legacy WM did not configure all 4 synthetic windows within 3000 ms (configured 0)' \
-    >>"$bridged"
-reject_mutation "xmonad compatibility bridge activity" "$bridged" \
-    "xmonad compatibility bridge activity"
-
 # The identity must describe the profile that ran.
 misreported="$temp_dir/misreported.log"
 sed "s/root_sha256=$profile_sha256/root_sha256=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/" \

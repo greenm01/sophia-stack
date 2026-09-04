@@ -26,8 +26,8 @@ may be evaluated from demonstrated product requirements, but no such interface
 is currently supported or planned.
 
 Sophia does not prescribe the shape of a session, either. The same boundaries
-must serve a lean policy client such as xmonad or qtile, a conventional
-environment such as Xfce, and designs that do not look much like today's window
+must serve a lean native policy client, a conventional environment such as
+Xfce, and designs that do not look much like today's window
 managers. Tiling, scrolling, stacking, floating, and hybrid layouts are policy
 choices. Panels, decorations, launchers, and other shell pieces are separate
 choices. None of them changes who owns input, pixels, protocol state, or

@@ -26,6 +26,6 @@ compositor {
 
 namespace profile="classic-shared"
 
-external-wm executable="/usr/bin/xmonad"
+external-wm executable="/usr/bin/hagia" interface="sophia_wm_v1"
 
 diagnostics verbose=#false

@@ -56,7 +56,7 @@ commit="$(sed -n 's/^commit=//p' "$run/manifest" | head -n 1)"
 identity="$(tail -n 1 "$run/identity.log")"
 [[ -n "$commit" \
     && "$identity" == "sophia_installed_session schema=1 status=starting "* \
-    && " $identity " == *" profile=xmonad "* \
+    && " $identity " == *" profile=hagia "* \
     && " $identity " == *" commit=$commit "* ]] || {
     echo "installed watchdog identity does not match its release: $run" >&2
     exit 1

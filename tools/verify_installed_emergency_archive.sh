@@ -7,7 +7,7 @@ VERIFY_EMERGENCY="${SOPHIA_VERIFY_EMERGENCY_BIN:-$RELEASE_DIR/bin/sophia-verify-
 VERIFY_IDENTITY="${SOPHIA_VERIFY_IDENTITY_BIN:-$RELEASE_DIR/bin/sophia-verify-runtime-identity}"
 VERIFY_LIFECYCLE="${SOPHIA_VERIFY_LIFECYCLE_BIN:-$RELEASE_DIR/bin/sophia-verify-lifecycle}"
 if [[ ! -x "$VERIFY_EMERGENCY" ]]; then
-    VERIFY_EMERGENCY="$RELEASE_DIR/tools/verify_sophia_xmonad_emergency_tty3.sh"
+    VERIFY_EMERGENCY="$RELEASE_DIR/tools/verify_installed_hagia_recovery.sh"
 fi
 if [[ ! -x "$VERIFY_IDENTITY" ]]; then
     VERIFY_IDENTITY="$RELEASE_DIR/tools/verify_installed_runtime_identity.sh"
@@ -58,7 +58,7 @@ commit="$(sed -n 's/^commit=//p' "$run/manifest" | head -n 1)"
 identity="$(tail -n 1 "$run/identity.log")"
 [[ -n "$commit" \
     && "$identity" == "sophia_installed_session schema=1 status=starting "* \
-    && " $identity " == *" profile=xmonad "* \
+    && " $identity " == *" profile=hagia "* \
     && " $identity " == *" commit=$commit "* ]] || {
     echo "installed emergency identity does not match its release: $run" >&2
     exit 1

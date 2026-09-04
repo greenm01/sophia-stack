@@ -61,8 +61,9 @@ Status vocabulary:
 - Hagia is the ordinary installed native session. The retained Triad behavior
   port is complete, `sophia_wm_v1` interface major 1 / wire revision 3 is
   frozen, and Engine-owned API v7 workspace policy is gone.
-- Hagia speaks the Sophia WM and shell roles directly; the xmonad bridge is a
-  compatibility oracle and regression profile, not the product path.
+- Hagia and Narthex speak the Sophia WM and shell roles directly. Sophia ships
+  no legacy-X11-WM bridge or compatibility policy profile; existing WMs must be
+  ported to the language-neutral protocols.
 - The common native protocol-family contract is ratified. The role-by-role
   lifecycle audit and one family-level conformance entry point are not complete.
 - `sophia_shell_v1` revision 1 remains experimental. Its descriptor switcher,
@@ -281,7 +282,7 @@ These rows do not reorder the critical path.
 - [ ] Repair the evidence readers still pinned below their emitter. Ten accept
   `sophia_live_session status=bounded_complete` at schema 15 or lower against an
   emitter that writes 16, and nine accept `sophia_live_wm status=ready` at
-  schema 1 against an emitter that writes 4. These are xmonad-era physical and
+  schema 1 against an emitter that writes 4. These are retired-policy physical and
   QEMU gates; they fail loudly rather than silently, so each needs a per-gate
   decision about whether it still earns its keep. Add each repaired record to
   `tools/check_live_record_schema_readers.sh` once its emitters are confirmed to
@@ -318,7 +319,7 @@ tranche with a named driver and exit gate.
 
 ### Authority and lifecycle hardening
 
-- Stamp geometry, interaction, pointer-handoff, and legacy-WM work queued across
+- Stamp geometry, interaction, pointer-handoff, and WM-policy work queued across
   an output-topology transition; revalidate it against typed authority epochs.
 - Bound the page-flip callback read without losing retirement, then close the
   broker swallow points, unbounded input delivery, route-lease send, and
@@ -369,10 +370,9 @@ tranche with a named driver and exit gate.
 
 ### Compatibility and diagnostics
 
-- Keep xmonad as a regression oracle. Repair stable-relayout silence and add
-  other classical-WM profiles only from named versions and retained workflows;
-  no profile may proxy real X Authority metadata.
-- Retain physical `glxgears`, pc105 keyboard, exhaustive xmobar reservation,
+- Keep XLibre+xmonad only as a direct external desktop-comparison reference;
+  it never runs as Sophia policy and never connects to a Sophia endpoint.
+- Retain physical `glxgears`, pc105 keyboard, exhaustive X11 reservation,
   Chromium fixture, and human-visible QEMU/RFB proofs only when they cover a
   promoted product change.
 

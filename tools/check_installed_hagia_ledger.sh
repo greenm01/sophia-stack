@@ -36,7 +36,7 @@ write_identity() {
     {
         printf 'sophia_runtime_identity schema=2 kind=system kernel=test mesa=test\n'
         printf 'sophia_runtime_identity schema=2 kind=application name=sophia version=0.1.0 digest=%s\n' "$sophia_digest"
-        for application in kitty firefox xmonad xmobar; do
+        for application in kitty firefox xterm sophia-wm-demo narthex; do
             printf 'sophia_runtime_identity schema=2 kind=application name=%s version=test digest=unavailable\n' "$application"
         done
         printf 'sophia_runtime_identity schema=2 kind=application name=hagia version=packaged digest=%s\n' "$hagia_digest"

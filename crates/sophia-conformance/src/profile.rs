@@ -17,8 +17,8 @@ pub struct Profile {
     /// The startup application's identity within the session.
     pub startup: &'static str,
     /// Whether a window manager serves this profile. `sophia-wm-demo` lost its
-    /// serving mode in 83596bfc, so only the profiles backed by an external
-    /// policy client -- xmonad's bridge and Hagia -- have one.
+    /// serving mode in 83596bfc, so only profiles backed by a native Sophia WM
+    /// protocol client have one.
     pub window_manager: bool,
     /// Whether the session ends when its startup application does. A profile
     /// with no window manager has no logout shortcut, because shortcuts are
@@ -27,13 +27,7 @@ pub struct Profile {
     pub exit_with_startup: bool,
 }
 
-pub const PROFILES: [Profile; 5] = [
-    Profile {
-        name: "xmonad",
-        startup: "terminal",
-        window_manager: true,
-        exit_with_startup: false,
-    },
+pub const PROFILES: [Profile; 4] = [
     Profile {
         name: "hagia",
         startup: "terminal",

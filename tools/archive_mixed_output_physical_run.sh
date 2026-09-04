@@ -8,7 +8,7 @@ state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 run_root="${SOPHIA_MIXED_RUN_ROOT:-$state_home/sophia/promotion/mixed-output-runs}"
 sophia_bin="${SOPHIA_MIXED_SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 wm_bin="${SOPHIA_MIXED_WM_BIN:-$ROOT_DIR/target/release/sophia-wm-demo}"
-core_config="${SOPHIA_MIXED_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia-xmonad/core.kdl}"
+core_config="${SOPHIA_MIXED_CORE_CONFIG:-$ROOT_DIR/tools/config/sophia/core.kdl}"
 desktop_profile="${SOPHIA_MIXED_DESKTOP_PROFILE:-$ROOT_DIR/tools/fixtures/mixed_output_probe.kdl}"
 
 [[ "$extended_connector" =~ ^[A-Za-z0-9._-]+$ ]] || {
@@ -79,7 +79,7 @@ committed_file_sha256() {
     git -C "$ROOT_DIR" show "$source_commit:$path" | sha256sum | awk '{ print $1 }'
 }
 [[ "$core_config_sha256" == \
-    "$(committed_file_sha256 tools/config/sophia-xmonad/core.kdl)" ]] || {
+    "$(committed_file_sha256 tools/config/sophia/core.kdl)" ]] || {
     echo "mixed-output core configuration does not match the signed source commit" >&2
     exit 1
 }

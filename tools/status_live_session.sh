@@ -18,13 +18,13 @@ operator_guide="$PREFIX/current/share/doc/sophia/operations.md"
 printf 'operator_guide=%s\n' "$operator_guide"
 printf 'graphical_processes='
 found_graphical=false
-for process in sophia hagia xmonad sophia-wm-demo kitty firefox xterm; do
+for process in sophia hagia narthex sophia-wm-demo kitty firefox xterm; do
     if pgrep -a -x "$process" 2>/dev/null; then
         found_graphical=true
     fi
 done
 [[ "$found_graphical" == true ]] || echo none
-for profile in hagia xmonad kitty native; do
+for profile in hagia kitty native; do
     state="$STATE_HOME/sophia/$profile-session"
     lifecycle="$state/lifecycle.log"
     printf '%s_logs=%s\n' "$profile" "$state"

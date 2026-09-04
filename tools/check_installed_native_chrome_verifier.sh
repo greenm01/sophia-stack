@@ -14,7 +14,7 @@ install -m 600 "$ROOT_DIR/tools/fixtures/physical_native_chrome_pass.log" \
     "$RUN/session.log"
 install -m 600 "$ROOT_DIR/tools/fixtures/physical_native_chrome_sequence_pass.log" \
     "$RUN/sequence.log"
-install -m 600 "$ROOT_DIR/tools/fixtures/physical_xmonad_hardware_smoke_guard_pass.log" \
+install -m 600 "$ROOT_DIR/tools/fixtures/installed_truecolor_input_guard_pass.log" \
     "$RUN/input-guard.log"
 install -m 600 "$ROOT_DIR/tools/fixtures/installed_native_chrome_recovery_pass.log" \
     "$RUN/recovery.log"

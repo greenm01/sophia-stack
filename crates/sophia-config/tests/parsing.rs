@@ -29,7 +29,7 @@ compositor {
     chrome-limits max-width=12
 }
 namespace profile="classic-shared"
-external-wm executable="/usr/bin/xmonad" {
+external-wm executable="/usr/bin/hagia" {
     arg "--replace"
 }
 diagnostics verbose=#true
@@ -82,7 +82,7 @@ fn parses_complete_core_snapshot() {
 #[test]
 fn parses_public_external_wm_interface() {
     let source = CORE.replace(
-        "external-wm executable=\"/usr/bin/xmonad\"",
+        "external-wm executable=\"/usr/bin/hagia\"",
         "external-wm executable=\"/usr/bin/hagia\" interface=\"sophia_wm_v1\"",
     );
     let snapshot = parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL)
@@ -96,8 +96,8 @@ fn parses_public_external_wm_interface() {
 #[test]
 fn rejects_removed_api_v7_external_wm_interface() {
     let source = CORE.replace(
-        "external-wm executable=\"/usr/bin/xmonad\"",
-        "external-wm executable=\"/usr/bin/xmonad\" interface=\"api_v7\"",
+        "external-wm executable=\"/usr/bin/hagia\"",
+        "external-wm executable=\"/usr/bin/hagia\" interface=\"api_v7\"",
     );
     let error = parse_core_config(source.as_bytes(), ConfigGeneration::INITIAL)
         .expect_err("the removed private transport must not remain selectable");

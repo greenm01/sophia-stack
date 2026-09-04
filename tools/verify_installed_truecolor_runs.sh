@@ -54,7 +54,7 @@ for run in "${runs[@]}"; do
     }
     "$VERIFY_IDENTITY" "$run/runtime-identity.log" "$recorded_binary"
     "$VERIFY_LIFECYCLE" "$run/lifecycle.log" normal
-    for application in kitty xmobar; do
+    for application in kitty hagia narthex; do
         grep -Eq "^sophia_runtime_identity schema=2 kind=application name=${application} version=[^ ]+ digest=[0-9a-f]{64}$" \
             "$run/runtime-identity.log" || {
             echo "installed TrueColor run has no $application executable identity: $run" >&2
@@ -67,7 +67,7 @@ for run in "${runs[@]}"; do
         exit 1
     }
     identity="$(tail -n 1 "$run/identity.log")"
-    [[ "$identity" == "sophia_installed_session schema=1 status=starting profile=xmonad "* \
+    [[ "$identity" == "sophia_installed_session schema=1 status=starting profile=hagia "* \
         && " $identity " == *" commit=$commit "* ]] || {
         echo "installed TrueColor launch identity does not match its manifest: $run" >&2
         exit 1

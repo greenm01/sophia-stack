@@ -4,23 +4,16 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 source "$RELEASE_DIR/tools/lib/session_lifecycle.sh"
-export SOPHIA_TTY_PROFILE="${SOPHIA_TTY_PROFILE:-xmonad}"
+export SOPHIA_TTY_PROFILE="${SOPHIA_TTY_PROFILE:?a native Sophia session profile is required}"
 export SOPHIA_BUILD_SESSION=false
 export SOPHIA_MANAGE_KEYD=false
 export SOPHIA_INSTALLED_SESSION=true
 export SOPHIA_REQUIRE_RUNTIME_DIR=true
 export SOPHIA_REQUIRE_LOCAL_VT=true
 export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
-export SOPHIA_X11_WM_BRIDGE_BIN="$RELEASE_DIR/target/release/sophia-x11-wm-bridge"
 export SOPHIA_NATIVE_WM_BIN="$RELEASE_DIR/target/release/sophia-wm-demo"
 export SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
 export SOPHIA_HAGIA_SHELL_BIN="$RELEASE_DIR/target/release/narthex"
-export SOPHIA_XMONAD_BIN="$RELEASE_DIR/target/release/xmonad"
-export SOPHIA_CORE_CONFIG="$RELEASE_DIR/share/sophia-policy/xmonad/core.kdl"
-export SOPHIA_DESKTOP_PROFILE="${SOPHIA_DESKTOP_PROFILE:-$RELEASE_DIR/share/sophia-policy/xmonad/desktop.kdl}"
-export SOPHIA_XMOBAR_BIN="$RELEASE_DIR/target/release/xmobar"
-export SOPHIA_XMOBAR_CONFIG="$RELEASE_DIR/tools/fixtures/xmobar_sophia.config"
-export SOPHIA_ENABLE_XMOBAR=true
 export SOPHIA_TTY_MODE_HELPER="$RELEASE_DIR/tools/sophia_tty_mode.py"
 
 manifest="$RELEASE_DIR/manifest"
@@ -50,10 +43,6 @@ attempt_dir=""
 attempt_record=""
 attempt_result_record=""
 case "$attempt_mode" in
-    xmonad)
-        attempt_record="$RELEASE_DIR/bin/sophia-record-run"
-        attempt_result_record=sophia_installed_cycle
-        ;;
     firefox)
         attempt_record="$RELEASE_DIR/bin/sophia-record-firefox-attempt"
         attempt_result_record=sophia_installed_firefox
@@ -97,10 +86,10 @@ if [[ -n "$attempt_record" ]]; then
 fi
 
 set +e
-"$RELEASE_DIR/tools/run_sophia_xmonad_session.sh" "$@"
+"$RELEASE_DIR/tools/run_sophia_session.sh" "$@"
 session_status=$?
 set -e
-if [[ "$attempt_mode" =~ ^(xmonad|firefox|xterm)$ && "$session_status" == 130 ]] &&
+if [[ "$attempt_mode" =~ ^(hagia|firefox|xterm)$ && "$session_status" == 130 ]] &&
     ! "$RELEASE_DIR/bin/sophia-record-emergency-run"; then
     # The normal pending attempt still preserves the launch if archival fails.
     echo "sophia_installed_emergency schema=1 status=record_failed phase=finish session_exit_status=$session_status" >&2

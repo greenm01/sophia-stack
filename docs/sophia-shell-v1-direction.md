@@ -65,11 +65,9 @@ vocabulary remain out of revision 1.
 
 ## Why A Driving Client
 
-`sophia_wm_v1` was specified against two demanding clients: supervised xmonad
-through the private compatibility bridge, and Hagia as native policy. That
-pairing kept the interface honest. It had to be wide enough to carry a real
-window manager and narrow enough to stay metadata-blind, and each client
-falsified a different kind of design error.
+`sophia_wm_v1` was specified against independent Rust, C, and Hagia clients.
+That diversity kept the interface honest. It had to be language-neutral, wide
+enough to carry a real window manager, and narrow enough to stay metadata-blind.
 
 The shell interface has no comparable client. Specified in isolation it fails
 in one of two directions:
@@ -80,8 +78,7 @@ in one of two directions:
   that `docs/sophia-policy-ipc.md` forbids, and the authority separation
   becomes nominal.
 
-xmobar is the only shell-like client with retained evidence today
-(`docs/x11-compatibility-matrix.md`). It is a useful presentation and
+Earlier xmobar X11 evidence remains a useful presentation and
 work-area probe, but it is deliberately minimal: static text, no hit targets,
 no popups, no animation, no desktop surfaces. Specifying a shell interface
 against xmobar would produce the too-narrow failure.
@@ -569,8 +566,8 @@ free-running. It consumes no Engine or protocol work and blocks nothing.
 
 ### Choosing The Driving Client
 
-`docs/specification.md` states Sophia must serve "a lean policy client such as
-xmonad or qtile, a conventional environment such as Xfce, and designs that do
+`docs/specification.md` states Sophia must serve "a lean native policy client,
+a conventional environment such as Xfce, and designs that do
 not look much like today's window managers." Xfce is therefore an architectural
 target, and it is a strong candidate for a driving client — but for a different
 interface than this one.
@@ -591,9 +588,9 @@ consumes EWMH, struts, and XEmbed. Under Sophia it is a Path A client
 permanently. It cannot exercise a display-list protocol because it will never
 produce a display list, so it cannot falsify a single design decision in
 `sophia_shell_v1`. What it *can* falsify is the X11 compatibility surface —
-frontend coverage, WM bridge behavior, strut and work-area reservation, and
-tray/XEmbed admission — and it fits the existing unmodified-retained-workflow
-admission model that xmonad, xmobar, Kitty, and Firefox already use.
+frontend coverage, strut and work-area reservation, and tray/XEmbed admission —
+and it fits the existing unmodified-retained-workflow admission model used by
+ordinary X11 applications.
 
 Noctalia's value is narrower and more specific: `src/render/scene/` is already a
 retained tree of typed primitives with hit-test areas attached. That is

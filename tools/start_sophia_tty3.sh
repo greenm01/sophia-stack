@@ -11,9 +11,9 @@ TARGET_VT="${SOPHIA_TTY_NUMBER:-3}"
 }
 TARGET_TTY="/dev/tty$TARGET_VT"
 case "$SESSION_PROFILE" in
-    hagia|hagia-policy|kitty|native|standalone|xmonad) ;;
+    hagia|hagia-policy|kitty|native|standalone) ;;
     *)
-        echo "SOPHIA_TTY_PROFILE must be hagia, hagia-policy, kitty, native, standalone, or xmonad." >&2
+        echo "SOPHIA_TTY_PROFILE must be hagia, hagia-policy, kitty, native, or standalone." >&2
         exit 1
         ;;
 esac
@@ -396,9 +396,8 @@ fi
 cd "$ROOT_DIR"
 case "$SESSION_PROFILE" in
     kitty) tools/run_sophia_kitty_session.sh "$@" ;;
-    hagia) tools/run_sophia_xmonad_session.sh "$@" ;;
+    hagia) tools/run_sophia_session.sh "$@" ;;
     hagia-policy) tools/hagia_policy_physical_gate.sh "$@" ;;
-    native) tools/run_sophia_xmonad_session.sh "$@" ;;
-    standalone) tools/run_sophia_xmonad_session.sh "$@" ;;
-    xmonad) tools/run_sophia_xmonad_session.sh "$@" ;;
+    native) tools/run_sophia_session.sh "$@" ;;
+    standalone) tools/run_sophia_session.sh "$@" ;;
 esac

@@ -17,7 +17,7 @@ if [[ ! -x "$VERIFY_LIFECYCLE" && -x "$SCRIPT_DIR/verify_installed_session_lifec
     VERIFY_LIFECYCLE="$SCRIPT_DIR/verify_installed_session_lifecycle.sh"
 fi
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-LOG_DIR="$STATE_HOME/sophia/xmonad-session"
+LOG_DIR="$STATE_HOME/sophia/hagia-session"
 RUN_ROOT="${SOPHIA_FIREFOX_RUN_ROOT:-$STATE_HOME/sophia/promotion/firefox-runs}"
 PREFIX="${SOPHIA_INSTALL_PREFIX:-/opt/sophia}"
 
@@ -34,7 +34,7 @@ install -d -m 700 "$run_dir"
 install -m 600 "$LOG_DIR/session.log" "$run_dir/session.log"
 install -m 600 "$LOG_DIR/input-guard.log" "$run_dir/input-guard.log"
 install -m 600 "$LOG_DIR/lifecycle.log" "$run_dir/lifecycle.log"
-grep -E '^sophia_tty_recovery schema=3 profile=xmonad ' \
+grep -E '^sophia_tty_recovery schema=3 profile=hagia ' \
     "$LOG_DIR/recovery.log" | tail -n 1 >"$run_dir/recovery.log"
 if [[ -f "$PREFIX/current/manifest" ]]; then
     (cd "$PREFIX/current" && sha256sum -c SHA256SUMS)

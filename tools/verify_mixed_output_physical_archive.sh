@@ -64,7 +64,7 @@ committed_file_sha256() {
     git -C "$ROOT_DIR" show "$source_commit:$path" | sha256sum | awk '{ print $1 }'
 }
 [[ "$(sed -n 's/^core_config_sha256=//p' "$run/manifest")" == \
-    "$(committed_file_sha256 tools/config/sophia-xmonad/core.kdl)" ]] || {
+    "$(committed_file_sha256 tools/config/sophia/core.kdl)" ]] || {
     echo "mixed-output archive core configuration is not from its signed commit: $run" >&2
     exit 1
 }

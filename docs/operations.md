@@ -1,222 +1,141 @@
 # Installed Sophia Operations
 
 This is the operator runbook for an immutable Sophia release installed below
-`/opt/sophia`. It describes the Milestone 13 Hagia candidate and its retained
-recovery profiles, not checkout-based development launchers.
+`/opt/sophia`. The ordinary desktop is the native Hagia WM plus Narthex shell.
+Sophia does not package or run an unmodified legacy X11 WM as policy.
 
 ## Support Boundary
 
 The retained physical reference is a Void Linux x86-64 host with an AMD Radeon
-RX 7900 GRE (`amdgpu`), two connected DisplayPort outputs at 2560 by 1440 and
-1920 by 1080, and keyboard and pointer devices on `seat0`. The latest retained
-runtime identity when this runbook was written used Linux 6.18.40, Mesa 26.1.5,
-Kitty 0.48.0, and Firefox 153.0.1. Those versions identify the proven
-combination; they are not general compatibility promises or version floors.
+RX 7900 GRE (`amdgpu`), two DisplayPort outputs, and keyboard and pointer
+devices on `seat0`. That identifies the proven combination; it is not a general
+hardware promise.
 
 An installed candidate requires:
 
-- A local Linux virtual terminal supplied by greetd. The validated tuigreet
-  configuration reads `/usr/share/wayland-sessions`.
-- An absolute, existing, user-owned `XDG_RUNTIME_DIR`.
-- A working libseat provider for `seat0`; the validated Void host uses
-  elogind. Sophia obtains DRM and input device leases through libseat.
-- A primary DRM card that admits universal planes and atomic modesetting, plus
-  at least one connected output. Multi-output and hotplug scenarios require
-  their named topology.
-- Readable udev input discovery with at least one keyboard. The complete
-  daily-driver proof also requires a pointer.
-- The runtime libraries used by the packaged binary: libdrm, GBM/Mesa,
-  libseat, libudev, libinput, and libxkbcommon.
-- Bubblewrap 0.11.2 or newer at `/usr/bin/bwrap` for Hagia candidates. The
-  installer verifies this before changing an installed release; public Hagia
-  policy and its metadata broker will not launch without their protection
-  domains.
-- Bash, Python 3, GNU core utilities, procps, Kitty, Helium, and xterm on
-  `PATH`. Helium is required by the retained Hagia revision-3 desktop profile;
-  other profiles require it only for named browser scenarios. Xmonad and xmobar are
-  frozen recovery/regression components
-  inside the release; neither is discovered from a home source checkout.
+- a local Linux virtual terminal supplied by greetd;
+- an absolute, user-owned `XDG_RUNTIME_DIR`;
+- a working libseat provider and readable udev input discovery;
+- atomic KMS plus GBM/Mesa, libdrm, libudev, libinput, and libxkbcommon;
+- Bubblewrap 0.11.2 or newer at `/usr/bin/bwrap` for Hagia/Narthex;
+- Bash, Python 3, GNU core utilities, procps, Kitty, Helium, and xterm.
 
-The QEMU virtio-gpu gates prove deterministic protocol and lifecycle semantics;
-they do not extend the physical hardware support claim.
+X11 applications connect to Sophia's X Authority. Hagia connects directly to
+`sophia_wm_v1`, and Narthex connects directly to `sophia_shell_v1`. These are
+separate supervised protection domains. X Authority is not an X11 policy
+environment and does not expose root-window WM authority.
 
 ## Installation And Session Entries
 
-From a clean checkout at the commit to promote, package and install once:
+From a clean checkout at the commit to promote:
 
 ```sh
 tools/install_live_session.sh
 ```
 
-The command builds before requesting privilege, verifies every artifact
-digest, installs a new immutable directory below `/opt/sophia/releases`, and
-atomically updates `current` while retaining the former release as `previous`.
-If the exact immutable directory already exists but is not current, the same
-command verifies it in place, restores its operator-command links and greetd
-desktop entries, and re-activates it without overwriting release content. The
-explicit recovery form is
-`tools/activate_live_session_release.sh /opt/sophia/releases/RELEASE_ID`; it
-refuses artifacts and any directory outside that exact installed-release path.
-Activation and the packaged rollback command share the same installed-surface
-reconciliation. Rollback verifies the target release's checksums and packaged
-policy before switching `current`, then restores exactly that release's command
-links and greetd entries. Selecting a release without Hagia removes stale
-Sophia-managed Hagia entries; a file or link at an optional path is preserved
-when its target does not exactly match Sophia's managed installation path.
+The command builds before requesting privilege, verifies every artifact digest,
+installs a new immutable directory below `/opt/sophia/releases`, and atomically
+updates `current` while retaining the former release as `previous`. Activation
+and rollback validate the complete target surface before changing command links
+or greetd entries.
 
-The artifact manifest records the configured xmonad and xmobar source
-identities plus their configuration and executable digests. A schema-5 Hagia
-artifact also records the signed Hagia source commit and canonical default
-profile digest. Installation rejects a missing path, wrong version, dirty
-source profile, or digest mismatch. It installs six base greetd entries:
+A native-only schema-6 artifact records the Sophia commit and whether Hagia is
+included. A Hagia artifact additionally records its signed source commit, the
+canonical default-profile digest, and Hagia and Narthex executable digests.
+Installation rejects missing, non-executable, or mismatched artifacts. Legacy
+WM executables, compatibility configuration, and bridge fields are forbidden.
 
-- `Sophia xmonad (Experimental)` is the frozen classical-WM compatibility
-  fallback. Its blind bridge is a `sophia_wm_v1` client.
-- `Sophia Kitty (Baseline)` is the known-good reduced fallback.
-- `Sophia Firefox Proof` runs the integrated browser evidence workflow.
-- `Sophia Recovery Proof` adds a process-external 45-second watchdog. It is an
-  evidence gate, not the ordinary desktop.
-- `Sophia Native Chrome Proof` advances ring-only, frame-only, and combined
-  native-WM chrome and records one immutable physical proof.
-- `Sophia Cycle Gate (Automated)` performs ten installed startup and normal
-  logout cycles after one authenticated selection. It is a lifecycle gate, not
-  the ordinary desktop.
+Every release installs these base entries:
 
-An artifact packaged with explicit `SOPHIA_HAGIA_BIN` and
-`SOPHIA_HAGIA_SHELL_BIN` paths also installs two Hagia entries. `Sophia Hagia
-(Native Policy)` selects the user's XDG profile, then `/etc/hagia/config.kdl`,
-then the packaged default. `Sophia Hagia Promotion (Packaged Default)` ignores
-both mutable locations and selects only the immutable packaged default.
-If the shell path is omitted, packaging looks for `hagia-shell` and then
-Nimble's `hagia_shell` beside `hagia`. Both executable digests are retained in
-the manifest, and installation rejects a missing shell. Neither entry falls
-back to xmonad. After bounded deterministic preflight, select the ordinary
-entry once to make it the remembered session; use the promotion entry only for
-release evidence.
+- `Sophia Kitty (Baseline)` — one application, no WM or shell;
+- `Sophia Native Chrome Proof` — a bounded Engine-chrome diagnostic.
 
-Before installing a Hagia candidate, a development checkout can exercise the
-owner's exact public-policy settlement boundaries:
+A release built with explicit `SOPHIA_HAGIA_BIN` and
+`SOPHIA_HAGIA_SHELL_BIN` paths also installs:
 
-```sh
-SOPHIA_HAGIA_BIN=/absolute/path/hagia \
-SOPHIA_HAGIA_SHELL_BIN=/absolute/path/hagia-shell \
-  tools/hagia_owner_settlement_fault_smoke.sh
-```
+- `Sophia Hagia (Native Policy)` — the ordinary user-profile session;
+- `Sophia Hagia Promotion (Packaged Default)` — immutable release evidence;
+- `Sophia Firefox Proof` — the integrated browser workflow;
+- `Sophia Recovery Proof` — a bounded watchdog/recovery gate.
 
-The bounded matrix requests one supervised restart after proposal staging,
-while frontend settlement is pending, after non-mutating preparation, and
-after the terminal outcome is queued. Every case must reach connection epoch
-2, preserve the prior coherent layout, and finish with clean session and layout
-health. The control is explicit, requires `sophia_wm_v1` plus a bounded runtime,
-and is not installed as an ordinary login option.
+The generic `sophia-session` command is an internal launcher and requires an
+explicit native profile. It has no legacy-WM profile and no compatibility
+fallback. Activating a native-only release removes stale Sophia-managed legacy
+entries, but preserves unrelated files or links at the same paths.
 
 ## Status And Logs
 
-From the session, an independent text VT, or SSH as the same user, run:
+From the session or an independent text VT:
 
 ```sh
 sophia-status
 ```
 
-Status verifies the current release checksums and prints the current and
-previous targets, relevant processes, the latest lifecycle outcome, the
-runtime identity, and the newest Hagia, normal, Firefox, xterm, TrueColor,
-fallback, emergency, watchdog, and native-chrome attempts. An `OK` line for every
-packaged file is expected.
-Investigate any checksum failure before launching or rolling back.
+Status verifies the current release checksums and reports current/previous
+targets, relevant processes, lifecycle outcomes, runtime identity, and the
+newest native proof attempts.
 
-The durable user evidence is stored below `${XDG_STATE_HOME:-$HOME/.local/state}`:
+Durable user evidence lives below
+`${XDG_STATE_HOME:-$HOME/.local/state}/sophia/`:
 
 | Evidence | Path |
 | --- | --- |
-| Hagia session, guard, recovery, lifecycle | `sophia/hagia-session/` |
-| xmonad session, guard, recovery, lifecycle | `sophia/xmonad-session/` |
-| fallback session, guard, recovery, lifecycle | `sophia/kitty-session/` |
-| installed launch and runtime identity | `sophia/installed-session/` |
-| automatic normal-cycle attempts | `sophia/promotion/runs/` |
-| automatic fallback attempts | `sophia/promotion/fallback-runs/` |
-| automatic emergency archives | `sophia/promotion/emergency-runs/` |
-| automatic watchdog attempts | `sophia/promotion/watchdog-runs/` |
-| automatic native-chrome attempts | `sophia/promotion/native-chrome-runs/` |
-| automatic Firefox proof attempts | `sophia/promotion/firefox-runs/` |
-| automatic xterm proof attempts | `sophia/promotion/xterm-runs/` |
-| automatic TrueColor proof attempts | `sophia/promotion/truecolor-runs/` |
-| automatic Hagia attempts and coverage | `sophia/promotion/hagia-runs/` |
-| packaged-default Hagia promotion attempts | `sophia/promotion/hagia-promotion-runs/` |
+| Hagia session, guard, recovery, lifecycle | `hagia-session/` |
+| Kitty fallback session | `kitty-session/` |
+| native diagnostics | `native-session/` |
+| installed launch and runtime identity | `installed-session/` |
+| Hagia attempts and coverage | `promotion/hagia-runs/` |
+| packaged-default Hagia attempts | `promotion/hagia-promotion-runs/` |
+| Firefox, xterm, and TrueColor attempts | `promotion/{firefox,xterm,truecolor}-runs/` |
+| fallback, emergency, watchdog, and native-chrome attempts | `promotion/{fallback,emergency,watchdog,native-chrome}-runs/` |
 
-Every active launch, runtime-identity, session, input-guard, recovery, and
-lifecycle log keeps at most one `.previous` generation. Promotion attempts are
-separate immutable archives; each records the exact Sophia executable digest
-in both its schema-2 runtime identity and profile-aware attempt manifest. Hagia
-records the selected mode, root-file hash, and activated effective digest;
-daily archives never copy personal configuration bytes. Archive
-verification compares those copies, so installing another release does not
-weaken the older record. The logs contain reduced state and identity evidence;
-they must not contain typed text, clipboard data, window titles, or application
-content.
+Active logs retain at most one `.previous` generation. Immutable attempts bind
+the Sophia executable, relevant native policy executable, selected profile
+identity, lifecycle, recovery, and reduced session evidence. Personal
+configuration contents are never copied into an archive. Logs must not contain
+typed text, clipboard data, window titles, or application content.
 
 ## Normal Stop
 
-Use `Ctrl+Alt+Delete` for an ordinary Hagia logout. The packaged default and the
-current personal daily-driver profile both bind that chord. A customized
-profile may choose another nonreserved binding. Recovery xmonad profiles retain
-`Super+Shift+Q`. Normal logout commits the policy action, drains presentation
-and application ownership, restores the VT, and returns to greetd.
+Use `Ctrl+Alt+Delete` for ordinary Hagia logout. A customized profile may choose
+another nonreserved binding. Normal logout commits the policy action, drains
+presentation and application ownership, restores the VT, and returns to greetd.
 
-If the graphical session cannot accept the shortcut, log in as the same user
-on an independent text VT or through SSH and run:
+If the graphical session cannot accept the shortcut, use an independent text
+VT as the same user:
 
 ```sh
 sophia-stop
 ```
 
-The command signals the outer session wrapper, which performs bounded child
-cleanup and restores terminal state. Do not kill Sophia, Hagia, xmonad, Kitty, or
-Firefox individually; that bypasses the owner responsible for cleanup and
-weakens the retained evidence.
-`sophia-stop` discovers the sole active installed profile; an explicit
-`sophia-stop hagia` remains available for explicit recovery.
+The command signals the outer session wrapper. Do not kill Sophia, Hagia,
+Narthex, Kitty, or Firefox individually; that bypasses the owner responsible
+for bounded cleanup. `sophia-stop hagia` remains available when an explicit
+profile is useful.
 
 ## Emergency Recovery And Fallback
 
-The independent input guard is armed before graphics takeover. If both Sophia
+The independent input guard is armed before graphics takeover. If both
 rendering and routed input are unusable, press and release
-`Ctrl+Alt+Backspace`. The guard does not depend on the X server or WM. It ends
-the supervised process group, restores keyboard, KD, and termios state, and
-returns control to greetd. Use `sophia-stop` from another VT when the chord is
-unavailable.
+`Ctrl+Alt+Backspace`. The guard does not depend on Sophia, Hagia, or Narthex. It
+ends the supervised process group, restores keyboard/KD/termios state, and
+returns control to greetd.
 
 After greetd returns:
 
-1. Select `Sophia Kitty (Baseline)` to distinguish an integrated xmonad or
-   Firefox failure from the core display, input, and recovery path.
-2. Exit Kitty normally to return to greetd.
-3. Run `sophia-verify-fallback` from a text VT. The login is recorded
-   automatically, so no archive command is needed.
-4. Run `sophia-status` and inspect the xmonad or Kitty lifecycle and recovery
-   lines before retrying.
+1. Select `Sophia Kitty (Baseline)` to isolate the core display/input path.
+2. Exit Kitty normally.
+3. Run `sophia-verify-fallback` from a text VT.
+4. Inspect `sophia-status` before retrying Hagia.
 
-For a release recovery gate, select `Sophia Recovery Proof`, arm the local
-guard when prompted, and leave the session running. The external watchdog must
-return to greetd after 45 seconds. The entry reserves its archive before
-takeover and finalizes it automatically. Verify the newest proof with:
-
-```sh
-sophia-verify-watchdog
-```
-
-An ordinary `Ctrl+Alt+Backspace` recovery is separate. The ordinary session
-automatically archives a strictly verified status-130 outcome before returning
-that status to greetd. Verify the newest emergency proof with:
-
-```sh
-sophia-verify-emergency
-```
+`Sophia Recovery Proof` exercises the process-external watchdog. Verify its
+latest archive with `sophia-verify-watchdog`. An independent emergency chord
+from a Hagia session is archived separately and verified with
+`sophia-verify-emergency`.
 
 ## Rollback
 
-Rollback requires both `/opt/sophia/current` and `/opt/sophia/previous`. From
-an independent text VT after the current session has ended, run:
+From an independent text VT after the current session has ended:
 
 ```sh
 sophia-status
@@ -224,262 +143,58 @@ sudo sophia-rollback
 sophia-status
 ```
 
-Rollback atomically swaps the two symlinks; it does not edit or delete either
-immutable release. Confirm the reported commit after the swap, then select the
-ordinary session or `Sophia Kitty (Baseline)` in greetd. Do not repeat rollback
-blindly: a second invocation swaps the same releases back.
+Rollback swaps `current` and `previous`; it does not edit either immutable
+release. A second invocation swaps the same pair back.
 
-## Installed Evidence
+## Native Evidence Workflows
 
-Every ordinary xmonad launch automatically reserves a numbered attempt before
-graphics takeover. Normal handoff finalizes it as passed or failed; a wrapper
-crash leaves it pending. Failed and pending attempts intentionally interrupt
-the consecutive-cycle gate. No recording command is needed after an ordinary
-login.
+The ordinary Hagia session automatically reserves an attempt before graphics
+takeover. Normal logout records `status=passed`, emergency recovery records
+`status=recovered`, unexpected exits record `status=failed`, and interruption
+before finalization leaves `status=pending`.
 
-The focused xterm gate is a command instead of another greetd entry. From a
-local text VT, run `sophia-xterm-proof`. Once xterm is visible, switch to
-another VT and back, then use `Super+Shift+Q` for normal logout. The command
-selects xterm before takeover and automatically records a dedicated attempt.
-It requires two reduced xmobar work areas, pixel-matched xterm presentation
-inside the primary work area, zero imported-image ownership for the CPU-only
-client, retained Engine-scene rehydration, a primary retirement after resume,
-clean protocol and process ownership, and exact TTY restoration. Verify the
-newest archive with:
-
-```sh
-sophia-verify-xterm-runs 1
-```
-
-The same immutable xterm archive closes the focused xmobar/work-area boundary
-without another physical sequence. It verifies exact reservations and bar
-repaints in addition to the xterm gate:
-
-```sh
-sophia-verify-xmobar-work-area
-```
-
-Run the physical color gate from a local text VT with one command:
-
-```sh
-sophia-truecolor-proof
-```
-
-Arm the recovery guard when prompted. The session opens a real Kitty 24-bit
-ANSI sample and a fixed 640-by-240 X11 palette. Wait until both are visible,
-then use `Super+Shift+Q` once. The wrapper archives and verifies the attempt
-automatically. It requires exact `AllocColor`, `AllocNamedColor`, `QueryColors`,
-`PutImage`, and `GetImage` behavior; asymmetric RGB/CMY/gray populations after
-Engine composition; a later retired output-1 KMS frame; a final chromatic Kitty
-DMA-BUF frame retired on output 1; the independent output-2 startup baseline;
-clean logout; and exact VT restoration. The palette stays inside the primary
-output because the current classical-WM compatibility boundary projects
-client composition through that output; active cross-output client projection
-remains a separate milestone.
-
-Verify the newest immutable attempt from a text VT:
-
-```sh
-sophia-verify-truecolor-runs 1
-```
-
-The immutable capture records the verifier result that existed when the
-session ended. If that result is `reason=session_verification` with exit status
-zero, the current run-set verifier may re-adjudicate it without rewriting the
-archive, but only after every checksummed session, identity, lifecycle, color,
-retirement, logout, and recovery assertion passes. Session-exit failures are
-never eligible.
-
-Repeated final-region readback is enabled only by this explicit proof profile.
-Ordinary installed sessions retain the lower-cost aggregate evidence.
-
-Every `Sophia Kitty (Baseline)` launch follows the same fail-closed pattern in
-a separate fallback ledger. A passing attempt requires the reduced one-Kitty,
-WM-disabled profile, two-output readiness and retirement, routed physical
-input, clean presentation and application shutdown, an untriggered guard, and
-exact Kitty-profile VT restoration. Verify the newest fallback attempt with:
-
-```sh
-sophia-verify-fallback
-```
-
-`Sophia Recovery Proof` records its expected status-124 handoff in a third
-ledger. The verifier requires visible startup, the exact 45-second external
-deadline, an armed but untriggered local guard, watchdog-owned process-group
-termination, installed lifecycle and runtime identities, and complete VT
-restoration. Failed and pending recovery attempts remain visible and fail the
-latest-attempt check.
-
-If the independent chord ends an ordinary xmonad session, its already-reserved
-normal attempt remains a failed interruption—as required by the consecutive
-cycle gate—and the wrapper writes a separate verified emergency archive. The
-emergency verifier requires both the guard and live owner to observe the chord,
-drained client keys and native presentation, graceful process ownership, the
-installed lifecycle and runtime identities, and exact VT restoration.
-
-`Sophia Native Chrome Proof` starts two Kitty windows under the packaged native
-WM and advances the focus ring from 2 to 6 pixels, retains that state across an
-invalid edit and deletion, applies a 4-pixel frame, and finishes with a 2-pixel
-ring plus 6-pixel frame. Each intermediate retired frame remains visible for
-three seconds. After the combined state remains on screen, focus and type in
-both windows, then use `Super+Shift+Q` for a normal logout. The entry archives
-the ordered sequence automatically. Verify it from a text session with:
-
-```sh
-sophia-verify-native-chrome
-```
-
-The verifier binds the sequence to the installed commit and requires both
-output baselines, an asynchronous page flip, routed physical keys, atomic
-two-surface resize epochs, exact ring/frame composition, clean native drain,
-an untriggered guard, and exact VT restoration. An early logout, timeout,
-emergency exit, modified log, or mismatched release remains a failed attempt.
-
-## Continuous Hagia Dogfooding
-
-`Sophia Hagia (Native Policy)` is the ordinary development session. Selecting
-it once in `tuigreet` makes it the remembered session; `Sophia Kitty
-(Baseline)`, `Sophia xmonad (Experimental)`, `/opt/sophia/previous`, and
-`sophia-rollback` remain available recovery paths.
-
-Every Hagia login reserves an immutable ledger entry before graphics takeover.
-Normal logout produces `status=passed`, Ctrl-Alt-Backspace produces
-`status=recovered`, unexpected exit or invalid final health produces
-`status=failed`, and interruption before finalization leaves `status=pending`.
-The archive contains exact Sophia and Hagia digests, runtime identity, reduced
-session evidence, input-guard and TTY-recovery records, lifecycle order, a
-data-minimized coverage summary, and checksums. Verify the latest healthy
-archive and inspect aggregate status with:
+Verify ordinary and packaged-default sessions with:
 
 ```sh
 sophia-verify-hagia
-sophia-status
-```
-
-The daily verifier accepts profile-aware user, system, explicit, or packaged
-fallback identities but never archives their source bytes. To qualify a release,
-select `Sophia Hagia Promotion (Packaged Default)` and verify its separate
-archive:
-
-```sh
 sophia-verify-hagia-promotion
 ```
 
-That verifier requires schema 5, `packaged-promotion` mode, and an archived
-generic profile whose SHA-256 matches the release manifest.
-
-The verifier requires startup readiness, settled policy and native work,
-normal cleanup or exact emergency recovery, and exact installed identities. It
-does not require a minimum duration, application count, or action count.
-Coverage for launches, policy actions, pointer operations, checkpoint recovery,
-output movement, and topology changes accumulates across real sessions and is
-informational until a concrete change names one of those bounded scenarios as
-its acceptance test.
-
-Failures do not restart a clock. Reproduce them with the smallest deterministic
-test, formal counterexample, or bounded physical scenario, fix the defect,
-install a successor, and continue ordinary work. Fall back immediately for
-data loss, input/authority violations, broken recovery, repeated termination,
-or corrupted policy state. Ordinary UI gaps remain backlog items.
-
-## Historical xmonad Regression Evidence
-
-Verify the latest three consecutive xmonad attempts with:
+Focused X11-application proofs remain commands rather than desktop policy
+profiles:
 
 ```sh
-sophia-verify-cycles 3
+sophia-xterm-proof
+sophia-verify-xterm-runs 1
+
+sophia-truecolor-proof
+sophia-verify-truecolor-runs 1
 ```
 
-Milestone 12 does not require an operator to repeat that sequence ten times.
-Install the bounded uinput permission once with `sophia-setup-uinput`, then
-select `Sophia Cycle Gate (Automated)` in greetd. The runner creates a fresh
-virtual keyboard for each cycle, waits for the new input guard's exact path
-readiness, and sends one Ctrl-Alt-Backspace chord to arm the production
-recovery interlock. The guard publishes its armed state only after the complete
-chord is released, and the runner separately requires the injector's completion
-receipt. Only after exact two-output startup readiness does that same keyboard
-send `Super+Shift+Q` through the normal libinput and blind-WM path. The runner
-verifies the new immutable archive before continuing, stops at the first
-failure, and returns to greetd after the aggregate ten-cycle verifier passes.
-The gate uses physical DRM, VT, and libseat ownership; uinput replaces
-repetitive human key presses, not the separately retained physical-input
-evidence.
+Both run under Hagia/Narthex. The xterm proof covers CPU-backed placement,
+work-area reservation, VT switch/resume, page-flip retirement, and clean
+logout. The TrueColor proof covers core color requests, CPU and DMA-BUF
+composition, independent output readiness, retirement, and exact recovery.
 
-Each inner lifecycle records `handoff=cycle_runner`. The runner itself is the
-single greetd-owned session and returns once when the gate ends. This preserves
-the distinction between repeated Sophia ownership cleanup and repeated PAM
-authentication; the latter is not a desktop stability invariant.
+`Sophia Native Chrome Proof` records the ordered ring/frame sequence and is
+verified with `sophia-verify-native-chrome`. Firefox proof attempts are checked
+with `sophia-verify-firefox-runs`.
 
-The gate rechecks release and evidence digests, launch uniqueness, runtime
-identity, two-output startup, page-flip retirement, normal logout, protocol and
-session health, application cleanup, guard state, VT restoration, the
-cycle-runner handoff, and complete bridge/xmonad process drain. After a later
-recovery attempt, preserve an earlier gate's reproducibility by naming its
-immutable ending run, for example
-`sophia-verify-cycles 3 0005`. The verifier selects that run and its two direct
-predecessors; it does not skip intervening failures or pending attempts. The
-completed Milestone 12 regressions use the same ledger with
-`sophia-verify-cycles 10`. `sophia-verify-soak` retains its historical
-duration and action thresholds so old artifacts remain reproducible. These are
-optional compatibility regressions; they do not gate Hagia promotion or
-critical-path work.
-
-The legacy soak verifier consumes generic redacted xmonad session evidence,
-not a special Firefox proof mode. Every counted action-launched Kitty and
-Firefox process must exit
-cleanly, and the run must include enough close actions to cover those launches.
-It also requires repeated focus commits, workspace-away and workspace-return
-projections, visually committed resizes, bidirectional selection activity, two
-distinct clean outputs, a complete kernel page-flip clock, drained input and
-held-key state, clean cursor health, and zero allocator or ownership failure.
-
-The practical profile uses these physical shortcuts:
-
-| Action | Shortcut |
-| --- | --- |
-| Focus next / previous / master | `Super+J` / `Super+K` / `Super+M` |
-| Swap down / up / master | `Super+Shift+J` / `Super+Shift+K` / `Super+Shift+M` |
-| Shrink / expand master | `Super+H` / `Super+L` |
-| Increase / decrease master count | `Super+,` / `Super+.` |
-| Next / reset layout | `Super+Space` / `Super+Shift+Space` |
-| Toggle floating / sink | `Super+Ctrl+Space` / `Super+T` |
-| View / move to workspace | `Super+1..9` / `Super+Shift+1..9` |
-| Open Kitty / Firefox | `Super+Enter` / `Super+F` |
-| Close / normal logout | `Super+Shift+C` / `Super+Shift+Q` |
-| Float and move / resize | `Super+left drag` / `Super+right drag` |
-
-The candidate packages the theme with Engine, not xmonad: a one-pixel
-IR_Black-derived frame uses `#ffb6b0` when focused and `#7c7c7c` otherwise.
-Xmobar remains static and redacted; it receives no titles or client metadata.
-
-To inspect a retained historical xmonad soak, run:
-
-```sh
-sophia-soak-progress --watch
-```
-
-The display reports the legacy duration and workload fields.
-`sophia-verify-soak` recomputes that redacted summary from checksummed raw
-evidence and fails on a false or stale record. Do not use its elapsed threshold
-as a Hagia promotion criterion.
+There is no installed cycle or two-hour soak gate. Long durability runs are
+optional overnight diagnostics and do not block product work. Historical
+bridge-era evidence remains in the Git history and roadmap archives; it is not
+installed, re-executed, or accepted as current native-policy evidence.
 
 ## Known Limitations
 
-- Sophia is a native X11 research candidate, not a full Xorg replacement.
-  Compatibility is limited to the admitted clients and operations in the X11
-  compatibility matrix.
+- Sophia is a native X11 application-server candidate, not a full Xorg
+  replacement. Compatibility is limited to the admitted operations in the X11
+  matrix.
 - Wayland application protocol support is intentionally absent.
-- Only the AMD two-output reference above has retained physical daily-driver
-  evidence. Other drivers, output topologies, and architectures are unproven.
-- The installed xmonad profile disables the session D-Bus address and desktop
-  portal activation. Applications that require a desktop session bus, portal,
-  notification service, or accessibility bus are outside the current support
-  boundary. PipeWire is not required by Sophia's display path.
-- Direct scanout, hardware cursor-plane composition, shared multi-output GPU
-  workers, buffer-age optimization, and VRR activation remain Milestone 13
-  work. The validated outputs reported no usable VRR capability.
-- The fallback proves the reduced Kitty display/input path; it does not prove
-  xmonad, Firefox, clipboard, or portal behavior.
-- Only one previous release is retained by the rollback interface. Keep the
-  immutable release directories until the successor has clean Hagia evidence
-  and its recovery and fallback paths have been exercised.
+- Only the retained AMD reference has physical daily-driver evidence; other
+  drivers, topologies, and architectures remain unproven.
+- Applications that require a desktop portal, notification service, or
+  accessibility bus are outside the current support boundary.
+- Only one previous release is addressable through rollback. Preserve older
+  immutable release directories until a successor has clean Hagia/Narthex and
+  recovery evidence.

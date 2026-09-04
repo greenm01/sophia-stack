@@ -1,14 +1,13 @@
 # Sophia Window Manager API
 
-**Role:** normative spatial-policy boundary and compatibility contract.
+**Role:** normative native spatial-policy protocol.
 **Status:** `sophia_wm_v1` interface major 1, wire revision 3 is stable. The
 experimental Rust API v7 transport has been removed.
 
-Sophia has one spatial-policy role. A native WM speaks that role directly. A
-classical X11 WM speaks only to the private synthetic X server inside
-`sophia-x11-wm-bridge`; the bridge translates its policy into the same Sophia
-interface. Neither path is an application authority or an alternate
-compositor.
+Sophia has one spatial-policy role. A WM speaks that role directly over the
+language-neutral `sophia_wm_v1` IPC protocol. It is neither an application
+authority nor an alternate compositor. Legacy X11 WMs must be ported; Sophia
+does not provide a synthetic X server or compatibility adapter for policy.
 
 The common endpoint, framing, negotiation, transaction, versioning, recovery,
 and stability rules are in the [Sophia Native Protocol
@@ -55,10 +54,8 @@ ambient IPC that recombines their authority.
 The client-hosted Rust socket, revision negotiation, workspace reducer, policy
 reload frames, demo server, and Engine transport were removed after the
 revision-3 freeze gates closed. Configuration accepts only
-`--wm-interface=sophia_wm_v1`; `api_v7` fails closed. Classical X11 policy is
-implemented inside `sophia-x11-wm-bridge`, which translates its private
-synthetic-X model into complete public projections without giving Engine an
-alternate workspace-policy path.
+`--wm-interface=sophia_wm_v1`; `api_v7` fails closed. There is no alternate
+workspace-policy transport.
 
 ## Public `sophia_wm_v1` Negotiation
 
@@ -315,31 +312,26 @@ only supervised child restarts within that session; session teardown removes
 it before endpoint cleanup. The checkpoint is implementation-private and is
 not a `sophia_wm_v1` record or durable user configuration.
 
-## Legacy X11 WM Profiles
+## Porting Existing WMs
 
-The compatibility bridge owns synthetic-X lifecycle and generic translation.
-A bounded profile supplies one named upstream WM/version, frozen configuration,
-captured private-X request surface, and action map. Xmonad is the first profile,
-not a universal compatibility claim.
+An existing WM may reuse its private layout, workspace, and focus model, but it
+must expose that model as a native `sophia_wm_v1` client. The port consumes
+opaque Sophia snapshots and produces complete Sophia projections. It cannot
+depend on root-window ownership, real X Authority metadata, synthetic X
+windows, raw input, application pixels, or global command execution.
 
-Classical workspaces, layouts, and focus stacks remain inside the bridge and
-its supervised WM. The bridge converts the selected visible synthetic windows
-into the same complete Sophia projection used by a native policy client. It
-cannot expose real X Authority clients or properties, draw application pixels,
-receive raw input, execute arbitrary commands, or acquire metadata.
-
-Every admitted profile passes the same semantic conformance suite as a native
-client. Profiles that require real client metadata, global X server ownership,
-or fake-server drawing are rejected rather than widening Engine or the bridge.
+Every implementation passes the same semantic conformance suite. A design that
+requires forbidden authority is rejected rather than widening Engine or adding
+a client-specific adapter.
 
 ## Stability Gate
 
 The revision-3 freeze required retained Triad behavior to stop exposing missing
-WM facts or operations and required the independently implemented Hagia client,
-X11 WM bridge, and C conformance client to pass identical negotiation, snapshot,
-projection, action, focus, multi-output, rejection, timeout, restart, and
-last-layout tests. Those gates passed, including the retained physical-output
-apply/rollback evidence and an immutable archived C99 client.
+WM facts or operations and required the independently implemented Hagia, Rust,
+and C clients to pass identical negotiation, snapshot, projection, action,
+focus, multi-output, rejection, timeout, restart, and last-layout tests. Those
+gates passed, including the retained physical-output apply/rollback evidence
+and an immutable archived C99 client.
 
 `sophia_wm_v1` major 1 revision 3 is therefore stable. Later shell, broker,
 portal, and output work remains separately gated and cannot reopen its frozen
