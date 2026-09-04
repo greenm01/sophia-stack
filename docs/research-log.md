@@ -18423,3 +18423,22 @@ an operator-visible qualification of the cursor path, not a performance sample,
 so it runs outside the measured window and is bound into the first attempt. The
 old two rows remain diagnostic inputs; a fresh signed run is required to test
 these corrections on hardware.
+
+## 2026-09-04: the native WM client matrix stays green without the legacy bridge
+
+After the legacy X11 WM bridge was removed, the canonical
+`tools/check_policy_client_matrix.sh` gate completed against signed Sophia
+commit `ba96298c` and signed Hagia commit `a1a352bc`. The Rust client, current
+handwritten C client, archived revision-3 C client, and independent Hagia Nim
+client all passed the shared golden and malformed wire corpora. All eleven
+behavior scenarios passed with sequential transactions, ordered actions,
+timeout/stale/invalid discard and recovery, a fresh connection epoch after
+restart, and preservation of the last committed projection across the
+two-process restart corpus.
+
+This result proves that retiring the compatibility bridge did not regress the
+native WM policy boundary. It does not close CP-15.1 or CP-15.2: the emitted
+schema-8 record correctly says `revision_freeze=false`, and this gate covers
+`sophia_wm_v1`, not the complete WM, shell, and output protocol family. The
+role-by-role lifecycle audit and one family-level conformance entry point
+remain separate work after the active Milestone 14 comparison gate.
