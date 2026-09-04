@@ -713,6 +713,7 @@ pub fn encode_wm_v1_policy_snapshot(
     {
         return Err(invalid("snapshot_active_output", 0));
     }
+    validate_wm_v1_snapshot_focus(scene)?;
     let outputs = scene
         .outputs
         .iter()
@@ -979,6 +980,7 @@ pub fn decode_wm_v1_policy_snapshot(
             })
             .collect::<Result<Vec<_>, IpcCodecError>>()?,
     };
+    validate_wm_v1_snapshot_focus(&scene)?;
     let live_surfaces = scene
         .surfaces
         .iter()
@@ -1017,6 +1019,23 @@ pub fn decode_wm_v1_policy_snapshot(
             .collect::<Result<Vec<_>, IpcCodecError>>()?,
         classifications,
     })
+}
+
+fn validate_wm_v1_snapshot_focus(scene: &PolicySceneSnapshot) -> Result<(), IpcCodecError> {
+    for output in &scene.outputs {
+        let Some(focus) = output.focus else {
+            continue;
+        };
+        if !scene.surfaces.iter().any(|surface| {
+            surface.surface == focus
+                && surface.current_output == Some(output.output)
+                && surface.capabilities.focusable
+                && !surface.current_state.minimized
+        }) {
+            return Err(invalid("snapshot_output_focus", focus.index()));
+        }
+    }
+    Ok(())
 }
 
 pub fn encode_wm_v1_policy_projection(

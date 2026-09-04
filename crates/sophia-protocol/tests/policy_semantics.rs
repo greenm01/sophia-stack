@@ -51,6 +51,38 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
 }
 
 #[test]
+fn snapshot_focus_without_its_usable_surface_fails_both_codec_directions() {
+    let mut scene = gated_scene();
+    scene.session_operations.clear();
+
+    let mut invalid = scene.clone();
+    invalid.surfaces.clear();
+    assert!(matches!(
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &invalid, &[], &[], 0,),
+        Err(IpcCodecError::InvalidEnum {
+            field: "snapshot_output_focus",
+            ..
+        })
+    ));
+
+    let mut transfer =
+        encode_wm_v1_policy_snapshot(TransactionId::from_raw(9), 2, &scene, &[], &[], 0).unwrap();
+    transfer
+        .chunks
+        .retain(|chunk| chunk.record_kind != SNAPSHOT_SURFACE_RECORD_KIND);
+    transfer.begin.surface_count = 0;
+    transfer.begin.chunk_count = 1;
+    transfer.end.chunk_count = 1;
+    assert!(matches!(
+        decode_wm_v1_policy_snapshot(&transfer),
+        Err(IpcCodecError::InvalidEnum {
+            field: "snapshot_output_focus",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn complete_output_projection_roundtrips_in_stacking_order() {
     let proposal = PolicyProjectionProposal {
         transaction: TransactionId::from_raw(11),

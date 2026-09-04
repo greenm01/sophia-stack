@@ -43,7 +43,7 @@ pub(super) fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyPr
     if scene.surfaces.len() > POLICY_MAX_SURFACES {
         return Err(PolicyProjectionError::ExcessiveSurfaces);
     }
-    let mut surfaces = BTreeSet::new();
+    let mut surfaces = BTreeMap::new();
     for surface in &scene.surfaces {
         if !surface.surface.is_valid() || surface.generation == 0 {
             return Err(PolicyProjectionError::InvalidSurface);
@@ -54,7 +54,7 @@ pub(super) fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyPr
         {
             return Err(PolicyProjectionError::InvalidOutput);
         }
-        if !surfaces.insert(surface.surface) {
+        if surfaces.insert(surface.surface, surface).is_some() {
             return Err(PolicyProjectionError::DuplicateSurface);
         }
         if surface.geometry.is_empty() {
@@ -68,9 +68,20 @@ pub(super) fn validate_scene(scene: &PolicySceneSnapshot) -> Result<(), PolicyPr
     for surface in &scene.surfaces {
         if surface
             .transient_owner
-            .is_some_and(|owner| owner == surface.surface || !surfaces.contains(&owner))
+            .is_some_and(|owner| owner == surface.surface || !surfaces.contains_key(&owner))
         {
             return Err(PolicyProjectionError::InvalidTransientOwner);
+        }
+    }
+    for output in &scene.outputs {
+        if output.focus.is_some_and(|focus| {
+            !surfaces.get(&focus).is_some_and(|surface| {
+                surface.current_output == Some(output.output)
+                    && surface.capabilities.focusable
+                    && !surface.current_state.minimized
+            })
+        }) {
+            return Err(PolicyProjectionError::InvalidFocus);
         }
     }
     // A scene is a description of where surfaces are, not a proposal about

@@ -39,6 +39,7 @@ pub enum PolicyProjectionError {
     InvalidSurfaceConstraints,
     InvalidPresentationState,
     InvalidTransientOwner,
+    InvalidFocus,
     ExcessiveSurfaces,
     ConnectionAlreadyActive,
     InvalidConnectionEpoch,

@@ -7,9 +7,10 @@ are stable. Other interfaces retain the individual status recorded below; this
 document does not promote an experimental role by grouping it into the family.
 
 Sophia exposes replaceable desktop components through local, language-neutral
-IPC. The protocol family is the public extension point. Hagia, the X11 WM
-bridge, shells, and later authorities are ordinary clients of separately
-authorized interfaces; none has a private Engine entry point.
+IPC. The protocol family is the public extension point. Hagia, shells, and
+later authorities are ordinary clients of separately authorized interfaces;
+none has a private Engine entry point. Legacy X11 WMs are ported to the native
+roles rather than hosted through a compatibility bridge.
 
 This is the developer entry point for the shared protocol contract. A role
 specification defines which facts and proposals may cross one authority

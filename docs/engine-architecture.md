@@ -106,6 +106,16 @@ pointer state, focus, hit-testing, and target routing. The live backend owns
 kernel-facing device access; protocol frontends own application-facing input
 encoding. Neither is allowed to choose Engine focus or hit-test results.
 
+Pointer appearance is configurable presentation policy, not a backend constant.
+Application frontends request bounded semantic shapes such as `left_ptr` or
+`text`; trusted session or shell configuration selects the cursor theme and
+nominal size. Engine resolves each shape to validated pixels, dimensions, and a
+hotspot, with a deterministic built-in fallback when an asset is absent. The
+backend receives only that resolved presentation payload for composition or a
+cursor plane. A WM cannot gain raw-input, renderer, or KMS authority by styling
+the pointer. Reproducible comparisons pin the same theme and size for every
+stack.
+
 ### WM Boundary
 
 Engine exports only reduced, metadata-blind policy facts to a WM. A WM returns

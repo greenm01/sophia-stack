@@ -12,7 +12,7 @@ use crate::live_session::{
     LivePublicPolicyCause, LiveWmProposalSource, LiveWmRequestAdmission,
     consume_public_launch_classification, enqueue_public_policy_cause,
     materialize_public_dirty_cause, public_launch_classification_snapshot,
-    public_policy_rearm_after_outcome,
+    public_policy_rearm_after_outcome, public_policy_snapshot_focus,
 };
 
 fn relayout_cause(outputs: &[u64]) -> LivePublicPolicyCause {
@@ -117,6 +117,56 @@ fn launch_classification_snapshot_excludes_withdrawn_surfaces() {
             surface: live,
             classification: 2,
         }]
+    );
+}
+
+#[test]
+fn snapshot_focus_requires_a_live_focusable_surface_on_the_same_output() {
+    let output = OutputId::from_raw(1);
+    let focus = SurfaceId::new(7, 1);
+    let mut surface = sophia_protocol::PolicySurfaceSnapshot {
+        surface: focus,
+        generation: 1,
+        current_output: Some(output),
+        kind: sophia_protocol::PolicySurfaceKind::Toplevel,
+        capabilities: sophia_protocol::LayoutNodeCapabilities::STANDARD_TOPLEVEL,
+        constraints: sophia_protocol::SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        exact_size: None,
+        requested_state: sophia_protocol::PolicyPresentationState::default(),
+        current_state: sophia_protocol::PolicyPresentationState::default(),
+        transient_owner: None,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 50,
+            height: 50,
+        },
+    };
+    assert_eq!(
+        public_policy_snapshot_focus(output, Some(focus), &[surface]),
+        Some(focus)
+    );
+    assert_eq!(public_policy_snapshot_focus(output, Some(focus), &[]), None);
+
+    surface.current_output = Some(OutputId::from_raw(2));
+    assert_eq!(
+        public_policy_snapshot_focus(output, Some(focus), &[surface]),
+        None
+    );
+    surface.current_output = Some(output);
+    surface.capabilities.focusable = false;
+    assert_eq!(
+        public_policy_snapshot_focus(output, Some(focus), &[surface]),
+        None
+    );
+    surface.capabilities.focusable = true;
+    surface.current_state.minimized = true;
+    assert_eq!(
+        public_policy_snapshot_focus(output, Some(focus), &[surface]),
+        None
     );
 }
 

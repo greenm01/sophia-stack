@@ -326,6 +326,31 @@ fn snapshot_membership_and_focus_are_the_initial_and_committed_truth() {
 }
 
 #[test]
+fn scene_focus_must_name_a_live_focusable_surface_on_the_same_output() {
+    let mut valid_surface = surface(1);
+    valid_surface.current_output = Some(output(1));
+    let mut valid = scene(1, &[valid_surface]);
+    valid.outputs[0].focus = Some(surface_id(1));
+    assert!(PolicyProjectionReducer::new(valid.clone()).is_ok());
+
+    let mut dangling = valid.clone();
+    dangling.surfaces.clear();
+    let mut wrong_output = valid.clone();
+    wrong_output.surfaces[0].current_output = Some(output(2));
+    let mut unfocusable = valid.clone();
+    unfocusable.surfaces[0].capabilities.focusable = false;
+    let mut minimized = valid;
+    minimized.surfaces[0].current_state.minimized = true;
+
+    for invalid in [dangling, wrong_output, unfocusable, minimized] {
+        assert_eq!(
+            PolicyProjectionReducer::new(invalid).unwrap_err(),
+            sophia_engine::PolicyProjectionError::InvalidFocus
+        );
+    }
+}
+
+#[test]
 fn repeated_action_token_with_distinct_activation_serials_is_not_coalesced() {
     let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
     reducer.connect(1).unwrap();

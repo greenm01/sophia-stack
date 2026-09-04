@@ -68,6 +68,27 @@ fn public_launch_classification_snapshot(
         .collect()
 }
 
+/// Retains focus only when the same complete snapshot proves it is usable.
+///
+/// Committed policy may still name a surface during the owner turn that
+/// withdraws it. The snapshot must not carry that stale identity after its
+/// surface record has disappeared: independent clients validate the complete
+/// transfer before they reconcile private policy state.
+fn public_policy_snapshot_focus(
+    output: sophia_protocol::OutputId,
+    focus: Option<SurfaceId>,
+    surfaces: &[sophia_protocol::PolicySurfaceSnapshot],
+) -> Option<SurfaceId> {
+    focus.filter(|focus| {
+        surfaces.iter().any(|surface| {
+            surface.surface == *focus
+                && surface.current_output == Some(output)
+                && surface.capabilities.focusable
+                && !surface.current_state.minimized
+        })
+    })
+}
+
 fn consume_public_launch_classification(
     classifications: &mut BTreeMap<SurfaceId, u64>,
     source: Option<LiveWmProposalSource>,
@@ -1424,11 +1445,12 @@ impl LivePublicPolicyState {
         chrome: sophia_engine::SurfaceChromeStyle,
     ) -> Result<sophia_protocol::PolicySceneSnapshot, Box<dyn std::error::Error>> {
         let previous = self.reducer.scene();
+        let committed = self.reducer.committed();
         let mut current_output = BTreeMap::new();
         let mut committed_geometry = BTreeMap::new();
         let mut committed_presentation = BTreeMap::new();
-        for projection in self.reducer.committed() {
-            for placement in projection.placements {
+        for projection in &committed {
+            for placement in &projection.placements {
                 current_output.insert(placement.surface, projection.output);
                 committed_geometry.insert(placement.surface, placement.geometry);
                 committed_presentation.insert(placement.surface, placement.presentation);
@@ -1466,12 +1488,14 @@ impl LivePublicPolicyState {
                 Ok(sophia_protocol::PolicyOutputSnapshot {
                     output,
                     generation: self.output_generations.get(&output).copied().unwrap_or(1),
-                    focus: self
-                        .reducer
-                        .committed()
-                        .into_iter()
-                        .find(|projection| projection.output == output)
-                        .and_then(|projection| projection.focus),
+                    focus: public_policy_snapshot_focus(
+                        output,
+                        committed
+                            .iter()
+                            .find(|projection| projection.output == output)
+                            .and_then(|projection| projection.focus),
+                        &surfaces,
+                    ),
                     bounds,
                     work_area: self.work_areas.get(&output).copied().unwrap_or(bounds),
                 })

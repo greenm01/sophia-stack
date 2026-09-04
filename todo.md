@@ -79,9 +79,12 @@ Status vocabulary:
   machine-and-visual pass. The comparison capture/replay contract is now
   teardown-aware and separates stack from workload cost. Its latest owner-only
   run failed closed before row 1 when an output-policy commit dropped the
-  selected atomic cursor plane from reconstructed KMS head state. That
-  transition now preserves the discovered plane; no comparison evidence is
-  promotable yet.
+  selected atomic cursor plane from reconstructed KMS head state. The next
+  zero-row run proved that repair physically: both heads presented and the
+  cursor crossed between them. Withdrawal of the qualification window then
+  exposed a stale focused-surface identity in the public policy snapshot. The
+  producer, wire codec, and Engine validation now enforce one complete-snapshot
+  focus invariant; no comparison evidence is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -95,7 +98,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only `cp14-schema4-ba438555` then failed closed at 0/36 when its first output-policy commit lost the selected cursor plane. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` then failed closed at 0/36 on cursor-plane reconstruction and stale focus respectively. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -219,6 +222,13 @@ work:
 - [x] preserve the cursor plane across output-policy candidate and rollback
   selections and cover that KMS-route invariant through the public topology
   planner;
+- [x] stop after the next zero-row attempt and diagnose its bounded failure:
+  cursor qualification proved two-head atomic motion, then withdrawing its
+  final window left committed focus naming a surface omitted from the next
+  complete public snapshot;
+- [x] sanitize snapshot focus from the same live surface set and reject stale,
+  cross-output, non-focusable, or minimized focus at both the protocol codec
+  and Engine authority boundaries;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
   continuing;
@@ -375,8 +385,10 @@ tranche with a named driver and exit gate.
   client-rasterized textures.
 - Retain only measured rendering follow-ups: cross-drawable `CopyArea`, bounded
   raster storage, upscale filtering, linear-light blend/opacity, mirror remode,
-  presented-extent raster demand, CPU GBM pooling, cursor images, concurrent
-  producers, and equal-mode scanout cloning.
+  presented-extent raster demand, CPU GBM pooling, configurable semantic cursor
+  themes (theme, nominal size, named shapes, hotspots, and deterministic
+  fallback), concurrent producers, and equal-mode scanout cloning. Comparison
+  profiles must pin one cursor theme and size across Sophia and references.
 
 ### Compatibility and diagnostics
 
