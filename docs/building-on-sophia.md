@@ -116,7 +116,9 @@ shell's enumerated needs (`docs/sophia-shell-v1-direction.md`) and adds the
 content path: you rasterize widgets you own, hand over bounded
 content-addressed textures, and Engine composites them. You still can't read
 the screen. And the bar isn't a separate component — "shell-owned" covers a
-small status strip and a full panel set alike.
+small status strip and a full panel set alike. How your users configure it is
+covered below in Two Configs, Two Owners — the short version is that your app's
+settings are yours, and only the operator's envelope goes through Sophia.
 
 **A desktop environment**, in the XFCE, COSMIC, or macOS tradition. This is
 not a fourth protocol. A desktop decomposes into the pieces above, plus
@@ -201,6 +203,41 @@ environment is a superset composition, not a second platform. Moving from
 niri-class to KDE-class changes what you ship — never how it's wired — and
 the climb is also the trust gradient: a complete confined desktop at the
 bottom rung, more expressiveness for more granted trust above it.
+
+## Two Configs, Two Owners
+
+A developer building on Sophia will want their users to configure the thing they
+built. They can — and the config the user edits is the developer's own, not
+Sophia's. There are two layers, owned by two parties, and keeping them straight
+is the difference between an afternoon and a bad week.
+
+**Your app's config is yours.** A shell's bar colors, widget choices, fonts,
+module layout, behavior — none of it crosses into Sophia's authority, so Sophia
+neither sees it nor imposes anything on it. Pick your own format, read your own
+file, watch it and hot-reload it however you like. This is bring-your-own-config
+to match bring-your-own-language: a shell written in Zig can read TOML its own
+way. Sophia mandates a format only at the authority boundary.
+
+**The profile is the operator's envelope.** The desktop profile — the seven
+authority sections Sophia owns — is not where your users tune your app. It's
+where the operator grants what your app is *allowed* to do: shell enabled, may
+reserve up to N pixels of work area, these keybindings map to these
+session-operation slots, input repeats this fast. Sophia validates it because it
+crosses the whole session. Your app configures freely inside the envelope; the
+envelope itself is granted, not claimed. Your config file may ask for a 40-pixel
+panel, but the shell *requests* 40 through the reservation mechanism and Sophia
+caps it at whatever the profile allowed. A user cannot, through your app's
+settings, quietly grant your app more of the screen than the operator permitted
+— which is the same property that stops your app drawing a phishing prompt.
+
+**An action is a request, not a thing your app does.** This is the seam every
+developer arriving from X11 or Wayland gets wrong. When a user binds a key to
+"launch a terminal," your app does not spawn the terminal. It asks Sophia
+through an opaque session-operation slot, and the session decides what that slot
+does. Your config expresses the intent — this key, that action — but the effect
+routes through the authority that owns it. Same for anything that moves data: a
+portal decision sits behind it. You express what the user wants; Sophia decides
+whether and how it happens.
 
 ## The Menu-Export Portal
 
