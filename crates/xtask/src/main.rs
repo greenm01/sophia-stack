@@ -148,6 +148,10 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             build_release_sophia(&repo)?;
             desktop_comparison::prepare(&repo, Path::new(run)).map(print_lines)
         }
+        [command, run] if command == "prepare-soak" => {
+            build_release_sophia(&repo)?;
+            desktop_comparison::prepare_optional_soak(&repo, Path::new(run)).map(print_lines)
+        }
         [command, run] if command == "gate" => {
             gate_desktop_comparison(&repo, Path::new(run))
         }
@@ -200,9 +204,9 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             desktop_comparison::report(&repo, Path::new(run)).map(print_lines)
         }
         [command, ..] => Err(format!(
-            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, gate, status, attest, preflight, capture, replay, verify, or report"
+            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, prepare-soak, gate, status, attest, preflight, capture, replay, verify, or report"
         )),
-        [] => Err("desktop-comparison needs install-reference, prepare, gate, status, attest, preflight, capture, replay, verify, or report".to_owned()),
+        [] => Err("desktop-comparison needs install-reference, prepare, prepare-soak, gate, status, attest, preflight, capture, replay, verify, or report".to_owned()),
     }
 }
 
@@ -444,6 +448,7 @@ usage: cargo xtask <command>
 
   conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
   conformance desktop-comparison prepare RUN
+  conformance desktop-comparison prepare-soak RUN
   conformance desktop-comparison gate RUN
   conformance desktop-comparison status RUN
   conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]

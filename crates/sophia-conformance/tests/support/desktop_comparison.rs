@@ -29,13 +29,21 @@ fn temporary_root(label: &str) -> PathBuf {
 }
 
 fn prepared_run(root: &Path) -> (PathBuf, String) {
+    prepared_run_for_lane(root, "interactive", schedule())
+}
+
+fn prepared_run_for_lane(
+    root: &Path,
+    lane: &str,
+    scheduled: Vec<ScheduledSample>,
+) -> (PathBuf, String) {
     let repo = repo();
     let run = root.join("run");
     fs::create_dir(&run).unwrap();
     fs::create_dir(run.join("samples")).unwrap();
     let candidate = git_output(&repo, &["rev-parse", "HEAD"]).unwrap();
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=3 status=prepared diagnostic_only=true acquisition=terminal_free_visible source_commit={candidate}\n"
+        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true acquisition=terminal_free_visible lane={lane} optional_soak=separate source_commit={candidate}\n"
     );
     for config in CONFIGS {
         manifest.push_str(&format!(
@@ -44,7 +52,7 @@ fn prepared_run(root: &Path) -> (PathBuf, String) {
         ));
     }
     fs::write(run.join("manifest.kdl"), manifest).unwrap();
-    let encoded = schedule()
+    let encoded = scheduled
         .iter()
         .map(|item| format!(
             "desktop_comparison_schedule schema=2 order={} stack={} workload={} repetition={} backend=native\n",
@@ -94,16 +102,37 @@ fn complete_rotated_matrix_verifies_and_reports_without_a_relative_verdict() {
     }
 
     let verified = verify(&repo, &run).unwrap();
-    assert!(verified[0].contains("samples=39"));
+    assert!(verified[0].contains("samples=36"));
     assert!(verified[0].contains("relative_performance_gate=false"));
     let report = report(&repo, &run).unwrap();
-    assert_eq!(report.len(), 16);
+    assert_eq!(report.len(), 13);
     assert!(
         report
             .iter()
             .skip(1)
             .all(|line| line.ends_with("verdict=none"))
     );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn optional_soak_is_a_separate_nonblocking_sophia_lane() {
+    assert_eq!(schedule().len(), 36);
+    assert!(schedule().iter().all(|item| item.workload != "soak-2h"));
+
+    let soak = optional_soak_schedule();
+    assert_eq!(soak.len(), 1);
+    assert_eq!(soak[0].stack, "sophia");
+    assert_eq!(soak[0].workload, "soak-2h");
+
+    let root = temporary_root("optional-soak");
+    let (run, candidate) = prepared_run_for_lane(&root, "optional-soak", soak.clone());
+    let incoming = root.join("incoming-soak.log");
+    fs::write(&incoming, sample_record(&soak[0], &candidate)).unwrap();
+    run_sample(&repo(), &run, &incoming).unwrap();
+    let verified = verify(&repo(), &run).unwrap();
+    assert!(verified[0].contains("samples=1"));
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -361,13 +390,13 @@ fn legacy_manifest_is_preserved_but_not_admitted() {
     let (run, _) = prepared_run(&root);
     let manifest_path = run.join("manifest.kdl");
     let manifest = fs::read_to_string(&manifest_path).unwrap().replacen(
+        "schema=4 status=prepared diagnostic_only=true acquisition=terminal_free_visible lane=interactive optional_soak=separate",
         "schema=3 status=prepared diagnostic_only=true acquisition=terminal_free_visible",
-        "schema=2 status=prepared diagnostic_only=true",
         1,
     );
     fs::write(manifest_path, manifest).unwrap();
     let error = status(&repo(), &run).unwrap_err();
-    assert!(error.contains("predates the terminal-free visibility contract"));
+    assert!(error.contains("predates the terminal-free visibility and optional-soak contract"));
 
     fs::remove_dir_all(root).unwrap();
 }

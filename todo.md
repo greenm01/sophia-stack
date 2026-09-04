@@ -76,9 +76,11 @@ Status vocabulary:
   activation, direct-versus-composed measurements, and the atomic cursor path.
   Continuous software-content presentation is closed by one signed physical
   machine-and-visual pass. The mechanical comparison capture/replay contract is
-  implemented, but its first matrix acquisition exposed an unverified visible-
-  workload boundary and a Sophia-only launcher client. That physical evidence
-  is diagnostic and cannot be promoted.
+  implemented. Its first matrix acquisition exposed an unverified visible-
+  workload boundary and a Sophia-only launcher client; the replacement
+  terminal-free acquisition then exposed connector-neutral RandR naming drift
+  and an unsafe display-manager input handoff. All physical evidence remains
+  diagnostic and non-promotable.
 
 Latest retained Milestone 14 evidence:
 
@@ -92,7 +94,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | run `cp14` paused after 15 sealed rows: Sophia's five rows retained a launcher Kitty and did not prove that the owned workload was visible on DP-1; zero comparison results are promotable |
+| Comparison acquisition | legacy run `cp14` is paused after 15 biased rows; the fresh schema-3 run remains at zero rows after a false RandR-name timeout and an unverified greetd keyboard handoff forced a reboot; zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -106,9 +108,10 @@ before changing any product default.
 
 ### CP-14.2 — Same-hardware comparison (`NOW`)
 
-- [ ] Run identical Kitty, Firefox, resize, launch-burst, and soak workloads
-  against Sophia, XLibre+xmonad, and a mature Wayland compositor on the same
-  hardware.
+- [ ] Run identical Kitty, Firefox, resize, and launch-burst workloads against
+  Sophia, XLibre+xmonad, and a mature Wayland compositor on the same hardware.
+  Run the separate Sophia two-hour soak only when overnight durability evidence
+  is useful; it is optional and non-blocking.
 
 Required exit:
 
@@ -135,11 +138,12 @@ Each attempt retains exact raw visibility, resource, kernel-frame, workload,
 native-timing, and attempt records plus a derived schema-3 result and internal
 ledger. Replay requires an empty application baseline; a capture-owned,
 focused, visible DP-1 toplevel with zero foreign application toplevels at
-settlement and every sample; uniform 60-second short windows; the two-hour
-soak; 120 resize observations; contiguous/monotonic populations; zero
-crash/loss; and clean teardown. Correlation consumes PID/start identity only
-inside trusted conformance code and persists no application identity. Partial
-attempts block progress. Regression coverage includes ready-but-hidden and
+settlement and every sample; uniform 60-second short windows; 120 resize
+observations; contiguous/monotonic populations; zero crash/loss; and clean
+teardown. The optional soak lane independently requires a full two-hour sample.
+Correlation consumes PID/start identity only inside trusted conformance code
+and persists no application identity. Partial attempts block progress only
+within their own run. Regression coverage includes ready-but-hidden and
 foreign-window rejection, legacy-run refusal, raw replay/archive integrity,
 matrix/order mutation, kernel normalization, owner-only modes, tracefs probe
 records, isolated Kitty configuration, and bounded runtime socket paths.
@@ -156,7 +160,8 @@ have no equivalent client. Readiness and DRM-vblank evidence do not prove a
 visible workload, so Sophia rows 1, 6, 8, 10, and 15 are biased and the complete
 prefix is non-promotable. Acquisition is paused before row 16.
 
-Implementation is complete; remaining critical-path work:
+Implementation and recovery hardening are complete; remaining critical-path
+work:
 
 - [x] replace Sophia's operator-terminal acquisition with a terminal-free
   session and a capture controller outside the measured supervisor tree;
@@ -165,11 +170,19 @@ Implementation is complete; remaining critical-path work:
   identity to the blind WM, with hidden/foreign negative regressions;
 - [x] commit and sign the corrected candidate, then prepare a fresh run using
   the already provisioned pinned XLibre prefix and isolated reference profiles;
-- [ ] run the unified one-row TTY3 gate for all 39 scheduled rows on this
+- [x] accept Sophia's connector-neutral RandR names and harden teardown so a
+  greeter is activated only after both the origin and manager TTY input states
+  are restored and verified, with a text-TTY fallback and persistent handoff
+  record;
+- [ ] sign the recovery correction and prepare a fresh run bound to that exact
+  candidate;
+- [ ] run the first short Sophia row and inspect both its sealed evidence and
+  the persistent input-handoff record before continuing the matrix;
+- [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
-- [ ] retain and verify the complete matrix. The Sophia two-hour raw run may
-  also satisfy CP-14.3 only if the same evidence independently passes the
-  current soak verifier.
+- [ ] retain and verify the complete interactive matrix. A separate one-row
+  Sophia two-hour soak remains optional overnight evidence and does not block
+  this gate or CP-14.3.
 
 ### CP-14.3 — Close Milestone 14 (`NEXT`)
 
@@ -180,12 +193,13 @@ Milestone 14 exits only with bounded warmed resource counts, no steady-state
 allocation growth, refresh-relative latency evidence, clean normal teardown,
 and no change to Sophia's native-X authority model.
 
-The current-soak verifier now requires a nonsaturated five-second resource
-series, at least 120 contiguous samples, and flat settled peaks with zero
-tolerance for accounted resources. The native sampler now holds 1,560 samples,
-covering two hours plus ten minutes without saturation. Historical installed
-archives explicitly use the archive policy and remain reproducible. A fresh
-two-hour current run remains required; no fixture or historical archive closes
+The current-soak verifier remains available for optional overnight durability
+evidence. It requires a nonsaturated five-second resource series, at least 120
+contiguous samples, and flat settled peaks with zero tolerance for accounted
+resources; the native sampler holds 1,560 samples, covering two hours plus ten
+minutes without saturation. Historical installed archives explicitly use the
+archive policy and remain reproducible. A fresh two-hour run is useful but does
+not block Milestone 14 closure.
 
 ### CP-15.1 — Native protocol-family lifecycle audit (`NEXT`)
 

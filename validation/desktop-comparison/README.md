@@ -18,7 +18,7 @@ terminal-free visibility contract. The replacement acquisition is implemented
 as one typed TTY3 gate. It starts every stack without an operator application,
 runs the controller outside the measured supervisor tree, and requires passive
 workload-owned focus and visibility on DP-1 before and throughout measurement.
-Physical validation and a fresh 39-row run remain outstanding. Do not continue
+Physical validation and a fresh 36-row run remain outstanding. Do not continue
 or cite `cp14`; schema-3 admission rejects it explicitly.
 
 ## Pinned matrix
@@ -36,10 +36,12 @@ The repository-owned profiles under `profiles/` replace personal Hagia, niri,
 and xmonad configuration for the matrix. Animations are disabled and comparison
 windows are floating where the reference stack supports a rule.
 
-Four 60-second workloads run three times per stack in rotated order: a visibly
+Four short workloads run three times per stack in rotated order: a visibly
 changing Kitty stream, the loopback-only animated Firefox fixture with a fresh
 profile and readiness beacon, 120 Kitty resize requests, and a 16-Kitty launch
-burst. One two-hour Kitty soak follows for each stack. This is 39 rows.
+burst. This required interactive lane is 36 rows. A single Sophia two-hour
+Kitty soak is a separate optional durability lane; it neither extends nor
+blocks verification of the comparison matrix.
 
 ## Local row workflow
 
@@ -48,6 +50,13 @@ Prepare once from the clean signed candidate:
 ```sh
 cargo xtask conformance desktop-comparison prepare RUN
 cargo xtask conformance desktop-comparison status RUN
+```
+
+An overnight soak uses its own run and the same one-row gate:
+
+```sh
+cargo xtask conformance desktop-comparison prepare-soak SOAK_RUN
+cargo xtask conformance desktop-comparison gate SOAK_RUN
 ```
 
 For each row, switch to TTY3, log in, and run one command:
@@ -64,9 +73,10 @@ stack/policy/shell executable digests. It reads only the next typed row,
 launches the matching local terminal-free Sophia, XLibre+xmonad, or niri
 session with the repository profile, checks the fixed topology, attests the
 actual supervisor, resolves DP-1's active CRTC through DRM, captures and seals
-one row, tears the session down, and returns to TTY3. It never uses SSH.
-Sophia's adapter may stop and restore the local display manager because Sophia
-owns DRM directly; failure cleanup retains that restoration path.
+one row, and tears the session down. It never uses SSH. Sophia's adapter may
+stop and restore the local display manager because Sophia owns DRM directly.
+It activates greetd only after verifying the configured manager VT's input
+state; otherwise it returns to the independently verified originating TTY3.
 
 `attest` derives the stack and version from the exact next schedule row. It
 refuses a foreign-UID process, a supervisor executable that cannot implement

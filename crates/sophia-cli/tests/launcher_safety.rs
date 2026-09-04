@@ -62,6 +62,12 @@ fn graphical_takeover_saves_and_restores_exact_tty_state() {
     assert!(SESSION_LAUNCHER.contains("python3 \"$TTY_MODE_HELPER\" \"$kd_mode\""));
     assert!(SESSION_LAUNCHER.contains("stty \"$tty_state\""));
     assert!(SESSION_LAUNCHER.contains("python3 \"$TTY_MODE_HELPER\" \"keyboard-$keyboard_mode\""));
+    assert!(
+        SESSION_LAUNCHER
+            .contains("restored_keyboard=\"$(python3 \"$TTY_MODE_HELPER\" get-keyboard")
+    );
+    assert!(SESSION_LAUNCHER.contains("sophia_tty_recovery_verification schema=1"));
+    assert!(SESSION_LAUNCHER.contains("keyd did not become ready after restoration"));
 }
 
 #[test]
@@ -124,16 +130,35 @@ fn firefox_m10_profiles_are_bounded_by_the_session_lifecycle() {
 }
 
 #[test]
-fn tty3_gate_reactivates_its_originating_vt_after_display_manager_restore() {
+fn tty3_gate_restores_input_before_activating_the_ready_greetd_vt() {
+    let restore_origin = TTY3_LAUNCHER.find("if ! restore_origin_tty").unwrap();
+    let restore_manager_tty = TTY3_LAUNCHER.find("if ! restore_greetd_tty").unwrap();
     let restore_manager = TTY3_LAUNCHER
-        .find("sudo sv up \"$display_manager\"")
+        .find("sudo -n sv up \"$display_manager\"")
         .unwrap();
-    let reactivate_tty = TTY3_LAUNCHER.find("sudo chvt \"$origin_vt\"").unwrap();
+    let greeter_ready = TTY3_LAUNCHER.find("ps -C tuigreet -o tty=").unwrap();
+    let verify_manager_tty = TTY3_LAUNCHER.find("elif ! verify_greetd_tty").unwrap();
+    let reactivate_tty = TTY3_LAUNCHER
+        .find("sudo -n chvt \"$activation_vt\"")
+        .unwrap();
 
     assert!(TTY3_LAUNCHER.contains("origin_tty=\"$(tty)\""));
     assert!(TTY3_LAUNCHER.contains("origin_vt=\"${origin_tty#/dev/tty}\""));
-    assert!(restore_manager < reactivate_tty);
+    assert!(
+        TTY3_LAUNCHER
+            .contains("origin_keyboard_mode=\"$(python3 \"$TTY_MODE_HELPER\" get-keyboard)\"")
+    );
+    assert!(TTY3_LAUNCHER.contains("display_manager_keyboard_mode=\"$("));
+    assert!(restore_origin < restore_manager_tty);
+    assert!(restore_manager_tty < restore_manager);
+    assert!(restore_manager < greeter_ready);
+    assert!(greeter_ready < verify_manager_tty);
+    assert!(verify_manager_tty < reactivate_tty);
     assert!(TTY3_LAUNCHER.contains("active_vt=\"$(fgconsole 2>/dev/null || true)\""));
+    assert!(TTY3_LAUNCHER.contains("sudo -n sv down \"$display_manager\" 2>/dev/null || true"));
+    assert!(TTY3_LAUNCHER.contains("sudo -n -v || exit"));
+    assert!(TTY3_LAUNCHER.contains("stop_sudo_keepalive"));
+    assert!(TTY3_LAUNCHER.contains("sophia_tty_handoff schema=1"));
 }
 
 #[test]
@@ -147,6 +172,8 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("gate-last.log"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("^SOPHIA-1 connected primary"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("xrandr-last.log"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_niri EXIT"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_xmonad EXIT"));
     assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));

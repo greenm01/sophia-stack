@@ -318,13 +318,28 @@ cleanup() {
             echo "WARNING: keyd could not be restored; run: sudo sv up keyd" >&2
             status=1
             handoff_failed=true
+        else
+            for _ in {1..200}; do
+                pgrep -x keyd >/dev/null 2>&1 && break
+                sleep 0.05
+            done
+            if ! pgrep -x keyd >/dev/null 2>&1; then
+                echo "WARNING: keyd did not become ready after restoration." >&2
+                status=1
+                handoff_failed=true
+            fi
         fi
     fi
     rm -f "$GUARD_ARMED_FILE" "$GUARD_TRIGGERED_FILE" "$WATCHDOG_TRIGGERED_FILE"
     if [[ -n "$kd_mode" && -n "$tty_state" ]]; then
-        local restored_kd restored_termios
+        local restored_kd restored_keyboard restored_termios keyd_restored
         restored_kd="$(python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
+        restored_keyboard="$(python3 "$TTY_MODE_HELPER" get-keyboard 2>/dev/null || echo unavailable)"
         restored_termios="$(stty -g 2>/dev/null || echo unavailable)"
+        keyd_restored=true
+        if [[ "$keyd_was_running" == true ]] && ! pgrep -x keyd >/dev/null 2>&1; then
+            keyd_restored=false
+        fi
         printf 'sophia_tty_recovery schema=3 profile=%s kd_mode_before=%s kd_mode_after=%s termios_restored=%s emergency=%s session_shutdown=%s session_exit_status=%s\n' \
             "$SESSION_PROFILE" \
             "$kd_mode" "$restored_kd" \
@@ -332,7 +347,13 @@ cleanup() {
             "$emergency" \
             "$emergency_session_shutdown" \
             "$emergency_session_exit_status" >>"$RECOVERY_LOG"
-        if [[ "$restored_kd" != "$kd_mode" || "$restored_termios" != "$tty_state" ]]; then
+        printf 'sophia_tty_recovery_verification schema=1 profile=%s keyboard_mode_before=%s keyboard_mode_after=%s keyd_restored=%s\n' \
+            "$SESSION_PROFILE" "$keyboard_mode" "$restored_keyboard" "$keyd_restored" \
+            >>"$RECOVERY_LOG"
+        if [[ "$restored_kd" != "$kd_mode" \
+            || "$restored_keyboard" != "$keyboard_mode" \
+            || "$restored_termios" != "$tty_state" \
+            || "$keyd_restored" != true ]]; then
             status=1
             handoff_failed=true
         fi

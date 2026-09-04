@@ -10,6 +10,7 @@ chmod 700 "$diagnostic_root"
 diagnostic_log="$diagnostic_root/gate-last.log"
 : >"$diagnostic_log"
 chmod 600 "$diagnostic_log"
+rm -f "$diagnostic_root/xrandr-last.log"
 gate_stage=initialization
 record_gate_stage() {
     gate_stage=$1
@@ -105,14 +106,20 @@ require_x_topology() {
     local ready=false topology
     for _ in {1..300}; do
         topology=$(xrandr --query 2>/dev/null || true)
-        if grep -Eq '^DP-1 connected primary 2560x1440\+0\+0' <<<"$topology" \
-            && grep -Eq '^DP-2 connected 1920x1080\+2560\+0' <<<"$topology"; then
+        if { grep -Eq '^DP-1 connected primary 2560x1440\+0\+0' <<<"$topology" \
+                && grep -Eq '^DP-2 connected 1920x1080\+2560\+0' <<<"$topology"; } \
+            || { grep -Eq '^SOPHIA-1 connected primary 2560x1440\+0\+0' <<<"$topology" \
+                && grep -Eq '^SOPHIA-2 connected 1920x1080\+2560\+0' <<<"$topology"; }; then
             ready=true
             break
         fi
         sleep 0.1
     done
-    [[ $ready == true ]] || fail "the exact DP-1/DP-2 topology did not become ready"
+    if [[ $ready != true ]]; then
+        printf '%s\n' "$topology" >"$diagnostic_root/xrandr-last.log"
+        chmod 600 "$diagnostic_root/xrandr-last.log"
+        fail "the exact two-output X topology did not become ready; inspect $diagnostic_root/xrandr-last.log"
+    fi
 }
 
 run_niri_child() {

@@ -27,7 +27,7 @@ pub const XMONAD_CONTRIB_VERSION: &str = "0.18.2";
 pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
 pub(crate) const SHORT_WORKLOADS: [&str; 4] =
     ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
-pub(crate) const CONFIGS: [&str; 12] = [
+pub(crate) const CONFIGS: [&str; 14] = [
     "validation/desktop-comparison/config/sophia.kdl",
     "validation/desktop-comparison/config/xlibre-xmonad.kdl",
     "validation/desktop-comparison/config/niri.kdl",
@@ -35,7 +35,9 @@ pub(crate) const CONFIGS: [&str; 12] = [
     "validation/desktop-comparison/firefox/user.js",
     "tools/desktop_comparison_tracefs.sh",
     "tools/desktop_comparison_tty3.sh",
+    "tools/start_sophia_tty3.sh",
     "tools/run_sophia_xmonad_session.sh",
+    "tools/sophia_tty_mode.py",
     "tools/lib/session_terminal.sh",
     "validation/desktop-comparison/profiles/hagia.kdl",
     "validation/desktop-comparison/profiles/niri.kdl",
@@ -48,6 +50,21 @@ pub struct ScheduledSample {
     pub stack: String,
     pub workload: String,
     pub repetition: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ComparisonLane {
+    Interactive,
+    OptionalSoak,
+}
+
+impl ComparisonLane {
+    const fn token(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::OptionalSoak => "optional-soak",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -135,7 +152,26 @@ fn comparison_binaries(repo: &Path) -> Result<[(&'static str, PathBuf); 6], Stri
 
 pub fn prepare(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     let identity = host::detect()?;
-    prepare_with_identity(repo, run, &identity.kernel, &identity.mesa, &identity.gpu)
+    prepare_with_identity(
+        repo,
+        run,
+        &identity.kernel,
+        &identity.mesa,
+        &identity.gpu,
+        ComparisonLane::Interactive,
+    )
+}
+
+pub fn prepare_optional_soak(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    let identity = host::detect()?;
+    prepare_with_identity(
+        repo,
+        run,
+        &identity.kernel,
+        &identity.mesa,
+        &identity.gpu,
+        ComparisonLane::OptionalSoak,
+    )
 }
 
 fn prepare_with_identity(
@@ -144,6 +180,7 @@ fn prepare_with_identity(
     kernel: &str,
     mesa: &str,
     gpu: &str,
+    lane: ComparisonLane,
 ) -> Result<Vec<String>, String> {
     if run.exists() {
         return Err(format!("comparison run already exists: {}", run.display()));
@@ -175,7 +212,8 @@ fn prepare_with_identity(
         binary_fields.push_str(&format!(" {name}={}", digest_file(&path)?));
     }
     let mut manifest = format!(
-        "desktop_comparison_manifest schema=3 status=prepared diagnostic_only=true raw_capture_required=true acquisition=terminal_free_visible source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}{binary_fields}\n"
+        "desktop_comparison_manifest schema=4 status=prepared diagnostic_only=true raw_capture_required=true acquisition=terminal_free_visible lane={} optional_soak=separate source_commit={source_commit} candidate_signature=verified kernel={kernel} mesa={mesa} gpu={gpu} topology={TOPOLOGY} kitty={KITTY_VERSION} firefox={FIREFOX_VERSION}{binary_fields}\n",
+        lane.token(),
     );
     manifest.push_str(&format!(
         "desktop_comparison_stack schema=2 id=sophia version={source_commit} backend=native\n"
@@ -195,7 +233,7 @@ fn prepare_with_identity(
     }
     write_new(&run.join("manifest.kdl"), manifest.as_bytes())?;
 
-    let schedule = schedule();
+    let schedule = schedule_for_lane(lane);
     let mut encoded = String::new();
     for item in &schedule {
         encoded.push_str(&format!(
@@ -206,9 +244,10 @@ fn prepare_with_identity(
     write_new(&run.join("schedule.kdl"), encoded.as_bytes())?;
     rewrite_checksums(run, &[])?;
     Ok(vec![format!(
-        "desktop_comparison_prepare schema=3 status=complete run={} source_commit={} samples={}",
+        "desktop_comparison_prepare schema=4 status=complete run={} source_commit={} lane={} samples={}",
         run.display(),
         source_commit,
+        lane.token(),
         schedule.len()
     )])
 }
@@ -251,11 +290,12 @@ pub fn status(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     verify_no_pending_capture(run)?;
     let observed = observed_samples(run)?;
     verify_raw_attempts(run, &observed)?;
+    let expected = schedule_for_run(run)?;
     match next_scheduled(run)? {
         Some(item) => Ok(vec![format!(
             "desktop_comparison_status schema=1 status=pending completed={} total={} next_order={} next_stack={} next_workload={} next_repetition={}",
             item.order.saturating_sub(1),
-            schedule().len(),
+            expected.len(),
             item.order,
             item.stack,
             item.workload,
@@ -263,8 +303,8 @@ pub fn status(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
         )]),
         None => Ok(vec![format!(
             "desktop_comparison_status schema=1 status=complete completed={} total={}",
-            schedule().len(),
-            schedule().len(),
+            expected.len(),
+            expected.len(),
         )]),
     }
 }
@@ -300,7 +340,7 @@ fn observed_samples(run: &Path) -> Result<BTreeSet<ScheduledSample>, String> {
 }
 
 pub fn next_scheduled(run: &Path) -> Result<Option<ScheduledSample>, String> {
-    let expected = schedule();
+    let expected = schedule_for_run(run)?;
     let observed = observed_samples(run)?;
     for (index, item) in expected.iter().enumerate() {
         if !observed.contains(item) {
@@ -326,7 +366,7 @@ fn run_sample(repo: &Path, run: &Path, raw_log: &Path) -> Result<Vec<String>, St
     let source = fs::read_to_string(raw_log)
         .map_err(|error| format!("could not read sample log {}: {error}", raw_log.display()))?;
     let sample = parse_sample(&source, &source_commit(run)?)?;
-    let scheduled = schedule();
+    let scheduled = schedule_for_run(run)?;
     if !scheduled.iter().any(|item| item == &sample.scheduled) {
         return Err(format!(
             "sample is not in the prepared schedule: {}/{}/{} order={}",
@@ -467,7 +507,7 @@ pub fn verify(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     verify_prepared_inputs(repo, run)?;
     verify_checksums(run)?;
     verify_no_pending_capture(run)?;
-    let expected = schedule();
+    let expected = schedule_for_run(run)?;
     let expected_set = expected.iter().cloned().collect::<BTreeSet<_>>();
     let observed = observed_samples(run)?;
     if observed != expected_set {
@@ -548,16 +588,41 @@ pub fn schedule() -> Vec<ScheduledSample> {
             }
         }
     }
-    for stack in STACKS {
-        result.push(ScheduledSample {
-            order,
-            stack: stack.to_owned(),
-            workload: "soak-2h".to_owned(),
-            repetition: 1,
-        });
-        order += 1;
-    }
     result
+}
+
+pub fn optional_soak_schedule() -> Vec<ScheduledSample> {
+    vec![ScheduledSample {
+        order: 1,
+        stack: "sophia".to_owned(),
+        workload: "soak-2h".to_owned(),
+        repetition: 1,
+    }]
+}
+
+fn schedule_for_lane(lane: ComparisonLane) -> Vec<ScheduledSample> {
+    match lane {
+        ComparisonLane::Interactive => schedule(),
+        ComparisonLane::OptionalSoak => optional_soak_schedule(),
+    }
+}
+
+fn schedule_for_run(run: &Path) -> Result<Vec<ScheduledSample>, String> {
+    Ok(schedule_for_lane(prepared_lane(run)?))
+}
+
+fn prepared_lane(run: &Path) -> Result<ComparisonLane, String> {
+    let manifest = fs::read_to_string(run.join("manifest.kdl"))
+        .map_err(|error| format!("comparison manifest is missing: {error}"))?;
+    match fields(manifest.lines().next().unwrap_or_default())?
+        .get("lane")
+        .copied()
+    {
+        Some("interactive") => Ok(ComparisonLane::Interactive),
+        Some("optional-soak") => Ok(ComparisonLane::OptionalSoak),
+        Some(lane) => Err(format!("comparison manifest names unknown lane {lane:?}")),
+        None => Err("comparison manifest lacks lane".to_owned()),
+    }
 }
 
 fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
@@ -745,16 +810,22 @@ fn verify_prepared_inputs(repo: &Path, run: &Path) -> Result<(), String> {
     let manifest = fs::read_to_string(run.join("manifest.kdl"))
         .map_err(|error| format!("comparison manifest is missing: {error}"))?;
     let acquisition = manifest.lines().next().unwrap_or_default();
-    if !acquisition.starts_with("desktop_comparison_manifest schema=3 status=prepared ")
+    if !acquisition.starts_with("desktop_comparison_manifest schema=4 status=prepared ")
         || !acquisition
             .split_ascii_whitespace()
             .any(|field| field == "acquisition=terminal_free_visible")
+        || !acquisition
+            .split_ascii_whitespace()
+            .any(|field| field == "optional_soak=separate")
     {
-        return Err("comparison run predates the terminal-free visibility contract".to_owned());
+        return Err(
+            "comparison run predates the terminal-free visibility and optional-soak contract"
+                .to_owned(),
+        );
     }
     let schedule_file = fs::read_to_string(run.join("schedule.kdl"))
         .map_err(|error| format!("comparison schedule is missing: {error}"))?;
-    let expected_schedule = schedule()
+    let expected_schedule = schedule_for_run(run)?
         .iter()
         .map(|item| format!(
             "desktop_comparison_schedule schema=2 order={} stack={} workload={} repetition={} backend=native\n",

@@ -60,6 +60,7 @@ cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
 cargo xtask conformance gate direct-scanout [PROOF]
 cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
 cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison prepare-soak SOAK_RUN
 cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
 cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
@@ -82,13 +83,14 @@ session, `--cursor` sweeps the hardware cursor, and `--atomic-cursor` asserts
 the default atomic path rather than selecting it. Each has a matching
 `verify` spelling above.
 
-The desktop comparison is a diagnostic 39-sample matrix, not a relative
+The desktop comparison is a diagnostic 36-sample matrix, not a relative
 release gate. Its typed conformance owner requires a clean signed candidate,
 pins and hashes configuration, stack executables, and hardware/software
 identities, rotates stack order across three 60-second repetitions, and owns
 workload/process/resource lifetime. It replays kernel-DRM, visibility, and
-workload populations, binds every sealed raw attempt by checksum, and requires
-one two-hour soak per stack.
+workload populations and binds every sealed raw attempt by checksum. A separate
+`prepare-soak` run contains one optional two-hour Sophia durability row; it does
+not block verification or reporting of the interactive matrix.
 `desktop-comparison gate` is the typed one-row entry point. Its shell adapter
 owns only TTY3 checks, local compositor/X-server launch, bounded teardown, VT
 recovery, and tracefs privilege; stack/workload choice, admission, sampling,

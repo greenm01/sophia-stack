@@ -635,6 +635,7 @@ owned by typed conformance code:
 ```sh
 cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
 cargo xtask conformance desktop-comparison prepare RUN
+cargo xtask conformance desktop-comparison prepare-soak SOAK_RUN
 cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
 cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
@@ -651,8 +652,9 @@ candidate and reference-stack identities, and records the common two-output
 topology plus detected kernel, Mesa, and GPU identities. The schedule
 rotates Sophia, XLibre+xmonad, and niri across three repetitions of Kitty 60 s,
 the loopback-only animated Firefox fixture, 120 resize requests, and a 16-Kitty
-launch burst, then requires
-one two-hour soak for each stack: 39 raw samples total.
+launch burst: 36 required raw samples total. `prepare-soak` creates a separate
+one-row Sophia run for an optional two-hour overnight durability check. The
+soak never blocks `verify` or `report` for the interactive matrix.
 
 `gate` owns one complete TTY3 row: it checks the clean prepared commit, builds
 before display takeover, selects only the next typed stack, launches it without

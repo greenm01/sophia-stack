@@ -18226,3 +18226,71 @@ device ownership or permissions nor broadens user group or sudo policy.
 Launcher-safety coverage requires inherited-descriptor duplication and rejects
 the pathname-open spelling that caused the failure. The null-standard-input
 regression and structured gate journal remain intact.
+
+## 2026-09-04: first native comparison startup exposed two recovery gaps
+
+The next physical row crossed TTY, candidate, tracefs, and stack admission and
+started the terminal-free Sophia/Hagia session. Native evidence proved two
+ready heads, output 1 on DP-1 at 2560x1440 and output 2 on DP-2 at 1920x1080,
+followed by a committed and settled two-output topology. The gate nevertheless
+timed out in `sophia-launch` before admitting a capture.
+
+The timeout was deterministic adapter drift. Sophia's X authority deliberately
+publishes connector-neutral RandR output names (`SOPHIA-1` and `SOPHIA-2`),
+while the shared X topology predicate accepted only XLibre's physical `DP-1`
+and `DP-2` names. The gate now admits either complete naming domain with the
+same primary, modes, and logical positions. A failed predicate retains the last
+raw query in the owner-only `xrandr-last.log` instead of discarding the fact
+needed to diagnose it.
+
+Failure teardown then restored greetd on its configured tty7, but the visible
+greeter did not accept keyboard input. The machine required a hard reboot. The
+retained inner recovery record proved only tty3's display mode and termios; it
+did not verify tty3's keyboard mode, any previously running keyd service, or
+the tty7 state to which control was handed. The launcher also requested greetd
+startup and immediately raced it with activation, treating tty7 as an error
+because it expected to remain on tty3. Those omissions made the earlier
+successful handoff record unsound. The reboot removed the live kernel state, so
+the exact stale tty7 field cannot be reconstructed; the missing verification
+boundary is independently sufficient to explain why the failure was admitted.
+
+The session launcher now reads back the restored keyboard mode, waits for a
+previously running keyd instance, and records those facts without changing the
+established schema-3 record consumed by retained verifiers. The outer launcher
+captures tty3 and greetd tty7 display, keyboard, and termios state before
+takeover. On exit it restores and verifies tty3 first, restores tty7 before
+starting greetd, waits for a live tuigreet on the configured VT, re-verifies
+tty7, and only then activates it. Any manager readiness or input-state failure
+stops the manager and returns to the verified originating text VT instead of
+presenting an unverified greeter. A persistent `tty-handoff.log` makes that
+decision attributable after `/tmp` loss or reboot.
+
+The launcher authenticates sudo while both input and the display manager are
+healthy, refreshes only that existing timestamp for its bounded lifetime, and
+uses noninteractive sudo during recovery. This prevents the two-hour soak from
+ending at an invisible password prompt; a lost lease becomes an immediate,
+recorded recovery failure rather than an unbounded wait.
+
+This is a safety fix, not comparison evidence. No row was sealed, the prepared
+run remains non-promotable, and another physical attempt is prohibited until
+the corrected candidate is signed and the full offline gate passes.
+
+## 2026-09-04: two-hour soak moves to an optional overnight lane
+
+The comparison's three two-hour rows made a diagnostic matrix consume six
+hours of attended critical-path time after its 36 short rows. They also made
+reference-compositor durability a prerequisite for closing Sophia's milestone,
+even though reference performance is explicitly not a Sophia correctness gate.
+
+The schema-4 comparison contract now separates lanes. Ordinary `prepare`
+creates the complete 36-row interactive matrix: four workloads, three
+repetitions, and three rotated stacks. `prepare-soak` creates an independent
+one-row Sophia two-hour durability run. Each run keeps its own signed candidate,
+host identity, immutable schedule, raw attempts, checksums, verification, and
+report. Completing or omitting the optional run cannot change the required
+matrix's result.
+
+The soak verifier and 7,200-second capture path remain intact for overnight
+use. Milestone 14 now closes on the required matrix and its existing absolute
+correctness, resource, teardown, and refresh-relative latency evidence; the
+two-hour run adds durability confidence but does not block productive work.
