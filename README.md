@@ -14,9 +14,10 @@ Sophia divides its systems based on what each part is permitted to control, rath
 
 - **Sophia Engine:** The absolute visual authority. It manages physical input, visual state, frame scheduling, transaction commits, rendering, and display output.
 - **Sophia X Server Frontend:** A clean, modern X11 frontend. It presents the established X11 API, translates protocol state into Sophia surface transactions, and performs X11 delivery rules. It does not control layout or scanout.
-- **Sophia WM (Window Manager):** A dedicated policy process handling layout, focus, keybindings, workspaces, and launch decisions. It operates entirely on opaque layout nodes and `SurfaceId` handles.
+- **Sophia WM (Window Manager):** A dedicated policy process handling layout, focus, keybindings, workspaces, and launch decisions. It operates entirely on opaque layout nodes and `SurfaceId` handles. [Hagia](https://github.com/sophia-org/hagia) is the reference implementation — an independent Nim client with no Sophia build dependency, and the repository to copy from if you're writing your own.
 - **Sophia Portals:** Mechanisms for deliberate cross-namespace transfers, such as clipboard sharing, drag-and-drop, and screen capture.
 - **Metadata Broker and Chrome:** Translates protocol metadata into redacted compositor UI without exposing namespaces to the window manager.
+- **Sophia Shell:** A separately confined client that decides what appears in shell surfaces — switcher, work-area claims — while Engine draws every pixel. [Narthex](https://github.com/sophia-org/narthex) is the reference implementation, deliberately small.
 
 ```text
 ================================================================================
