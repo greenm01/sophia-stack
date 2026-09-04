@@ -176,6 +176,7 @@ fn tty3_gate_restores_input_before_activating_the_ready_greetd_vt() {
 #[test]
 fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_SESSION_STARTUP=none"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_PROFILE_CHECK_XTASK=\"$xtask\""));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_sophia_session EXIT"));
     assert!(DESKTOP_COMPARISON_GATE.contains("exec {operator_tty_fd}<&0"));
     assert!(DESKTOP_COMPARISON_GATE.contains(") <&\"$operator_tty_fd\" &"));
@@ -227,6 +228,14 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
     assert!(SESSION_LAUNCHER.contains("--config=$SOPHIA_CORE_CONFIG"));
     assert!(SESSION_LAUNCHER.contains("sophia_append_session_terminal_registration_args"));
+}
+
+#[test]
+fn tty_profile_check_is_independent_of_the_callers_working_directory() {
+    assert!(TTY3_LAUNCHER.contains("SOPHIA_PROFILE_CHECK_XTASK"));
+    assert!(TTY3_LAUNCHER.contains("--manifest-path \"$ROOT_DIR/Cargo.toml\""));
+    assert!(TTY3_LAUNCHER.contains("--package xtask -- profile check"));
+    assert!(!TTY3_LAUNCHER.contains("cargo xtask profile check"));
 }
 
 #[test]

@@ -362,12 +362,30 @@ fi
 # Three physical runs died in argument validation with greetd already down:
 # a desktop default the session could not satisfy, a window manager that could
 # not serve, and a client override that would not parse. This is the check none
-# of them had.
-if ! cargo xtask profile check >/dev/null 2>"${TMPDIR:-/tmp}/sophia-profile-check.log"; then
+# of them had. A parent gate can provide its already-running xtask so the
+# preflight is both candidate-consistent and free of a redundant Cargo launch.
+# Direct launcher use falls back to an explicit manifest invocation: Cargo
+# aliases are discovered from the caller's working directory, which need not be
+# the repository when an absolute launcher path is entered on a TTY.
+run_profile_check() {
+    local checker="${SOPHIA_PROFILE_CHECK_XTASK:-}"
+    if [[ -n "$checker" ]]; then
+        [[ "$checker" == /* && -f "$checker" && -x "$checker" ]] || {
+            echo "SOPHIA_PROFILE_CHECK_XTASK must name an absolute executable file." >&2
+            return 1
+        }
+        "$checker" profile check
+    else
+        cargo run --quiet --offline --manifest-path "$ROOT_DIR/Cargo.toml" \
+            --package xtask -- profile check
+    fi
+}
+if ! run_profile_check >/dev/null 2>"${TMPDIR:-/tmp}/sophia-profile-check.log"; then
     echo "A session profile would be refused; not taking the display." >&2
     cat "${TMPDIR:-/tmp}/sophia-profile-check.log" >&2
     exit 1
 fi
+unset SOPHIA_PROFILE_CHECK_XTASK
 
 if [[ -n "$display_manager" ]]; then
     echo "Stopping $display_manager so Sophia can own DRM..."

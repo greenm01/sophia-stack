@@ -111,7 +111,10 @@ therefore cannot change a comparison row.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.
-Installed sessions invoke `sophia` directly.
+The TTY development launcher roots its standalone profile-check fallback at the
+workspace manifest instead of depending on the caller's directory; a parent
+gate passes down its already-running absolute xtask executable. Installed
+sessions invoke `sophia` directly.
 
 ## Check Contract
 

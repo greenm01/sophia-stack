@@ -344,6 +344,7 @@ run_sophia() {
         export SOPHIA_SESSION_STARTUP=none
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
         export SOPHIA_BUILD_SESSION=false
+        export SOPHIA_PROFILE_CHECK_XTASK="$xtask"
         exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$narthex_bin" \
             --max-runtime-ms="$max_runtime_ms"
     ) <&"$operator_tty_fd" &
