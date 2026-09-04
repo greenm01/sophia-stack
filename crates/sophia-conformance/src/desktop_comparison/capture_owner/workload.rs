@@ -1,7 +1,10 @@
 //! Repository-owned desktop-comparison workloads.
 
 use super::visibility::ProcessIdentity;
-use super::{READY_TIMEOUT, ScheduledSample, elapsed_micros, timing_population, write_new};
+use super::{
+    READY_TIMEOUT, ScheduledSample, elapsed_micros, parse_proc_stat, timing_population, write_new,
+};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
@@ -23,6 +26,7 @@ const TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(super) struct WorkloadOwner {
     children: Vec<Child>,
     roots: Vec<u32>,
+    observed_processes: BTreeMap<u32, u64>,
     sockets: Vec<PathBuf>,
     socket_namespace: Option<PathBuf>,
     firefox: Option<FixtureServer>,
@@ -45,6 +49,7 @@ impl WorkloadOwner {
         let mut owner = Self {
             children: Vec::new(),
             roots: Vec::new(),
+            observed_processes: BTreeMap::new(),
             sockets: Vec::new(),
             socket_namespace: None,
             firefox: None,
@@ -201,6 +206,10 @@ impl WorkloadOwner {
             .collect()
     }
 
+    pub(super) fn retain_processes(&mut self, processes: impl IntoIterator<Item = (u32, u64)>) {
+        self.observed_processes.extend(processes);
+    }
+
     pub(super) fn mark_visible(&mut self) {
         self.settle_usec = elapsed_micros(self.launched_at);
     }
@@ -225,7 +234,7 @@ impl WorkloadOwner {
                 .map_err(|_| "resize workload thread panicked".to_owned())??,
             None => Vec::new(),
         };
-        terminate_owned_children(&mut self.children)?;
+        terminate_owned_processes(&mut self.children, &self.observed_processes)?;
         self.firefox.take();
         self.cleanup_kitty_namespace();
         let (p50, p95, p99, maximum) = timing_population(&resize);
@@ -260,9 +269,73 @@ impl WorkloadOwner {
 impl Drop for WorkloadOwner {
     fn drop(&mut self) {
         if !self.finished {
-            let _ = terminate_owned_children(&mut self.children);
+            let _ = terminate_owned_processes(&mut self.children, &self.observed_processes);
             self.cleanup_kitty_namespace();
         }
+    }
+}
+
+fn terminate_owned_processes(
+    children: &mut [Child],
+    observed_processes: &BTreeMap<u32, u64>,
+) -> Result<(), String> {
+    signal_observed_processes(observed_processes, rustix::process::Signal::TERM);
+    let group_result = terminate_owned_children(children);
+    signal_observed_processes(observed_processes, rustix::process::Signal::KILL);
+
+    let deadline = Instant::now() + TERMINATION_TIMEOUT;
+    while Instant::now() < deadline {
+        if observed_processes
+            .iter()
+            .all(|(&pid, &start_ticks)| !process_identity_is_live(pid, start_ticks))
+        {
+            return group_result;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    let survivors = observed_processes
+        .iter()
+        .filter(|&(&pid, &start_ticks)| process_identity_is_live(pid, start_ticks))
+        .count();
+    let retained_result = if survivors == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "{survivors} owned comparison workload processes survived bounded termination"
+        ))
+    };
+    combine_termination_results(group_result, retained_result)
+}
+
+fn signal_observed_processes(
+    observed_processes: &BTreeMap<u32, u64>,
+    signal: rustix::process::Signal,
+) {
+    for (&pid, &start_ticks) in observed_processes {
+        if !process_identity_is_live(pid, start_ticks) {
+            continue;
+        }
+        if let Some(pid) = rustix::process::Pid::from_raw(pid as i32) {
+            let _ = rustix::process::kill_process(pid, signal);
+        }
+    }
+}
+
+fn process_identity_is_live(pid: u32, expected_start_ticks: u64) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|source| parse_proc_stat(&source).ok())
+        .is_some_and(|stat| stat.start_ticks == expected_start_ticks)
+}
+
+fn combine_termination_results(
+    first: Result<(), String>,
+    second: Result<(), String>,
+) -> Result<(), String> {
+    match (first, second) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
+        (Err(first), Err(second)) => Err(format!("{first}; {second}")),
     }
 }
 

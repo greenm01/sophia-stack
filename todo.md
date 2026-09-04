@@ -104,10 +104,13 @@ Status vocabulary:
   `cp14-schema4-401d2b68` then passed the four-target qualification and retained
   a healthy 60-second measurement, but failed closed before finalization when
   two accepted X clients outlived the workload launcher and session quiescence
-  timed out. The conformance owner now gives every workload a private process
-  group and drains the whole group; qualification also emits valid ImageText8
-  and checks every draw response. A new signed physical run is required. No
-  comparison evidence is promotable yet.
+  timed out. Private workload process groups removed one survivor on signed
+  candidate `69520f50`, and valid ImageText8 eliminated all protocol errors, but
+  one connection still outlived the consistently observed three-process Kitty
+  tree. The conformance owner now retains exact PID/start identities from its
+  existing sampler and drains those processes as well as their original group.
+  A new signed physical run is required. No comparison evidence is promotable
+  yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -121,7 +124,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs remain at 0/36 while preserving successive cursor-plane, stale-focus, cadence, qualification, and teardown diagnostics. The latest `cp14-schema4-401d2b68` partial passed 4/4 cursor targets with 1,151 motion events and retained 60/60 focused visibility/resource samples plus 3,599 contiguous kernel frames; two surviving X clients prevented clean teardown. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs remain at 0/36 while preserving successive cursor-plane, stale-focus, cadence, qualification, and teardown diagnostics. The latest `cp14-schema4-69520f50` partial passed 4/4 cursor targets with 728 motion events and retained 60/60 focused visibility/resource samples plus 3,599 contiguous kernel frames. Its protocol tally was clean, but one surviving X client prevented clean teardown. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -281,11 +284,11 @@ work:
   qualification even when its caller condition disables implicit `errexit`;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `401d2b68` passed qualification and captured a healthy
-  first Sophia measurement, but did not seal it because launcher-only workload
-  cleanup left accepted X clients alive through session quiescence. Private
-  workload process groups, early probe disconnect, valid ImageText8, and checked
-  qualification draws now need a fresh signed candidate and prepared run;
+  continuing. Candidate `69520f50` passed qualification, captured a healthy
+  first Sophia measurement, and eliminated qualification protocol errors, but
+  did not seal it because one accepted X client survived process-group cleanup.
+  Exact sampled PID/start identity retention and bounded group-plus-process
+  teardown now need a fresh signed candidate and prepared run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

@@ -424,8 +424,9 @@ fn measure(
         .union(&workload_roots)
         .copied()
         .collect::<BTreeSet<_>>();
-    let [baseline, stack_baseline, workload_baseline] =
+    let ([baseline, stack_baseline, workload_baseline], observed_workload) =
         sample_process_populations(Path::new("/proc"), [&roots, &stack_roots, &workload_roots])?;
+    workload.retain_processes(observed_workload);
     let mut resources = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -447,10 +448,12 @@ fn measure(
                 format_record("sample", sequence, monotonic_usec, observed_visibility).as_bytes(),
             )
             .map_err(|error| format!("could not append visibility evidence: {error}"))?;
-        let [snapshot, stack_snapshot, workload_snapshot] = sample_process_populations(
-            Path::new("/proc"),
-            [&roots, &stack_roots, &workload_roots],
-        )?;
+        let ([snapshot, stack_snapshot, workload_snapshot], observed_workload) =
+            sample_process_populations(
+                Path::new("/proc"),
+                [&roots, &stack_roots, &workload_roots],
+            )?;
+        workload.retain_processes(observed_workload);
         writeln!(
             resources,
             "desktop_comparison_resource schema=2 seq={sequence} monotonic_usec={} processes={} pss_kib={} rss_kib={} anonymous_kib={} private_dirty_kib={} cpu_msec={} minor_faults={} major_faults={} threads={} fds={} stack_processes={} stack_pss_kib={} stack_rss_kib={} stack_cpu_msec={} stack_threads={} stack_fds={} workload_processes={} workload_pss_kib={} workload_rss_kib={} workload_cpu_msec={} workload_threads={} workload_fds={}",
@@ -977,11 +980,13 @@ fn read_attestation(path: &Path) -> Result<SessionAttestation, String> {
 ///
 /// Stack and workload totals are views over the aggregate population. Reading
 /// every `smaps_rollup` three times would add avoidable controller work to the
-/// measurement it is trying not to perturb.
+/// measurement it is trying not to perturb. The returned PID/start pairs are
+/// the exact members of the final roots entry, retained transiently so teardown
+/// still owns a descendant after it changes parent or process group.
 fn sample_process_populations<const N: usize>(
     proc_root: &Path,
     roots: [&BTreeSet<u32>; N],
-) -> Result<[ResourceSnapshot; N], String> {
+) -> Result<([ResourceSnapshot; N], Vec<(u32, u64)>), String> {
     let mut processes = BTreeMap::new();
     for entry in fs::read_dir(proc_root)
         .map_err(|error| format!("could not enumerate process population: {error}"))?
@@ -1009,6 +1014,7 @@ fn sample_process_populations<const N: usize>(
     }
 
     let mut totals = [ResourceSnapshot::default(); N];
+    let mut last_population = Vec::new();
     for pid in processes.keys().copied() {
         let membership =
             std::array::from_fn::<_, N, _>(|index| descends_from(pid, roots[index], &processes));
@@ -1018,6 +1024,9 @@ fn sample_process_populations<const N: usize>(
         let Some(stat) = processes.get(&pid) else {
             continue;
         };
+        if membership.last().copied().unwrap_or(false) {
+            last_population.push((pid, stat.start_ticks));
+        }
         let process = proc_root.join(pid.to_string());
         let memory = match fs::read_to_string(process.join("smaps_rollup")) {
             Ok(memory) => memory,
@@ -1069,7 +1078,7 @@ fn sample_process_populations<const N: usize>(
     }) {
         return Err("sampled process population is empty or unreadable".to_owned());
     }
-    Ok(totals)
+    Ok((totals, last_population))
 }
 
 fn descends_from(mut pid: u32, roots: &BTreeSet<u32>, processes: &BTreeMap<u32, ProcStat>) -> bool {
