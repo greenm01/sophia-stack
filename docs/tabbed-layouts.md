@@ -89,3 +89,5 @@ focus/resize/move, hidden-member clicks, shell restart, title changes, fullscree
 and floating-window occlusion. Confirm native GPU composition, retirement, input
 alignment, and recovery in the retained evidence. Offline checks do not prove
 physical scanout behavior or advance the unrelated CP14 comparison rows.
+This acceptance is owned by the CP-14.3 development-workflow checklist in
+[the active roadmap](../todo.md#critical-path); it requires no comparison run.

@@ -4,6 +4,34 @@ This file archives completed and prototype roadmap items that previously lived
 in `todo.md`. Keep active work in `todo.md`; keep detailed rationale and
 validation evidence in `docs/research-log.md`.
 
+## 2026-09-04 Milestone 14 Exit Retargeted To Development-Session Readiness
+
+The user changed Milestone 14's exit to a usable, recoverable Hagia development
+session. CP-14.3 now orders lifecycle repair, the live launcher and fallback,
+bounded diagnostics, real terminal/Firefox/clipboard/layout/two-monitor use,
+and evidence review. Readiness follows demonstrated tasks and resolved failures;
+it requires no consecutive-clean-day timer. Milestone 14 remains open.
+
+CP-14.2 retains its identifier and moves to Deferred, explicitly incomplete.
+The comparison infrastructure is implemented: exact signed candidates, isolated
+profiles, external capture ownership, physical cursor qualification, focused
+visibility checks, split resources, deduplicated kernel frames, and sealing only
+after teardown. Its verifier still requires all 36 rows. None of those rules or
+the retained archives were weakened by changing the execution order.
+
+The Firefox recovery work culminated in signed `2823807e`'s short physical
+canary: changing nonblack pixels, exact native retirement, and clean logout in
+43 ms. The later `cp14-schema4-251d9acd` run sealed nine Kitty rows and measured
+Firefox row 10, then failed completion after VT resume reset native counters.
+The suspended-seat loop also delays its runtime deadline. Those defects remain
+the first active repair; the measured partial is not promoted.
+
+The [decision and former queue](research-log.md#2026-09-04-milestone-14-retargeted-to-development-session-readiness)
+retain the previous requirements and detailed recovery history. A changed
+candidate still needs a fresh matrix if comparison work is explicitly resumed.
+Comparison and optional soak completion no longer gate development-session use
+or milestone closure. CP-15.1 and CP-15.2 follow the revised milestone.
+
 ## 2026-09-04 Native Tree Layouts And Tab Descriptors
 
 Implemented Hagia frame-tree/Notion and split-tree/i3 topology, projection,
@@ -13,7 +41,7 @@ persistent Narthex descriptors, with Sophia owning GPU composition and activatio
 against presented tab targets. Revision-1 shell clients remain supported.
 
 The implementation and offline verification slice is complete; physical display
-acceptance remains active in `todo.md`. This does not advance CP14. See
+acceptance is part of CP-14.3 in `todo.md`. This seals no CP-14.2 comparison rows. See
 [tabbed layouts](tabbed-layouts.md) for the contract, fallback, and operator gate.
 
 ## 2026-09-01 Milestone 14 Stable X Backing And Continuous Presentation
@@ -38,8 +66,9 @@ acceptance remains active in `todo.md`. This does not advance CP14. See
 Run `20260902T002500Z` retained a 16.586 ms maximum source gap, 18.825 ms
 maximum display gap, and 31.737 ms maximum update-to-retirement latency on the
 60 Hz physical workload, with clean authority, protocol, native-presentation,
-and teardown state. This closes CP-14.1 only. The same-hardware comparison and
-fresh two-hour current soak remain the active Milestone 14 exit evidence.
+and teardown state. This closes CP-14.1 only. The comparison and soak were the
+planned exit evidence at that point; the explicit 2026-09-04 retargeting above
+supersedes that execution requirement without changing this physical result.
 
 ---
 

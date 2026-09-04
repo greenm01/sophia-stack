@@ -627,8 +627,56 @@ Offline regressions are
 `tools/check_sophia_terminal_performance_reporter.sh`, and
 `tools/check_xserver_rendering_performance_reporter.sh`.
 
-Milestone 14's broader same-hardware comparison is a separate diagnostic matrix
-owned by typed conformance code:
+## Development-Session Readiness
+
+CP-14.3 in [the active roadmap](../todo.md#critical-path) owns Milestone 14's
+current exit: a recoverable Hagia development session using terminal, Firefox,
+clipboard, layouts/tabs, two monitors, dependable input, VT recovery, and logout.
+The native evidence-lifetime and suspended-deadline fixes remain the first task.
+This is a target acceptance policy, not a claim that those fixes or workflows
+have passed. Diagnostics improvements and the short session checklist are queued
+there; no new gate command is introduced by this policy change.
+
+Start with a short physical Firefox/VT/deadline canary after the lifecycle
+regressions pass. The normal-session acceptance check then covers startup,
+terminal and Firefox launch, typing/focus, resize, both outputs, basic tabs,
+VT return, and clean logout. Full tab behavior follows the
+[tab acceptance contract](tabbed-layouts.md#verification-and-operator-acceptance).
+The operator can perform normal work; no benchmark controller or foreign-stack
+comparison is required. Reuse the existing session entry and fallback path.
+
+For each workflow observation retain the exact source, binaries, profiles,
+session identity, outcome, and relevant diagnostics. A usage failure needs a
+diagnosis, focused regression where feasible, correction, and revalidation of
+affected behavior. Code changes retain `cargo xtask check`; protocol changes
+also retain independent client checks. Startup, rendering, input, or lifecycle
+changes require the short physical acceptance check and any defect-specific
+probe. Documentation-only changes need inspection, link checks, and
+`git diff --check`, not an operator session.
+
+Previous evidence keeps its original identity. Relying on it for a newer
+candidate requires a recorded impact review; changed behavior requires relevant
+retesting. Unrelated changes do not reset every demonstrated workflow. Real use
+complements deterministic and physical tests, and cannot establish unobserved
+properties. Readiness requires no fixed hour/day counter or consecutive clean
+workdays.
+
+Promotion requires observations for every declared workflow and no unresolved
+blocking failures: unrecoverable sessions, lost input, application-blocking
+failures, visible corruption, undrained work, or unbounded resource growth.
+Review warmed resource populations and steady-state allocation growth against
+the observed workload, clean teardown, and relevant refresh-relative latency
+evidence; record limits rather than extrapolating unobserved durability. Longer
+use is useful evidence. The optional two-hour soak and CP-14.2 matrix remain
+separate and non-blocking, with their own existing verification requirements.
+
+## Deferred Same-Hardware Comparison
+
+CP-14.2 is deferred and incomplete. Resume it only for an explicitly selected
+stable candidate or a named performance investigation. Its 36-row requirement
+applies to comparison verification, not permission to use Hagia or close the
+revised Milestone 14. Existing artifacts and strict verification remain intact.
+The comparison is owned by typed conformance code:
 
 ```sh
 cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
@@ -680,7 +728,8 @@ baseline plus focused workload ownership on DP-1 with zero foreign toplevels,
 and duration, resource cadence, frame monotonicity, resize population, crash,
 sample-loss, and teardown checks pass. The sealed attempt has an exact file set
 and internal checksums; the run ledger separately binds its result to the typed
-schedule. A partial capture blocks all later progress until diagnosed.
+schedule. A partial capture blocks later progress within its own comparison run
+until diagnosed; it does not block the development-session work in CP-14.3.
 
 `verify` requires the exact complete matrix. `report` retains memory,
 allocation, CPU/fault, process/thread/fd, launch/settle/resize, and kernel-frame

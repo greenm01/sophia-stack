@@ -85,8 +85,27 @@ session, `--cursor` sweeps the hardware cursor, and `--atomic-cursor` asserts
 the default atomic path rather than selecting it. Each has a matching
 `verify` spelling above.
 
-The desktop comparison is a diagnostic 36-sample matrix, not a relative
-release gate. Its typed conformance owner requires a clean signed candidate,
+The active development-session path is CP-14.3 in `todo.md`. Reuse the existing
+`sophia session run` entry, installed launcher, and necessary TTY adapter, with
+exact binary/profile identity and a known working fallback. The roadmap queues
+the remaining lifecycle fixes, short physical acceptance checklist, per-session
+diagnostic preservation, and incident markers; these are not new commands
+already provided by this document. Extend existing bounded telemetry first.
+Production session events stay in `sophia-session`; developer evidence packaging
+and validation stay in `sophia-conformance`/`xtask`. Expensive tracing and pixel
+inspection remain opt-in.
+
+Normal usage supplies workflow evidence alongside deterministic tests. A fix
+requires the relevant regression and acceptance checks, not another comparison
+campaign. The [development-session validation policy](validation.md#development-session-readiness)
+defines evidence applicability and promotion. Historical scripts such as
+`run_current_critical_path_tty4.sh` retain their existing proof workflows; their
+names do not select the current roadmap task or make them prerequisites for use.
+
+The desktop comparison is a deferred, incomplete diagnostic 36-sample matrix.
+It resumes only for an explicitly selected stable candidate or named performance
+investigation, and gates neither development-session use nor revised Milestone
+14 closure. Its typed conformance owner still requires a clean signed candidate,
 pins and hashes configuration, stack executables, and hardware/software
 identities, rotates stack order across three 60-second repetitions, and owns
 workload/process/resource lifetime. It replays kernel-DRM, visibility, and

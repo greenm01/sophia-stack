@@ -24,6 +24,10 @@ Use this file as a decision surface, not as a project diary.
 6. Keep this file short. When a gate closes, record its durable result and
    evidence elsewhere, remove its implementation narrative here, and expose
    the next measurable gate.
+7. A usage failure produces a diagnosis, a focused regression where feasible,
+   a correction, and revalidation of affected behavior. Insert a blocking repair
+   into the active stage; do not restart a comparison campaign or reset unrelated
+   completed work. Retain exact candidate identities and review evidence impact.
 
 Status vocabulary:
 
@@ -46,8 +50,8 @@ Status vocabulary:
 - WMs remain blind to XIDs, namespace IDs, titles, classes, PIDs, executable
   paths, and portal payloads.
 - `sophia_wm_v1`, `sophia_shell_v1`, and `sophia_output_v1` are separate
-  authority endpoints in one language-neutral protocol family. Hagia is the
-  first proof-of-concept WM and shell client, not a protocol.
+  authority endpoints in one language-neutral protocol family. Hagia is the WM
+  reference client; Narthex is the independent shell reference client.
 - Public role protocols carry bounded semantic policy, never shader programs.
   Engine retains compositor authority and any private renderer-provider seam.
 - QEMU may prove deterministic protocol and policy behavior. Only physical
@@ -66,38 +70,23 @@ Status vocabulary:
   ported to the language-neutral protocols.
 - The common native protocol-family contract is ratified. The role-by-role
   lifecycle audit and one family-level conformance entry point are not complete.
-- `sophia_shell_v1` revision 1 remains experimental. Its descriptor switcher,
-  protected launch, capability path, reconnect behavior, C proof, and Hagia
-  shell client exist; permanent compatibility, the complete independent
-  lifecycle proof, reservation coordination, and signed installed evidence
-  remain open.
-- Milestone 14 has promoted generational three-slot presentation, bounded
-  buffer-age damage, refresh-relative input latency, one shared renderer worker
-  per DRM group, direct scanout, return to composition on overlay/effect
-  activation, direct-versus-composed measurements, and the atomic cursor path.
-  Continuous software-content presentation is closed by one signed physical
-  machine-and-visual pass. The comparison capture/replay contract is
-  visibility-bound, teardown-aware, and separates stack from workload cost.
-  Run `cp14-schema4-124ad6c1` sealed all nine Kitty rows and then failed closed
-  on Sophia's first Firefox row: a retained 200x210 startup extent remained the
-  recovery constraint after stronger 1290x1050 Present buffers arrived, so the
-  surface stayed unassigned and invisible. Admission recovery now follows the
-  strongest retained candidate only until exact native retirement is armed.
-  The follow-up exposed a separate source-selection defect: a retained CPU
-  background replaced Firefox's new DRI3 source. That defect and child-window
-  software Present mapping now have failing-before/passing-after regressions.
-  Page readiness and retirement alone did not prove visible browser content.
-  Candidate `48bf357f` rendered Firefox visibly; its deliberate light/dark
-  animation was confirmed by the operator. Logout still failed: frontend
-  egress drained in 18 ms, but the owner stranded one buffered authority batch
-  after observing EOF. The owner now consumes accepted work after ingress
-  closes and includes accepted coordinator work in its completion barrier.
-  Signed candidate `2823807e` subsequently passed the short Firefox canary:
-  changing nonblack browser pixels, exact native retirement, and clean logout
-  in 43 ms. Its saved capture verifies after fixing compatibility-launch
-  double counting and recognizing committed CPU admission without requiring
-  a standing-target successor. A fresh comparison run is still required;
-  no current comparison evidence is promotable.
+- `sophia_shell_v1` revision 2 is experimental, with revision-1 clients still
+  supported. Narthex implements switcher, bounded reservation, and persistent
+  tab descriptors; Sophia owns geometry, rendering, input, and presentation.
+  The family audit, stabilization, and current signed physical tab acceptance
+  remain open. Hagia's native trees and tab protocol pass offline verification.
+- Milestone 14 has retained physical evidence for frame slots, buffer-age damage,
+  input latency, shared rendering, direct scanout, cursor motion, and continuous
+  software-content presentation. Candidate `2823807e` passed the short Firefox
+  canary with changing nonblack pixels, exact retirement, and clean logout.
+- Comparison run `cp14-schema4-251d9acd` sealed nine Kitty rows; Firefox row 10
+  measured successfully but failed final validation after VT resume reset native
+  counters. Suspension also delays the runtime deadline. These lifecycle gaps
+  are the first task in CP-14.3; the comparison remains deferred at 9/36. See the
+  [diagnosis](docs/research-log.md#2026-09-04-cp14-row-10-exposes-scanout-evidence-lifetime-and-suspended-deadline-gaps).
+- The current target is a recoverable Hagia development session, evaluated by
+  real workflows and targeted checks. Milestone 14 is not complete; neither a
+  new comparison matrix nor a clean-day timer is a prerequisite for this work.
 
 Latest retained Milestone 14 evidence:
 
@@ -111,7 +100,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | `cp14-schema4-124ad6c1` sealed 9/36 Kitty rows; row 10 retained a failed Sophia Firefox partial with zero visible workloads. The 200x210 recovery extent did not follow stronger 1290x1050 Present evidence. The run remains diagnostic and a new signed candidate is required. |
+| Comparison acquisition | `cp14-schema4-251d9acd` sealed 9/36 Kitty rows; Firefox row 10 measured 60 focused/visible samples and 3,600 kernel frames, then failed native completion after VT resume reset counters. The partial blocks its own run; CP-14.2 remains deferred and incomplete. |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -123,202 +112,93 @@ before changing any product default.
 
 ## Critical Path
 
-### CP-14.2 — Same-hardware comparison (`NOW`)
+### CP-14.3 — Development-session readiness and Milestone 14 closure (`NOW`)
 
-- [ ] Run identical Kitty, Firefox, resize, and launch-burst workloads against
-  Sophia, XLibre+xmonad, and a mature Wayland compositor on the same hardware.
-  Run the separate Sophia two-hour soak only when overnight durability evidence
-  is useful; it is optional and non-blocking.
+Milestone 14 now targets a reliable personal development session: terminal,
+Firefox, clipboard, layouts/tabs, two monitors, dependable input, recovery, and
+logout. Readiness is demonstrated through working tasks and resolved failures,
+with no consecutive-clean-day requirement. CP-14.2 is explicitly deferred and
+incomplete; neither its 36-row matrix nor the optional soak gates this milestone.
+The [decision and former queue](docs/research-log.md#2026-09-04-milestone-14-retargeted-to-development-session-readiness)
+retain the change in exit criteria. Work through these stages in order.
 
-Required exit:
+#### 1. Recover reliably
 
-- pin executable/configuration identities, topology, refresh, workload, sample
-  windows, and raw evidence;
-- report resource, frame-time, latency, allocation, and failure populations
-  without converting reference results into Sophia correctness thresholds; and
-- classify the comparison as diagnostic. Sophia's absolute correctness,
-  authority, and refresh-relative latency gates remain authoritative.
+- [ ] Preserve session-wide native evidence across scanout replacement,
+  retaining earlier failures and each owner's drain obligations.
+- [ ] Honor runtime deadlines while the seat is suspended, without requiring
+  reacquisition to begin shutdown.
+- [ ] Add regressions for retirement before replacement, repeated resume,
+  immediate shutdown after resume, rejected VT switches, topology replacement,
+  suspension across the deadline, and failure retention. Then run a short
+  physical Firefox/VT/deadline canary.
 
-The acquisition contract is implemented under
-`cargo xtask conformance desktop-comparison`. A clean signed preparation
-detects host identity and hashes the descriptors, isolated profiles, Firefox
-fixture/profile, tracefs adapter, all stack-launch adapters, and the six stack,
-policy, and shell executables. `gate` is the single TTY3 row owner: it
-revalidates the clean prepared checkout and release
-build before takeover, chooses the typed next stack, launches no operator
-application, keeps the controller outside the measured supervisor tree,
-resolves DP-1's active CRTC, and owns capture plus teardown. `attest`,
-`preflight`, `qualify`, `capture`, `finalize`, `replay`, `verify`, and `report`
-remain separately callable diagnostics.
+Exit: recovery and bounded shutdown pass without contradictory counters,
+abandoned accepted work, or loss of the fallback desktop. The
+[row-10 diagnosis](docs/research-log.md#2026-09-04-cp14-row-10-exposes-scanout-evidence-lifetime-and-suspended-deadline-gaps)
+is the starting evidence; no new comparison run is required.
 
-Each attempt retains exact raw visibility, split resource, deduplicated
-kernel-frame, workload, native-timing, and post-teardown attempt records plus a
-derived schema-4 result and internal ledger. The first Sophia row also requires
-an excluded four-target physical cursor qualification. Replay requires an empty
-application baseline; a capture-owned, focused, visible DP-1 toplevel with zero
-foreign application toplevels at settlement and every sample; uniform
-60-second short windows; 120 resize observations; contiguous/monotonic
-populations; zero crash/loss; and clean teardown. The optional soak lane
-independently requires a full two-hour sample.
-Correlation consumes PID/start identity only inside trusted conformance code
-and persists no application identity. Partial attempts block progress only
-within their own run. Regression coverage includes ready-but-hidden and
-foreign-window rejection, legacy-run refusal, raw replay/archive integrity,
-matrix/order mutation, kernel normalization, owner-only modes, tracefs probe
-records, isolated Kitty configuration, and bounded runtime socket paths.
-Reports retain resource, allocation, latency, and frame distributions with
-`verdict=none`.
+#### 2. Establish the live session
 
-The first physical attempt failed closed before row 1 and is documented in
-`docs/research-log.md`. A later run on signed candidate `00deb788` sealed the
-first 15 rows, but the operator did not see Firefox during Sophia row 15.
-Investigation found that the Sophia launcher keeps the Kitty used to invoke
-capture inside the measured supervisor tree, while Hagia preserves focus on
-that terminal and can leave the owned workload off-screen. Reference sessions
-have no equivalent client. Readiness and DRM-vblank evidence do not prove a
-visible workload, so Sophia rows 1, 6, 8, 10, and 15 are biased and the complete
-prefix is non-promotable. Acquisition is paused before row 16.
+- [ ] Reuse the existing launcher and installed session path; identify the exact
+  Sophia/Hagia/Narthex binaries and profiles, retain a known working fallback,
+  and document start, normal logout, emergency escape, and rollback.
+- [ ] Pass a short physical acceptance check: start normally, launch terminal
+  and Firefox, type and change focus, resize, use both outputs, return from a
+  VT, and log out cleanly. Include a basic tab-layout interaction.
 
-Implementation and recovery hardening are complete; remaining critical-path
-work:
+Exit: the operator can enter and leave a normal development session without a
+comparison controller or benchmark workload. This stage establishes pilot use,
+not milestone completion; fuller workflow acceptance follows in stage 4.
 
-- [x] replace Sophia's operator-terminal acquisition with a terminal-free
-  session and a capture controller outside the measured supervisor tree;
-- [x] fail closed unless trusted passive observation binds the capture-owned
-  workload to focused, visible DP-1 placement without disclosing application
-  identity to the blind WM, with hidden/foreign negative regressions;
-- [x] commit and sign the corrected candidate, then prepare a fresh run using
-  the already provisioned pinned XLibre prefix and isolated reference profiles;
-- [x] accept Sophia's connector-neutral RandR names and harden teardown so a
-  greeter is activated only after both the origin and manager TTY input states
-  are restored and verified, with a text-TTY fallback and persistent handoff
-  record;
-- [x] reproduce the schema-4 failure with the isolated real `xrandr` client,
-  implement the advertised read-only `GetPanning`, `GetCrtcTransform`, and
-  `GetCrtcGamma` requests, and make X protocol errors terminate topology
-  admission immediately with preserved diagnostics;
-- [x] make greetd recovery attributable and layered: verify exact captured state
-  before restart, fall back to a verified safe text-console baseline if exact
-  kernel round-tripping diverges, then require stable text display, a
-  non-disabled keyboard mode, readable termios, and a live tuigreet on the
-  configured VT before activation;
-- [x] sign the protocol and recovery corrections as `d5a1f7da` and prepare
-  `cp14-schema4-randr` against that exact candidate;
-- [x] stop after its first Sophia-row attempt and inspect the zero-row result:
-  topology and attestation passed, recovery safely established greetd on tty7,
-  and capture aborted before creating an attempt because Firefox had upgraded
-  from the pinned 154 to 155;
-- [x] update the Firefox comparison pin and move exact Kitty, Firefox, and niri
-  version admission into both preparation and the pre-takeover gate, retaining
-  capture-time revalidation against upgrades during a run;
-- [x] sign the version-admission correction, prepare `cp14-schema4-tools`, and
-  stop after the first Sophia and XLibre rows for inspection;
-- [x] diagnose the two-row discrepancy: the atomic cursor accepted pending
-  positions without a guaranteed post-retirement commit, XMonad self-replaced
-  through a missing isolated cache executable, duplicated DRM deliveries
-  inflated X timing, and capture claimed clean teardown before teardown ran;
-- [x] implement a topology-wide latest-wins atomic cursor owner with idle
-  cursor-only progress, combined-commit retry, hard-rejection legacy fallback,
-  bounded counters, and truthful queued-versus-visible reporting;
-- [x] make comparison capture stage before teardown, finalize only after the
-  exact supervisor exits, keep required component identities live throughout
-  sampling, split stack/workload/aggregate resources, deduplicate kernel
-  sequences, preserve nested gate diagnostics, and add the excluded cursor
-  qualification;
-- [x] land the cursor and evidence corrections in a clean signed candidate;
-- [x] make the prepared comparison root and its identity/checksum records
-  owner-only independent of umask, and reject later ownership or mode drift;
-- [x] stop after the first owner-only Sophia attempt and diagnose its bounded
-  runtime failure: candidate topology reconstruction retained the fixed
-  connector, CRTC, and primary plane but discarded the discovered cursor
-  plane, invalidating the already-selected atomic cursor path after commit;
-- [x] preserve the cursor plane across output-policy candidate and rollback
-  selections and cover that KMS-route invariant through the public topology
-  planner;
-- [x] stop after the next zero-row attempt and diagnose its bounded failure:
-  cursor qualification proved two-head atomic motion, then withdrawing its
-  final window left committed focus naming a surface omitted from the next
-  complete public snapshot;
-- [x] sanitize snapshot focus from the same live surface set and reject stale,
-  cross-output, non-focusable, or minimized focus at both the protocol codec
-  and Engine authority boundaries;
-- [x] decouple primary content cadence from input turns with one
-  refresh-relative latest-wins deadline and cover still-versus-moving input
-  schedules deterministically;
-- [x] replace the renderer-private cursor bitmap with one bounded immutable
-  Engine asset, configurable standard Xcursor lookup, validated hotspot and
-  static-frame handling, and the canonical X11 core `left_ptr` fallback;
-- [x] pin the comparison's Sophia core profile and canonical cursor digest,
-  materialize the same pixels as an owner-only Xcursor theme for niri, and
-  select XLibre's matching core cursor without reading personal configuration;
-- [x] diagnose the remaining pointer/cadence coupling: DMA-BUF Present used
-  global request transaction IDs as its MSC, while cursor-only atomic commits
-  could block ahead of ready Present feedback;
-- [x] route physical KMS `(ust, msc)` through GPU and software Present
-  completion, make transaction IDs correlation-only, give primary submission
-  and feedback priority over cursor-only DRM service, preserve a superseding
-  cursor cell, and keep hardware-cursor pixels out of native CPU repaints;
-- [x] inspect the resulting signed physical Sophia attempt: the workload stayed
-  focused and visible for 60/60 samples with 3,600 contiguous 60 Hz kernel
-  frames, but late re-reading of volatile cursor qualification prevented
-  `measurement.kdl` and retained the row as a partial diagnostic;
-- [x] admit and snapshot live-session qualification before creating a partial
-  or starting the timed workload, and preserve each nested conformance result
-  in the durable TTY gate log;
-- [x] reproduce the missing-qualification path without consuming a capture:
-  the window mapped and routed pointer motion, but timed out at 0/4 targets;
-  make the shell helper return explicitly after failed attestation or
-  qualification even when its caller condition disables implicit `errexit`;
-- [x] prepare a fresh interactive run and inspect its physical qualification
-  and initial rows. Candidate `124ad6c1` sealed all nine Kitty rows with clean
-  teardown; Sophia Firefox row 10 then exposed stale admission recovery and
-  remained partial;
-- [x] sign the admission-recovery correction and run one short physical Sophia
-  Firefox canary: admission rebased to 1266x1408, Firefox reached page-ready,
-  and several full-size frames retired before a distinct software-Present timing
-  failure. Subsequent pixel inspection found black browser content; this was
-  not a Firefox visual pass;
-- [x] require a fresh native retirement for every software Present even when
-  the retained scene checksum is unchanged, and retain failed staging work in
-  the teardown-visible ownership queue;
-- [x] preserve the selected DRI3 source when CPU backing also exists; resolve
-  CPU/SHM/GPU child Presents through the same presentation root; validate core
-  image formats, byte order, payloads, and GC operations before pixel mutation;
-- [x] require changing nonblack browser regions joined through head scene and
-  exact native frame retirement; keep pixel scans opt-in, preserve explicit
-  trace modes, drain connected clients without cancelling accepted work, and
-  express output focus through the layout label instead of a blue square;
-- [x] inspect `48bf357f`'s visible Firefox canary without promoting its failed
-  teardown; reproduce and fix EOF suppressing already-buffered authority work,
-  preserve bounded native service, and require coordinator settlement before
-  successful shutdown;
-- [x] pass one short physical Sophia Firefox canary: `2823807e`, clean logout
-  in 43 ms, zero pending authority/coordinator/CPU/native work, and zero
-  remaining application groups or frontend workers; fix both reader assumptions
-  against the retained capture without another physical run;
-- [ ] prepare a fresh pinned comparison run;
-- [ ] run the unified one-row TTY3 gate for all 36 required rows on this
-  machine; and
-- [ ] retain and verify the complete interactive matrix. A separate one-row
-  Sophia two-hour soak remains optional overnight evidence and does not block
-  this gate or CP-14.3.
+#### 3. Make failures diagnosable
 
-### CP-14.3 — Close Milestone 14 (`NEXT`)
+- [ ] Reuse existing telemetry for identifiable per-session logs and bounded
+  resource observations; preserve diagnostics after abnormal exit.
+- [ ] Provide a simple incident-time marker and document how to find the
+  matching build, configuration, session, and surrounding events. Keep expensive
+  tracing and pixel inspection opt-in; retain metadata-disclosure boundaries.
 
-- [ ] Verify the milestone exit, archive the concise result in
-  `docs/roadmap-history.md`, and update every affected current/target statement.
+Exit: a reported problem can be investigated without reproducing it merely to
+recover an overwritten log. Extend existing session/tooling owners rather than
+building a separate monitoring platform.
 
-Milestone 14 exits only with bounded warmed resource counts, no steady-state
-allocation growth, refresh-relative latency evidence, clean normal teardown,
-and no change to Sophia's native-X authority model.
+#### 4. Exercise real development workflows
 
-The current-soak verifier remains available for optional overnight durability
-evidence. It requires a nonsaturated five-second resource series, at least 120
-contiguous samples, and flat settled peaks with zero tolerance for accounted
-resources; the native sampler holds 1,560 samples, covering two hours plus ten
-minutes without saturation. Historical installed archives explicitly use the
-archive policy and remain reproducible. A fresh two-hour run is useful but does
-not block Milestone 14 closure.
+- [ ] Use terminal editing/building and Firefox for real work; verify clipboard
+  transfer in both directions, keyboard shortcuts, focus, resize/move, workspace
+  navigation, and both monitors.
+- [ ] Complete the [physical tab acceptance](docs/tabbed-layouts.md#verification-and-operator-acceptance)
+  for frame-tree/Notion and i3/split-tree: empty/nested groups, hidden-member
+  activation, shell recovery, title changes, fullscreen, and floating occlusion.
+  Implementation and offline verification are already complete.
+- [ ] Observe idle, VT resume, and normal logout during actual use. Turn any
+  blocking failure into the next concrete repair task within this stage; retain
+  its evidence, add a focused regression where feasible, and recheck the affected
+  workflow after correction.
+
+Exit: every listed workflow has retained observations, with no unresolved
+failures preventing those tasks or safe recovery. Unrecoverable sessions, lost
+input, application-blocking failures, visible corruption, undrained work, and
+unbounded resource growth are blockers. Longer sessions are useful evidence,
+not mandatory hour/day counters that restart after every fix.
+
+#### 5. Close Milestone 14
+
+- [ ] Review workflow evidence, recovery, clean teardown, bounded warmed
+  resources/no steady-state allocation growth, and relevant refresh-relative
+  latency evidence. Record the accepted candidate, limitations, and why earlier
+  evidence still applies or which affected checks were rerun.
+- [ ] Archive the concise result in `docs/roadmap-history.md` and update current
+  product statements only after the development-session target is demonstrated.
+
+Exit: the declared workflow is usable and recoverable with no unresolved
+blockers, and Sophia's native-X authority model is preserved. Comparison and
+optional soak evidence remain separately labelled incomplete and non-blocking.
+Lock, audio controls, screenshots, notifications, conferencing, broader confined
+workflows, and effects are outside this first target; promote them when actual
+use establishes the need. Targeted protocol repairs remain part of these stages;
+the full family audit follows below and is not a prerequisite for pilot use.
 
 ### CP-15.1 — Native protocol-family lifecycle audit (`NEXT`)
 
@@ -347,7 +227,7 @@ Required exit:
 - every stable role retains an immutable old-client compatibility gate;
 - every stable role has a complete non-Rust lifecycle client implemented from
   normative prose and checked-in schemas; and
-- shell stabilization specifically retains the independent C proof and Hagia's
+- shell stabilization specifically retains the independent C proof and Narthex's
   independent Nim proof without linking Sophia crates or generated bindings.
 
 ### Post-CP-15.2 planning checkpoint
@@ -417,14 +297,16 @@ tranche with a named driver and exit gate.
 
 ### Native WM and shell product
 
-- Finish issuer-scoped action-capability validation and the atomic
-  shell-reservation/work-area/WM coordinator.
+- Harden the implemented issuer-scoped action checks and reservation/work-area
+  coordination only against a named remaining lifecycle gap; preserve existing
+  offline conformance and distinguish it from signed physical acceptance.
 - Stabilize the minimum `sophia_shell_v1` lifecycle only after CP-15.1 and
-  CP-15.2; require signed installed `hagia-shell` evidence and preserve metadata
+  CP-15.2; require signed installed Narthex evidence and preserve metadata
   separation from the blind WM.
 - Add bounded target-resolved move, resize, drag, and scrolling interactions.
-- Add trusted launch-placement provenance, output-scoped active workspaces, and
-  only evidence-backed metadata-free native tabs.
+- Extend launch-placement or output-scoped workspace policy only for a named
+  unmet workflow; opaque launch provenance and active-output selection already
+  exist. Native tab implementation is complete; acceptance belongs to CP-14.3.
 - Define a bounded redacted workspace/layout/focus status feed and opaque
   launcher action; add lock, screenshot, wallpaper, and audio through their
   owning shell/session capabilities.
@@ -471,6 +353,27 @@ tranche with a named driver and exit gate.
 
 ## Deferred
 
+### CP-14.2 — Same-hardware comparison (`DEFERRED`)
+
+- [ ] Complete and verify the 36-row Kitty/Firefox/resize/launch-burst matrix
+  against Sophia, XLibre+xmonad, and niri only when the user selects a stable
+  candidate or a named performance investigation. No automatic restart follows
+  a development-session fix. The separate two-hour soak remains optional.
+
+Run `cp14-schema4-251d9acd` retains nine sealed Kitty rows and a failed Firefox
+row-10 partial. These remain exact-candidate historical evidence, not a complete
+or passed comparison. A changed comparison candidate requires a fresh pinned
+run when this work is resumed; old rows cannot be relabelled for newer binaries.
+
+The [comparison contract](docs/validation.md#deferred-same-hardware-comparison)
+and all existing tooling remain intact: clean signed preparation, executable
+and configuration hashes, raw visibility/resources/kernel-frame evidence,
+post-teardown sealing, exact complete matrix verification, and diagnostic
+`verdict=none`. The partial still blocks only its own run. Deferral does not
+waive validation or promote the failed attempt, and does not block CP-14.3.
+
+### Other deferred work
+
 - XLibre provider integration until a measured native-X gap justifies its
   authority and maintenance cost.
 - Any new application protocol or compatibility frontend without a
@@ -493,9 +396,21 @@ For any promoted row:
 4. run `cargo xtask check` for code changes and the named physical gate for
    hardware claims; docs-only edits require inspection and `git diff --check`;
 5. retain exact source, binary, configuration, topology, and evidence identity
-   for promotion claims; and
+   for promotion claims;
 6. update this file, `docs/roadmap-history.md`, affected current/target sections,
-   and `docs/research-log.md` so they agree.
+   and `docs/research-log.md` so they agree;
+7. run relevant independent client checks for protocol changes, and the short
+   physical session acceptance check for startup/rendering/input/lifecycle
+   changes, plus checks targeted to the defect. Documentation-only changes need
+   inspection and whitespace/link checks, not another operator session; and
+8. retain prior evidence under its original identity. Record a change-impact
+   review before relying on it for a newer candidate, and rerun affected
+   workflows rather than treating unrelated changes as a reset of all progress.
+
+Normal usage complements deterministic tests. Existing architecture, ownership
+models, compatibility gates, and physical proof requirements remain binding.
+See [development-session validation](docs/validation.md#development-session-readiness)
+for the evidence boundary.
 
 Canonical tooling and command ownership are defined in
 [`docs/development-tooling.md`](docs/development-tooling.md). Validation gates
@@ -512,13 +427,3 @@ are indexed in [`docs/validation.md`](docs/validation.md).
   and retained evidence.
 - [`docs/research-log-archive.md`](docs/research-log-archive.md): superseded
   research material.
-
-### User-selected tabbed-layout slice
-
-- [x] Implement Hagia frame-tree/Notion and split-tree/i3 state and projections,
-  capability-gated WM group facts, and persistent Narthex descriptors through
-  Sophia's GPU compositor. Track deterministic verification and physical
-  acceptance separately; see [tabbed layouts](docs/tabbed-layouts.md).
-- [ ] Physical acceptance of tab geometry, hidden-member activation, nested groups,
-  multiple outputs, shell recovery, fullscreen and scanout remains an operator
-  gate. This slice does not consume or close CP14 comparison rows.
