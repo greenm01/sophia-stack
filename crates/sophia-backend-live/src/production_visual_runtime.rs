@@ -43,7 +43,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
         .filter(|layer| layer.outcome == sophia_engine::HeadBindingOutcome::Active)
         .count();
     let fallback = plan.layers.len().saturating_sub(active);
-    tracing::info!(
+    tracing::trace!(
         "sophia_live_head_composition_plan schema=2 status=ready output={} head={} scene_generation={} target_generation={} width={} height={} mapping={} exact={} downsampled={} upsampled={} mixed={} active={} fallback={} unavailable=0 compositor_primitives={} damage_rects={} logical_content_checksum={}",
         plan.output.raw(),
         plan.head.raw(),
@@ -74,7 +74,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
     // that was never generated look identical downstream.
     for command in &plan.compositor {
         if let sophia_engine::HeadCompositorCommand::Border(border) = command {
-            tracing::info!(
+            tracing::trace!(
                 "sophia_live_head_border schema=1 status=planned output={} head={} scene_generation={} native={}x{} scene={}x{}_{}_{} outer={}x{}_{}_{} inner={}x{}_{}_{} clip={}x{}_{}_{}",
                 plan.output.raw(),
                 plan.head.raw(),
@@ -102,7 +102,7 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
     }
     for layer in &plan.layers {
         if let BufferSource::CpuBuffer { handle } = layer.source {
-            tracing::info!(
+            tracing::trace!(
                 "sophia_live_head_content schema=1 status=selected output={} head={} scene_generation={} surface={} committed_generation={} variant={} source=cpu handle={} density_millis={} sampling={} fidelity={}",
                 plan.output.raw(),
                 plan.head.raw(),

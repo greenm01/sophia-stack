@@ -46,17 +46,49 @@ impl LiveProductionNativeScanout {
     /// keeps the legacy ioctl, which archive `0004` proved works over
     /// directly scanned frames, so there is nothing to gain by insisting.
     pub fn use_atomic_cursor_plane(&mut self) -> crate::HardwareCursorPath {
-        self.cursor_path = match self.cursor_plane_probe() {
-            Some(probe) => crate::cursor_path_for_probe(probe),
-            None => crate::HardwareCursorPath::LegacyIoctl,
+        let groups_usable = !self.groups.is_empty()
+            && self.groups.iter().all(|group| {
+                group.session.cursor_plane_probe() == Some(crate::CursorPlaneProbe::Accepted)
+                    && group.session.atomic_cursor_resources().is_some()
+            });
+        let mut heads_usable = !self.heads.is_empty();
+        for index in 0..self.heads.len() {
+            let Some(plane) = self.heads[index].selection.cursor_plane() else {
+                heads_usable = false;
+                continue;
+            };
+            let group = self.heads[index].group;
+            let properties = crate::discover_cursor_plane_properties(
+                self.groups[group].session.cursor_commit_device(),
+                plane,
+            );
+            self.heads[index].cursor_properties = properties;
+            heads_usable &= properties.is_some();
+        }
+        // Atomic is a topology-wide decision. Mixing it with legacy updates
+        // leaves one card's cursor state outside the transaction owner and
+        // makes cross-head motion impossible to reason about.
+        self.cursor_path = if groups_usable && heads_usable {
+            crate::HardwareCursorPath::AtomicPlane
+        } else {
+            crate::HardwareCursorPath::LegacyIoctl
         };
         self.cursor_path
     }
 
     pub fn cursor_plane_probe(&self) -> Option<crate::CursorPlaneProbe> {
-        self.groups
+        let mut probes = self
+            .groups
             .iter()
-            .find_map(|group| group.session.cursor_plane_probe())
+            .map(|group| group.session.cursor_plane_probe());
+        let first = probes.next().flatten()?;
+        if first == crate::CursorPlaneProbe::Refused
+            || probes.any(|probe| probe != Some(crate::CursorPlaneProbe::Accepted))
+        {
+            Some(crate::CursorPlaneProbe::Refused)
+        } else {
+            Some(crate::CursorPlaneProbe::Accepted)
+        }
     }
 
     pub fn update_classic_hardware_cursor(
@@ -161,6 +193,9 @@ impl LiveProductionNativeScanout {
             match group.session.update_classic_hardware_cursors(group_targets) {
                 Ok(crate::ClassicHardwareCursorUpdate::Visible) => visible = true,
                 Ok(crate::ClassicHardwareCursorUpdate::Hidden) => {}
+                Ok(crate::ClassicHardwareCursorUpdate::Queued) => {
+                    return Err("legacy cursor update entered the atomic queue".into());
+                }
                 Ok(crate::ClassicHardwareCursorUpdate::Deferred) => {
                     self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
                     self.cursor_update_failures = self.cursor_update_failures.saturating_add(1);
@@ -208,9 +243,28 @@ impl LiveProductionNativeScanout {
             return None;
         }
         let placement = self.heads[index].pending_cursor?;
-        if placement == self.heads[index].committed_cursor {
-            self.heads[index].pending_cursor = None;
-            return None;
+        let admission = crate::hardware_cursor_admission(
+            crate::HardwareCursorPath::AtomicPlane,
+            true,
+            self.heads[index].submitted_at.is_some()
+                || self.heads[index].scanout_submission.is_some(),
+        );
+        match crate::plan_cursor_commit(
+            crate::HardwareCursorPath::AtomicPlane,
+            admission,
+            self.heads[index].pending_cursor,
+            self.heads[index].committed_cursor,
+            true,
+        ) {
+            crate::CursorCommitPlan::RideNextPrimary => {}
+            crate::CursorCommitPlan::Idle => {
+                self.heads[index].pending_cursor = None;
+                self.heads[index].pending_cursor_since = None;
+                return None;
+            }
+            crate::CursorCommitPlan::CommitCursorOnly | crate::CursorCommitPlan::Wait => {
+                return None;
+            }
         }
         let plane = self.heads[index].selection.cursor_plane()?;
         if self.heads[index].cursor_properties.is_none() {
@@ -232,6 +286,171 @@ impl LiveProductionNativeScanout {
         ))
     }
 
+    fn queue_atomic_cursor(
+        &mut self,
+        index: usize,
+        placement: Option<crate::LibdrmNativeCursorPlacement>,
+    ) {
+        if placement == self.heads[index].committed_cursor {
+            self.heads[index].pending_cursor = None;
+            self.heads[index].pending_cursor_since = None;
+            return;
+        }
+        if self.heads[index]
+            .pending_cursor
+            .is_some_and(|pending| pending != placement)
+        {
+            self.cursor_updates_coalesced = self.cursor_updates_coalesced.saturating_add(1);
+        }
+        if self.heads[index].pending_cursor.is_none() {
+            self.heads[index].pending_cursor_since = Some(Instant::now());
+        }
+        self.heads[index].pending_cursor = Some(placement);
+    }
+
+    pub(crate) fn settle_atomic_cursor(
+        &mut self,
+        index: usize,
+        placement: Option<crate::LibdrmNativeCursorPlacement>,
+        rode_primary: bool,
+    ) {
+        if let Some(started) = self.heads[index].pending_cursor_since.take() {
+            self.max_cursor_queue_delay = self.max_cursor_queue_delay.max(started.elapsed());
+        }
+        self.heads[index].committed_cursor = placement;
+        self.heads[index].pending_cursor = None;
+        self.cursor_updates = self.cursor_updates.saturating_add(1);
+        if rode_primary {
+            self.cursor_updates_ridden = self.cursor_updates_ridden.saturating_add(1);
+        } else {
+            self.cursor_only_commits = self.cursor_only_commits.saturating_add(1);
+        }
+    }
+
+    pub fn pending_atomic_cursor_count(&self) -> usize {
+        self.heads
+            .iter()
+            .filter(|head| head.pending_cursor.is_some())
+            .count()
+    }
+
+    /// Service the latest desired cursor after page-flip retirement.
+    ///
+    /// `WouldBlock` leaves the single pending cell intact. A hard rejection
+    /// changes the whole topology to the proven legacy ioctl and applies the
+    /// newest desired position there; repeatedly trying an unsupported atomic
+    /// request would otherwise turn pointer motion into an unbounded hot loop.
+    pub(crate) fn service_pending_atomic_cursors(
+        &mut self,
+        output: OutputId,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.cursor_path != crate::HardwareCursorPath::AtomicPlane {
+            return Ok(());
+        }
+        for index in self.head_indices(output) {
+            let Some(placement) = self.heads[index].pending_cursor else {
+                continue;
+            };
+            if self.heads[index].prepared_scanout.is_some()
+                || self.exporters[index].pending_frame()
+                || self.exporters[index].worker_in_flight()
+            {
+                continue;
+            }
+            let admission = crate::hardware_cursor_admission(
+                crate::HardwareCursorPath::AtomicPlane,
+                true,
+                self.heads[index].submitted_at.is_some()
+                    || self.heads[index].scanout_submission.is_some(),
+            );
+            match crate::plan_cursor_commit(
+                crate::HardwareCursorPath::AtomicPlane,
+                admission,
+                self.heads[index].pending_cursor,
+                self.heads[index].committed_cursor,
+                false,
+            ) {
+                crate::CursorCommitPlan::Idle => {
+                    self.heads[index].pending_cursor = None;
+                    self.heads[index].pending_cursor_since = None;
+                    continue;
+                }
+                crate::CursorCommitPlan::Wait => continue,
+                crate::CursorCommitPlan::CommitCursorOnly => {}
+                crate::CursorCommitPlan::RideNextPrimary => {
+                    return Err("cursor-only service planned a primary ride".into());
+                }
+            }
+            let plane = self.heads[index]
+                .selection
+                .cursor_plane()
+                .ok_or("atomic cursor head lost its selected plane")?;
+            let properties = self.heads[index]
+                .cursor_properties
+                .ok_or("atomic cursor head lost its property set")?;
+            let request = crate::build_native_cursor_only_atomic_request(
+                plane,
+                self.heads[index].selection.crtc_handle(),
+                properties,
+                placement,
+            );
+            let group = self.heads[index].group;
+            let status = crate::submit_native_cursor_only_commit(
+                self.groups[group].session.cursor_commit_device(),
+                request,
+            );
+            match status {
+                crate::LibdrmNativeAtomicCommitSubmitStatus::Submitted => {
+                    self.settle_atomic_cursor(index, placement, false);
+                }
+                crate::LibdrmNativeAtomicCommitSubmitStatus::WouldBlock => {}
+                crate::LibdrmNativeAtomicCommitSubmitStatus::Rejected => {
+                    self.cursor_update_failures = self.cursor_update_failures.saturating_add(1);
+                    self.fallback_pending_atomic_cursor_to_legacy()?;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn fallback_pending_atomic_cursor_to_legacy(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let fallback_started = Instant::now();
+        self.cursor_path = crate::HardwareCursorPath::LegacyIoctl;
+        self.cursor_legacy_fallbacks = self.cursor_legacy_fallbacks.saturating_add(1);
+        for group_index in 0..self.groups.len() {
+            let targets = self
+                .heads
+                .iter()
+                .filter(|head| head.group == group_index)
+                .filter_map(|head| {
+                    head.pending_cursor
+                        .unwrap_or(head.committed_cursor)
+                        .map(|placement| (head.selection, placement.x, placement.y))
+                })
+                .collect::<Vec<_>>();
+            self.groups[group_index]
+                .session
+                .update_classic_hardware_cursors(&targets)
+                .map_err(|error| format!("legacy cursor fallback failed: {error}"))?;
+        }
+        for head in &mut self.heads {
+            if let Some(started) = head.pending_cursor_since.take() {
+                self.max_cursor_queue_delay = self.max_cursor_queue_delay.max(started.elapsed());
+            }
+            head.committed_cursor = head.pending_cursor.unwrap_or(head.committed_cursor);
+            head.pending_cursor = None;
+        }
+        self.cursor_updates = self.cursor_updates.saturating_add(1);
+        self.max_cursor_update = self.max_cursor_update.max(fallback_started.elapsed());
+        tracing::warn!(
+            "sophia_live_cursor_path schema=3 status=fallback reason=atomic_cursor_rejected path=legacy_ioctl"
+        );
+        Ok(())
+    }
+
     /// Put the cursor where it belongs on every head, atomically.
     ///
     /// One decision per head, taken by `plan_cursor_commit` so the rule lives
@@ -243,6 +462,7 @@ impl LiveProductionNativeScanout {
         &mut self,
         head_positions: &BTreeMap<usize, (i32, i32)>,
     ) -> Result<crate::ClassicHardwareCursorUpdate, Box<dyn std::error::Error>> {
+        let update_started = Instant::now();
         let mut visible = false;
         for index in 0..self.heads.len() {
             let Some((framebuffer, width, height)) = self.groups[self.heads[index].group]
@@ -262,72 +482,23 @@ impl LiveProductionNativeScanout {
                         height,
                     });
             visible |= placement.is_some();
-            self.heads[index].pending_cursor = Some(placement);
-
-            let Some(plane) = self.heads[index].selection.cursor_plane() else {
-                continue;
-            };
-            if self.heads[index].cursor_properties.is_none() {
-                self.heads[index].cursor_properties = crate::discover_cursor_plane_properties(
-                    self.groups[self.heads[index].group]
-                        .session
-                        .cursor_commit_device(),
-                    plane,
-                );
-            }
-            let Some(properties) = self.heads[index].cursor_properties else {
-                continue;
-            };
-
-            // The CRTC is busy exactly when a frame of ours is in flight on
-            // it, which is the same signal the primary submit ladder defers
-            // on.
-            let admission = crate::hardware_cursor_admission(
-                crate::HardwareCursorPath::AtomicPlane,
-                true,
-                self.heads[index].submitted_at.is_some(),
-            );
-            match crate::plan_cursor_commit(
-                crate::HardwareCursorPath::AtomicPlane,
-                admission,
-                self.heads[index].pending_cursor,
-                self.heads[index].committed_cursor,
-                false,
-            ) {
-                crate::CursorCommitPlan::CommitCursorOnly => {
-                    let request = crate::build_native_cursor_only_atomic_request(
-                        plane,
-                        self.heads[index].selection.crtc_handle(),
-                        properties,
-                        placement,
-                    );
-                    let device = self.groups[self.heads[index].group]
-                        .session
-                        .cursor_commit_device();
-                    match crate::submit_native_cursor_only_commit(device, request) {
-                        crate::LibdrmNativeAtomicCommitSubmitStatus::Submitted => {
-                            // Blocking, so the CRTC is free now and the plane
-                            // shows this. Clearing the pending cell is what
-                            // stops the next tick paying for the same commit.
-                            self.heads[index].committed_cursor = placement;
-                            self.heads[index].pending_cursor = None;
-                            self.cursor_updates = self.cursor_updates.saturating_add(1);
-                        }
-                        _ => {
-                            // The position stays pending for a later commit.
-                            // A cursor that stutters is not a session that
-                            // failed.
-                            self.cursor_update_failures =
-                                self.cursor_update_failures.saturating_add(1);
-                        }
-                    }
-                }
-                // Waiting or riding a frame: the position stays pending and
-                // some later commit carries it.
-                crate::CursorCommitPlan::Wait
-                | crate::CursorCommitPlan::RideNextPrimary
-                | crate::CursorCommitPlan::Idle => {}
-            }
+            self.queue_atomic_cursor(index, placement);
+        }
+        // An idle head should move now; a head with primary work pending keeps
+        // the same cell for `arm_cursor_ride`. This makes pointer motion
+        // responsive without serializing an animated primary stream.
+        let outputs = self
+            .heads
+            .iter()
+            .map(|head| head.output.id)
+            .collect::<BTreeSet<_>>();
+        for output in outputs {
+            self.service_pending_atomic_cursors(output)?;
+        }
+        self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
+        if self.pending_atomic_cursor_count() > 0 {
+            self.cursor_updates_queued = self.cursor_updates_queued.saturating_add(1);
+            return Ok(crate::ClassicHardwareCursorUpdate::Queued);
         }
         if visible {
             Ok(crate::ClassicHardwareCursorUpdate::Visible)

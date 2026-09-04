@@ -183,6 +183,10 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(!DESKTOP_COMPARISON_GATE.contains("operator_tty_fd}<\"$operator_tty\""));
     assert!(DESKTOP_COMPARISON_GATE.contains("gate-last.log"));
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison attest"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison qualify"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison finalize"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("xmonad-$(uname -m)-linux"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("internal_mode=false"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
     assert!(DESKTOP_COMPARISON_GATE.contains("^SOPHIA-1 connected primary"));
     assert!(DESKTOP_COMPARISON_GATE.contains("xrandr-last.log"));

@@ -40,7 +40,72 @@ pub(super) fn resolve_dp1_crtc() -> Result<u64, String> {
             cards.len()
         ));
     }
-    resolve_card_dp1(&cards[0])
+    let target = &cards[0];
+    let expected = resolve_card_dp1(target)?;
+    reject_cross_card_crtc_alias(target, expected)?;
+    Ok(expected)
+}
+
+/// The tracepoint exposes a card-local CRTC index without a device identity.
+/// A second active card using the same index would make its completions
+/// indistinguishable from DP-1, so the comparison must fail closed.
+fn reject_cross_card_crtc_alias(target: &Path, expected: u64) -> Result<(), String> {
+    for entry in fs::read_dir("/sys/class/drm")
+        .map_err(|error| format!("could not enumerate DRM cards: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("could not inspect DRM card: {error}"))?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.strip_prefix("card").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        }) {
+            continue;
+        }
+        let path = PathBuf::from("/dev/dri").join(name);
+        if path == target {
+            continue;
+        }
+        let card = Card(fs::File::open(&path).map_err(|error| {
+            format!(
+                "could not open {} for CRTC ambiguity check: {error}",
+                path.display()
+            )
+        })?);
+        let resources = card
+            .resource_handles()
+            .map_err(|error| format!("could not read {} DRM resources: {error}", path.display()))?;
+        for handle in resources.connectors() {
+            let Ok(connector) = card.get_connector(*handle, false) else {
+                continue;
+            };
+            if connector.state() != connector::State::Connected {
+                continue;
+            }
+            let Some(encoder) = connector.current_encoder() else {
+                continue;
+            };
+            let Some(crtc) = card
+                .get_encoder(encoder)
+                .map_err(|error| format!("could not inspect active encoder: {error}"))?
+                .crtc()
+            else {
+                continue;
+            };
+            let index = resources
+                .crtcs()
+                .iter()
+                .position(|candidate| *candidate == crtc)
+                .and_then(|index| u64::try_from(index).ok());
+            if index == Some(expected) {
+                return Err(format!(
+                    "kernel DRM timing is ambiguous: {} also has active CRTC index {expected}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn resolve_card_dp1(path: &Path) -> Result<u64, String> {

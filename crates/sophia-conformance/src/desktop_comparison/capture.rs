@@ -7,10 +7,19 @@ use sha2::Digest as _;
 use std::fs;
 use std::path::Path;
 
-const ATTEMPT_PREFIX: &str = "desktop_comparison_attempt schema=2 status=measured ";
+const ATTEMPT_PREFIXES: [&str; 2] = [
+    "desktop_comparison_attempt schema=3 status=measured ",
+    "desktop_comparison_attempt schema=2 status=measured ",
+];
 const VISIBILITY_PREFIX: &str = "desktop_comparison_visibility schema=1 ";
-const RESOURCE_PREFIX: &str = "desktop_comparison_resource schema=1 ";
-const KERNEL_FRAME_PREFIX: &str = "desktop_comparison_kernel_frame schema=1 ";
+const RESOURCE_PREFIXES: [&str; 2] = [
+    "desktop_comparison_resource schema=2 ",
+    "desktop_comparison_resource schema=1 ",
+];
+const KERNEL_FRAME_PREFIXES: [&str; 2] = [
+    "desktop_comparison_kernel_frame schema=2 ",
+    "desktop_comparison_kernel_frame schema=1 ",
+];
 const WORKLOAD_PREFIX: &str = "desktop_comparison_workload schema=1 status=complete ";
 const NATIVE_PREFIX: &str = "desktop_comparison_native_timing schema=1 ";
 
@@ -35,6 +44,18 @@ struct ResourcePeak {
     major_faults: u64,
     threads: u64,
     fds: u64,
+    stack_processes: u64,
+    stack_pss_kib: u64,
+    stack_rss_kib: u64,
+    stack_cpu_msec: u64,
+    stack_threads: u64,
+    stack_fds: u64,
+    workload_processes: u64,
+    workload_pss_kib: u64,
+    workload_rss_kib: u64,
+    workload_cpu_msec: u64,
+    workload_threads: u64,
+    workload_fds: u64,
 }
 
 impl ResourcePeak {
@@ -50,6 +71,18 @@ impl ResourcePeak {
             major_faults: 0,
             threads: 0,
             fds: 0,
+            stack_processes: 0,
+            stack_pss_kib: 0,
+            stack_rss_kib: 0,
+            stack_cpu_msec: 0,
+            stack_threads: 0,
+            stack_fds: 0,
+            workload_processes: 0,
+            workload_pss_kib: 0,
+            workload_rss_kib: 0,
+            workload_cpu_msec: 0,
+            workload_threads: 0,
+            workload_fds: 0,
         }
     }
 
@@ -69,6 +102,40 @@ impl ResourcePeak {
         self.major_faults = self.major_faults.max(number(record, "major_faults")?);
         self.threads = self.threads.max(number(record, "threads")?);
         self.fds = self.fds.max(number(record, "fds")?);
+        self.stack_processes = self
+            .stack_processes
+            .max(optional_number(record, "stack_processes")?);
+        self.stack_pss_kib = self
+            .stack_pss_kib
+            .max(optional_number(record, "stack_pss_kib")?);
+        self.stack_rss_kib = self
+            .stack_rss_kib
+            .max(optional_number(record, "stack_rss_kib")?);
+        self.stack_cpu_msec = self
+            .stack_cpu_msec
+            .max(optional_number(record, "stack_cpu_msec")?);
+        self.stack_threads = self
+            .stack_threads
+            .max(optional_number(record, "stack_threads")?);
+        self.stack_fds = self.stack_fds.max(optional_number(record, "stack_fds")?);
+        self.workload_processes = self
+            .workload_processes
+            .max(optional_number(record, "workload_processes")?);
+        self.workload_pss_kib = self
+            .workload_pss_kib
+            .max(optional_number(record, "workload_pss_kib")?);
+        self.workload_rss_kib = self
+            .workload_rss_kib
+            .max(optional_number(record, "workload_rss_kib")?);
+        self.workload_cpu_msec = self
+            .workload_cpu_msec
+            .max(optional_number(record, "workload_cpu_msec")?);
+        self.workload_threads = self
+            .workload_threads
+            .max(optional_number(record, "workload_threads")?);
+        self.workload_fds = self
+            .workload_fds
+            .max(optional_number(record, "workload_fds")?);
         Ok(())
     }
 }
@@ -76,6 +143,8 @@ impl ResourcePeak {
 #[derive(Clone, Copy, Debug)]
 struct Distribution {
     samples: usize,
+    deliveries: u64,
+    duplicates: u64,
     mean: u64,
     p50: u64,
     p95: u64,
@@ -85,7 +154,9 @@ struct Distribution {
 
 pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, String> {
     let candidate = source_commit(run)?;
-    let attempt_source = read_one(attempt.join("attempt.kdl"), ATTEMPT_PREFIX)?;
+    let attempt_source = read_one_any(attempt.join("attempt.kdl"), &ATTEMPT_PREFIXES)?;
+    let staged_schema =
+        attempt_source.starts_with("desktop_comparison_attempt schema=3 status=measured ");
     let attempt_fields = owned_fields(&attempt_source)?;
     let order = integer::<usize>(&attempt_fields, "order")?;
     let repetition = integer::<u8>(&attempt_fields, "repetition")?;
@@ -122,6 +193,27 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
             return Err(format!(
                 "capture attempt {name} does not match the prepared contract"
             ));
+        }
+    }
+    if staged_schema {
+        if required(&attempt_fields, "supervisor_exited")? != "true" {
+            return Err("staged capture was not finalized after supervisor exit".to_owned());
+        }
+        let expected_qualification = if stack == "sophia" && order == 1 {
+            "passed"
+        } else {
+            "not_required"
+        };
+        if required(&attempt_fields, "cursor_qualification")? != expected_qualification {
+            return Err("capture cursor qualification does not match its schedule row".to_owned());
+        }
+        let targets = number(&attempt_fields, "cursor_targets")?;
+        let motions = number(&attempt_fields, "cursor_motion_events")?;
+        if expected_qualification == "passed" && (targets != 4 || motions == 0) {
+            return Err("first Sophia row lacks complete visual cursor qualification".to_owned());
+        }
+        if expected_qualification == "not_required" && (targets != 0 || motions != 0) {
+            return Err("non-qualification row claims cursor target evidence".to_owned());
         }
     }
     let duration_msec = number(&attempt_fields, "duration_msec")?;
@@ -179,9 +271,17 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         return Err("unexposed native timing cannot claim samples".to_owned());
     }
     let native_source_name = required(&native_fields, "source")?;
+    let sample_schema = if resources.stack_processes > 0 && resources.workload_processes > 0 {
+        4
+    } else {
+        3
+    };
+    if staged_schema && sample_schema != 4 {
+        return Err("staged capture lacks split stack/workload resources".to_owned());
+    }
 
     let sample_record = format!(
-        "desktop_comparison_sample schema=3 status=complete order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} visible_dp1=true focused_owned=true foreign_toplevels=0 resource_samples={} processes={} pss_peak_kib={} rss_peak_kib={} anonymous_peak_kib={} private_dirty_peak_kib={} cpu_msec={} minor_faults={} major_faults={} threads_peak={} fds_peak={} launch_msec={} settle_msec={} resize_msec={} resize_samples={} resize_p50_usec={} resize_p95_usec={} resize_p99_usec={} resize_max_usec={} frame_source=kernel_drm frame_samples={} frame_mean_usec={} frame_p50_usec={} frame_p95_usec={} frame_p99_usec={} frame_max_usec={} native_timing={} native_source={} native_samples={} crashes=0 sample_loss=0 teardown=clean",
+        "desktop_comparison_sample schema={sample_schema} status=complete order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} visible_dp1=true focused_owned=true foreign_toplevels=0 resource_samples={} processes={} pss_peak_kib={} rss_peak_kib={} anonymous_peak_kib={} private_dirty_peak_kib={} cpu_msec={} minor_faults={} major_faults={} threads_peak={} fds_peak={} stack_processes={} stack_pss_peak_kib={} stack_rss_peak_kib={} stack_cpu_msec={} stack_threads_peak={} stack_fds_peak={} workload_processes={} workload_pss_peak_kib={} workload_rss_peak_kib={} workload_cpu_msec={} workload_threads_peak={} workload_fds_peak={} launch_msec={} settle_msec={} resize_msec={} resize_samples={} resize_p50_usec={} resize_p95_usec={} resize_p99_usec={} resize_max_usec={} frame_source=kernel_drm frame_samples={} frame_deliveries={} frame_duplicates={} frame_mean_usec={} frame_p50_usec={} frame_p95_usec={} frame_p99_usec={} frame_max_usec={} native_timing={} native_source={} native_samples={} crashes=0 sample_loss=0 teardown=clean",
         scheduled.order,
         scheduled.stack,
         scheduled.workload,
@@ -203,6 +303,18 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         resources.major_faults,
         resources.threads,
         resources.fds,
+        resources.stack_processes,
+        resources.stack_pss_kib,
+        resources.stack_rss_kib,
+        resources.stack_cpu_msec,
+        resources.stack_threads,
+        resources.stack_fds,
+        resources.workload_processes,
+        resources.workload_pss_kib,
+        resources.workload_rss_kib,
+        resources.workload_cpu_msec,
+        resources.workload_threads,
+        resources.workload_fds,
         micros_to_millis(launch_usec),
         micros_to_millis(settle_usec),
         micros_to_millis(resize_p95_usec),
@@ -212,6 +324,8 @@ pub fn replay_attempt(run: &Path, attempt: &Path) -> Result<CaptureReplay, Strin
         resize_p99_usec,
         resize_max_usec,
         frames.samples,
+        frames.deliveries,
+        frames.duplicates,
         frames.mean,
         frames.p50,
         frames.p95,
@@ -302,7 +416,7 @@ fn require_visible_observation(
 }
 
 fn replay_resources(attempt: &Path, duration_msec: u64) -> Result<(usize, ResourcePeak), String> {
-    let records = read_records(attempt.join("resources.log"), RESOURCE_PREFIX)?;
+    let records = read_records_any(attempt.join("resources.log"), &RESOURCE_PREFIXES)?;
     let minimum = usize::try_from(duration_msec / 1_000)
         .unwrap_or(usize::MAX)
         .saturating_sub(1);
@@ -344,13 +458,15 @@ fn replay_resources(attempt: &Path, duration_msec: u64) -> Result<(usize, Resour
 }
 
 fn replay_kernel_frames(attempt: &Path) -> Result<Distribution, String> {
-    let records = read_records(attempt.join("kernel-frames.log"), KERNEL_FRAME_PREFIX)?;
+    let records = read_records_any(attempt.join("kernel-frames.log"), &KERNEL_FRAME_PREFIXES)?;
     if records.len() < 3 {
         return Err("kernel timing requires at least three completion timestamps".to_owned());
     }
     let mut previous_usec = 0;
     let mut crtc = None;
     let mut intervals = Vec::with_capacity(records.len().saturating_sub(1));
+    let mut deliveries = 0u64;
+    let mut kernel_sequences = std::collections::BTreeSet::new();
     for (index, record) in records.iter().enumerate() {
         let expected = u64::try_from(index + 1).unwrap_or(u64::MAX);
         if number(record, "seq")? != expected {
@@ -363,6 +479,19 @@ fn replay_kernel_frames(attempt: &Path) -> Result<Distribution, String> {
         {
             return Err("kernel timing mixes CRTC identities".to_owned());
         }
+        let kernel_sequence = optional_number(record, "kernel_sequence")?;
+        if kernel_sequence != 0 && !kernel_sequences.insert(kernel_sequence) {
+            return Err("normalized kernel frame repeats a kernel sequence".to_owned());
+        }
+        let record_deliveries = record.get("deliveries").map_or(Ok(1), |value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| "capture deliveries is not an integer".to_owned())
+        })?;
+        if record_deliveries == 0 {
+            return Err("normalized kernel frame has no delivered event".to_owned());
+        }
+        deliveries = deliveries.saturating_add(record_deliveries);
         let ust_usec = number(record, "ust_usec")?;
         if previous_usec != 0 {
             if ust_usec <= previous_usec {
@@ -372,7 +501,10 @@ fn replay_kernel_frames(attempt: &Path) -> Result<Distribution, String> {
         }
         previous_usec = ust_usec;
     }
-    distribution(intervals)
+    let mut result = distribution(intervals)?;
+    result.deliveries = deliveries;
+    result.duplicates = deliveries.saturating_sub(u64::try_from(records.len()).unwrap_or(u64::MAX));
+    Ok(result)
 }
 
 fn distribution(mut values: Vec<u64>) -> Result<Distribution, String> {
@@ -384,6 +516,8 @@ fn distribution(mut values: Vec<u64>) -> Result<Distribution, String> {
     let sum = values.iter().copied().fold(0u64, u64::saturating_add);
     Ok(Distribution {
         samples: values.len(),
+        deliveries: u64::try_from(values.len().saturating_add(1)).unwrap_or(u64::MAX),
+        duplicates: 0,
         mean: sum / count,
         p50: percentile(&values, 50),
         p95: percentile(&values, 95),
@@ -414,6 +548,20 @@ fn read_one(path: impl AsRef<Path>, prefix: &str) -> Result<String, String> {
     Ok(records.remove(0).to_owned())
 }
 
+fn read_one_any(path: impl AsRef<Path>, prefixes: &[&str]) -> Result<String, String> {
+    let path = path.as_ref();
+    let source = fs::read_to_string(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let records = source
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    if records.len() != 1 || !prefixes.iter().any(|prefix| records[0].starts_with(prefix)) {
+        return Err(format!("{} contains an unexpected record", path.display()));
+    }
+    Ok(records[0].to_owned())
+}
+
 fn read_records(
     path: impl AsRef<Path>,
     prefix: &str,
@@ -430,6 +578,36 @@ fn read_records(
     let records = source
         .lines()
         .filter(|line| line.starts_with(prefix))
+        .map(owned_fields)
+        .collect::<Result<Vec<_>, _>>()?;
+    if records.is_empty() {
+        return Err(format!("{} contains no records", path.display()));
+    }
+    Ok(records)
+}
+
+fn read_records_any(
+    path: impl AsRef<Path>,
+    prefixes: &[&str],
+) -> Result<Vec<std::collections::BTreeMap<String, String>>, String> {
+    let path = path.as_ref();
+    let source = fs::read_to_string(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let selected = source
+        .lines()
+        .find(|line| !line.is_empty())
+        .and_then(|line| prefixes.iter().find(|prefix| line.starts_with(**prefix)))
+        .copied()
+        .ok_or_else(|| format!("{} contains no records", path.display()))?;
+    if source
+        .lines()
+        .any(|line| !line.is_empty() && !line.starts_with(selected))
+    {
+        return Err(format!("{} contains an unexpected record", path.display()));
+    }
+    let records = source
+        .lines()
+        .filter(|line| line.starts_with(selected))
         .map(owned_fields)
         .collect::<Result<Vec<_>, _>>()?;
     if records.is_empty() {
@@ -465,6 +643,17 @@ fn number(record: &std::collections::BTreeMap<String, String>, name: &str) -> Re
     required(record, name)?
         .parse()
         .map_err(|_| format!("capture {name} is not an integer"))
+}
+
+fn optional_number(
+    record: &std::collections::BTreeMap<String, String>,
+    name: &str,
+) -> Result<u64, String> {
+    record.get(name).map_or(Ok(0), |value| {
+        value
+            .parse()
+            .map_err(|_| format!("capture {name} is not an integer"))
+    })
 }
 
 fn integer<T>(record: &std::collections::BTreeMap<String, String>, name: &str) -> Result<T, String>

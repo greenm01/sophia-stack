@@ -978,7 +978,7 @@
         );
     }
     crate::session_println!(
-        "sophia_live_session_cursor schema=5 path={} plane={} moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={}",
+        "sophia_live_session_cursor schema=6 path={} plane={} moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={} queued={} backend_coalesced={} rides={} cursor_only={} combined_drops={} fallbacks={} pending={}",
         match native_scanout.as_ref().map(|scanout| scanout.cursor_path) {
             Some(sophia_backend_live::HardwareCursorPath::AtomicPlane) => "atomic_plane",
             _ => "legacy_ioctl",
@@ -996,7 +996,11 @@
             None => "unprobed",
         },
         cursor_moves_coalesced,
-        cursor_max_motion_to_submit.as_millis(),
+        cursor_max_motion_to_submit.max(
+            native_scanout
+                .as_ref()
+                .map_or(Duration::ZERO, |scanout| scanout.max_cursor_queue_delay)
+        ).as_millis(),
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.max_cursor_initialization.as_millis()),
@@ -1019,6 +1023,27 @@
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.cursor_update_failures),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_updates_queued),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_updates_coalesced),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_updates_ridden),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_only_commits),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_combined_drops),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.cursor_legacy_fallbacks),
+        native_scanout
+            .as_ref()
+            .map_or(0, |scanout| scanout.pending_atomic_cursor_count()),
     );
     crate::session_println!(
         "sophia_live_session_health schema=1 status=clean protocol_errors={} pending_wm={} pending_actions={} pending_input={} wm_degraded={}",

@@ -115,6 +115,18 @@ mod persistent_native_scanout {
         pub page_flip_phase_rejections: usize,
         pub cursor_updates: usize,
         pub cursor_hidden_updates: usize,
+        /// Latest-wins atomic positions accepted while a head was busy.
+        pub cursor_updates_queued: usize,
+        /// Pending positions replaced before the plane could show them.
+        pub cursor_updates_coalesced: usize,
+        /// Atomic cursor updates carried by a primary-plane commit.
+        pub cursor_updates_ridden: usize,
+        /// Atomic cursor-only commits made while primary content was idle.
+        pub cursor_only_commits: usize,
+        /// Combined primary/cursor requests retried as cursor-only commits.
+        pub cursor_combined_drops: usize,
+        /// Runtime atomic cursor rejection transitions to the legacy ioctl.
+        pub cursor_legacy_fallbacks: usize,
         pub cursor_initialization_deferrals: usize,
         pub cursor_updates_primary_in_flight: usize,
         /// Which cursor path this session is driving, and what the card said
@@ -126,6 +138,8 @@ mod persistent_native_scanout {
         pub cursor_update_failures: usize,
         pub max_cursor_initialization: Duration,
         pub max_cursor_update: Duration,
+        /// Oldest accepted motion-to-plane completion observed by the backend.
+        pub max_cursor_queue_delay: Duration,
     }
 
     pub struct LiveProductionNativeGroup {
@@ -222,6 +236,12 @@ mod persistent_native_scanout {
         /// is a *placement* of `None` inside `Some`, which is how a head is
         /// told to hide rather than told nothing.
         pub pending_cursor: Option<Option<crate::LibdrmNativeCursorPlacement>>,
+        /// When the current pending cell first became nonempty.
+        ///
+        /// Superseding preserves the timestamp: the bound describes how long
+        /// the plane went without reaching an accepted desired state, not how
+        /// recently the newest mouse packet arrived.
+        pub pending_cursor_since: Option<Instant>,
         /// What this head is currently showing, so a redundant commit can be
         /// skipped and a ghost can be noticed.
         pub committed_cursor: Option<crate::LibdrmNativeCursorPlacement>,
@@ -732,6 +752,7 @@ mod persistent_native_scanout {
                         nonzero_exports: 0,
                         last_submit_report: None,
                         pending_cursor: None,
+                        pending_cursor_since: None,
                         committed_cursor: None,
                         cursor_properties: None,
                         prepared_cursor_ride: None,
@@ -852,12 +873,19 @@ mod persistent_native_scanout {
                 page_flip_phase_rejections: 0,
                 cursor_updates: 0,
                 cursor_hidden_updates: 0,
+                cursor_updates_queued: 0,
+                cursor_updates_coalesced: 0,
+                cursor_updates_ridden: 0,
+                cursor_only_commits: 0,
+                cursor_combined_drops: 0,
+                cursor_legacy_fallbacks: 0,
                 cursor_path: crate::HardwareCursorPath::LegacyIoctl,
                 cursor_initialization_deferrals: 0,
                 cursor_updates_primary_in_flight: 0,
                 cursor_update_failures: 0,
                 max_cursor_initialization: Duration::ZERO,
                 max_cursor_update: Duration::ZERO,
+                max_cursor_queue_delay: Duration::ZERO,
             })
         }
 
@@ -1209,6 +1237,7 @@ mod persistent_native_scanout {
             let index = self.primary_head(output)?;
             if !self.exporter_mut(output)?.pending_frame() {
                 self.retire_ready_and_retry_cleanup(output, runtime)?;
+                self.service_pending_atomic_cursors(output)?;
                 return Ok(runtime.run_tick(input)?);
             }
             let group = self.heads[index].group;
@@ -1334,12 +1363,10 @@ mod persistent_native_scanout {
                         // pending instead, for a later commit.
                         if let Some((_, placement)) = cursor_ride {
                             if submit.cursor_dropped {
-                                self.cursor_update_failures =
-                                    self.cursor_update_failures.saturating_add(1);
+                                self.cursor_combined_drops =
+                                    self.cursor_combined_drops.saturating_add(1);
                             } else {
-                                self.heads[index].committed_cursor = placement;
-                                self.heads[index].pending_cursor = None;
-                                self.cursor_updates = self.cursor_updates.saturating_add(1);
+                                self.settle_atomic_cursor(index, placement, true);
                             }
                         }
                         if matches!(
@@ -1365,14 +1392,14 @@ mod persistent_native_scanout {
                         let cycle =
                             u64::try_from(self.heads[index].submissions).unwrap_or(u64::MAX);
                         let frame = content.map_or(0, |content| content.frame().raw());
-                        tracing::info!(
+                        tracing::trace!(
                             "sophia_live_native_page_flip schema=1 status=submitted output={} submission={} content={:?} frame={}",
                             output.raw(),
                             cycle,
                             content,
                             frame,
                         );
-                        tracing::info!(
+                        tracing::trace!(
                             "sophia_live_native_head_page_flip schema=2 status=submitted output={} head={} submission={} content={:?} frame={}",
                             output.raw(),
                             self.heads[index].head.raw(),
@@ -1438,6 +1465,7 @@ mod persistent_native_scanout {
             self.max_in_flight_ticks = self
                 .max_in_flight_ticks
                 .max(report.rendered_primary_plane_scanout_in_flight_ticks);
+            self.service_pending_atomic_cursors(output)?;
             self.observe_in_flight_depth();
             Ok(report)
         }
@@ -1731,7 +1759,7 @@ mod persistent_native_scanout {
                     callback.frame_serial,
                     frame.raw(),
                 );
-                tracing::info!(
+                tracing::trace!(
                     "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
                     output.raw(),
                     callback.head.raw(),
@@ -2188,7 +2216,7 @@ mod persistent_native_scanout {
                             .get_mut(&output)
                             .expect("mirror output has a lifecycle")
                             .observe_physical_progress(logical_frame);
-                        tracing::info!(
+                        tracing::trace!(
                             "sophia_live_native_head_page_flip schema=2 status=prepared output={} head={} frame={} all_prepared={}",
                             output.raw(),
                             head_id.raw(),
@@ -2254,12 +2282,10 @@ mod persistent_native_scanout {
                         if let Some(placement) = self.heads[head_index].prepared_cursor_ride.take()
                         {
                             if submit.cursor_dropped {
-                                self.cursor_update_failures =
-                                    self.cursor_update_failures.saturating_add(1);
+                                self.cursor_combined_drops =
+                                    self.cursor_combined_drops.saturating_add(1);
                             } else {
-                                self.heads[head_index].committed_cursor = placement;
-                                self.heads[head_index].pending_cursor = None;
-                                self.cursor_updates = self.cursor_updates.saturating_add(1);
+                                self.settle_atomic_cursor(head_index, placement, true);
                             }
                         }
                         self.heads[head_index].submitted_ust_usec =
@@ -2291,7 +2317,7 @@ mod persistent_native_scanout {
                         if matches!(content, Some(LiveProductionScanoutContent::Cpu { .. })) {
                             self.heads[head_index].pending_nonzero_pixel_bytes = 0;
                         }
-                        tracing::info!(
+                        tracing::trace!(
                             "sophia_live_native_head_page_flip schema=2 status=submitted output={} head={} submission={} content={:?} frame={}",
                             output.raw(),
                             head_id.raw(),
@@ -2481,6 +2507,7 @@ mod persistent_native_scanout {
                 .map(|(_, head)| head.scanout_in_flight_ticks)
                 .max()
                 .unwrap_or_default();
+            self.service_pending_atomic_cursors(output)?;
             Ok(tick)
         }
 
@@ -2598,6 +2625,7 @@ mod persistent_native_scanout {
                     self.retire_failures = self.retire_failures.saturating_sub(1);
                 }
             }
+            self.service_pending_atomic_cursors(output)?;
             Ok(())
         }
 
@@ -2740,7 +2768,7 @@ mod persistent_native_scanout {
                         .submitted_content
                         .or(self.heads[index].presented_content)
                         .map_or(0, |content| content.frame().raw());
-                    tracing::info!(
+                    tracing::trace!(
                         "sophia_live_native_page_flip schema=1 status=retired output={} submission={} frame={}",
                         self.heads[index].output.id.raw(),
                         self.heads[index]
@@ -2748,7 +2776,7 @@ mod persistent_native_scanout {
                             .unwrap_or(self.heads[index].submissions),
                         frame,
                     );
-                    tracing::info!(
+                    tracing::trace!(
                         "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
                         self.heads[index].output.id.raw(),
                         self.heads[index].head.raw(),
@@ -2799,7 +2827,7 @@ mod persistent_native_scanout {
             if report.accepted > 0 {
                 trace_live_native_lifecycle("page_flip_callback_accepted");
                 if completion_source == LiveProductionKmsCompletionSource::PageFlipEvent {
-                    tracing::info!(
+                    tracing::trace!(
                         "sophia_live_native_page_flip schema=1 status=callback_accepted output={} callbacks={} kernel_sequence={}",
                         self.heads[index].output.id.raw(),
                         report.accepted,
@@ -2808,7 +2836,7 @@ mod persistent_native_scanout {
                             .and_then(|accepted| accepted.event.frame_serial)
                             .map_or_else(|| "none".to_owned(), |serial| serial.to_string()),
                     );
-                    tracing::info!(
+                    tracing::trace!(
                         "sophia_live_native_head_page_flip schema=2 status=callback_accepted output={} head={} callbacks={} kernel_sequence={}",
                         self.heads[index].output.id.raw(),
                         self.heads[index].head.raw(),

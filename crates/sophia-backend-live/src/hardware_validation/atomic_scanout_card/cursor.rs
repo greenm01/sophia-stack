@@ -156,6 +156,12 @@ impl<Crtc: Copy + Debug + Eq> LegacyHardwareCursorController<Crtc> {
 pub enum ClassicHardwareCursorUpdate {
     Visible,
     Hidden,
+    /// The newest position is owned by the atomic transaction queue.
+    ///
+    /// This is acceptance, not presentation. The backend will either carry
+    /// it on the next primary commit or issue a cursor-only commit as soon as
+    /// the CRTC retires. Callers must not keep resubmitting the same motion.
+    Queued,
     Deferred,
 }
 

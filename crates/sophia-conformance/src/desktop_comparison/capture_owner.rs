@@ -6,11 +6,13 @@
 //! events, and binds only a replayable raw attempt.
 
 mod crtc;
+mod qualification;
 mod reference;
 mod trace;
 mod visibility;
 mod workload;
 
+pub use qualification::qualify;
 pub use reference::install_reference;
 use trace::{TraceOwner, probe_tracefs};
 use visibility::{VisibilityProbe, format_record, process_descends_from};
@@ -60,6 +62,14 @@ struct ResourceSnapshot {
     major_faults: u64,
     threads: u64,
     fds: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StackProcessIdentity {
+    label: &'static str,
+    pid: u32,
+    start_ticks: u64,
+    executable: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -248,18 +258,91 @@ pub fn capture_next(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     protect_owner_directory(&attempt)?;
 
     let measured = measure(repo, run, &attempt, &scheduled, &attestation);
-    let result = match measured {
-        Ok(()) => bind_attempt(repo, run, &attempt),
+    match measured {
+        Ok(()) => Ok(vec![format!(
+            "desktop_comparison_capture schema=2 status=staged order={} stack={} workload={} repetition={} path={}",
+            scheduled.order,
+            scheduled.stack,
+            scheduled.workload,
+            scheduled.repetition,
+            attempt.display(),
+        )]),
         Err(error) => Err(format!(
             "{error}; partial capture retained at {}",
             attempt.display()
         )),
-    };
-    if result.is_ok() {
-        fs::remove_dir_all(&attempt)
-            .map_err(|error| format!("capture bound but pending copy was not removed: {error}"))?;
     }
-    result
+}
+
+/// Seal a staged row only after its graphical supervisor has exited.
+///
+/// Capture cannot truthfully attest teardown while it is still running under
+/// that stack. The TTY adapter calls this after Xorg, niri, or Sophia has
+/// returned and restored the operator terminal.
+pub fn finalize_next(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    let scheduled = next_scheduled(run)?
+        .ok_or_else(|| "desktop comparison matrix is already complete".to_owned())?;
+    let attestation = read_attestation(&session_attestation_path()?)?;
+    if attestation.stack != scheduled.stack {
+        return Err("staged comparison session does not match the next row".to_owned());
+    }
+    if supervisor_identity_is_live(&attestation)? {
+        return Err("comparison teardown cannot finalize while its supervisor is alive".to_owned());
+    }
+    let incoming = run.join("incoming");
+    let entries = fs::read_dir(&incoming)
+        .map_err(|error| format!("could not inspect staged comparison capture: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("could not inspect staged comparison capture: {error}"))?;
+    if entries.len() != 1
+        || !entries[0]
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+    {
+        return Err("comparison finalization requires exactly one staged capture".to_owned());
+    }
+    let attempt = entries[0].path();
+    let source = fs::read_to_string(attempt.join("measurement.kdl"))
+        .map_err(|error| format!("staged comparison measurement is missing: {error}"))?;
+    let finalized = finalize_measurement_record(&source, &scheduled)?;
+    write_new(&attempt.join("attempt.kdl"), finalized.as_bytes())?;
+    fs::remove_file(attempt.join("measurement.kdl"))
+        .map_err(|error| format!("could not retire staged measurement: {error}"))?;
+    let result = bind_attempt(repo, run, &attempt)?;
+    fs::remove_dir_all(&attempt)
+        .map_err(|error| format!("capture bound but staged copy was not removed: {error}"))?;
+    Ok(result)
+}
+
+pub(super) fn finalize_measurement_record(
+    source: &str,
+    scheduled: &ScheduledSample,
+) -> Result<String, String> {
+    let measurement = one_record(
+        source,
+        "desktop_comparison_measurement schema=1 status=complete ",
+    )?;
+    let fields = record_fields(measurement)?;
+    for (name, expected) in [
+        ("order", scheduled.order.to_string()),
+        ("stack", scheduled.stack.clone()),
+        ("workload", scheduled.workload.clone()),
+        ("repetition", scheduled.repetition.to_string()),
+    ] {
+        if fields.get(name) != Some(&expected) {
+            return Err(format!("staged comparison measurement mismatches {name}"));
+        }
+    }
+    if fields.contains_key("teardown") || fields.contains_key("supervisor_exited") {
+        return Err("live measurement cannot predeclare teardown state".to_owned());
+    }
+    let body = measurement
+        .strip_prefix("desktop_comparison_measurement schema=1 status=complete ")
+        .expect("measurement prefix checked above");
+    Ok(format!(
+        "desktop_comparison_attempt schema=3 status=measured {body} teardown=clean supervisor_exited=true\n"
+    ))
 }
 
 fn measure(
@@ -318,10 +401,18 @@ fn measure(
 
     let started = Instant::now();
     let clock_ticks = clock_ticks_per_second()?;
-    let mut roots = BTreeSet::from([attestation.supervisor_pid]);
-    roots.extend(workload.root_pids());
-    roots.extend(stack_auxiliary_roots(repo, run, &scheduled.stack)?);
-    let baseline = sample_process_population(Path::new("/proc"), &roots)?;
+    let stack_identities = required_stack_identities(repo, run, scheduled, attestation)?;
+    let stack_roots = stack_identities
+        .iter()
+        .map(|identity| identity.pid)
+        .collect::<BTreeSet<_>>();
+    let workload_roots = workload.root_pids().into_iter().collect::<BTreeSet<_>>();
+    let roots = stack_roots
+        .union(&workload_roots)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let [baseline, stack_baseline, workload_baseline] =
+        sample_process_populations(Path::new("/proc"), [&roots, &stack_roots, &workload_roots])?;
     let mut resources = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -331,7 +422,7 @@ fn measure(
     for sequence in 1..=samples {
         let due = started + RESOURCE_INTERVAL.saturating_mul(sequence as u32);
         sleep_until(due);
-        validate_supervisor(attestation)?;
+        validate_stack_identities(&stack_identities)?;
         if workload.exited_early()? {
             return Err("comparison workload exited before its measured window".to_owned());
         }
@@ -343,10 +434,13 @@ fn measure(
                 format_record("sample", sequence, monotonic_usec, observed_visibility).as_bytes(),
             )
             .map_err(|error| format!("could not append visibility evidence: {error}"))?;
-        let snapshot = sample_process_population(Path::new("/proc"), &roots)?;
+        let [snapshot, stack_snapshot, workload_snapshot] = sample_process_populations(
+            Path::new("/proc"),
+            [&roots, &stack_roots, &workload_roots],
+        )?;
         writeln!(
             resources,
-            "desktop_comparison_resource schema=1 seq={sequence} monotonic_usec={} processes={} pss_kib={} rss_kib={} anonymous_kib={} private_dirty_kib={} cpu_msec={} minor_faults={} major_faults={} threads={} fds={}",
+            "desktop_comparison_resource schema=2 seq={sequence} monotonic_usec={} processes={} pss_kib={} rss_kib={} anonymous_kib={} private_dirty_kib={} cpu_msec={} minor_faults={} major_faults={} threads={} fds={} stack_processes={} stack_pss_kib={} stack_rss_kib={} stack_cpu_msec={} stack_threads={} stack_fds={} workload_processes={} workload_pss_kib={} workload_rss_kib={} workload_cpu_msec={} workload_threads={} workload_fds={}",
             monotonic_usec,
             snapshot.processes,
             snapshot.pss_kib,
@@ -358,6 +452,18 @@ fn measure(
             snapshot.major_faults.saturating_sub(baseline.major_faults),
             snapshot.threads,
             snapshot.fds,
+            stack_snapshot.processes,
+            stack_snapshot.pss_kib,
+            stack_snapshot.rss_kib,
+            stack_snapshot.cpu_ticks.saturating_sub(stack_baseline.cpu_ticks).saturating_mul(1_000) / clock_ticks,
+            stack_snapshot.threads,
+            stack_snapshot.fds,
+            workload_snapshot.processes,
+            workload_snapshot.pss_kib,
+            workload_snapshot.rss_kib,
+            workload_snapshot.cpu_ticks.saturating_sub(workload_baseline.cpu_ticks).saturating_mul(1_000) / clock_ticks,
+            workload_snapshot.threads,
+            workload_snapshot.fds,
         )
         .map_err(|error| format!("could not append resource evidence: {error}"))?;
     }
@@ -393,10 +499,11 @@ fn measure(
         "niri" => NIRI_VERSION,
         _ => return Err("prepared schedule contains an unknown stack".to_owned()),
     };
+    let qualification = qualification::measurement_fields(run, scheduled, attestation)?;
     write_new(
-        &attempt.join("attempt.kdl"),
+        &attempt.join("measurement.kdl"),
         format!(
-            "desktop_comparison_attempt schema=2 status=measured order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} crashes=0 sample_loss=0 teardown=clean\n",
+            "desktop_comparison_measurement schema=1 status=complete order={} stack={} workload={} repetition={} backend=native stack_version={} topology={} kitty={} firefox={} duration_msec={} controller_outside_supervisor=true visibility_samples={} crashes=0 sample_loss=0 {qualification}\n",
             scheduled.order,
             scheduled.stack,
             scheduled.workload,
@@ -525,6 +632,107 @@ fn require_descendant_executable(
             "comparison requires exactly one prepared {executable_name} descendant; found {observed}"
         ))
     }
+}
+
+fn required_stack_identities(
+    repo: &Path,
+    run: &Path,
+    scheduled: &ScheduledSample,
+    attestation: &SessionAttestation,
+) -> Result<Vec<StackProcessIdentity>, String> {
+    let mut identities = vec![stack_process_identity(
+        "supervisor",
+        attestation.supervisor_pid,
+    )?];
+    match scheduled.stack.as_str() {
+        "sophia" => {
+            identities.push(sole_descendant_identity(
+                run,
+                attestation.supervisor_pid,
+                "hagia",
+                "hagia_sha256",
+            )?);
+            identities.push(sole_descendant_identity(
+                run,
+                attestation.supervisor_pid,
+                "hagia_shell",
+                "hagia_shell_sha256",
+            )?);
+        }
+        "xlibre-xmonad" => {
+            let roots = stack_auxiliary_roots(repo, run, &scheduled.stack)?;
+            identities.push(stack_process_identity("xmonad", roots[0])?);
+        }
+        "niri" => {}
+        _ => return Err("prepared schedule contains an unknown stack".to_owned()),
+    }
+    Ok(identities)
+}
+
+fn sole_descendant_identity(
+    run: &Path,
+    supervisor: u32,
+    executable_name: &'static str,
+    digest_field: &str,
+) -> Result<StackProcessIdentity, String> {
+    let expected = manifest_identity(run, digest_field)?;
+    let mut identities = Vec::new();
+    for entry in fs::read_dir("/proc")
+        .map_err(|error| format!("could not enumerate {executable_name} processes: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("could not inspect process: {error}"))?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(executable) = fs::read_link(entry.path().join("exe")) else {
+            continue;
+        };
+        if executable.file_name().and_then(|name| name.to_str()) == Some(executable_name)
+            && process_descends_from(pid, supervisor)?
+        {
+            require_executable_digest(&executable, &expected)?;
+            identities.push(stack_process_identity(executable_name, pid)?);
+        }
+    }
+    if identities.len() != 1 {
+        return Err(format!(
+            "comparison requires exactly one prepared {executable_name} descendant; found {}",
+            identities.len()
+        ));
+    }
+    Ok(identities.remove(0))
+}
+
+fn stack_process_identity(label: &'static str, pid: u32) -> Result<StackProcessIdentity, String> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat"))
+        .map_err(|error| format!("could not read {label} process identity: {error}"))?;
+    let executable = fs::read_link(format!("/proc/{pid}/exe"))
+        .map_err(|error| format!("could not read {label} executable identity: {error}"))?;
+    Ok(StackProcessIdentity {
+        label,
+        pid,
+        start_ticks: parse_proc_stat(&stat)?.start_ticks,
+        executable,
+    })
+}
+
+fn validate_stack_identities(identities: &[StackProcessIdentity]) -> Result<(), String> {
+    for expected in identities {
+        let observed = stack_process_identity(expected.label, expected.pid)?;
+        if observed.start_ticks != expected.start_ticks
+            || observed.executable != expected.executable
+        {
+            return Err(format!(
+                "comparison stack component {} changed identity during capture",
+                expected.label
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn expected_profile(repo: &Path, stack: &str) -> Result<PathBuf, String> {
@@ -694,6 +902,16 @@ fn validate_supervisor(attestation: &SessionAttestation) -> Result<(), String> {
     Ok(())
 }
 
+fn supervisor_identity_is_live(attestation: &SessionAttestation) -> Result<bool, String> {
+    match fs::read_to_string(format!("/proc/{}/stat", attestation.supervisor_pid)) {
+        Ok(source) => {
+            Ok(parse_proc_stat(&source)?.start_ticks == attestation.supervisor_start_ticks)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("could not inspect torn-down supervisor: {error}")),
+    }
+}
+
 fn session_attestation_path() -> Result<PathBuf, String> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .ok_or("XDG_RUNTIME_DIR is unset; no active comparison session can be admitted")?;
@@ -750,10 +968,15 @@ fn current_uid() -> Result<u32, String> {
         .ok_or_else(|| "current process identity lacks a numeric UID".to_owned())
 }
 
-fn sample_process_population(
+/// Sample overlapping populations in one `/proc` pass.
+///
+/// Stack and workload totals are views over the aggregate population. Reading
+/// every `smaps_rollup` three times would add avoidable controller work to the
+/// measurement it is trying not to perturb.
+fn sample_process_populations<const N: usize>(
     proc_root: &Path,
-    roots: &BTreeSet<u32>,
-) -> Result<ResourceSnapshot, String> {
+    roots: [&BTreeSet<u32>; N],
+) -> Result<[ResourceSnapshot; N], String> {
     let mut processes = BTreeMap::new();
     for entry in fs::read_dir(proc_root)
         .map_err(|error| format!("could not enumerate process population: {error}"))?
@@ -773,24 +996,27 @@ fn sample_process_population(
             processes.insert(pid, stat);
         }
     }
-    if roots.iter().any(|pid| !processes.contains_key(pid)) {
+    if roots
+        .iter()
+        .any(|population| population.iter().any(|pid| !processes.contains_key(pid)))
+    {
         return Err("a sampled process root disappeared".to_owned());
     }
 
-    let selected = processes
-        .keys()
-        .copied()
-        .filter(|pid| descends_from(*pid, roots, &processes))
-        .collect::<Vec<_>>();
-    let mut total = ResourceSnapshot::default();
-    for pid in selected {
+    let mut totals = [ResourceSnapshot::default(); N];
+    for pid in processes.keys().copied() {
+        let membership =
+            std::array::from_fn::<_, N, _>(|index| descends_from(pid, roots[index], &processes));
+        if !membership.iter().any(|included| *included) {
+            continue;
+        }
         let Some(stat) = processes.get(&pid) else {
             continue;
         };
         let process = proc_root.join(pid.to_string());
         let memory = match fs::read_to_string(process.join("smaps_rollup")) {
             Ok(memory) => memory,
-            Err(error) if roots.contains(&pid) => {
+            Err(error) if roots.iter().any(|population| population.contains(&pid)) => {
                 return Err(format!(
                     "sampled process root {pid} has no readable memory population: {error}"
                 ));
@@ -799,39 +1025,46 @@ fn sample_process_population(
         };
         let fd_count = match fs::read_dir(process.join("fd")) {
             Ok(entries) => entries.filter_map(Result::ok).count(),
-            Err(error) if roots.contains(&pid) => {
+            Err(error) if roots.iter().any(|population| population.contains(&pid)) => {
                 return Err(format!(
                     "sampled process root {pid} has no readable fd population: {error}"
                 ));
             }
             Err(_) => continue,
         };
-        total.processes = total.processes.saturating_add(1);
-        total.pss_kib = total.pss_kib.saturating_add(memory_kib(&memory, "Pss:"));
-        total.rss_kib = total.rss_kib.saturating_add(memory_kib(&memory, "Rss:"));
-        total.anonymous_kib = total
-            .anonymous_kib
-            .saturating_add(memory_kib(&memory, "Anonymous:"));
-        total.private_dirty_kib = total
-            .private_dirty_kib
-            .saturating_add(memory_kib(&memory, "Private_Dirty:"));
-        total.cpu_ticks = total.cpu_ticks.saturating_add(stat.cpu_ticks);
-        total.minor_faults = total.minor_faults.saturating_add(stat.minor_faults);
-        total.major_faults = total.major_faults.saturating_add(stat.major_faults);
-        total.threads = total.threads.saturating_add(stat.threads);
-        total.fds = total
-            .fds
-            .saturating_add(u64::try_from(fd_count).unwrap_or(u64::MAX));
+        for (index, included) in membership.into_iter().enumerate() {
+            if !included {
+                continue;
+            }
+            let total = &mut totals[index];
+            total.processes = total.processes.saturating_add(1);
+            total.pss_kib = total.pss_kib.saturating_add(memory_kib(&memory, "Pss:"));
+            total.rss_kib = total.rss_kib.saturating_add(memory_kib(&memory, "Rss:"));
+            total.anonymous_kib = total
+                .anonymous_kib
+                .saturating_add(memory_kib(&memory, "Anonymous:"));
+            total.private_dirty_kib = total
+                .private_dirty_kib
+                .saturating_add(memory_kib(&memory, "Private_Dirty:"));
+            total.cpu_ticks = total.cpu_ticks.saturating_add(stat.cpu_ticks);
+            total.minor_faults = total.minor_faults.saturating_add(stat.minor_faults);
+            total.major_faults = total.major_faults.saturating_add(stat.major_faults);
+            total.threads = total.threads.saturating_add(stat.threads);
+            total.fds = total
+                .fds
+                .saturating_add(u64::try_from(fd_count).unwrap_or(u64::MAX));
+        }
     }
-    if total.processes == 0
-        || total.pss_kib == 0
-        || total.rss_kib == 0
-        || total.threads == 0
-        || total.fds == 0
-    {
+    if totals.iter().any(|total| {
+        total.processes == 0
+            || total.pss_kib == 0
+            || total.rss_kib == 0
+            || total.threads == 0
+            || total.fds == 0
+    }) {
         return Err("sampled process population is empty or unreadable".to_owned());
     }
-    Ok(total)
+    Ok(totals)
 }
 
 fn descends_from(mut pid: u32, roots: &BTreeSet<u32>, processes: &BTreeMap<u32, ProcStat>) -> bool {
@@ -911,7 +1144,8 @@ pub(super) fn normalize_kernel_trace(
     {
         return Err("kernel DRM trace reports lost events".to_owned());
     }
-    let mut timestamps = Vec::new();
+    let mut frames = Vec::<(u64, u64, u64)>::new();
+    let mut seen_sequences = BTreeSet::new();
     for line in trace.lines() {
         let Some((prefix, payload)) = line.split_once("drm_vblank_event_delivered:") else {
             continue;
@@ -923,6 +1157,11 @@ pub(super) fn normalize_kernel_trace(
         if crtc != Some(expected_crtc) {
             continue;
         }
+        let kernel_sequence = payload
+            .split_ascii_whitespace()
+            .find_map(|token| token.trim_end_matches(',').strip_prefix("seq="))
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or("kernel DRM trace contains an invalid kernel sequence")?;
         let timestamp = prefix
             .split_ascii_whitespace()
             .rev()
@@ -930,26 +1169,37 @@ pub(super) fn normalize_kernel_trace(
             .and_then(|value| value.parse::<f64>().ok())
             .map(|seconds| (seconds * 1_000_000.0).round() as u64)
             .ok_or("kernel DRM trace contains an invalid event timestamp")?;
-        if timestamps
+        if let Some((previous_sequence, _, deliveries)) = frames.last_mut()
+            && *previous_sequence == kernel_sequence
+        {
+            *deliveries = deliveries.saturating_add(1);
+            continue;
+        }
+        if !seen_sequences.insert(kernel_sequence) {
+            return Err("kernel DRM sequence reappeared after a different completion".to_owned());
+        }
+        if frames
             .last()
-            .is_some_and(|previous| *previous >= timestamp)
+            .is_some_and(|(_, previous, _)| *previous >= timestamp)
         {
             return Err("kernel DRM completion timestamps are not strictly monotonic".to_owned());
         }
-        timestamps.push(timestamp);
+        frames.push((kernel_sequence, timestamp, 1));
     }
-    if timestamps.len() < 3 {
+    if frames.len() < 3 {
         return Err(format!(
             "kernel DRM timing population is incomplete: found {} delivered events for CRTC {expected_crtc}",
-            timestamps.len()
+            frames.len()
         ));
     }
     let mut output = String::new();
-    for (index, timestamp) in timestamps.into_iter().enumerate() {
+    for (index, (kernel_sequence, timestamp, deliveries)) in frames.into_iter().enumerate() {
         output.push_str(&format!(
-            "desktop_comparison_kernel_frame schema=1 seq={} crtc={} ust_usec={}\n",
+            "desktop_comparison_kernel_frame schema=2 seq={} crtc={} kernel_sequence={} deliveries={} ust_usec={}\n",
             index + 1,
             expected_crtc,
+            kernel_sequence,
+            deliveries,
             timestamp,
         ));
     }

@@ -22,7 +22,8 @@ const PROOF: &str = "sophia_live_direct_scanout_cursor_proof schema=1 status=";
 /// archive `0004` is schema 4, and a reader that only understood the newest
 /// shape would quietly stop verifying the proof that archive was written to
 /// make. The corpus caught exactly that.
-const CURSOR_SCHEMAS: [(&str, &str, &str); 2] = [
+const CURSOR_SCHEMAS: [(&str, &str, &str); 3] = [
+    ("sophia_live_session_cursor schema=6 ", "", ""),
     ("sophia_live_session_cursor schema=5 ", "", ""),
     (
         "sophia_live_session_cursor schema=4 ",

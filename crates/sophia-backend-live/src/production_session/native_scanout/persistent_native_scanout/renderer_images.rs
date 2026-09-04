@@ -438,7 +438,7 @@ impl LiveProductionNativeScanout {
                 .deferred_mirror_generations
                 .insert(output, generation)
                 .map(|generation| generation.frame);
-            tracing::info!(
+            tracing::trace!(
                 "sophia_live_mirror_pacing schema=1 status=deferred output={} frame={} blocked_by={} replaced={}",
                 output.raw(),
                 frame.raw(),
@@ -458,7 +458,7 @@ impl LiveProductionNativeScanout {
             },
         )?;
         if let Some(previous) = previous {
-            tracing::info!(
+            tracing::trace!(
                 "sophia_live_mirror_pacing schema=1 status=newest_ready output={} frame={} previous={}",
                 output.raw(),
                 frame.raw(),

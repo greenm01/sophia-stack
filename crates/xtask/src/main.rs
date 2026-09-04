@@ -164,6 +164,12 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
         [command, run] if command == "capture" => {
             desktop_comparison::capture_next(&repo, Path::new(run)).map(print_lines)
         }
+        [command, run] if command == "qualify" => {
+            desktop_comparison::qualify(&repo, Path::new(run)).map(print_lines)
+        }
+        [command, run] if command == "finalize" => {
+            desktop_comparison::finalize_next(&repo, Path::new(run)).map(print_lines)
+        }
         [command, run, pid] if command == "attest" => {
             let supervisor_pid = pid
                 .parse::<u32>()
@@ -204,9 +210,9 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
             desktop_comparison::report(&repo, Path::new(run)).map(print_lines)
         }
         [command, ..] => Err(format!(
-            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, prepare-soak, gate, status, attest, preflight, capture, replay, verify, or report"
+            "desktop-comparison {command:?} has invalid arguments; expected install-reference, prepare, prepare-soak, gate, status, attest, preflight, qualify, capture, finalize, replay, verify, or report"
         )),
-        [] => Err("desktop-comparison needs install-reference, prepare, prepare-soak, gate, status, attest, preflight, capture, replay, verify, or report".to_owned()),
+        [] => Err("desktop-comparison needs install-reference, prepare, prepare-soak, gate, status, attest, preflight, qualify, capture, finalize, replay, verify, or report".to_owned()),
     }
 }
 
@@ -454,7 +460,9 @@ usage: cargo xtask <command>
   conformance desktop-comparison status RUN
   conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
   conformance desktop-comparison preflight RUN
+  conformance desktop-comparison qualify RUN
   conformance desktop-comparison capture RUN
+  conformance desktop-comparison finalize RUN
   conformance desktop-comparison replay RUN ATTEMPT
   conformance desktop-comparison verify RUN
   conformance desktop-comparison report RUN

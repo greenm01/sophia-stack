@@ -640,7 +640,9 @@ cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
 cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
 cargo xtask conformance desktop-comparison preflight RUN
+cargo xtask conformance desktop-comparison qualify RUN
 cargo xtask conformance desktop-comparison capture RUN
+cargo xtask conformance desktop-comparison finalize RUN
 cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 ```
@@ -661,13 +663,21 @@ before display takeover, selects only the next typed stack, launches it without
 an operator application, attests its supervisor, resolves DP-1's active CRTC,
 captures, and tears down. `attest` publishes an owner-only local record.
 Privileged preflight confirms the DRM completion tracepoint before creating an
-attempt, even when tracefs is root-private. `capture` rejects a controller or
-workload launcher inside the measured supervisor tree, owns an isolated
-workload and common process-tree sampler, and uses a private tracefs instance
-for authoritative kernel DRM completion timestamps. Kitty control sockets
-live in a short owner-only runtime namespace and never load personal Kitty
-configuration. Capture emits six raw inputs. Passive replay derives the sole
-schema-3 sample only after the normalized visibility series proves an empty
+attempt, even when tracefs is root-private. Before the first Sophia row,
+`qualify` displays four candidate-derived targets and requires physical cursor
+motion plus a click in each; that interaction is excluded from the measured
+window. `capture` rejects a controller or workload launcher inside the measured
+supervisor tree, continuously verifies the exact supervisor and required stack
+components, owns an isolated workload, and samples stack, workload, and
+aggregate resource populations separately. It uses a private tracefs instance
+for authoritative kernel DRM completion timestamps; repeated tracepoint
+deliveries of one kernel sequence are counted but do not become extra frames,
+and an active cross-card CRTC-index alias is rejected as ambiguous. Kitty
+control sockets live in a short owner-only runtime namespace and never load
+personal Kitty configuration. Capture stages six raw inputs while the stack is
+live. After stack exit and TTY recovery, `finalize` proves the attested
+supervisor is gone, records clean teardown, and seals the row. Passive replay
+derives the sole schema-4 sample only after the normalized visibility series proves an empty
 baseline plus focused workload ownership on DP-1 with zero foreign toplevels,
 and duration, resource cadence, frame monotonicity, resize population, crash,
 sample-loss, and teardown checks pass. The sealed attempt has an exact file set

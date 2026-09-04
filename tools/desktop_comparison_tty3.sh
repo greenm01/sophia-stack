@@ -8,9 +8,17 @@ diagnostic_root="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/desktop-comparison
 mkdir -p "$diagnostic_root"
 chmod 700 "$diagnostic_root"
 diagnostic_log="$diagnostic_root/gate-last.log"
-: >"$diagnostic_log"
+internal_mode=false
+case "${1:-}" in
+    --internal-niri|--internal-xlibre) internal_mode=true ;;
+esac
+if [[ $internal_mode == false ]]; then
+    : >"$diagnostic_log"
+    rm -f "$diagnostic_root/xrandr-last.log"
+else
+    touch "$diagnostic_log"
+fi
 chmod 600 "$diagnostic_log"
-rm -f "$diagnostic_root/xrandr-last.log"
 gate_stage=initialization
 record_gate_stage() {
     gate_stage=$1
@@ -99,7 +107,13 @@ attest_capture() {
     local run=$1 supervisor=$2
     "$xtask" conformance desktop-comparison attest "$run" "$supervisor"
     "$xtask" conformance desktop-comparison capture "$run"
-    "$xtask" conformance desktop-comparison status "$run"
+}
+
+attest_qualify_capture() {
+    local run=$1 supervisor=$2
+    "$xtask" conformance desktop-comparison attest "$run" "$supervisor"
+    "$xtask" conformance desktop-comparison qualify "$run"
+    "$xtask" conformance desktop-comparison capture "$run"
 }
 
 require_x_topology() {
@@ -239,7 +253,7 @@ run_niri_child() {
 }
 
 run_xlibre_child() {
-    local run=$1 wm_pid=
+    local run=$1 wm_pid= xmonad_alias=
     mkdir -p "$adapter_root/xmonad-config" "$adapter_root/xmonad-data" "$adapter_root/xmonad-cache"
     export XMONAD_CONFIG_DIR="$adapter_root/xmonad-config"
     export XMONAD_DATA_DIR="$adapter_root/xmonad-data"
@@ -247,7 +261,9 @@ run_xlibre_child() {
     export XDG_SESSION_TYPE=x11
     export XDG_CURRENT_DESKTOP=XMonad
 
-    "$xmonad" >"$adapter_root/xmonad.log" 2>&1 &
+    xmonad_alias="$XMONAD_CACHE_DIR/xmonad-$(uname -m)-linux"
+    ln -sfn "$xmonad" "$xmonad_alias"
+    "$xmonad_alias" >"$adapter_root/xmonad.log" 2>&1 &
     wm_pid=$!
     cleanup_xmonad() {
         kill -0 "$wm_pid" 2>/dev/null && kill "$wm_pid" 2>/dev/null || true
@@ -277,10 +293,13 @@ run_xlibre_child() {
 }
 
 run_sophia() {
-    local run=$1 workload=$2 result=0 launcher_status=0 child_tty=
+    local run=$1 workload=$2 result=0 launcher_status=0 child_tty= max_runtime_ms=95000
     local session_log="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/hagia-session/session.log"
-    local watchdog=300
-    [[ $workload != soak-2h ]] || watchdog=7500
+    local watchdog=125
+    if [[ $workload == soak-2h ]]; then
+        watchdog=7265
+        max_runtime_ms=7235000
+    fi
 
     record_gate_stage sophia-launch
     (
@@ -297,7 +316,8 @@ run_sophia() {
         export SOPHIA_SESSION_STARTUP=none
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
         export SOPHIA_BUILD_SESSION=false
-        exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$hagia_shell"
+        exec "$repo/tools/start_sophia_tty3.sh" --shell-process="$hagia_shell" \
+            --max-runtime-ms="$max_runtime_ms"
     ) <&"$operator_tty_fd" &
     sophia_launcher=$!
 
@@ -348,12 +368,35 @@ run_sophia() {
             unset WAYLAND_DISPLAY WAYLAND_SOCKET
             require_x_topology || result=$?
             if [[ $result -eq 0 ]]; then
-                attest_capture "$run" "$sophia_supervisor" || result=$?
+                attest_qualify_capture "$run" "$sophia_supervisor" || result=$?
             fi
         fi
     fi
 
-    cleanup_sophia_session
+    if [[ $result -eq 0 ]]; then
+        record_gate_stage sophia-orderly-exit
+        for _ in {1..450}; do
+            kill -0 "$sophia_launcher" 2>/dev/null || break
+            sleep 0.1
+        done
+        if kill -0 "$sophia_launcher" 2>/dev/null; then
+            result=1
+            echo "desktop comparison: Sophia did not reach its bounded orderly exit" >&2
+        else
+            if wait "$sophia_launcher"; then
+                launcher_status=0
+            else
+                launcher_status=$?
+            fi
+            sophia_launcher=
+            sophia_supervisor=
+            if [[ $launcher_status -ne 0 ]]; then
+                result=$launcher_status
+                echo "desktop comparison: Sophia teardown returned status $launcher_status" >&2
+            fi
+        fi
+    fi
+    [[ $result -ne 0 ]] && cleanup_sophia_session
     return "$result"
 }
 
@@ -438,3 +481,7 @@ case "$next_stack" in
         fail "typed schedule named unknown stack $next_stack"
         ;;
 esac
+
+record_gate_stage post-teardown-finalization
+"$xtask" conformance desktop-comparison finalize "$run"
+"$xtask" conformance desktop-comparison status "$run"

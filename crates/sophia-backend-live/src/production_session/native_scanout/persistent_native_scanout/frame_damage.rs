@@ -74,19 +74,19 @@ pub(super) fn trace_presented_output_damage(
     output: OutputId,
     presented: &sophia_engine::OutputFramePresentation,
 ) {
-    tracing::info!(
+    tracing::trace!(
         "sophia_live_compositor_damage schema=1 status={} output={} rects={}",
         status,
         output.raw(),
         presented.compositor_damage.rects.len(),
     );
-    tracing::info!(
+    tracing::trace!(
         "sophia_live_output_damage schema=1 status={} output={} rects={}",
         status,
         output.raw(),
         presented.damage.rects.len(),
     );
-    tracing::info!(
+    tracing::trace!(
         "sophia_live_output_repaint schema=1 status={} output={} mode={} rects={} pixels={}",
         status,
         output.raw(),
@@ -105,7 +105,7 @@ pub(super) fn trace_presented_mirror_head_damage(
     frame: LiveProductionNativeFrameId,
     presented: &sophia_engine::OutputFramePresentation,
 ) {
-    tracing::info!(
+    tracing::trace!(
         "sophia_live_mirror_head_damage schema=2 status=presented output={} head={} frame={} width={} height={} mode={} rects={} pixels={}",
         output.raw(),
         head.raw(),

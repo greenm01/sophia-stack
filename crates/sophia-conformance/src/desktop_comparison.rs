@@ -6,7 +6,8 @@ mod host;
 
 pub use capture::{CaptureReplay, replay_attempt};
 pub use capture_owner::{
-    attest_session, attest_session_auto, capture_next, install_reference, preflight, run_stream,
+    attest_session, attest_session_auto, capture_next, finalize_next, install_reference, preflight,
+    qualify, run_stream,
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,6 +82,18 @@ struct Sample {
     major_faults: u64,
     threads_peak: u64,
     fds_peak: u64,
+    stack_processes: u64,
+    stack_pss_peak_kib: u64,
+    stack_rss_peak_kib: u64,
+    stack_cpu_msec: u64,
+    stack_threads_peak: u64,
+    stack_fds_peak: u64,
+    workload_processes: u64,
+    workload_pss_peak_kib: u64,
+    workload_rss_peak_kib: u64,
+    workload_cpu_msec: u64,
+    workload_threads_peak: u64,
+    workload_fds_peak: u64,
     launch_msec: u64,
     settle_msec: u64,
     resize_msec: u64,
@@ -89,6 +102,8 @@ struct Sample {
     frame_p95_usec: u64,
     frame_p99_usec: u64,
     frame_max_usec: u64,
+    frame_deliveries: u64,
+    frame_duplicates: u64,
 }
 
 fn comparison_binaries(repo: &Path) -> Result<[(&'static str, PathBuf); 6], String> {
@@ -586,7 +601,7 @@ pub fn report(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             samples.iter().map(field).fold(0u64, u64::saturating_add) / count
         };
         lines.push(format!(
-            "desktop_comparison_report schema=2 status=diagnostic stack={stack} workload={workload} samples={count} duration_mean_msec={} processes_peak_mean={} pss_peak_mean_kib={} rss_peak_mean_kib={} anonymous_peak_mean_kib={} private_dirty_peak_mean_kib={} cpu_mean_msec={} minor_faults_mean={} major_faults_mean={} threads_peak_mean={} fds_peak_mean={} launch_mean_msec={} settle_mean_msec={} resize_p95_mean_msec={} frame_mean_usec={} frame_p50_mean_usec={} frame_p95_mean_usec={} frame_p99_mean_usec={} frame_max_mean_usec={} crashes=0 sample_loss=0 verdict=none",
+            "desktop_comparison_report schema=3 status=diagnostic stack={stack} workload={workload} samples={count} duration_mean_msec={} processes_peak_mean={} pss_peak_mean_kib={} rss_peak_mean_kib={} anonymous_peak_mean_kib={} private_dirty_peak_mean_kib={} cpu_mean_msec={} minor_faults_mean={} major_faults_mean={} threads_peak_mean={} fds_peak_mean={} stack_processes_peak_mean={} stack_pss_peak_mean_kib={} stack_rss_peak_mean_kib={} stack_cpu_mean_msec={} stack_threads_peak_mean={} stack_fds_peak_mean={} workload_processes_peak_mean={} workload_pss_peak_mean_kib={} workload_rss_peak_mean_kib={} workload_cpu_mean_msec={} workload_threads_peak_mean={} workload_fds_peak_mean={} launch_mean_msec={} settle_mean_msec={} resize_p95_mean_msec={} frame_deliveries_mean={} frame_duplicates_mean={} frame_mean_usec={} frame_p50_mean_usec={} frame_p95_mean_usec={} frame_p99_mean_usec={} frame_max_mean_usec={} crashes=0 sample_loss=0 verdict=none",
             sum(|sample| sample.duration_msec),
             sum(|sample| sample.processes),
             sum(|sample| sample.pss_peak_kib),
@@ -598,9 +613,23 @@ pub fn report(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
             sum(|sample| sample.major_faults),
             sum(|sample| sample.threads_peak),
             sum(|sample| sample.fds_peak),
+            sum(|sample| sample.stack_processes),
+            sum(|sample| sample.stack_pss_peak_kib),
+            sum(|sample| sample.stack_rss_peak_kib),
+            sum(|sample| sample.stack_cpu_msec),
+            sum(|sample| sample.stack_threads_peak),
+            sum(|sample| sample.stack_fds_peak),
+            sum(|sample| sample.workload_processes),
+            sum(|sample| sample.workload_pss_peak_kib),
+            sum(|sample| sample.workload_rss_peak_kib),
+            sum(|sample| sample.workload_cpu_msec),
+            sum(|sample| sample.workload_threads_peak),
+            sum(|sample| sample.workload_fds_peak),
             sum(|sample| sample.launch_msec),
             sum(|sample| sample.settle_msec),
             sum(|sample| sample.resize_msec),
+            sum(|sample| sample.frame_deliveries),
+            sum(|sample| sample.frame_duplicates),
             sum(|sample| sample.frame_mean_usec),
             sum(|sample| sample.frame_p50_usec),
             sum(|sample| sample.frame_p95_usec),
@@ -672,6 +701,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
             line.starts_with("desktop_comparison_sample schema=1 status=complete ")
                 || line.starts_with("desktop_comparison_sample schema=2 status=complete ")
                 || line.starts_with("desktop_comparison_sample schema=3 status=complete ")
+                || line.starts_with("desktop_comparison_sample schema=4 status=complete ")
         })
         .collect::<Vec<_>>();
     if records.len() != 1 {
@@ -717,7 +747,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
             ));
         }
     }
-    if matches!(schema, "2" | "3") {
+    if matches!(schema, "2" | "3" | "4") {
         for (name, expected) in [("frame_source", "kernel_drm"), ("teardown", "clean")] {
             if required(name)? != expected {
                 return Err(format!(
@@ -738,7 +768,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
                 .map_err(|_| format!("sample {name} is not an integer"))
         })
     };
-    if matches!(schema, "2" | "3") {
+    if matches!(schema, "2" | "3" | "4") {
         for name in [
             "resource_samples",
             "anonymous_peak_kib",
@@ -761,7 +791,7 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         let _ = required("native_timing")?;
         let _ = required("native_source")?;
     }
-    if schema == "3" {
+    if matches!(schema, "3" | "4") {
         for (name, expected) in [
             ("controller_outside_supervisor", "true"),
             ("visible_dp1", "true"),
@@ -803,6 +833,33 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
     for name in ["cpu_msec", "launch_msec", "settle_msec", "resize_msec"] {
         let _ = numeric(name)?;
     }
+    if schema == "4" {
+        for name in [
+            "stack_processes",
+            "stack_pss_peak_kib",
+            "stack_rss_peak_kib",
+            "stack_threads_peak",
+            "stack_fds_peak",
+            "workload_processes",
+            "workload_pss_peak_kib",
+            "workload_rss_peak_kib",
+            "workload_threads_peak",
+            "workload_fds_peak",
+            "frame_deliveries",
+        ] {
+            if numeric(name)? == 0 {
+                return Err(format!("sample {name} must be positive"));
+            }
+        }
+        for name in ["stack_cpu_msec", "workload_cpu_msec", "frame_duplicates"] {
+            let _ = numeric(name)?;
+        }
+        if numeric("frame_deliveries")? < numeric("frame_samples")?.saturating_add(1) {
+            return Err(
+                "sample frame delivery population is smaller than unique frames".to_owned(),
+            );
+        }
+    }
     Ok(Sample {
         scheduled: ScheduledSample {
             order: usize::try_from(numeric("order")?).map_err(|_| "sample order is too large")?,
@@ -822,6 +879,18 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         major_faults: compatible_numeric("major_faults", 0)?,
         threads_peak: numeric("threads_peak")?,
         fds_peak: numeric("fds_peak")?,
+        stack_processes: compatible_numeric("stack_processes", 0)?,
+        stack_pss_peak_kib: compatible_numeric("stack_pss_peak_kib", 0)?,
+        stack_rss_peak_kib: compatible_numeric("stack_rss_peak_kib", 0)?,
+        stack_cpu_msec: compatible_numeric("stack_cpu_msec", 0)?,
+        stack_threads_peak: compatible_numeric("stack_threads_peak", 0)?,
+        stack_fds_peak: compatible_numeric("stack_fds_peak", 0)?,
+        workload_processes: compatible_numeric("workload_processes", 0)?,
+        workload_pss_peak_kib: compatible_numeric("workload_pss_peak_kib", 0)?,
+        workload_rss_peak_kib: compatible_numeric("workload_rss_peak_kib", 0)?,
+        workload_cpu_msec: compatible_numeric("workload_cpu_msec", 0)?,
+        workload_threads_peak: compatible_numeric("workload_threads_peak", 0)?,
+        workload_fds_peak: compatible_numeric("workload_fds_peak", 0)?,
         launch_msec: numeric("launch_msec")?,
         settle_msec: numeric("settle_msec")?,
         resize_msec: numeric("resize_msec")?,
@@ -830,6 +899,11 @@ fn parse_sample(source: &str, candidate: &str) -> Result<Sample, String> {
         frame_p95_usec: compatible_numeric("frame_p95_usec", numeric("frame_mean_usec")?)?,
         frame_p99_usec: compatible_numeric("frame_p99_usec", numeric("frame_mean_usec")?)?,
         frame_max_usec: compatible_numeric("frame_max_usec", numeric("frame_mean_usec")?)?,
+        frame_deliveries: compatible_numeric(
+            "frame_deliveries",
+            numeric("frame_samples")?.saturating_add(1),
+        )?,
+        frame_duplicates: compatible_numeric("frame_duplicates", 0)?,
     })
 }
 

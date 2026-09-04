@@ -742,6 +742,42 @@
         if input_requested_exit {
             break;
         }
+        // `Queued` transfers ownership to the backend. Observe completion on
+        // the following owner pass instead of claiming visible pixels merely
+        // because the desired position entered the latest-wins cell.
+        if !cursor_updates.dirty
+            && cursor_updates.dirty_since.is_some()
+            && native_scanout
+                .as_ref()
+                .is_some_and(|native| native.pending_atomic_cursor_count() == 0)
+        {
+            pointer_pixel_change |= metrics.physical_pointer_routed > 0;
+            if let Some(started) = cursor_updates.dirty_since.take() {
+                metrics.cursor_max_motion_to_submit =
+                    metrics.cursor_max_motion_to_submit.max(started.elapsed());
+            }
+            if !cursor_visible_reported {
+                crate::session_println!(
+                    "sophia_live_session_pointer schema=2 status=visible source=hardware_cursor"
+                );
+                cursor_visible_reported = true;
+            }
+            if config.expect_physical_pointer
+                && physical_input_completion_reported
+                && input_pixel_change
+                && pointer_phase_started_at.is_none()
+            {
+                pointer_checksum = Some(0);
+                pointer_phase_started_at = Some(Instant::now());
+                crate::session_println!(
+                    "sophia_live_session_pointer schema=1 status=visible source=physical position=center"
+                );
+                crate::session_println!(
+                    "sophia_live_session_pointer schema=1 status=ready source=physical action=select"
+                );
+                std::io::stdout().flush()?;
+            }
+        }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(runtime), Some(position)) =
                 (native_scanout.as_mut(), runtime.as_ref(), pointer.position())
@@ -780,6 +816,12 @@
                     }
                 }
                 Ok(ClassicHardwareCursorUpdate::Hidden) => {
+                    cursor_updates.dirty = false;
+                }
+                Ok(ClassicHardwareCursorUpdate::Queued) => {
+                    // The backend owns progress from here. Leaving `dirty`
+                    // set would resubmit the same position on every owner
+                    // pass and defeat latest-wins coalescing.
                     cursor_updates.dirty = false;
                 }
                 Ok(ClassicHardwareCursorUpdate::Deferred) => {}

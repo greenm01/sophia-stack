@@ -65,7 +65,9 @@ cargo xtask conformance desktop-comparison gate RUN
 cargo xtask conformance desktop-comparison status RUN
 cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
 cargo xtask conformance desktop-comparison preflight RUN
+cargo xtask conformance desktop-comparison qualify RUN
 cargo xtask conformance desktop-comparison capture RUN
+cargo xtask conformance desktop-comparison finalize RUN
 cargo xtask conformance desktop-comparison verify RUN
 cargo xtask conformance desktop-comparison report RUN
 sophia session run [OPTIONS]
@@ -96,8 +98,11 @@ owns only TTY3 checks, local compositor/X-server launch, bounded teardown, VT
 recovery, and tracefs privilege; stack/workload choice, admission, sampling,
 replay, and binding remain in Rust. The gate launches no operator application,
 never contacts another host, and runs its controller outside the measured
-supervisor tree. Sophia's direct-DRM path may stop and restore the local display
-manager.
+supervisor tree. The first Sophia row runs a four-target physical cursor
+qualification before measurement. Capture then stages the row; `finalize`
+checks that the exact supervisor has exited before it records clean teardown,
+replays, and seals the evidence. Sophia's direct-DRM path may stop and restore
+the local display manager.
 
 `just --list` exposes the small human-facing subset. CI and scripts invoke
 `cargo xtask` directly so correctness never depends on a convenience runner.

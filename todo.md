@@ -75,12 +75,11 @@ Status vocabulary:
   per DRM group, direct scanout, return to composition on overlay/effect
   activation, direct-versus-composed measurements, and the atomic cursor path.
   Continuous software-content presentation is closed by one signed physical
-  machine-and-visual pass. The mechanical comparison capture/replay contract is
-  implemented. Its first matrix acquisition exposed an unverified visible-
-  workload boundary and a Sophia-only launcher client; the replacement
-  terminal-free acquisition then exposed connector-neutral RandR naming drift
-  and an unsafe display-manager input handoff. All physical evidence remains
-  diagnostic and non-promotable.
+  machine-and-visual pass. The comparison capture/replay contract is now
+  teardown-aware and separates stack from workload cost. Its latest two-row
+  diagnostic exposed a Sophia atomic-cursor progress hole, an XMonad
+  self-replacement failure, and duplicate DRM trace deliveries. Those rows are
+  retained for diagnosis only; no comparison evidence is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -94,7 +93,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy run `cp14` is paused after 15 biased rows; schema-3 and schema-4 replacements remain at zero rows. The schema-4 attempt reached Sophia but exposed missing read-only RANDR requests and a false greetd post-start termios check; emergency recovery returned to verified TTY3. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36, but row 1 had a visually frozen cursor and row 2 lost XMonad while XLibre stayed alive; both are diagnostic only. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -131,16 +130,18 @@ revalidates the clean prepared checkout and release
 build before takeover, chooses the typed next stack, launches no operator
 application, keeps the controller outside the measured supervisor tree,
 resolves DP-1's active CRTC, and owns capture plus teardown. `attest`,
-`preflight`, `capture`, `replay`, `verify`, and `report` remain
-separately callable diagnostics.
+`preflight`, `qualify`, `capture`, `finalize`, `replay`, `verify`, and `report`
+remain separately callable diagnostics.
 
-Each attempt retains exact raw visibility, resource, kernel-frame, workload,
-native-timing, and attempt records plus a derived schema-3 result and internal
-ledger. Replay requires an empty application baseline; a capture-owned,
-focused, visible DP-1 toplevel with zero foreign application toplevels at
-settlement and every sample; uniform 60-second short windows; 120 resize
-observations; contiguous/monotonic populations; zero crash/loss; and clean
-teardown. The optional soak lane independently requires a full two-hour sample.
+Each attempt retains exact raw visibility, split resource, deduplicated
+kernel-frame, workload, native-timing, and post-teardown attempt records plus a
+derived schema-4 result and internal ledger. The first Sophia row also requires
+an excluded four-target physical cursor qualification. Replay requires an empty
+application baseline; a capture-owned, focused, visible DP-1 toplevel with zero
+foreign application toplevels at settlement and every sample; uniform
+60-second short windows; 120 resize observations; contiguous/monotonic
+populations; zero crash/loss; and clean teardown. The optional soak lane
+independently requires a full two-hour sample.
 Correlation consumes PID/start identity only inside trusted conformance code
 and persists no application identity. Partial attempts block progress only
 within their own run. Regression coverage includes ready-but-hidden and
@@ -192,10 +193,24 @@ work:
 - [x] update the Firefox comparison pin and move exact Kitty, Firefox, and niri
   version admission into both preparation and the pre-takeover gate, retaining
   capture-time revalidation against upgrades during a run;
-- [ ] sign the version-admission correction and prepare a new schema-4 run
-  bound to that exact candidate;
-- [ ] run its first short Sophia row and inspect both its sealed evidence and
-  the persistent input-handoff record before continuing the matrix;
+- [x] sign the version-admission correction, prepare `cp14-schema4-tools`, and
+  stop after the first Sophia and XLibre rows for inspection;
+- [x] diagnose the two-row discrepancy: the atomic cursor accepted pending
+  positions without a guaranteed post-retirement commit, XMonad self-replaced
+  through a missing isolated cache executable, duplicated DRM deliveries
+  inflated X timing, and capture claimed clean teardown before teardown ran;
+- [x] implement a topology-wide latest-wins atomic cursor owner with idle
+  cursor-only progress, combined-commit retry, hard-rejection legacy fallback,
+  bounded counters, and truthful queued-versus-visible reporting;
+- [x] make comparison capture stage before teardown, finalize only after the
+  exact supervisor exits, keep required component identities live throughout
+  sampling, split stack/workload/aggregate resources, deduplicate kernel
+  sequences, preserve nested gate diagnostics, and add the excluded cursor
+  qualification;
+- [x] land the cursor and evidence corrections in a clean signed candidate;
+- [ ] prepare a fresh interactive run and inspect its physical cursor
+  qualification plus the first Sophia, XLibre, and niri rows before
+  continuing;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

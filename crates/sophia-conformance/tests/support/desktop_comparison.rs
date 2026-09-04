@@ -304,6 +304,103 @@ fn raw_capture_replays_from_complete_monotonic_populations() {
 }
 
 #[test]
+fn split_resources_and_duplicate_kernel_deliveries_replay_without_double_counting() {
+    let root = temporary_root("split-replay");
+    let (run, candidate) = prepared_run(&root);
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let resources = fs::read_to_string(attempt.join("resources.log"))
+        .unwrap()
+        .replace("schema=1", "schema=2")
+        .lines()
+        .map(|line| {
+            format!(
+                "{line} stack_processes=3 stack_pss_kib=150000 stack_rss_kib=160000 stack_cpu_msec=700 stack_threads=8 stack_fds=50 workload_processes=1 workload_pss_kib=50000 workload_rss_kib=60000 workload_cpu_msec=300 workload_threads=4 workload_fds=30\n"
+            )
+        })
+        .collect::<String>();
+    fs::write(attempt.join("resources.log"), resources).unwrap();
+    let frames = (1..=121u64)
+        .map(|seq| {
+            format!(
+                "desktop_comparison_kernel_frame schema=2 seq={seq} crtc=41 kernel_sequence={} deliveries={} ust_usec={}\n",
+                seq + 100,
+                if seq == 1 { 2 } else { 1 },
+                1_000_000 + (seq - 1) * 16_667,
+            )
+        })
+        .collect::<String>();
+    fs::write(attempt.join("kernel-frames.log"), frames).unwrap();
+
+    let replay = replay_attempt(&run, &attempt).unwrap();
+    assert!(replay.sample_record.contains("stack_processes=3"));
+    assert!(replay.sample_record.contains("workload_processes=1"));
+    assert!(replay.sample_record.contains("frame_deliveries=122"));
+    assert!(replay.sample_record.contains("frame_duplicates=1"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn staged_schema_requires_post_teardown_cursor_qualification() {
+    let root = temporary_root("staged-replay");
+    let (run, candidate) = prepared_run(&root);
+    let item = schedule().remove(0);
+    let attempt = raw_capture_attempt(&root, &item, &candidate);
+    let resources = fs::read_to_string(attempt.join("resources.log"))
+        .unwrap()
+        .replace("schema=1", "schema=2")
+        .lines()
+        .map(|line| {
+            format!(
+                "{line} stack_processes=3 stack_pss_kib=150000 stack_rss_kib=160000 stack_cpu_msec=700 stack_threads=8 stack_fds=50 workload_processes=1 workload_pss_kib=50000 workload_rss_kib=60000 workload_cpu_msec=300 workload_threads=4 workload_fds=30\n"
+            )
+        })
+        .collect::<String>();
+    fs::write(attempt.join("resources.log"), resources).unwrap();
+    let source = fs::read_to_string(attempt.join("attempt.kdl")).unwrap();
+    let staged = source
+        .replace("attempt schema=2", "attempt schema=3")
+        .replace(
+            "teardown=clean",
+            "teardown=clean supervisor_exited=true cursor_qualification=passed cursor_targets=4 cursor_motion_events=12",
+        );
+    fs::write(attempt.join("attempt.kdl"), &staged).unwrap();
+    replay_attempt(&run, &attempt).unwrap();
+
+    fs::write(
+        attempt.join("attempt.kdl"),
+        staged.replace("supervisor_exited=true", "supervisor_exited=false"),
+    )
+    .unwrap();
+    assert!(
+        replay_attempt(&run, &attempt)
+            .unwrap_err()
+            .contains("not finalized after supervisor exit")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn finalization_adds_teardown_only_after_live_measurement() {
+    let item = schedule().remove(0);
+    let source = format!(
+        "desktop_comparison_measurement schema=1 status=complete order={} stack={} workload={} repetition={} marker=kept\n",
+        item.order, item.stack, item.workload, item.repetition,
+    );
+    let finalized = capture_owner::finalize_measurement_record(&source, &item).unwrap();
+    assert!(finalized.starts_with("desktop_comparison_attempt schema=3 status=measured "));
+    assert!(finalized.contains("marker=kept"));
+    assert!(finalized.contains("teardown=clean supervisor_exited=true"));
+
+    let premature = source.replace("marker=kept", "teardown=clean marker=kept");
+    assert!(
+        capture_owner::finalize_measurement_record(&premature, &item)
+            .unwrap_err()
+            .contains("cannot predeclare teardown")
+    );
+}
+
+#[test]
 fn raw_capture_rejects_truncation_and_nonmonotonic_kernel_time() {
     let root = temporary_root("raw-mutations");
     let (run, candidate) = prepared_run(&root);
@@ -490,6 +587,7 @@ fn local_capture_parsers_reject_malformed_kernel_time() {
     fs::write(
         &raw,
         "worker 10.000000: drm_vblank_event_delivered: crtc=41, seq=1\n\
+         worker 10.000010: drm_vblank_event_delivered: crtc=41, seq=1\n\
          worker 10.016667: drm_vblank_event_delivered: crtc=42, seq=9\n\
          worker 10.016668: drm_vblank_event_delivered: crtc=41, seq=2\n\
          worker 10.033335: drm_vblank_event_delivered: crtc=41, seq=3\n",
@@ -498,7 +596,11 @@ fn local_capture_parsers_reject_malformed_kernel_time() {
     capture_owner::normalize_kernel_trace(&raw, &normalized, 41).unwrap();
     let evidence = fs::read_to_string(&normalized).unwrap();
     assert_eq!(evidence.lines().count(), 3);
-    assert!(evidence.contains("seq=3 crtc=41 ust_usec=10033335"));
+    assert!(
+        evidence
+            .contains("schema=2 seq=1 crtc=41 kernel_sequence=1 deliveries=2 ust_usec=10000000")
+    );
+    assert!(evidence.contains("seq=3 crtc=41 kernel_sequence=3 deliveries=1 ust_usec=10033335"));
 
     fs::write(&raw, "CPU: 0 [LOST 4 EVENTS]\n").unwrap();
     let lost = root.join("lost.log");
@@ -510,9 +612,9 @@ fn local_capture_parsers_reject_malformed_kernel_time() {
 
     fs::write(
         &raw,
-        "worker 10.000000: drm_vblank_event_delivered: crtc=41\n\
-         worker 9.000000: drm_vblank_event_delivered: crtc=41\n\
-         worker 11.000000: drm_vblank_event_delivered: crtc=41\n",
+        "worker 10.000000: drm_vblank_event_delivered: crtc=41, seq=1\n\
+         worker 9.000000: drm_vblank_event_delivered: crtc=41, seq=2\n\
+         worker 11.000000: drm_vblank_event_delivered: crtc=41, seq=3\n",
     )
     .unwrap();
     let second = root.join("invalid.log");
