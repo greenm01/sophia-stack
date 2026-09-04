@@ -84,6 +84,15 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 &decode_wm_v1_projection_output_status_records(&data, 1).unwrap(),
             )
             .unwrap(),
+            // The extension record's codec is hand-written rather than
+            // generated, and the corpus proves it against the same bytes an
+            // independent client sees.
+            "snapshot_surface_classification" => {
+                encode_wm_v1_snapshot_surface_classification_records(
+                    &decode_wm_v1_snapshot_surface_classification_records(&data, 1).unwrap(),
+                )
+                .unwrap()
+            }
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");

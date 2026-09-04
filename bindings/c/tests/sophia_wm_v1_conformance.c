@@ -200,6 +200,29 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         ROUNDTRIP_RECORD(projection_indicator, SOPHIA_WM_V1_PROJECTION_INDICATOR_RECORD_SIZE);
     else if (strcmp(name, "projection_output_status") == 0)
         ROUNDTRIP_RECORD(projection_output_status, SOPHIA_WM_V1_PROJECTION_OUTPUT_STATUS_RECORD_SIZE);
+    else if (strcmp(name, "snapshot_surface_classification") == 0) {
+        /* Capability-gated extension record: no generated codec by design, so
+         * the layout is proven by hand. Three little-endian fields, 16 bytes:
+         * surface_index u32, surface_generation u32, classification u64. */
+        if (data_len != 16) return 0;
+        uint64_t classification = 0;
+        for (size_t i = 0; i < 8; ++i)
+            classification |= (uint64_t)data[8 + i] << (8 * i);
+        uint32_t surface_index = 0;
+        uint32_t surface_generation = 0;
+        for (size_t i = 0; i < 4; ++i) {
+            surface_index |= (uint32_t)data[i] << (8 * i);
+            surface_generation |= (uint32_t)data[4 + i] << (8 * i);
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            encoded[i] = (uint8_t)(surface_index >> (8 * i));
+            encoded[4 + i] = (uint8_t)(surface_generation >> (8 * i));
+        }
+        for (size_t i = 0; i < 8; ++i)
+            encoded[8 + i] = (uint8_t)(classification >> (8 * i));
+        encoded_len = 16;
+        status = SOPHIA_WM_V1_OK;
+    }
     else return 0;
     return status == SOPHIA_WM_V1_OK && encoded_len == data_len &&
         memcmp(encoded, data, data_len) == 0;
@@ -223,7 +246,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 8;
+    return checked == 9;
 }
 
 int main(int argc, char **argv) {

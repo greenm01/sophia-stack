@@ -108,6 +108,20 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "layout" type="u8" count=32 sample="54616c6c00000000000000000000000000000000000000000000000000000000"
     }
 
+    // Extension records ride uncounted chunks appended after the ordinary
+    // prefix: `SnapshotBegin.chunk_count` excludes them, their ordinals
+    // continue the dense sequence, and a sender emits one only when the
+    // gating capability was negotiated. Kinds 0xFF00-0xFFFF (65280-65535) are
+    // reserved for them and no codec is generated; the counted record path is
+    // frozen, and this shape exists so a frozen revision can still carry new
+    // facts. `classification` is an opaque broker-issued class: values map to
+    // policy view slots and carry no application metadata.
+    extension-record "SnapshotSurfaceClassification" transfer="snapshot" kind=65280 gate="launch_placement" max=1024 {
+        field "surface_index" type="u32" sample=3
+        field "surface_generation" type="u32" sample=1
+        field "classification" type="u64" sample=2
+    }
+
     message "ClientHello" kind=32 direction="policy-to-session" transaction="zero" {
         field "minimum_revision" type="u16" sample=1
         field "maximum_revision" type="u16" sample=1

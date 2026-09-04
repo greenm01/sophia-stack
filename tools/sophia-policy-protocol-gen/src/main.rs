@@ -36,6 +36,7 @@ struct Protocol {
     capabilities: Vec<NamedValue>,
     outcomes: Vec<NamedValue>,
     records: Vec<Record>,
+    extension_records: Vec<ExtensionRecord>,
     messages: Vec<Message>,
 }
 
@@ -61,6 +62,16 @@ struct Record {
     kind: u64,
     max: u64,
     fields: Vec<Field>,
+}
+
+/// A capability-gated record riding an uncounted chunk after the ordinary
+/// prefix. It shares the ordinary record shape but is never counted by a
+/// `*Begin` message and never generates codec machinery: the frozen counted
+/// path must not grow, which is the whole reason this shape exists.
+#[derive(Clone, Debug)]
+struct ExtensionRecord {
+    record: Record,
+    gate: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -229,6 +240,7 @@ fn parse_schema(text: &str) -> Result<Protocol, String> {
     let mut capabilities = Vec::new();
     let mut outcomes = Vec::new();
     let mut records = Vec::new();
+    let mut extension_records = Vec::new();
     let mut messages = Vec::new();
     for node in children.nodes() {
         match node.name().value() {
@@ -241,6 +253,10 @@ fn parse_schema(text: &str) -> Result<Protocol, String> {
                 value: integer_property(node, "value")?,
             }),
             "record" => records.push(parse_record(node)?),
+            "extension-record" => extension_records.push(ExtensionRecord {
+                gate: string_property(node, "gate")?,
+                record: parse_record(node)?,
+            }),
             "message" => messages.push(parse_message(node)?),
             other => return Err(format!("unknown protocol node `{other}`")),
         }
@@ -256,6 +272,7 @@ fn parse_schema(text: &str) -> Result<Protocol, String> {
         capabilities,
         outcomes,
         records,
+        extension_records,
         messages,
     };
     validate_schema(&parsed)?;
@@ -459,15 +476,6 @@ fn validate_schema(protocol: &Protocol) -> Result<(), String> {
     let mut record_names = BTreeSet::new();
     let mut record_keys = BTreeSet::new();
     for record in &protocol.records {
-        if record.max == 0 || record.max > u32::MAX as u64 {
-            return Err(format!("record `{}` has invalid max", record.name));
-        }
-        if !matches!(record.transfer.as_str(), "snapshot" | "projection") {
-            return Err(format!("record `{}` has invalid transfer", record.name));
-        }
-        if record.kind == 0 || record.kind > u16::MAX as u64 {
-            return Err(format!("record `{}` has invalid kind", record.name));
-        }
         // `0xFF00`-`0xFFFF` belongs to capability-gated extension chunks, which is
         // what lets a frozen revision carry new facts at all. An ordinary record
         // allocated here would collide with a future extension, and the collision
@@ -487,57 +495,104 @@ extension range {:#06x}-0xFFFF",
         {
             return Err(format!("record `{}` is duplicated", record.name));
         }
-        let mut field_names = BTreeSet::new();
-        for field in &record.fields {
-            if field.kind == FieldKind::Bytes || field.max.is_some() {
-                return Err(format!("record `{}` must be fixed width", record.name));
-            }
-            if !field_names.insert(field.name.as_str()) {
-                return Err(format!(
-                    "duplicate field `{}` in `{}`",
-                    field.name, record.name
-                ));
-            }
-            match field.kind {
-                FieldKind::U16 => validate_integer_sample(field, u16::MAX as u64)?,
-                FieldKind::U32 => validate_integer_sample(field, u32::MAX as u64)?,
-                FieldKind::U64 => validate_integer_sample(field, u64::MAX)?,
-                FieldKind::I32 => validate_integer_sample(field, i32::MAX as u64)?,
-                FieldKind::Bytes => unreachable!(),
-                // A fixed run stays fixed width, so it is legal here. The
-                // sample must fill it exactly; a short sample would encode a
-                // different width than the record declares.
-                FieldKind::FixedBytes(count) => {
-                    if field.reserved {
+        validate_record_shape(record)?;
+    }
+    let capability_names: BTreeSet<&str> = protocol
+        .capabilities
+        .iter()
+        .map(|capability| capability.name.as_str())
+        .collect();
+    for extension in &protocol.extension_records {
+        let record = &extension.record;
+        // An extension record is the one shape a frozen revision can still
+        // gain. Its kind must sit inside the range the ordinary allocator
+        // refuses, and it must name the capability that gates it: the layout,
+        // the kind, and the gate are one contract, and a schema that states
+        // only two of the three is how this record went undiscoverable for an
+        // entire revision.
+        if record.kind < EXTENSION_RECORD_KIND_FLOOR {
+            return Err(format!(
+                "extension record `{}` claims kind {:#06x}, below the reserved \
+extension range floor {:#06x}",
+                record.name, record.kind, EXTENSION_RECORD_KIND_FLOOR
+            ));
+        }
+        if !capability_names.contains(extension.gate.as_str()) {
+            return Err(format!(
+                "extension record `{}` is gated on unknown capability `{}`",
+                record.name, extension.gate
+            ));
+        }
+        if !record_names.insert(record.name.as_str())
+            || !record_keys.insert((record.transfer.as_str(), record.kind))
+        {
+            return Err(format!("record `{}` is duplicated", record.name));
+        }
+        validate_record_shape(record)?;
+    }
+    Ok(())
+}
+
+fn validate_record_shape(record: &Record) -> Result<(), String> {
+    if record.max == 0 || record.max > u32::MAX as u64 {
+        return Err(format!("record `{}` has invalid max", record.name));
+    }
+    if !matches!(record.transfer.as_str(), "snapshot" | "projection") {
+        return Err(format!("record `{}` has invalid transfer", record.name));
+    }
+    if record.kind == 0 || record.kind > u16::MAX as u64 {
+        return Err(format!("record `{}` has invalid kind", record.name));
+    }
+    let mut field_names = BTreeSet::new();
+    for field in &record.fields {
+        if field.kind == FieldKind::Bytes || field.max.is_some() {
+            return Err(format!("record `{}` must be fixed width", record.name));
+        }
+        if !field_names.insert(field.name.as_str()) {
+            return Err(format!(
+                "duplicate field `{}` in `{}`",
+                field.name, record.name
+            ));
+        }
+        match field.kind {
+            FieldKind::U16 => validate_integer_sample(field, u16::MAX as u64)?,
+            FieldKind::U32 => validate_integer_sample(field, u32::MAX as u64)?,
+            FieldKind::U64 => validate_integer_sample(field, u64::MAX)?,
+            FieldKind::I32 => validate_integer_sample(field, i32::MAX as u64)?,
+            FieldKind::Bytes => unreachable!(),
+            // A fixed run stays fixed width, so it is legal here. The
+            // sample must fill it exactly; a short sample would encode a
+            // different width than the record declares.
+            FieldKind::FixedBytes(count) => {
+                if field.reserved {
+                    return Err(format!(
+                        "fixed octet field `{}` cannot be reserved",
+                        field.name
+                    ));
+                }
+                match &field.sample {
+                    Sample::Bytes(bytes) if bytes.len() as u64 == count => {}
+                    Sample::Bytes(bytes) => {
                         return Err(format!(
-                            "fixed octet field `{}` cannot be reserved",
+                            "field `{}` sample is {} bytes but declares {count}",
+                            field.name,
+                            bytes.len()
+                        ));
+                    }
+                    Sample::Integer(_) => {
+                        return Err(format!(
+                            "field `{}` sample must be a hex string",
                             field.name
                         ));
                     }
-                    match &field.sample {
-                        Sample::Bytes(bytes) if bytes.len() as u64 == count => {}
-                        Sample::Bytes(bytes) => {
-                            return Err(format!(
-                                "field `{}` sample is {} bytes but declares {count}",
-                                field.name,
-                                bytes.len()
-                            ));
-                        }
-                        Sample::Integer(_) => {
-                            return Err(format!(
-                                "field `{}` sample must be a hex string",
-                                field.name
-                            ));
-                        }
-                    }
                 }
             }
-            if field.reserved && !matches!(field.sample, Sample::Integer(0)) {
-                return Err(format!(
-                    "reserved field `{}` sample must be zero",
-                    field.name
-                ));
-            }
+        }
+        if field.reserved && !matches!(field.sample, Sample::Integer(0)) {
+            return Err(format!(
+                "reserved field `{}` sample must be zero",
+                field.name
+            ));
         }
     }
     Ok(())
@@ -1691,7 +1746,89 @@ fn render_docs(protocol: &Protocol) -> String {
             offset += field_width(field.kind);
         }
     }
+    if !protocol.extension_records.is_empty() {
+        writeln!(out, "\n# Extension Records").unwrap();
+        writeln!(
+            out,
+            "\nExtension records ride uncounted chunks appended after the ordinary \
+prefix: `*Begin.chunk_count` excludes them, their ordinals continue the dense \
+sequence, and a sender emits one only when the gating capability was \
+negotiated. Kinds `0xFF00`-`0xFFFF` are reserved for them, and no codec is \
+generated: the counted record path is frozen, and these exist so a frozen \
+revision can still carry new facts."
+        )
+        .unwrap();
+        for extension in &protocol.extension_records {
+            let record = &extension.record;
+            writeln!(out, "\n## `{}` extension record\n", record.name).unwrap();
+            writeln!(
+                out,
+                "Transfer: `{}`; record kind: {:#06X}; gated on capability \
+`{}`; maximum records: {}; fixed size: {} bytes.\n",
+                record.transfer,
+                record.kind,
+                extension.gate,
+                record.max,
+                record_width(record)
+            )
+            .unwrap();
+            writeln!(out, "| Offset | Field | Type | Rule |").unwrap();
+            writeln!(out, "| ---: | --- | --- | --- |").unwrap();
+            let mut offset = 0;
+            for field in &record.fields {
+                let rule = if field.reserved {
+                    "must be zero"
+                } else if matches!(field.kind, FieldKind::FixedBytes(_)) {
+                    "octet run, zero padded"
+                } else {
+                    "little-endian"
+                };
+                writeln!(
+                    out,
+                    "| {offset} | `{}` | `{}` | {rule} |",
+                    field.name,
+                    field_name(field.kind)
+                )
+                .unwrap();
+                offset += field_width(field.kind);
+            }
+        }
+    }
     out
+}
+
+fn record_sample_bytes(record: &Record) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    for field in &record.fields {
+        match (field.kind, &field.sample) {
+            (FieldKind::U16, Sample::Integer(value)) => {
+                bytes.extend_from_slice(&(*value as u16).to_le_bytes())
+            }
+            (FieldKind::U32, Sample::Integer(value)) => {
+                bytes.extend_from_slice(&(*value as u32).to_le_bytes())
+            }
+            (FieldKind::U64, Sample::Integer(value)) => {
+                bytes.extend_from_slice(&value.to_le_bytes())
+            }
+            (FieldKind::I32, Sample::Integer(value)) => {
+                bytes.extend_from_slice(&(*value as i32).to_le_bytes())
+            }
+            (FieldKind::FixedBytes(count), Sample::Bytes(sample)) => {
+                if sample.len() as u64 != count {
+                    return Err(format!(
+                        "record sample for `{}` is {} bytes but declares {count}",
+                        field.name,
+                        sample.len()
+                    ));
+                }
+                bytes.extend_from_slice(sample)
+            }
+            _ => {
+                return Err(format!("record sample type mismatch for `{}`", field.name));
+            }
+        }
+    }
+    Ok(bytes)
 }
 
 fn render_record_golden(protocol: &Protocol) -> Result<String, String> {
@@ -1703,37 +1840,21 @@ fn render_record_golden(protocol: &Protocol) -> Result<String, String> {
     .unwrap();
     writeln!(out, "# record-name|record-hex").unwrap();
     for record in &protocol.records {
-        let mut bytes = Vec::new();
-        for field in &record.fields {
-            match (field.kind, &field.sample) {
-                (FieldKind::U16, Sample::Integer(value)) => {
-                    bytes.extend_from_slice(&(*value as u16).to_le_bytes())
-                }
-                (FieldKind::U32, Sample::Integer(value)) => {
-                    bytes.extend_from_slice(&(*value as u32).to_le_bytes())
-                }
-                (FieldKind::U64, Sample::Integer(value)) => {
-                    bytes.extend_from_slice(&value.to_le_bytes())
-                }
-                (FieldKind::I32, Sample::Integer(value)) => {
-                    bytes.extend_from_slice(&(*value as i32).to_le_bytes())
-                }
-                (FieldKind::FixedBytes(count), Sample::Bytes(sample)) => {
-                    if sample.len() as u64 != count {
-                        return Err(format!(
-                            "record sample for `{}` is {} bytes but declares {count}",
-                            field.name,
-                            sample.len()
-                        ));
-                    }
-                    bytes.extend_from_slice(sample)
-                }
-                _ => {
-                    return Err(format!("record sample type mismatch for `{}`", field.name));
-                }
-            }
-        }
+        let bytes = record_sample_bytes(record)?;
         writeln!(out, "{}|{}", snake(&record.name), encode_hex(&bytes)).unwrap();
+    }
+    // Extension records join the corpus so an independent client can prove its
+    // decoder against the same bytes, even though no codec is generated for
+    // them here.
+    for extension in &protocol.extension_records {
+        let bytes = record_sample_bytes(&extension.record)?;
+        writeln!(
+            out,
+            "{}|{}",
+            snake(&extension.record.name),
+            encode_hex(&bytes)
+        )
+        .unwrap();
     }
     Ok(out)
 }

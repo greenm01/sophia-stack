@@ -383,3 +383,17 @@ Transfer: `projection`; record kind: 4; maximum records: 16; fixed size: 48 byte
 | 10 | `layout_len` | `u16` | little-endian |
 | 12 | `reserved` | `u32` | must be zero |
 | 16 | `layout` | `u8[32]` | octet run, zero padded |
+
+# Extension Records
+
+Extension records ride uncounted chunks appended after the ordinary prefix: `*Begin.chunk_count` excludes them, their ordinals continue the dense sequence, and a sender emits one only when the gating capability was negotiated. Kinds `0xFF00`-`0xFFFF` are reserved for them, and no codec is generated: the counted record path is frozen, and these exist so a frozen revision can still carry new facts.
+
+## `SnapshotSurfaceClassification` extension record
+
+Transfer: `snapshot`; record kind: 0xFF00; gated on capability `launch_placement`; maximum records: 1024; fixed size: 16 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `surface_index` | `u32` | little-endian |
+| 4 | `surface_generation` | `u32` | little-endian |
+| 8 | `classification` | `u64` | little-endian |
