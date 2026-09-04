@@ -41,6 +41,7 @@ for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit" "$
     commit="${repo_and_commit##*:}"
     git -C "$repo" verify-commit "$commit" >/dev/null 2>&1 || {
         echo "Physical-proof HEAD lacks a valid signature: $repo" >&2
+        echo "  Run tools/check_proof_preconditions.sh first to see all three." >&2
         exit 1
     }
     upstream="$(git -C "$repo" rev-parse --verify refs/remotes/origin/master 2>/dev/null || true)"
@@ -48,6 +49,7 @@ for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit" "$
         echo "Physical-proof HEAD must equal the locally known origin/master: $repo" >&2
         echo "  HEAD:          $commit" >&2
         echo "  origin/master: ${upstream:-missing}" >&2
+        echo "  Run tools/check_proof_preconditions.sh first to see all three." >&2
         exit 1
     fi
 done

@@ -1695,7 +1695,11 @@ clean health, and exact TTY recovery, the verifier requires the schema-7
 frame-slot block to balance and to report no slot still leased at completion --
 the evidence that promotes the three native frame slots.
 
-Run `tools/check_hagia_native_matchers.sh` before any physical attempt. It
+Run `tools/check_proof_preconditions.sh` and
+`tools/check_hagia_native_matchers.sh` before any physical attempt. The first
+reports whether Sophia, Hagia, and Narthex are each clean, signed, and level
+with `origin/master`, which is cheaper to learn before switching to tty4 than
+after. It
 drives the real guide across synthesized passing evidence, deletes each required
 line in turn, injects a leaked lease, a stale release, an unbalanced worker
 ledger, a latency overrun, a reordered workflow, bridge activity, a misreported
