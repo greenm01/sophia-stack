@@ -325,12 +325,12 @@ impl PersistentLiveLayout {
                     transaction.transaction.raw(),
                     transaction.surface.index(),
                 );
-                // The first safe pixels can race the layout that admitted the
-                // surface. Prime from the measurement at the point it becomes
-                // authoritative, not only while reducing the earlier Manage
-                // response: that response may already have been staged while
-                // the surface was pixel-silent.
-                self.prime_admission_extent(transaction.surface);
+                // The strongest complete pixels can race the layout that
+                // admitted the surface. Keep the temporary constraint aligned
+                // with the exact retained candidate until native retirement
+                // owns it; candidate-less geometry cannot cross quarantine.
+                let admission_extent =
+                    self.synchronize_admission_extent(transaction.surface);
                 // Arming happens inside a layout commit, and a first frame
                 // usually arrives seconds after its launch layout committed.
                 // A pending layout can be just as unable to stage it: a
@@ -343,7 +343,12 @@ impl PersistentLiveLayout {
                 let candidate_owned_by_pending = self.pending.as_ref().is_some_and(|pending| {
                     pending.requested_sizes.get(&transaction.surface) == Some(&observed_size)
                 });
-                if !candidate_owned_by_pending {
+                let candidate_can_drive_admission = matches!(
+                    admission_extent,
+                    AdmissionRecoveryExtentDecision::Unchanged { .. }
+                        | AdmissionRecoveryExtentDecision::Update { .. }
+                );
+                if candidate_can_drive_admission && !candidate_owned_by_pending {
                     self.constraint_relayout_required = true;
                 }
             }
@@ -1054,18 +1059,33 @@ impl PersistentLiveLayout {
             .copied()
             .filter(|surface| self.admission_retries.get(surface).copied().unwrap_or(0) >= 1)
             .collect::<BTreeSet<_>>();
+        for surface in admission_surfaces
+            .iter()
+            .copied()
+            .filter(|surface| !terminal_admissions.contains(surface))
+        {
+            self.synchronize_admission_extent(surface);
+        }
         let recoverable_admissions = admission_surfaces
             .iter()
             .copied()
             .filter(|surface| {
                 !terminal_admissions.contains(surface)
-                    && self.layout_epochs.safe_size(*surface).is_some()
+                    && self.surface_awaits_visual_candidate(*surface)
+                    && self
+                        .layout_epochs
+                        .recovery_extent(*surface)
+                        .is_some_and(|extent| {
+                            self.selected_pre_admission_transaction(*surface, extent)
+                                .is_some()
+                        })
             })
             .collect::<Vec<_>>();
         // A first-launch admission with retained pixels is fenced through a
-        // fixed recovery extent, not rolled back. Pixel-silent admission is an
-        // expected state: it keeps the standing target and bounded retry but
-        // cannot claim a recovery extent that does not exist.
+        // fixed recovery extent, not rolled back. Candidate-less geometry and
+        // pixel-silent admission are expected states: they keep the standing
+        // target and bounded retry but cannot claim an extent whose exact
+        // transaction is unavailable at the quarantine boundary.
         // A recovery request needs a committed extent to configure back to. A
         // surface the coordinator no longer knows — one withdrawn while its
         // resize was outstanding — has none, and naming it fails the whole

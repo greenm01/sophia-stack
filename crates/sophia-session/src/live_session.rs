@@ -19,7 +19,8 @@ use crate::native_output_completion::{
     validate_native_output_content_evidence,
 };
 use crate::resize_transaction::{
-    PendingLayoutGeometryAuthority, ResizeVisualCommit, ResizeVisualCommitTracker,
+    AdmissionRecoveryExtentDecision, PendingLayoutGeometryAuthority, ResizeVisualCommit,
+    ResizeVisualCommitTracker, decide_admission_recovery_extent,
     merge_unrequested_layout_observation, project_authority_batch_onto_layout,
 };
 use crate::session_actions::{SessionLaunchIntent, SessionLaunchQueue, SessionLaunchQueueOutcome};

@@ -552,7 +552,11 @@ snapshot, and equal evidence is ordered by the Engine-assigned observation
 sequence. A later policy-sized clear therefore cannot replace a retained client
 frame as recovery truth. Once managed, ordinary newest-complete-observation
 ordering resumes. The epoch coordinator can use the selected extent to form a
-bounded recovery request without claiming that its pixels reached the scene.
+bounded recovery request only while its exact transaction remains in the
+pre-admission quarantine; a candidate-less or unavailable observation cannot
+become an admission constraint. The constraint follows the selected candidate
+through `AwaitingPixels` and becomes immutable in `AwaitingRetirement`, without
+claiming that its pixels reached the scene.
 
 Safe extents and declared constraints remain client-content values inside
 authority and visual-state records. WM snapshots carry outer allocation values.

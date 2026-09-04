@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use sophia_engine::{SafeSurfaceObservation, SurfacePresentationAdmissionState};
 use sophia_protocol::{LayerSnapshot, Size, SurfaceId, SurfaceTransactionKey, TransactionId};
 use sophia_x_authority::XAuthorityObservedTransactionBatch;
 
@@ -9,6 +10,64 @@ pub use sophia_engine::{
 };
 
 pub const RESIZE_VISUAL_COMMIT_CAPACITY: usize = 256;
+
+/// Pure decision for keeping admission recovery constraints aligned with the
+/// exact visual candidate that can cross the quarantine boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdmissionRecoveryExtentDecision {
+    Ineligible,
+    AwaitingCandidate,
+    Unchanged {
+        selected: SafeSurfaceObservation,
+    },
+    Update {
+        previous: Option<Size>,
+        selected: SafeSurfaceObservation,
+    },
+    ClearStale {
+        previous: Size,
+    },
+}
+
+/// Reduces passive admission facts without mutating either owning state table.
+///
+/// A safe observation is not sufficient by itself: admission can use it only
+/// while its exact transaction remains retained in the pre-admission queue.
+/// Once native retirement owns a candidate, later observations cannot move the
+/// recovery constraint underneath that in-flight frame.
+pub fn decide_admission_recovery_extent(
+    admission: SurfacePresentationAdmissionState,
+    selected: Option<SafeSurfaceObservation>,
+    selected_candidate_retained: bool,
+    current: Option<Size>,
+) -> AdmissionRecoveryExtentDecision {
+    if !matches!(
+        admission,
+        SurfacePresentationAdmissionState::PolicyPending
+            | SurfacePresentationAdmissionState::ControlPending { .. }
+            | SurfacePresentationAdmissionState::AwaitingPixels { .. }
+    ) {
+        return AdmissionRecoveryExtentDecision::Ineligible;
+    }
+
+    let Some(selected) = selected
+        .filter(|observation| observation.candidate.is_some() && selected_candidate_retained)
+    else {
+        return current.map_or(
+            AdmissionRecoveryExtentDecision::AwaitingCandidate,
+            |previous| AdmissionRecoveryExtentDecision::ClearStale { previous },
+        );
+    };
+
+    if current == Some(selected.extent) {
+        AdmissionRecoveryExtentDecision::Unchanged { selected }
+    } else {
+        AdmissionRecoveryExtentDecision::Update {
+            previous: current,
+            selected,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResizeVisualCommit {

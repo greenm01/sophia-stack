@@ -76,41 +76,15 @@ Status vocabulary:
   per DRM group, direct scanout, return to composition on overlay/effect
   activation, direct-versus-composed measurements, and the atomic cursor path.
   Continuous software-content presentation is closed by one signed physical
-  machine-and-visual pass. The comparison capture/replay contract is now
-  teardown-aware and separates stack from workload cost. Its latest owner-only
-  run failed closed before row 1 when an output-policy commit dropped the
-  selected atomic cursor plane from reconstructed KMS head state. The next
-  zero-row run proved that repair physically: both heads presented and the
-  cursor crossed between them. Withdrawal of the qualification window then
-  exposed a stale focused-surface identity in the public policy snapshot. The
-  producer, wire codec, and Engine validation now enforce one complete-snapshot
-  focus invariant. The subsequent zero-row `cp14-schema4-d0b10a2c` attempt is
-  retained as a partial launch diagnostic. Manual observation also exposed two
-  presentation gaps: authority turns could compose outside a refresh deadline,
-  and the cursor used a Sophia-only bitmap. The first corrections added
-  deadline coalescing and one configurable CPU/KMS cursor asset, but follow-up
-  observation still found mouse-dependent Kitty cadence. The remaining cause
-  was protocol and KMS ordering: X Present reported transaction IDs as MSCs,
-  and input could issue a blocking cursor-only atomic commit before ready
-  Present feedback. Signed candidate `07effa0a` then completed a fresh physical
-  60-second Sophia workload with continuous focused visibility and 3,600
-  contiguous kernel frames, but the row failed after sampling when capture
-  attempted to re-read now-missing live-session qualification evidence.
-  Qualification is now admitted before timed capture and nested gate output
-  is durable. The next run exposed the underlying shell bug without starting a
-  workload: a `0/4` qualification timeout continued into capture because the
-  caller's status guard disabled Bash's implicit `errexit` inside the helper.
-  Each prerequisite now returns explicitly on failure. Run
-  `cp14-schema4-401d2b68` then passed the four-target qualification and retained
-  a healthy 60-second measurement, but failed closed before finalization when
-  two accepted X clients outlived the workload launcher and session quiescence
-  timed out. Private workload process groups removed one survivor on signed
-  candidate `69520f50`, and valid ImageText8 eliminated all protocol errors, but
-  one connection still outlived the consistently observed three-process Kitty
-  tree. The conformance owner now retains exact PID/start identities from its
-  existing sampler and drains those processes as well as their original group.
-  A new signed physical run is required. No comparison evidence is promotable
-  yet.
+  machine-and-visual pass. The comparison capture/replay contract is
+  visibility-bound, teardown-aware, and separates stack from workload cost.
+  Run `cp14-schema4-124ad6c1` sealed all nine Kitty rows and then failed closed
+  on Sophia's first Firefox row: a retained 200x210 startup extent remained the
+  recovery constraint after stronger 1290x1050 Present buffers arrived, so the
+  surface stayed unassigned and invisible. Admission recovery now follows the
+  strongest retained candidate only until exact native retirement is armed.
+  A new signed physical Firefox canary and fresh comparison run are required;
+  no current comparison evidence is promotable.
 
 Latest retained Milestone 14 evidence:
 
@@ -124,7 +98,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs remain at 0/36 while preserving successive cursor-plane, stale-focus, cadence, qualification, and teardown diagnostics. `cp14-schema4-2b50438c` proved location-independent launch, passed 4/4 cursor targets with 955 motions, and retained 60/60 resource/visibility samples plus 3,599 contiguous kernel frames. All three sampled Kitty processes terminated and its surface withdrew, but one descriptor holder outside the retained ancestry kept X client 7 alive. The capture process now becomes a kernel child subreaper, includes adopted descendants in the same `/proc` measurement pass, and kills/reaps them before strict session quiescence. A fresh signed run must prove containment and clean finalization. Zero comparison results are promotable |
+| Comparison acquisition | `cp14-schema4-124ad6c1` sealed 9/36 Kitty rows; row 10 retained a failed Sophia Firefox partial with zero visible workloads. The 200x210 recovery extent did not follow stronger 1290x1050 Present evidence. The run remains diagnostic and a new signed candidate is required. |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -282,13 +256,12 @@ work:
   the window mapped and routed pointer motion, but timed out at 0/4 targets;
   make the shell helper return explicitly after failed attestation or
   qualification even when its caller condition disables implicit `errexit`;
-- [ ] prepare a fresh interactive run and inspect its physical cursor
-  qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `69520f50` passed qualification, captured a healthy
-  first Sophia measurement, and eliminated qualification protocol errors, but
-  did not seal it because one accepted X client survived process-group cleanup.
-  Exact sampled PID/start identity retention and bounded group-plus-process
-  teardown now need a fresh signed candidate and prepared run;
+- [x] prepare a fresh interactive run and inspect its physical qualification
+  and initial rows. Candidate `124ad6c1` sealed all nine Kitty rows with clean
+  teardown; Sophia Firefox row 10 then exposed stale admission recovery and
+  remained partial;
+- [ ] sign the admission-recovery correction, pass one short physical Sophia
+  Firefox canary, and prepare a fresh comparison run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

@@ -10,27 +10,55 @@ impl PersistentLiveLayout {
             )
     }
 
-    fn prime_admission_extent(&mut self, surface: SurfaceId) {
-        if !self.surface_requires_admission(surface)
-            || self.layout_epochs.recovery_extent(surface).is_some()
-        {
-            return;
+    fn synchronize_admission_extent(
+        &mut self,
+        surface: SurfaceId,
+    ) -> AdmissionRecoveryExtentDecision {
+        let selected = self.layout_epochs.safe_observation(surface);
+        let selected_candidate_retained = selected.is_some_and(|observation| {
+            self.selected_pre_admission_transaction(surface, observation.extent)
+                .is_some()
+        });
+        let decision = decide_admission_recovery_extent(
+            self.admissions.state(surface),
+            selected,
+            selected_candidate_retained,
+            self.layout_epochs.recovery_extent(surface),
+        );
+        match decision {
+            AdmissionRecoveryExtentDecision::Update { previous, selected } => {
+                self.layout_epochs
+                    .set_recovery_extent(surface, selected.extent);
+                self.layout_epochs.set_admission(
+                    surface,
+                    sophia_engine::SurfaceAdmissionState::PendingLayout,
+                );
+                if let Some(previous) = previous {
+                    crate::session_println!(
+                        "sophia_live_resize_epoch schema=3 status=admission_extent_rebased surface={} previous_width={} previous_height={} width={} height={} evidence={:?}",
+                        surface.index(),
+                        previous.width,
+                        previous.height,
+                        selected.extent.width,
+                        selected.extent.height,
+                        selected.evidence,
+                    );
+                } else {
+                    crate::session_println!(
+                        "sophia_live_resize_epoch schema=3 status=admission_extent_primed surface={} width={} height={}",
+                        surface.index(),
+                        selected.extent.width,
+                        selected.extent.height,
+                    );
+                }
+            }
+            AdmissionRecoveryExtentDecision::ClearStale { .. } => {
+                self.release_recovery_extent(surface, "admission_candidate_unavailable");
+            }
+            AdmissionRecoveryExtentDecision::Ineligible
+            | AdmissionRecoveryExtentDecision::AwaitingCandidate
+            | AdmissionRecoveryExtentDecision::Unchanged { .. } => {}
         }
-        let Some(extent) = self.layout_epochs.safe_size(surface) else {
-            return;
-        };
-        // Admit the complete pixels the client has already produced before
-        // driving it toward the blind WM's final geometry.
-        self.layout_epochs.set_recovery_extent(surface, extent);
-        self.layout_epochs.set_admission(
-            surface,
-            sophia_engine::SurfaceAdmissionState::PendingLayout,
-        );
-        crate::session_println!(
-            "sophia_live_resize_epoch schema=3 status=admission_extent_primed surface={} width={} height={}",
-            surface.index(),
-            extent.width,
-            extent.height,
-        );
+        decision
     }
 }

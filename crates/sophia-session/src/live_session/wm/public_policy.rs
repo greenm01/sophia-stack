@@ -2216,7 +2216,7 @@ impl LiveWmSession {
                     None
                 } else {
                     if let LiveWmProposalSource::Manage(surface) = source {
-                        layout.prime_admission_extent(surface);
+                        layout.synchronize_admission_extent(surface);
                     }
                     let reconciliation = reconcile_public_policy_proposal(
                         layout,

@@ -479,7 +479,13 @@ an accumulated software-backing snapshot regardless of arrival order. The
 buffer identity prevents a policy-sized background clear in the same authority
 transaction from impersonating the client frame. Within one evidence class
 the newest observation wins. After admission, normal committed ordering
-resumes.
+resumes. A temporary admission constraint may project only a selected candidate
+whose exact transaction remains in the bounded pre-admission quarantine; a
+candidate-less committed size is not admission evidence. While presentation is
+still `PolicyPending`, `ControlPending`, or `AwaitingPixels`, that constraint
+tracks a stronger or newer selected candidate. It freezes in
+`AwaitingRetirement`, where only the already-armed exact candidate may complete
+admission.
 
 This reducer does not make the Engine understand X11. The X authority owns the
 meaning and order of Present, core drawing, SHM drawing, clears, and backing

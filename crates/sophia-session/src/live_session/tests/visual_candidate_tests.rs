@@ -504,15 +504,18 @@ fn present_candidate_is_not_replaced_by_later_blank_backing_extent() {
 }
 
 #[test]
-fn a_selected_pre_admission_candidate_queues_the_relayout_that_arms_it() {
-    // Arming happens inside a layout commit, and a first frame arrives seconds
-    // after its launch layout committed. Without this nudge nothing schedules
-    // the commit, so the admitted window sits selected and empty until an
-    // unrelated event forces a relayout -- on the rig, the operator pressing
-    // the launch key a second time and receiving both windows at once.
+fn a_stronger_pre_admission_candidate_rebases_recovery_and_queues_relayout() {
+    // Firefox can publish a small backing snapshot before its first complete
+    // Present. The stronger frame must replace that temporary constraint;
+    // otherwise policy keeps requesting an extent whose selected pixels no
+    // longer exist and the surface remains invisible.
     let surface = SurfaceId::new(81, 1);
     let transaction = TransactionId::from_raw(2318);
     let geometry = rect(1278, 1424);
+    let stale = Size {
+        width: 200,
+        height: 210,
+    };
     let dma_buffer = BufferHandle::from_raw(16);
     let frame = SurfaceTransaction {
         transaction,
@@ -581,6 +584,16 @@ fn a_selected_pre_admission_candidate_queues_the_relayout_that_arms_it() {
             },
             generation: 1,
         });
+    layout.layout_epochs.record_safe_observation(
+        sophia_protocol::SurfaceTransactionKey {
+            transaction: TransactionId::from_raw(2317),
+            surface,
+            target_buffer: BufferSource::CpuBuffer { handle: 15 },
+        },
+        stale,
+        sophia_engine::SurfaceVisualEvidence::BackingSnapshot,
+    );
+    layout.layout_epochs.set_recovery_extent(surface, stale);
     assert!(layout.surface_requires_admission(surface));
     assert!(!layout.constraint_relayout_required());
 
@@ -596,7 +609,7 @@ fn a_selected_pre_admission_candidate_queues_the_relayout_that_arms_it() {
             width: geometry.width,
             height: geometry.height,
         }),
-        "candidate selection must prime the measured admission extent",
+        "the stronger candidate must replace the stale admission extent",
     );
 }
 

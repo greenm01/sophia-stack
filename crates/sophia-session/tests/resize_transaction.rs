@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use sophia_engine::{
+    SafeSurfaceObservation, SurfacePresentationAdmissionState, SurfaceVisualEvidence,
+};
 use sophia_session::resize_transaction::{
-    PendingLayoutGeometryAuthority, PendingLayoutObservationMerge, ResizeRollbackCoordinator,
-    ResizeVisualCommit, ResizeVisualCommitTracker, merge_unrequested_layout_observation,
+    AdmissionRecoveryExtentDecision, PendingLayoutGeometryAuthority, PendingLayoutObservationMerge,
+    ResizeRollbackCoordinator, ResizeVisualCommit, ResizeVisualCommitTracker,
+    decide_admission_recovery_extent, merge_unrequested_layout_observation,
     project_authority_batch_onto_layout,
 };
 
@@ -17,6 +21,124 @@ fn visual_candidate(
         target_buffer: BufferSource::DmaBuf {
             handle: transaction.raw(),
         },
+    }
+}
+
+fn safe_observation(
+    candidate: sophia_protocol::SurfaceTransactionKey,
+    extent: Size,
+    evidence: SurfaceVisualEvidence,
+    sequence: u64,
+) -> SafeSurfaceObservation {
+    SafeSurfaceObservation {
+        candidate: Some(candidate),
+        extent,
+        evidence,
+        sequence,
+    }
+}
+
+#[test]
+fn admission_recovery_rebases_to_the_stronger_retained_candidate() {
+    let surface = SurfaceId::new(68, 1);
+    let startup = size(200, 210);
+    let presented = size(1290, 1050);
+    let backing = safe_observation(
+        visual_candidate(TransactionId::from_raw(680), surface),
+        startup,
+        SurfaceVisualEvidence::BackingSnapshot,
+        1,
+    );
+    let frame = safe_observation(
+        visual_candidate(TransactionId::from_raw(681), surface),
+        presented,
+        SurfaceVisualEvidence::PresentedBuffer,
+        2,
+    );
+    let state = SurfacePresentationAdmissionState::AwaitingPixels {
+        transaction: TransactionId::from_raw(67),
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: startup.width,
+            height: startup.height,
+        },
+    };
+
+    assert_eq!(
+        decide_admission_recovery_extent(state, Some(backing), true, None),
+        AdmissionRecoveryExtentDecision::Update {
+            previous: None,
+            selected: backing,
+        }
+    );
+    assert_eq!(
+        decide_admission_recovery_extent(state, Some(frame), true, Some(startup)),
+        AdmissionRecoveryExtentDecision::Update {
+            previous: Some(startup),
+            selected: frame,
+        }
+    );
+    assert_eq!(
+        decide_admission_recovery_extent(state, Some(frame), true, Some(presented)),
+        AdmissionRecoveryExtentDecision::Unchanged { selected: frame }
+    );
+}
+
+#[test]
+fn admission_recovery_rejects_candidate_less_or_unretained_geometry() {
+    let surface = SurfaceId::new(69, 1);
+    let startup = size(200, 210);
+    let state = SurfacePresentationAdmissionState::PolicyPending;
+    let unavailable = SafeSurfaceObservation {
+        candidate: None,
+        extent: startup,
+        evidence: SurfaceVisualEvidence::BackingSnapshot,
+        sequence: 1,
+    };
+    let unretained = safe_observation(
+        visual_candidate(TransactionId::from_raw(690), surface),
+        startup,
+        SurfaceVisualEvidence::BackingSnapshot,
+        2,
+    );
+
+    assert_eq!(
+        decide_admission_recovery_extent(state, Some(unavailable), false, None),
+        AdmissionRecoveryExtentDecision::AwaitingCandidate
+    );
+    assert_eq!(
+        decide_admission_recovery_extent(state, Some(unretained), false, Some(startup)),
+        AdmissionRecoveryExtentDecision::ClearStale { previous: startup }
+    );
+}
+
+#[test]
+fn armed_or_managed_admission_cannot_rebase_its_recovery_extent() {
+    let surface = SurfaceId::new(67, 1);
+    let original = size(200, 210);
+    let newer = safe_observation(
+        visual_candidate(TransactionId::from_raw(671), surface),
+        size(1290, 1050),
+        SurfaceVisualEvidence::PresentedBuffer,
+        2,
+    );
+    let armed = SurfacePresentationAdmissionState::AwaitingRetirement {
+        admission_transaction: TransactionId::from_raw(67),
+        visual_candidate: visual_candidate(TransactionId::from_raw(670), surface),
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: original.width,
+            height: original.height,
+        },
+    };
+
+    for state in [armed, SurfacePresentationAdmissionState::Managed] {
+        assert_eq!(
+            decide_admission_recovery_extent(state, Some(newer), true, Some(original)),
+            AdmissionRecoveryExtentDecision::Ineligible
+        );
     }
 }
 

@@ -494,7 +494,7 @@ fn newer_committed_policy_replaces_deferred_retirement_focus() {
 }
 
 #[test]
-fn first_admission_primes_the_selected_safe_pixel_extent() {
+fn admission_does_not_prime_a_candidate_missing_from_quarantine() {
     let surface = SurfaceId::new(7, 1);
     let extent = Size {
         width: 500,
@@ -541,12 +541,23 @@ fn first_admission_primes_the_selected_safe_pixel_extent() {
         sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
     );
 
-    layout.prime_admission_extent(surface);
+    let decision = layout.synchronize_admission_extent(surface);
 
-    assert_eq!(layout.layout_epochs.recovery_extent(surface), Some(extent));
+    assert_eq!(
+        decision,
+        crate::resize_transaction::AdmissionRecoveryExtentDecision::AwaitingCandidate
+    );
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+    layout.layout_epochs.set_recovery_extent(surface, extent);
+    assert_eq!(
+        layout.synchronize_admission_extent(surface),
+        crate::resize_transaction::AdmissionRecoveryExtentDecision::ClearStale { previous: extent }
+    );
+    assert_eq!(layout.layout_epochs.recovery_extent(surface), None);
+    assert!(layout.constraint_relayout_required());
     assert_eq!(
         layout.layout_epochs.admission(surface),
-        sophia_engine::SurfaceAdmissionState::PendingLayout
+        sophia_engine::SurfaceAdmissionState::Unmanaged
     );
 }
 
