@@ -404,7 +404,8 @@ fn wire_xy_pixmap_upload_is_classified_unsupported_at_dispatch() {
                 dst_x: 0,
                 dst_y: 0,
             },
-            &split_image(8, 4, 3),
+            // Twenty-four planes, four rows, each padded to 32 bits.
+            &[0x55; 24 * 4 * 4],
         ),
         &mut runtime,
         &mut atoms,

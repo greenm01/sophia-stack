@@ -209,6 +209,10 @@ install -m 644 tools/lib/installed_hagia_evidence.sh \
     "$artifact/tools/lib/installed_hagia_evidence.sh"
 install -m 644 tools/lib/live_session_surface.sh \
     "$artifact/tools/lib/live_session_surface.sh"
+install -m 644 tools/lib/verify_firefox_rendering.awk \
+    "$artifact/tools/lib/verify_firefox_rendering.awk"
+install -m 755 tools/verify_sophia_firefox_rendering_physical.sh \
+    "$artifact/tools/verify_sophia_firefox_rendering_physical.sh"
 install -m 755 tools/sophia_tty_mode.py "$artifact/tools/sophia_tty_mode.py"
 install -m 644 tools/fixtures/firefox_m8_local_page.html \
     "$artifact/tools/fixtures/firefox_m8_local_page.html"

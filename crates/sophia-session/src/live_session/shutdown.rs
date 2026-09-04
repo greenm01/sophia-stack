@@ -55,17 +55,40 @@ pub(super) fn observe_authority_ingress(
     Ok(())
 }
 
-/// Stops frontend admission once. Cleanup callers may safely invoke this
-/// after the normal quiescence path has already stopped and joined the
-/// frontend without manufacturing a second failure.
-pub(super) fn stop_frontend_intake(
+fn send_frontend_stop(
     sender: &SyncSender<XServerFrontendServiceCommand>,
     stopped: &mut bool,
+    command: XServerFrontendServiceCommand,
 ) -> Result<(), SendError<XServerFrontendServiceCommand>> {
     if *stopped {
         return Ok(());
     }
-    sender.send(XServerFrontendServiceCommand::StopAccepting)?;
+    sender.send(command)?;
     *stopped = true;
     Ok(())
+}
+
+/// Stops frontend admission once. Fatal cleanup terminates clients separately.
+pub(super) fn stop_frontend_intake(
+    sender: &SyncSender<XServerFrontendServiceCommand>,
+    stopped: &mut bool,
+) -> Result<(), SendError<XServerFrontendServiceCommand>> {
+    send_frontend_stop(
+        sender,
+        stopped,
+        XServerFrontendServiceCommand::StopAccepting,
+    )
+}
+
+/// Closes client streams without cancelling their accepted ordered work.
+/// Merely closing admission leaves a live browser holding quiescence open.
+pub(super) fn disconnect_frontend_for_drain(
+    sender: &SyncSender<XServerFrontendServiceCommand>,
+    stopped: &mut bool,
+) -> Result<(), SendError<XServerFrontendServiceCommand>> {
+    send_frontend_stop(
+        sender,
+        stopped,
+        XServerFrontendServiceCommand::DrainAndDisconnect,
+    )
 }

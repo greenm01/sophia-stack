@@ -311,6 +311,10 @@ pub struct XAuthorityClientControlAck {
 #[derive(Clone, Debug)]
 pub enum XServerFrontendServiceCommand {
     StopAccepting,
+    /// Close admission and client streams, but preserve ordered authority
+    /// egress until accepted requests and resource teardown have drained.
+    DrainAndDisconnect,
+    /// Emergency cancellation after the owner's bounded drain has expired.
     StopAndDisconnect,
     RevokeAdmission {
         admission: ClientAdmissionId,

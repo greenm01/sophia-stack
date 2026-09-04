@@ -120,9 +120,10 @@ impl XAuthorityRuntime {
         ))
     }
 
-    /// Applies one client image upload.
+    /// Applies one validated image in tight, little-endian 32-bit pixels.
     ///
-    /// `semantics` carries the wire facts the journal needs to decide whether
+    /// Wire dispatch owns decoding before this call. `semantics` carries the
+    /// GC operation and original format facts the journal needs to decide whether
     /// the upload is replayable. `None` means the caller cannot vouch for the
     /// format, so a window destination poisons its journal with a named cause
     /// rather than retaining pixels that might not reproduce the drawable.
@@ -138,19 +139,47 @@ impl XAuthorityRuntime {
         if let Err(error) = self.validate_drawable_access(namespace, drawable) {
             return XAuthorityResponsePacket::rejected(transaction, error);
         }
+        let Some(data) = data else {
+            return XAuthorityResponsePacket::rejected(
+                transaction,
+                XAuthorityRuntimeError::InvalidResource,
+            );
+        };
+        let Some(rect) = damage.rects.first().copied() else {
+            return XAuthorityResponsePacket::rejected(
+                transaction,
+                XAuthorityRuntimeError::InvalidResource,
+            );
+        };
+        let Ok(size) = self.drawable_facts(namespace, drawable).map(|facts| Size {
+            width: facts.geometry.width,
+            height: facts.geometry.height,
+        }) else {
+            return XAuthorityResponsePacket::rejected(
+                transaction,
+                XAuthorityRuntimeError::InvalidResource,
+            );
+        };
+        if rect.width == 0
+            || rect.height == 0
+            || rect.x >= size.width
+            || rect.y >= size.height
+            || rect.x.saturating_add(rect.width) <= 0
+            || rect.y.saturating_add(rect.height) <= 0
+        {
+            return XAuthorityResponsePacket::accepted(transaction);
+        }
         if let Ok(size) = self.pixmap_size(namespace, drawable) {
-            let wrote_image = data.and_then(|data| {
-                damage
-                    .rects
-                    .first()
-                    .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
-            });
+            let wrote_image = self
+                .software_buffers
+                .put_image(drawable, size, rect, data, semantics);
             if wrote_image.is_none() {
                 return XAuthorityResponsePacket::rejected(
                     transaction,
                     XAuthorityRuntimeError::InvalidResource,
                 );
             }
+            crate::image::trace_image_pixels("upload", transaction, drawable, rect, data);
             return XAuthorityResponsePacket::accepted(transaction);
         }
         let Some(record) = self.windows.get(drawable) else {
@@ -163,21 +192,9 @@ impl XAuthorityRuntime {
             width: record.geometry.width,
             height: record.geometry.height,
         };
-        let Some(buffer) = data
-            .and_then(|data| {
-                damage
-                    .rects
-                    .first()
-                    .and_then(|rect| self.software_buffers.put_image(drawable, size, *rect, data))
-            })
-            .or_else(|| {
-                self.software_buffers.paint_damage(
-                    drawable,
-                    size,
-                    &damage.rects,
-                    &XGraphicsContextValues::default(),
-                )
-            })
+        let Some(buffer) = self
+            .software_buffers
+            .put_image(drawable, size, rect, data, semantics)
         else {
             return XAuthorityResponsePacket::rejected(
                 transaction,
@@ -185,16 +202,13 @@ impl XAuthorityRuntime {
             );
         };
         let handle = buffer.handle();
+        crate::image::trace_image_pixels("upload", transaction, drawable, rect, data);
         // Classification needs the destination rectangle the canonical writer
         // consumed, so it reads the same first damage rect.
-        self.pending_raster_command = Some(
-            match (semantics, data, damage.rects.first()) {
-                (Some(semantics), Some(data), Some(rect)) => {
-                    XAuthorityRasterCommand::from_put_image(semantics, *rect, data)
-                }
+        self.pending_raster_command = Some(match semantics {
+            Some(semantics) => XAuthorityRasterCommand::from_put_image(semantics, rect, data),
                 _ => XAuthorityRasterCommand::Unsupported(XRasterUnsupportedKind::PutImage),
-            },
-        );
+        });
         self.finish_drawing_update(XDrawingUpdate::shm_put_image(
             transaction,
             namespace,
@@ -229,5 +243,4 @@ impl XAuthorityRuntime {
             .image_region(drawable, region)
             .ok_or(XDrawableImageError::AllocationFailed)
     }
-
 }

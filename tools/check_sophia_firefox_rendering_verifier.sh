@@ -15,7 +15,10 @@ for pattern in \
     'status=page_ready title_bytes=249' \
     'status=recovery_extent_cleared' \
     'source=standing_target_recovery' \
-    'clip=1276x1422_2_16' \
+    'sophia_native_composition_region_frame' \
+    'sophia_live_head_content_geometry' \
+    'sophia_live_head_composition_queue' \
+    'sophia_live_native_head_page_flip' \
     'status=complete page_ready=true' \
     'status=clean protocol_errors=0' \
     'status=clean app_groups=0'; do
@@ -25,6 +28,30 @@ for pattern in \
         exit 1
     fi
 done
+
+# Both current storage paths are valid; metadata, stale pixels, other surfaces
+# and other frames must never substitute for the browser's scanout evidence.
+for mutation in \
+    's/nonzero_rgb_pixels=1700000/nonzero_rgb_pixels=0/g' \
+    's/nonzero_rgb_pixels=1700000/nonzero_rgb_pixels=16/g' \
+    's/checksum=987654321098765432/checksum=123456789012345678/g' \
+    '/sophia_live_head_content_geometry/s/surface=6291459/surface=999/g' \
+    '/sophia_native_composition_region_frame/s/scene_generation=90/scene_generation=80/g' \
+    '/sophia_native_composition_region_frame/s/head=1/head=2/g' \
+    '/sophia_live_native_head_page_flip/s/frame=4/frame=5/g' \
+    '/sophia_native_composition_region_frame/s/1285_23/2_16/g' \
+    '/sophia_native_composition_region_frame/s/region_pixels=1782528/region_pixels=1/g' \
+    's/clip=1266x1408_1285_23/clip=1266x100_1285_23/g'; do
+    sed -e "$mutation" "$FIXTURE" >"$TEMP_FILE"
+    if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; then
+        echo "rendering verifier accepted invalid pixels/identity: $mutation" >&2
+        exit 1
+    fi
+done
+# Geometry and tracing prefixes are observed data, not fixed fixture strings.
+sed -e 's/1266x1408/800x600/g' -e 's/1782528/480000/g' -e 's/1700000/400000/g' \
+    -e 's/1285_23/50_30/g' -e 's/^/2026-09-04 INFO module: /' "$FIXTURE" >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"
 
 awk '/status=restarted/ { print; print; next } { print }' "$FIXTURE" >"$TEMP_FILE"
 if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; then

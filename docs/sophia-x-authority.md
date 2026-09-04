@@ -410,7 +410,13 @@ content extent, and carries the accumulated child offset in the Present
 submission. The live layout gate compares the imported buffer with the content
 extent, while native retirement commits the logical extent. This mirrors
 XLibre and yserver's separate window-tree geometry and Present offsets without
-exporting X11 hierarchy into Engine.
+exporting X11 hierarchy into Engine. This applies equally to CPU, SHM, and GPU
+Present sources. CPU/SHM copies are materialized in the presentation root's
+backing, so their advertised raster extent is that backing's measured size;
+GPU sources retain their imported size and accumulated child offset. A retained
+CPU snapshot may supply raster variants only when its handle is the exact
+source selected by the transaction. Its mere existence must never replace a
+DRI3 source or change Present's fence/feedback route.
 
 ## Drawing To Buffer Readiness
 
@@ -712,6 +718,16 @@ damage, emits a ready CPU-backed `SurfaceTransaction`, and still sends no direct
 X11 reply on success. The compiled Xlib `XPutImage` smoke validates that the
 observed transaction commits in Sophia Engine and increments Sophia Runtime's
 authority transaction counters.
+
+Core image validation owns format, depth, left padding, scanline padding,
+payload length, and the connection's advertised image order. It lowers valid
+packed or planar pixels into tight little-endian storage before mutation;
+little-endian 32-bit ZPixmap uploads borrow their payload without conversion.
+The software writer applies GC clipping, raster function, and plane mask, with
+a row-copy fast path for unrestricted GXcopy. XYBitmap selects GC foreground
+and background. Malformed or unreadable data never manufactures background
+pixels. `SOPHIA_X11_PIXEL_TRACE=1` enables bounded RGB counts/checksums at upload
+and CPU Present boundaries; normal sessions do not scan pixels for diagnostics.
 
 A private `SOPHIA-PRESENT` extension remains as historical prototype evidence
 for the first explicit buffer-handoff reducer. It is not the forward path and

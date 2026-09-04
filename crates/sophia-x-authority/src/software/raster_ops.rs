@@ -330,8 +330,8 @@ pub(super) fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect
     let target_stride = usize::try_from(buffer.stride).unwrap_or(0);
     let target_bytes = bytes_mut(buffer);
     for y in top..bottom {
-        let source_y = y.saturating_sub(usize::try_from(rect.y.max(0)).unwrap_or(0));
-        let source_x = left.saturating_sub(usize::try_from(rect.x.max(0)).unwrap_or(0));
+        let source_y = usize::try_from(y as i64 - i64::from(rect.y)).unwrap_or(0);
+        let source_x = usize::try_from(left as i64 - i64::from(rect.x)).unwrap_or(0);
         let width = right.saturating_sub(left);
         let source_offset = source_y
             .saturating_mul(source_stride)
@@ -347,6 +347,51 @@ pub(super) fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect
             target_bytes.get_mut(target_offset..target_offset.saturating_add(byte_len))
         {
             target.copy_from_slice(source);
+        }
+    }
+}
+
+pub(super) fn put_image_pixels(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+    data: &[u8],
+    semantics: Option<&super::XPutImageSemantics>,
+) {
+    let Some(semantics) = semantics else {
+        return copy_xrgb8888(buffer, rect, data);
+    };
+    let gc = &semantics.gc;
+    let mask = if semantics.depth == 32 {
+        u32::MAX
+    } else {
+        (1u32 << semantics.depth) - 1
+    };
+    if gc.function == crate::X_GX_COPY
+        && gc.plane_mask & mask == mask
+        && gc.clip_rectangles.is_empty()
+    {
+        return copy_xrgb8888(buffer, rect, data);
+    }
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+        return;
+    };
+    let stride = buffer.stride as usize;
+    let source_stride = rect.width as usize * 4;
+    let bytes = bytes_mut(buffer);
+    for y in top..bottom {
+        for x in left..right {
+            if !pixel_in_clip(x, y, gc) {
+                continue;
+            }
+            let src = (y as i64 - i64::from(rect.y)) as usize * source_stride
+                + (x as i64 - i64::from(rect.x)) as usize * 4;
+            let dst = y * stride + x * 4;
+            let source = u32::from_le_bytes(data[src..src + 4].try_into().unwrap());
+            let destination = u32::from_le_bytes(bytes[dst..dst + 4].try_into().unwrap());
+            let planes = gc.plane_mask & mask;
+            let result = (raster_function(source, destination, gc.function) & planes)
+                | (destination & !planes);
+            bytes[dst..dst + 4].copy_from_slice(&result.to_le_bytes());
         }
     }
 }
@@ -423,7 +468,13 @@ pub(super) fn apply_raster_function(
 ) -> u32 {
     let source = source & 0x00ff_ffff;
     let destination = destination & 0x00ff_ffff;
-    let result = match gc.function {
+    let result = raster_function(source, destination, gc.function) & 0x00ff_ffff;
+    let mask = gc.plane_mask & 0x00ff_ffff;
+    ((result & mask) | (destination & !mask)) & 0x00ff_ffff
+}
+
+fn raster_function(source: u32, destination: u32, function: u8) -> u32 {
+    match function {
         0 => 0,
         1 => source & destination,
         2 => source & !destination,
@@ -441,7 +492,5 @@ pub(super) fn apply_raster_function(
         14 => !(source & destination),
         15 => u32::MAX,
         _ => source,
-    } & 0x00ff_ffff;
-    let mask = gc.plane_mask & 0x00ff_ffff;
-    ((result & mask) | (destination & !mask)) & 0x00ff_ffff
+    }
 }

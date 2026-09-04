@@ -120,3 +120,16 @@ pub(super) fn trace_presented_mirror_head_damage(
         presented.repaint.damaged_pixels(),
     );
 }
+/// Pixel proof needs a retirement identity at the same log level as readback.
+/// Ordinary sessions keep this per-flip record at trace level.
+pub(super) fn trace_native_head_retirement(output: u64, head: u64, submission: usize, frame: u64) {
+    if std::env::var_os("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").is_some() {
+        tracing::info!(
+            "sophia_live_native_head_page_flip schema=2 status=retired output={output} head={head} submission={submission} frame={frame}"
+        );
+    } else {
+        tracing::trace!(
+            "sophia_live_native_head_page_flip schema=2 status=retired output={output} head={head} submission={submission} frame={frame}"
+        );
+    }
+}

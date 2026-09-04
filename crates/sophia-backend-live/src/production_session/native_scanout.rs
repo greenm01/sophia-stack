@@ -14,7 +14,10 @@ mod persistent_native_scanout {
     mod topology;
     pub use cursor::project_native_cursor_logical_viewport;
     pub use frame_damage::project_mirror_output_damage_snapshot;
-    use frame_damage::{trace_presented_mirror_head_damage, trace_presented_output_damage};
+    use frame_damage::{
+        trace_native_head_retirement, trace_presented_mirror_head_damage,
+        trace_presented_output_damage,
+    };
     pub use renderer_images::{
         LiveProductionHeadCompositionFrame, LiveProductionRendererImageHandoff,
         live_topology_frame_renderer_image_requirements,
@@ -1773,8 +1776,7 @@ mod persistent_native_scanout {
                     callback.frame_serial,
                     frame.raw(),
                 );
-                tracing::trace!(
-                    "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
+                trace_native_head_retirement(
                     output.raw(),
                     callback.head.raw(),
                     self.heads[head_index].presented_submissions,
@@ -2788,8 +2790,7 @@ mod persistent_native_scanout {
                             .unwrap_or(self.heads[index].submissions),
                         frame,
                     );
-                    tracing::trace!(
-                        "sophia_live_native_head_page_flip schema=2 status=retired output={} head={} submission={} frame={}",
+                    trace_native_head_retirement(
                         self.heads[index].output.id.raw(),
                         self.heads[index].head.raw(),
                         self.heads[index]

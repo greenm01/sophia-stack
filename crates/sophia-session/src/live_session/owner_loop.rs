@@ -126,12 +126,7 @@ fn resume_native_scanout_from_scene(
     scene: &mut LiveProductionCpuScene,
     handoff: Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    runtime.resume_native_scanout(
-        native,
-        outputs,
-        scene,
-        handoff,
-    )
+    runtime.resume_native_scanout(native, outputs, scene, handoff)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -313,8 +308,9 @@ fn run_session_loop_inner(
         .then(sophia_backend_live::LiveDrmTopologyMonitor::open)
         .transpose()?;
     let mut output_topology_retry_at: Option<Instant> = None;
-    let mut deferred_output_topology_notice:
-        Option<sophia_backend_live::LiveDrmTopologyRescanNotice> = None;
+    let mut deferred_output_topology_notice: Option<
+        sophia_backend_live::LiveDrmTopologyRescanNotice,
+    > = None;
     let mut output_topology_policy_commit_baseline = 0u64;
     let mut scene = LiveProductionCpuScene::new(output.size);
     scene.set_cursor_asset(config.cursor_resolution.asset.clone());
@@ -375,8 +371,7 @@ fn run_session_loop_inner(
         let indicator_strip_enabled = wm_session
             .as_ref()
             .is_some_and(LiveWmSession::tier0_indicator_strip_enabled);
-        let mut initialized =
-            LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
+        let mut initialized = LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
         .with_m4_proof_controls(
             config.m4_first_acquire_delay,
             config.m4_reject_first_present,
@@ -487,8 +482,7 @@ fn run_session_loop_inner(
     let mut focus_ready_reported = false;
     let mut applied_client_focus: Option<SurfaceId> = None;
     let mut session_controls = SessionControlQueue::default();
-    let mut session_control_completions =
-        Vec::with_capacity(SESSION_CONTROL_CAPACITY);
+    let mut session_control_completions = Vec::with_capacity(SESSION_CONTROL_CAPACITY);
     let mut next_focus_control_transaction = 1_000_000u64;
     let resize_proof_targets = config.surface_resize_targets();
     let mut resize_proof: Option<(TransactionId, SurfaceId, Size)> = None;
@@ -554,8 +548,9 @@ fn run_session_loop_inner(
             config.direct_overlay_proof,
             config.direct_overlay_hold_ticks,
         );
-    let mut direct_cursor_proof =
-        crate::live_session::direct_cursor_proof::DirectCursorProof::new(config.direct_cursor_proof);
+    let mut direct_cursor_proof = crate::live_session::direct_cursor_proof::DirectCursorProof::new(
+        config.direct_cursor_proof,
+    );
     let direct_overlay_generation = 1u64;
     let mut startup_native_recovery_attempted = false;
     let mut startup_topology_recovery_pending = false;
@@ -635,7 +630,7 @@ fn run_session_loop_inner(
         ($reason:literal) => {{
             if session_quiescence.is_none() {
                 let now = Instant::now();
-                if let Err(error) = stop_frontend_intake(
+                if let Err(error) = disconnect_frontend_for_drain(
                     frontend_service_sender,
                     &mut terminal_client_intake_stopped,
                 ) {

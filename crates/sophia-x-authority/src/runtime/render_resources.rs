@@ -21,7 +21,6 @@ pub fn dri3_depth_of(format: u32) -> u8 {
     }
 }
 
-
 fn clipped_present_rect(size: Size, rect: Rect) -> Option<Rect> {
     let left = rect.x.max(0).min(size.width);
     let top = rect.y.max(0).min(size.height);
@@ -351,7 +350,8 @@ impl XAuthorityRuntime {
         namespace: NamespaceId,
         drawable: crate::XResourceId,
     ) -> Option<crate::XServerFrontendPixmapAllocation> {
-        self.validate_dri3_drawable_access(namespace, drawable).ok()?;
+        self.validate_dri3_drawable_access(namespace, drawable)
+            .ok()?;
         if self.dri3_pixmaps.contains_key(&drawable) {
             return None;
         }
@@ -450,7 +450,9 @@ impl XAuthorityRuntime {
                 tracing::info!(
                     "sophia_dri3_recovery schema=1 status=refused reason=never_imported pixmap={:#x} kind={:?}",
                     pixmap.local.raw(),
-                    self.drawable_facts(namespace, pixmap).map(|facts| facts.kind).ok(),
+                    self.drawable_facts(namespace, pixmap)
+                        .map(|facts| facts.kind)
+                        .ok(),
                 );
             }
             return Err(XAuthorityRuntimeError::UnknownResource);
@@ -526,24 +528,34 @@ impl XAuthorityRuntime {
             );
         };
         let damage = translated_present_damage(&source_damage, x_offset, y_offset);
-        let (target_window, target_generation, buffer, damage) =
-            if let Some(descriptor) = self.dri3_pixmaps.get(&pixmap).map(|record| record.descriptor) {
-                let (presentation_window, _, child_x, child_y) =
+        // Both storage paths publish the same compositor-facing owner. A child
+        // is an X drawing target, not an independently managed desktop surface.
+        let (target_window, _, child_x, child_y) =
                     match self.window_presentation_root_and_offset(namespace, window) {
                         Ok(presentation) => presentation,
-                        Err(error) => {
-                            return XAuthorityResponsePacket::rejected(transaction, error);
-                        }
+                Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
                     };
-                let Some(presentation_record) = self.windows.get(presentation_window) else {
+        let Some(presentation_record) = self.windows.get(target_window) else {
                     return XAuthorityResponsePacket::rejected(
                         transaction,
                         XAuthorityRuntimeError::UnknownResource,
                     );
                 };
+        let target_generation = presentation_record.generation;
+        let target_size = Size {
+            width: presentation_record.geometry.width,
+            height: presentation_record.geometry.height,
+        };
+        let drawing_extent = Size {
+            width: record.geometry.width,
+            height: record.geometry.height,
+        };
+        let (buffer, damage, presentation_extent, raster_extent) = if let Some(descriptor) = self
+            .dri3_pixmaps
+            .get(&pixmap)
+            .map(|record| record.descriptor)
+        {
                 (
-                    presentation_window,
-                    presentation_record.generation,
                     sophia_protocol::BufferSource::DmaBuf {
                         handle: descriptor.handle.raw(),
                     },
@@ -558,6 +570,8 @@ impl XAuthorityRuntime {
                             })
                             .collect(),
                     },
+                drawing_extent,
+                pixmap_size,
                 )
             } else {
                 if let Some(binding) = self.shm_pixmaps.get(&pixmap).cloned() {
@@ -610,14 +624,11 @@ impl XAuthorityRuntime {
                     }
                 }
                 let Some(update) = self.software_buffers.present_window_damage(
-                    window,
-                    Size {
-                        width: record.geometry.width,
-                        height: record.geometry.height,
-                    },
+                target_window,
+                target_size,
                     pixmap,
-                    i32::from(x_offset),
-                    i32::from(y_offset),
+                child_x.saturating_add(i32::from(x_offset)),
+                child_y.saturating_add(i32::from(y_offset)),
                     &source_damage,
                 ) else {
                     return XAuthorityResponsePacket::rejected(
@@ -626,12 +637,39 @@ impl XAuthorityRuntime {
                     );
                 };
                 let handle = update.handle();
+            let extent = update.size();
+            if std::env::var("SOPHIA_X11_PIXEL_TRACE").as_deref() == Ok("1")
+                && let Some(snapshot) = self.software_buffers.presentation_snapshot(target_window)
+            {
+                crate::image::trace_image_pixels(
+                    "present",
+                    transaction,
+                    target_window,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: snapshot.size.width,
+                        height: snapshot.size.height,
+                    },
+                    &snapshot.bytes,
+                );
+            }
                 self.last_cpu_buffer_updates.push(update);
                 (
-                    window,
-                    record.generation,
                     sophia_protocol::BufferSource::CpuBuffer { handle },
-                    damage,
+                Region {
+                    rects: damage
+                        .rects
+                        .into_iter()
+                        .map(|rect| Rect {
+                            x: rect.x.saturating_add(child_x),
+                            y: rect.y.saturating_add(child_y),
+                            ..rect
+                        })
+                        .collect(),
+                },
+                extent,
+                extent,
                 )
             };
         // Two extents, and they are not the same question. The drawing window
@@ -641,10 +679,6 @@ impl XAuthorityRuntime {
         // window's size for it put a raster nobody had measured into committed
         // content -- which the compositor later compared against the buffer and
         // ended the session over.
-        let presentation_extent = Size {
-            width: record.geometry.width,
-            height: record.geometry.height,
-        };
         self.raster_store
             .invalidate_unjournaled_presentation(target_window, presentation_extent);
         self.finish_drawing_update(XDrawingUpdate::present_buffer(
@@ -653,7 +687,7 @@ impl XAuthorityRuntime {
             target_window,
             buffer,
             presentation_extent,
-            pixmap_size,
+            raster_extent,
             damage,
             target_generation,
             250,

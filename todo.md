@@ -83,6 +83,10 @@ Status vocabulary:
   recovery constraint after stronger 1290x1050 Present buffers arrived, so the
   surface stayed unassigned and invisible. Admission recovery now follows the
   strongest retained candidate only until exact native retirement is armed.
+  The follow-up exposed a separate source-selection defect: a retained CPU
+  background replaced Firefox's new DRI3 source. That defect and child-window
+  software Present mapping now have failing-before/passing-after regressions.
+  Page readiness and retirement alone did not prove visible browser content.
   A new signed physical Firefox canary and fresh comparison run are required;
   no current comparison evidence is promotable.
 
@@ -262,11 +266,19 @@ work:
   remained partial;
 - [x] sign the admission-recovery correction and run one short physical Sophia
   Firefox canary: admission rebased to 1266x1408, Firefox reached page-ready,
-  and several full frames rendered before a distinct software-Present timing
-  failure;
+  and several full-size frames retired before a distinct software-Present timing
+  failure. Subsequent pixel inspection found black browser content; this was
+  not a Firefox visual pass;
 - [x] require a fresh native retirement for every software Present even when
   the retained scene checksum is unchanged, and retain failed staging work in
   the teardown-visible ownership queue;
+- [x] preserve the selected DRI3 source when CPU backing also exists; resolve
+  CPU/SHM/GPU child Presents through the same presentation root; validate core
+  image formats, byte order, payloads, and GC operations before pixel mutation;
+- [x] require changing nonblack browser regions joined through head scene and
+  exact native frame retirement; keep pixel scans opt-in, preserve explicit
+  trace modes, drain connected clients without cancelling accepted work, and
+  express output focus through the layout label instead of a blue square;
 - [ ] pass one short physical Sophia Firefox canary and prepare a fresh
   comparison run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this

@@ -15,6 +15,8 @@ require "const renderingOnly = parameters.get('rendering_only') === '1';"
 require "document.title = '0'.repeat(229);"
 require "source.hidden = true;"
 require "Firefox rendering canary ready"
-require "Press Super+Shift+Q to finish."
+require 'Watch the counter change, then press Ctrl+Alt+Delete to finish.'
+require 'renderingTick += 1;'
+require "document.body.style.background = renderingTick % 2 ? '#304860' : '#102038';"
 
 echo 'Firefox M10 rendering page contract passed'

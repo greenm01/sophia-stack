@@ -783,7 +783,15 @@ impl XAuthorityRuntime {
         if let Err(error) = self.windows.advance_generation(window, previous_generation) {
             return XAuthorityResponsePacket::rejected(transaction_id, error.into());
         }
-        if let Some(canonical) = self.software_buffers.presentation_snapshot(window) {
+        // A retained CPU background is not the source of a later DRI3 Present.
+        // Expand density variants only for the exact backing this draw chose;
+        // changing the source here also changes Present's routing and fences.
+        if let Some(canonical) = self.software_buffers.presentation_snapshot(window)
+            && transaction.target_buffer()
+                == (sophia_protocol::BufferSource::CpuBuffer {
+                    handle: canonical.handle,
+                })
+        {
             transaction.content = self.raster_store.content_set(window, canonical);
         }
         self.last_cpu_buffer_updates.extend(cpu_buffer_updates);
@@ -835,7 +843,10 @@ impl XAuthorityRuntime {
         // That is an ordinary content state, not a runtime failure: reporting
         // it as an error here would propagate out of the connection loop and
         // take the whole X server down over one surface's demand.
-        let Some(canonical) = self.software_buffers.presentation_snapshot(record.id).cloned()
+        let Some(canonical) = self
+            .software_buffers
+            .presentation_snapshot(record.id)
+            .cloned()
         else {
             return Ok(XSurfaceRasterOutcome::SampledFallback {
                 cause: crate::XRasterFallbackCause::NoCanonicalRaster,
@@ -852,7 +863,8 @@ impl XAuthorityRuntime {
         // overflow, a backing bound — are all states this surface can
         // legitimately be in, so they answer the demand rather than fail the
         // runtime.
-        let satisfied = match self
+        let satisfied =
+            match self
             .raster_store
             .satisfy(record.id, requirements, canonical.bytes.len())
         {
@@ -878,8 +890,7 @@ impl XAuthorityRuntime {
             content.variants().iter().any(|variant| {
                 variant.density_millis == class.density_millis
                     && variant.transform == class.transform
-                    && variant.fidelity
-                        == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
+                    && variant.fidelity == sophia_protocol::SurfaceContentFidelity::AuthorityRaster
             })
         });
         if !all_satisfied {

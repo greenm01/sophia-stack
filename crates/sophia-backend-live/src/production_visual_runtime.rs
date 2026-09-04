@@ -100,7 +100,35 @@ fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
             );
         }
     }
+    let pixel_trace = std::env::var_os("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE").is_some();
     for layer in &plan.layers {
+        if pixel_trace {
+            let source = match layer.source {
+                BufferSource::CpuBuffer { .. } => "cpu",
+                BufferSource::DmaBuf { .. } => "dmabuf",
+                _ => "other",
+            };
+            let target = layer.native_geometry;
+            let clip = layer.native_clip;
+            tracing::info!(
+                "sophia_live_head_content_geometry schema=1 status=selected output={} head={} scene_generation={} surface={} committed_generation={} source={source} size={}x{} target={}x{}_{}_{} clip={}x{}_{}_{}",
+                plan.output.raw(),
+                plan.head.raw(),
+                plan.scene_generation,
+                layer.surface.index(),
+                layer.committed_generation,
+                layer.source_pixel_size.width,
+                layer.source_pixel_size.height,
+                target.width,
+                target.height,
+                target.x,
+                target.y,
+                clip.width,
+                clip.height,
+                clip.x,
+                clip.y,
+            );
+        }
         if let BufferSource::CpuBuffer { handle } = layer.source {
             tracing::trace!(
                 "sophia_live_head_content schema=1 status=selected output={} head={} scene_generation={} surface={} committed_generation={} variant={} source=cpu handle={} density_millis={} sampling={} fidelity={}",

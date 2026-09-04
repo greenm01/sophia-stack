@@ -267,7 +267,13 @@
     document.querySelector('#primary').hidden = true;
     document.querySelector('#dialog').hidden = true;
     status.textContent = 'Firefox rendering canary ready';
-    next.textContent = 'The browser must fill the left column from top to bottom with no black region. Press Super+Shift+Q to finish.';
+    next.textContent = 'The colored page must fill the browser content area. Watch the counter change, then press Ctrl+Alt+Delete to finish.';
+    let renderingTick = 0;
+    setInterval(() => {
+      renderingTick += 1;
+      status.textContent = `Firefox rendering canary ready: ${renderingTick}`;
+      document.body.style.background = renderingTick % 2 ? '#304860' : '#102038';
+    }, 500);
   } else if (navigated) {
     // Use an out-of-band title length so the session can prove that the
     // replacement document is ready without accidentally completing scroll.

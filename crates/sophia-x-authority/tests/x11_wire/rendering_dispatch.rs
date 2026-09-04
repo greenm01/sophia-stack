@@ -128,7 +128,7 @@ fn x11_dispatch_mit_shm_attach_is_namespace_local_metadata() {
 }
 
 #[test]
-fn x11_dispatch_mit_shm_put_image_emits_bounded_surface_transaction() {
+fn x11_dispatch_mit_shm_put_image_rejects_unreadable_pixels_without_publication() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -164,7 +164,7 @@ fn x11_dispatch_mit_shm_put_image_emits_bounded_surface_transaction() {
     );
 
     runtime
-        .attach_shm_segment(namespace, XResourceId::new(0x440020, 1), 88, false, 1)
+        .attach_shm_segment(namespace, XResourceId::new(0x440020, 1), u32::MAX, false, 1)
         .unwrap();
     let create = decode_x11_core_request(
         context(namespace, 530, XByteOrder::LittleEndian),
@@ -196,27 +196,16 @@ fn x11_dispatch_mit_shm_put_image_emits_bounded_surface_transaction() {
         &mut properties,
     );
 
-    assert!(attached.outputs.is_empty());
+    // Registration is not proof that the OS segment is readable. Publishing
+    // a fabricated background here used to conceal missing image payloads.
+    assert_eq!(attached.outputs.len(), 1);
     let response = attached.response.unwrap();
-    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
-    assert_eq!(response.transactions.len(), 1);
-    assert_eq!(
-        response.transactions[0].surface,
-        SurfaceId::new(0x220701, 1)
-    );
     assert!(matches!(
-        response.transactions[0].target_buffer(),
-        BufferSource::CpuBuffer { .. }
+        response.outcome,
+        XAuthorityResponseOutcome::Rejected(_)
     ));
-    assert_eq!(
-        response.transactions[0].damage,
-        Region::single(Rect {
-            x: 3,
-            y: 5,
-            width: 32,
-            height: 24,
-        })
-    );
+    assert!(response.transactions.is_empty());
+    assert!(runtime.take_cpu_buffer_updates().is_empty());
 }
 
 #[test]
@@ -718,11 +707,7 @@ fn x11_dispatch_query_colors_returns_true_color_records_in_both_orders() {
 
         let invalid = decode_x11_core_request(
             context(namespace, 526, byte_order),
-            &query_colors_request(
-                byte_order,
-                X_SETUP_DEFAULT_COLORMAP,
-                &[0, 0x0100_0000],
-            ),
+            &query_colors_request(byte_order, X_SETUP_DEFAULT_COLORMAP, &[0, 0x0100_0000]),
         )
         .unwrap();
         let invalid = dispatch_x11_wire_request(

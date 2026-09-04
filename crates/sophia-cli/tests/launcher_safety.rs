@@ -78,19 +78,54 @@ fn detached_graphical_owner_does_not_attempt_direct_vt_activation() {
 }
 
 #[test]
-fn kitty_gate_always_retains_one_shot_composition_pixel_evidence() {
-    assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=1"));
+fn verbose_trace_defaults_to_one_shot_without_overriding_an_explicit_mode() {
+    assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE-1"));
     assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
     assert!(SESSION_LAUNCHER.contains("SOPHIA_SESSION_VERBOSE_TRACE:-false"));
 }
 
 #[test]
-fn truecolor_wrapper_alone_enables_repeated_final_region_readback() {
+fn visual_proofs_opt_in_to_repeated_final_region_readback() {
     assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_INSTALLED_ATTEMPT_MODE=truecolor"));
     assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_TRUECOLOR_PROOF=true"));
     assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions"));
     assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=final-regions"));
     assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
+}
+
+#[test]
+fn launcher_trace_mode_precedence_is_preserved_when_verbose_and_proof_overlap() {
+    let begin = offset("if [[ \"${SOPHIA_SESSION_VERBOSE_TRACE:-false}\" == true ]]");
+    let end = offset("session_command=(");
+    let block = &SESSION_LAUNCHER[begin..end];
+    for (verbose, proof, explicit, expected) in [
+        ("true", "false", None, Some("1")),
+        (
+            "true",
+            "false",
+            Some("final-regions"),
+            Some("final-regions"),
+        ),
+        ("true", "true", Some("continuous"), Some("continuous")),
+        ("true", "true", None, Some("final-regions")),
+        ("false", "false", None, None),
+    ] {
+        let mut command = std::process::Command::new("bash");
+        command.args(["-eu", "-c", &format!("session_environment=(); {block}\nfor entry in \"${{session_environment[@]}}\"; do export \"$entry\"; done\nprintf '%s' \"${{SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE-unset}}\"")]);
+        command
+            .env("SOPHIA_SESSION_VERBOSE_TRACE", verbose)
+            .env("FIREFOX_M10_RENDERING_PROOF", proof);
+        command.env_remove("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE");
+        if let Some(value) = explicit {
+            command.env("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE", value);
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            expected.unwrap_or("unset")
+        );
+    }
 }
 
 #[test]

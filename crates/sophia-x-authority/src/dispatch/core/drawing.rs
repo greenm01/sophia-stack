@@ -443,7 +443,8 @@ fn dispatch_core_drawing_request(
                     }
                 };
             if runtime.drawable_depth(context.namespace, drawable) != Ok(gc_depth)
-                || depth != gc_depth
+                || (format == 0 && depth != 1)
+                || (format != 0 && depth != gc_depth)
             {
                 return Handled(core_draw_validation_error(
                     context,
@@ -459,17 +460,45 @@ fn dispatch_core_drawing_request(
                 width: i32::from(width),
                 height: i32::from(height),
             });
+            let pixels = match crate::image::decode_upload(
+                format,
+                depth,
+                width,
+                height,
+                left_pad,
+                context.byte_order,
+                &gc_values,
+                &data,
+            ) {
+                Ok(pixels) => pixels,
+                Err(code) => {
+                    return Handled(core_draw_validation_error(
+                        context,
+                        transaction,
+                        XAuthorityRuntimeError::InvalidResource,
+                        code,
+                        drawable,
+                    ));
+                }
+            };
+            if width == 0 || height == 0 {
+                return Handled(XDispatchResult {
+                    response: Some(XAuthorityResponsePacket::accepted(transaction)),
+                    outputs: Vec::new(),
+                    metadata_candidates: Vec::new(),
+                });
+            }
             let response = runtime.apply_put_image(
                 transaction,
                 context.namespace,
                 drawable,
                 damage,
-                Some(&data),
+                Some(&pixels),
                 Some(&XPutImageSemantics {
                     format,
-                    depth,
+                    depth: gc_depth,
                     left_pad,
-                    byte_order: context.byte_order,
+                    byte_order: XByteOrder::LittleEndian,
                     gc: gc_values,
                 }),
             );

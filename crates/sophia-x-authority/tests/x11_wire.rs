@@ -21,6 +21,8 @@ include!("x11_wire/output_and_draw.rs");
 include!("x11_wire/image_readback.rs");
 include!("x11_wire/density_fidelity.rs");
 include!("x11_wire/put_image_replay.rs");
+include!("x11_wire/put_image_pixels.rs");
+include!("x11_wire/graceful_disconnect.rs");
 include!("x11_wire/text_and_scroll.rs");
 include!("x11_wire/resources_frontend.rs");
 include!("x11_wire/admission_frontend.rs");

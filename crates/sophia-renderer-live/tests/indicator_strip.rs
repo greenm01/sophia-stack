@@ -112,3 +112,25 @@ fn cache_reuses_exact_semantics_and_evicts_without_invalidating_frames() {
     assert!(stats.evictions >= 2);
     assert!(!shared_pixels.is_empty());
 }
+
+#[test]
+fn output_focus_accents_the_label_without_a_detached_marker() {
+    let mut cache = IndicatorStripRasterCache::default();
+    let plain = cache.raster_for(&strip(1)).unwrap();
+    let mut focused_strip = strip(2);
+    focused_strip.strip.status.as_mut().unwrap().2 =
+        sophia_protocol::POLICY_OUTPUT_STATUS_FOCUS_MASK;
+    let focused = cache.raster_for(&focused_strip).unwrap();
+    assert_ne!(plain.bytes, focused.bytes);
+    // The right-aligned label lives well past x=130. Focus must not introduce
+    // a square in the empty left side of its status cell.
+    for y in 0..14usize {
+        let left = y * 800;
+        assert_eq!(
+            &plain.bytes[left..left + 130 * 4],
+            &focused.bytes[left..left + 130 * 4]
+        );
+    }
+    let cached = cache.raster_for(&focused_strip).unwrap();
+    assert!(Arc::ptr_eq(&focused.bytes, &cached.bytes));
+}

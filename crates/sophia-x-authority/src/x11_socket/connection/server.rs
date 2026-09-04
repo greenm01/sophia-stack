@@ -285,10 +285,7 @@ struct XAuthorityBoundedEgressEnvelope {
 
 #[cfg(unix)]
 impl XAuthorityBoundedEgressEnvelope {
-    fn new(
-        transaction: TransactionId,
-        batch: Option<XAuthorityObservedTransactionBatch>,
-    ) -> Self {
+    fn new(transaction: TransactionId, batch: Option<XAuthorityObservedTransactionBatch>) -> Self {
         let client = batch.as_ref().and_then(|batch| batch.client);
         let observed_batch = batch.is_some();
         Self {
@@ -421,8 +418,7 @@ impl XAuthorityOrderedEgress {
     ) -> Result<(), X11SetupSocketError> {
         let waiting_since = envelope.waiting_since.take();
         let waited = waiting_since.map_or(Duration::ZERO, |started| started.elapsed());
-        if waiting_since.is_some()
-            || matches!(kind, XAuthorityBackpressureTelemetryKind::Shutdown)
+        if waiting_since.is_some() || matches!(kind, XAuthorityBackpressureTelemetryKind::Shutdown)
         {
             let mut state = self.state()?;
             if waiting_since.is_some() {
@@ -440,9 +436,7 @@ impl XAuthorityOrderedEgress {
                 | XAuthorityBackpressureTelemetryKind::TransportFailure => {}
             }
         }
-        if envelope.observed_batch
-            && (waiting_since.is_some() || failure.is_some())
-        {
+        if envelope.observed_batch && (waiting_since.is_some() || failure.is_some()) {
             (self.telemetry)(XAuthorityBackpressureTelemetry {
                 kind,
                 client: envelope.client,
@@ -485,11 +479,7 @@ impl XAuthorityOrderedEgress {
             state.report.batches_delivered = state.report.batches_delivered.saturating_add(1);
         }
         drop(state);
-        self.finish_wait(
-            envelope,
-            XAuthorityBackpressureTelemetryKind::Resume,
-            None,
-        )?;
+        self.finish_wait(envelope, XAuthorityBackpressureTelemetryKind::Resume, None)?;
         self.turn.notify_all();
         Ok(())
     }
@@ -520,10 +510,9 @@ impl XAuthorityOrderedEgress {
                     drop(state);
                     continue;
                 }
-                let state = self
-                    .turn
-                    .wait(state)
-                    .map_err(|_| X11SetupSocketError::new("authority egress order lock poisoned"))?;
+                let state = self.turn.wait(state).map_err(|_| {
+                    X11SetupSocketError::new("authority egress order lock poisoned")
+                })?;
                 drop(state);
                 continue;
             }
@@ -652,6 +641,13 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                         progressed = true;
                     }
                 }
+                Ok(XServerFrontendServiceCommand::DrainAndDisconnect) => {
+                    accepting = false;
+                    // Workers retain cleanup ownership and may still be
+                    // publishing accepted work. Do not cancel their egress.
+                    frontend.shutdown_all_client_workers()?;
+                    progressed = true;
+                }
                 Ok(XServerFrontendServiceCommand::StopAndDisconnect)
                 | Err(TryRecvError::Disconnected) => {
                     accepting = false;
@@ -705,9 +701,7 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                 .runtime
                                 .lock()
                                 .map_err(|_| {
-                                    X11SetupSocketError::new(
-                                        "X11 authority runtime lock poisoned",
-                                    )
+                                    X11SetupSocketError::new("X11 authority runtime lock poisoned")
                                 })?
                                 .apply_surface_raster_requirements(transaction, &requirements);
                             match response {
@@ -730,11 +724,9 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     cause,
                                     observed_content_generation,
                                 }) => {
-                                    pending_raster_egress =
-                                        Some(XAuthorityBoundedEgressEnvelope::new(
-                                            transaction,
-                                            None,
-                                        ));
+                                    pending_raster_egress = Some(
+                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
+                                    );
                                     raster_fallbacks.report(
                                         &requirements,
                                         cause,
@@ -742,11 +734,9 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
                                     );
                                 }
                                 Err(error) => {
-                                    pending_raster_egress =
-                                        Some(XAuthorityBoundedEgressEnvelope::new(
-                                            transaction,
-                                            None,
-                                        ));
+                                    pending_raster_egress = Some(
+                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
+                                    );
                                     tracing::warn!(
                                         "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
                                         requirements.surface,

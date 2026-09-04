@@ -1,5 +1,10 @@
 use sophia_protocol::{NamespaceId, Rect};
 
+mod trace;
+mod upload;
+pub(crate) use trace::trace_image_pixels;
+pub(crate) use upload::decode_upload;
+
 use crate::{
     X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES, XAuthorityRuntime, XAuthorityRuntimeError, XByteOrder,
     XClientError, XErrorCode, XResourceId, x11_pixmap_format,

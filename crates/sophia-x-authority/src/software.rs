@@ -12,7 +12,7 @@ mod update;
 
 use raster_ops::{
     copy_buffer_region, copy_xrgb8888, draw_fixed_glyph, draw_line, draw_rectangle_outline,
-    fill_rect, point_bounds, rectangle_outline_bounds, set_pixel,
+    fill_rect, point_bounds, put_image_pixels, rectangle_outline_bounds, set_pixel,
 };
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
@@ -320,10 +320,20 @@ impl XSoftwareBufferStore {
         size: Size,
         destination: Rect,
         data: &[u8],
+        semantics: Option<&XPutImageSemantics>,
     ) -> Option<XAuthorityCpuDrawResult> {
+        let len = usize::try_from(destination.width)
+            .ok()?
+            .checked_mul(usize::try_from(destination.height).ok()?)?
+            .checked_mul(4)?;
+        if data.len() < len
+            || semantics.is_some_and(|s| crate::x11_pixmap_format(s.depth).is_none())
+        {
+            return None;
+        }
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
-        copy_xrgb8888(buffer, destination, data);
+        put_image_pixels(buffer, destination, data, semantics);
         finish_immutable_update(buffer, handle, replaced, Some(destination))
     }
 

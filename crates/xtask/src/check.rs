@@ -69,6 +69,8 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "tools/check_direct_scanout_archive_verifier.sh",
         "tools/check_sophia_standalone_vkcube_verifier.sh",
         "tools/check_hagia_native_matchers.sh",
+        "tools/check_firefox_m10_rendering_page.sh",
+        "tools/check_sophia_firefox_rendering_verifier.sh",
         "tools/check_mirror_group_physical_verifier.sh",
         "tools/check_sophia_terminal_performance_reporter.sh",
         "tools/check_installed_native_verifiers.sh",

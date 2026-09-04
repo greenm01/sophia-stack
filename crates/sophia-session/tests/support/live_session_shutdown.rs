@@ -3,7 +3,8 @@
 use super::super::{
     AuthorityIngressState, SessionQuiescence, SessionQuiescenceDecision, SessionQuiescenceSnapshot,
     XAuthorityObservedTransactionBatch, XServerFrontendServiceCommand,
-    drain_queued_authority_batches, observe_authority_ingress, stop_frontend_intake,
+    disconnect_frontend_for_drain, drain_queued_authority_batches, observe_authority_ingress,
+    stop_frontend_intake,
 };
 use sophia_protocol::TransactionId;
 use std::collections::VecDeque;
@@ -94,6 +95,21 @@ fn frontend_stop_is_idempotent_after_successful_stop() {
     drop(receiver);
 
     stop_frontend_intake(&sender, &mut stopped).unwrap();
+    assert!(stopped);
+}
+
+#[test]
+fn frontend_drain_disconnect_is_idempotent_after_successful_request() {
+    let (sender, receiver) = sync_channel(1);
+    let mut stopped = false;
+    disconnect_frontend_for_drain(&sender, &mut stopped).unwrap();
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        XServerFrontendServiceCommand::DrainAndDisconnect
+    ));
+    drop(receiver);
+
+    disconnect_frontend_for_drain(&sender, &mut stopped).unwrap();
     assert!(stopped);
 }
 

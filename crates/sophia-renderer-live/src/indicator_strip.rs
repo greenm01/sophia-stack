@@ -253,22 +253,19 @@ impl IndicatorStripRasterCache {
         if let Some((cell, label, focus_bits)) = &strip.strip.status
             && let Some(cell) = local_rect(*cell, geometry)
         {
-            if focus_bits & POLICY_OUTPUT_STATUS_FOCUS_MASK != 0 {
-                let edge = (4.0 * scale).round().max(1.0);
-                context.set_paint(ACTIVE);
-                context.fill_rect(&KurboRect::new(
-                    cell.x0 + f64::from(padding),
-                    ((cell.y0 + cell.y1 - f64::from(edge)) / 2.0).max(cell.y0),
-                    (cell.x0 + f64::from(padding + edge)).min(cell.x1),
-                    ((cell.y0 + cell.y1 + f64::from(edge)) / 2.0).min(cell.y1),
-                ));
-            }
+            // Reuse the active palette for the existing policy label. A
+            // detached square reads as a rendering artifact, not focus state.
+            let color = if focus_bits & POLICY_OUTPUT_STATUS_FOCUS_MASK != 0 {
+                ACTIVE
+            } else {
+                OCCUPIED_TEXT
+            };
             self.draw_text(
                 &mut context,
                 &mut resources,
                 label,
                 cell,
-                OCCUPIED_TEXT,
+                color,
                 scale,
                 padding,
                 true,

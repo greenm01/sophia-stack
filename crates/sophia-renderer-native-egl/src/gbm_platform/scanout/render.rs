@@ -137,15 +137,8 @@ fn create_native_render_target<T: std::os::fd::AsFd>(
         candidate,
     } = spec;
     let surface_started = Instant::now();
-    let surface = create_native_frame_surface(
-        egl,
-        display,
-        gbm_device,
-        width,
-        height,
-        config,
-        &candidate,
-    )?;
+    let surface =
+        create_native_frame_surface(egl, display, gbm_device, width, height, config, &candidate)?;
     let surface_create_duration = surface_started.elapsed();
     let egl_surface = surface.egl_surface();
     let egl_context = match egl.create_context(display, config, None, &context_attributes()) {
@@ -461,7 +454,8 @@ fn render_native_target_composition(
     trace_native_lifecycle("composition_surface_current");
     // The age belongs to the buffer this context just made current, so it can
     // only be read here -- and only before anything is drawn into it.
-    let buffer_age = query_native_surface_buffer_age(egl, display, egl_surface, buffer_age_supported);
+    let buffer_age =
+        query_native_surface_buffer_age(egl, display, egl_surface, buffer_age_supported);
     let damage = frame
         .repaint
         .and_then(|table| table.damage_for_age(buffer_age.unwrap_or(0)));
@@ -584,7 +578,9 @@ fn render_native_target_composition(
                                 layer.sampling,
                                 frame.trace,
                             )
-                            .map_err(|_| NativeGbmScanoutBufferExportDetail::CompositionDrawFailed)
+                                .map_err(|_| {
+                                    NativeGbmScanoutBufferExportDetail::CompositionDrawFailed
+                                })
                     });
                 if result.is_ok() {
                     trace_native_lifecycle("composition_dmabuf_layer_finished");
@@ -634,7 +630,8 @@ fn render_native_target_composition(
                         alpha: layer.alpha,
                         sampling: layer.sampling,
                     };
-                    let texture = import_cache.texture(egl, display, &target.pipeline, imported)?;
+                        let texture =
+                            import_cache.texture(egl, display, &target.pipeline, imported)?;
                     target
                         .pipeline
                         .draw_texture_layer(
@@ -716,6 +713,7 @@ fn render_native_target_composition(
                         layer_index,
                         layer_target,
                         (target.width, target.height),
+                        frame.trace,
                     ) {
                         evidence.traced_nonzero_rgb_pixels = evidence
                             .traced_nonzero_rgb_pixels
@@ -825,9 +823,28 @@ fn trace_final_composition_region(
     layer: usize,
     target: NativeCompositionRect,
     output: (u32, u32),
+    trace: Option<NativeCompositionTrace>,
 ) -> Option<usize> {
     match pipeline.read_composition_region_pixels(target.into()) {
         Ok(region) => {
+            // Keep the existing region schema for historical gates. This
+            // additive identity record ties the same readback to an opaque
+            // head scene, which the backend maps to an exact retired frame.
+            if let Some(trace) = trace {
+                tracing::info!(
+                    "sophia_native_composition_region_frame schema=1 status=read output={} head={} scene_generation={} layer={layer} source_stage={source_stage} target={}x{}_{}_{} region_pixels={} nonzero_rgb_pixels={} checksum={}",
+                    trace.output,
+                    trace.head,
+                    trace.scene_generation,
+                    target.width,
+                    target.height,
+                    target.x,
+                    target.y,
+                    region.pixels,
+                    region.nonzero_rgb_pixels,
+                    region.checksum,
+                );
+            }
             tracing::info!(
                 "sophia_native_composition_region schema=3 status=read composition=final source_stage={source_stage} layer={layer} output={}x{} target={}x{}_{}_{} region_pixels={} region_nonzero_rgb_pixels={} region_red_pixels={} region_green_pixels={} region_blue_pixels={} region_yellow_pixels={} region_cyan_pixels={} region_magenta_pixels={} region_gray_pixels={} region_other_pixels={} region_luminance_sum={} region_luminance_mean_millis={} region_luminance_histogram={} region_checksum={}",
                 output.0,
