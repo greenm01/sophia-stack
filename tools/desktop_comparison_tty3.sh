@@ -128,14 +128,14 @@ owned_for_executable() {
 
 attest_capture() {
     local run=$1 supervisor=$2
-    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor"
+    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor" || return $?
     run_xtask_logged conformance desktop-comparison capture "$run"
 }
 
 attest_qualify_capture() {
     local run=$1 supervisor=$2
-    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor"
-    run_xtask_logged conformance desktop-comparison qualify "$run"
+    run_xtask_logged conformance desktop-comparison attest "$run" "$supervisor" || return $?
+    run_xtask_logged conformance desktop-comparison qualify "$run" || return $?
     run_xtask_logged conformance desktop-comparison capture "$run"
 }
 

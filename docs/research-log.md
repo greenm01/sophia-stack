@@ -18625,9 +18625,9 @@ kernel frames. It did not create `measurement.kdl`, and the live-session cursor
 qualification file was absent afterwards. The filesystem boundary therefore
 places the failure after workload and trace normalization but before the final
 measurement record; the intact manifest and writable attempt directory isolate
-the late qualification re-read as the supported cause. The old gate copied
-only its outer `return 1` to the durable log, so the precise inner error printed
-on the takeover TTY was lost. No row was sealed or promoted.
+the absent qualification as the immediate cause. The old gate copied only its
+outer `return 1` to the durable log, so the reason that qualification was absent
+was initially lost. No row was sealed or promoted.
 
 Capture had validated the excluded cursor qualification only after the timed
 workload. That evidence belongs to the live runtime directory, while the row
@@ -18640,3 +18640,23 @@ qualification, capture, finalization, and final-status result into
 `gate-last.log` under `pipefail`, preserving the actual conformance-owner error
 without weakening its exit status. The diagnostic partial remains immutable;
 the correction requires a new signed candidate and prepared run.
+
+The next zero-row run, `cp14-schema4-af87c8f0`, made the underlying control-flow
+bug explicit without creating a partial or starting a workload. The
+qualification window mapped, became focused, and received routed pointer
+motion, but no target click was accepted before its 20-second timeout. The new
+log retained both that `0/4` result and an immediately following capture
+rejection for missing qualification. `attest_qualify_capture` was itself called
+as the left side of `|| result=$?`; Bash therefore disabled implicit `errexit`
+inside the whole function, and its sequential commands continued after
+qualification failed. The earlier run's lost output and late missing-file
+failure are consistent with the same path.
+
+The adapter no longer relies on contextual `set -e` behavior. Attestation and
+qualification now return their exact nonzero status explicitly before the next
+operation can run. A failed qualification cannot invoke capture, regardless of
+how the helper's caller handles its status. The early Rust admission remains a
+second owner-boundary defense rather than a substitute for correct shell
+sequencing. A fresh signed candidate is required; on its first physical run the
+operator must move the pointer and click each of the four green targets before
+the timed Kitty workload starts.

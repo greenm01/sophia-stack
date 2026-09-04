@@ -97,8 +97,11 @@ Status vocabulary:
   contiguous kernel frames, but the row failed after sampling when capture
   attempted to re-read now-missing live-session qualification evidence.
   Qualification is now admitted before timed capture and nested gate output
-  is durable. A new signed physical run is required. No comparison evidence
-  is promotable yet.
+  is durable. The next run exposed the underlying shell bug without starting a
+  workload: a `0/4` qualification timeout continued into capture because the
+  caller's status guard disabled Bash's implicit `errexit` inside the helper.
+  Each prerequisite now returns explicitly on failure. A new signed physical
+  run is required. No comparison evidence is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -266,11 +269,16 @@ work:
 - [x] admit and snapshot live-session qualification before creating a partial
   or starting the timed workload, and preserve each nested conformance result
   in the durable TTY gate log;
+- [x] reproduce the missing-qualification path without consuming a capture:
+  the window mapped and routed pointer motion, but timed out at 0/4 targets;
+  make the shell helper return explicitly after failed attestation or
+  qualification even when its caller condition disables implicit `errexit`;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `07effa0a` physically passed the corrected Sophia
-  workload but did not seal a row because of the now-corrected late
-  qualification read. This needs a fresh signed candidate and prepared run;
+  continuing. Candidate `07effa0a` completed the corrected Sophia workload but
+  did not seal a row because qualification failure was not propagated. The
+  `af87c8f0` retry preserved that exact failure before capture. This needs a
+  fresh signed candidate and prepared run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row
