@@ -58,4 +58,13 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; t
     echo 'rendering canary verifier accepted repeated WM recovery' >&2
     exit 1
 fi
+# Visible pixels and eventual cleanup cannot turn a failed normal drain into
+# a pass. This models the EOF-stranded final batch from the physical canary.
+awk '{ print } END {
+    print "sophia_live_session_quiescence schema=2 status=timed_out reason=logout_complete elapsed_msec=2000 authority_pending=1 cpu_pending=0 native_pending=false coordinator_pending=0 oldest_authority_transaction=42"
+}' "$FIXTURE" >"$TEMP_FILE"
+if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; then
+    echo 'rendering canary verifier accepted a shutdown timeout' >&2
+    exit 1
+fi
 echo 'Firefox rendering canary verifier fixtures passed'

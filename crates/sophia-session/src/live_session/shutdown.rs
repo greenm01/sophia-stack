@@ -9,6 +9,35 @@ pub(super) enum AuthorityIngressState {
     Disconnected,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AuthorityWorkWait {
+    Service,
+    Receive,
+}
+
+/// Selects accepted work without polling the frontend or bypassing owner service.
+pub(super) fn take_authority_work(
+    initial: &mut Option<XAuthorityObservedTransactionBatch>,
+    queued: &mut VecDeque<XAuthorityObservedTransactionBatch>,
+    coordinator: Option<sophia_protocol::TransactionId>,
+    ingress: AuthorityIngressState,
+    owner_service_required: bool,
+) -> Result<XAuthorityObservedTransactionBatch, AuthorityWorkWait> {
+    if owner_service_required {
+        return Err(AuthorityWorkWait::Service);
+    }
+    // EOF closes ingress, not the owner's accepted-work queues. In particular,
+    // final removal batches must still retire routes, buffers, and layout state.
+    initial
+        .take()
+        .or_else(|| queued.pop_front())
+        .or_else(|| coordinator.map(super::wm_update_coordinator_batch))
+        .ok_or(match ingress {
+            AuthorityIngressState::Open => AuthorityWorkWait::Receive,
+            AuthorityIngressState::Disconnected => AuthorityWorkWait::Service,
+        })
+}
+
 /// Buffers immediately available batches without blocking.
 ///
 /// A disconnected receiver is not itself a failure. During quiescence it is
@@ -21,7 +50,11 @@ pub(super) fn drain_queued_authority_batches(
     queued: &mut VecDeque<XAuthorityObservedTransactionBatch>,
     capacity: usize,
     budget: Duration,
+    ingress: AuthorityIngressState,
 ) -> AuthorityIngressState {
+    if ingress == AuthorityIngressState::Disconnected {
+        return ingress;
+    }
     let started = Instant::now();
     while queued.len() < capacity && started.elapsed() < budget {
         match receiver.try_recv() {

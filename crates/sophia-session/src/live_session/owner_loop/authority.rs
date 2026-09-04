@@ -33,56 +33,60 @@
             && pending_authority_batches.is_empty()
             && pending_wm_update.is_some();
         let output_topology_quarantined = active_output_topology_preparation.is_some();
-        let authority_batch = if session_quiescence
+        let authority_ingress = if session_quiescence
             .as_ref()
             .is_some_and(|quiescence| quiescence.frontend_authority_drained)
         {
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-        } else if output_topology_quarantined {
-            // The owner alone can observe frame retirement. Preserve authority
-            // batches at their existing bounded queues until topology either
-            // commits or rolls back.
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-        } else if native_frame_service_preemption {
-            // Renderer completion and KMS retirement are not X Authority
-            // events. Give their bounded polling path a turn even when queued
-            // or newly arriving metadata-only X batches keep the authority
-            // channel continuously readable. Never take two such preemptions
-            // consecutively so X control and focus traffic also makes bounded
-            // progress under a continuously active renderer.
-            std::thread::sleep(Duration::from_millis(1));
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            AuthorityIngressState::Disconnected
         } else {
-            initial_authority_batch
-                .take()
-                .or_else(|| pending_authority_batches.pop_front())
-                .or_else(|| {
-                    pending_wm_update.as_ref().map(|update| {
-                        wm_update_coordinator_batch(update.commit.transaction)
-                    })
+            AuthorityIngressState::Open
+        };
+        let coordinator_transaction = pending_wm_update
+            .as_ref()
+            .map(|update| update.commit.transaction)
+            .or_else(|| {
+                runtime.as_ref().and_then(|runtime| {
+                    runtime.released_surface_content_transaction()
                 })
-                .or_else(|| {
-                    runtime.as_ref().and_then(|runtime| {
-                        runtime
-                            .released_surface_content_transaction()
-                            .map(wm_update_coordinator_batch)
-                    })
-                })
-                .map_or_else(
-                    || {
-                        let now = Instant::now();
-                        let maximum = authority_wait_timeout(
-                            physical_input.is_some(),
-                            cursor_updates.dirty,
-                            session_controls.pending_len() != 0
-                                || explicit_pointer_grabs.pending() != 0,
-                        );
-                        authority_receiver.recv_timeout(
-                            primary_frame_pacer.cap_wait(now, maximum),
-                        )
-                    },
-                    Ok,
-                )
+            });
+        let authority_batch = match take_authority_work(
+            &mut initial_authority_batch,
+            &mut pending_authority_batches,
+            coordinator_transaction,
+            authority_ingress,
+            output_topology_quarantined || native_frame_service_preemption,
+        ) {
+            Ok(batch) => Ok(batch),
+            Err(AuthorityWorkWait::Service) => {
+                // Preserve topology quarantine and alternate bounded frame
+                // service with authority turns, including after frontend EOF.
+                if (native_frame_service_preemption && !output_topology_quarantined)
+                    || authority_ingress == AuthorityIngressState::Disconnected
+                {
+                    // A closed receiver cannot provide the usual bounded wait.
+                    // Yield until the earliest frame/drain deadline instead of
+                    // spinning while a renderer or policy response is pending.
+                    let now = Instant::now();
+                    let mut wait = primary_frame_pacer.cap_wait(now, Duration::from_millis(1));
+                    if let Some(quiescence) = session_quiescence.as_ref() {
+                        wait = wait.min(quiescence.deadline.saturating_duration_since(now));
+                    }
+                    if !wait.is_zero() {
+                        std::thread::sleep(wait);
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            }
+            Err(AuthorityWorkWait::Receive) => {
+                let now = Instant::now();
+                let maximum = authority_wait_timeout(
+                    physical_input.is_some(),
+                    cursor_updates.dirty,
+                    session_controls.pending_len() != 0
+                        || explicit_pointer_grabs.pending() != 0,
+                );
+                authority_receiver.recv_timeout(primary_frame_pacer.cap_wait(now, maximum))
+            }
         };
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
         if session_controls.pending_len() == 0 {
@@ -100,6 +104,7 @@
                     &mut pending_authority_batches,
                     AUTHORITY_DRAIN_CAPACITY,
                     Duration::from_millis(2),
+                    authority_ingress,
                 );
                 observe_authority_ingress(
                     ingress,
@@ -643,6 +648,7 @@
                         &mut pending_authority_batches,
                         AUTHORITY_DRAIN_CAPACITY,
                         Duration::from_millis(2),
+                        authority_ingress,
                     );
                     observe_authority_ingress(
                         ingress,

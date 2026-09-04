@@ -564,6 +564,7 @@ fn session_quiescence_requires_frontend_authority_cpu_and_native_drain() {
             started + Duration::from_millis(2),
             SessionQuiescenceSnapshot {
                 pending_authority_batches: 1,
+                pending_coordinator_work: 0,
                 cpu_update_pending: true,
                 native_work_pending: true,
             },

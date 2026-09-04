@@ -16,6 +16,7 @@ require "document.title = '0'.repeat(229);"
 require "source.hidden = true;"
 require "Firefox rendering canary ready"
 require 'Watch the counter change, then press Ctrl+Alt+Delete to finish.'
+require 'Light/dark alternation every half-second is intentional.'
 require 'renderingTick += 1;'
 require "document.body.style.background = renderingTick % 2 ? '#304860' : '#102038';"
 

@@ -432,6 +432,17 @@ join one, since it is judged against the requirement state of its own cycle.
 Without merging, a client that draws in a burst is displayed one draw per
 frame, trailing itself by the whole backlog.
 
+Normal session shutdown closes frontend ingress without cancelling accepted
+work. Frontend EOF is an ingress fact, not an empty-owner-queue guarantee:
+initial and buffered authority batches, including nonmergeable removals and
+resource releases, still run in order before accepted coordinator work.
+Topology quarantine and bounded native-frame service retain their scheduling
+priority. Successful quiescence requires frontend drain, empty authority
+queues, settled issued layout/coordinator work, and settled CPU/native work.
+A closed receiver is not polled again; the owner continues deadline-bounded
+service. Timeout remains a failure with emergency cleanup, never evidence of
+successful normal teardown.
+
 Authority and committed surface extents are client-content geometry. Before a
 layout node crosses the WM boundary, Engine converts both geometry and
 constraints to outer allocations using the active chrome clearance. The

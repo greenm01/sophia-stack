@@ -1185,6 +1185,15 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 pending_authority_batches: pending_authority_batches
                     .len()
                     .saturating_add(usize::from(initial_authority_batch.is_some())),
+                pending_coordinator_work: usize::from(pending_wm_update.is_some())
+                    .saturating_add(usize::from(layout.pending.is_some()))
+                    .saturating_add(wm_session.as_ref().map_or(
+                        0,
+                        LiveWmSession::in_flight_request_count,
+                    ))
+                    .saturating_add(usize::from(runtime.as_ref().is_some_and(
+                        LiveProductionVisualRuntime::has_released_surface_content,
+                    ))),
                 cpu_update_pending: !cpu_visual_progress.is_settled(),
                 native_work_pending,
             };
@@ -1192,7 +1201,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 SessionQuiescenceDecision::Pending => {}
                 SessionQuiescenceDecision::Complete => {
                     crate::session_println!(
-                        "sophia_live_session_quiescence schema=2 status=complete reason={} elapsed_msec={} authority_pending=0 cpu_pending=0 native_pending=false pending_transaction=none pending_surface=none pending_handle=none pending_generation=none pending_target_checksum=none",
+                        "sophia_live_session_quiescence schema=2 status=complete reason={} elapsed_msec={} authority_pending=0 coordinator_pending=0 cpu_pending=0 native_pending=false pending_transaction=none pending_surface=none pending_handle=none pending_generation=none pending_target_checksum=none",
                         quiescence.reason,
                         quiescence.elapsed(now).as_millis(),
                     );
@@ -1203,6 +1212,13 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     // Materialize diagnostic strings only on its terminal
                     // failure path, not in the steady drain loop.
                     let pending_identity = cpu_visual_progress.pending_identity();
+                    let oldest_authority_transaction = initial_authority_batch
+                        .as_ref()
+                        .or_else(|| pending_authority_batches.front())
+                        .map_or_else(
+                            || "none".to_owned(),
+                            |batch| batch.transaction.raw().to_string(),
+                        );
                     let pending_transaction = pending_identity.map_or_else(
                         || "none".to_owned(),
                         |identity| identity.transaction.raw().to_string(),
@@ -1232,7 +1248,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         Err(_) => "frontend_already_stopped",
                     };
                     crate::session_println!(
-                        "sophia_live_session_quiescence schema=2 status=timed_out reason={} elapsed_msec={} authority_pending={} cpu_pending={} native_pending={} cancellation={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={}",
+                        "sophia_live_session_quiescence schema=2 status=timed_out reason={} elapsed_msec={} authority_pending={} cpu_pending={} native_pending={} cancellation={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={} coordinator_pending={} authority_initial={} authority_queued={} oldest_authority_transaction={}",
                         quiescence.reason,
                         quiescence.elapsed(now).as_millis(),
                         snapshot.pending_authority_batches,
@@ -1244,9 +1260,13 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         pending_handle,
                         pending_generation,
                         pending_target_checksum,
+                        snapshot.pending_coordinator_work,
+                        usize::from(initial_authority_batch.is_some()),
+                        pending_authority_batches.len(),
+                        oldest_authority_transaction,
                     );
                     return Err(format!(
-                        "session quiescence timed out: reason={} frontend_drained={} authority_pending={} cpu_pending={} native_pending={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={}",
+                        "session quiescence timed out: reason={} frontend_drained={} authority_pending={} cpu_pending={} native_pending={} pending_transaction={} pending_surface={} pending_handle={} pending_generation={} pending_target_checksum={} coordinator_pending={} oldest_authority_transaction={}",
                         quiescence.reason,
                         quiescence.frontend_authority_drained,
                         snapshot.pending_authority_batches,
@@ -1257,6 +1277,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         pending_handle,
                         pending_generation,
                         pending_target_checksum,
+                        snapshot.pending_coordinator_work,
+                        oldest_authority_transaction,
                     )
                     .into());
                 }

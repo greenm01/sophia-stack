@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::super::shutdown::{AuthorityWorkWait, take_authority_work};
 use super::super::{
     AuthorityIngressState, SessionQuiescence, SessionQuiescenceDecision, SessionQuiescenceSnapshot,
     XAuthorityObservedTransactionBatch, XServerFrontendServiceCommand,
@@ -10,6 +11,205 @@ use sophia_protocol::TransactionId;
 use std::collections::VecDeque;
 use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
+
+#[test]
+fn disconnected_ingress_still_consumes_final_removal_and_coordinator() {
+    let (sender, receiver) = sync_channel(2);
+    sender.send(batch(1)).unwrap();
+    let mut removal = batch(2);
+    removal
+        .removed_surfaces
+        .push(sophia_protocol::SurfaceId::new(7, 1));
+    removal
+        .released_dma_bufs
+        .push(sophia_protocol::BufferHandle::from_raw(8));
+    removal
+        .released_fences
+        .push(sophia_protocol::FenceHandle::from_raw(9));
+    sender.send(removal).unwrap();
+    drop(sender);
+    let mut initial = Some(receiver.recv().unwrap());
+    let mut queued = VecDeque::new();
+    let ingress = drain_queued_authority_batches(
+        &receiver,
+        &mut queued,
+        2,
+        Duration::from_millis(20),
+        AuthorityIngressState::Open,
+    );
+    assert_eq!(ingress, AuthorityIngressState::Disconnected);
+    for expected in [1, 2, 3] {
+        let selected = take_authority_work(
+            &mut initial,
+            &mut queued,
+            Some(TransactionId::from_raw(3)),
+            ingress,
+            false,
+        )
+        .unwrap();
+        assert_eq!(selected.transaction, TransactionId::from_raw(expected));
+        if expected == 2 {
+            assert_eq!(selected.removed_surfaces.len(), 1);
+            assert_eq!(
+                selected.released_dma_bufs,
+                [sophia_protocol::BufferHandle::from_raw(8)]
+            );
+            assert_eq!(
+                selected.released_fences,
+                [sophia_protocol::FenceHandle::from_raw(9)]
+            );
+            assert_eq!(
+                super::super::authority_merge_run_len(&selected, queued.iter(), true, 8,),
+                1
+            );
+        }
+    }
+    assert!(initial.is_none());
+    assert!(queued.is_empty());
+    assert_eq!(
+        take_authority_work(&mut initial, &mut queued, None, ingress, false,).unwrap_err(),
+        AuthorityWorkWait::Service
+    );
+}
+
+#[test]
+fn owner_service_defers_but_never_consumes_buffered_work() {
+    for ingress in [
+        AuthorityIngressState::Open,
+        AuthorityIngressState::Disconnected,
+    ] {
+        let mut initial = Some(batch(1));
+        let mut queued = VecDeque::from([batch(2)]);
+        for _ in 0..3 {
+            assert_eq!(
+                take_authority_work(&mut initial, &mut queued, None, ingress, true,).unwrap_err(),
+                AuthorityWorkWait::Service
+            );
+            assert_eq!(
+                initial.as_ref().unwrap().transaction,
+                TransactionId::from_raw(1)
+            );
+            assert_eq!(queued.len(), 1);
+        }
+        for expected in [1, 2] {
+            assert_eq!(
+                take_authority_work(&mut initial, &mut queued, None, ingress, false,)
+                    .unwrap()
+                    .transaction,
+                TransactionId::from_raw(expected)
+            );
+        }
+        assert_eq!(
+            take_authority_work(&mut initial, &mut queued, None, ingress, false,).unwrap_err(),
+            match ingress {
+                AuthorityIngressState::Open => AuthorityWorkWait::Receive,
+                AuthorityIngressState::Disconnected => AuthorityWorkWait::Service,
+            }
+        );
+    }
+}
+
+#[test]
+fn capacity_boundaries_preserve_fifo_through_final_disconnect() {
+    for capacity in [1, 2, 4] {
+        let (sender, receiver) = sync_channel(5);
+        for transaction in 1..=5 {
+            sender.send(batch(transaction)).unwrap();
+        }
+        drop(sender);
+        let mut queued = VecDeque::new();
+        let mut initial = None;
+        let mut ingress = AuthorityIngressState::Open;
+        for expected in 1..=5 {
+            ingress = drain_queued_authority_batches(
+                &receiver,
+                &mut queued,
+                capacity,
+                Duration::from_secs(1),
+                ingress,
+            );
+            assert!(queued.len() <= capacity);
+            assert_eq!(
+                take_authority_work(&mut initial, &mut queued, None, ingress, false,)
+                    .unwrap()
+                    .transaction,
+                TransactionId::from_raw(expected)
+            );
+        }
+        ingress = drain_queued_authority_batches(
+            &receiver,
+            &mut queued,
+            capacity,
+            Duration::from_secs(1),
+            ingress,
+        );
+        assert_eq!(ingress, AuthorityIngressState::Disconnected);
+        assert!(queued.is_empty());
+    }
+}
+
+#[test]
+fn known_closed_ingress_is_not_polled_again() {
+    let (sender, receiver) = sync_channel(1);
+    sender.send(batch(1)).unwrap();
+    let mut queued = VecDeque::new();
+    assert_eq!(
+        drain_queued_authority_batches(
+            &receiver,
+            &mut queued,
+            2,
+            Duration::from_secs(1),
+            AuthorityIngressState::Disconnected,
+        ),
+        AuthorityIngressState::Disconnected
+    );
+    assert!(queued.is_empty());
+    assert_eq!(
+        receiver.try_recv().unwrap().transaction,
+        TransactionId::from_raw(1)
+    );
+}
+
+#[test]
+fn quiescence_waits_for_each_accepted_work_domain_without_extending_deadline() {
+    let now = Instant::now();
+    let mut quiescence = SessionQuiescence::new("test", now, Duration::from_millis(20));
+    quiescence.mark_frontend_authority_drained();
+    for snapshot in [
+        SessionQuiescenceSnapshot {
+            pending_authority_batches: 1,
+            ..Default::default()
+        },
+        SessionQuiescenceSnapshot {
+            pending_coordinator_work: 1,
+            ..Default::default()
+        },
+        SessionQuiescenceSnapshot {
+            cpu_update_pending: true,
+            ..Default::default()
+        },
+        SessionQuiescenceSnapshot {
+            native_work_pending: true,
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            quiescence.decision(now + Duration::from_millis(1), snapshot),
+            SessionQuiescenceDecision::Pending
+        );
+        assert_eq!(
+            quiescence.decision(now + Duration::from_millis(20), snapshot),
+            SessionQuiescenceDecision::TimedOut
+        );
+    }
+    assert_eq!(
+        quiescence.decision(
+            now + Duration::from_millis(20),
+            SessionQuiescenceSnapshot::default()
+        ),
+        SessionQuiescenceDecision::Complete
+    );
+}
 
 fn batch(transaction: u64) -> XAuthorityObservedTransactionBatch {
     super::super::wm_update_coordinator_batch(TransactionId::from_raw(transaction))
@@ -28,7 +228,13 @@ fn opportunistic_drain_preserves_final_batch_before_disconnect() {
 
     let mut queued = VecDeque::new();
     assert_eq!(
-        drain_queued_authority_batches(&receiver, &mut queued, 2, Duration::from_millis(20),),
+        drain_queued_authority_batches(
+            &receiver,
+            &mut queued,
+            2,
+            Duration::from_millis(20),
+            AuthorityIngressState::Open
+        ),
         AuthorityIngressState::Disconnected
     );
     assert_eq!(queued.len(), 1);

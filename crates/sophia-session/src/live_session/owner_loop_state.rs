@@ -218,6 +218,7 @@ impl SessionQuiescence {
     ) -> SessionQuiescenceDecision {
         if self.frontend_authority_drained
             && snapshot.pending_authority_batches == 0
+            && snapshot.pending_coordinator_work == 0
             && !snapshot.cpu_update_pending
             && !snapshot.native_work_pending
         {
@@ -237,6 +238,7 @@ impl SessionQuiescence {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct SessionQuiescenceSnapshot {
     pending_authority_batches: usize,
+    pending_coordinator_work: usize,
     cpu_update_pending: bool,
     native_work_pending: bool,
 }
