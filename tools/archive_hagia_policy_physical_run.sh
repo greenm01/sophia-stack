@@ -8,21 +8,24 @@ state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 run_root="${SOPHIA_HAGIA_POLICY_RUN_ROOT:-$state_home/sophia/promotion/hagia-policy-runs}"
 sophia_bin="${SOPHIA_HAGIA_POLICY_SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 hagia_bin="${SOPHIA_HAGIA_BIN:-/opt/sophia/current/target/release/hagia}"
-hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-/opt/sophia/current/target/release/hagia-shell}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-/opt/sophia/current/target/release/narthex}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 
 "$ROOT_DIR/tools/verify_hagia_policy_physical.sh" "$evidence" "$proof_text" >/dev/null
-identity="$(grep -E '^sophia_hagia_policy_identity schema=2 status=bound ' "$evidence")"
+identity="$(grep -E '^sophia_hagia_policy_identity schema=3 status=bound ' "$evidence")"
 source_commit="$(sed -n 's/.* sophia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")"
 hagia_commit="$(sed -n 's/.* hagia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")"
+narthex_commit="$(sed -n 's/.* narthex_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")"
 recorded_sophia_sha256="$(sed -n 's/.* sophia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")"
 recorded_hagia_sha256="$(sed -n 's/.* hagia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")"
-recorded_hagia_shell_sha256="$(sed -n 's/.* hagia_shell_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")"
+recorded_narthex_sha256="$(sed -n 's/.* narthex_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")"
 [[ -d "$hagia_root/.git" ]] || {
     echo "Hagia checkout is unavailable: $hagia_root" >&2
     exit 1
 }
-for repo_and_commit in "$ROOT_DIR:$source_commit" "$hagia_root:$hagia_commit"; do
+for repo_and_commit in "$ROOT_DIR:$source_commit" "$hagia_root:$hagia_commit" \
+    "$narthex_root:$narthex_commit"; do
     repo="${repo_and_commit%:*}"
     commit="${repo_and_commit##*:}"
     [[ "$commit" =~ ^[0-9a-f]{40}$ ]] && git -C "$repo" cat-file -e "$commit^{commit}" || {
@@ -44,7 +47,7 @@ done
 evidence_sha256="$(sha256sum "$evidence" | awk '{ print $1 }')"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
-hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
+narthex_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
 [[ "$sophia_sha256" == "$recorded_sophia_sha256" ]] || {
     echo "Hagia physical Sophia binary no longer matches the verified run" >&2
     exit 1
@@ -53,7 +56,7 @@ hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
     echo "Hagia physical Hagia binary no longer matches the verified run" >&2
     exit 1
 }
-[[ "$hagia_shell_sha256" == "$recorded_hagia_shell_sha256" ]] || {
+[[ "$narthex_sha256" == "$recorded_narthex_sha256" ]] || {
     echo "Hagia physical Hagia Shell binary no longer matches the verified run" >&2
     exit 1
 }
@@ -76,11 +79,11 @@ trap 'rm -rf -- "$run_dir"' ERR HUP INT TERM
 
 install -m 600 "$evidence" "$run_dir/session.log"
 printf '%s\n' \
-    'sophia_hagia_policy_physical schema=3 status=passed' \
+    'sophia_hagia_policy_physical schema=4 status=passed' \
     >"$run_dir/result.kdl"
-printf 'record_schema=3\nrecord_kind=hagia_policy_physical\nrecorded_at_utc=%s\nsource_commit=%s\nhagia_commit=%s\nproof_text=%s\nevidence_sha256=%s\nsophia_binary_sha256=%s\nhagia_binary_sha256=%s\nhagia_shell_binary_sha256=%s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$source_commit" "$hagia_commit" "$proof_text" \
-    "$evidence_sha256" "$sophia_sha256" "$hagia_sha256" "$hagia_shell_sha256" \
+printf 'record_schema=4\nrecord_kind=hagia_policy_physical\nrecorded_at_utc=%s\nsource_commit=%s\nhagia_commit=%s\nnarthex_commit=%s\nproof_text=%s\nevidence_sha256=%s\nsophia_binary_sha256=%s\nhagia_binary_sha256=%s\nnarthex_binary_sha256=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$source_commit" "$hagia_commit" "$narthex_commit" "$proof_text" \
+    "$evidence_sha256" "$sophia_sha256" "$hagia_sha256" "$narthex_sha256" \
     >"$run_dir/manifest"
 chmod 600 "$run_dir/manifest" "$run_dir/result.kdl"
 (

@@ -65,10 +65,23 @@ require_line() {
 [[ "$proof_text" =~ ^[a-z]{1,24}$ ]] ||
     fail "proof text must contain 1-24 lowercase ASCII letters"
 
-# Identity. One line, both signed commits, all three binary digests, and the
+# Identity. One line, every signed commit, all three binary digests, and the
 # desktop profile the session actually loaded.
-identity_pattern='^sophia_hagia_native_identity schema=1 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} hagia_shell_sha256=[0-9a-f]{64} desktop_profile_sha256=[0-9a-f]{64}$'
-require_exactly "bound Sophia/Hagia identity" "$identity_pattern" 1
+#
+# schema=2 binds the Narthex commit and names the shell binary narthex.
+# schema=1 is the pre-split spelling and is still accepted, because this
+# verifier also reads archives written before the split, where the old field
+# name means "older", not "wrong". Every archive is re-verified by
+# `cargo xtask check`, so refusing schema=1 here would break the build on
+# history that is correct for its own time.
+identity_pattern_v2='^sophia_hagia_native_identity schema=2 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} narthex_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} narthex_sha256=[0-9a-f]{64} desktop_profile_sha256=[0-9a-f]{64}$'
+identity_pattern_v1='^sophia_hagia_native_identity schema=1 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} hagia_shell_sha256=[0-9a-f]{64} desktop_profile_sha256=[0-9a-f]{64}$'
+if (( $(count "$identity_pattern_v2") == 1 )); then
+    identity_pattern="$identity_pattern_v2"
+else
+    identity_pattern="$identity_pattern_v1"
+fi
+require_exactly "bound Sophia/Hagia/Narthex identity" "$identity_pattern" 1
 identity="$(grep -E "$identity_pattern" "$evidence")"
 profile_sha256="$(field "$identity" desktop_profile_sha256)"
 

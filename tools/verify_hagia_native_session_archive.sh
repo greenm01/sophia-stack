@@ -28,18 +28,31 @@ fi
     echo "Hagia native session archive checksum verification failed: $run" >&2
     exit 1
 }
-[[ "$(sed -n 's/^record_schema=//p' "$run/manifest")" == 1 \
+# record_schema=2 binds the Narthex commit and names the shell binary narthex.
+# record_schema=1 is the pre-split spelling; these archives are immutable
+# history and every one of them is re-verified by `cargo xtask check`.
+record_schema="$(sed -n 's/^record_schema=//p' "$run/manifest")"
+[[ ( "$record_schema" == 1 || "$record_schema" == 2 ) \
     && "$(sed -n 's/^record_kind=//p' "$run/manifest")" == hagia_native_session ]] || {
     echo "Hagia native session archive has the wrong record identity: $run" >&2
     exit 1
 }
-[[ "$(cat "$run/result.kdl")" == 'sophia_hagia_native_session schema=1 status=passed' ]] || {
+[[ "$(cat "$run/result.kdl")" == "sophia_hagia_native_session schema=$record_schema status=passed" ]] || {
     echo "Hagia native session archive is not passing: $run" >&2
     exit 1
 }
+if [[ "$record_schema" == 2 ]]; then
+    shell_manifest_key=narthex_binary_sha256
+    shell_identity_key=narthex_sha256
+    extra_keys=(narthex_commit)
+else
+    shell_manifest_key=hagia_shell_binary_sha256
+    shell_identity_key=hagia_shell_sha256
+    extra_keys=()
+fi
 for key in source_commit hagia_commit proof_text evidence_sha256 \
-    sophia_binary_sha256 hagia_binary_sha256 hagia_shell_binary_sha256 \
-    desktop_profile_sha256; do
+    sophia_binary_sha256 hagia_binary_sha256 "$shell_manifest_key" \
+    "${extra_keys[@]}" desktop_profile_sha256; do
     [[ "$(grep -c "^${key}=" "$run/manifest")" == 1 ]] || {
         echo "Hagia native session archive has invalid $key cardinality: $run" >&2
         exit 1
@@ -66,15 +79,16 @@ evidence_sha256="$(sha256sum "$run/session.log" | awk '{ print $1 }')"
     echo "Hagia native session evidence digest does not match its manifest: $run" >&2
     exit 1
 }
-identity="$(grep -E '^sophia_hagia_native_identity schema=1 status=bound ' "$run/session.log")"
+# The identity schema tracks the record schema one-for-one here.
+identity="$(grep -E "^sophia_hagia_native_identity schema=$record_schema status=bound " "$run/session.log")"
 [[ "$(sed -n 's/.* sophia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")" == "$source_commit" \
     && "$(sed -n 's/.* hagia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")" == "$hagia_commit" \
     && "$(sed -n 's/.* sophia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")" == \
         "$(sed -n 's/^sophia_binary_sha256=//p' "$run/manifest")" \
     && "$(sed -n 's/.* hagia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")" == \
         "$(sed -n 's/^hagia_binary_sha256=//p' "$run/manifest")" \
-    && "$(sed -n 's/.* hagia_shell_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")" == \
-        "$(sed -n 's/^hagia_shell_binary_sha256=//p' "$run/manifest")" \
+    && "$(sed -n "s/.* $shell_identity_key=\\([0-9a-f]\\{64\\}\\) .*/\\1/p" <<<"$identity")" == \
+        "$(sed -n "s/^$shell_manifest_key=//p" "$run/manifest")" \
     && "$(sed -n 's/.* desktop_profile_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")" == \
         "$(sed -n 's/^desktop_profile_sha256=//p' "$run/manifest")" ]] || {
     echo "Hagia native session evidence and manifest have different identities: $run" >&2

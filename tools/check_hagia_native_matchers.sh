@@ -189,7 +189,7 @@ printf '%s\n' \
     'sophia_live_metadata_shell schema=1 status=stopped transport=disconnected process=terminated' \
     'sophia_live_metadata_broker schema=1 status=stopped transport=disconnected process=terminated' \
     'sophia_tty_recovery schema=3 profile=hagia kd_mode_before=0 kd_mode_after=0 termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none' \
-    "sophia_hagia_native_identity schema=1 status=bound sophia_commit=1111111111111111111111111111111111111111 hagia_commit=2222222222222222222222222222222222222222 sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb hagia_shell_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc desktop_profile_sha256=$profile_sha256" \
+    "sophia_hagia_native_identity schema=2 status=bound sophia_commit=1111111111111111111111111111111111111111 hagia_commit=2222222222222222222222222222222222222222 narthex_commit=3333333333333333333333333333333333333333 sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb narthex_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc desktop_profile_sha256=$profile_sha256" \
     >"$evidence"
 
 # A terminal launched by the workflow runs this same script and must stand down
@@ -279,7 +279,7 @@ for missing in \
     'sophia_live_session_cleanup schema=1 status=clean' \
     'sophia_live_session_protocol_errors schema=1' \
     'sophia_tty_recovery schema=3 profile=hagia' \
-    'sophia_hagia_native_identity schema=1 status=bound'; do
+    'sophia_hagia_native_identity schema=2 status=bound'; do
     rejected="$temp_dir/rejected.log"
     grep -vF "$missing" "$evidence" >"$rejected"
     if "$verifier" "$rejected" "$proof_text" >/dev/null 2>&1; then
@@ -687,20 +687,24 @@ cp /usr/bin/true "$hagia_shell_bin"
 sophia_commit="$(git -C "$root_dir" rev-parse HEAD)"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$root_dir/../hagia}"
 hagia_commit="$(git -C "$hagia_root" rev-parse HEAD)"
+narthex_root="${SOPHIA_NARTHEX_ROOT:-$root_dir/../narthex}"
+narthex_commit="$(git -C "$narthex_root" rev-parse HEAD)"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
-hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
+narthex_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
 archive_evidence="$temp_dir/archive-evidence.log"
 sed \
     -e "s/sophia_commit=1111111111111111111111111111111111111111/sophia_commit=$sophia_commit/" \
     -e "s/hagia_commit=2222222222222222222222222222222222222222/hagia_commit=$hagia_commit/" \
+    -e "s/narthex_commit=3333333333333333333333333333333333333333/narthex_commit=$narthex_commit/" \
     -e "s/sophia_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sophia_sha256=$sophia_sha256/" \
     -e "s/hagia_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/hagia_sha256=$hagia_sha256/" \
-    -e "s/hagia_shell_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/hagia_shell_sha256=$hagia_shell_sha256/" \
+    -e "s/narthex_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/narthex_sha256=$narthex_sha256/" \
     "$evidence" >"$archive_evidence"
 archive_output="$(env \
     XDG_STATE_HOME="$temp_dir/state" \
     SOPHIA_HAGIA_ROOT="$hagia_root" \
+    SOPHIA_NARTHEX_ROOT="$narthex_root" \
     SOPHIA_HAGIA_NATIVE_SOPHIA_BIN="$sophia_bin" \
     SOPHIA_HAGIA_BIN="$hagia_bin" \
     SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
@@ -714,6 +718,7 @@ SOPHIA_HAGIA_ROOT="$hagia_root" \
 if env \
     XDG_STATE_HOME="$temp_dir/state" \
     SOPHIA_HAGIA_ROOT="$hagia_root" \
+    SOPHIA_NARTHEX_ROOT="$narthex_root" \
     SOPHIA_HAGIA_NATIVE_SOPHIA_BIN="$sophia_bin" \
     SOPHIA_HAGIA_BIN="$hagia_bin" \
     SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
-hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v hagia-shell || true)}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v narthex || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 browser_bin="${SOPHIA_BROWSER_BIN:-${SOPHIA_FIREFOX_BIN:-}}"
 if [[ -z "$browser_bin" ]]; then
@@ -17,11 +17,13 @@ evidence="${SOPHIA_HAGIA_PHYSICAL_EVIDENCE:-/tmp/sophia-hagia-policy-physical.lo
 proof_text="${SOPHIA_HAGIA_PHYSICAL_TEXT:-hagiapolicyproof}"
 guide="${SOPHIA_HAGIA_PHYSICAL_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_physical_guide.sh}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 source_commit="${SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT:-}"
 hagia_commit="${SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT:-}"
+narthex_commit="${SOPHIA_HAGIA_PHYSICAL_NARTHEX_COMMIT:-}"
 recorded_sophia_sha256="${SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256:-}"
 recorded_hagia_sha256="${SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256:-}"
-recorded_hagia_shell_sha256="${SOPHIA_HAGIA_PHYSICAL_HAGIA_SHELL_SHA256:-}"
+recorded_narthex_sha256="${SOPHIA_HAGIA_PHYSICAL_NARTHEX_SHA256:-}"
 
 if [[ ! "$proof_text" =~ ^[a-z]{1,24}$ ]]; then
     echo "SOPHIA_HAGIA_PHYSICAL_TEXT must contain 1-24 lowercase ASCII letters" >&2
@@ -60,7 +62,7 @@ if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
     || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ \
     || ! "$recorded_hagia_shell_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind both signed commits and all three binary identities" >&2
+    echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind all three signed commits and all three binary identities" >&2
     exit 2
 fi
 if [[ ! -d "$hagia_root/.git" ]]; then
@@ -80,9 +82,11 @@ fi
 verify_bound_identity() {
     if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
         || -n "$(git -C "$hagia_root" status --short)" \
+        || -n "$(git -C "$narthex_root" status --short)" \
         || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" \
-        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" ]]; then
-        echo "Sophia or Hagia source identity changed during the physical proof." >&2
+        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" \
+        || "$(git -C "$narthex_root" rev-parse HEAD)" != "$narthex_commit" ]]; then
+        echo "Sophia, Hagia, or Narthex source identity changed during the physical proof." >&2
         exit 1
     fi
     git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
@@ -93,13 +97,17 @@ verify_bound_identity() {
         echo "Hagia physical-proof commit does not have a valid signature." >&2
         exit 1
     }
+    git -C "$narthex_root" verify-commit "$narthex_commit" >/dev/null 2>&1 || {
+        echo "Narthex physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
     sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
     hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
-    hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
+    narthex_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
     if [[ "$sophia_sha256" != "$recorded_sophia_sha256" \
         || "$hagia_sha256" != "$recorded_hagia_sha256" \
-        || "$hagia_shell_sha256" != "$recorded_hagia_shell_sha256" ]]; then
-        echo "Sophia, Hagia, or Hagia Shell does not match its bound physical-proof identity." >&2
+        || "$narthex_sha256" != "$recorded_narthex_sha256" ]]; then
+        echo "Sophia, Hagia, or Narthex does not match its bound physical-proof identity." >&2
         exit 1
     fi
 }
@@ -152,8 +160,8 @@ SOPHIA_HAGIA_PHYSICAL_TEXT="$proof_text" \
     --exit-after-input-proof
 
 verify_bound_identity
-printf 'sophia_hagia_policy_identity schema=2 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s hagia_shell_sha256=%s\n' \
-    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" "$hagia_shell_sha256" \
+printf 'sophia_hagia_policy_identity schema=3 status=bound sophia_commit=%s hagia_commit=%s narthex_commit=%s sophia_sha256=%s hagia_sha256=%s narthex_sha256=%s\n' \
+    "$source_commit" "$hagia_commit" "$narthex_commit" "$sophia_sha256" "$hagia_sha256" "$narthex_sha256" \
     | tee -a "$evidence"
 
 "$ROOT_DIR/tools/verify_hagia_policy_physical.sh" "$evidence" "$proof_text"

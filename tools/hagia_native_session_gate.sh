@@ -15,7 +15,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
-hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v hagia-shell || true)}"
+hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v narthex || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
 seat="${SOPHIA_HAGIA_NATIVE_SEAT:-}"
 display="${SOPHIA_HAGIA_NATIVE_DISPLAY:-:292}"
@@ -36,7 +36,8 @@ source_commit="${SOPHIA_HAGIA_NATIVE_SOURCE_COMMIT:-}"
 hagia_commit="${SOPHIA_HAGIA_NATIVE_HAGIA_COMMIT:-}"
 recorded_sophia_sha256="${SOPHIA_HAGIA_NATIVE_SOPHIA_SHA256:-}"
 recorded_hagia_sha256="${SOPHIA_HAGIA_NATIVE_HAGIA_SHA256:-}"
-recorded_hagia_shell_sha256="${SOPHIA_HAGIA_NATIVE_HAGIA_SHELL_SHA256:-}"
+recorded_narthex_sha256="${SOPHIA_HAGIA_NATIVE_NARTHEX_SHA256:-}"
+narthex_commit="${SOPHIA_HAGIA_NATIVE_NARTHEX_COMMIT:-}"
 recorded_profile_sha256="${SOPHIA_DESKTOP_PROFILE_SHA256:-}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 session_log="$state_home/sophia/hagia-session/session.log"
@@ -82,9 +83,10 @@ if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$hagia_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
     || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ \
-    || ! "$recorded_hagia_shell_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$recorded_narthex_sha256" =~ ^[0-9a-f]{64}$ \
+    || ! "$narthex_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$recorded_profile_sha256" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "run tools/run_current_hagia_native_gate_tty4.sh to bind both signed commits, all three binary identities, and the profile digest" >&2
+    echo "run tools/run_current_hagia_native_gate_tty4.sh to bind all signed commits, all three binary identities, and the profile digest" >&2
     exit 2
 fi
 if [[ "$(sha256sum "$desktop_profile" | awk '{ print $1 }')" != "$recorded_profile_sha256" ]]; then
@@ -131,10 +133,10 @@ verify_bound_identity() {
     }
     sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
     hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
-    hagia_shell_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
+    narthex_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
     if [[ "$sophia_sha256" != "$recorded_sophia_sha256" \
         || "$hagia_sha256" != "$recorded_hagia_sha256" \
-        || "$hagia_shell_sha256" != "$recorded_hagia_shell_sha256" ]]; then
+        || "$narthex_sha256" != "$recorded_narthex_sha256" ]]; then
         echo "Sophia, Hagia, or Hagia Shell does not match its bound physical-proof identity." >&2
         exit 1
     fi
@@ -224,9 +226,9 @@ recovery_record="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$reco
     exit 1
 }
 printf '%s\n' "$recovery_record" >>"$evidence"
-printf 'sophia_hagia_native_identity schema=1 status=bound sophia_commit=%s hagia_commit=%s sophia_sha256=%s hagia_sha256=%s hagia_shell_sha256=%s desktop_profile_sha256=%s\n' \
-    "$source_commit" "$hagia_commit" "$sophia_sha256" "$hagia_sha256" \
-    "$hagia_shell_sha256" "$recorded_profile_sha256" >>"$evidence"
+printf 'sophia_hagia_native_identity schema=2 status=bound sophia_commit=%s hagia_commit=%s narthex_commit=%s sophia_sha256=%s hagia_sha256=%s narthex_sha256=%s desktop_profile_sha256=%s\n' \
+    "$source_commit" "$hagia_commit" "$narthex_commit" "$sophia_sha256" "$hagia_sha256" \
+    "$narthex_sha256" "$recorded_profile_sha256" >>"$evidence"
 
 # A run made by current code records which hardware cursor path it took. The
 # verifier cannot require that, because it also reads archives written before

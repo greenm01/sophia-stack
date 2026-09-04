@@ -62,8 +62,17 @@ require_line() {
     fi
 }
 
-if [[ "$(grep -Ec '^sophia_hagia_policy_identity schema=2 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} hagia_shell_sha256=[0-9a-f]{64}$' "$evidence" || true)" != 1 ]]; then
-    echo "Hagia physical policy evidence lacks one exact Sophia/Hagia/Hagia Shell identity" >&2
+# schema=3 binds the Narthex commit and names the shell binary narthex.
+# schema=2 is the pre-split spelling and is still accepted, because this
+# verifier also reads archives written before the split, where the old field
+# name means "older", not "wrong". Refusal belongs on a missing field, not on
+# a schema version.
+identity_schema3='^sophia_hagia_policy_identity schema=3 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} narthex_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} narthex_sha256=[0-9a-f]{64}$'
+identity_schema2='^sophia_hagia_policy_identity schema=2 status=bound sophia_commit=[0-9a-f]{40} hagia_commit=[0-9a-f]{40} sophia_sha256=[0-9a-f]{64} hagia_sha256=[0-9a-f]{64} hagia_shell_sha256=[0-9a-f]{64}$'
+identity_count=$(( $(grep -Ec "$identity_schema3" "$evidence" || true)
+    + $(grep -Ec "$identity_schema2" "$evidence" || true) ))
+if [[ "$identity_count" != 1 ]]; then
+    echo "Hagia physical policy evidence lacks one exact Sophia/Hagia/Narthex identity" >&2
     exit 1
 fi
 # The revision is not pinned: the proof's scripted shell restart drives a broker

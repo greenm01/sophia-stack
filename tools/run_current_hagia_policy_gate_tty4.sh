@@ -124,6 +124,7 @@ export SOPHIA_HAGIA_PHYSICAL_SOURCE_COMMIT="$sophia_commit"
 export SOPHIA_HAGIA_PHYSICAL_HAGIA_COMMIT="$hagia_commit"
 export SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256="$sophia_sha256"
 export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHA256="$hagia_sha256"
-export SOPHIA_HAGIA_PHYSICAL_HAGIA_SHELL_SHA256="$hagia_shell_sha256"
+export SOPHIA_HAGIA_PHYSICAL_NARTHEX_SHA256="$hagia_shell_sha256"
+export SOPHIA_HAGIA_PHYSICAL_NARTHEX_COMMIT="$narthex_commit"
 export SOPHIA_LIVE_SESSION_SKIP_BUILD=1
 exec "$ROOT_DIR/tools/start_sophia_hagia_policy_tty4.sh"
