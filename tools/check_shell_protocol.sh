@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-hagia_root=${SOPHIA_HAGIA_ROOT:-"$(dirname -- "$root")/hagia"}
+narthex_root=${SOPHIA_NARTHEX_ROOT:-"$(dirname -- "$root")/narthex"}
 build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
@@ -24,27 +24,27 @@ cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- \
     "$build_dir/sophia-shell-v1-c-client"
 
-if [ ! -f "$hagia_root/src/hagia_shell.nim" ]; then
-    echo "Hagia checkout not found at $hagia_root" >&2
+if [ ! -f "$narthex_root/src/narthex.nim" ]; then
+    echo "Narthex checkout not found at $narthex_root" >&2
     exit 2
 fi
-cd "$hagia_root"
+cd "$narthex_root"
 SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src \
     --nimcache:"$build_dir/nimcache-test" \
-    -o:"$build_dir/tsophia-shell-v1" tests/tsophia_shell_v1.nim
+    -o:"$build_dir/tshell-v1" tests/tshell_v1.nim
 nim c --hints:off --path:src --nimcache:"$build_dir/nimcache-client" \
-    -o:"$build_dir/hagia-shell" src/hagia_shell.nim
+    -o:"$build_dir/narthex" src/narthex.nim
 cd "$root"
 cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell"
+    --example shell_descriptor_conformance_host -- "$build_dir/narthex"
 cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell" --serve
+    --example shell_descriptor_conformance_host -- "$build_dir/narthex" --serve
 # The reservation half: the real Nim shell claims a bottom strip, Engine's
 # coordinator admits it, and the work area shrinks only once the bundle
 # commits. Driving it here keeps the claim honest offline, where a wrong band
 # costs seconds instead of a rig session.
 cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/hagia-shell" --bar-proof
+    --example shell_descriptor_conformance_host -- "$build_dir/narthex" --bar-proof
 
 printf '%s\n' \
     'sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1'

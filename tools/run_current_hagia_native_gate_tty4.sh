@@ -8,6 +8,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+NARTHEX_ROOT="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 
 if [[ ! -t 0 || "$(tty)" != /dev/tty4 ]]; then
     echo "Switch to tty4 with Ctrl+Alt+F4, log in, and run:" >&2
@@ -19,8 +20,17 @@ if [[ ! -d "$HAGIA_ROOT/.git" ]]; then
     echo "Set SOPHIA_HAGIA_ROOT to its checkout path." >&2
     exit 1
 fi
+if [[ ! -d "$NARTHEX_ROOT/.git" ]]; then
+    echo "Narthex checkout not found at $NARTHEX_ROOT" >&2
+    echo "Set SOPHIA_NARTHEX_ROOT to its checkout path." >&2
+    exit 1
+fi
 if [[ -n "$(git -C "$ROOT_DIR" status --short)" ]]; then
     echo "Sophia worktree must be clean before the physical proof." >&2
+    exit 1
+fi
+if [[ -n "$(git -C "$NARTHEX_ROOT" status --short)" ]]; then
+    echo "Narthex worktree must be clean before the physical proof." >&2
     exit 1
 fi
 if [[ -n "$(git -C "$HAGIA_ROOT" status --short)" ]]; then
@@ -30,6 +40,7 @@ fi
 
 sophia_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 hagia_commit="$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
+narthex_commit="$(git -C "$NARTHEX_ROOT" rev-parse HEAD)"
 for repo_and_commit in "$ROOT_DIR:$sophia_commit" "$HAGIA_ROOT:$hagia_commit"; do
     repo="${repo_and_commit%:*}"
     commit="${repo_and_commit##*:}"
@@ -53,12 +64,16 @@ hagia_shell_nimcache="${TMPDIR:-/tmp}/hagia-native-shell-nimcache-${hagia_commit
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
 echo "Hagia:  $hagia_commit"
+echo "Narthex: $narthex_commit"
 (
     cd "$HAGIA_ROOT"
     nim c -d:release --path:src --nimcache:"$hagia_nimcache" \
         -o:"$hagia_bin" src/hagia.nim
+)
+(
+    cd "$NARTHEX_ROOT"
     nim c -d:release --path:src --nimcache:"$hagia_shell_nimcache" \
-        -o:"$hagia_shell_bin" src/hagia_shell.nim
+        -o:"$hagia_shell_bin" src/narthex.nim
 )
 (
     cd "$ROOT_DIR"
