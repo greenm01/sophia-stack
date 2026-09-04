@@ -966,6 +966,7 @@ version = "0.1.0"
 dependencies = [
  "drm",
  "niri-ipc",
+ "rustix",
  "sha2",
  "sophia-engine",
  "x11rb",

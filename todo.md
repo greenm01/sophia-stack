@@ -100,8 +100,14 @@ Status vocabulary:
   is durable. The next run exposed the underlying shell bug without starting a
   workload: a `0/4` qualification timeout continued into capture because the
   caller's status guard disabled Bash's implicit `errexit` inside the helper.
-  Each prerequisite now returns explicitly on failure. A new signed physical
-  run is required. No comparison evidence is promotable yet.
+  Each prerequisite now returns explicitly on failure. Run
+  `cp14-schema4-401d2b68` then passed the four-target qualification and retained
+  a healthy 60-second measurement, but failed closed before finalization when
+  two accepted X clients outlived the workload launcher and session quiescence
+  timed out. The conformance owner now gives every workload a private process
+  group and drains the whole group; qualification also emits valid ImageText8
+  and checks every draw response. A new signed physical run is required. No
+  comparison evidence is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -115,7 +121,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs `cp14-schema4-ba438555` and `cp14-schema4-5897b3be` failed closed at 0/36 on cursor-plane reconstruction and stale focus; `cp14-schema4-d0b10a2c` and `cp14-schema4-07effa0a` are retained 0/36 partial diagnostics. The latter completed 60/60 visibility/resource samples and 3,600 contiguous kernel frames before a late qualification re-read failed. Zero comparison results are promotable |
+| Comparison acquisition | legacy `cp14` remains paused after 15 biased rows. `cp14-schema4-tools` reached 2/36 but both rows are diagnostic only. Owner-only runs remain at 0/36 while preserving successive cursor-plane, stale-focus, cadence, qualification, and teardown diagnostics. The latest `cp14-schema4-401d2b68` partial passed 4/4 cursor targets with 1,151 motion events and retained 60/60 focused visibility/resource samples plus 3,599 contiguous kernel frames; two surviving X clients prevented clean teardown. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -275,10 +281,11 @@ work:
   qualification even when its caller condition disables implicit `errexit`;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `07effa0a` completed the corrected Sophia workload but
-  did not seal a row because qualification failure was not propagated. The
-  `af87c8f0` retry preserved that exact failure before capture. This needs a
-  fresh signed candidate and prepared run;
+  continuing. Candidate `401d2b68` passed qualification and captured a healthy
+  first Sophia measurement, but did not seal it because launcher-only workload
+  cleanup left accepted X clients alive through session quiescence. Private
+  workload process groups, early probe disconnect, valid ImageText8, and checked
+  qualification draws now need a fresh signed candidate and prepared run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

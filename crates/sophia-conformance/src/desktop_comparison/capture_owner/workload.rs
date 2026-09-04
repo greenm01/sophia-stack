@@ -7,6 +7,7 @@ use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
@@ -17,6 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const UNIX_SOCKET_PATH_MAX_BYTES: usize = 107;
+const TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(super) struct WorkloadOwner {
     children: Vec<Child>,
@@ -106,6 +108,7 @@ impl WorkloadOwner {
                 "kitty-stream",
                 &duration.as_secs().saturating_add(120).to_string(),
             ])
+            .process_group(0)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -134,6 +137,7 @@ impl WorkloadOwner {
             .args(["--no-remote", "--new-instance", "--profile"])
             .arg(&profile)
             .arg(server.url())
+            .process_group(0)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -221,14 +225,7 @@ impl WorkloadOwner {
                 .map_err(|_| "resize workload thread panicked".to_owned())??,
             None => Vec::new(),
         };
-        for child in &mut self.children {
-            child
-                .kill()
-                .map_err(|error| format!("could not stop owned comparison workload: {error}"))?;
-            let _ = child
-                .wait()
-                .map_err(|error| format!("could not reap owned comparison workload: {error}"))?;
-        }
+        terminate_owned_children(&mut self.children)?;
         self.firefox.take();
         self.cleanup_kitty_namespace();
         let (p50, p95, p99, maximum) = timing_population(&resize);
@@ -263,13 +260,63 @@ impl WorkloadOwner {
 impl Drop for WorkloadOwner {
     fn drop(&mut self) {
         if !self.finished {
-            for child in &mut self.children {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+            let _ = terminate_owned_children(&mut self.children);
             self.cleanup_kitty_namespace();
         }
     }
+}
+
+fn terminate_owned_children(children: &mut [Child]) -> Result<(), String> {
+    let mut failures = Vec::new();
+    for child in children {
+        if let Err(error) = terminate_owned_child(child) {
+            failures.push(error);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+fn terminate_owned_child(child: &mut Child) -> Result<(), String> {
+    let group = rustix::process::Pid::from_raw(child.id() as i32)
+        .ok_or("comparison workload process-group ID is invalid")?;
+    let leader_exited = child
+        .try_wait()
+        .map_err(|error| format!("could not poll owned comparison workload: {error}"))?
+        .is_some();
+
+    // The application and every helper start in a private group. TERM gives
+    // toolkits a chance to close their X sockets; KILL then drains helpers that
+    // outlive or were orphaned by the group leader. Session quiescence must not
+    // depend on the behavior of an unowned descendant.
+    let _ = rustix::process::kill_process_group(group, rustix::process::Signal::TERM);
+    if leader_exited {
+        thread::sleep(Duration::from_millis(25));
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+        return Ok(());
+    }
+
+    let deadline = Instant::now() + TERMINATION_TIMEOUT;
+    while Instant::now() < deadline {
+        if child
+            .try_wait()
+            .map_err(|error| format!("could not poll owned comparison workload: {error}"))?
+            .is_some()
+        {
+            let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    child
+        .wait()
+        .map_err(|error| format!("could not reap owned comparison workload: {error}"))?;
+    Ok(())
 }
 
 fn create_kitty_socket_namespace() -> Result<PathBuf, String> {

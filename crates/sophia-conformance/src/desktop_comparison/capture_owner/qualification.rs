@@ -317,7 +317,7 @@ fn draw<C: x11rb::connection::Connection>(
     height: u16,
     current: Rectangle,
 ) -> Result<(), String> {
-    connection
+    let background_cookie = connection
         .poly_fill_rectangle(
             window,
             background,
@@ -329,11 +329,20 @@ fn draw<C: x11rb::connection::Connection>(
             }],
         )
         .map_err(|error| error.to_string())?;
-    connection
+    background_cookie
+        .check()
+        .map_err(|error| format!("cursor qualification background draw failed: {error}"))?;
+    let target_cookie = connection
         .poly_fill_rectangle(window, target, &[current])
         .map_err(|error| error.to_string())?;
-    connection
-        .poly_text8(
+    target_cookie
+        .check()
+        .map_err(|error| format!("cursor qualification target draw failed: {error}"))?;
+    // ImageText8 accepts an ordinary byte string. PolyText8 instead expects a
+    // stream of length-prefixed text/font items; passing this string directly
+    // made its leading `M` an impossible item length and elicited BadLength.
+    let instruction_cookie = connection
+        .image_text8(
             window,
             instruction,
             18,
@@ -341,6 +350,9 @@ fn draw<C: x11rb::connection::Connection>(
             b"Move the visible pointer and click each green target (4 total)",
         )
         .map_err(|error| error.to_string())?;
+    instruction_cookie
+        .check()
+        .map_err(|error| format!("cursor qualification instruction draw failed: {error}"))?;
     connection.flush().map_err(|error| error.to_string())
 }
 

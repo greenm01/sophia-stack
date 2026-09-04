@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 drm = { version = "0.15", default-features = false }
 niri-ipc = "=26.4.0"
+rustix.workspace = true
 sha2.workspace = true
 sophia-engine = { path = "../sophia-engine" }
 x11rb = "0.13.1"

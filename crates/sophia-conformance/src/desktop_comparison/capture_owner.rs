@@ -488,6 +488,10 @@ fn measure(
         .map_err(|error| format!("could not sync resource evidence: {error}"))?;
 
     let duration_msec = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    // The probe is a trusted controller connection, not part of the workload.
+    // Close it as soon as the last sample is durable so session quiescence does
+    // not depend on later trace normalization or workload cleanup.
+    drop(visibility);
     trace.finish()?;
     workload.finish(attempt)?;
     normalize_kernel_trace(
