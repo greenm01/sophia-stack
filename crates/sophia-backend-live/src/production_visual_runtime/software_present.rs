@@ -13,6 +13,7 @@ pub(super) struct LiveProductionSoftwarePresentFrame {
 
 pub(super) struct LiveProductionSoftwarePresentBinding {
     pub frames: BTreeMap<OutputId, LiveProductionNativeFrameId>,
+    pub clock_output: OutputId,
     pub output_cohort: sophia_engine::TransactionPresentationCohort,
     pub retirements: BTreeMap<OutputId, LiveProductionNativeFrameRetirement>,
     pub submissions: Vec<LiveProductionSoftwarePresentSubmission>,
@@ -130,6 +131,9 @@ impl LiveProductionVisualRuntime {
             &waiting.source_set,
         )?;
         let frames = native_scanout.queue_retained_output_head_composition_frames(batches)?;
+        if !frames.contains_key(&output) {
+            return Err("software Present cohort omitted its selected clock output".into());
+        }
         let cohort_transaction = waiting
             .submissions
             .first()
@@ -160,6 +164,7 @@ impl LiveProductionVisualRuntime {
                 root,
                 LiveProductionSoftwarePresentBinding {
                     frames,
+                    clock_output: output,
                     output_cohort,
                     retirements: BTreeMap::new(),
                     submissions: waiting.submissions,
@@ -254,24 +259,19 @@ impl LiveProductionVisualRuntime {
             .output_cohort
             .terminal()
             .ok_or("software Present cohort reached no terminal state")?;
-        let sophia_engine::TransactionPresentationTerminal::Presented {
-            logical_sequence,
-            ust_usec,
-        } = terminal
-        else {
+        let sophia_engine::TransactionPresentationTerminal::Presented { .. } = terminal else {
             return Err("software Present output cohort failed".into());
         };
         let evidence = binding
             .retirements
-            .values()
+            .get(&binding.clock_output)
             .copied()
-            .max_by_key(|retirement| (retirement.ust, retirement.output))
             .ok_or("software Present cohort retained no retirement evidence")?;
         for submission in binding.submissions {
             let outcome = self.presentation_feedback.complete_copy(
                 submission.transaction,
-                ust_usec,
-                logical_sequence,
+                evidence.ust,
+                evidence.msc,
             )?;
             self.route_present_feedback(outcome);
             if self.retired_software_presents.len() == PRESENT_FEEDBACK_CAPACITY {
@@ -283,8 +283,8 @@ impl LiveProductionVisualRuntime {
                         source_size: submission.source_size,
                         frame: evidence.frame,
                         native_submission: evidence.submission,
-                        ust_usec,
-                        msc: logical_sequence,
+                        ust_usec: evidence.ust,
+                        msc: evidence.msc,
                     });
             }
             self.finish_surface_content_owner(submission.candidate)?;

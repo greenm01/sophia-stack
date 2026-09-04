@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 use sophia_backend_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LivePresentationResourceSession,
     LiveProductionAuthorityBatch, LiveProductionAuthorityGroup, LiveProductionNativeFrameId,
-    LiveProductionPresentDisposition, LiveProductionPresentGate, LiveProductionPresentScheduler,
-    LiveProductionPresentSubmission, LiveProductionSubmittedPresent,
-    LiveRetainedRendererImageLayer,
+    LiveProductionPageFlipRetirement, LiveProductionPresentDisposition, LiveProductionPresentGate,
+    LiveProductionPresentScheduler, LiveProductionPresentSubmission,
+    LiveProductionSubmittedPresent, LiveRetainedRendererImageLayer,
 };
 use sophia_engine::{HeadlessEngine, ProductionSessionCoordinator};
 use sophia_protocol::{
@@ -200,19 +200,22 @@ fn in_flight_present_for_outputs(
         timeout_msec: 250,
         previous_committed_generation: 1,
     });
+    let frames = outputs
+        .into_iter()
+        .enumerate()
+        .map(|(index, output)| {
+            (
+                output,
+                sophia_backend_live::LiveProductionNativeFrameId::from_raw(
+                    u64::try_from(index).unwrap() + 1,
+                ),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let clock_output = *frames.keys().next().unwrap();
     LiveProductionSubmittedPresent::new(
-        outputs
-            .into_iter()
-            .enumerate()
-            .map(|(index, output)| {
-                (
-                    output,
-                    sophia_backend_live::LiveProductionNativeFrameId::from_raw(
-                        u64::try_from(index).unwrap() + 1,
-                    ),
-                )
-            })
-            .collect(),
+        frames,
+        clock_output,
         sophia_protocol::SurfaceTransactionKey {
             transaction,
             surface,
@@ -283,7 +286,16 @@ fn submitted_present_joins_outputs_after_independent_submission_and_retirement()
         scheduler.unsubmitted_frame(output_b),
         Some(LiveProductionNativeFrameId::from_raw(2))
     );
-    assert_eq!(scheduler.mark_output_retired(output_a, 900).unwrap(), None);
+    assert_eq!(
+        scheduler
+            .mark_output_retired(LiveProductionPageFlipRetirement {
+                output: output_a,
+                ust: 900,
+                msc: 1_113_395,
+            })
+            .unwrap(),
+        None
+    );
     assert_eq!(scheduler.unsubmitted_frame(output_a), None);
     assert_eq!(
         scheduler.unsubmitted_frame(output_b),
@@ -295,17 +307,27 @@ fn submitted_present_joins_outputs_after_independent_submission_and_retirement()
     );
     assert!(scheduler.has_submitted());
     assert_eq!(
-        scheduler.mark_output_retired(output_b, 1_200).unwrap(),
+        scheduler
+            .mark_output_retired(LiveProductionPageFlipRetirement {
+                output: output_b,
+                ust: 1_200,
+                msc: 4_202,
+            })
+            .unwrap(),
         Some(sophia_engine::TransactionPresentationTerminal::Presented {
             logical_sequence: transaction.raw(),
             ust_usec: 1_200,
         })
     );
+    let submitted = scheduler.take_submitted().unwrap();
+    assert_eq!(submitted.transaction, transaction);
     assert_eq!(
-        scheduler
-            .take_submitted()
-            .map(|present| present.transaction),
-        Some(transaction)
+        submitted.presentation_clock(),
+        Some(LiveProductionPageFlipRetirement {
+            output: output_a,
+            ust: 900,
+            msc: 1_113_395,
+        })
     );
 }
 

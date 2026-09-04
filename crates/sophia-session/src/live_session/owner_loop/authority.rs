@@ -695,7 +695,7 @@
                         let repaint = runtime.run_cpu_repaint(
                             &mut scene,
                             raised_surface,
-                            pointer.position(),
+                            LiveProductionCursorPresentation::HardwarePlane,
                             &outputs,
                             native_scanout,
                         )?;

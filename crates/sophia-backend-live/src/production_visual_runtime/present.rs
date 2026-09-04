@@ -76,6 +76,10 @@ impl LiveProductionVisualRuntime {
             self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         }
+        // Present's MSC belongs to one physical CRTC clock. Bind it before
+        // submission so a multi-output cohort cannot change clock domains
+        // according to whichever callback happens to arrive last.
+        let clock_output = applicable_outputs[0];
         for output in &applicable_outputs {
             let index = self
                 .outputs
@@ -277,6 +281,7 @@ impl LiveProductionVisualRuntime {
         self.present_scheduler.mark_rendering(
             LiveProductionSubmittedPresent::new(
                 frames.clone(),
+                clock_output,
                 queued_candidate,
                 transaction,
                 queued_surface,

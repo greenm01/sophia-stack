@@ -20,6 +20,21 @@ use crate::{HardwareCursorPath, LegacyHardwareCursorAdmission, LibdrmNativeCurso
 /// told to hide, which is a change to commit rather than nothing to say.
 pub type PendingCursor = Option<Option<LibdrmNativeCursorPlacement>>;
 
+/// Settle the cursor position carried by one accepted KMS commit.
+///
+/// A newer desired position may replace the pending cell while an older
+/// primary commit is being prepared. Settling that older commit must advance
+/// the committed position without erasing the newer work.
+pub fn settle_pending_cursor(
+    pending: PendingCursor,
+    settled: Option<LibdrmNativeCursorPlacement>,
+) -> PendingCursor {
+    match pending {
+        Some(latest) if latest == settled => None,
+        pending => pending,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CursorCommitPlan {
     /// Nothing to do: nothing pending, or the plane already shows it.

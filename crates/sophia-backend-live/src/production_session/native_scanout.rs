@@ -1253,7 +1253,6 @@ mod persistent_native_scanout {
             let index = self.primary_head(output)?;
             if !self.exporter_mut(output)?.pending_frame() {
                 self.retire_ready_and_retry_cleanup(output, runtime)?;
-                self.service_pending_atomic_cursors(output)?;
                 return Ok(runtime.run_tick(input)?);
             }
             let group = self.heads[index].group;
@@ -1481,7 +1480,6 @@ mod persistent_native_scanout {
             self.max_in_flight_ticks = self
                 .max_in_flight_ticks
                 .max(report.rendered_primary_plane_scanout_in_flight_ticks);
-            self.service_pending_atomic_cursors(output)?;
             self.observe_in_flight_depth();
             Ok(report)
         }
@@ -2523,7 +2521,6 @@ mod persistent_native_scanout {
                 .map(|(_, head)| head.scanout_in_flight_ticks)
                 .max()
                 .unwrap_or_default();
-            self.service_pending_atomic_cursors(output)?;
             Ok(tick)
         }
 
@@ -2641,7 +2638,6 @@ mod persistent_native_scanout {
                     self.retire_failures = self.retire_failures.saturating_sub(1);
                 }
             }
-            self.service_pending_atomic_cursors(output)?;
             Ok(())
         }
 

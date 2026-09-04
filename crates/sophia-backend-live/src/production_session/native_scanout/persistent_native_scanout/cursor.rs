@@ -323,11 +323,14 @@ impl LiveProductionNativeScanout {
         placement: Option<crate::LibdrmNativeCursorPlacement>,
         rode_primary: bool,
     ) {
-        if let Some(started) = self.heads[index].pending_cursor_since.take() {
+        self.heads[index].committed_cursor = placement;
+        self.heads[index].pending_cursor =
+            crate::settle_pending_cursor(self.heads[index].pending_cursor, placement);
+        if self.heads[index].pending_cursor.is_none()
+            && let Some(started) = self.heads[index].pending_cursor_since.take()
+        {
             self.max_cursor_queue_delay = self.max_cursor_queue_delay.max(started.elapsed());
         }
-        self.heads[index].committed_cursor = placement;
-        self.heads[index].pending_cursor = None;
         self.cursor_updates = self.cursor_updates.saturating_add(1);
         if rode_primary {
             self.cursor_updates_ridden = self.cursor_updates_ridden.saturating_add(1);
@@ -423,6 +426,24 @@ impl LiveProductionNativeScanout {
         Ok(())
     }
 
+    /// Commit cursor-only work only after the visual runtime has drained and
+    /// routed primary-frame feedback for this service cycle.
+    ///
+    /// Input merely replaces the desired-position cell. Centralizing the DRM
+    /// side effect here keeps pointer traffic from entering a blocking atomic
+    /// ioctl ahead of ready Present completions or primary submissions.
+    pub(crate) fn service_idle_atomic_cursors(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let outputs = self
+            .heads
+            .iter()
+            .map(|head| head.output.id)
+            .collect::<BTreeSet<_>>();
+        for output in outputs {
+            self.service_pending_atomic_cursors(output)?;
+        }
+        Ok(())
+    }
+
     fn fallback_pending_atomic_cursor_to_legacy(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -493,17 +514,10 @@ impl LiveProductionNativeScanout {
             visible |= placement.is_some();
             self.queue_atomic_cursor(index, placement);
         }
-        // An idle head should move now; a head with primary work pending keeps
-        // the same cell for `arm_cursor_ride`. This makes pointer motion
-        // responsive without serializing an animated primary stream.
-        let outputs = self
-            .heads
-            .iter()
-            .map(|head| head.output.id)
-            .collect::<BTreeSet<_>>();
-        for output in outputs {
-            self.service_pending_atomic_cursors(output)?;
-        }
+        // The visual runtime services this cell after it has routed ready
+        // presentation feedback and submitted any primary work. That gives a
+        // frame the first chance to carry the cursor for free and prevents a
+        // blocking cursor-only ioctl from delaying X Present's display clock.
         self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
         if self.pending_atomic_cursor_count() > 0 {
             self.cursor_updates_queued = self.cursor_updates_queued.saturating_add(1);

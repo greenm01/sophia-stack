@@ -1116,7 +1116,7 @@ impl LiveProductionVisualRuntime {
         &mut self,
         scene: &mut LiveProductionCpuScene,
         raised_surface: Option<SurfaceId>,
-        cursor_position: Option<Point>,
+        cursor_presentation: LiveProductionCursorPresentation,
         output_descriptors: &[sophia_engine::HeadlessOutput],
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<LiveProductionCpuSubmission, Box<dyn std::error::Error>> {
@@ -1131,7 +1131,12 @@ impl LiveProductionVisualRuntime {
             .ok_or("software composition has no output descriptor")?;
         let compose_started = Instant::now();
         let composition = scene
-            .compose_display_list(output, &committed, &display_list, cursor_position)?
+            .compose_display_list(
+                output,
+                &committed,
+                &display_list,
+                cursor_presentation.composition_position(),
+            )?
             .clone();
         self.record_focus_ring_observation(&committed, true)?;
         let head_batches = self.retained_output_head_composition_frames(scene, native_scanout)?;

@@ -4,7 +4,7 @@
 
 use sophia_backend_live::{
     CursorCommitPlan, HardwareCursorPath, LegacyHardwareCursorAdmission,
-    LibdrmNativeCursorPlacement, plan_cursor_commit,
+    LibdrmNativeCursorPlacement, plan_cursor_commit, settle_pending_cursor,
 };
 
 fn placement(x: i32) -> LibdrmNativeCursorPlacement {
@@ -170,4 +170,23 @@ fn nothing_pending_is_idle() {
             CursorCommitPlan::Idle
         );
     }
+}
+
+/// Completion only consumes the position that actually entered the accepted
+/// KMS request. A newer latest-wins cell remains owed to the display.
+#[test]
+fn settling_an_older_cursor_preserves_a_newer_pending_position() {
+    assert_eq!(
+        settle_pending_cursor(Some(Some(placement(11))), Some(placement(10))),
+        Some(Some(placement(11)))
+    );
+}
+
+#[test]
+fn settling_the_latest_cursor_clears_the_pending_cell() {
+    assert_eq!(
+        settle_pending_cursor(Some(Some(placement(10))), Some(placement(10))),
+        None
+    );
+    assert_eq!(settle_pending_cursor(Some(None), None), None);
 }

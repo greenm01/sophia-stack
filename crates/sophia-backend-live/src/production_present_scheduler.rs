@@ -1,6 +1,7 @@
 use crate::{
     LivePresentationResourceSession, LivePresentationSubmission, LiveProductionAuthorityGroup,
-    LiveProductionNativeFrameId, LiveProductionPresentDisposition,
+    LiveProductionNativeFrameId, LiveProductionPageFlipRetirement,
+    LiveProductionPresentDisposition,
 };
 use sophia_engine::{PreparedSurfaceCommit, SURFACE_CONTENT_STREAM_CAPACITY};
 use sophia_protocol::{
@@ -55,6 +56,8 @@ impl LiveProductionQueuedPresent {
 #[derive(Debug)]
 pub struct LiveProductionSubmittedPresent {
     frames: BTreeMap<sophia_protocol::OutputId, LiveProductionNativeFrameId>,
+    retirements: BTreeMap<sophia_protocol::OutputId, LiveProductionPageFlipRetirement>,
+    clock_output: sophia_protocol::OutputId,
     output_cohort: sophia_engine::TransactionPresentationCohort,
     pub candidate: SurfaceTransactionKey,
     pub transaction: TransactionId,
@@ -66,6 +69,7 @@ pub struct LiveProductionSubmittedPresent {
 impl LiveProductionSubmittedPresent {
     pub fn new(
         frames: BTreeMap<sophia_protocol::OutputId, LiveProductionNativeFrameId>,
+        clock_output: sophia_protocol::OutputId,
         candidate: SurfaceTransactionKey,
         transaction: TransactionId,
         surface: sophia_protocol::SurfaceId,
@@ -74,8 +78,10 @@ impl LiveProductionSubmittedPresent {
     ) -> Option<Self> {
         let output_cohort =
             sophia_engine::TransactionPresentationCohort::new(transaction, frames.keys().copied())?;
-        (!frames.is_empty()).then_some(Self {
+        frames.contains_key(&clock_output).then_some(Self {
             frames,
+            retirements: BTreeMap::new(),
+            clock_output,
             output_cohort,
             candidate,
             transaction,
@@ -93,6 +99,15 @@ impl LiveProductionSubmittedPresent {
 
     pub fn frame(&self, output: sophia_protocol::OutputId) -> Option<LiveProductionNativeFrameId> {
         self.frames.get(&output).copied()
+    }
+
+    /// The physical clock selected for this joined present.
+    ///
+    /// Transaction IDs establish causal ownership; they are not a display
+    /// clock. A multi-output cohort is bound to one output when it is built so
+    /// callback ordering cannot switch the MSC domain between frames.
+    pub fn presentation_clock(&self) -> Option<LiveProductionPageFlipRetirement> {
+        self.retirements.get(&self.clock_output).copied()
     }
 }
 
@@ -508,8 +523,7 @@ impl LiveProductionPresentScheduler {
 
     pub fn mark_output_retired(
         &mut self,
-        output: sophia_protocol::OutputId,
-        ust_usec: u64,
+        retirement: LiveProductionPageFlipRetirement,
     ) -> Result<Option<sophia_engine::TransactionPresentationTerminal>, &'static str> {
         let Some(in_flight) = self.in_flight.as_mut() else {
             return Err("output retirement has no in-flight Present cohort");
@@ -519,9 +533,18 @@ impl LiveProductionPresentScheduler {
             | LiveProductionInFlightPresent::Submitted(present) => present,
         };
         use sophia_engine::TransactionPresentationTransition as Transition;
-        match present.output_cohort.mark_retired(output, ust_usec) {
-            Transition::Accepted => Ok(None),
-            Transition::PhaseReady => Ok(present.output_cohort.terminal()),
+        match present
+            .output_cohort
+            .mark_retired(retirement.output, retirement.ust)
+        {
+            Transition::Accepted => {
+                present.retirements.insert(retirement.output, retirement);
+                Ok(None)
+            }
+            Transition::PhaseReady => {
+                present.retirements.insert(retirement.output, retirement);
+                Ok(present.output_cohort.terminal())
+            }
             Transition::Duplicate => Ok(None),
             _ => Err("Present cohort rejected output retirement"),
         }

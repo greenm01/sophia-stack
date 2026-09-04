@@ -86,12 +86,14 @@ Status vocabulary:
   producer, wire codec, and Engine validation now enforce one complete-snapshot
   focus invariant. The subsequent zero-row `cp14-schema4-d0b10a2c` attempt is
   retained as a partial launch diagnostic. Manual observation also exposed two
-  presentation gaps now corrected in code: authority turns could compose
-  outside a refresh deadline, making input wake patterns affect perceived
-  stream cadence, and the cursor used a Sophia-only bitmap. Primary content is
-  now deadline-coalesced independently of input, and one configurable bounded
-  cursor asset feeds both CPU and KMS paths. No comparison evidence is
-  promotable yet; the corrections still need the physical three-stack check.
+  presentation gaps: authority turns could compose outside a refresh deadline,
+  and the cursor used a Sophia-only bitmap. The first corrections added
+  deadline coalescing and one configurable CPU/KMS cursor asset, but follow-up
+  observation still found mouse-dependent Kitty cadence. The remaining cause
+  was protocol and KMS ordering: X Present reported transaction IDs as MSCs,
+  and input could issue a blocking cursor-only atomic commit before ready
+  Present feedback. Both are corrected in code and await a fresh signed
+  physical run. No comparison evidence is promotable yet.
 
 Latest retained Milestone 14 evidence:
 
@@ -237,20 +239,27 @@ work:
   cross-output, non-focusable, or minimized focus at both the protocol codec
   and Engine authority boundaries;
 - [x] decouple primary content cadence from input turns with one
-  refresh-relative latest-wins deadline, retain immediate hardware-cursor
-  service, and cover still-versus-moving input schedules deterministically;
+  refresh-relative latest-wins deadline and cover still-versus-moving input
+  schedules deterministically;
 - [x] replace the renderer-private cursor bitmap with one bounded immutable
   Engine asset, configurable standard Xcursor lookup, validated hotspot and
   static-frame handling, and the canonical X11 core `left_ptr` fallback;
 - [x] pin the comparison's Sophia core profile and canonical cursor digest,
   materialize the same pixels as an owner-only Xcursor theme for niri, and
   select XLibre's matching core cursor without reading personal configuration;
+- [x] diagnose the remaining pointer/cadence coupling: DMA-BUF Present used
+  global request transaction IDs as its MSC, while cursor-only atomic commits
+  could block ahead of ready Present feedback;
+- [x] route physical KMS `(ust, msc)` through GPU and software Present
+  completion, make transaction IDs correlation-only, give primary submission
+  and feedback priority over cursor-only DRM service, preserve a superseding
+  cursor cell, and keep hardware-cursor pixels out of native CPU repaints;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing. Candidate `7b98b59a` reached every pre-launch admission gate but
-  correctly failed at 0/36 because checkout umask `0002` made the new core
-  profile group-writable; the gate now stages the manifest-bound source as an
-  owner-only runtime file, so this needs a fresh signed candidate;
+  continuing. Candidate `8a3f3802` corrected profile staging; its first Sophia
+  attempt was invalidated by an operator VT switch during measurement, but the
+  partial observation exposed the remaining Present-clock/cursor-ordering bug.
+  This needs a fresh signed candidate after the code correction;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

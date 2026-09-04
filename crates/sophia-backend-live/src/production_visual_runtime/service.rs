@@ -349,6 +349,7 @@ impl LiveProductionVisualRuntime {
         let mut retired_software_presents = Vec::new();
         self.drain_retired_software_presents_into(&mut retired_software_presents)?;
         native_scanout.ensure_page_flip_progress()?;
+        native_scanout.service_idle_atomic_cursors()?;
         Ok(LiveProductionNativeServiceReport {
             ticks,
             retired_present,

@@ -861,22 +861,26 @@ impl LiveProductionVisualRuntime {
         ) {
             return Err("DMA Present retired on a native frame with different ownership".into());
         }
-        let terminal = self
-            .present_scheduler
-            .mark_output_retired(output, retirement.ust)?;
-        let Some(sophia_engine::TransactionPresentationTerminal::Presented {
-            logical_sequence,
-            ust_usec,
-        }) = terminal
+        let terminal =
+            self.present_scheduler
+                .mark_output_retired(LiveProductionPageFlipRetirement {
+                    output,
+                    ust: retirement.ust,
+                    msc: retirement.msc,
+                })?;
+        let Some(sophia_engine::TransactionPresentationTerminal::Presented { .. }) = terminal
         else {
             return Ok(None);
         };
-        let ust = ust_usec;
-        let msc = logical_sequence;
         let submitted = self
             .present_scheduler
             .take_submitted()
             .ok_or("joined native retirement lost its submitted DMA Present")?;
+        let clock = submitted
+            .presentation_clock()
+            .ok_or("joined native retirement retained no physical presentation clock")?;
+        let ust = clock.ust;
+        let msc = clock.msc;
         let outputs = submitted.frames().map(|(output, _)| output).collect();
         // The page flip is the commit point for the compositor copy. Promote
         // its staged image before releasing the client source or emitting any

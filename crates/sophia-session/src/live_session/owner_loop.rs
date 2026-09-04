@@ -393,7 +393,7 @@ fn run_session_loop_inner(
             let _ = initialized.run_cpu_repaint(
                 &mut scene,
                 None,
-                None,
+                LiveProductionCursorPresentation::HardwarePlane,
                 &outputs,
                 native,
             )?;
