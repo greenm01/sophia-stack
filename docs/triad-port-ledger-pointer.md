@@ -51,6 +51,11 @@ binds Sophia `870ba46ae231081220b982ecc3a5a95517df7a90` and Hagia
 corpus, public xmonad migration, and immutable archived revision-3 client also
 pass.
 
+Shell surface policy left Hagia on 2026-09-04 for `sophia-org/narthex`, a
+separate client with a strictly smaller capability. The rows below record the
+state at the 2026-08-26 freeze and are not restated; the work happened in Hagia
+at that time and the archives bind those commits.
+
 `hagia-shell` now exists as source: Hagia commits `216fb87`, `3795dce`,
 `c33a1f4`, and `a76528f` add the experimental client, the live shell service,
 the protected switcher, and unlabeled descriptor decoding. Signed archive

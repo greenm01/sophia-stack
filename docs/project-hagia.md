@@ -468,17 +468,17 @@ directory. It is never transferred to another policy process or treated as
 portable configuration.
 
 From a logged-in tty4, `tools/hagia-proof` is the one-shot current-checkout
-launcher. It requires clean Sophia and Hagia trees, builds both exact commits
-before takeover, verifies both signatures and their locally known
+launcher. It requires clean Sophia, Hagia, and Narthex trees, builds each exact
+commit before takeover, verifies every signature and their locally known
 `origin/master` identities, validates the compiled profile, resolves the
 configured terminal and browser executables, and then enters the guarded gate.
-The resulting evidence binds both commits and all three binary digests. Its
+The resulting evidence binds all three commits and all three binary digests. Its
 verifier requires the protected metadata broker to reach ready, commit at least
 two redacted descriptors, validate two opaque action issuers, and stop cleanly.
 It also requires three output-local nonzero switcher presentations, activation
-and withdrawal on both sides of one fresh-epoch Hagia Shell restart, one click
+and withdrawal on both sides of one fresh-epoch Narthex restart, one click
 against retained inert pixels, and clean shell shutdown. The archive
-independently rechecks both commit signatures and every cross-record identity.
+independently rechecks every commit signature and every cross-record identity.
 The underlying build launcher is `tools/run_current_hagia_policy_gate_tty4.sh`; the
 opt-in installed gate is
 `tools/hagia_policy_physical_gate.sh`. It requires

@@ -1666,7 +1666,7 @@ command must print `Hagia physical policy gate passed`.
 Every passing run is rechecked by
 `tools/verify_hagia_policy_physical.sh` and archived under
 `${XDG_STATE_HOME:-$HOME/.local/state}/sophia/promotion/hagia-policy-runs` with
-both source commits, exact Sophia, Hagia, and Hagia Shell executable digests,
+all three source commits, exact Sophia, Hagia, and Narthex executable digests,
 the immutable raw log, and checksums. The verifier also requires the protected
 switcher lifecycle on both sides of its fresh-epoch restart.
 `tools/archive_hagia_policy_physical_run.sh` rejects a duplicate evidence digest
@@ -1688,8 +1688,8 @@ The gate runs its session through the ordinary `hagia` runner profile, so exact
 TTY restoration is recorded by the same component that performs it. Evidence is
 rechecked by `tools/verify_hagia_native_session.sh` and archived under
 `${XDG_STATE_HOME:-$HOME/.local/state}/sophia/promotion/hagia-native-runs` with
-both source commits, all three executable digests, the digest of the desktop
-profile the session actually loaded, the raw log, and checksums. Beyond ordered
+all three source commits, all three executable digests, the digest of the
+desktop profile the session actually loaded, the raw log, and checksums. Beyond ordered
 projection commits, shell-role separation, bounded session-control latency,
 clean health, and exact TTY recovery, the verifier requires the schema-7
 frame-slot block to balance and to report no slot still leased at completion --

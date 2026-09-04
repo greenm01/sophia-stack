@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Re-verifies an archived native Hagia session independently of the run that
-# produced it: checksums, record identity, both signed commits, and the evidence
+# produced it: checksums, record identity, every signed commit, and the evidence
 # itself through the same verifier the gate used.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

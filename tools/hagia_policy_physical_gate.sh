@@ -42,7 +42,7 @@ if [[ -z "$hagia_bin" || ! -x "$hagia_bin" ]]; then
     exit 2
 fi
 if [[ -z "$hagia_shell_bin" || ! -x "$hagia_shell_bin" ]]; then
-    echo "set SOPHIA_HAGIA_SHELL_BIN to a built Hagia Shell executable" >&2
+    echo "set SOPHIA_HAGIA_SHELL_BIN to a built Narthex executable" >&2
     exit 2
 fi
 if [[ -z "$kitty_bin" || ! -x "$kitty_bin" ]]; then
