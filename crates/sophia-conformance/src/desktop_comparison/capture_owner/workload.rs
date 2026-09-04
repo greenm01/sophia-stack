@@ -2,9 +2,10 @@
 
 use super::visibility::ProcessIdentity;
 use super::{
-    READY_TIMEOUT, ScheduledSample, elapsed_micros, parse_proc_stat, timing_population, write_new,
+    READY_TIMEOUT, ScheduledSample, elapsed_micros, parse_proc_stat, read_process_table,
+    timing_population, write_new,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
@@ -27,6 +28,7 @@ pub(super) struct WorkloadOwner {
     children: Vec<Child>,
     roots: Vec<u32>,
     observed_processes: BTreeMap<u32, u64>,
+    subreaper: WorkloadSubreaper,
     sockets: Vec<PathBuf>,
     socket_namespace: Option<PathBuf>,
     firefox: Option<FixtureServer>,
@@ -46,10 +48,12 @@ impl WorkloadOwner {
         duration: Duration,
     ) -> Result<Self, String> {
         let launched = Instant::now();
+        let subreaper = WorkloadSubreaper::arm(Path::new("/proc"))?;
         let mut owner = Self {
             children: Vec::new(),
             roots: Vec::new(),
             observed_processes: BTreeMap::new(),
+            subreaper,
             sockets: Vec::new(),
             socket_namespace: None,
             firefox: None,
@@ -198,6 +202,16 @@ impl WorkloadOwner {
         self.roots.iter().copied()
     }
 
+    pub(super) fn adopted_population_roots(
+        &self,
+        processes: &BTreeMap<u32, super::ProcStat>,
+    ) -> BTreeSet<u32> {
+        self.subreaper
+            .adopted_from_processes(processes)
+            .into_keys()
+            .collect()
+    }
+
     pub(super) fn root_identities(&self) -> Result<Vec<ProcessIdentity>, String> {
         self.roots
             .iter()
@@ -234,7 +248,11 @@ impl WorkloadOwner {
                 .map_err(|_| "resize workload thread panicked".to_owned())??,
             None => Vec::new(),
         };
-        terminate_owned_processes(&mut self.children, &self.observed_processes)?;
+        terminate_owned_processes(
+            &mut self.children,
+            &self.observed_processes,
+            &self.subreaper,
+        )?;
         self.firefox.take();
         self.cleanup_kitty_namespace();
         let (p50, p95, p99, maximum) = timing_population(&resize);
@@ -269,7 +287,11 @@ impl WorkloadOwner {
 impl Drop for WorkloadOwner {
     fn drop(&mut self) {
         if !self.finished {
-            let _ = terminate_owned_processes(&mut self.children, &self.observed_processes);
+            let _ = terminate_owned_processes(
+                &mut self.children,
+                &self.observed_processes,
+                &self.subreaper,
+            );
             self.cleanup_kitty_namespace();
         }
     }
@@ -278,6 +300,7 @@ impl Drop for WorkloadOwner {
 fn terminate_owned_processes(
     children: &mut [Child],
     observed_processes: &BTreeMap<u32, u64>,
+    subreaper: &WorkloadSubreaper,
 ) -> Result<(), String> {
     signal_observed_processes(observed_processes, rustix::process::Signal::TERM);
     let group_result = terminate_owned_children(children);
@@ -285,9 +308,13 @@ fn terminate_owned_processes(
 
     let deadline = Instant::now() + TERMINATION_TIMEOUT;
     while Instant::now() < deadline {
+        let adopted = subreaper.adopted_processes()?;
+        signal_observed_processes(&adopted, rustix::process::Signal::KILL);
+        reap_adopted_processes(&adopted);
         if observed_processes
             .iter()
             .all(|(&pid, &start_ticks)| !process_identity_is_live(pid, start_ticks))
+            && subreaper.adopted_processes()?.is_empty()
         {
             return group_result;
         }
@@ -296,7 +323,8 @@ fn terminate_owned_processes(
     let survivors = observed_processes
         .iter()
         .filter(|&(&pid, &start_ticks)| process_identity_is_live(pid, start_ticks))
-        .count();
+        .count()
+        .saturating_add(subreaper.adopted_processes()?.len());
     let retained_result = if survivors == 0 {
         Ok(())
     } else {
@@ -305,6 +333,76 @@ fn terminate_owned_processes(
         ))
     };
     combine_termination_results(group_result, retained_result)
+}
+
+fn reap_adopted_processes(processes: &BTreeMap<u32, u64>) {
+    for &pid in processes.keys() {
+        let Some(pid) = rustix::process::Pid::from_raw(pid as i32) else {
+            continue;
+        };
+        let _ = rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG);
+    }
+}
+
+struct WorkloadSubreaper {
+    controller: u32,
+    original: Option<rustix::process::Pid>,
+    preexisting_children: BTreeMap<u32, u64>,
+}
+
+impl WorkloadSubreaper {
+    fn arm(proc_root: &Path) -> Result<Self, String> {
+        let controller = std::process::id();
+        let original = rustix::process::child_subreaper()
+            .map_err(|error| format!("could not read comparison child-subreaper state: {error}"))?;
+        rustix::process::set_child_subreaper(Some(rustix::process::getpid()))
+            .map_err(|error| format!("could not own orphaned comparison processes: {error}"))?;
+        let processes = match read_process_table(proc_root) {
+            Ok(processes) => processes,
+            Err(error) => {
+                let _ = rustix::process::set_child_subreaper(original);
+                return Err(error);
+            }
+        };
+        let preexisting_children = direct_children(&processes, controller, &BTreeMap::new());
+        Ok(Self {
+            controller,
+            original,
+            preexisting_children,
+        })
+    }
+
+    fn adopted_processes(&self) -> Result<BTreeMap<u32, u64>, String> {
+        Ok(self.adopted_from_processes(&read_process_table(Path::new("/proc"))?))
+    }
+
+    fn adopted_from_processes(
+        &self,
+        processes: &BTreeMap<u32, super::ProcStat>,
+    ) -> BTreeMap<u32, u64> {
+        direct_children(processes, self.controller, &self.preexisting_children)
+    }
+}
+
+impl Drop for WorkloadSubreaper {
+    fn drop(&mut self) {
+        let _ = rustix::process::set_child_subreaper(self.original);
+    }
+}
+
+fn direct_children(
+    processes: &BTreeMap<u32, super::ProcStat>,
+    controller: u32,
+    excluded: &BTreeMap<u32, u64>,
+) -> BTreeMap<u32, u64> {
+    let mut children = BTreeMap::new();
+    for (&pid, stat) in processes {
+        if stat.ppid != controller || excluded.get(&pid) == Some(&stat.start_ticks) {
+            continue;
+        }
+        children.insert(pid, stat.start_ticks);
+    }
+    children
 }
 
 fn signal_observed_processes(
@@ -559,9 +657,17 @@ pub fn run_stream(seconds: u64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{UNIX_SOCKET_PATH_MAX_BYTES, kitty_socket_path};
+    use super::{
+        TERMINATION_TIMEOUT, UNIX_SOCKET_PATH_MAX_BYTES, WorkloadSubreaper, direct_children,
+        kitty_socket_path, terminate_owned_processes,
+    };
+    use crate::desktop_comparison::capture_owner::ProcStat;
+    use std::collections::BTreeMap;
     use std::os::unix::ffi::OsStrExt as _;
     use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn runtime_socket_path_stays_within_the_linux_limit() {
@@ -576,5 +682,94 @@ mod tests {
         let namespace = PathBuf::from("/tmp").join("x".repeat(UNIX_SOCKET_PATH_MAX_BYTES));
         let error = kitty_socket_path(&namespace, 0).expect_err("long socket must be refused");
         assert!(error.contains("Linux permits at most 107"));
+    }
+
+    #[test]
+    fn direct_child_ownership_excludes_only_the_same_preexisting_identity() {
+        let stat = |ppid, start_ticks| ProcStat {
+            ppid,
+            start_ticks,
+            cpu_ticks: 0,
+            minor_faults: 0,
+            major_faults: 0,
+            threads: 1,
+        };
+        let processes =
+            BTreeMap::from([(10, stat(4, 100)), (11, stat(4, 110)), (12, stat(3, 120))]);
+        let excluded = BTreeMap::from([(10, 100), (11, 109)]);
+
+        assert_eq!(
+            direct_children(&processes, 4, &excluded),
+            BTreeMap::from([(11, 110)])
+        );
+    }
+
+    #[test]
+    fn subreaper_contains_and_terminates_an_orphaned_workload_child() {
+        const CHILD_ENV: &str = "SOPHIA_SUBREAPER_REGRESSION_CHILD";
+        if let Some(marker) = std::env::var_os(CHILD_ENV) {
+            let subreaper = WorkloadSubreaper::arm(Path::new("/proc"))
+                .expect("test process should become a child subreaper");
+            let status = Command::new("sh")
+                .args(["-c", "sleep 30 &"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .expect("test should launch an orphaning workload");
+            assert!(status.success());
+
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let adopted = loop {
+                let adopted = subreaper
+                    .adopted_processes()
+                    .expect("test should inspect adopted workload processes");
+                if !adopted.is_empty() {
+                    break adopted;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "orphaned workload child was not adopted"
+                );
+                thread::sleep(Duration::from_millis(10));
+            };
+            assert_eq!(adopted.len(), 1);
+            terminate_owned_processes(&mut [], &BTreeMap::new(), &subreaper)
+                .expect("adopted workload child should terminate within the bound");
+            assert!(
+                subreaper
+                    .adopted_processes()
+                    .expect("test should verify subreaper drain")
+                    .is_empty()
+            );
+            std::fs::write(marker, b"passed\n").expect("child test should publish completion");
+            return;
+        }
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow epoch")
+            .as_nanos();
+        let marker = std::env::temp_dir().join(format!(
+            "sophia-subreaper-regression-{}-{nonce}",
+            std::process::id()
+        ));
+        let module = module_path!()
+            .strip_prefix("sophia_conformance::")
+            .unwrap_or(module_path!());
+        let test =
+            format!("{module}::subreaper_contains_and_terminates_an_orphaned_workload_child");
+        let status = Command::new(std::env::current_exe().expect("test executable should resolve"))
+            .args(["--exact", &test])
+            .env(CHILD_ENV, &marker)
+            .status()
+            .expect("isolated subreaper regression should run");
+        assert!(status.success());
+        assert_eq!(
+            std::fs::read(&marker).expect("isolated regression should publish completion"),
+            b"passed\n"
+        );
+        std::fs::remove_file(marker).expect("subreaper test marker should be removed");
+        assert_eq!(TERMINATION_TIMEOUT, Duration::from_secs(2));
     }
 }

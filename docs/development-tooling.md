@@ -102,7 +102,10 @@ supervisor tree. The first Sophia row runs a four-target physical cursor
 qualification before measurement. Capture then stages the row; `finalize`
 checks that the exact supervisor has exited before it records clean teardown,
 replays, and seals the evidence. Sophia's direct-DRM path may stop and restore
-the local display manager. The prepared manifest also binds the canonical
+the local display manager. The capture process is the workload's Linux child
+subreaper: detached descendants remain measurable and teardown-owned even
+after they leave their launch ancestry or process group. The prepared manifest
+also binds the canonical
 cursor digest and repository-owned Sophia core configuration. The gate
 materializes those Engine pixels as an owner-only standard Xcursor theme for
 niri, selects XLibre's matching core `left_ptr`, and refuses a Sophia session

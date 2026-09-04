@@ -419,13 +419,17 @@ fn measure(
         .iter()
         .map(|identity| identity.pid)
         .collect::<BTreeSet<_>>();
-    let workload_roots = workload.root_pids().into_iter().collect::<BTreeSet<_>>();
+    let workload_roots = workload.root_pids().collect::<BTreeSet<_>>();
     let roots = stack_roots
         .union(&workload_roots)
         .copied()
         .collect::<BTreeSet<_>>();
     let ([baseline, stack_baseline, workload_baseline], observed_workload) =
-        sample_process_populations(Path::new("/proc"), [&roots, &stack_roots, &workload_roots])?;
+        sample_process_populations(
+            Path::new("/proc"),
+            [&roots, &stack_roots, &workload_roots],
+            &workload,
+        )?;
     workload.retain_processes(observed_workload);
     let mut resources = OpenOptions::new()
         .write(true)
@@ -452,6 +456,7 @@ fn measure(
             sample_process_populations(
                 Path::new("/proc"),
                 [&roots, &stack_roots, &workload_roots],
+                &workload,
             )?;
         workload.retain_processes(observed_workload);
         writeln!(
@@ -986,26 +991,12 @@ fn read_attestation(path: &Path) -> Result<SessionAttestation, String> {
 fn sample_process_populations<const N: usize>(
     proc_root: &Path,
     roots: [&BTreeSet<u32>; N],
+    workload: &WorkloadOwner,
 ) -> Result<([ResourceSnapshot; N], Vec<(u32, u64)>), String> {
-    let mut processes = BTreeMap::new();
-    for entry in fs::read_dir(proc_root)
-        .map_err(|error| format!("could not enumerate process population: {error}"))?
-    {
-        let entry = entry.map_err(|error| format!("could not read process entry: {error}"))?;
-        let Some(pid) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        let Ok(source) = fs::read_to_string(entry.path().join("stat")) else {
-            continue;
-        };
-        if let Ok(stat) = parse_proc_stat(&source) {
-            processes.insert(pid, stat);
-        }
+    if N == 0 {
+        return Err("process sampling requires at least one population".to_owned());
     }
+    let processes = read_process_table(proc_root)?;
     if roots
         .iter()
         .any(|population| population.iter().any(|pid| !processes.contains_key(pid)))
@@ -1013,11 +1004,16 @@ fn sample_process_populations<const N: usize>(
         return Err("a sampled process root disappeared".to_owned());
     }
 
+    let adopted_workload_roots = workload.adopted_population_roots(&processes);
     let mut totals = [ResourceSnapshot::default(); N];
     let mut last_population = Vec::new();
     for pid in processes.keys().copied() {
-        let membership =
+        let mut membership =
             std::array::from_fn::<_, N, _>(|index| descends_from(pid, roots[index], &processes));
+        if descends_from(pid, &adopted_workload_roots, &processes) {
+            membership[0] = true;
+            membership[N - 1] = true;
+        }
         if !membership.iter().any(|included| *included) {
             continue;
         }
@@ -1079,6 +1075,29 @@ fn sample_process_populations<const N: usize>(
         return Err("sampled process population is empty or unreadable".to_owned());
     }
     Ok((totals, last_population))
+}
+
+pub(super) fn read_process_table(proc_root: &Path) -> Result<BTreeMap<u32, ProcStat>, String> {
+    let mut processes = BTreeMap::new();
+    for entry in fs::read_dir(proc_root)
+        .map_err(|error| format!("could not enumerate process population: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("could not read process entry: {error}"))?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(source) = fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        if let Ok(stat) = parse_proc_stat(&source) {
+            processes.insert(pid, stat);
+        }
+    }
+    Ok(processes)
 }
 
 fn descends_from(mut pid: u32, roots: &BTreeSet<u32>, processes: &BTreeMap<u32, ProcStat>) -> bool {
