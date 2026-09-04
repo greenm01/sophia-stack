@@ -389,6 +389,32 @@ pub enum LiveProductionRetainedSceneQueueStatus {
     UnchangedPresented,
 }
 
+/// Why a retained composition is being queued.
+///
+/// Ordinary projections only need the newest logical pixels on glass and may
+/// reuse identical work already owned by the output. Presentation feedback is
+/// different: every accepted Present needs a distinct physical retirement,
+/// even when its pixels have the same checksum as the displayed scene.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveProductionRetainedFrameQueueRequirement {
+    LatestScene,
+    FreshRetirement,
+}
+
+pub fn reduce_live_production_retained_frame_queue(
+    requirement: LiveProductionRetainedFrameQueueRequirement,
+    pending: Option<LiveProductionScanoutContent>,
+    rendering: Option<LiveProductionScanoutContent>,
+    submitted: Option<LiveProductionScanoutContent>,
+    presented: Option<LiveProductionScanoutContent>,
+    checksum: u64,
+) -> LiveProductionRetainedSceneQueueStatus {
+    if requirement == LiveProductionRetainedFrameQueueRequirement::FreshRetirement {
+        return LiveProductionRetainedSceneQueueStatus::Queue;
+    }
+    reduce_live_production_retained_scene_queue(pending, rendering, submitted, presented, checksum)
+}
+
 /// Reduces retained-scene queueing against the newest frame a head owns.
 ///
 /// Ownership order matters. If a different pending frame is newer than a

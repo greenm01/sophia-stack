@@ -4,15 +4,15 @@ use sophia_backend_live::{
     LIVE_PRODUCTION_PAGE_FLIP_HARD_STALL, LiveProductionCpuFrameQueueStatus,
     LiveProductionMixedLayerSource, LiveProductionNativeSuspendError,
     LiveProductionNativeSuspendOutcome, LiveProductionNativeSuspendReport,
-    LiveProductionPageFlipWatchdogStatus, LiveProductionRetainedSceneQueueStatus,
-    LiveProductionScanoutContent, LiveProductionVisualRuntime,
-    finish_live_production_native_suspend, live_production_mixed_layer_order,
-    live_production_projection_requires_gpu_scanout, live_production_retained_projection_admitted,
-    live_production_retained_surface_order, live_production_should_preserve_gpu_output,
-    live_production_transactions_require_gpu_scanout,
+    LiveProductionPageFlipWatchdogStatus, LiveProductionRetainedFrameQueueRequirement,
+    LiveProductionRetainedSceneQueueStatus, LiveProductionScanoutContent,
+    LiveProductionVisualRuntime, finish_live_production_native_suspend,
+    live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
+    live_production_retained_projection_admitted, live_production_retained_surface_order,
+    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
-    reduce_live_production_retained_scene_queue,
+    reduce_live_production_retained_frame_queue, reduce_live_production_retained_scene_queue,
 };
 use sophia_engine::HeadlessOutput;
 use sophia_protocol::{
@@ -525,6 +525,35 @@ fn retained_scene_queue_suppresses_the_matching_newest_owned_frame() {
         reduce_live_production_retained_scene_queue(None, None, None, None, 42),
         LiveProductionRetainedSceneQueueStatus::Queue
     );
+}
+
+#[test]
+fn software_present_queue_requires_fresh_retirement_for_identical_pixels() {
+    let matching = Some(LiveProductionScanoutContent::HeadComposition {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
+        logical_content_checksum: 42,
+        nonzero_rgb_pixels: 1,
+    });
+
+    for owned in [
+        [matching, None, None, None],
+        [None, matching, None, None],
+        [None, None, matching, None],
+        [None, None, None, matching],
+    ] {
+        assert_eq!(
+            reduce_live_production_retained_frame_queue(
+                LiveProductionRetainedFrameQueueRequirement::FreshRetirement,
+                owned[0],
+                owned[1],
+                owned[2],
+                owned[3],
+                42,
+            ),
+            LiveProductionRetainedSceneQueueStatus::Queue,
+            "Present feedback cannot reuse an identical owned scene"
+        );
+    }
 }
 
 #[test]

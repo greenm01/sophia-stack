@@ -921,8 +921,41 @@ impl LiveProductionNativeScanout {
         &mut self,
         batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        self.queue_retained_output_head_composition_frames_with_requirement(
+            batches,
+            LiveProductionRetainedFrameQueueRequirement::LatestScene,
+        )
+    }
+
+    /// Queues one immutable software-Present cohort on every applicable
+    /// logical output.
+    ///
+    /// Unlike an ordinary retained projection, this must never reuse an
+    /// identical pending or displayed scene. The new frame is the physical
+    /// clock owner for Present feedback, so suppressing it would erase the
+    /// retirement the client is waiting for.
+    pub fn queue_software_present_output_head_composition_frames(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        self.queue_retained_output_head_composition_frames_with_requirement(
+            batches,
+            LiveProductionRetainedFrameQueueRequirement::FreshRetirement,
+        )
+    }
+
+    fn queue_retained_output_head_composition_frames_with_requirement(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+        requirement: LiveProductionRetainedFrameQueueRequirement,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
         if batches.is_empty() {
-            return Ok(BTreeMap::new());
+            return match requirement {
+                LiveProductionRetainedFrameQueueRequirement::LatestScene => Ok(BTreeMap::new()),
+                LiveProductionRetainedFrameQueueRequirement::FreshRetirement => {
+                    Err("software Present has no applicable logical output".into())
+                }
+            };
         }
         let mut outputs = BTreeSet::new();
         let mut checksums = BTreeMap::new();
@@ -930,12 +963,23 @@ impl LiveProductionNativeScanout {
             if !outputs.insert(*output) {
                 return Err("retained scene repeats a logical output cohort".into());
             }
+            if requirement == LiveProductionRetainedFrameQueueRequirement::FreshRetirement
+                && !self.frame_queue_ready(*output)
+            {
+                return Err(
+                    "software Present output cohort is not ready for a new generation".into(),
+                );
+            }
             let (_, checksum) = self.validate_head_composition_frames(*output, frames)?;
             checksums.insert(*output, checksum);
         }
         let mut queued = BTreeMap::new();
         for (output, frames) in batches {
-            if self.retained_scene_already_pending(output, checksums.get(&output).copied()) {
+            if self.retained_frame_already_pending(
+                output,
+                checksums.get(&output).copied(),
+                requirement,
+            ) {
                 continue;
             }
             let frame = self.queue_head_composition_frames_with_content(
@@ -959,7 +1003,12 @@ impl LiveProductionNativeScanout {
     /// Mirror cohorts are never suppressed. Their pending content is arbitrated
     /// by mirror generation rather than held per head, and their queue lines are
     /// promotion evidence.
-    fn retained_scene_already_pending(&self, output: OutputId, checksum: Option<u64>) -> bool {
+    fn retained_frame_already_pending(
+        &self,
+        output: OutputId,
+        checksum: Option<u64>,
+        requirement: LiveProductionRetainedFrameQueueRequirement,
+    ) -> bool {
         let Some(checksum) = checksum else {
             return false;
         };
@@ -970,7 +1019,8 @@ impl LiveProductionNativeScanout {
         let Some(head) = indices.first().and_then(|index| self.heads.get(*index)) else {
             return false;
         };
-        let decision = reduce_live_production_retained_scene_queue(
+        let decision = reduce_live_production_retained_frame_queue(
+            requirement,
             head.pending_content,
             head.rendering_content,
             head.submitted_content,
@@ -981,6 +1031,7 @@ impl LiveProductionNativeScanout {
             tracing::debug!(
                 output = output.raw(),
                 logical_content_checksum = checksum,
+                ?requirement,
                 status = ?decision,
                 "retained scene already owned by this output"
             );

@@ -119,21 +119,13 @@ impl LiveProductionVisualRuntime {
         {
             return Ok(false);
         }
-        let Some(_) = self.software_present_frames_waiting.front() else {
+        let Some(waiting) = self.software_present_frames_waiting.front() else {
             return Ok(false);
         };
-        let waiting = self
-            .software_present_frames_waiting
-            .pop_front()
-            .expect("software Present frame front checked above");
         let batches = self.retained_output_head_composition_frames_from_sources(
             native_scanout,
             &waiting.source_set,
         )?;
-        let frames = native_scanout.queue_retained_output_head_composition_frames(batches)?;
-        if !frames.contains_key(&output) {
-            return Err("software Present cohort omitted its selected clock output".into());
-        }
         let cohort_transaction = waiting
             .submissions
             .first()
@@ -141,9 +133,14 @@ impl LiveProductionVisualRuntime {
             .ok_or("software Present cohort has no submission")?;
         let output_cohort = sophia_engine::TransactionPresentationCohort::new(
             cohort_transaction,
-            frames.keys().copied(),
+            batches.iter().map(|(output, _)| *output),
         )
         .ok_or("software Present cohort has invalid output coverage")?;
+        if !output_cohort.is_required(output) {
+            return Err("software Present cohort omitted its selected clock output".into());
+        }
+        let frames =
+            native_scanout.queue_software_present_output_head_composition_frames(batches)?;
         let root = frames
             .values()
             .next()
@@ -155,26 +152,28 @@ impl LiveProductionVisualRuntime {
         }) {
             return Err("native frame ID was reused for software Present".into());
         }
+        // Keep the frame in the waiting queue through every fallible staging
+        // operation. If native queueing fails, shutdown must still find its
+        // submissions and release their SurfaceContentStream ownership.
+        let waiting = self
+            .software_present_frames_waiting
+            .pop_front()
+            .expect("software Present frame front retained through staging");
         for frame in frames.values() {
             self.software_present_frame_owners.insert(*frame, root);
         }
-        if self
-            .software_present_frames_bound
-            .insert(
-                root,
-                LiveProductionSoftwarePresentBinding {
-                    frames,
-                    clock_output: output,
-                    output_cohort,
-                    retirements: BTreeMap::new(),
-                    submissions: waiting.submissions,
-                    phase: LiveProductionSoftwarePresentFramePhase::Pending,
-                },
-            )
-            .is_some()
-        {
-            return Err("native frame ID was reused for software Present".into());
-        }
+        let replaced = self.software_present_frames_bound.insert(
+            root,
+            LiveProductionSoftwarePresentBinding {
+                frames,
+                clock_output: output,
+                output_cohort,
+                retirements: BTreeMap::new(),
+                submissions: waiting.submissions,
+                phase: LiveProductionSoftwarePresentFramePhase::Pending,
+            },
+        );
+        debug_assert!(replaced.is_none(), "software Present owner checked above");
         tracing::debug!(
             outputs = required_outputs.len(),
             frame = root.raw(),

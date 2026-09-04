@@ -260,8 +260,15 @@ work:
   and initial rows. Candidate `124ad6c1` sealed all nine Kitty rows with clean
   teardown; Sophia Firefox row 10 then exposed stale admission recovery and
   remained partial;
-- [ ] sign the admission-recovery correction, pass one short physical Sophia
-  Firefox canary, and prepare a fresh comparison run;
+- [x] sign the admission-recovery correction and run one short physical Sophia
+  Firefox canary: admission rebased to 1266x1408, Firefox reached page-ready,
+  and several full frames rendered before a distinct software-Present timing
+  failure;
+- [x] require a fresh native retirement for every software Present even when
+  the retained scene checksum is unchanged, and retain failed staging work in
+  the teardown-visible ownership queue;
+- [ ] pass one short physical Sophia Firefox canary and prepare a fresh
+  comparison run;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row

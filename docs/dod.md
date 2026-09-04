@@ -786,6 +786,14 @@ current scene state. Queue replacement can affect only queued Presents; it
 cannot mutate either in-flight variant. Retirement or controlled failure is
 the sole path back to no in-flight Present.
 
+Retained frame queueing carries a typed requirement. `LatestScene` may reuse an
+identical pending, rendering, submitted, or displayed logical scene.
+`FreshRetirement` always creates a new native frame because Present feedback
+needs a new physical clock event even when the pixels are identical. A
+software-Present record moves from the teardown-visible waiting queue only
+after its complete output cohort is validated and queued; fallible staging
+never creates an untracked ownership gap.
+
 `OutputFramePresentationState` and native scanout content mirror the same
 four-stage data lifecycle: `Pending -> Rendering -> Submitted -> Presented`.
 Each transition moves the immutable record rather than reconstructing it from

@@ -407,6 +407,13 @@ software Present binds to exactly one immutable CPU or retained-mixed frame.
 An unrelated DMA-BUF frame may submit and retire first, but its callbacks
 cannot mark or settle the software Present. The runtime then submits the bound
 software frame and routes Copy/Idle feedback only from that exact page flip.
+A retained-scene checksum may suppress an ordinary projection whose newest
+pixels are already owned by the output; it must never suppress a software
+Present. Every accepted Present queues a fresh frame on every applicable
+logical output so its selected clock output produces a distinct physical
+retirement. Staging retains the submission in its teardown-visible waiting
+queue until complete cohort validation and native queueing succeed, so a
+failure cannot strand surface-content ownership outside the cleanup ledger.
 A same-owner batch containing software Present work cannot be coalesced, and a
 single group that claims both storage paths is malformed and fails closed.
 Future frame merging must preserve this explicit ownership relation rather
