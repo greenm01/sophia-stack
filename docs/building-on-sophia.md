@@ -171,9 +171,13 @@ output, broker — with digests, validation, and a full prepare–activate–rol
 activation machine, model-checked in TLA+. Core configuration is live: the
 session watches its file and reloads on change, waiting for input to fall idle,
 revalidating, and applying atomically or keeping what runs. The desktop
-profile's seven sections currently apply at session start; extending the same
-watch-and-revalidate trigger to the profile is small, because the activation
-machine behind it is already built.
+profile's seven sections currently apply once, at session start. Its activation
+reducer is built to accept a newer generation, so re-running it is not the
+obstacle; the missing pieces are a watcher on the profile path and a live
+re-handoff of the Policy authority to the already-running window manager, since
+that authority is reached over the wire rather than settled inside the session.
+That is a genuine increment, not a toggle — but every hard part, the
+seven-authority prepare–activate–rollback machine, is done.
 
 Either way the interface is the KDL file, not an application. Edit it by hand,
 with `sed`, or with an editor someone writes. A settings GUI is therefore not
@@ -184,8 +188,9 @@ a shell backend does.
 So the honest distance from the WM rung to a full desktop is a short list, in
 rough dependency order: the content-mode shell (`sophia_shell_v1` r2, the
 gating item), a bounded status feed so rich panels have something to show,
-application-session restore in the session authority, and — smaller — a live
-reload trigger for the full profile to match the one core config already has.
+application-session restore in the session authority, and a live
+reload path for the full profile, which needs a profile-file watcher plus a
+re-handoff of the Policy authority to the running window manager over the wire.
 A theming story across applications is the one genuinely unsolved item, since
 applications are protocol clients and their toolkits theme themselves, but
 that is a hard problem every desktop shares rather than a Sophia gap. A
