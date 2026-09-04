@@ -389,6 +389,13 @@ fn randr_window_request(byte_order: XByteOrder, minor_opcode: u8, window: u32) -
     out
 }
 
+fn randr_crtc_request(byte_order: XByteOrder, minor_opcode: u8, crtc: u32) -> Vec<u8> {
+    let mut out = vec![X_RANDR_MAJOR_OPCODE, minor_opcode];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, crtc);
+    out
+}
+
 fn query_extension_request(byte_order: XByteOrder, name: &str) -> Vec<u8> {
     let mut out = vec![98, 0];
     let len_units = (8 + padded_len_for_test(name.len())) / 4;

@@ -14,6 +14,9 @@ fn dispatch_randr_request(
             | XWireRequest::RandrGetOutputProperty { .. }
             | XWireRequest::RandrGetCrtcInfo { .. }
             | XWireRequest::RandrGetCrtcGammaSize { .. }
+            | XWireRequest::RandrGetCrtcGamma { .. }
+            | XWireRequest::RandrGetCrtcTransform { .. }
+            | XWireRequest::RandrGetPanning { .. }
             | XWireRequest::RandrGetOutputPrimary { .. }
             | XWireRequest::RandrGetProviders { .. }
             | XWireRequest::RandrGetMonitors { .. }
@@ -259,6 +262,70 @@ fn dispatch_randr_request(
                             sequence: context.sequence,
                             resource_id: crtc,
                             minor_code: crate::X_RANDR_GET_CRTC_GAMMA_SIZE_MINOR_OPCODE.into(),
+                            major_code: context.major_opcode,
+                        })
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![client_output],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::RandrGetCrtcGamma { crtc } => {
+                    let resources = randr_resources(runtime.output_topology());
+                    let client_output = if resources.crtcs.contains(&crtc) {
+                        XClientOutput::Reply(XClientReply::RandrGetCrtcGamma {
+                            sequence: context.sequence,
+                        })
+                    } else {
+                        XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadValue,
+                            sequence: context.sequence,
+                            resource_id: crtc,
+                            minor_code: crate::X_RANDR_GET_CRTC_GAMMA_MINOR_OPCODE.into(),
+                            major_code: context.major_opcode,
+                        })
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![client_output],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::RandrGetCrtcTransform { crtc } => {
+                    let resources = randr_resources(runtime.output_topology());
+                    let client_output = if resources.crtcs.contains(&crtc) {
+                        XClientOutput::Reply(XClientReply::RandrGetCrtcTransform {
+                            sequence: context.sequence,
+                        })
+                    } else {
+                        XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadValue,
+                            sequence: context.sequence,
+                            resource_id: crtc,
+                            minor_code: crate::X_RANDR_GET_CRTC_TRANSFORM_MINOR_OPCODE.into(),
+                            major_code: context.major_opcode,
+                        })
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: vec![client_output],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::RandrGetPanning { crtc } => {
+                    let resources = randr_resources(runtime.output_topology());
+                    let client_output = if resources.crtcs.contains(&crtc) {
+                        XClientOutput::Reply(XClientReply::RandrGetPanning {
+                            sequence: context.sequence,
+                            timestamp: resources.timestamp,
+                        })
+                    } else {
+                        XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadValue,
+                            sequence: context.sequence,
+                            resource_id: crtc,
+                            minor_code: crate::X_RANDR_GET_PANNING_MINOR_OPCODE.into(),
                             major_code: context.major_opcode,
                         })
                     };

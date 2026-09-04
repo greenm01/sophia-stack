@@ -581,6 +581,15 @@ pub enum XWireRequest {
     RandrGetCrtcGammaSize {
         crtc: u32,
     },
+    RandrGetCrtcGamma {
+        crtc: u32,
+    },
+    RandrGetCrtcTransform {
+        crtc: u32,
+    },
+    RandrGetPanning {
+        crtc: u32,
+    },
     RandrGetOutputPrimary {
         window: XResourceId,
     },

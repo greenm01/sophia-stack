@@ -95,6 +95,36 @@ fn decode_randr(
                 crtc: context.byte_order.u32(&bytes[4..8]),
             })
         }
+        X_RANDR_GET_CRTC_GAMMA_MINOR_OPCODE => {
+            require_exact_len(
+                X_RANDR_MAJOR_OPCODE,
+                X_RANDR_GET_CRTC_GAMMA_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::RandrGetCrtcGamma {
+                crtc: context.byte_order.u32(&bytes[4..8]),
+            })
+        }
+        X_RANDR_GET_CRTC_TRANSFORM_MINOR_OPCODE => {
+            require_exact_len(
+                X_RANDR_MAJOR_OPCODE,
+                X_RANDR_GET_CRTC_TRANSFORM_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::RandrGetCrtcTransform {
+                crtc: context.byte_order.u32(&bytes[4..8]),
+            })
+        }
+        X_RANDR_GET_PANNING_MINOR_OPCODE => {
+            require_exact_len(
+                X_RANDR_MAJOR_OPCODE,
+                X_RANDR_GET_PANNING_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::RandrGetPanning {
+                crtc: context.byte_order.u32(&bytes[4..8]),
+            })
+        }
         X_RANDR_GET_OUTPUT_PRIMARY_MINOR_OPCODE => {
             require_exact_len(
                 X_RANDR_MAJOR_OPCODE,
@@ -125,4 +155,3 @@ fn decode_randr(
         _ => Err(XWireParseError::UnknownOpcode(bytes[0])),
     }
 }
-

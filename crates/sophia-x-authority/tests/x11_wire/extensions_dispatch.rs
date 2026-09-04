@@ -205,6 +205,145 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
 }
 
 #[test]
+fn randr_get_panning_reports_disabled_and_rejects_unknown_crtcs() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    for (sequence, crtc, expected_code) in [
+        (1, 0x1000_0001, 1),
+        (2, 0x1fff_ffff, 0),
+    ] {
+        let request = randr_crtc_request(
+            XByteOrder::LittleEndian,
+            X_RANDR_GET_PANNING_MINOR_OPCODE,
+            crtc,
+        );
+        let request = decode_x11_core_request(
+            context(
+                namespace,
+                542 + u64::from(sequence),
+                XByteOrder::LittleEndian,
+            ),
+            &request,
+        )
+        .unwrap();
+        assert_eq!(request, XWireRequest::RandrGetPanning { crtc });
+
+        let encoded = dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                sequence,
+                XByteOrder::LittleEndian,
+                X_RANDR_MAJOR_OPCODE,
+            ),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+        .encoded_outputs(XByteOrder::LittleEndian);
+        assert_eq!(encoded[0][0], expected_code);
+        if expected_code == 1 {
+            assert_eq!(encoded[0].len(), 36);
+            assert_eq!(encoded[0][1], 0, "panning status is Success");
+            assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 1);
+            assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 1);
+            assert!(encoded[0][12..].iter().all(|byte| *byte == 0));
+        } else {
+            assert_eq!(encoded[0][1], 2, "unknown CRTC is BadValue");
+            assert_eq!(
+                read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]),
+                u16::from(X_RANDR_GET_PANNING_MINOR_OPCODE)
+            );
+            assert_eq!(encoded[0][10], X_RANDR_MAJOR_OPCODE);
+        }
+    }
+}
+
+#[test]
+fn randr_get_crtc_transform_reports_bounded_identity_transform() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = randr_crtc_request(
+        XByteOrder::LittleEndian,
+        X_RANDR_GET_CRTC_TRANSFORM_MINOR_OPCODE,
+        0x1000_0001,
+    );
+    let request = decode_x11_core_request(
+        context(namespace, 545, XByteOrder::LittleEndian),
+        &request,
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        XWireRequest::RandrGetCrtcTransform {
+            crtc: 0x1000_0001
+        }
+    );
+
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0].len(), 96);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 16);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 1 << 16);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][24..28]), 1 << 16);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][40..44]), 1 << 16);
+    assert_eq!(encoded[0][44], 0, "arbitrary transforms are unavailable");
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][48..52]), 1 << 16);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][64..68]), 1 << 16);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][80..84]), 1 << 16);
+    assert!(encoded[0][84..].iter().all(|byte| *byte == 0));
+}
+
+#[test]
+fn randr_get_crtc_gamma_matches_the_advertised_zero_length_ramp() {
+    let namespace = NamespaceId::from_raw(45);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let request = randr_crtc_request(
+        XByteOrder::LittleEndian,
+        X_RANDR_GET_CRTC_GAMMA_MINOR_OPCODE,
+        0x1000_0001,
+    );
+    let request = decode_x11_core_request(
+        context(namespace, 546, XByteOrder::LittleEndian),
+        &request,
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        XWireRequest::RandrGetCrtcGamma {
+            crtc: 0x1000_0001
+        }
+    );
+
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded[0].len(), 32);
+    assert_eq!(encoded[0][0], 1);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 0);
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 0);
+}
+
+#[test]
 fn randr_output_property_returns_bounded_empty_edid_fallback() {
     let namespace = NamespaceId::from_raw(45);
     let mut runtime = XAuthorityRuntime::new();

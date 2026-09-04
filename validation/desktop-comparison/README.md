@@ -19,7 +19,7 @@ as one typed TTY3 gate. It starts every stack without an operator application,
 runs the controller outside the measured supervisor tree, and requires passive
 workload-owned focus and visibility on DP-1 before and throughout measurement.
 Physical validation and a fresh 36-row run remain outstanding. Do not continue
-or cite `cp14`; schema-3 admission rejects it explicitly.
+or cite `cp14`; schema-4 admission rejects it explicitly.
 
 ## Pinned matrix
 
@@ -77,6 +77,12 @@ one row, and tears the session down. It never uses SSH. Sophia's adapter may
 stop and restore the local display manager because Sophia owns DRM directly.
 It activates greetd only after verifying the configured manager VT's input
 state; otherwise it returns to the independently verified originating TTY3.
+Captured manager state is restored and read back before greetd starts. If exact
+kernel round-tripping diverges, recovery records each field and establishes a
+verified safe text-console baseline instead. After startup, readiness permits
+tuigreet's intentional termios transition but requires stable text display
+mode, a non-disabled keyboard mode, readable termios, and a live greeter on the
+configured VT before activation.
 
 `attest` derives the stack and version from the exact next schedule row. It
 refuses a foreign-UID process, a supervisor executable that cannot implement

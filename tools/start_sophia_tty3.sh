@@ -57,6 +57,13 @@ display_manager_tty=""
 display_manager_tty_state=""
 display_manager_kd_mode=""
 display_manager_keyboard_mode=""
+display_manager_ready_tty_state=unavailable
+display_manager_ready_kd_mode=unavailable
+display_manager_ready_keyboard_mode=unavailable
+display_manager_restore=not_applicable
+observed_greetd_tty_state=unavailable
+observed_greetd_kd_mode=unavailable
+observed_greetd_keyboard_mode=unavailable
 display_manager_stopped=false
 sudo_keepalive_pid=""
 sudo_lease_owner="$BASHPID"
@@ -145,20 +152,106 @@ restore_greetd_tty() {
     sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
         python3 "$TTY_MODE_HELPER" "keyboard-$display_manager_keyboard_mode" || status=1
     sudo -n stty -F "$display_manager_tty" "$display_manager_tty_state" || status=1
-    verify_greetd_tty || status=1
-    return "$status"
+    if [[ "$status" -eq 0 ]] && verify_greetd_tty_prestart; then
+        display_manager_restore=exact
+        return 0
+    fi
+    echo "WARNING: exact $display_manager_tty restoration diverged; trying a safe text baseline." >&2
+    if establish_safe_greetd_tty; then
+        display_manager_restore=safe_baseline
+        return 0
+    fi
+    display_manager_restore=failed
+    return 1
 }
 
-verify_greetd_tty() {
+observe_greetd_tty() {
+    observed_greetd_kd_mode="$(sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
+        python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
+    observed_greetd_keyboard_mode="$(sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
+        python3 "$TTY_MODE_HELPER" get-keyboard 2>/dev/null || echo unavailable)"
+    observed_greetd_tty_state="$(sudo -n stty -g -F "$display_manager_tty" \
+        2>/dev/null || echo unavailable)"
+}
+
+verify_greetd_tty_prestart() {
     [[ "$display_manager" == greetd && -n "$display_manager_tty" ]] || return 0
-    [[ "$(sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
-            python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)" \
-        == "$display_manager_kd_mode" ]] || return 1
-    [[ "$(sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
-            python3 "$TTY_MODE_HELPER" get-keyboard 2>/dev/null || echo unavailable)" \
-        == "$display_manager_keyboard_mode" ]] || return 1
-    [[ "$(sudo -n stty -g -F "$display_manager_tty" 2>/dev/null || echo unavailable)" \
-        == "$display_manager_tty_state" ]]
+    local termios_match=false result=failed
+    observe_greetd_tty
+    [[ "$observed_greetd_tty_state" == "$display_manager_tty_state" ]] \
+        && termios_match=true
+    if [[ "$observed_greetd_kd_mode" == "$display_manager_kd_mode" \
+        && "$observed_greetd_keyboard_mode" == "$display_manager_keyboard_mode" \
+        && "$termios_match" == true ]]; then
+        result=passed
+    fi
+    printf 'sophia_tty_manager_input schema=1 phase=exact_prestart status=%s expected_kd=%s actual_kd=%s expected_keyboard=%s actual_keyboard=%s termios_match=%s\n' \
+        "$result" "$display_manager_kd_mode" "$observed_greetd_kd_mode" \
+        "$display_manager_keyboard_mode" "$observed_greetd_keyboard_mode" \
+        "$termios_match" >>"$HANDOFF_LOG"
+    [[ "$result" == passed ]]
+}
+
+establish_safe_greetd_tty() {
+    local status=0 safe_keyboard_mode=3 result=failed
+    # Preserve any captured enabled keyboard mode; otherwise use K_UNICODE.
+    [[ "$display_manager_keyboard_mode" =~ ^[0-3]$ ]] \
+        && safe_keyboard_mode="$display_manager_keyboard_mode"
+    sudo -n stty sane -F "$display_manager_tty" || status=1
+    sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
+        python3 "$TTY_MODE_HELPER" text || status=1
+    sudo -n env SOPHIA_SESSION_TTY="$display_manager_tty" \
+        python3 "$TTY_MODE_HELPER" "keyboard-$safe_keyboard_mode" || status=1
+    observe_greetd_tty
+    if [[ "$status" -eq 0 && "$observed_greetd_kd_mode" == 0 \
+        && "$observed_greetd_keyboard_mode" =~ ^[0-3]$ \
+        && "$observed_greetd_tty_state" != unavailable ]]; then
+        result=passed
+    fi
+    printf 'sophia_tty_manager_input schema=1 phase=safe_prestart status=%s actual_kd=%s actual_keyboard=%s termios_readable=%s\n' \
+        "$result" "$observed_greetd_kd_mode" "$observed_greetd_keyboard_mode" \
+        "$([[ "$observed_greetd_tty_state" != unavailable ]] && echo true || echo false)" \
+        >>"$HANDOFF_LOG"
+    [[ "$result" == passed ]]
+}
+
+verify_greetd_tty_ready() {
+    [[ "$display_manager" == greetd && -n "$display_manager_tty" ]] || return 0
+    local kd_mode keyboard_mode tty_state signature previous_signature= stable_samples=0
+    for _ in {1..100}; do
+        observe_greetd_tty
+        kd_mode="$observed_greetd_kd_mode"
+        keyboard_mode="$observed_greetd_keyboard_mode"
+        tty_state="$observed_greetd_tty_state"
+        if [[ "$kd_mode" == 0 && "$keyboard_mode" =~ ^[0-3]$ \
+            && "$tty_state" != unavailable ]]; then
+            signature="$kd_mode:$keyboard_mode:$tty_state"
+            if [[ "$signature" == "$previous_signature" ]]; then
+                stable_samples=$((stable_samples + 1))
+            else
+                previous_signature="$signature"
+                stable_samples=1
+            fi
+            if [[ "$stable_samples" -ge 3 ]]; then
+                display_manager_ready_kd_mode="$kd_mode"
+                display_manager_ready_keyboard_mode="$keyboard_mode"
+                display_manager_ready_tty_state="$tty_state"
+                printf 'sophia_tty_manager_input schema=1 phase=live_ready status=passed actual_kd=%s actual_keyboard=%s termios_stable=true samples=%s\n' \
+                    "$kd_mode" "$keyboard_mode" "$stable_samples" >>"$HANDOFF_LOG"
+                return 0
+            fi
+        else
+            previous_signature=""
+            stable_samples=0
+        fi
+        sleep 0.05
+    done
+    display_manager_ready_kd_mode="$kd_mode"
+    display_manager_ready_keyboard_mode="$keyboard_mode"
+    display_manager_ready_tty_state="$tty_state"
+    printf 'sophia_tty_manager_input schema=1 phase=live_ready status=failed actual_kd=%s actual_keyboard=%s termios_stable=false samples=%s\n' \
+        "$kd_mode" "$keyboard_mode" "$stable_samples" >>"$HANDOFF_LOG"
+    return 1
 }
 
 stop_sudo_keepalive() {
@@ -209,7 +302,7 @@ restore_display_manager() {
             if [[ "$manager_ready" != true ]]; then
                 echo "WARNING: greetd did not publish a greeter on $display_manager_tty." >&2
                 status=1
-            elif ! verify_greetd_tty; then
+            elif ! verify_greetd_tty_ready; then
                 echo "WARNING: greetd changed $display_manager_tty to an unverified input state." >&2
                 status=1
                 manager_input_ok=false
@@ -237,9 +330,10 @@ restore_display_manager() {
             fi
         fi
     fi
-    if ! printf 'sophia_tty_handoff schema=1 status=returned profile=%s origin_vt=%s origin_input=%s display_manager=%s manager_vt=%s manager_input=%s manager_ready=%s requested_vt=%s active_vt=%s exit_status=%s\n' \
+    if ! printf 'sophia_tty_handoff schema=1 status=returned profile=%s origin_vt=%s origin_input=%s display_manager=%s manager_vt=%s manager_restore=%s manager_input=%s manager_ready=%s manager_kd=%s manager_keyboard=%s requested_vt=%s active_vt=%s exit_status=%s\n' \
         "$SESSION_PROFILE" "$origin_vt" "$origin_input_ok" "${display_manager:-none}" \
-        "${display_manager_vt:-none}" "$manager_input_ok" "$manager_ready" \
+        "${display_manager_vt:-none}" "$display_manager_restore" "$manager_input_ok" "$manager_ready" \
+        "$display_manager_ready_kd_mode" "$display_manager_ready_keyboard_mode" \
         "$activation_vt" "$active_vt" "$status" >>"$HANDOFF_LOG"; then
         echo "WARNING: could not persist the final TTY handoff result." >&2
         status=1

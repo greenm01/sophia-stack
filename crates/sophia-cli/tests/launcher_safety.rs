@@ -137,7 +137,9 @@ fn tty3_gate_restores_input_before_activating_the_ready_greetd_vt() {
         .find("sudo -n sv up \"$display_manager\"")
         .unwrap();
     let greeter_ready = TTY3_LAUNCHER.find("ps -C tuigreet -o tty=").unwrap();
-    let verify_manager_tty = TTY3_LAUNCHER.find("elif ! verify_greetd_tty").unwrap();
+    let verify_manager_tty = TTY3_LAUNCHER
+        .find("elif ! verify_greetd_tty_ready")
+        .unwrap();
     let reactivate_tty = TTY3_LAUNCHER
         .find("sudo -n chvt \"$activation_vt\"")
         .unwrap();
@@ -149,6 +151,16 @@ fn tty3_gate_restores_input_before_activating_the_ready_greetd_vt() {
             .contains("origin_keyboard_mode=\"$(python3 \"$TTY_MODE_HELPER\" get-keyboard)\"")
     );
     assert!(TTY3_LAUNCHER.contains("display_manager_keyboard_mode=\"$("));
+    assert!(TTY3_LAUNCHER.contains("verify_greetd_tty_prestart"));
+    assert!(TTY3_LAUNCHER.contains("establish_safe_greetd_tty"));
+    assert!(TTY3_LAUNCHER.contains("sudo -n stty sane -F \"$display_manager_tty\""));
+    assert!(TTY3_LAUNCHER.contains("phase=exact_prestart"));
+    assert!(TTY3_LAUNCHER.contains("phase=safe_prestart"));
+    assert!(TTY3_LAUNCHER.contains("phase=live_ready"));
+    assert!(TTY3_LAUNCHER.contains("keyboard_mode\" =~ ^[0-3]$"));
+    assert!(TTY3_LAUNCHER.contains("stable_samples\" -ge 3"));
+    assert!(TTY3_LAUNCHER.contains("manager_restore=%s"));
+    assert!(TTY3_LAUNCHER.contains("manager_keyboard=%s"));
     assert!(restore_origin < restore_manager_tty);
     assert!(restore_manager_tty < restore_manager);
     assert!(restore_manager < greeter_ready);
@@ -174,6 +186,9 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));
     assert!(DESKTOP_COMPARISON_GATE.contains("^SOPHIA-1 connected primary"));
     assert!(DESKTOP_COMPARISON_GATE.contains("xrandr-last.log"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("topology=$(xrandr --query 2>&1)"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("status=protocol_error"));
+    assert!(DESKTOP_COMPARISON_GATE.contains("for _ in {1..50}"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_niri EXIT"));
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_xmonad EXIT"));
     assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));

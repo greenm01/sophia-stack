@@ -501,6 +501,16 @@ pub enum XClientReply {
         sequence: u16,
         size: u16,
     },
+    RandrGetCrtcGamma {
+        sequence: u16,
+    },
+    RandrGetCrtcTransform {
+        sequence: u16,
+    },
+    RandrGetPanning {
+        sequence: u16,
+        timestamp: u32,
+    },
     RandrGetOutputPrimary {
         sequence: u16,
         output: u32,

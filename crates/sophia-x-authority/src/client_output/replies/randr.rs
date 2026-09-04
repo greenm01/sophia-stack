@@ -7,6 +7,9 @@ fn encode_randr_reply(
             XClientReply::RandrQueryVersion { .. }
             | XClientReply::RandrGetScreenSizeRange { .. }
             | XClientReply::RandrGetCrtcGammaSize { .. }
+            | XClientReply::RandrGetCrtcGamma { .. }
+            | XClientReply::RandrGetCrtcTransform { .. }
+            | XClientReply::RandrGetPanning { .. }
             | XClientReply::RandrGetScreenResources { .. }
             | XClientReply::RandrGetOutputInfo { .. }
             | XClientReply::RandrGetOutputProperty { .. }
@@ -48,6 +51,38 @@ fn encode_randr_reply(
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     put_u16(byte_order, &mut out[8..10], size);
+                    out
+                }
+                XClientReply::RandrGetCrtcGamma { sequence } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u16(byte_order, &mut out[8..10], 0);
+                    out
+                }
+                XClientReply::RandrGetCrtcTransform { sequence } => {
+                    // The fixed-point identity matrices describe the only
+                    // supported transform. An empty filter and false
+                    // has-transforms flag make this a read-only capability.
+                    const FIXED_ONE: u32 = 1 << 16;
+                    let identity = [FIXED_ONE, 0, 0, 0, FIXED_ONE, 0, 0, 0, FIXED_ONE];
+                    let mut out = vec![0; 96];
+                    write_reply_header(byte_order, &mut out, sequence, 16);
+                    for (index, value) in identity.into_iter().enumerate() {
+                        put_u32(byte_order, &mut out[8 + index * 4..12 + index * 4], value);
+                        put_u32(byte_order, &mut out[48 + index * 4..52 + index * 4], value);
+                    }
+                    out
+                }
+                XClientReply::RandrGetPanning {
+                    sequence,
+                    timestamp,
+                } => {
+                    // A 36-byte RandR reply with zero-sized panning and tracking
+                    // rectangles means panning is disabled for this CRTC.
+                    let mut out = vec![0; 36];
+                    write_reply_header(byte_order, &mut out, sequence, 1);
+                    out[1] = 0;
+                    put_u32(byte_order, &mut out[8..12], timestamp);
                     out
                 }
                 XClientReply::RandrGetScreenResources {

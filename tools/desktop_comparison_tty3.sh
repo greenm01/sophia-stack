@@ -103,9 +103,20 @@ attest_capture() {
 }
 
 require_x_topology() {
-    local ready=false topology
-    for _ in {1..300}; do
-        topology=$(xrandr --query 2>/dev/null || true)
+    local ready=false topology= query_status=0
+    for _ in {1..50}; do
+        if topology=$(xrandr --query 2>&1); then
+            query_status=0
+        else
+            query_status=$?
+            if grep -Eq 'X Error of failed request|Major opcode of failed request' \
+                <<<"$topology"; then
+                printf 'desktop_comparison_xrandr schema=1 status=protocol_error exit=%s\n%s\n' \
+                    "$query_status" "$topology" >"$diagnostic_root/xrandr-last.log"
+                chmod 600 "$diagnostic_root/xrandr-last.log"
+                fail "xrandr encountered an X protocol error; inspect $diagnostic_root/xrandr-last.log"
+            fi
+        fi
         if { grep -Eq '^DP-1 connected primary 2560x1440\+0\+0' <<<"$topology" \
                 && grep -Eq '^DP-2 connected 1920x1080\+2560\+0' <<<"$topology"; } \
             || { grep -Eq '^SOPHIA-1 connected primary 2560x1440\+0\+0' <<<"$topology" \
@@ -116,7 +127,8 @@ require_x_topology() {
         sleep 0.1
     done
     if [[ $ready != true ]]; then
-        printf '%s\n' "$topology" >"$diagnostic_root/xrandr-last.log"
+        printf 'desktop_comparison_xrandr schema=1 status=topology_mismatch exit=%s\n%s\n' \
+            "$query_status" "$topology" >"$diagnostic_root/xrandr-last.log"
         chmod 600 "$diagnostic_root/xrandr-last.log"
         fail "the exact two-output X topology did not become ready; inspect $diagnostic_root/xrandr-last.log"
     fi

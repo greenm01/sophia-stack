@@ -94,7 +94,7 @@ Latest retained Milestone 14 evidence:
 | Cursor | archives `0004`–`0006` plus continuous shakedown: 57.97 fps, p95 16.687 ms |
 | Stable X backing | physical terminal run: 63/64 patches, 2 COW splits, registry peak 1 buffer |
 | CPU continuity | signed run `20260902T002500Z` on `b9f0735a`: 7,116 accepted updates accounted, 1,190 presented, 5,926 superseded, zero pending, 16.586 ms maximum source gap, 18.825 ms maximum display gap, and 31.737 ms maximum update-to-retirement latency |
-| Comparison acquisition | legacy run `cp14` is paused after 15 biased rows; the fresh schema-3 run remains at zero rows after a false RandR-name timeout and an unverified greetd keyboard handoff forced a reboot; zero comparison results are promotable |
+| Comparison acquisition | legacy run `cp14` is paused after 15 biased rows; schema-3 and schema-4 replacements remain at zero rows. The schema-4 attempt reached Sophia but exposed missing read-only RANDR requests and a false greetd post-start termios check; emergency recovery returned to verified TTY3. Zero comparison results are promotable |
 
 Promotion does not imply default enablement. Damage-limited repaint is now the
 default, with `SOPHIA_ENABLE_BUFFER_AGE_DAMAGE=0` as the opt-out; its
@@ -174,8 +174,17 @@ work:
   greeter is activated only after both the origin and manager TTY input states
   are restored and verified, with a text-TTY fallback and persistent handoff
   record;
-- [ ] sign the recovery correction and prepare a fresh run bound to that exact
-  candidate;
+- [x] reproduce the schema-4 failure with the isolated real `xrandr` client,
+  implement the advertised read-only `GetPanning`, `GetCrtcTransform`, and
+  `GetCrtcGamma` requests, and make X protocol errors terminate topology
+  admission immediately with preserved diagnostics;
+- [x] make greetd recovery attributable and layered: verify exact captured state
+  before restart, fall back to a verified safe text-console baseline if exact
+  kernel round-tripping diverges, then require stable text display, a
+  non-disabled keyboard mode, readable termios, and a live tuigreet on the
+  configured VT before activation;
+- [ ] sign these protocol and recovery corrections and prepare a fresh schema-4
+  run bound to that exact candidate;
 - [ ] run the first short Sophia row and inspect both its sealed evidence and
   the persistent input-handoff record before continuing the matrix;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
