@@ -19,7 +19,7 @@ use std::process::Command;
 pub const XLIBRE_COMMIT: &str = "56be9f4320ef121dc5d4bc40a6365d995512d3bc";
 pub const NIRI_VERSION: &str = "26.04";
 pub const KITTY_VERSION: &str = "0.48.2";
-pub const FIREFOX_VERSION: &str = "154";
+pub const FIREFOX_VERSION: &str = "155";
 pub const TOPOLOGY: &str = "DP-1:2560x1440@60000+DP-2:1920x1080@60000";
 pub const XMONAD_VERSION: &str = "0.18.1";
 pub const XMONAD_CONTRIB_VERSION: &str = "0.18.2";
@@ -151,6 +151,7 @@ fn comparison_binaries(repo: &Path) -> Result<[(&'static str, PathBuf); 6], Stri
 }
 
 pub fn prepare(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    verify_host_tool_versions()?;
     let identity = host::detect()?;
     prepare_with_identity(
         repo,
@@ -163,6 +164,7 @@ pub fn prepare(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
 }
 
 pub fn prepare_optional_soak(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
+    verify_host_tool_versions()?;
     let identity = host::detect()?;
     prepare_with_identity(
         repo,
@@ -172,6 +174,44 @@ pub fn prepare_optional_soak(repo: &Path, run: &Path) -> Result<Vec<String>, Str
         &identity.gpu,
         ComparisonLane::OptionalSoak,
     )
+}
+
+/// Verifies every mutable host executable used by a prepared comparison run.
+///
+/// This belongs before preparation and before graphical takeover. Capture also
+/// repeats it so a package update cannot silently mix versions within a run.
+pub fn verify_host_tool_versions() -> Result<(), String> {
+    require_tool_version("kitty", &["--version"], KITTY_VERSION)?;
+    require_tool_version("firefox", &["--version"], FIREFOX_VERSION)?;
+    require_tool_version("niri", &["--version"], NIRI_VERSION)
+}
+
+fn require_tool_version(program: &str, arguments: &[&str], expected: &str) -> Result<(), String> {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|error| format!("could not run {program} version preflight: {error}"))?;
+    let observed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !output.status.success() || !version_output_matches(&observed, expected) {
+        return Err(format!(
+            "{program} version mismatch: expected token {expected:?}, observed {:?}",
+            observed.trim()
+        ));
+    }
+    Ok(())
+}
+
+fn version_output_matches(observed: &str, expected: &str) -> bool {
+    observed.split_ascii_whitespace().any(|token| {
+        token == expected
+            || token
+                .strip_prefix(expected)
+                .is_some_and(|suffix| suffix.starts_with('.'))
+    })
 }
 
 fn prepare_with_identity(

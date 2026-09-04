@@ -20,6 +20,7 @@ pub use workload::run_stream;
 use super::{
     FIREFOX_VERSION, KITTY_VERSION, NIRI_VERSION, ScheduledSample, TOPOLOGY, XLIBRE_COMMIT,
     XMONAD_CONTRIB_VERSION, XMONAD_VERSION, bind_attempt, next_scheduled, source_commit, status,
+    verify_host_tool_versions,
 };
 use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -198,11 +199,7 @@ pub fn preflight(repo: &Path, run: &Path) -> Result<Vec<String>, String> {
     let attestation = read_attestation(&attestation_path)?;
     validate_session(run, &scheduled, &attestation)?;
     validate_active_profile(repo, run, &attestation)?;
-    require_tool_version("kitty", &["--version"], KITTY_VERSION)?;
-    require_tool_version("firefox", &["--version"], FIREFOX_VERSION)?;
-    if scheduled.stack == "niri" {
-        require_tool_version("niri", &["--version"], NIRI_VERSION)?;
-    }
+    verify_host_tool_versions()?;
     let helper = repo.join("tools/desktop_comparison_tracefs.sh");
     if !helper.is_file() {
         return Err(format!(
@@ -957,25 +954,6 @@ pub(super) fn normalize_kernel_trace(
         ));
     }
     write_new(destination, output.as_bytes())
-}
-
-fn require_tool_version(program: &str, arguments: &[&str], expected: &str) -> Result<(), String> {
-    let output = Command::new(program)
-        .args(arguments)
-        .output()
-        .map_err(|error| format!("could not run {program} version preflight: {error}"))?;
-    let observed = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if !output.status.success() || !observed.contains(expected) {
-        return Err(format!(
-            "{program} version mismatch: expected token {expected:?}, observed {:?}",
-            observed.trim()
-        ));
-    }
-    Ok(())
 }
 
 fn timing_population(values: &[u64]) -> (u64, u64, u64, u64) {

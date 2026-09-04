@@ -183,9 +183,18 @@ work:
   kernel round-tripping diverges, then require stable text display, a
   non-disabled keyboard mode, readable termios, and a live tuigreet on the
   configured VT before activation;
-- [ ] sign these protocol and recovery corrections and prepare a fresh schema-4
-  run bound to that exact candidate;
-- [ ] run the first short Sophia row and inspect both its sealed evidence and
+- [x] sign the protocol and recovery corrections as `d5a1f7da` and prepare
+  `cp14-schema4-randr` against that exact candidate;
+- [x] stop after its first Sophia-row attempt and inspect the zero-row result:
+  topology and attestation passed, recovery safely established greetd on tty7,
+  and capture aborted before creating an attempt because Firefox had upgraded
+  from the pinned 154 to 155;
+- [x] update the Firefox comparison pin and move exact Kitty, Firefox, and niri
+  version admission into both preparation and the pre-takeover gate, retaining
+  capture-time revalidation against upgrades during a run;
+- [ ] sign the version-admission correction and prepare a new schema-4 run
+  bound to that exact candidate;
+- [ ] run its first short Sophia row and inspect both its sealed evidence and
   the persistent input-handoff record before continuing the matrix;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and

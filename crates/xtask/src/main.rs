@@ -213,6 +213,7 @@ fn run_desktop_comparison(arguments: &[String]) -> Result<(), String> {
 fn gate_desktop_comparison(repo: &Path, run: &Path) -> Result<(), String> {
     desktop_comparison::status(repo, run)?;
     desktop_comparison::require_candidate_checkout(repo, run)?;
+    desktop_comparison::verify_host_tool_versions()?;
     build_release_sophia(repo)?;
     desktop_comparison::require_candidate_checkout(repo, run)?;
     desktop_comparison::verify_prepared_binaries(repo, run)?;

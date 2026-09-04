@@ -67,9 +67,12 @@ just desktop-comparison-row RUN
 cargo xtask conformance desktop-comparison gate RUN
 ```
 
-`gate` revalidates the exact clean prepared commit and builds the release
-Sophia candidate before graphical takeover, then verifies the six prepared
-stack/policy/shell executable digests. It reads only the next typed row,
+Preparation verifies the exact pinned Kitty, Firefox, and niri versions before
+creating a run. `gate` repeats that mutable-host check, revalidates the exact
+clean prepared commit, and builds the release Sophia candidate before graphical
+takeover, then verifies the six prepared stack/policy/shell executable digests.
+Capture repeats the version check so a package upgrade during a run fails
+closed. The gate reads only the next typed row,
 launches the matching local terminal-free Sophia, XLibre+xmonad, or niri
 session with the repository profile, checks the fixed topology, attests the
 actual supervisor, resolves DP-1's active CRTC through DRM, captures and seals

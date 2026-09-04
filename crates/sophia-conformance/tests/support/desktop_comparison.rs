@@ -10,6 +10,21 @@ fn comparison_candidate_must_have_a_clean_worktree() {
     assert!(require_clean_worktree(" M crates/sophia/src/lib.rs").is_err());
 }
 
+#[test]
+fn tool_version_matching_requires_a_complete_version_token() {
+    assert!(version_output_matches(
+        "kitty 0.48.2 created by Kovid Goyal",
+        "0.48.2"
+    ));
+    assert!(version_output_matches("Mozilla Firefox 155.0", "155"));
+    assert!(version_output_matches(
+        "niri 26.04 (unknown commit)",
+        "26.04"
+    ));
+    assert!(!version_output_matches("Mozilla Firefox 154.0", "155"));
+    assert!(!version_output_matches("Mozilla Firefox 1155.0", "155"));
+}
+
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
