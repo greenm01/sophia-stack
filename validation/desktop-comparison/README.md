@@ -39,7 +39,10 @@ The matrix also pins the public-domain X11 core-font `left_ptr` at nominal size
 16. Sophia consumes it through the repository-owned core profile, niri through
 an owner-only Xcursor theme materialized by the typed conformance owner, and
 XLibre through its native core cursor. The manifest binds the cursor asset
-digest; no stack reads a personal cursor preference.
+digest; no stack reads a personal cursor preference. Before Sophia starts, the
+gate copies the manifest-bound core profile into its private runtime directory
+with mode 0600. Configuration admission therefore does not depend on the
+operator's checkout umask while still rejecting writable runtime policy.
 
 Four short workloads run three times per stack in rotated order: a visibly
 changing Kitty stream, the loopback-only animated Firefox fixture with a fresh

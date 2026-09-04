@@ -189,7 +189,11 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("desktop-comparison cursor-theme"));
     assert!(DESKTOP_COMPARISON_GATE.contains("export XCURSOR_THEME=sophia-x11-core"));
     assert!(DESKTOP_COMPARISON_GATE.contains("xsetroot -cursor_name left_ptr"));
-    assert!(DESKTOP_COMPARISON_GATE.contains("export SOPHIA_CORE_CONFIG="));
+    assert!(DESKTOP_COMPARISON_GATE.contains("install -m 600 \"$source\""));
+    assert!(DESKTOP_COMPARISON_GATE.contains("comparison core configuration is not owner-only"));
+    assert!(
+        DESKTOP_COMPARISON_GATE.contains("export SOPHIA_CORE_CONFIG=\"$comparison_core_config\"")
+    );
     assert!(DESKTOP_COMPARISON_GATE.contains("Sophia did not attest the prepared cursor asset"));
     assert!(DESKTOP_COMPARISON_GATE.contains("internal_mode=false"));
     assert!(DESKTOP_COMPARISON_GATE.contains("cleanup exceeded 30 seconds"));

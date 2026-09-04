@@ -54,6 +54,18 @@ runtime_root="${XDG_RUNTIME_DIR:-}"
 adapter_root="$runtime_root/sophia-desktop-comparison-adapter"
 mkdir -p "$adapter_root"
 chmod 700 "$adapter_root"
+comparison_core_config="$adapter_root/sophia-core.kdl"
+
+prepare_core_config() {
+    local source="$repo/validation/desktop-comparison/profiles/core.kdl"
+    install -m 600 "$source" "$comparison_core_config"
+    [[ -f $comparison_core_config && ! -L $comparison_core_config ]] \
+        || fail "comparison core configuration is not a regular staged file"
+    [[ $(stat -c '%a' "$comparison_core_config") == 600 ]] \
+        || fail "comparison core configuration is not owner-only"
+    cmp -s "$source" "$comparison_core_config" \
+        || fail "comparison core configuration changed while staging"
+}
 
 prepare_cursor_theme() {
     "$xtask" conformance desktop-comparison cursor-theme "$adapter_root/cursor-themes"
@@ -323,7 +335,7 @@ run_sophia() {
         export SOPHIA_BIN="$sophia_bin"
         export SOPHIA_HAGIA_BIN="$hagia_bin"
         export SOPHIA_HAGIA_SHELL_BIN="$narthex_bin"
-        export SOPHIA_CORE_CONFIG="$repo/validation/desktop-comparison/profiles/core.kdl"
+        export SOPHIA_CORE_CONFIG="$comparison_core_config"
         export SOPHIA_DESKTOP_PROFILE="$repo/validation/desktop-comparison/profiles/hagia.kdl"
         export SOPHIA_SESSION_STARTUP=none
         export SOPHIA_SESSION_WATCHDOG_SECONDS="$watchdog"
@@ -445,6 +457,7 @@ operator_tty_fd_tty=$(tty <&"$operator_tty_fd") \
 [[ $operator_tty_fd_tty == "$operator_tty" ]] \
     || fail "the duplicated operator terminal changed identity"
 command -v jq >/dev/null || fail "jq is not installed"
+prepare_core_config
 prepare_cursor_theme
 
 record_gate_stage candidate-admission

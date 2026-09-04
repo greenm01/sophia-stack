@@ -247,7 +247,10 @@ work:
   select XLibre's matching core cursor without reading personal configuration;
 - [ ] prepare a fresh interactive run and inspect its physical cursor
   qualification plus the first Sophia, XLibre, and niri rows before
-  continuing;
+  continuing. Candidate `7b98b59a` reached every pre-launch admission gate but
+  correctly failed at 0/36 because checkout umask `0002` made the new core
+  profile group-writable; the gate now stages the manifest-bound source as an
+  owner-only runtime file, so this needs a fresh signed candidate;
 - [ ] run the unified one-row TTY3 gate for all 36 required rows on this
   machine; and
 - [ ] retain and verify the complete interactive matrix. A separate one-row
