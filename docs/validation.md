@@ -66,6 +66,14 @@ ownership of a software Present by one native frame, move/resize geometry
 feedback, exact cached workspace assignment, pixel-silent first-admission
 retry, public policy negotiation and transfer assembly, and atomic
 multi-output projection.
+`TabDescriptorPresentation` checks tab candidate freshness and capture lifetime
+across layout changes and shell loss. Its stale-candidate and lost-capture
+negative controls must violate `CoherentPresentation` and `ExactActivation`,
+respectively. Independent tab wire and protected client checks run through
+`tools/check_shell_protocol.sh`; `tools/check_policy_protocol.sh` also verifies
+the frozen revision-3 WM clients against the optional group extension. Hagia and
+Narthex run their own `SOPHIA_STACK_ROOT=/path/to/sophia-stack nimble test` gates.
+These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
 `ShellWorkAreaCoordination` checks that a future ready shell reservation,
 derived work area, and exact WM projection promote as one coherent generation;
 normal shell or WM failure preserves the prior presented bundle. It is a target

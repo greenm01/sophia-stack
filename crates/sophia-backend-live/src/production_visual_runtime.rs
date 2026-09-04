@@ -197,6 +197,7 @@ pub struct LivePresentedInputProjection {
     pub chrome_occlusion: Option<Rect>,
     pub descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
     pub descriptor_occlusion: Option<Rect>,
+    pub tab_occlusions: Vec<Rect>,
 }
 
 /// Retains policy order only for surfaces present in Engine's committed scene.
@@ -257,6 +258,8 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
+    tab_bars: Vec<sophia_engine::TabBarProjection>,
+    tab_frames: BTreeMap<OutputId, CompositorDisplayList>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,
@@ -338,6 +341,7 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion: None,
                 descriptor_targets: Vec::new(),
                 descriptor_occlusion: None,
+                tab_occlusions: Vec::new(),
             })
             .collect();
         Ok(Self {
@@ -368,6 +372,8 @@ impl LiveProductionVisualRuntime {
             indicator_publication: None,
             descriptor_overlay: None,
             descriptor_overlay_interactive: false,
+            tab_bars: Vec::new(),
+            tab_frames: BTreeMap::new(),
             pending_focus_ring_observation: None,
             last_focus_ring_observation: None,
             pending_chrome_set_observation: None,
@@ -640,6 +646,7 @@ impl LiveProductionVisualRuntime {
         let head_plan_outline = self.floating_outline;
         let head_plan_indicator_enabled = self.indicator_strip_enabled;
         let head_plan_indicator_publication = self.indicator_publication.clone();
+        let head_plan_tabs = self.tab_bars.clone();
         let indicator_strip_cache = &self.indicator_strip_cache;
         let text_cache = &self.text_cache;
         let mut native_scanout = native_scanout;
@@ -700,6 +707,9 @@ impl LiveProductionVisualRuntime {
                                             head_plan_focus,
                                             head_plan_style,
                                         )?;
+                                    if let Some(publication) = head_plan_indicator_publication.as_ref() {
+                                        sophia_engine::append_tab_bars(&mut display_list.commands, &publication.tab_groups, publication.generation, &head_plan_tabs, output_id);
+                                    }
                                     if let Some(outline) = head_plan_outline {
                                         if display_list.commands.len()
                                             >= sophia_engine::MAX_COMPOSITOR_DISPLAY_COMMANDS

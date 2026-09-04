@@ -1,4 +1,6 @@
 use super::*;
+mod tabs;
+use tabs::LiveTabSession;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum LiveMetadataShellPoll {
@@ -32,6 +34,25 @@ struct ShellOutputIdentity {
     generation: u64,
 }
 
+struct PendingDescriptorRequest {
+    snapshot: sophia_protocol::ShellV1DescriptorSnapshot,
+    transaction: TransactionId,
+    output: sophia_engine::HeadlessOutput,
+    bounds: sophia_protocol::Rect,
+    root: sophia_protocol::Rect,
+    output_bounds: Vec<(sophia_protocol::OutputId, sophia_protocol::Rect)>,
+    sources: Vec<super::metadata_broker::LiveShellDescriptorSource>,
+    deadline: Instant,
+}
+
+struct PendingDescriptorActivation {
+    action: sophia_protocol::ToplevelActionCapabilityRef,
+    surface: SurfaceId,
+    output: sophia_protocol::OutputId,
+    activation: u64,
+    deadline: Instant,
+}
+
 /// Session owner for the separately protected metadata shell.
 ///
 /// The shell sees only bounded descriptors and opaque slots. This owner keeps
@@ -39,6 +60,7 @@ struct ShellOutputIdentity {
 /// Engine, and waits for the output-local presentation boundary before enabling
 /// activation.
 pub(super) struct LiveMetadataShell {
+    tabs: LiveTabSession,
     supervisor: ProcessSupervisor,
     transport: sophia_runtime::ShellSessionTransport,
     slots: BTreeMap<SurfaceId, u16>,
@@ -48,6 +70,8 @@ pub(super) struct LiveMetadataShell {
     next_snapshot_generation: u64,
     next_projection: u64,
     next_transaction: u64,
+    requested: Option<PendingDescriptorRequest>,
+    activating: Option<PendingDescriptorActivation>,
     pending: Option<PendingShellPresentation>,
     presented: Option<PresentedShellCandidate>,
     presented_actions: BTreeMap<sophia_protocol::ToplevelActionCapabilityRef, SurfaceId>,
@@ -92,6 +116,7 @@ impl LiveMetadataShell {
         }
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
         let mut shell = Self {
+            tabs: LiveTabSession::default(),
             supervisor,
             transport,
             slots: BTreeMap::new(),
@@ -101,6 +126,8 @@ impl LiveMetadataShell {
             next_snapshot_generation: 1,
             next_projection: 1,
             next_transaction: 1,
+            requested: None,
+            activating: None,
             pending: None,
             presented: None,
             presented_actions: BTreeMap::new(),
@@ -190,9 +217,8 @@ impl LiveMetadataShell {
         root: sophia_protocol::Rect,
         output_bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
         activation_surfaces: &BTreeSet<SurfaceId>,
-    ) -> Result<Option<sophia_engine::DescriptorOverlayProjection>, Box<dyn std::error::Error>>
-    {
-        if self.pending.is_some() {
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.pending.is_some() || self.requested.is_some() {
             return Err("metadata shell already has an unpresented candidate".into());
         }
         let output_generation = self
@@ -251,7 +277,53 @@ impl LiveMetadataShell {
             descriptors,
         };
         let transaction = self.take_transaction()?;
-        let candidate = self.transport.request_candidate(transaction, &snapshot)?;
+        self.transport
+            .begin_candidate_request(transaction, &snapshot)?;
+        self.requested = Some(PendingDescriptorRequest {
+            snapshot,
+            transaction,
+            output,
+            bounds,
+            root,
+            output_bounds: output_bounds.to_vec(),
+            sources,
+            deadline: Instant::now() + Duration::from_secs(5),
+        });
+        Ok(())
+    }
+
+    pub(super) fn poll_candidate(
+        &mut self,
+        broker: &LiveMetadataBroker,
+    ) -> Result<
+        Option<Option<sophia_engine::DescriptorOverlayProjection>>,
+        Box<dyn std::error::Error>,
+    > {
+        let Some(request) = self.requested.as_ref() else {
+            return Ok(None);
+        };
+        if Instant::now() > request.deadline {
+            return Err("shell candidate timed out".into());
+        }
+        let Some(candidate) = self.transport.poll_candidate()? else {
+            return Ok(None);
+        };
+        let PendingDescriptorRequest {
+            snapshot,
+            transaction,
+            output,
+            bounds,
+            root,
+            output_bounds,
+            sources,
+            ..
+        } = self.requested.take().unwrap();
+        if !self.outputs.get(&output.id).is_some_and(|o| {
+            o.generation == snapshot.output_generation && o.descriptor == Some(output)
+        }) {
+            return Err("shell candidate targets stale output geometry".into());
+        }
+        let connection_epoch = snapshot.connection_epoch;
         let mut actions = BTreeMap::new();
         let entries = candidate
             .entries
@@ -314,7 +386,7 @@ impl LiveMetadataShell {
             output.id,
             candidate.reservation,
             root,
-            output_bounds,
+            &output_bounds,
         ) {
             Ok(prepared) => {
                 if let Some(admitted) = prepared.reservation {
@@ -355,7 +427,7 @@ impl LiveMetadataShell {
             visible: candidate.visible,
             actions,
         });
-        Ok(overlay)
+        Ok(Some(overlay))
     }
 
     pub(super) fn observe_presentation(
@@ -443,10 +515,9 @@ impl LiveMetadataShell {
 
     pub(super) fn dispatch_activation(
         &mut self,
-        broker: &LiveMetadataBroker,
         action: sophia_protocol::ToplevelActionCapabilityRef,
         activation: u64,
-    ) -> Result<(Option<SurfaceId>, sophia_protocol::OutputId), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let surface = self
             .presented_actions
             .get(&action)
@@ -466,7 +537,39 @@ impl LiveMetadataShell {
                 action,
             },
         )?;
-        let acknowledgement = self.transport.receive_activation_ack()?;
+        self.activating = Some(PendingDescriptorActivation {
+            surface,
+            action,
+            activation,
+            output: presented.output,
+            deadline: Instant::now() + Duration::from_secs(5),
+        });
+        Ok(())
+    }
+
+    pub(super) fn poll_activation(
+        &mut self,
+        broker: &LiveMetadataBroker,
+    ) -> Result<
+        Option<(Option<SurfaceId>, sophia_protocol::OutputId, u64)>,
+        Box<dyn std::error::Error>,
+    > {
+        let Some(pending) = self.activating.as_ref() else {
+            return Ok(None);
+        };
+        if Instant::now() > pending.deadline {
+            return Err("shell activation timed out".into());
+        }
+        let Some(acknowledgement) = self.transport.poll_activation_ack()? else {
+            return Ok(None);
+        };
+        let PendingDescriptorActivation {
+            surface,
+            action,
+            activation,
+            output,
+            ..
+        } = self.activating.take().unwrap();
         if acknowledgement.disposition != sophia_protocol::ShellV1ActivationDisposition::Consumed {
             return Err("metadata shell rejected a current presented activation".into());
         }
@@ -476,11 +579,14 @@ impl LiveMetadataShell {
                 "sophia_live_metadata_broker schema=1 status=issuer_validated activation={activation} target=redacted"
             );
         }
-        Ok((resolved, presented.output))
+        Ok(Some((resolved, output, activation)))
     }
 
     pub(super) fn interaction_presented(&self) -> bool {
-        !self.presented_actions.is_empty() || self.pending.is_some()
+        !self.presented_actions.is_empty()
+            || self.pending.is_some()
+            || self.requested.is_some()
+            || self.activating.is_some()
     }
 
     pub(super) fn revoke_interaction(&mut self) {
@@ -531,6 +637,9 @@ impl LiveMetadataShell {
                 "sophia_live_metadata_shell schema=1 status=disconnect_failed reason={reason} error={error}"
             );
         }
+        self.requested = None;
+        self.activating = None;
+        self.tabs = LiveTabSession::default();
         self.pending = None;
         self.presented = None;
         self.presented_actions.clear();

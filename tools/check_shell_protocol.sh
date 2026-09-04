@@ -11,10 +11,13 @@ cargo run --offline -q -p sophia-protocol --example shell_v1_corpus -- --valid \
     >"$build_dir/sophia-shell-v1.frames"
 cargo run --offline -q -p sophia-protocol --example shell_v1_corpus -- --malformed \
     >"$build_dir/sophia-shell-v1-malformed.frames"
+cargo run --offline -q -p sophia-protocol --example shell_tab_corpus >"$build_dir/sophia-shell-tabs.frames"
+cmp "$build_dir/sophia-shell-tabs.frames" protocol/golden/sophia-shell-tabs.frames
 cmp "$build_dir/sophia-shell-v1.frames" protocol/golden/sophia-shell-v1.frames
 cmp "$build_dir/sophia-shell-v1-malformed.frames" \
     protocol/golden/sophia-shell-v1-malformed.frames
 cargo test --offline -q -p sophia-protocol --test shell_wire
+cargo test --offline -q -p sophia-protocol --test shell_tabs
 cargo test --offline -q -p sophia-runtime --test shell_transport
 
 ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
@@ -32,6 +35,7 @@ cd "$narthex_root"
 SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src \
     --nimcache:"$build_dir/nimcache-test" \
     -o:"$build_dir/tshell-v1" tests/tshell_v1.nim
+SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-tabs" -o:"$build_dir/tshell-tabs" tests/tshell_tabs.nim
 nim c --hints:off --path:src --nimcache:"$build_dir/nimcache-client" \
     -o:"$build_dir/narthex" src/narthex.nim
 cd "$root"

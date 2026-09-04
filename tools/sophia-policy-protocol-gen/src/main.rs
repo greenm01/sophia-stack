@@ -172,7 +172,7 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
     if string_arg(protocol, 0)? != "sophia_shell_v1"
         || integer_property(protocol, "frame-version")? != 1
         || integer_property(protocol, "interface-major")? != 1
-        || integer_property(protocol, "interface-revision")? != 1
+        || integer_property(protocol, "interface-revision")? != 2
         || integer_property(protocol, "max-descriptors")? != 16
         || integer_property(protocol, "max-label-bytes")? != 128
         || integer_property(protocol, "max-pending-activations")? != 16
@@ -190,6 +190,11 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
         ("CandidateOutcome", (100, "session-to-shell", "required")),
         ("Activation", (101, "session-to-shell", "required")),
         ("ActivationAck", (102, "shell-to-session", "required")),
+        ("TabsBegin", (103, "session-to-shell", "required")),
+        ("TabsGroup", (104, "session-to-shell", "required")),
+        ("TabsEntry", (105, "session-to-shell", "required")),
+        ("TabsEnd", (106, "session-to-shell", "required")),
+        ("TabsCandidate", (107, "shell-to-session", "required")),
     ]);
     let mut actual = BTreeMap::new();
     for message in children
@@ -214,8 +219,10 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
             return Err(format!("shell schema message `{name}` drifted"));
         }
     }
-    if actual.len() != 7 {
-        return Err("shell schema must define exactly seven revision-1 messages".into());
+    if actual.len() != 12 {
+        return Err(
+            "shell schema must define seven revision-1 and five revision-2 messages".into(),
+        );
     }
     Ok(())
 }

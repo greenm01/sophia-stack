@@ -35,6 +35,16 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
+            if let Some(bounds) = self.outputs.logical_viewport(output) {
+                if let Ok(list) = self.display_list_for_output(
+                    output,
+                    bounds,
+                    self.production.committed_surfaces(),
+                    &self.presentation_order,
+                ) {
+                    self.tab_frames.insert(output, list);
+                }
+            }
             let (chrome_targets, chrome_occlusion) = self
                 .outputs
                 .logical_viewport(output)
@@ -87,6 +97,12 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
+            if let Some(frame) = native_scanout.presented_output_frame(output) {
+                self.tab_frames
+                    .insert(output, frame.compositor_display_list.clone());
+            } else {
+                self.tab_frames.remove(&output);
+            }
             let (
                 input_layers,
                 chrome_targets,
@@ -146,6 +162,39 @@ impl LiveProductionVisualRuntime {
         descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
         descriptor_occlusion: Option<Rect>,
     ) {
+        let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
+            return;
+        };
+        let mut descriptor_targets = descriptor_targets;
+        let mut tab_occlusions = Vec::new();
+        if let Some(frame) = self.tab_frames.get(&output) {
+            for rect in frame.rects() {
+                if let sophia_engine::CompositorNodeId::TabBar { group, .. } = rect.node {
+                    tab_occlusions.push(rect.geometry);
+                    if let Some(bar) = self.tab_bars.iter().find(|b| {
+                        b.output == output
+                            && b.group == group
+                            && b.generation == rect.generation
+                            && self
+                                .indicator_publication
+                                .as_ref()
+                                .is_some_and(|p| p.tab_groups.contains(&b.policy))
+                    }) {
+                        descriptor_targets.extend(
+                            bar.targets
+                                .iter()
+                                .filter(|t| {
+                                    t.geometry == rect.geometry
+                                        && !input_layers.iter().any(|l| {
+                                            sophia_engine::tab_rects_overlap(l.geometry, t.geometry)
+                                        })
+                                })
+                                .cloned(),
+                        );
+                    }
+                }
+            }
+        }
         let Some(projection) = self.input_projections.get_mut(index) else {
             return;
         };
@@ -154,6 +203,7 @@ impl LiveProductionVisualRuntime {
             || projection.chrome_occlusion != chrome_occlusion
             || projection.descriptor_targets != descriptor_targets
             || projection.descriptor_occlusion != descriptor_occlusion
+            || projection.tab_occlusions != tab_occlusions
         {
             projection.epoch = projection
                 .epoch
@@ -165,6 +215,7 @@ impl LiveProductionVisualRuntime {
         projection.chrome_occlusion = chrome_occlusion;
         projection.descriptor_targets = descriptor_targets;
         projection.descriptor_occlusion = descriptor_occlusion;
+        projection.tab_occlusions = tab_occlusions;
     }
 
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {

@@ -397,3 +397,31 @@ Transfer: `snapshot`; record kind: 0xFF00; gated on capability `launch_placement
 | 0 | `surface_index` | `u32` | little-endian |
 | 4 | `surface_generation` | `u32` | little-endian |
 | 8 | `classification` | `u64` | little-endian |
+
+## `ProjectionTabGroup` extension record
+
+Transfer: `projection`; record kind: 0xFF01; gated on capability `tab_groups`; maximum records: 1024; fixed size: 48 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `group` | `u64` | little-endian |
+| 16 | `x` | `i32` | little-endian |
+| 20 | `y` | `i32` | little-endian |
+| 24 | `width` | `i32` | little-endian |
+| 28 | `height` | `i32` | little-endian |
+| 32 | `selected_index` | `u32` | little-endian |
+| 36 | `selected_generation` | `u32` | little-endian |
+| 40 | `member_count` | `u32` | little-endian |
+| 44 | `focused` | `u32` | little-endian |
+
+## `ProjectionTabMember` extension record
+
+Transfer: `projection`; record kind: 0xFF02; gated on capability `tab_groups`; maximum records: 2048; fixed size: 24 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `group` | `u64` | little-endian |
+| 16 | `surface_index` | `u32` | little-endian |
+| 20 | `surface_generation` | `u32` | little-endian |

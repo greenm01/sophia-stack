@@ -27,9 +27,10 @@ because every exception is exactly what the confinement exists to prevent.
 
 Rendering has a corollary, the Compositing Operator Rule from
 `docs/compositor-graphics.md`: Engine admits a drawing primitive only when the
-client physically cannot perform the operation itself. A shell rasterizes its
-own widgets. Engine does the blur, because blur reads pixels the shell must
-never see.
+client physically cannot perform the operation itself. A future content shell
+rasterizes its own widgets. Engine does the blur, because blur reads pixels the
+shell must never see. The confined descriptor tier cannot rasterize widgets;
+Engine renders its fixed chrome from sanitized descriptors.
 
 ## Bring Your Own Language
 
@@ -63,7 +64,7 @@ replaceable:
 | Component | Protocol | Reference | May draw? | Sees |
 | --- | --- | --- | --- | --- |
 | Window manager | `sophia_wm_v1` (r3, frozen) | [Hagia](https://github.com/sophia-org/hagia) | no | geometry, window facts |
-| Shell | `sophia_shell_v1` (r1, experimental) | [Narthex](https://github.com/sophia-org/narthex) | not yet; r2 adds blind content | sanitized labels |
+| Shell | `sophia_shell_v1` (r2, experimental; r1 supported) | [Narthex](https://github.com/sophia-org/narthex) | no; descriptor chrome is Engine-rendered | sanitized labels |
 | Broker | `sophia_broker_v1` | in-tree | no | redacted descriptors |
 
 The window manager never learns titles, application identities, or pixel
@@ -84,8 +85,8 @@ is why tiling tools there have to disable system protection to work at all.
 ## The Ladder
 
 **A window manager**, in the dwm, niri, or xmonad tradition. One binary
-speaking `sophia_wm_v1`. The interface carries eleven capability bits, from
-`bindings` alone up to `launch_placement`; negotiate the ones you need and
+speaking `sophia_wm_v1`. The interface carries twelve capability bits, from
+`bindings` alone up to `tab_groups`; negotiate the ones you need and
 ignore the rest. A minimal tiler is a reducer — snapshot in, projection out —
 and you inherit the session's shell (or none), the portals, and the
 compatibility layer for free. Start from `protocol/archive/sophia-wm-v1-r3/`,
@@ -109,13 +110,15 @@ data, and nothing owns more than its job requires.
 
 **A shell** — bar, launcher, switcher, notifications; the Noctalia class. One
 binary speaking `sophia_shell_v1`, launched by the session into its own
-protection domain. Revision 1 carries a single capability, the descriptor
-switcher: you order sanitized entries, Engine renders and captures them, and
-you receive an opaque activation. Revision 2 is being derived from a real
-shell's enumerated needs (`docs/sophia-shell-v1-direction.md`) and adds the
-content path: you rasterize widgets you own, hand over bounded
-content-addressed textures, and Engine composites them. You still can't read
-the screen. And the bar isn't a separate component — "shell-owned" covers a
+protection domain. Revision 1 carries the descriptor switcher and bounded
+work-area reservations: you order sanitized entries, Engine renders and captures
+them, and you receive an opaque activation. Revision 2 adds persistent tab-group
+descriptors for WM layouts. Narthex remains confined to descriptors; Engine owns
+the bars' geometry, GPU rendering, and hit testing. A future content capability,
+derived from a real shell's enumerated needs (`docs/sophia-shell-v1-direction.md`),
+would let you rasterize your own widgets and hand over bounded content-addressed
+textures for Engine to composite. It would still grant no screen reads.
+The bar isn't a separate component — "shell-owned" covers a
 small status strip and a full panel set alike. How your users configure it is
 covered below in Two Configs, Two Owners — the short version is that your app's
 settings are yours, and only the operator's envelope goes through Sophia.
@@ -188,7 +191,7 @@ is already the interface, and it belongs outside this repository the same way
 a shell backend does.
 
 So the honest distance from the WM rung to a full desktop is a short list, in
-rough dependency order: the content-mode shell (`sophia_shell_v1` r2, the
+rough dependency order: a future content capability in `sophia_shell_v1` (the
 gating item), a bounded status feed so rich panels have something to show,
 application-session restore in the session authority, and a live
 reload path for the full profile, which needs a profile-file watcher plus a
@@ -272,7 +275,7 @@ surfaces, work-area claims, and activation — everything `sophia_shell_v1`
 needs — and the two would drift apart while third parties guessed which one
 to implement. The spanning mechanism is capability negotiation inside a
 single family, and it's proven: `sophia_wm_v1` carries a trivial tiler and
-Hagia's full policy surface on the same frozen wire, eleven bits apart.
+Hagia's full policy surface on the same frozen wire through optional capabilities.
 
 The open question for the shell family isn't width. It's who gates the width:
 whether the session's desktop profile decides which capabilities a shell may
@@ -320,8 +323,18 @@ anybody:
 | A full desktop | this document, then both of the above | Hagia and Narthex, as the split to imitate |
 | Portal-using apps | `docs/namespaces-and-portals.md` | — |
 
-The shell interface is the moving part. Revision 1 is a switcher. Revision 2
-is being derived from a working shell's enumerated needs plus a classic
-desktop's, so that it lands neither too narrow to carry a desktop nor so wide
-it re-exposes what confinement removed. If you're building in this space now,
-you're early enough to shape it.
+The shell interface is the moving part. Revision 1 provides a switcher and
+bounded reservations; revision 2 adds persistent WM tab descriptors. Broader
+content support is still being derived from a working shell's enumerated needs
+plus a classic desktop's. If you're building in this space now, you're early
+enough to shape that capability.
+
+### Tabbed WM layouts
+
+The [tabbed-layout protocol](tabbed-layouts.md) is an example of the descriptor
+shell tier. A WM commits opaque group membership and bar geometry alongside its
+layout projection. Sophia remaps those facts into sanitized, recipient-local
+shell descriptors. The shell confirms its candidate through `sophia_shell_v1`;
+Sophia renders and presents the bars through its normal GPU composition path.
+Neither a private WM–shell channel nor application metadata in the WM is needed.
+Richer raster content still requires a separate, explicitly negotiated capability.

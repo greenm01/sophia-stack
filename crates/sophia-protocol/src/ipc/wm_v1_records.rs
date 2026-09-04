@@ -1133,6 +1133,11 @@ pub fn encode_wm_v1_policy_projection(
         encode_wm_v1_projection_output_status_records(&statuses)?,
     )?;
     let chunk_count = chunks.len() as u16;
+    chunks.extend(super::encode_wm_tab_groups(
+        &proposal.tab_groups,
+        proposal.connection_epoch,
+        chunk_count,
+    )?);
     let begin = WmV1ProjectionBegin {
         connection_epoch: proposal.connection_epoch,
         request_id: proposal.request_id,
@@ -1168,7 +1173,7 @@ pub fn decode_wm_v1_policy_projection(
         || transfer.begin.request_id != transfer.end.request_id
         || transfer.begin.base_generation != transfer.end.base_generation
         || transfer.begin.chunk_count != transfer.end.chunk_count
-        || usize::from(transfer.begin.chunk_count) != transfer.chunks.len()
+        || usize::from(transfer.begin.chunk_count) > transfer.chunks.len()
         || transfer.begin.active_output == 0
     {
         return Err(invalid("projection_transfer", 0));
@@ -1183,6 +1188,12 @@ pub fn decode_wm_v1_policy_projection(
         {
             return Err(invalid("projection_chunk_identity", chunk.ordinal as u32));
         }
+        if ordinal >= usize::from(transfer.begin.chunk_count) && chunk.record_kind < 0xff00 {
+            return Err(invalid(
+                "projection_extension_order",
+                u32::from(chunk.record_kind),
+            ));
+        }
         match chunk.record_kind {
             PROJECTION_OUTPUT_RECORD_KIND => outputs.extend(
                 decode_wm_v1_projection_output_records(&chunk.data, chunk.item_count)?,
@@ -1196,6 +1207,8 @@ pub fn decode_wm_v1_policy_projection(
             PROJECTION_OUTPUT_STATUS_RECORD_KIND => statuses.extend(
                 decode_wm_v1_projection_output_status_records(&chunk.data, chunk.item_count)?,
             ),
+            super::PROJECTION_TAB_GROUP_RECORD_KIND | super::PROJECTION_TAB_MEMBER_RECORD_KIND
+                if ordinal >= usize::from(transfer.begin.chunk_count) => {}
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
     }
@@ -1224,6 +1237,7 @@ pub fn decode_wm_v1_policy_projection(
         return Err(invalid("placement_count", transfer.begin.placement_count));
     }
     Ok(PolicyProjectionProposal {
+        tab_groups: super::decode_wm_tab_groups(&transfer.chunks)?,
         transaction: transfer.transaction,
         connection_epoch: transfer.begin.connection_epoch,
         request_id: transfer.begin.request_id,

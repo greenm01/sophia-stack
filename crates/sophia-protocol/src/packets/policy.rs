@@ -269,6 +269,7 @@ pub struct PolicyProjectionOutputStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyProjectionProposal {
+    pub tab_groups: Vec<crate::PolicyTabGroup>,
     pub transaction: TransactionId,
     pub connection_epoch: u64,
     pub request_id: u64,

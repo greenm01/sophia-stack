@@ -8,7 +8,9 @@ pub use chrome_layout::*;
 mod chrome_summary;
 pub use chrome_summary::*;
 
-pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 1_024;
+// Includes surface chrome, 2,048 member labels, 1,024 empty-cell labels,
+// indicators and the descriptor switcher, all within one explicit bound.
+pub const MAX_COMPOSITOR_DISPLAY_COMMANDS: usize = 10_240;
 pub const MAX_OUTPUT_DAMAGE_RECTS: usize = MAX_COMPOSITOR_DISPLAY_COMMANDS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -36,6 +38,12 @@ pub enum CompositorNodeId {
     },
     IndicatorStrip {
         output: OutputId,
+    },
+    TabBar {
+        output: OutputId,
+        group: u64,
+        slot: u16,
+        label: bool,
     },
     DescriptorOverlay {
         projection: u64,

@@ -5,8 +5,10 @@ mod frame;
 mod output_v1;
 mod portal;
 mod primitives;
+mod shell_tabs;
 mod shell_v1;
 mod types;
+mod wm_tab_groups;
 mod wm_v1;
 mod wm_v1_profile;
 mod wm_v1_records;
@@ -20,8 +22,10 @@ pub use portal::{
     decode_portal_clipboard_payload_frame, encode_portal_broker_request_frame,
     encode_portal_broker_response_frame, encode_portal_clipboard_payload_frame,
 };
+pub use shell_tabs::*;
 pub use shell_v1::*;
 pub use types::*;
+pub use wm_tab_groups::*;
 pub use wm_v1::*;
 pub use wm_v1_profile::*;
 pub use wm_v1_records::*;

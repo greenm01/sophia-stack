@@ -379,3 +379,56 @@ fn projection_end(epoch: u64) -> WmV1ProjectionEnd {
         chunk_count: 2,
     }
 }
+
+#[test]
+fn tab_projection_extensions_require_negotiation_and_follow_the_frozen_prefix() {
+    use sophia_protocol::{PROJECTION_TAB_GROUP_RECORD_KIND, SOPHIA_WM_CAPABILITY_TAB_GROUPS};
+    for enabled in [false, true] {
+        let mut connection = PolicyConnectionState::default();
+        connection.connect(1).unwrap();
+        connection
+            .negotiate(&WmV1ClientHello {
+                minimum_revision: 3,
+                maximum_revision: 3,
+                capabilities: if enabled {
+                    SOPHIA_WM_CAPABILITY_TAB_GROUPS
+                } else {
+                    0
+                },
+            })
+            .unwrap();
+        let tx = TransactionId::from_raw(90);
+        connection
+            .begin_projection(tx, projection_begin(1))
+            .unwrap();
+        let extension = |ordinal| WmV1ProjectionChunk {
+            connection_epoch: 1,
+            ordinal,
+            record_kind: PROJECTION_TAB_GROUP_RECORD_KIND,
+            item_count: 1,
+            data: vec![0; 48],
+        };
+        assert!(
+            connection
+                .append_projection_chunk(tx, extension(0))
+                .is_err()
+        );
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 0, 1, 1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 1, 2, 2))
+            .unwrap();
+        let appended = connection.append_projection_chunk(tx, extension(2));
+        if enabled {
+            appended.unwrap();
+            connection.finish_projection(tx, projection_end(1)).unwrap();
+            assert!(matches!(
+                connection.settle_queued(),
+                Some(QueuedPolicyProjection::Admitted(_))
+            ));
+        } else {
+            assert_eq!(appended, Err(PolicyTransferError::UnsupportedCapability));
+        }
+    }
+}

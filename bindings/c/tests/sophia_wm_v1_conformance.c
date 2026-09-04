@@ -223,6 +223,22 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         encoded_len = 16;
         status = SOPHIA_WM_V1_OK;
     }
+    else if (strcmp(name, "projection_tab_group") == 0 || strcmp(name, "projection_tab_member") == 0) {
+        /* Two opaque u64 handles followed by fixed u32 fields. These extension
+         * records are independently checked; the revision-3 counted ABI stays frozen. */
+        size_t expected = strcmp(name, "projection_tab_group") == 0 ? 48 : 24;
+        if (data_len != expected) return 0;
+        for (size_t offset = 0; offset < expected;) {
+            size_t width = offset < 16 ? 8 : 4;
+            uint64_t value = 0;
+            for (size_t i = 0; i < width; ++i) value |= (uint64_t)data[offset + i] << (8 * i);
+            if (value != 1) return 0;
+            for (size_t i = 0; i < width; ++i) encoded[offset + i] = (uint8_t)(value >> (8 * i));
+            offset += width;
+        }
+        encoded_len = expected;
+        status = SOPHIA_WM_V1_OK;
+    }
     else return 0;
     return status == SOPHIA_WM_V1_OK && encoded_len == data_len &&
         memcmp(encoded, data, data_len) == 0;
@@ -246,7 +262,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 9;
+    return checked == 11;
 }
 
 int main(int argc, char **argv) {

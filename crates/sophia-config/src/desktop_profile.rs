@@ -1,3 +1,5 @@
+mod policy;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -12,6 +14,7 @@ use crate::{
 };
 
 pub const DESKTOP_PROFILE_MAX_DEPTH: usize = 10;
+
 /// The largest panel a profile may ask for, in pixels.
 ///
 /// This crate depends on nothing else in the stack, so it cannot read the
@@ -783,6 +786,9 @@ fn validate_setting(
             "outer-gap",
             "inner-gap",
             "viewport-offset",
+            "master-count",
+            "master-ratio",
+            "gap-step",
         ]
         .contains(&name),
         DesktopAuthority::Shell => ["enabled", "panel"].contains(&name),
@@ -798,52 +804,8 @@ fn validate_setting(
             authority.name()
         )));
     }
-    if authority == DesktopAuthority::Policy && name == "layout" {
-        validate_policy_layout(exact_string_argument(node, "policy layout")?)?;
-    }
-    if authority == DesktopAuthority::Policy && name == "layout-cycle" {
-        if node.entries().is_empty() || node.entries().len() > 5 || node.children().is_some() {
-            return Err(DesktopProfileError::Schema(
-                "policy layout-cycle requires one to five layouts".to_owned(),
-            ));
-        }
-        let mut layouts = std::collections::BTreeSet::new();
-        for entry in node.entries() {
-            let layout = entry
-                .name()
-                .is_none()
-                .then(|| entry.value().as_string())
-                .flatten()
-                .ok_or_else(|| {
-                    DesktopProfileError::Schema(
-                        "policy layout-cycle requires layout names".to_owned(),
-                    )
-                })?;
-            validate_policy_layout(layout)?;
-            if !layouts.insert(layout) {
-                return Err(DesktopProfileError::Schema(
-                    "policy layout-cycle contains duplicates".to_owned(),
-                ));
-            }
-        }
-    }
-    if authority == DesktopAuthority::Policy && name == "view-count" {
-        let value = exact_integer_argument(node, "policy view-count")?;
-        if !(1..=9).contains(&value) {
-            return Err(DesktopProfileError::Schema(
-                "policy view-count must be in 1..=9".to_owned(),
-            ));
-        }
-    }
-    if authority == DesktopAuthority::Policy
-        && ["outer-gap", "inner-gap", "viewport-offset"].contains(&name)
-    {
-        let value = exact_integer_argument(node, "policy geometry")?;
-        if !(0..=i128::from(i32::MAX)).contains(&value) {
-            return Err(DesktopProfileError::Schema(
-                "policy geometry must be a nonnegative 32-bit integer".to_owned(),
-            ));
-        }
+    if authority == DesktopAuthority::Policy {
+        return policy::validate_setting(node);
     }
     if authority == DesktopAuthority::Shell
         && name == "enabled"
@@ -931,16 +893,6 @@ pub fn desktop_profile_shell_panel_thickness(profile: &DesktopProfileGeneration)
         })
         .and_then(|thickness| u16::try_from(thickness).ok())
         .filter(|thickness| *thickness > 0)
-}
-
-fn validate_policy_layout(layout: &str) -> Result<(), DesktopProfileError> {
-    if ["scroller", "tile", "grid", "monocle", "vertical-scroller"].contains(&layout) {
-        Ok(())
-    } else {
-        Err(DesktopProfileError::Schema(
-            "unsupported policy layout".to_owned(),
-        ))
-    }
 }
 
 fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, DesktopProfileError> {

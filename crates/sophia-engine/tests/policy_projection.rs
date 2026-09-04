@@ -577,6 +577,7 @@ fn proposal(
     outputs: Vec<PolicyOutputProjection>,
 ) -> PolicyProjectionProposal {
     PolicyProjectionProposal {
+        tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(transaction),
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
@@ -741,4 +742,53 @@ fn an_unchanged_indicator_publication_survives_a_policy_commit() {
     let moved = reducer.indicator_publication();
     assert!(moved.generation > published.generation);
     assert_eq!(moved.indicators[0].label, "2");
+}
+
+#[test]
+fn tab_groups_commit_with_geometry_and_hidden_members_remain_scene_owned() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1), surface(2)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut p = proposal(
+        &request,
+        91,
+        vec![projected(
+            output(1),
+            vec![placed(surface_id(1), 1, rect(0, 24))],
+            Some(surface_id(1)),
+        )],
+    );
+    p.tab_groups = vec![sophia_protocol::PolicyTabGroup {
+        output: output(1),
+        group: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        },
+        focused: true,
+        selected: Some(surface_id(1)),
+        members: vec![surface_id(1), surface_id(2)],
+    }];
+    let staged = reducer.stage_proposal(&p).unwrap();
+    assert!(reducer.indicator_publication().tab_groups.is_empty());
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::Committed
+    );
+    assert_eq!(reducer.indicator_publication().tab_groups, p.tab_groups);
+    assert_eq!(reducer.committed()[0].placements.len(), 1);
+    let before = reducer.indicator_publication();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    p.request_id = request.request_id;
+    p.transaction = TransactionId::from_raw(92);
+    p.tab_groups[0].members.push(surface_id(3));
+    assert_eq!(
+        reducer.apply_proposal(&p),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+    assert_eq!(reducer.indicator_publication(), before);
+    reducer.disconnect(1);
+    assert!(reducer.indicator_publication().tab_groups.is_empty());
 }

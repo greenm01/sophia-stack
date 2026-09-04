@@ -490,6 +490,19 @@ impl LiveWmSession {
         Ok(LiveWmRequestAdmission::Duplicate)
     }
 
+    /// Called only after an exact presented tab action and its broker grant
+    /// have been validated. Hidden members need no current renderable layer.
+    fn enqueue_tab_focus(&mut self, surface:SurfaceId, output:sophia_protocol::OutputId)
+        -> Result<LiveWmRequestAdmission,Box<dyn std::error::Error>> {
+        let public=self.public.as_mut().ok_or("public WM state is unavailable")?;
+        let eligible=public.reducer.indicator_publication().tab_groups.iter().any(|g|g.output==output && g.members.contains(&surface))
+            && public.reducer.scene().surfaces.iter().any(|s|s.surface==surface && s.capabilities.focusable && !s.current_state.minimized);
+        if !eligible {return Ok(LiveWmRequestAdmission::Duplicate);}
+        let affected_outputs=if output==public.active_output{vec![output]}else{vec![public.active_output,output]};
+        Ok(public.queue_cause(LivePublicPolicyCause{source:LiveWmProposalSource::Focus(surface),
+            cause:sophia_protocol::PolicyRequestCause::Focus{target:surface},affected_outputs}))
+    }
+
     fn enqueue_focus(
         &mut self,
         surface: SurfaceId,

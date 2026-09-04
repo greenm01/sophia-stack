@@ -367,7 +367,7 @@ fn validate_welcome(welcome: ShellV1ServerWelcome) -> Result<(), IpcCodecError> 
     Ok(())
 }
 
-fn validate_snapshot(snapshot: &ShellV1DescriptorSnapshot) -> Result<(), IpcCodecError> {
+pub(super) fn validate_snapshot(snapshot: &ShellV1DescriptorSnapshot) -> Result<(), IpcCodecError> {
     if snapshot.connection_epoch == 0
         || snapshot.snapshot_generation == 0
         || !snapshot.output.is_valid()

@@ -10,6 +10,7 @@ use sophia_protocol::{
 
 fn publication(generation: u64) -> PolicyIndicatorPublication {
     PolicyIndicatorPublication {
+        tab_groups: Vec::new(),
         generation,
         connection_epoch: Some(4),
         indicators: vec![PolicyProjectionIndicator {

@@ -485,115 +485,15 @@ macro_rules! drain_physical_input {
                 }
             }
             for (action, activation) in report.descriptor_activations.iter().copied() {
-                let broker = metadata_broker
-                    .as_ref()
-                    .ok_or("descriptor activation has no live metadata broker")?;
-                let shell = metadata_shell
-                    .as_mut()
-                    .ok_or("descriptor activation has no live metadata shell")?;
-                let (surface, shell_output) = match shell.dispatch_activation(
-                    broker, action, activation,
-                ) {
-                    Ok(dispatch) => dispatch,
-                    Err(error) => {
-                        crate::session_eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=activation reason={error}"
-                        );
-                        shell.recover_transport("activation_failure")?;
-                        shell.revoke_interaction();
-                        descriptor_captures.cancel_all();
-                        runtime
-                            .as_mut()
-                            .ok_or("descriptor activation has no visual runtime")?
-                            .revoke_descriptor_overlay_interaction();
-                        continue;
-                    }
-                };
-                shell.revoke_interaction();
-                descriptor_captures.cancel_all();
-                let runtime = runtime
-                    .as_mut()
-                    .ok_or("descriptor activation has no visual runtime")?;
-                runtime.revoke_descriptor_overlay_interaction();
-                let action_output = outputs
-                    .iter()
-                    .find(|candidate| candidate.id == shell_output)
-                    .copied()
-                    .ok_or("descriptor activation targets an unavailable output")?;
-                if let Some(surface) = surface {
-                    let activation_surfaces = live_shell_activation_surfaces(
-                        &layout.layers,
-                        &layout.presentation_roles,
-                    );
-                    if !activation_surfaces.contains(&surface) {
-                        crate::session_eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=stale_target target=redacted"
-                        );
-                    } else {
-                        let wm = wm_session
-                            .as_mut()
-                            .ok_or("descriptor activation has no live WM session")?;
-                        match wm.enqueue_focus(surface, &layout, action_output)? {
-                            LiveWmRequestAdmission::Admitted => crate::session_println!(
-                                "sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} target=redacted"
-                            ),
-                            LiveWmRequestAdmission::Duplicate => crate::session_println!(
-                                "sophia_live_metadata_shell schema=1 status=activation_duplicate activation={activation} target=redacted"
-                            ),
-                            LiveWmRequestAdmission::RejectedCapacity => crate::session_eprintln!(
-                                "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=wm_capacity target=redacted"
-                            ),
-                        }
-                    }
-                } else {
-                    crate::session_eprintln!(
-                        "sophia_live_metadata_shell schema=1 status=activation_rejected activation={activation} reason=stale_issuer target=redacted"
-                    );
+                let shell=metadata_shell.as_mut().ok_or("descriptor activation has no shell")?;
+                let result=if shell.is_tab_action(action){shell.queue_tab_action(action,activation)}else{shell.dispatch_activation(action,activation)};
+                if let Err(error)=result {
+                    crate::session_eprintln!("sophia_live_metadata_shell schema=1 status=transport_failed stage=activation reason={error}");
+                    shell.recover_transport("activation_failure")?;
                 }
-                let output_bounds = wm_output_bounds(&outputs);
-                let bounds = output_bounds
-                    .iter()
-                    .find(|(output, _)| *output == shell_output)
-                    .map(|(_, bounds)| *bounds)
-                    .ok_or("descriptor withdrawal has no output bounds")?;
-                let root = wm_root_bounds(&output_bounds)
-                    .ok_or("descriptor withdrawal has no root bounds")?;
-                let activation_surfaces = live_shell_activation_surfaces(
-                    &layout.layers,
-                    &layout.presentation_roles,
-                );
-                let withdrawal = match shell.request_candidate(
-                    broker,
-                    action_output,
-                    bounds,
-                    root,
-                    &output_bounds,
-                    &activation_surfaces,
-                ) {
-                    Ok(withdrawal) => withdrawal,
-                    Err(error) => {
-                        crate::session_eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=withdrawal reason={error}"
-                        );
-                        shell.recover_transport("withdrawal_failure")?;
-                        runtime.revoke_descriptor_overlay_interaction();
-                        continue;
-                    }
-                };
-                if let Err(error) = runtime.set_descriptor_overlay(
-                    withdrawal,
-                    &scene,
-                    native_scanout.as_mut(),
-                ) {
-                    if let Err(rejection_error) = shell.reject_pending() {
-                        crate::session_eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=transport_failed stage=reject_withdrawal reason={rejection_error}"
-                        );
-                        shell.recover_transport("withdrawal_rejection_failure")?;
-                    }
-                    crate::session_eprintln!(
-                        "sophia_live_metadata_shell schema=1 status=candidate_rejected stage=withdrawal reason={error}"
-                    );
+                if !shell.is_tab_action(action) {
+                    shell.revoke_interaction();descriptor_captures.cancel_all();
+                    if let Some(runtime)=runtime.as_mut(){runtime.revoke_descriptor_overlay_interaction();}
                 }
             }
             for action in report.wm_actions.iter().copied() {
@@ -622,7 +522,7 @@ macro_rules! drain_physical_input {
                         &layout.layers,
                         &layout.presentation_roles,
                     );
-                    let overlay = match shell.request_candidate(
+                    match shell.request_candidate(
                         broker,
                         output,
                         bounds,
@@ -630,7 +530,7 @@ macro_rules! drain_physical_input {
                         &output_bounds,
                         &activation_surfaces,
                     ) {
-                        Ok(overlay) => overlay,
+                        Ok(()) => (),
                         Err(error) => {
                             crate::session_eprintln!(
                                 "sophia_live_metadata_shell schema=1 status=transport_failed stage=candidate reason={error}"
@@ -645,32 +545,6 @@ macro_rules! drain_physical_input {
                             continue;
                         }
                     };
-                    let result = runtime
-                        .as_mut()
-                        .ok_or("shell shortcut has no visual runtime")?
-                        .set_descriptor_overlay(
-                            overlay,
-                            &scene,
-                            native_scanout.as_mut(),
-                    );
-                    if let Err(error) = result {
-                        if let Err(rejection_error) = shell.reject_pending() {
-                            crate::session_eprintln!(
-                                "sophia_live_metadata_shell schema=1 status=transport_failed stage=reject_prepare reason={rejection_error}"
-                            );
-                            shell.recover_transport("candidate_rejection_failure")?;
-                            shell.revoke_interaction();
-                            descriptor_captures.cancel_all();
-                            runtime
-                                .as_mut()
-                                .expect("visual runtime existed for descriptor candidate")
-                                .revoke_descriptor_overlay_interaction();
-                        }
-                        crate::session_eprintln!(
-                            "sophia_live_metadata_shell schema=1 status=candidate_rejected stage=prepare reason={error}"
-                        );
-                        continue;
-                    }
                     crate::session_println!(
                         "sophia_live_metadata_shell schema=1 status=shortcut_admitted action=descriptor_switcher"
                     );
@@ -1101,6 +975,46 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     );
                     shell.recover_transport("poll_failure")?;
                     revoke_shell_input = true;
+                }
+            }
+            if let (Some(runtime),Some(broker))=(runtime.as_mut(),metadata_broker.as_ref()) {
+                let service=(||->Result<(),Box<dyn std::error::Error>> {
+                    if let Some((surface,shell_output,activation))=shell.poll_activation(broker)? {
+                        let output_bounds=wm_output_bounds(&outputs);
+                        if let Some(output)=outputs.iter().find(|o|o.id==shell_output).copied() {
+                            let activation_surfaces=live_shell_activation_surfaces(&layout.layers,&layout.presentation_roles);
+                            if let Some(surface)=surface.filter(|s|activation_surfaces.contains(s)) {
+                                if let Some(wm)=wm_session.as_mut(){
+                                    let admitted=wm.enqueue_focus(surface,&layout,output)?;
+                                    crate::session_println!("sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} outcome={admitted:?} target=redacted");
+                                }
+                            }
+                            let bounds=output_bounds.iter().find(|(o,_)|*o==shell_output).map(|(_,b)|*b).ok_or("shell output bounds missing")?;
+                            let root=wm_root_bounds(&output_bounds).ok_or("shell root bounds missing")?;
+                            shell.request_candidate(broker,output,bounds,root,&output_bounds,&activation_surfaces)?;
+                        }
+                    }
+                    if let Some(overlay)=shell.poll_candidate(broker)? {
+                        if let Err(error)=runtime.set_descriptor_overlay(overlay,&scene,native_scanout.as_mut()) {
+                            shell.reject_pending()?;return Err(error);
+                        }
+                    }
+                    Ok(())
+                })();
+                if let Err(error)=service {
+                    crate::session_eprintln!("sophia_live_metadata_shell schema=1 status=transport_failed stage=candidate reason={error}");
+                    shell.recover_transport("candidate_failure")?;revoke_shell_input=true;
+                }
+            }
+            if let (Some(runtime), Some(broker)) = (runtime.as_mut(), metadata_broker.as_ref()) {
+                let publication=wm_session.as_ref().and_then(LiveWmSession::indicator_publication);
+                match shell.service_tabs(publication,broker,runtime,&scene,native_scanout.as_mut()) {
+                    Ok(focus)=>for(surface,output) in focus {
+                        if let (Some(wm),Some(output))=(wm_session.as_mut(),outputs.iter().find(|o|o.id==output).copied()) {
+                            wm.enqueue_tab_focus(surface,output.id)?;
+                        }
+                    },
+                    Err(error)=>{crate::session_eprintln!("sophia_tabs status=unavailable error={error}");shell.recover_transport("tab_failure")?;revoke_shell_input=true;}
                 }
             }
             if let Some(runtime) = runtime.as_ref() {

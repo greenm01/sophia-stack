@@ -1,7 +1,9 @@
 # Sophia Shell Interface Direction
 
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
-**Status:** revision 1 descriptor-switcher experiment; not stable.
+**Status:** revision 2 descriptor experiment with persistent WM tabs; revision 1
+switcher and reservation clients remain supported. Neither revision grants a
+blind-content rendering capability. The interface is not stable.
 
 The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
 records how broader shell vocabulary will be derived, the external evidence
@@ -30,6 +32,13 @@ retained workflow that establishes it, and records what that workflow already
 demonstrates.
 
 ## The First Experimental Slice
+
+The revision-1 account below records the original experiment. The independent
+shell is now Narthex (`narthex --serve`). Its revision-2 tab extension is specified
+in [tabbed layouts](tabbed-layouts.md): Hagia proposes opaque group facts, Sophia
+supplies recipient-local descriptors, and Narthex confirms complete candidates.
+Sophia owns GPU composition, presentation, hit testing, and action validation.
+Rich content remains a future capability under the direction described here.
 
 Revision 1 carries one complete, bounded descriptor snapshot from Sophia to a
 separately protected shell. Each row contains an opaque slot, sanitized label,

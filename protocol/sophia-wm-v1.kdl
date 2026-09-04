@@ -10,6 +10,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "indicators" bit=8
     capability "profile_activation" bit=9
     capability "launch_placement" bit=10
+    capability "tab_groups" bit=11
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -120,6 +121,27 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "surface_index" type="u32" sample=3
         field "surface_generation" type="u32" sample=1
         field "classification" type="u64" sample=2
+    }
+
+    // Tab chrome is committed with affected-output placement; extension chunks
+    // follow ordinary chunks and are excluded from frozen begin/end counts.
+    extension-record "ProjectionTabGroup" transfer="projection" kind=65281 gate="tab_groups" max=1024 {
+        field "output" type="u64" sample=1
+        field "group" type="u64" sample=1
+        field "x" type="i32" sample=1
+        field "y" type="i32" sample=1
+        field "width" type="i32" sample=1
+        field "height" type="i32" sample=1
+        field "selected_index" type="u32" sample=1
+        field "selected_generation" type="u32" sample=1
+        field "member_count" type="u32" sample=1
+        field "focused" type="u32" sample=1
+    }
+    extension-record "ProjectionTabMember" transfer="projection" kind=65282 gate="tab_groups" max=2048 {
+        field "output" type="u64" sample=1
+        field "group" type="u64" sample=1
+        field "surface_index" type="u32" sample=1
+        field "surface_generation" type="u32" sample=1
     }
 
     message "ClientHello" kind=32 direction="policy-to-session" transaction="zero" {

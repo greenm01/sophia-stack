@@ -84,6 +84,7 @@ pub struct PolicyProjectionReducer {
     indicators: BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
     output_statuses: BTreeMap<OutputId, PolicyProjectionOutputStatus>,
     indicator_publication_generation: u64,
+    tab_groups: Vec<sophia_protocol::PolicyTabGroup>,
 }
 
 /// What the indicator chrome renders, and the identity consumers compare it by.
@@ -96,6 +97,7 @@ pub struct PolicyProjectionReducer {
 /// consumer needs to know.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyIndicatorPublication {
+    pub tab_groups: Vec<sophia_protocol::PolicyTabGroup>,
     pub generation: u64,
     pub connection_epoch: Option<u64>,
     pub indicators: Vec<PolicyProjectionIndicator>,
@@ -145,6 +147,7 @@ impl PolicyProjectionReducer {
             outstanding: None,
             commit_serial: 0,
             indicators: BTreeMap::new(),
+            tab_groups: Vec::new(),
             output_statuses: BTreeMap::new(),
             indicator_publication_generation: 0,
         })
@@ -259,13 +262,21 @@ impl PolicyProjectionReducer {
         else {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
+        let Ok(tab_groups) =
+            crate::validate_policy_tab_groups(&self.scene, &candidate, &self.tab_groups, proposal)
+        else {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        };
+        let tabs_changed = self.tab_groups != tab_groups;
+        self.tab_groups = tab_groups;
         // The commit serial advances unconditionally: it guards settlement
         // staleness and must count every commit. The publication generation
         // advances only when the published content moved, so a commit that
         // changes layout without touching the indicators leaves the chrome, its
         // raster cache, and any in-flight capture undisturbed.
-        let publication_changed =
-            self.indicators != indicators || self.output_statuses != output_statuses;
+        let publication_changed = tabs_changed
+            || self.indicators != indicators
+            || self.output_statuses != output_statuses;
         self.committed = candidate;
         self.scene.active_output = proposal.active_output;
         self.indicators = indicators;
@@ -427,6 +438,10 @@ impl PolicyProjectionReducer {
             committed.keys().copied().collect::<BTreeSet<_>>(),
             output_ids
         );
+        let tabs_before = self.tab_groups.len();
+        self.tab_groups.retain(|g| {
+            output_ids.contains(&g.output) && g.members.iter().all(|s| surfaces.contains_key(s))
+        });
         self.scene = scene;
         self.committed = committed;
         let before = (self.indicators.len(), self.output_statuses.len());
@@ -434,7 +449,9 @@ impl PolicyProjectionReducer {
             .retain(|output, _| output_ids.contains(output));
         self.output_statuses
             .retain(|output, _| output_ids.contains(output));
-        if before != (self.indicators.len(), self.output_statuses.len()) {
+        if tabs_before != self.tab_groups.len()
+            || before != (self.indicators.len(), self.output_statuses.len())
+        {
             self.indicator_publication_generation =
                 self.indicator_publication_generation.saturating_add(1);
         }
@@ -473,6 +490,7 @@ impl PolicyProjectionReducer {
 
     pub fn indicator_publication(&self) -> PolicyIndicatorPublication {
         PolicyIndicatorPublication {
+            tab_groups: self.tab_groups.clone(),
             generation: self.indicator_publication_generation,
             connection_epoch: self.active_epoch,
             indicators: self.indicators.values().flatten().cloned().collect(),
@@ -481,6 +499,7 @@ impl PolicyProjectionReducer {
     }
 
     fn clear_indicator_publication(&mut self) {
+        self.tab_groups.clear();
         self.indicators.clear();
         self.output_statuses.clear();
         self.indicator_publication_generation =

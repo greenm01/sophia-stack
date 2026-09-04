@@ -542,6 +542,15 @@ impl LiveProductionVisualRuntime {
             self.focused_surface,
             self.surface_chrome_style,
         )?;
+        if let Some(publication) = self.indicator_publication.as_ref() {
+            sophia_engine::append_tab_bars(
+                &mut display_list.commands,
+                &publication.tab_groups,
+                publication.generation,
+                &self.tab_bars,
+                output,
+            );
+        }
         if let Some(outline) = self.floating_outline {
             if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
                 return Err(CompositorDisplayListError::CapacityExceeded);
@@ -589,6 +598,62 @@ impl LiveProductionVisualRuntime {
 
     /// Installs one Engine-validated shell projection and queues a retained
     /// compositor repaint when native scanout owns presentation.
+    pub fn set_tab_bars(
+        &mut self,
+        bars: Vec<sophia_engine::TabBarProjection>,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.tab_bars == bars {
+            return Ok(false);
+        }
+        let previous = std::mem::replace(&mut self.tab_bars, bars);
+        if let Some(native) = native_scanout {
+            let queued = self
+                .retained_output_head_composition_frames(scene, native)
+                .and_then(|b| {
+                    native
+                        .queue_retained_output_head_composition_frames(b)
+                        .map(|_| ())
+                });
+            if let Err(e) = queued {
+                self.tab_bars = previous;
+                return Err(e);
+            }
+        } else {
+            self.publish_committed_input_layers();
+        }
+        Ok(true)
+    }
+
+    pub fn tab_bars_presented(&self, bars: &[sophia_engine::TabBarProjection]) -> bool {
+        if bars.is_empty() {
+            return self.tab_frames.values().all(|f| {
+                !f.rects()
+                    .any(|r| matches!(r.node, sophia_engine::CompositorNodeId::TabBar { .. }))
+            });
+        }
+        bars.iter().all(|bar| {
+            self.tab_frames
+                .get(&bar.output)
+                .is_some_and(|frame| bar.commands.iter().all(|c| frame.commands.contains(c)))
+        })
+    }
+
+    pub fn revoke_tab_interaction(&mut self) {
+        for bar in &mut self.tab_bars {
+            bar.targets.clear();
+        }
+        for p in &mut self.input_projections {
+            let before = p.descriptor_targets.len();
+            p.descriptor_targets
+                .retain(|t| t.id.generation & (1 << 63) == 0);
+            if before != p.descriptor_targets.len() {
+                p.epoch = p.epoch.checked_add(1).expect("input epoch exhausted");
+            }
+        }
+    }
+
     pub fn set_descriptor_overlay(
         &mut self,
         overlay: Option<sophia_engine::DescriptorOverlayProjection>,
@@ -622,6 +687,9 @@ impl LiveProductionVisualRuntime {
     /// Revokes input immediately without withdrawing already presented pixels.
     pub fn revoke_descriptor_overlay_interaction(&mut self) -> usize {
         self.descriptor_overlay_interactive = false;
+        for bar in &mut self.tab_bars {
+            bar.targets.clear();
+        }
         let mut revoked = 0usize;
         for projection in &mut self.input_projections {
             revoked = revoked.saturating_add(projection.descriptor_targets.len());
@@ -653,7 +721,10 @@ impl LiveProductionVisualRuntime {
                 overlay.output == output
                     && overlay.generation == generation
                     && !projection.descriptor_targets.is_empty()
-                    && projection.descriptor_targets == overlay.targets
+                    && overlay
+                        .targets
+                        .iter()
+                        .all(|t| projection.descriptor_targets.contains(t))
             })
         } else {
             self.descriptor_overlay.is_none() && projection.descriptor_occlusion.is_none()

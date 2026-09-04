@@ -512,3 +512,13 @@ are indexed in [`docs/validation.md`](docs/validation.md).
   and retained evidence.
 - [`docs/research-log-archive.md`](docs/research-log-archive.md): superseded
   research material.
+
+### User-selected tabbed-layout slice
+
+- [x] Implement Hagia frame-tree/Notion and split-tree/i3 state and projections,
+  capability-gated WM group facts, and persistent Narthex descriptors through
+  Sophia's GPU compositor. Track deterministic verification and physical
+  acceptance separately; see [tabbed layouts](docs/tabbed-layouts.md).
+- [ ] Physical acceptance of tab geometry, hidden-member activation, nested groups,
+  multiple outputs, shell recovery, fullscreen and scanout remains an operator
+  gate. This slice does not consume or close CP14 comparison rows.

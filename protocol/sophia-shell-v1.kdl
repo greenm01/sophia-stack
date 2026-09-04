@@ -1,5 +1,7 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=1 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=2 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 {
     capability "descriptor_switcher" bit=0
+    capability "work_area_reservation" bit=1
+    capability "tab_groups" bit=2 since=2
 
     outcome "prepared" value=1
     outcome "presented" value=2
@@ -64,10 +66,10 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "candidate_generation" type="u64"
         field "output" type="opaque-u64"
         field "visible" type="bool-u8"
-        field "byte_reserved" type="u8" reserved=#true
+        field "reservation_edge" type="u8" zero="none" max=4
         field "selected_slot" type="u16" zero="none"
         field "entry_count" type="u16" max=16
-        field "reserved" type="u16" reserved=#true
+        field "reservation_thickness" type="u16" zero="none" max=512
         repeated "entry" count="entry_count" {
             field "slot" type="u16"
             field "reserved" type="u16" reserved=#true
@@ -93,5 +95,43 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "activation" type="u64"
         field "disposition" type="u16"
         field "reserved" type="u16" reserved=#true
+    }
+
+    // Revision 2 only, capability tab_groups. Begin/group/entry/end share one
+    // transaction and epoch/generation. A candidate confirms the exact group
+    // order; membership, selected member and geometry remain committed WM facts.
+    message "TabsBegin" kind=103 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_count" type="u16"
+        field "entry_count" type="u16"
+    }
+    message "TabsGroup" kind=104 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_slot" type="opaque-u64"
+        field "output" type="opaque-u64"
+        field "selected_slot" type="u16"
+        field "focused" type="bool-u16"
+        field "entry_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "TabsEntry" kind=105 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_slot" type="opaque-u64"
+        field "descriptor_snapshot" type="descriptor-snapshot-payload-single-entry"
+    }
+    message "TabsEnd" kind=106 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+    }
+    message "TabsCandidate" kind=107 direction="shell-to-session" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "group_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "groups" type="opaque-u64-array"
     }
 }

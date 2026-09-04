@@ -1053,6 +1053,11 @@ fn route_input_events_with_pointer_focus(
                         input_output,
                         input_presentation_epoch,
                     );
+                let descriptor_occlusion = descriptor_occlusion.or_else(|| {
+                    input_projections.into_iter().flatten().filter(|p|Some(p.output)==input_output).flat_map(|p|p.tab_occlusions.iter()).find(|r| {
+                        event.global_position.is_some_and(|p| p.x >= f64::from(r.x) && p.y >= f64::from(r.y) && p.x < f64::from(r.x)+f64::from(r.width) && p.y < f64::from(r.y)+f64::from(r.height) && !input_layers.iter().any(|l| p.x >= f64::from(l.geometry.x) && p.y >= f64::from(l.geometry.y) && p.x < f64::from(l.geometry.x)+f64::from(l.geometry.width) && p.y < f64::from(l.geometry.y)+f64::from(l.geometry.height)))
+                    }).copied()
+                });
                 let application_owned = application_route_leases
                     .as_deref()
                     .and_then(|state| state.lease(event.seat))

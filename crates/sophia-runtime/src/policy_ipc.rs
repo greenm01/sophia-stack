@@ -28,7 +28,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_CONFIGURATION
     | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
     | SOPHIA_WM_CAPABILITY_INDICATORS
-    | SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT;
+    | SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -335,6 +336,41 @@ impl PolicyConnectionState {
             .filter(|bytes| *bytes <= POLICY_MAX_TRANSFER_BYTES)
             .ok_or(PolicyTransferError::ExcessiveBytes)?;
         let count = chunk.item_count as usize;
+        if matches!(
+            chunk.record_kind,
+            sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND
+                | sophia_protocol::PROJECTION_TAB_MEMBER_RECORD_KIND
+        ) {
+            if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS == 0 {
+                return Err(PolicyTransferError::UnsupportedCapability);
+            }
+            if transfer.chunks.len() < usize::from(transfer.begin.chunk_count)
+                || transfer.chunks.len() >= POLICY_MAX_TRANSFER_CHUNKS
+            {
+                return Err(PolicyTransferError::RecordCountMismatch);
+            }
+            let (size, maximum) =
+                if chunk.record_kind == sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND {
+                    (48, sophia_protocol::POLICY_MAX_TAB_GROUPS)
+                } else {
+                    (24, sophia_protocol::POLICY_MAX_TAB_MEMBERS)
+                };
+            let prior: usize = transfer
+                .chunks
+                .iter()
+                .filter(|c| c.record_kind == chunk.record_kind)
+                .map(|c| c.item_count as usize)
+                .sum();
+            if count > maximum.saturating_sub(prior) || chunk.data.len() != count * size {
+                return Err(PolicyTransferError::RecordCountMismatch);
+            }
+            transfer.bytes = next_bytes;
+            transfer.chunks.push(chunk);
+            return Ok(());
+        }
+        if transfer.chunks.len() >= usize::from(transfer.begin.chunk_count) {
+            return Err(PolicyTransferError::RecordCountMismatch);
+        }
         match chunk.record_kind {
             PROJECTION_OUTPUT_RECORD_KIND => {
                 let next = transfer
@@ -393,7 +429,7 @@ impl PolicyConnectionState {
         {
             return Err(PolicyTransferError::WrongTransferIdentity);
         }
-        if transfer.chunks.len() != usize::from(transfer.begin.chunk_count)
+        if transfer.chunks.len() < usize::from(transfer.begin.chunk_count)
             || transfer.output_records != usize::from(transfer.begin.output_count)
             || transfer.placement_records != transfer.begin.placement_count as usize
             || transfer.indicator_records != usize::from(transfer.begin.indicator_count)

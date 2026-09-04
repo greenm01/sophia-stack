@@ -94,6 +94,7 @@ fn explicit_pointer_grab_control_activates_and_releases_a_presented_root_anchor(
         chrome_occlusion: None,
         descriptor_targets: Vec::new(),
         descriptor_occlusion: None,
+        tab_occlusions: Vec::new(),
     };
     let (client, owner) = sophia_x_authority::x_authority_explicit_pointer_grab_bridge(
         std::num::NonZeroUsize::new(4).unwrap(),

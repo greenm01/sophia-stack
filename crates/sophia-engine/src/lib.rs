@@ -53,6 +53,7 @@ mod shell_work_area;
 mod shortcut;
 mod surface_admission;
 mod surface_content_stream;
+mod tab_groups;
 mod transaction_presentation;
 mod visual_state;
 
@@ -82,8 +83,12 @@ pub use shell_work_area::*;
 pub use shortcut::*;
 pub use surface_admission::*;
 pub use surface_content_stream::*;
+pub use tab_groups::*;
 pub use transaction_presentation::*;
 pub use visual_state::*;
 
 pub use sophia_protocol::ToplevelActionCapabilityRef;
 pub use sophia_runtime::{RuntimeScanoutState, SessionRuntimeObservation};
+
+mod tab_chrome;
+pub use tab_chrome::*;

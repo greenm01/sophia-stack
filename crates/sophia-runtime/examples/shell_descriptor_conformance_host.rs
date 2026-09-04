@@ -81,6 +81,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if bar_proof {
         return run_bar_proof(&mut transport, &mut supervisor, &snapshot);
     }
+    if client_mode == "--serve" {
+        tab_protocol_proof(&mut transport, &snapshot)?;
+    }
     let candidate_transaction = TransactionId::from_raw(1);
     let candidate = transport.request_candidate(candidate_transaction, &snapshot)?;
     let projection_candidate = resolve_candidate(&candidate, &snapshot, &surfaces)?;
@@ -472,4 +475,123 @@ fn fixture() -> (
         snapshot,
         [(1, FIRST), (2, SECOND)].into_iter().collect(),
     )
+}
+
+// Exercise the actual independent Nim server with two persistent generations,
+// including a superseded transfer, before the unchanged r1 switcher lifecycle.
+fn tab_protocol_proof(
+    transport: &mut ShellSessionTransport,
+    snapshot: &ShellV1DescriptorSnapshot,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_protocol::*;
+    if !transport.supports_tabs() {
+        return Err("Narthex did not negotiate tab descriptors".into());
+    }
+    let mut descriptors = snapshot.descriptors.clone();
+    for d in &mut descriptors {
+        d.slot += 100;
+        d.action.target_slot = d.slot;
+    }
+    let mut tabs = ShellTabSnapshot {
+        connection_epoch: 1,
+        generation: 1,
+        groups: vec![ShellTabGroup {
+            slot: 1,
+            output: OUTPUT,
+            focused: true,
+            selected_slot: Some(descriptors[0].slot),
+            entries: descriptors,
+        }],
+    };
+    let wait = |transport: &mut ShellSessionTransport,
+                kind: IpcMessageKind|
+     -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(frame) = transport.poll_kind(kind)? {
+                return Ok(frame);
+            }
+            if std::time::Instant::now() > deadline {
+                return Err("tab response timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    for generation in 1..=2 {
+        tabs.generation = generation;
+        let tx = TransactionId::from_raw(100 + generation);
+        for frame in encode_shell_tab_snapshot(tx, &tabs).map_err(|e| format!("{e:?}"))? {
+            transport.send_async(frame)?;
+        }
+        let (actual, candidate) =
+            decode_shell_tab_candidate(&wait(transport, IpcMessageKind::ShellTabsCandidate)?)
+                .map_err(|e| format!("{e:?}"))?;
+        if actual != tx
+            || candidate.snapshot_generation != generation
+            || candidate.groups != vec![1]
+        {
+            return Err("tab candidate escaped snapshot".into());
+        }
+        let outcome = |kind, presentation_epoch| {
+            encode_shell_v1_candidate_outcome_frame(
+                tx,
+                ShellV1CandidateOutcome {
+                    connection_epoch: 1,
+                    candidate_generation: candidate.candidate_generation,
+                    presentation_epoch,
+                    kind,
+                },
+            )
+            .map_err(|e| format!("{e:?}"))
+        };
+        if generation == 1 {
+            transport.send_async(outcome(ShellV1CandidateOutcomeKind::Superseded, 0)?)?;
+            continue;
+        }
+        transport.send_async(outcome(ShellV1CandidateOutcomeKind::Prepared, 0)?)?;
+        transport.send_async(outcome(ShellV1CandidateOutcomeKind::Presented, 50)?)?;
+        let event = ShellV1Activation {
+            connection_epoch: 1,
+            candidate_generation: candidate.candidate_generation,
+            presentation_epoch: 50,
+            activation: 600,
+            action: tabs.groups[0].entries[1].action,
+        };
+        let tx = TransactionId::from_raw(110);
+        transport.send_async(
+            encode_shell_v1_activation_frame(tx, event).map_err(|e| format!("{e:?}"))?,
+        )?;
+        let (actual, ack) = decode_shell_v1_activation_ack_frame(&wait(
+            transport,
+            IpcMessageKind::ShellV1ActivationAck,
+        )?)
+        .map_err(|e| format!("{e:?}"))?;
+        if actual != tx || ack.disposition != ShellV1ActivationDisposition::Consumed {
+            return Err("tab activation rejected".into());
+        }
+        // A different presentation epoch cannot activate the same descriptor.
+        transport.send_async(
+            encode_shell_v1_activation_frame(
+                TransactionId::from_raw(111),
+                ShellV1Activation {
+                    activation: 601,
+                    presentation_epoch: 49,
+                    ..event
+                },
+            )
+            .map_err(|e| format!("{e:?}"))?,
+        )?;
+        let (_, ack) = decode_shell_v1_activation_ack_frame(&wait(
+            transport,
+            IpcMessageKind::ShellV1ActivationAck,
+        )?)
+        .map_err(|e| format!("{e:?}"))?;
+        if ack.disposition != ShellV1ActivationDisposition::RejectedStale {
+            return Err("stale tab activation accepted".into());
+        }
+    }
+    println!(
+        "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected=true"
+    );
+    Ok(())
 }

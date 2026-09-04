@@ -4,6 +4,18 @@ This file archives completed and prototype roadmap items that previously lived
 in `todo.md`. Keep active work in `todo.md`; keep detailed rationale and
 validation evidence in `docs/research-log.md`.
 
+## 2026-09-04 Native Tree Layouts And Tab Descriptors
+
+Implemented Hagia frame-tree/Notion and split-tree/i3 topology, projection,
+actions, and version-5 checkpoints with version-4 migration. Optional WM group
+records preserve the frozen revision-3 counted wire. Shell revision 2 carries
+persistent Narthex descriptors, with Sophia owning GPU composition and activation
+against presented tab targets. Revision-1 shell clients remain supported.
+
+The implementation and offline verification slice is complete; physical display
+acceptance remains active in `todo.md`. This does not advance CP14. See
+[tabbed layouts](tabbed-layouts.md) for the contract, fallback, and operator gate.
+
 ## 2026-09-01 Milestone 14 Stable X Backing And Continuous Presentation
 
 - [x] Replaced full immutable CPU presentation replacement for stable

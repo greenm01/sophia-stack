@@ -6,6 +6,25 @@ const MALFORMED_CORPUS: &str =
 const RECORD_CORPUS: &str = include_str!("../../../protocol/golden/sophia-wm-v1.records");
 
 #[test]
+fn tab_extension_ordinals_cannot_wrap() {
+    let member = SurfaceId::new(1, 1);
+    let group = PolicyTabGroup {
+        output: OutputId::from_raw(1),
+        group: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 24,
+        },
+        focused: true,
+        selected: Some(member),
+        members: vec![member],
+    };
+    assert!(encode_wm_tab_groups(&[group], 1, u16::MAX).is_err());
+}
+
+#[test]
 fn generated_rust_codec_matches_every_golden_frame() {
     for line in corpus_lines(VALID_CORPUS) {
         let mut fields = line.split('|');
@@ -92,6 +111,37 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                     &decode_wm_v1_snapshot_surface_classification_records(&data, 1).unwrap(),
                 )
                 .unwrap()
+            }
+            "projection_tab_group" | "projection_tab_member" => {
+                let find = |name: &str| {
+                    RECORD_CORPUS
+                        .lines()
+                        .find_map(|line| line.strip_prefix(&format!("{name}|")))
+                        .map(decode_hex)
+                        .unwrap()
+                };
+                let chunks = vec![
+                    WmV1ProjectionChunk {
+                        connection_epoch: 1,
+                        ordinal: 0,
+                        record_kind: PROJECTION_TAB_GROUP_RECORD_KIND,
+                        item_count: 1,
+                        data: find("projection_tab_group"),
+                    },
+                    WmV1ProjectionChunk {
+                        connection_epoch: 1,
+                        ordinal: 1,
+                        record_kind: PROJECTION_TAB_MEMBER_RECORD_KIND,
+                        item_count: 1,
+                        data: find("projection_tab_member"),
+                    },
+                ];
+                let groups = decode_wm_tab_groups(&chunks).unwrap();
+                assert_eq!(groups[0].group, 1);
+                encode_wm_tab_groups(&groups, 1, 0).unwrap()
+                    [usize::from(name == "projection_tab_member")]
+                .data
+                .clone()
             }
             other => panic!("unknown record `{other}`"),
         };

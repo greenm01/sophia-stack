@@ -86,6 +86,12 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
         100 => IpcMessageKind::ShellV1CandidateOutcome,
         101 => IpcMessageKind::ShellV1Activation,
         102 => IpcMessageKind::ShellV1ActivationAck,
+        103 => IpcMessageKind::ShellTabsBegin,
+        104 => IpcMessageKind::ShellTabsGroup,
+        105 => IpcMessageKind::ShellTabsEntry,
+        106 => IpcMessageKind::ShellTabsEnd,
+        107 => IpcMessageKind::ShellTabsCandidate,
+
         other => return Err(IpcCodecError::UnknownMessageKind(other)),
     };
     let transaction = TransactionId::from_raw(cursor.u64()?);

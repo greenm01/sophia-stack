@@ -51,6 +51,11 @@ pub enum IpcMessageKind {
     ShellV1CandidateOutcome = 100,
     ShellV1Activation = 101,
     ShellV1ActivationAck = 102,
+    ShellTabsBegin = 103,
+    ShellTabsGroup = 104,
+    ShellTabsEntry = 105,
+    ShellTabsEnd = 106,
+    ShellTabsCandidate = 107,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

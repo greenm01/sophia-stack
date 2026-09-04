@@ -168,9 +168,9 @@ fn native_policy_layout_cycle_is_validated_and_partitioned() {
     assert_eq!(policy.values.len(), 2);
 
     for source in [
-        "schema 1\npolicy { layout \"spiral\"; }\n",
+        "schema 1\npolicy { layout \"unsupported\"; }\n",
         "schema 1\npolicy { layout-cycle \"grid\" \"grid\"; }\n",
-        "schema 1\npolicy { layout-cycle \"grid\" \"spiral\"; }\n",
+        "schema 1\npolicy { layout-cycle \"grid\" \"unsupported\"; }\n",
     ] {
         write_profile(&profile_path, source);
         assert!(matches!(
@@ -846,4 +846,25 @@ fn a_panel_that_is_not_one_integer_is_refused() {
             "accepted a malformed panel: {source}"
         );
     }
+}
+
+#[test]
+fn hagia_native_tree_layouts_and_current_numeric_settings_are_admitted() {
+    let root = temporary_directory("hagia-trees");
+    let path = root.join("config.kdl");
+    for layout in ["frame-tree", "notion", "i3", "split-tree"] {
+        write_profile(
+            &path,
+            &format!(
+                "schema 1\npolicy {{ layout \"{layout}\"; master-count 1; master-ratio 50; gap-step 2; }}\n"
+            ),
+        );
+        load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    }
+    write_profile(
+        &path,
+        "schema 1\npolicy {layout-cycle \"i3\" \"split-tree\";}\n",
+    );
+    assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    fs::remove_dir_all(root).unwrap();
 }
