@@ -131,7 +131,7 @@ portals, plus ordinary applications:
 | File handoff, URI open, notifications | portals |
 | Screenshot, screen recording | portals |
 | Desktop icons | shell surface launching through opaque actions |
-| Settings and control centre | an ordinary application writing configuration |
+| Settings and control centre | edit KDL; core config hot-reloads live, the desktop profile applies at session start. A GUI is an optional third-party editor |
 | File manager | an ordinary application |
 | Session save and restore | session authority, not the shell |
 | Per-app menu bar | menu-export portal (below) |
@@ -165,19 +165,31 @@ for actions, portals for data, the broker for metadata. Even the WM rung
 inherits it, which is why that rung is complete rather than spartan.
 
 The unified settings system is usually the deepest thing separating the two,
-and Sophia already has one. The desktop profile carries seven typed authority
-sections — policy, shell, shortcut, session, input, output, broker — with
-digests, validation, and a full prepare–activate–rollback activation
-machine, model-checked in TLA+. What's missing is only the front half: a
-settings application that writes the profile. The propagation half, the hard
-half, exists.
+and Sophia already has the parts that matter. The desktop profile carries
+seven typed authority sections — policy, shell, shortcut, session, input,
+output, broker — with digests, validation, and a full prepare–activate–rollback
+activation machine, model-checked in TLA+. Core configuration is live: the
+session watches its file and reloads on change, waiting for input to fall idle,
+revalidating, and applying atomically or keeping what runs. The desktop
+profile's seven sections currently apply at session start; extending the same
+watch-and-revalidate trigger to the profile is small, because the activation
+machine behind it is already built.
 
-So the honest distance from the WM rung to a full desktop is five items, in
+Either way the interface is the KDL file, not an application. Edit it by hand,
+with `sed`, or with an editor someone writes. A settings GUI is therefore not
+core work — it is an optional third-party application over a file format that
+is already the interface, and it belongs outside this repository the same way
+a shell backend does.
+
+So the honest distance from the WM rung to a full desktop is a short list, in
 rough dependency order: the content-mode shell (`sophia_shell_v1` r2, the
-gating item), a bounded status feed so rich panels have something to show, a
-settings application, application-session restore in the session authority,
-and a theming story across applications — the one genuinely unsolved item,
-since applications are protocol clients and their toolkits theme themselves.
+gating item), a bounded status feed so rich panels have something to show,
+application-session restore in the session authority, and — smaller — a live
+reload trigger for the full profile to match the one core config already has.
+A theming story across applications is the one genuinely unsolved item, since
+applications are protocol clients and their toolkits theme themselves, but
+that is a hard problem every desktop shares rather than a Sophia gap. A
+settings GUI is not on the list at all: the config file is the interface.
 
 Which yields a sentence no other platform gets to write: on Sophia, a desktop
 environment is a superset composition, not a second platform. Moving from
