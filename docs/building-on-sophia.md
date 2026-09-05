@@ -233,6 +233,14 @@ caps it at whatever the profile allowed. A user cannot, through your app's
 settings, quietly grant your app more of the screen than the operator permitted
 — which is the same property that stops your app drawing a phishing prompt.
 
+The existing unified profile also carries a `policy` section as a transport for
+WM-owned settings. Sophia preserves those ordered KDL records within the checked
+envelope; it does not maintain the WM's setting vocabulary or interpret layouts,
+workspace names, gaps, or scratchpad dimensions. The selected WM validates that
+fragment before acknowledging activation. Adding a spatial-policy setting in
+Hagia therefore needs no Sophia parser update. See [configuration](configuration.md)
+for the distinction between envelope checks and WM semantic validation.
+
 **An action is a request, not a thing your app does.** This is the seam every
 developer arriving from X11 or Wayland gets wrong. When a user binds a key to
 "launch a terminal," your app does not spawn the terminal. It asks Sophia

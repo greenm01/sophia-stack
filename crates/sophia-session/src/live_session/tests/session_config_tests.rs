@@ -331,11 +331,15 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
     assert_eq!(policy.values.len(), 3);
 
     std::fs::write(&path, "schema 1\npolicy { view-count 99; }\n").unwrap();
+    // Session configuration admits the envelope; the WM owns view-count.
+    PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
+        .unwrap();
+    std::fs::write(&path, "schema 1\npolicy { max-surfaces 99; }\n").unwrap();
     assert!(
         PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
             .unwrap_err()
             .to_string()
-            .contains("view-count")
+            .contains("reserved control")
     );
     assert!(
         PersistentXtermSessionConfig::from_args(&["--desktop-profile=relative.kdl".to_owned()])

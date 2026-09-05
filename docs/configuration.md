@@ -85,6 +85,25 @@ authority-local files, this source permits bounded top-level includes: depth
 10, 64 files, and one MiB in aggregate, with owner/mode checks, cycle
 detection, deterministic expansion, and per-value provenance.
 
+The `policy` section transports ordered WM-owned KDL records. Sophia validates
+the envelope, structural limits, and reserved Engine controls; the selected WM
+owns setting names, layout names, value ranges, and duplicate-setting identities.
+Repeated node names are preserved, so `view-name 1 "code"` and
+`view-name 2 "web"` both reach Hagia. Sophia's `policy.<node-name>` labels are
+descriptive, not unique WM setting keys. Encoded record order and contents survive
+staging; staged-file provenance replaces the source-file provenance on reload.
+
+`sophia config check --desktop-profile=...` reports
+`policy_validation=delegated`: success validates the envelope, not WM semantics.
+Pair it with `hagia config check --config=...` for offline Hagia validation. The
+Hagia TTY adapter runs both against the selected candidate before display-manager
+takeover. Packaging also checks both. Runtime still gives Hagia only its private
+Policy fragment, and Hagia constructs a valid policy model before acknowledging
+activation. Invalid values, duplicate WM settings, or unknown WM vocabulary keep
+Sophia's graphical gate closed through the existing rejection/rollback path.
+WM settings never grant renderer, scanout, input-admission, or session authority;
+Sophia continues to validate the resulting proposals against Engine constraints.
+
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime

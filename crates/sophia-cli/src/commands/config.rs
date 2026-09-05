@@ -73,7 +73,7 @@ fn validate_desktop_profile_options(args: &[String]) -> Result<(), Box<dyn std::
 fn check_desktop_profile(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let profile = load_desktop_profile(Some(path), ConfigGeneration::INITIAL)?;
     println!(
-        "valid domain=desktop-profile schema=1 generation={} digest={} sources={}",
+        "valid domain=desktop-profile schema=1 generation={} digest={} sources={} policy_validation=delegated",
         profile.generation.raw(),
         profile.digest,
         profile.sources.len()

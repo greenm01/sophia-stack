@@ -154,6 +154,12 @@ is the starting evidence; no new comparison run is required.
 
 #### 2. Establish the live session
 
+- [x] Delegate WM policy-setting validation to Hagia. Sophia preserves bounded
+  ordered policy fragments; Hagia validates values before activation. The
+  default and personal Hagia profiles pass paired offline checks without edits.
+  TTY startup checks both owners before display-manager takeover. Cross-repository
+  regression coverage includes repeated workspace records and rejection before
+  acknowledgement; runtime/installed acceptance still follows below.
 - [ ] Reuse the existing launcher and installed session path; identify the exact
   Sophia/Hagia/Narthex binaries and profiles, retain a known working fallback,
   and document start, normal logout, emergency escape, and rollback.

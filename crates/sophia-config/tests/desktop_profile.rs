@@ -156,7 +156,7 @@ fn includes_expand_in_place_with_per_value_provenance() {
 }
 
 #[test]
-fn native_policy_layout_cycle_is_validated_and_partitioned() {
+fn native_policy_layout_cycle_is_partitioned_for_wm_validation() {
     let root = temporary_directory("layout-cycle");
     let profile_path = root.join("config.kdl");
     write_profile(
@@ -173,10 +173,7 @@ fn native_policy_layout_cycle_is_validated_and_partitioned() {
         "schema 1\npolicy { layout-cycle \"grid\" \"unsupported\"; }\n",
     ] {
         write_profile(&profile_path, source);
-        assert!(matches!(
-            load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
-            Err(DesktopProfileError::Schema(_))
-        ));
+        load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
     }
     fs::remove_dir_all(root).unwrap();
 }
@@ -513,13 +510,10 @@ fn rejects_cycles_duplicates_unsupported_and_reserved_controls() {
     ));
 
     for source in [
-        "schema 1\npolicy { outer-gap 1; outer-gap 2; }\n",
-        "schema 1\npolicy { magic 1; }\n",
+        "schema 1\nshell { enabled #true; enabled #false; }\n",
+        "schema 1\nshell { unknown 1; }\n",
         "schema 1\npolicy { max-surfaces 2; }\n",
         "schema 1\nshell { enabled \"yes\"; }\n",
-        "schema 1\npolicy { view-count 10; }\n",
-        "schema 1\npolicy { outer-gap -1; }\n",
-        "schema 1\npolicy { inner-gap \"wide\"; }\n",
     ] {
         write_profile(&main, source);
         assert!(matches!(
@@ -865,6 +859,102 @@ fn hagia_native_tree_layouts_and_current_numeric_settings_are_admitted() {
         &path,
         "schema 1\npolicy {layout-cycle \"i3\" \"split-tree\";}\n",
     );
-    assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn wm_policy_records_round_trip_without_engine_semantics_or_deduplication() {
+    let root = temporary_directory("delegated-policy");
+    let path = root.join("config.kdl");
+    let included = root.join("views.kdl");
+    write_profile(
+        &included,
+        "policy { view-name 1 \"code\"; view-name 2 \"web\"; }\n",
+    );
+    write_profile(
+        &path,
+        r#"schema 1
+include "views.kdl"
+policy {
+    layout "dwindle"
+    scratchpad-size 70 60
+    floating-size 0 60
+    column-width-presets 33 50 67
+    view-layout 1 "notion"
+    view-layout 2 "split-tree"
+    future-wm-setting "opaque" value=42
+    named 7
+    outer-gap -1
+    outer-gap 513
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let policy = &profile.candidates[&DesktopAuthority::Policy];
+    assert_eq!(policy.values.len(), 12);
+    assert_eq!(policy.values[0].key, "policy.view-name");
+    assert_eq!(policy.values[1].key, "policy.view-name");
+    assert_eq!(policy.values[0].provenance.path, included);
+    assert_eq!(policy.values[2].provenance.path, path);
+    let stage = root.join("stage");
+    fs::create_dir(&stage).unwrap();
+    fs::set_permissions(&stage, fs::Permissions::from_mode(0o700)).unwrap();
+    let fragments = stage_desktop_profile(&profile, &stage).unwrap();
+    let key = DesktopProfileActivationKey::from(&profile);
+    validate_desktop_profile_fragments(&fragments, key).unwrap();
+    let restored = load_desktop_authority_fragment(
+        fragments.path(DesktopAuthority::Policy),
+        DesktopAuthority::Policy,
+        key,
+    )
+    .unwrap();
+    assert_eq!(restored.generation, policy.generation);
+    assert_eq!(restored.digest, policy.digest);
+    assert_eq!(
+        restored
+            .values
+            .iter()
+            .map(|v| (&v.key, &v.encoded))
+            .collect::<Vec<_>>(),
+        policy
+            .values
+            .iter()
+            .map(|v| (&v.key, &v.encoded))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        restored
+            .values
+            .iter()
+            .all(|v| v.provenance.path == fragments.path(DesktopAuthority::Policy))
+    );
+    // Staging rewrites provenance to its private file, never the payload order.
+    assert!(
+        load_desktop_authority_fragment(
+            fragments.path(DesktopAuthority::Policy),
+            DesktopAuthority::Shell,
+            key,
+        )
+        .is_err()
+    );
+    drop(fragments);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn opaque_policy_still_respects_envelope_limits_and_reserved_controls() {
+    let root = temporary_directory("delegated-policy-limits");
+    let path = root.join("config.kdl");
+    for setting in [
+        "(typed)future 1".to_owned(),
+        format!("future {}", vec!["1"; 33].join(" ")),
+        "renderer \"gpu\"".to_owned(),
+        "scanout #true".to_owned(),
+        "emergency-chord \"Super+x\"".to_owned(),
+    ] {
+        write_profile(&path, &format!("schema 1\npolicy {{ {setting}; }}\n"));
+        assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    }
     fs::remove_dir_all(root).unwrap();
 }

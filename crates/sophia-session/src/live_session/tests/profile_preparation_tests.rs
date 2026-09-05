@@ -309,6 +309,25 @@ fn hagia_pregraphics_profile_admission_activates_every_owner() {
     };
     let mut config = public_profile_test_config("sophia-hagia-profile-admission-test");
     config.wm_process = Some(hagia_bin.to_string_lossy().into_owned());
+    let profile_path = config.wm_socket_path.with_extension("kdl");
+    let source = sophia_config::COMPILED_DESKTOP_PROFILE
+        .replace("layout \"scroller\"", "layout \"dwindle\"")
+        + "\npolicy { scratchpad-size 70 60; floating-size 0 60; column-width-presets 33 50 67; view-name 1 \"code\"; view-name 2 \"web\"; view-layout 1 \"notion\"; view-layout 2 \"split-tree\"; }\n";
+    std::fs::write(&profile_path, source).unwrap();
+    std::fs::set_permissions(
+        &profile_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )
+    .unwrap();
+    let socket_path = config.wm_socket_path.clone();
+    config = PersistentXtermSessionConfig::from_args(&[
+        format!("--wm-process={}", hagia_bin.to_string_lossy()),
+        "--wm-interface=sophia_wm_v1".to_owned(),
+        format!("--desktop-profile={}", profile_path.display()),
+    ])
+    .unwrap();
+    config.wm_socket_path = socket_path;
+    std::fs::remove_file(profile_path).unwrap();
     let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
     let directory_path = config.wm_socket_path.with_extension("policy");
 
@@ -358,3 +377,6 @@ fn profile_restart_reattaches_the_exact_key_under_a_fresh_epoch() {
     assert_eq!(restarted.profile_generation, initial.profile_generation);
     assert_eq!(restarted.profile_digest, initial.profile_digest);
 }
+
+#[path = "../../../tests/support/delegated_policy.rs"]
+mod delegated_policy;

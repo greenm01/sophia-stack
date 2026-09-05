@@ -1,5 +1,3 @@
-mod policy;
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -158,6 +156,8 @@ pub struct DesktopValueProvenance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopProfileValue {
+    /// Policy labels describe records, not unique WM setting identities.
+    /// Repeated policy labels retain their order; only the WM resolves them.
     pub key: String,
     pub encoded: String,
     pub provenance: DesktopValueProvenance,
@@ -389,7 +389,7 @@ pub fn load_desktop_authority_fragment(
                 for child in children.nodes() {
                     validate_setting(authority, child)?;
                     let key = setting_key(authority, child)?;
-                    if !keys.insert(key.clone()) {
+                    if authority != DesktopAuthority::Policy && !keys.insert(key.clone()) {
                         return Err(fragment_schema("contains a duplicate setting"));
                     }
                     values.push(DesktopProfileValue {
@@ -729,7 +729,7 @@ fn partition(
         for child in children.nodes() {
             validate_setting(authority, child)?;
             let key = setting_key(authority, child)?;
-            if !keys.insert(key.clone()) {
+            if authority != DesktopAuthority::Policy && !keys.insert(key.clone()) {
                 return Err(DesktopProfileError::Schema(format!(
                     "duplicate setting {key:?}"
                 )));
@@ -779,18 +779,9 @@ fn validate_setting(
         ));
     }
     let supported = match authority {
-        DesktopAuthority::Policy => [
-            "layout",
-            "layout-cycle",
-            "view-count",
-            "outer-gap",
-            "inner-gap",
-            "viewport-offset",
-            "master-count",
-            "master-ratio",
-            "gap-step",
-        ]
-        .contains(&name),
+        // Policy is an ordered WM-owned payload. Its vocabulary and values
+        // are admitted by the selected WM before profile activation.
+        DesktopAuthority::Policy => true,
         DesktopAuthority::Shell => ["enabled", "panel"].contains(&name),
         DesktopAuthority::Shortcut => ["profile", "bind", "pointer-bind"].contains(&name),
         DesktopAuthority::Session => ["terminal", "browser", "logout", "startup"].contains(&name),
@@ -803,9 +794,6 @@ fn validate_setting(
             "unsupported {} setting {name:?}",
             authority.name()
         )));
-    }
-    if authority == DesktopAuthority::Policy {
-        return policy::validate_setting(node);
     }
     if authority == DesktopAuthority::Shell
         && name == "enabled"
@@ -897,7 +885,9 @@ pub fn desktop_profile_shell_panel_thickness(profile: &DesktopProfileGeneration)
 
 fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, DesktopProfileError> {
     let mut key = format!("{}.{}", authority.name(), node.name().value());
-    if ["bind", "pointer-bind", "application", "device", "named"].contains(&node.name().value()) {
+    if authority != DesktopAuthority::Policy
+        && ["bind", "pointer-bind", "application", "device", "named"].contains(&node.name().value())
+    {
         key.push('.');
         key.push_str(exact_first_string(node)?);
     }

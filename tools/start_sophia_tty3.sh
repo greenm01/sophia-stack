@@ -45,6 +45,25 @@ if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
     fi
     exit 1
 fi
+# Validate this selected candidate before any display-manager handoff. Builds
+# belong here too: checking yesterday's executable would not admit today's run.
+if [[ "$SESSION_PROFILE" == hagia ]]; then
+    if [[ "${SOPHIA_BUILD_SESSION:-true}" == true ]]; then
+        cargo build --offline --release --manifest-path "$ROOT_DIR/Cargo.toml" \
+            -p sophia-cli --features native-session
+        "$ROOT_DIR/tools/atomic_scanout_preflight.sh"
+        export SOPHIA_BUILD_SESSION=false
+    fi
+    source "$ROOT_DIR/tools/lib/session_profile.sh"
+    sophia_check_hagia_profile \
+        "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" \
+        "${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}" \
+        "${SOPHIA_DESKTOP_PROFILE:-}"
+    if [[ -n "${SOPHIA_CORE_CONFIG:-}" ]]; then
+        "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" config check \
+            "--config=$SOPHIA_CORE_CONFIG"
+    fi
+fi
 origin_tty="$(tty)"
 origin_vt="${origin_tty#/dev/tty}"
 origin_tty_state="$(stty -g)"
