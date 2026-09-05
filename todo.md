@@ -323,7 +323,17 @@ tranche with a named driver and exit gate.
   exist. Native tab implementation is complete; acceptance belongs to CP-14.3.
 - Define a bounded redacted workspace/layout/focus status feed and opaque
   launcher action; add lock, screenshot, wallpaper, and audio through their
-  owning shell/session capabilities.
+  owning shell/session capabilities. The wire is not what blocks these:
+  `SnapshotSessionOperation` (record kind 4, max 256) already advertises
+  every operation with its slot each snapshot, and a policy client resolves
+  slot to operation and sends `SessionOperationRequest`, so no revision is
+  needed. What is closed is this repository's own vocabulary — the five
+  variants of `DesktopSessionShortcut` in `crates/sophia-config/src/
+  shortcut_candidate.rs` and `WmActionBehavior` in `.../types.rs` — plus each
+  behavior's implementation, lock's being a security transition rather than a
+  launch. A policy client's side is one profile-whitelist string and one
+  appended action per capability, so each operation defined here unblocks
+  Hagia in a few lines.
 
 ### Developer outreach
 
