@@ -114,21 +114,28 @@ pub(crate) fn retained_surface_sources(
 /// The presenting surface contributes the frame just composed for it plus any CPU
 /// variants the candidate still carries, because a head may select a retained raster
 /// for it rather than the DMA-BUF being presented.
-pub fn live_present_head_composition_sources<'a>(
+/// Sources cover the union of the output display lists that will be lowered. Using
+/// only the primary output's list loses every surface owned by another output.
+pub fn live_present_head_composition_sources<'a, 'b>(
     presenting_surface: SurfaceId,
     current_source: sophia_renderer_live::LiveOwnedHeadCompositionSource,
     candidate: &[CommittedSurfaceState],
-    display_list: &CompositorDisplayList,
+    display_lists: impl IntoIterator<Item = &'b CompositorDisplayList>,
     cpu_layers: &[LiveCpuPresentationLayer],
     retained: impl Fn(SurfaceId) -> Option<&'a crate::LiveRetainedRendererImageLayer>,
     retained_direct: impl Fn(SurfaceId) -> Option<sophia_renderer_live::LiveOwnedMultiPlaneDmaBufFrame>,
 ) -> Result<Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>, Box<dyn std::error::Error>> {
     let mut current_source = Some(current_source);
     let mut sources = Vec::new();
-    for command in &display_list.commands {
+    let mut seen = BTreeSet::new();
+    for command in display_lists.into_iter().flat_map(|list| &list.commands) {
         let CompositorDisplayCommand::Surface { surface } = command else {
             continue;
         };
+        // Heads share retained sources; resolve each surface once across outputs.
+        if !seen.insert(*surface) {
+            continue;
+        }
         // Presentation order names policy's surfaces; the planner keeps only those the
         // candidate has committed. A surface policy ordered before its pixels arrived
         // is dropped there, so it owes no source here.

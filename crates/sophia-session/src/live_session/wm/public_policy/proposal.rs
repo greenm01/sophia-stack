@@ -188,6 +188,9 @@ fn public_live_proposal(
                     resize_sync: ResizeSyncCapability::ImplicitOnly,
                 }
             };
+            // Cached pixels may predate the first placement or belong to the
+            // previous output. Every accepted placement supplies its owner.
+            layer.output = Some(owning_output);
             layer.geometry = materialized.geometry;
             layer.stack_rank = u32::try_from(layers.len()).unwrap_or(u32::MAX - 1);
             if let Some(size) = materialized.requested_size {

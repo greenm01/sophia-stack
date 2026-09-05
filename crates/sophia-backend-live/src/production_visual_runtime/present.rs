@@ -71,7 +71,12 @@ impl LiveProductionVisualRuntime {
             previous_geometry,
             candidate_geometry,
         )?;
-        if applicable_outputs.is_empty() {
+        // A scroller can place a surface entirely beyond its own viewport, inside
+        // a neighbour's rectangle. That overlap does not make the Present visible.
+        if !applicable_outputs
+            .iter()
+            .any(|output| self.surface_outputs.get(&queued_surface) == Some(output))
+        {
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
@@ -183,7 +188,24 @@ impl LiveProductionVisualRuntime {
             },
             _ => return Err("ready Present source changed renderer kind".into()),
         };
-        let display_list = self.display_list(prepared.candidate(), &self.presentation_order)?;
+        let output_display_lists = applicable_outputs
+            .iter()
+            .map(|output| {
+                let logical_viewport = self
+                    .outputs
+                    .logical_viewport(*output)
+                    .ok_or("Present targets an unknown logical output")?;
+                Ok((
+                    *output,
+                    self.display_list_for_output(
+                        *output,
+                        logical_viewport,
+                        prepared.candidate(),
+                        &self.presentation_order,
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         let border_candidate = prepared.candidate().to_vec();
         // Sources are read from the scene against the candidate this Present plans,
         // never from a set captured when it was enqueued. A Present held behind a
@@ -194,7 +216,7 @@ impl LiveProductionVisualRuntime {
             queued_surface,
             current_source,
             prepared.candidate(),
-            &display_list,
+            output_display_lists.iter().map(|(_, list)| list),
             &cpu_layers,
             |surface| {
                 self.displayed_surfaces
@@ -211,24 +233,14 @@ impl LiveProductionVisualRuntime {
             },
         )?;
         self.record_focus_ring_observation(&border_candidate, false)?;
-        let mut output_head_frames = applicable_outputs
-            .iter()
-            .map(|output| {
-                let logical_viewport = self
-                    .outputs
-                    .logical_viewport(*output)
-                    .ok_or("Present targets an unknown logical output")?;
-                let output_display_list = self.display_list_for_output(
-                    *output,
-                    logical_viewport,
-                    prepared.candidate(),
-                    &self.presentation_order,
-                )?;
+        let mut output_head_frames = output_display_lists
+            .into_iter()
+            .map(|(output, output_display_list)| {
                 Ok((
-                    *output,
+                    output,
                     self.compose_native_head_frames_from_sources(
                         native_scanout,
-                        *output,
+                        output,
                         prepared.candidate(),
                         output_display_list,
                         transaction.raw(),

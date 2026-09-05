@@ -1608,3 +1608,6 @@ include!("wm_session_tests/direct_map.rs");
 include!("wm_session_tests/geometry.rs");
 include!("wm_session_tests/pre_admission.rs");
 include!("wm_session_tests/recovery.rs");
+
+#[path = "../../../tests/support/policy_output_ownership.rs"]
+mod policy_output_ownership;

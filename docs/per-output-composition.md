@@ -90,8 +90,9 @@ divergence is deliberate and recorded here.
    (`sophia-protocol/src/packets/surface/snapshot.rs`). `None` means no
    projection placed it, which is a real state rather than a default.
 2. `public_live_proposal` sets it from the projection that placed the
-   placement (`live_session/wm/public_policy/proposal.rs`). Read-back and
-   fixture sites pass `None` and say why.
+   placement (`live_session/wm/public_policy/proposal.rs`), including when
+   reusing a cached layer. First placement replaces `None`; a move replaces
+   the previous output. Read-back sites pass `None` and say why.
 3. The runtime retains a surface-to-output map from the layers it is already
    handed (`production_visual_runtime.rs`, `apply_presentation_layout`), so
    nothing new is plumbed.
@@ -99,6 +100,11 @@ divergence is deliberate and recorded here.
    (`production_visual_runtime/compositor_graphics.rs`) selects a head's
    surfaces, and `display_list_for_output` builds from that instead of the
    global order.
+5. A GPU Present gathers sources from the union of the applicable outputs'
+   display lists, then lowers those same lists. It cannot use the primary
+   output as a proxy for source discovery. A surface outside its owning
+   viewport does not become presentable by overlapping a neighbour's viewport;
+   such a Present follows the existing invisible-Present rejection path.
 
 Clipping is untouched: a column half past the edge still shows its visible
 half on its own output. Chrome needed nothing -- `IndicatorStrip` and `TabBar`
@@ -121,6 +127,15 @@ than position decides who draws it.
 
 Still wanted: a conformance scenario with two outputs and a strip longer than
 the first, asserting the second output's frame contains only its own surfaces.
+
+The installed startup failure on `86b5fe1d20bc` exposed two missing links in
+that rule. `sophia-session/tests/support/policy_output_ownership.rs` exercises
+the actual proposal builder with an unassigned cached raster and with a raster
+moving between outputs. `sophia-backend-live/tests/present_source_consistency.rs`
+reproduces the missing-source error from using only the primary output's list,
+checks a secondary-only Present, and lowers distinct CPU and DMA-BUF surfaces
+on two outputs without cross-output leakage. These deterministic checks do not
+replace installed physical acceptance.
 
 ## Not this change
 

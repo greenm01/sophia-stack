@@ -271,7 +271,7 @@ fn a_released_present_resolves_a_surface_admitted_after_it_was_queued() {
         GUIDE,
         current_source(&queued),
         &candidate,
-        &display_list,
+        [&display_list],
         &cpu_layers,
         |_| None,
         |_| None,
@@ -336,4 +336,108 @@ fn enqueue_time_sources_lose_the_late_admission() {
         lower_head_composition_plan(&plans[0], &sources).unwrap_err(),
         LiveHeadCompositionLoweringError::MissingCpuSource(BROWSER_HANDLE)
     );
+}
+
+#[test]
+fn a_secondary_output_present_sources_each_output_without_primary_leakage() {
+    let (mut candidate, queued, scene) = parked_present_released_after_a_late_admission();
+    let secondary = OutputId::from_raw(2);
+    candidate
+        .iter_mut()
+        .find(|state| state.surface == GUIDE)
+        .unwrap()
+        .geometry
+        .x = SIZE.width;
+    let order = [BROWSER, GUIDE];
+    let owners = std::collections::BTreeMap::from([(BROWSER, OUTPUT), (GUIDE, secondary)]);
+    let lists = [OUTPUT, secondary].map(|output| {
+        surface_chrome_display_list(
+            output,
+            &sophia_backend_live::live_surfaces_owned_by_output(&order, &owners, output),
+            &candidate,
+            None,
+            SurfaceChromeStyle::default(),
+        )
+        .unwrap()
+    });
+    let cpu_layers = scene.presentation_variant_layers(&candidate, &order);
+    let primary_only = live_present_head_composition_sources(
+        GUIDE,
+        current_source(&queued),
+        &candidate,
+        [&lists[0]],
+        &cpu_layers,
+        |_| None,
+        |_| None,
+    );
+    assert_eq!(
+        primary_only.unwrap_err().to_string(),
+        "visible Present surface is missing from the presentation order",
+        "an omitted owner must remain an error rather than silently lose the Present"
+    );
+    let secondary_only = live_present_head_composition_sources(
+        GUIDE,
+        current_source(&queued),
+        &candidate,
+        [&lists[1]],
+        &cpu_layers,
+        |_| panic!("the unrelated primary output must not need a retained source"),
+        |_| panic!("the unrelated primary output must not need a direct source"),
+    )
+    .unwrap();
+    assert_eq!(secondary_only.len(), 1);
+    let sources = live_present_head_composition_sources(
+        GUIDE,
+        current_source(&queued),
+        &candidate,
+        &lists,
+        &cpu_layers,
+        |_| None,
+        |_| None,
+    )
+    .expect("a secondary Present cannot use only the primary output's source list");
+    assert_eq!(sources.len(), 2);
+    for (index, list) in lists.into_iter().enumerate() {
+        let output = [OUTPUT, secondary][index];
+        let snapshot = output_scene_snapshot_from_committed_in_view(
+            output,
+            queued.transaction.raw(),
+            Rect {
+                x: if index == 0 { 0 } else { SIZE.width },
+                ..geometry()
+            },
+            &candidate,
+            list,
+            None,
+        )
+        .unwrap();
+        let target = HeadRenderTarget {
+            output,
+            head: RenderHeadId::from_raw(index as u64 + 1),
+            ..head_target()
+        };
+        let plans = build_output_head_plans(&snapshot, &[target]).unwrap();
+        let frame = lower_head_composition_plan(&plans[0], &sources).unwrap();
+        let cpu = frame
+            .layers
+            .iter()
+            .filter(|layer| {
+                matches!(
+                    layer,
+                    sophia_renderer_live::LiveOwnedMixedCompositionLayer::Cpu { .. }
+                )
+            })
+            .count();
+        let gpu = frame
+            .layers
+            .iter()
+            .filter(|layer| {
+                matches!(
+                    layer,
+                    sophia_renderer_live::LiveOwnedMixedCompositionLayer::DmaBuf { .. }
+                )
+            })
+            .count();
+        assert_eq!((cpu, gpu), if index == 0 { (1, 0) } else { (0, 1) });
+    }
 }

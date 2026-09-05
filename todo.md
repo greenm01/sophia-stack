@@ -154,6 +154,12 @@ is the starting evidence; no new comparison run is required.
 
 #### 2. Establish the live session
 
+- [ ] Revalidate installed startup after the output-ownership repair. Release
+  `0.1.0-86b5fe1d20bc` exited on the first Kitty Present after losing its output
+  assignment. Cached placement ownership and per-output Present source
+  discovery are repaired in source with focused regressions; install and
+  physical startup/both-output acceptance remain pending. See the
+  [diagnosis](docs/research-log.md#2026-09-05-installed-startup-loses-the-first-windows-output-ownership).
 - [x] Delegate WM policy-setting validation to Hagia. Sophia preserves bounded
   ordered policy fragments; Hagia validates values before activation. The
   default and personal Hagia profiles pass paired offline checks without edits.
