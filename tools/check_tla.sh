@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -172,6 +172,33 @@ for control in \
             ;;
     esac
 done
+
+# Judging a retirement by the frame the scheduler names right now strands a
+# frame this session submitted and then superseded, which is the verdict that
+# ends a live session. A passing run here would mean the model no longer
+# detects it.
+control=PresentMixedOwnershipSchedulerOnly
+control_dir="$TEMP_DIR/$control"
+mkdir "$control_dir"
+cp "$MODEL_DIR/PresentMixedOwnership.tla" "$control_dir/"
+cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+log="$control_dir/control.log"
+if (
+    cd "$control_dir"
+    java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock \
+        -workers 1 \
+        -fp 0 \
+        -config "$control.cfg" \
+        PresentMixedOwnership.tla
+) >"$log" 2>&1; then
+    echo "TLA+ negative control unexpectedly passed: $control" >&2
+    exit 1
+fi
+grep -Fq 'Invariant NoSubmittedFrameIsStranded is violated.' "$log" || {
+    echo "TLA+ mixed-ownership control failed for the wrong reason" >&2
+    exit 1
+}
 
 for control in TabDescriptorStaleCandidate TabDescriptorLostCapture; do
     control_dir="$TEMP_DIR/$control"
