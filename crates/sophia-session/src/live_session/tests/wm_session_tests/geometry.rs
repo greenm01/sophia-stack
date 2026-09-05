@@ -394,6 +394,70 @@ fn standing_visual_target_still_configures_geometry_that_is_not_installed() {
 }
 
 #[test]
+fn a_surface_withdrawn_mid_cycle_is_skipped_rather_than_fatal() {
+    // A window can close while a layout is in flight. The rollback that undoes
+    // the proposal then names a surface with no committed geometry and no
+    // client route, and there is neither anything to restore it to nor anyone
+    // left to tell.
+    //
+    // This ended the session until now: one `ok_or(...)?` turned an ordinary
+    // race into `live WM rollback has no committed geometry`, and a real
+    // desktop died of it when a workspace switch happened to coincide with a
+    // dock going away. Killing a desktop because a window stopped existing is
+    // never the right answer.
+    let surface = SurfaceId::new(6, 1);
+    let rejected = Rect {
+        x: 7,
+        y: 21,
+        width: 1000,
+        height: 700,
+    };
+    let transaction = TransactionId::from_raw(12);
+    let mut layout = PersistentLiveLayout::default();
+    register_test_routes(&mut layout, &[surface]);
+    // Deliberately no `layers.insert`: the surface was withdrawn between the
+    // proposal and its expiry.
+    layout.pending = Some(PendingLiveWmLayout {
+        transaction,
+        layers: vec![test_layer(surface, rejected)],
+        requested_sizes: BTreeMap::from([(
+            surface,
+            Size {
+                width: rejected.width,
+                height: rejected.height,
+            },
+        )]),
+        presentation_states: BTreeMap::new(),
+        presentation_settlements: BTreeSet::new(),
+        configure_deliveries: 1,
+        focus: Some(surface),
+        deadline: Instant::now(),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+        },
+        moved_surfaces: 1,
+        staged_transactions: BTreeMap::new(),
+        admission_surfaces: BTreeSet::new(),
+        source: Some(LiveWmProposalSource::Action(WmActionId::from_raw(3))),
+        policy_settlement: None,
+    });
+    let mut controls = crate::session_control::SessionControlQueue::default();
+
+    let result = layout
+        .expire_pending(&mut controls)
+        .expect("a withdrawn surface must not end the session")
+        .expect("the cycle still settles");
+
+    assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+    // Nothing is configured, because there is nothing left to configure.
+    assert!(drain_test_controls(&mut controls).is_empty());
+}
+
+#[test]
 fn resize_timeout_restores_the_complete_committed_rectangle() {
     let surface = SurfaceId::new(6, 1);
     let committed = Rect {

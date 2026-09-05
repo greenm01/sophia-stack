@@ -1121,23 +1121,33 @@ impl PersistentLiveLayout {
             .first()
             .map(|request| request.transaction)
             .unwrap_or(pending.transaction);
-        let rollback_configures = rollback.len();
+        let mut rollback_configures = rollback.len();
+        let mut rollback_withdrawn = 0usize;
         for request in rollback {
             let surface = request.surface;
             let size = request.size;
-            let geometry = self
-                .layers
-                .get(&surface)
-                .map(|layer| Rect {
-                    width: size.width,
-                    height: size.height,
-                    ..layer.geometry
-                })
-                .ok_or("live WM rollback has no committed geometry")?;
-            let client = self
-                .client_routes
-                .client_for_surface(surface)
-                .ok_or("live WM rollback has no X11 client route")?;
+            // A surface can be withdrawn between the proposal and the rollback
+            // that undoes it -- a window closing while a layout is in flight is
+            // ordinary, not exceptional. There is nothing to restore it to and
+            // nobody left to tell, so it is skipped and counted.
+            //
+            // This used to end the session. A workspace switch with a dock
+            // present was enough to reach it, and killing a desktop because one
+            // window stopped existing is never the right answer.
+            let Some(geometry) = self.layers.get(&surface).map(|layer| Rect {
+                width: size.width,
+                height: size.height,
+                ..layer.geometry
+            }) else {
+                rollback_configures = rollback_configures.saturating_sub(1);
+                rollback_withdrawn += 1;
+                continue;
+            };
+            let Some(client) = self.client_routes.client_for_surface(surface) else {
+                rollback_configures = rollback_configures.saturating_sub(1);
+                rollback_withdrawn += 1;
+                continue;
+            };
             session_controls.enqueue(XAuthorityClientControlCommand {
                 client,
                 command: XAuthorityControlCommand::ConfigureSurface {
@@ -1158,10 +1168,11 @@ impl PersistentLiveLayout {
             if previous == *desired || terminal_admissions.contains(surface) {
                 continue;
             }
-            let client = self
-                .client_routes
-                .client_for_surface(*surface)
-                .ok_or("live WM presentation rollback has no X11 client route")?;
+            // Withdrawn during the cycle, as above.
+            let Some(client) = self.client_routes.client_for_surface(*surface) else {
+                rollback_withdrawn += 1;
+                continue;
+            };
             session_controls
                 .enqueue(
                     XAuthorityClientControlCommand {
@@ -1179,10 +1190,13 @@ impl PersistentLiveLayout {
                 })?;
         }
         for surface in &terminal_admissions {
-            let client = self
-                .client_routes
-                .client_for_surface(*surface)
-                .ok_or("live WM withdrawal has no X11 client route")?;
+            // The most likely of the three to be gone: these are surfaces
+            // already on their way out, so losing the route before the
+            // withdrawal is delivered is the expected ending, not a fault.
+            let Some(client) = self.client_routes.client_for_surface(*surface) else {
+                rollback_withdrawn += 1;
+                continue;
+            };
             session_controls
                 .enqueue(
                     XAuthorityClientControlCommand {
@@ -1235,7 +1249,7 @@ impl PersistentLiveLayout {
             .collect::<Vec<_>>()
             .join(",");
         crate::session_println!(
-            "sophia_live_wm schema=1 status=layout_timeout transaction={} preserved_layout=true rollback_transaction={} rollback_configures={} resize_state={}",
+            "sophia_live_wm schema=1 status=layout_timeout transaction={} preserved_layout=true rollback_transaction={} rollback_configures={} rollback_withdrawn={rollback_withdrawn} resize_state={}",
             pending.transaction.raw(),
             rollback_transaction.raw(),
             rollback_configures,
