@@ -491,6 +491,10 @@ fn run_session_loop_inner(
     let mut input_observations = InputObservationState::default();
     let mut input_delivery = InputDeliveryState::default();
     let mut logout_requested = false;
+    // Set by a committed session action and serviced at the top of the next
+    // pass, where the policy launch and the authority slots are reachable.
+    let mut profile_reload_requested = false;
+    let mut wm_restart_requested = false;
     let mut post_input_deadline: Option<Instant> = None;
     let mut application_surface_gone_at: Option<Instant> = None;
     let mut input_content_surface: Option<SurfaceId> = None;

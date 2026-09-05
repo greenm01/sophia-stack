@@ -286,6 +286,18 @@ impl LiveWmSession {
         Self::from_started_public_config(config, outputs, started, output_bootstrap).map(Some)
     }
 
+    /// Replaces the policy client because someone asked, not because
+    /// something broke.
+    ///
+    /// The restart machinery is the same one a transport fault uses: the
+    /// process is replaced, the profile handshake runs again, and the
+    /// checkpoint carries the windows across. Only the evidence differs, and
+    /// it has to, because a restart nobody requested is a fault and a restart
+    /// someone pressed a key for is not.
+    pub(crate) fn request_deliberate_restart(&mut self) {
+        self.request_transport_restart("wm_restart_requested", None);
+    }
+
     fn request_transport_restart(&mut self, reason: &str, error: Option<&str>) {
         self.force_transport_restart = true;
         crate::session_println!(

@@ -45,6 +45,11 @@ pub enum DesktopSessionShortcut {
     LaunchTerminal,
     LaunchBrowser,
     WindowSwitcher,
+    /// Re-read the desktop profile and put it into effect, the way a window
+    /// manager that ships its config in a file has to offer.
+    ReloadProfile,
+    /// Replace the policy client with a fresh process, keeping the windows.
+    RestartWm,
 }
 
 impl DesktopSessionShortcut {
@@ -58,6 +63,8 @@ impl DesktopSessionShortcut {
             Self::LaunchTerminal => "spawn-terminal",
             Self::LaunchBrowser => "spawn-browser",
             Self::WindowSwitcher => "window-switcher",
+            Self::ReloadProfile => "reload-profile",
+            Self::RestartWm => "restart-wm",
         }
     }
 }
@@ -184,6 +191,21 @@ fn parse_chord(
 pub fn desktop_shortcut_evdev_keycode(trigger: &str) -> Option<u32> {
     Some(match trigger {
         "escape" => 1,
+        // Function keys. F1..F10 are contiguous from 59; F11 and F12 sit
+        // after the numeric block rather than continuing it, which is an
+        // accident of the original keyboard and not a mistake here.
+        "f1" => 59,
+        "f2" => 60,
+        "f3" => 61,
+        "f4" => 62,
+        "f5" => 63,
+        "f6" => 64,
+        "f7" => 65,
+        "f8" => 66,
+        "f9" => 67,
+        "f10" => 68,
+        "f11" => 87,
+        "f12" => 88,
         "1" => 2,
         "2" => 3,
         "3" => 4,
@@ -287,6 +309,8 @@ fn parse_target(
                 "spawn-terminal" => DesktopSessionShortcut::LaunchTerminal,
                 "spawn-browser" => DesktopSessionShortcut::LaunchBrowser,
                 "window-switcher" => DesktopSessionShortcut::WindowSwitcher,
+                "reload-profile" => DesktopSessionShortcut::ReloadProfile,
+                "restart-wm" => DesktopSessionShortcut::RestartWm,
                 _ => return Err(schema_error("unknown session shortcut capability")),
             };
             Ok(DesktopShortcutTarget::Session(shortcut))

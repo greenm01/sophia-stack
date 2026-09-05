@@ -486,11 +486,95 @@ pub fn prepare_desktop_profile_candidates(
     })
 }
 
+/// Rewrites already-staged fragments to carry a newer profile generation.
+///
+/// Staging refuses to overwrite, which is right when a session starts: a
+/// fragment already there means another session owns this directory. A reload
+/// is the one case where replacing them is the whole point, and the paths must
+/// not move, because the running policy client was launched with one of them
+/// named in its environment and will read that same path when it restarts.
+///
+/// Each fragment is written beside its target and renamed over it, so a reader
+/// arriving mid-write sees either the old profile or the new one. A failure
+/// part-way leaves the fragments it has not reached still holding the previous
+/// generation, which the activation key then refuses as a mismatch rather than
+/// admitting a half-swapped profile.
+pub fn restage_desktop_profile(
+    profile: &DesktopProfileGeneration,
+    fragments: &DesktopProfileFragments,
+) -> Result<DesktopProfileFragments, DesktopProfileError> {
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
+    let mut paths = BTreeMap::new();
+    for authority in DesktopAuthority::ALL {
+        let candidate = profile
+            .candidates
+            .get(&authority)
+            .expect("all desktop authority candidates validated before staging");
+        let path = fragments.path(authority).to_path_buf();
+        let staging = path.with_extension("kdl.replacing");
+        let result = (|| -> Result<(), DesktopProfileError> {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&staging)
+                .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+            write_desktop_profile_fragment(&mut file, profile, authority, candidate)?;
+            file.sync_all()
+                .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+            fs::set_permissions(&staging, fs::Permissions::from_mode(0o600))
+                .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+            fs::rename(&staging, &path)
+                .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = fs::remove_file(&staging);
+            return Err(error);
+        }
+        paths.insert(authority, path);
+    }
+    if let Some(directory) = fragments.path(DesktopAuthority::Policy).parent()
+        && let Err(error) = fs::File::open(directory).and_then(|directory| directory.sync_all())
+    {
+        return Err(DesktopProfileError::Stage(error.to_string()));
+    }
+    Ok(DesktopProfileFragments {
+        generation: profile.generation,
+        digest: profile.digest.clone(),
+        paths,
+    })
+}
+
+/// The body of one staged fragment. Shared so a reload writes byte-for-byte
+/// what startup wrote, which is what lets the digest be compared at all.
+fn write_desktop_profile_fragment(
+    file: &mut fs::File,
+    profile: &DesktopProfileGeneration,
+    authority: DesktopAuthority,
+    candidate: &DesktopAuthorityCandidate,
+) -> Result<(), DesktopProfileError> {
+    use std::io::Write as _;
+
+    writeln!(file, "schema 1")
+        .and_then(|_| writeln!(file, "profile-generation {}", profile.generation.raw()))
+        .and_then(|_| writeln!(file, "profile-digest \"{}\"", profile.digest))
+        .and_then(|_| writeln!(file, "{} {{", authority.name()))
+        .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+    for value in &candidate.values {
+        writeln!(file, "  {}", value.encoded)
+            .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+    }
+    writeln!(file, "}}").map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+    Ok(())
+}
+
 pub fn stage_desktop_profile(
     profile: &DesktopProfileGeneration,
     directory: &Path,
 ) -> Result<DesktopProfileFragments, DesktopProfileError> {
-    use std::io::Write as _;
     use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 
     if !directory.is_absolute() {
@@ -525,16 +609,7 @@ pub fn stage_desktop_profile(
             .open(&path)
             .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
         let result = (|| -> Result<(), DesktopProfileError> {
-            writeln!(file, "schema 1")
-                .and_then(|_| writeln!(file, "profile-generation {}", profile.generation.raw()))
-                .and_then(|_| writeln!(file, "profile-digest \"{}\"", profile.digest))
-                .and_then(|_| writeln!(file, "{} {{", authority.name()))
-                .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
-            for value in &candidate.values {
-                writeln!(file, "  {}", value.encoded)
-                    .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
-            }
-            writeln!(file, "}}").map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
+            write_desktop_profile_fragment(&mut file, profile, authority, candidate)?;
             file.sync_all()
                 .map_err(|error| DesktopProfileError::Stage(error.to_string()))?;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))

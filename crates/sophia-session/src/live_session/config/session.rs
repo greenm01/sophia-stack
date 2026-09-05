@@ -25,6 +25,8 @@ pub(super) fn session_action_evidence_name(action: WmSessionAction) -> &'static 
         WmSessionAction::LaunchApplication { .. } => "LaunchApplication",
         WmSessionAction::CloseFocused => "CloseFocused",
         WmSessionAction::Logout => "Logout",
+        WmSessionAction::ReloadProfile => "ReloadProfile",
+        WmSessionAction::RestartWm => "RestartWm",
     }
 }
 
@@ -155,6 +157,13 @@ impl SessionApplicationConfig {
                 sophia_config::DesktopShortcutTarget::Session(
                     sophia_config::DesktopSessionShortcut::WindowSwitcher,
                 ) => shell_enabled,
+                // Always available. Neither needs a configured application,
+                // and a desktop whose configuration is wrong is the one that
+                // needs them most.
+                sophia_config::DesktopShortcutTarget::Session(
+                    sophia_config::DesktopSessionShortcut::ReloadProfile
+                    | sophia_config::DesktopSessionShortcut::RestartWm,
+                ) => true,
             };
             if available {
                 continue;

@@ -13,6 +13,8 @@ fn session_shortcut_identity(
         sophia_config::DesktopSessionShortcut::LaunchBrowser => Some((2, "spawn-browser")),
         sophia_config::DesktopSessionShortcut::CloseFocused => Some((3, "close-window")),
         sophia_config::DesktopSessionShortcut::Logout => Some((4, "logout")),
+        sophia_config::DesktopSessionShortcut::ReloadProfile => Some((5, "reload-profile")),
+        sophia_config::DesktopSessionShortcut::RestartWm => Some((6, "restart-wm")),
         sophia_config::DesktopSessionShortcut::WindowSwitcher => None,
     }
 }

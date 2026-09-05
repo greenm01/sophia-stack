@@ -17,6 +17,16 @@
         }
     }
     if let Some(wm) = wm_session.as_mut() {
+        if profile_reload_requested {
+            profile_reload_requested = false;
+            // Requests its own restart when it has something to restart for,
+            // so an unchanged or refused profile costs the desktop nothing.
+            let _ = wm.reload_desktop_profile(config)?;
+        }
+        if wm_restart_requested {
+            wm_restart_requested = false;
+            wm.request_deliberate_restart();
+        }
         let _ = wm.poll_restart(&mut layout, output)?;
         wm.poll_output_authority()?;
         if let Some(mut execution) = active_output_topology_preparation.take() {

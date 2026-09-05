@@ -547,10 +547,22 @@ struct SessionActionExecutionContext<'a> {
     session_controls: &'a mut SessionControlQueue,
 }
 
+/// What committed session actions asked the session to do next.
+///
+/// Three requests that outlive the action loop. Logout ends the session,
+/// reload puts a changed profile into effect, and restart replaces the policy
+/// client; each is carried out by the owner loop, which owns the machinery.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CommittedSessionActionRequests {
+    pub logout: bool,
+    pub reload_profile: bool,
+    pub restart_wm: bool,
+}
+
 fn execute_committed_session_actions(
     context: SessionActionExecutionContext<'_>,
     actions: &mut VecDeque<(TransactionId, WmSessionAction, Option<SurfaceId>)>,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<CommittedSessionActionRequests, Box<dyn std::error::Error>> {
     let SessionActionExecutionContext {
         config,
         xauthority,
@@ -599,7 +611,7 @@ fn execute_committed_session_actions(
         );
     }
 
-    let mut logout = false;
+    let mut requests = CommittedSessionActionRequests::default();
     while let Some((transaction, action, target)) = actions.pop_front() {
         if let WmSessionAction::LaunchApplication { application } = action {
             let placement_classification = config
@@ -653,8 +665,18 @@ fn execute_committed_session_actions(
                     format!("failed to queue polite close control: {error:?}")
                 })?;
             }
+            WmSessionAction::ReloadProfile => {
+                // Re-reading the profile is the owner loop's to do: it holds
+                // the staging directory, the authority slots and the policy
+                // launch. Recording the request here keeps this loop what it
+                // is, which is the place committed actions are acknowledged.
+                requests.reload_profile = true;
+            }
+            WmSessionAction::RestartWm => {
+                requests.restart_wm = true;
+            }
             WmSessionAction::Logout => {
-                logout = true;
+                requests.logout = true;
                 let cancelled = launches.cancel_pending();
                 let admission_cancelled = usize::from(launches.fail_current().is_some());
                 *launch_admission_started_at = None;
@@ -677,11 +699,11 @@ fn execute_committed_session_actions(
         );
     }
 
-    if logout {
-        return Ok(true);
+    if requests.logout {
+        return Ok(requests);
     }
     let Some(intent) = launches.begin_next(startup_ready, admission_pipeline_idle) else {
-        return Ok(false);
+        return Ok(requests);
     };
     if children.len() >= crate::session_actions::SESSION_ACTION_APPLICATION_CAPACITY {
         let _ = launches.fail_current();
@@ -689,7 +711,7 @@ fn execute_committed_session_actions(
             "sophia_session_app schema=2 status=rejected source=action transaction={} reason=capacity",
             intent.transaction.raw(),
         );
-        return Ok(false);
+        return Ok(requests);
     }
     let action = WmSessionAction::LaunchApplication {
         application: intent.application,
@@ -738,5 +760,5 @@ fn execute_committed_session_actions(
             );
         }
     }
-    Ok(logout)
+    Ok(requests)
 }

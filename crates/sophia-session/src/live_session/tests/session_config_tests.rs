@@ -968,12 +968,17 @@ fn frame_fed_output_gate_admits_hagias_complete_session_operation_catalog() {
     .unwrap();
 
     let (operations, _) = public_session_operations(&config);
+    // Slots 1-4 depend on what the session was configured to launch. Slots 5
+    // and 6 -- reload the profile, replace the policy client -- do not: a
+    // desktop whose configuration is wrong is the one that needs them, and a
+    // catalog that offered them only when things were already working would
+    // withhold them exactly when they matter.
     assert_eq!(
         operations
             .iter()
             .map(|operation| operation.slot)
             .collect::<Vec<_>>(),
-        vec![1, 2, 3, 4]
+        vec![1, 2, 3, 4, 5, 6]
     );
 }
 

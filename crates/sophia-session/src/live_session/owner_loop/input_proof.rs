@@ -251,7 +251,7 @@
             }
         }
         let withdrawn_admissions = layout.take_withdrawn_admissions();
-        if execute_committed_session_actions(
+        let session_requests = execute_committed_session_actions(
             SessionActionExecutionContext {
                 config,
                 xauthority,
@@ -268,7 +268,14 @@
                 session_controls: &mut session_controls,
             },
             &mut committed_session_actions,
-        )? {
+        )?;
+        if session_requests.reload_profile {
+            profile_reload_requested = true;
+        }
+        if session_requests.restart_wm {
+            wm_restart_requested = true;
+        }
+        if session_requests.logout {
             logout_requested = true;
             let discarded = input_delivery.pending.len();
             input_delivery.events_expected =

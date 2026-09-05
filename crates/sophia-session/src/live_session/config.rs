@@ -98,6 +98,11 @@ struct PersistentXtermSessionConfig {
     input_profile: PreparedInputProfile,
     output_profile: PreparedOutputProfile,
     desktop_profile: sophia_config::DesktopProfileGeneration,
+    /// Where the desktop profile was read from, kept so it can be read again.
+    /// A reload has to return to the same file the session started from; a
+    /// discovery run at reload time could answer differently and silently
+    /// swap which profile the desktop obeys.
+    desktop_profile_source: Option<std::path::PathBuf>,
     desktop_profile_activation: sophia_config::DesktopProfileActivationModel,
     core_config_source: sophia_config::ConfigSource,
     core_config_state: sophia_config::CoreConfigState,
@@ -936,6 +941,7 @@ impl PersistentXtermSessionConfig {
             input_profile,
             output_profile,
             desktop_profile,
+            desktop_profile_source,
             desktop_profile_activation: sophia_config::DesktopProfileActivationModel::default(),
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             cursor_resolution,
@@ -1034,7 +1040,10 @@ impl PersistentXtermSessionConfig {
                 self.applications.browser.as_ref()
             }
             WmSessionAction::LaunchApplication { .. } => None,
-            WmSessionAction::CloseFocused | WmSessionAction::Logout => None,
+            WmSessionAction::CloseFocused
+            | WmSessionAction::Logout
+            | WmSessionAction::ReloadProfile
+            | WmSessionAction::RestartWm => None,
         }?;
         self.applications.applications.get(id)
     }

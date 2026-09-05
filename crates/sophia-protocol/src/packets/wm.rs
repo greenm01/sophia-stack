@@ -135,9 +135,17 @@ impl WmChromePolicy {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WmSessionAction {
-    LaunchApplication { application: SessionApplicationId },
+    LaunchApplication {
+        application: SessionApplicationId,
+    },
     CloseFocused,
     Logout,
+    /// Re-read the desktop profile and put it into effect.
+    ReloadProfile,
+    /// Replace the policy client with a fresh process. Its state is
+    /// checkpointed and restored, so this is a reload of the window manager
+    /// rather than a loss of the desktop.
+    RestartWm,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

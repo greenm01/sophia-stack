@@ -1844,6 +1844,11 @@ fn public_session_operations(
     if config.applications.logout_enabled {
         admit(4, token(4), WmSessionAction::Logout, false);
     }
+    // Reloading the profile and replacing the policy client are always
+    // available. Neither depends on a configured application, and a desktop
+    // whose configuration is wrong is exactly the one that needs them.
+    admit(5, token(5), WmSessionAction::ReloadProfile, false);
+    admit(6, token(6), WmSessionAction::RestartWm, false);
     (operations, actions)
 }
 
@@ -2136,6 +2141,18 @@ impl LiveWmSession {
         let proposal = match event {
             Ok(Some(PolicyTransportEvent::Negotiated)) => {
                 public.negotiated = true;
+                // A client that negotiated is a client that works, so the
+                // restart budget starts over. Without this the count only ever
+                // rises: ProcessHealthy is the one event that clears it and
+                // nothing emitted it, so three restarts across an entire
+                // session -- however many hours apart, however deliberate --
+                // ended the desktop on the third.
+                let (state, _) = update_supervisor(
+                    self.supervisor_state.clone(),
+                    SupervisorEvent::ProcessHealthy,
+                    self.restart_policy,
+                );
+                self.supervisor_state = state;
                 None
             }
             Ok(Some(PolicyTransportEvent::ReadyForCycle)) => {
@@ -2810,3 +2827,117 @@ impl LiveWmSession {
 }
 
 include!("public_policy/proposal.rs");
+
+/// What re-reading the desktop profile did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DesktopProfileReloadOutcome {
+    /// The file on disk says what the running session already believes.
+    Unchanged,
+    /// The file could not be read or did not validate. Nothing was touched;
+    /// the session keeps running on the profile it already had.
+    Declined,
+    /// New fragments are staged and the policy client must be replaced to
+    /// read them.
+    RestartRequired,
+}
+
+impl LiveWmSession {
+    /// Re-reads the desktop profile and stages it for the policy client.
+    ///
+    /// Reload is a restart, because that is the only moment the policy client
+    /// reads its profile: the activation barrier runs once per connection, and
+    /// the client learns its candidate from an environment variable set when it
+    /// was launched. A replacement process re-runs that barrier against the
+    /// fragments this stages, and its checkpoint carries the windows across, so
+    /// what the operator sees is the configuration changing under a desktop
+    /// that did not go away.
+    ///
+    /// Nothing is written until the new profile has been read and validated, so
+    /// a broken config file is refused with everything still running on the
+    /// last profile that worked.
+    pub(crate) fn reload_desktop_profile(
+        &mut self,
+        config: &mut PersistentXtermSessionConfig,
+    ) -> Result<DesktopProfileReloadOutcome, Box<dyn std::error::Error>> {
+        let Some(public) = self.public.as_mut() else {
+            crate::session_eprintln!(
+                "sophia_live_desktop_profile schema=1 status=reload_declined reason=no_policy_client"
+            );
+            return Ok(DesktopProfileReloadOutcome::Declined);
+        };
+        if public.profile_key.is_none() {
+            crate::session_eprintln!(
+                "sophia_live_desktop_profile schema=1 status=reload_declined reason=activation_not_negotiated"
+            );
+            return Ok(DesktopProfileReloadOutcome::Declined);
+        }
+        let active_generation = config.desktop_profile.generation.raw();
+        crate::session_println!(
+            "sophia_live_desktop_profile schema=1 status=reload_requested generation={active_generation}"
+        );
+
+        let next_generation = sophia_config::ConfigGeneration::from_raw(
+            active_generation.saturating_add(1),
+        );
+        let loaded = sophia_config::load_prepared_desktop_profile(
+            config.desktop_profile_source.as_deref(),
+            next_generation,
+        );
+        let sophia_config::PreparedDesktopProfile {
+            profile: reloaded, ..
+        } = match loaded {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                // The refusal has to name what it refused, because the operator
+                // is looking at a desktop that did not change and needs to know
+                // whether that is their typo or our bug.
+                crate::session_eprintln!(
+                    "sophia_live_desktop_profile schema=1 status=reload_declined reason=invalid detail={error}"
+                );
+                return Ok(DesktopProfileReloadOutcome::Declined);
+            }
+        };
+        if reloaded.digest == config.desktop_profile.digest {
+            crate::session_println!(
+                "sophia_live_desktop_profile schema=1 status=reload_unchanged generation={active_generation} digest={}",
+                config.desktop_profile.digest,
+            );
+            return Ok(DesktopProfileReloadOutcome::Unchanged);
+        }
+
+        // Only the policy authority is carried by a client restart. Every other
+        // authority was applied by the session itself when it started, and
+        // saying so beats letting an operator believe a key they changed took
+        // effect.
+        for authority in sophia_config::DesktopAuthority::ALL {
+            if authority == sophia_config::DesktopAuthority::Policy {
+                continue;
+            }
+            let before = config.desktop_profile.candidates.get(&authority);
+            let after = reloaded.candidates.get(&authority);
+            if before.map(|candidate| &candidate.values) != after.map(|candidate| &candidate.values)
+            {
+                crate::session_eprintln!(
+                    "sophia_live_desktop_profile schema=1 status=reload_deferred authority={} reason=applied_at_session_start",
+                    authority.name(),
+                );
+            }
+        }
+
+        let fragments =
+            sophia_config::restage_desktop_profile(&reloaded, &public._profile_fragments)?;
+        let key = sophia_config::DesktopProfileActivationKey::from(&reloaded);
+        sophia_config::validate_desktop_profile_fragments(&fragments, key)?;
+        let digest = reloaded.digest.clone();
+        let generation = reloaded.generation.raw();
+
+        public._profile_fragments = fragments;
+        public.profile_key = Some(key);
+        config.desktop_profile = reloaded;
+        self.request_deliberate_restart();
+        crate::session_println!(
+            "sophia_live_desktop_profile schema=1 status=reload_staged generation={generation} digest={digest}"
+        );
+        Ok(DesktopProfileReloadOutcome::RestartRequired)
+    }
+}

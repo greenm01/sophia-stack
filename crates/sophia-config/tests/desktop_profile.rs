@@ -13,8 +13,8 @@ use sophia_config::{
     discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
     load_prepared_desktop_profile, prepare_desktop_input_candidate,
     prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, stage_desktop_profile,
-    validate_desktop_profile_fragments,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, restage_desktop_profile,
+    stage_desktop_profile, validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -579,6 +579,56 @@ fn rejects_unsafe_sources_symlinks_depth_and_aggregate_size() {
         load_desktop_profile(Some(&main), ConfigGeneration::INITIAL),
         Err(DesktopProfileError::Limit(message)) if message.contains("64 files")
     ));
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A reload rewrites the fragments the running client will read again.
+///
+/// Staging refuses to overwrite, which is correct at startup and useless for a
+/// reload: the policy client was launched with one of these paths in its
+/// environment and reads that same path when it restarts, so the new profile
+/// has to arrive at the old location. The paths must not move and the content
+/// must be what staging would have written, or the activation key stops
+/// matching what the client loads.
+#[test]
+fn restaging_replaces_fragments_in_place_for_a_newer_generation() {
+    let root = temporary_directory("restage");
+    let first = load_desktop_profile(None, ConfigGeneration::INITIAL).unwrap();
+    let staged = stage_desktop_profile(&first, &root).unwrap();
+    let paths_before = DesktopAuthority::ALL
+        .into_iter()
+        .map(|authority| staged.path(authority).to_path_buf())
+        .collect::<Vec<_>>();
+
+    let second = load_desktop_profile(None, ConfigGeneration::from_raw(7)).unwrap();
+    let restaged = restage_desktop_profile(&second, &staged).unwrap();
+
+    for (index, authority) in DesktopAuthority::ALL.into_iter().enumerate() {
+        let path = restaged.path(authority);
+        assert_eq!(
+            path, paths_before[index],
+            "a reload must not move the fragment the client was told to read"
+        );
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "a replaced fragment stays owner-only"
+        );
+        let source = fs::read_to_string(path).unwrap();
+        assert!(source.contains("profile-generation 7"));
+        assert!(source.contains(&format!("profile-digest \"{}\"", second.digest)));
+    }
+    assert_eq!(restaged.generation, ConfigGeneration::from_raw(7));
+
+    // Nothing is left behind mid-write: the replacement file is renamed over
+    // its target, so a reader arriving at any moment sees one whole profile.
+    for entry in fs::read_dir(&root).unwrap() {
+        let name = entry.unwrap().file_name();
+        assert!(
+            !name.to_string_lossy().contains("replacing"),
+            "a staging file survived the rename: {name:?}"
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
