@@ -39,6 +39,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-kitty-input-smoke");
     println!("commands: x-authority-vkcube-admission-smoke");
     println!("commands: x-authority-xmobar-smoke");
+    println!("commands: x-authority-quickshell-smoke");
     println!("commands: x-authority-present-pixmap-smoke");
     #[cfg(feature = "native-session")]
     println!(
