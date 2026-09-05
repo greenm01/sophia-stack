@@ -331,10 +331,15 @@ tranche with a named driver and exit gate.
 - Implement the generic session-owned [scripting contract](docs/scripting.md)
   only after promotion of a bounded slice. The proposed `sophia msg` first
   exposes registered argument-free WM actions and session reload/restart;
-  shell commands need a negotiated extension. Define caller authorization,
-  access defaults, wire, limits, and completion/recovery evidence before
-  enablement. Documentation establishes the target, not a shipped interface
-  or a new daily-driver acceptance gate.
+  shell commands need a negotiated extension. The experimental
+  [control v1 wire](docs/sophia-control-v1.md), KDL schema, generated vectors,
+  and independent client are specified and checked offline. Access is disabled
+  by default with explicit host-administration opt-in; revision 1 has one
+  outstanding request per connection and owner settlement. Before enablement,
+  implement verified host-domain admission, catalog/action correlation,
+  reload/restart settlement and rollback, bounded transport, and measured
+  input/frame fairness. Delegated grants remain a later extension. This is
+  neither a shipped service nor a new daily-driver acceptance gate.
 - Harden the implemented issuer-scoped action checks and reservation/work-area
   coordination only against a named remaining lifecycle gap; preserve existing
   offline conformance and distinguish it from signed physical acceptance.

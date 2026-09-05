@@ -8,6 +8,8 @@ use std::process::{Command, Stdio};
 
 use kdl::{KdlDocument, KdlNode};
 
+mod control;
+
 const SCHEMA_PATH: &str = "protocol/sophia-wm-v1.kdl";
 const SHELL_SCHEMA_PATH: &str = "protocol/sophia-shell-v1.kdl";
 const RUST_PATH: &str = "crates/sophia-protocol/src/ipc/wm_v1.rs";
@@ -131,7 +133,10 @@ fn run() -> Result<(), String> {
     let shell_schema_text = fs::read_to_string(root.join(SHELL_SCHEMA_PATH))
         .map_err(|error| format!("read {SHELL_SCHEMA_PATH}: {error}"))?;
     validate_shell_schema(&shell_schema_text)?;
-    let outputs = render_outputs(&schema)?;
+    let mut outputs = render_outputs(&schema)?;
+    let control_text = fs::read_to_string(root.join("protocol/sophia-control-v1.kdl"))
+        .map_err(|error| format!("read control schema: {error}"))?;
+    outputs.extend(control::outputs(&control_text)?);
 
     let mut stale = Vec::new();
     for (relative, content) in outputs {
@@ -933,7 +938,12 @@ fn render_rust_record(record: &Record, out: &mut String) {
                 rust_cursor(field.kind)
             )
             .unwrap();
-            writeln!(out, "        if reserved != 0 {{ return Err(IpcCodecError::ReservedNonZero(reserved as u32)); }}").unwrap();
+            let cast = if field.kind == FieldKind::U32 {
+                ""
+            } else {
+                " as u32"
+            };
+            writeln!(out, "        if reserved != 0 {{ return Err(IpcCodecError::ReservedNonZero(reserved{cast})); }}").unwrap();
         } else {
             writeln!(
                 out,

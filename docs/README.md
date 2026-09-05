@@ -58,6 +58,10 @@ candidates that role may exchange.
 - [Sophia Native Protocol Family](sophia-policy-ipc.md) is the developer entry
   point for the shared language-neutral envelope, negotiation, lifecycle,
   source hierarchy, evolution rules, and per-role stability discipline.
+- [Sophia Control v1](sophia-control-v1.md) specifies the experimental scripting
+  wire, host-control opt-in, catalog generations, and owner-settled outcomes.
+  Its schema, generated vectors, and independent client are offline artifacts;
+  the session control service and `sophia msg` CLI remain unimplemented.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.

@@ -74,6 +74,14 @@ respectively. Independent tab wire and protected client checks run through
 the frozen revision-3 WM clients against the optional group extension. Hagia and
 Narthex run their own `SOPHIA_STACK_ROOT=/path/to/sophia-stack nimble test` gates.
 These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
+
+`tools/check_control_protocol.sh` checks the experimental
+[control v1 wire](sophia-control-v1.md): generated schema artifacts and an
+independent client exercise framing, catalog bounds, correlation, and failure
+handling. The session endpoint is unimplemented. Host-domain admission,
+dispatch/settlement, reload/restart recovery, pressure, and input/frame fairness
+remain live-service implementation gates listed in that specification.
+
 `ShellWorkAreaCoordination` checks that a future ready shell reservation,
 derived work area, and exact WM projection promote as one coherent generation;
 normal shell or WM failure preserves the prior presented bundle. It is a target

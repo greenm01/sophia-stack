@@ -96,7 +96,11 @@ command scope; generic shell commands require a separately negotiated
 extension. Namespace admission does not grant desktop-control authority,
 and command invocation does not grant application-data access. The scripting
 contract distinguishes host-user administration, confined callers, and future
-namespace-scoped automation without choosing a default access policy.
+namespace-scoped automation. The experimental [control v1 wire](sophia-control-v1.md)
+is specified for independent clients: disabled by default, explicit host-control
+opt-in, one outstanding request per stream, and owner-settled results. Confined
+delegation and shell commands require future extensions. Offline wire checks
+do not establish the still-unimplemented endpoint's security or live behavior.
 
 ## The Ladder
 

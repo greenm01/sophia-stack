@@ -26,6 +26,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
 | `sophia_shell_v1` major 1 revision 1 | metadata-bearing shell | experimental title-only descriptor switcher | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
 | `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
+| `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental wire and offline client conformance; service unimplemented | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
 
 A shared envelope or implementation crate does not give one interface the
@@ -55,9 +56,11 @@ The proposed public [scripting interface](scripting.md) is a separate
 session-owned control service. Its callers are not supervised role peers,
 and commands do not tunnel WM, shell, or broker packets through another
 endpoint. Existing role negotiation and authority boundaries remain intact.
-The scripting document establishes target behavior, not a new wire schema;
-its control protocol and any generic shell-command extension still require
-specification and conformance evidence.
+The experimental [control v1 specification](sophia-control-v1.md) and
+[schema](../protocol/sophia-control-v1.kdl) define its separate wire surface
+(kinds 128–134), with generated tables, vectors, and an independent example.
+The control service and CLI remain unimplemented. Generic shell commands
+still require a negotiated extension; control adds no role capability.
 
 Role interfaces use the same conceptual lifecycle even when their frozen
 message names differ:
@@ -152,7 +155,12 @@ The current public role schemas are:
 
 - `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3; and
 - `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
-  revision 1.
+revision 1.
+
+The separate scripting service uses `protocol/sophia-control-v1.kdl` for
+experimental control major 1 revision 1. It shares this family's envelope but
+has its own host-admission, sequencing, and settlement contract; it is not a
+supervised role schema.
 
 `sophia_output_v1` does not yet have a checked-in declarative schema. Its
 handwritten experimental codec is implementation evidence, not a wire
@@ -168,6 +176,11 @@ and `tools/check_shell_protocol.sh` exercise the current role implementations
 against their shared bytes. A single family-level conformance entry point
 remains a roadmap gate; the separate scripts do not define separate protocol
 semantics.
+
+`tools/check_control_protocol.sh` checks schema-derived control tables and
+vectors against an independent Python example. This is offline wire/client
+evidence only; it does not exercise an implemented service or prove admission,
+owner settlement, or fairness under live traffic.
 
 ## Endpoints And Admission
 

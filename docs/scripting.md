@@ -1,9 +1,10 @@
 # Scripting Sophia
 
 **Role:** normative target architecture and proposed CLI contract.
-**Status:** unimplemented control interface. `sophia msg` is proposed; none of
-the command examples below is currently available. This document adds no wire
-messages, capabilities, or default enablement.
+**Status:** unimplemented control service and CLI. `sophia msg` is proposed;
+none of the command examples below is currently available. The experimental
+[control v1 wire](sophia-control-v1.md) is specified with offline conformance
+artifacts. It is disabled by default and requires explicit host-control opt-in.
 
 Sophia supports the architectural goal of a scriptable display server with
 replaceable window-manager and shell clients. Scripts request deliberate
@@ -17,8 +18,8 @@ client executable, implementation language, or private command vocabulary.
 [Namespaces and Portals](namespaces-and-portals.md) owns resource isolation
 and transfers; the [native protocol family](sophia-policy-ipc.md) owns shared
 wire and lifecycle rules. This document owns scripting-specific requirements
-within those contracts. A future control schema must define the wire before
-an independent implementation can be built.
+within those contracts. The [control schema](../protocol/sophia-control-v1.kdl)
+and companion wire specification define the first independent-client surface.
 
 ## Current And Proposed Support
 
@@ -29,7 +30,7 @@ an independent implementation can be built.
 | Shell behavior | Negotiated descriptor, candidate, presentation, and activation exchanges | A generic shell command catalog needs a separate protocol extension |
 | Parameterized commands | The WM action path has no arbitrary argument payload | Specify a bounded argument contract before adding setters |
 | State queries and event subscriptions | Role snapshots serve their admitted recipients | A scripting disclosure and subscription contract is future work |
-| Public control endpoint | No `sophia msg` service exists | Specify admission, wire, limits, and lifecycle before enabling it |
+| Public control endpoint | Wire specified; no `sophia msg` service exists | Implement and verify host admission, owner settlement, limits, and recovery before enabling it |
 
 The existence of a session operation or role message does not make it a public
 scripting API. In particular, a shell activation acknowledgement is not a
@@ -150,14 +151,17 @@ processes running as the session user. That trusts all such processes, not
 only a terminal or a selected executable. Owner-only filesystem permissions
 exclude other users; they do not provide a same-user application allowlist.
 This mode must be named explicitly and must not be advertised as
-namespace-restricted scripting. Its default enablement is not decided here.
+namespace-restricted scripting. Control v1 selects this mode only through an
+explicit host-administration opt-in; the default is disabled. OS-confined and
+protected role processes are excluded. Verified host protection-domain
+admission remains an implementation gate, not a property of the socket wire.
 
 Selective grants require an enforceable caller boundary. They cannot establish
 isolation from an unconfined process that can replace authorized tools, read
 their credentials, or modify the session's configuration. Confined callers
 need explicit delegation and verified protection against reaching or
 inheriting broader host authority. Grant issuance and delivery remain
-implementation prerequisites, not existing facilities implied by this text.
+prerequisites for a future delegated-access extension, outside control v1.
 
 The session keeps caller credentials, namespace identity, and authorization
 decisions outside the WM. The WM receives only the permitted opaque action
@@ -205,8 +209,9 @@ blocking socket I/O stay outside input and rendering work. Session servicing
 must enforce fair work budgets so a slow reader or command flood cannot
 starve physical input, frame service, security transitions, or recovery.
 The hot path must not spawn a process per request or acquire unbounded queues.
-Exact limits and measurable service budgets belong to the implementation
-contract and its acceptance evidence.
+The [control v1 bounds](sophia-control-v1.md#resource-and-scheduling-contract)
+fix transport ceilings. Measurable aggregate service budgets still require
+implementation acceptance evidence.
 
 ## Guidance For Independent Clients
 
@@ -222,18 +227,20 @@ families must fail explicitly rather than fall back to another role's socket.
 
 Scripting-client authors discover available names and support, handle terminal
 outcomes, and treat replacement or reconnect as a fresh authority context.
-The future interface must be implementable from its published contract and
+The interface must be implementable from its published contract and
 schema using ordinary Unix IPC, without a required SDK or a reference WM or
 shell executable. The proposed CLI is a convenience client of that interface.
 
 ## Implementation Prerequisites
 
-Implementation remains candidate work. Before enabling a service, specify and
-review its endpoint discovery and caller authentication, authorization scopes,
-grant delivery and revocation, default access policy, wire negotiation and
-layouts, numeric bounds, command-specific completion, and compatibility rules.
-The protocol schema and independent conformance surface must agree with this
-architecture. No byte layout or new role capability is established here.
+Service implementation remains candidate work. Control v1 now specifies
+endpoint discovery, host-only opt-in, negotiation and layouts, numeric bounds,
+command-specific completion, and compatibility. Before enablement, implement
+and review race-resistant host protection-domain admission, dispatch-time
+authorization, owner settlement/rollback, revocation, and measured service
+budgets. The schema, independent client, and offline fixtures do not prove
+these runtime properties. Delegated grants and shell commands need later
+protocol extensions; existing WM and shell wire capabilities are unchanged.
 
 Acceptance must cover unauthorized callers and forged namespace claims,
 cross-namespace denial, protected-role isolation, stale/replayed requests,
