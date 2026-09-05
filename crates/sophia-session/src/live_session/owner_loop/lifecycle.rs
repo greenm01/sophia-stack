@@ -780,6 +780,61 @@
                 std::io::stdout().flush()?;
             }
         }
+        // Shake-to-find, before the move is submitted: the gesture is read from
+        // the same positions the hardware cursor is about to be placed at, so
+        // there is no second source of pointer truth to keep in step.
+        //
+        // The pointer is watched whatever input routing is doing. A client
+        // that has grabbed the pointer has not taken the cursor -- the Engine
+        // owns that -- and someone who cannot find it is exactly as lost
+        // either way.
+        if config.cursor_shake_resolution.is_some() && !cursor_shake_refused {
+            let now_msec =
+                u64::try_from(cursor_shake_epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let at = pointer
+                .position()
+                .map(|position| (position.x as i32, position.y as i32));
+            let action = match at {
+                Some(at) if Some(at) != cursor_shake_seen => {
+                    cursor_shake_seen = Some(at);
+                    cursor_shake.observe_motion(true, at.0, at.1, now_msec)
+                }
+                _ => cursor_shake.tick(true, now_msec),
+            };
+            if let Some(action) = action {
+                let resolution = match action {
+                    sophia_engine::CursorShakeAction::Enlarge => config
+                        .cursor_shake_resolution
+                        .as_ref()
+                        .unwrap_or(&config.cursor_resolution),
+                    sophia_engine::CursorShakeAction::Restore => &config.cursor_resolution,
+                };
+                scene.set_cursor_asset(resolution.asset.clone());
+                if let Some(native) = native_scanout.as_mut() {
+                    // A refusal here is not a session failure. The cursor the
+                    // operator has stays on screen, which is worse than the
+                    // one they asked for and much better than no desktop.
+                    if let Err(error) =
+                        native.replace_hardware_cursor_asset(resolution.asset.clone())
+                    {
+                        crate::session_eprintln!(
+                            "sophia_live_cursor schema=1 status=shake_declined action={action:?} detail={error}"
+                        );
+                        // Leave the base cursor installed rather than whatever
+                        // partial state a multi-head refusal stopped at.
+                        let _ = native
+                            .replace_hardware_cursor_asset(config.cursor_resolution.asset.clone());
+                        scene.set_cursor_asset(config.cursor_resolution.asset.clone());
+                        cursor_shake_refused = true;
+                    }
+                }
+                crate::session_println!(
+                    "sophia_live_cursor schema=1 status=shake action={action:?} size={}",
+                    resolution.effective_nominal_size,
+                );
+                cursor_updates.dirty = pointer.position().is_some();
+            }
+        }
         if cursor_updates.dirty
             && let (Some(native_scanout), Some(runtime), Some(position)) =
                 (native_scanout.as_mut(), runtime.as_ref(), pointer.position())

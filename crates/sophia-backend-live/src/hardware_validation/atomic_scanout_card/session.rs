@@ -40,6 +40,53 @@ struct RealAtomicCursorPlane {
 }
 
 #[cfg(feature = "gbm-probe")]
+fn cursor_raster_fits(
+    dimensions: LegacyHardwareCursorDimensions,
+    asset: &sophia_engine::CursorAsset,
+) -> io::Result<()> {
+    if dimensions.width < asset.width() || dimensions.height < asset.height() {
+        return Err(io::Error::other(format!(
+            "driver cursor dimensions {}x{} are smaller than the {}x{} cursor raster",
+            dimensions.width,
+            dimensions.height,
+            asset.width(),
+            asset.height(),
+        )));
+    }
+    Ok(())
+}
+
+/// Writes an asset's pixels into the cursor buffer, clearing what was there.
+///
+/// The buffer is the size the driver reports for a cursor, not the size of the
+/// raster, so a smaller asset leaves the rest transparent and a replacement
+/// never needs a new buffer. That is what makes swapping the cursor at runtime
+/// a fill rather than a reallocation: the plane keeps scanning out the same
+/// handle and only its contents change.
+#[cfg(feature = "gbm-probe")]
+fn paint_hardware_cursor(
+    card: &RealAtomicScanoutCard,
+    buffer: &mut drm::control::dumbbuffer::DumbBuffer,
+    asset: &sophia_engine::CursorAsset,
+) -> io::Result<()> {
+    let pitch = usize::try_from(drm::buffer::Buffer::pitch(buffer))
+        .map_err(|_| io::Error::other("cursor pitch exceeds address space"))?;
+    let raster_stride = usize::try_from(asset.width())
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or_else(|| io::Error::other("cursor raster stride overflow"))?;
+    use drm::control::Device as _;
+
+    let mut mapping = card.map_dumb_buffer(buffer)?;
+    mapping.fill(0);
+    for (y, row) in asset.pixels().chunks_exact(raster_stride).enumerate() {
+        let offset = y * pitch;
+        mapping[offset..offset + raster_stride].copy_from_slice(row);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "gbm-probe")]
 struct RealLegacyHardwareCursorDevice<'a> {
     card: &'a RealAtomicScanoutCard,
     buffer: &'a drm::control::dumbbuffer::DumbBuffer,
@@ -73,19 +120,46 @@ impl LegacyHardwareCursorDevice for RealLegacyHardwareCursorDevice<'_> {
 }
 
 impl RealAtomicScanoutPageFlipSession {
+    /// Installs the cursor the hardware plane scans out, before or after it
+    /// has a buffer.
+    ///
+    /// This used to refuse once a buffer existed, which made the cursor a
+    /// startup-only decision and left the two backends disagreeing -- the CPU
+    /// scene could already swap its asset. Nothing about the hardware required
+    /// that: the buffer is sized to the driver's cursor dimensions rather than
+    /// to the raster, so a replacement repaints the buffer the plane is
+    /// already scanning and neither the buffer nor the framebuffer handle
+    /// changes. There is no commit to sequence and nothing to roll back.
+    ///
+    /// A raster the driver cannot hold is refused with the buffer untouched,
+    /// so a caller that asked for a size this card will not take still has the
+    /// cursor it had.
     #[cfg(feature = "gbm-probe")]
     pub fn set_hardware_cursor_asset(
         &mut self,
         asset: sophia_engine::CursorAsset,
     ) -> io::Result<()> {
-        if self.cursor_buffer.is_some() || self.cursor_framebuffer.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "hardware cursor asset is already in use",
-            ));
+        if let Some(dimensions) = self.cursor_dimensions {
+            cursor_raster_fits(dimensions, &asset)?;
+        }
+        if let Some(buffer) = self.cursor_buffer.as_mut() {
+            paint_hardware_cursor(&self.card, buffer, &asset)?;
         }
         self.cursor_asset = asset;
         Ok(())
+    }
+
+    /// Whether a raster of this size could be installed on this card.
+    ///
+    /// Asked before rendering one, because producing a cursor the driver will
+    /// not take costs a raster and tells the caller nothing it can act on. The
+    /// dimensions are unknown until the first cursor is prepared, and an
+    /// unknown answer is optimistic: refusing on ignorance would disable the
+    /// feature on every card before it was ever asked.
+    #[cfg(feature = "gbm-probe")]
+    pub fn hardware_cursor_admits_size(&self, width: u32, height: u32) -> bool {
+        self.cursor_dimensions
+            .is_none_or(|dimensions| dimensions.width >= width && dimensions.height >= height)
     }
 
     #[cfg(feature = "gbm-probe")]
@@ -308,38 +382,13 @@ impl RealAtomicScanoutPageFlipSession {
             let dimensions = self
                 .cursor_dimensions
                 .ok_or_else(|| io::Error::other("hardware cursor dimensions are unavailable"))?;
-            let raster_width = self.cursor_asset.width();
-            let raster_height = self.cursor_asset.height();
-            if dimensions.width < raster_width || dimensions.height < raster_height {
-                return Err(io::Error::other(format!(
-                    "driver cursor dimensions {}x{} are smaller than the {}x{} cursor raster",
-                    dimensions.width, dimensions.height, raster_width, raster_height,
-                )));
-            }
+            cursor_raster_fits(dimensions, &self.cursor_asset)?;
             let mut buffer = self.card.create_dumb_buffer(
                 (dimensions.width, dimensions.height),
                 drm::buffer::DrmFourcc::Argb8888,
                 32,
             )?;
-            let pitch = usize::try_from(drm::buffer::Buffer::pitch(&buffer))
-                .map_err(|_| io::Error::other("cursor pitch exceeds address space"))?;
-            {
-                let mut mapping = self.card.map_dumb_buffer(&mut buffer)?;
-                mapping.fill(0);
-                let raster_stride = usize::try_from(raster_width)
-                    .ok()
-                    .and_then(|width| width.checked_mul(4))
-                    .ok_or_else(|| io::Error::other("cursor raster stride overflow"))?;
-                for (y, row) in self
-                    .cursor_asset
-                    .pixels()
-                    .chunks_exact(raster_stride)
-                    .enumerate()
-                {
-                    let offset = y * pitch;
-                    mapping[offset..offset + raster_stride].copy_from_slice(row);
-                }
-            }
+            paint_hardware_cursor(&self.card, &mut buffer, &self.cursor_asset)?;
             self.cursor_buffer = Some(buffer);
         }
         // Ask the card once whether it would scan a cursor plane, and record

@@ -537,6 +537,20 @@ fn run_session_loop_inner(
     let mut first_protocol_error = None;
     let mut emergency_exit_requested = false;
     let mut cursor_updates = CursorUpdateState::new(pointer.position().is_some());
+    // Shake-to-find. The detector holds no clock of its own, so the loop hands
+    // it milliseconds from a fixed origin; only differences matter to it.
+    let mut cursor_shake = sophia_engine::CursorShakeDetector::default();
+    // Set when the hardware refuses the enlarged raster, which is a property
+    // of the card rather than of the moment: a driver whose cursor plane is
+    // 64x64 will refuse a 96 px cursor every time it is asked, and saying so
+    // once is evidence where saying it per gesture is noise.
+    let mut cursor_shake_refused = false;
+    // The position the detector last saw. Motion is decided here rather than
+    // from the cursor-update flag, because `observe_motion` treats every call
+    // as movement and pushes the restore deadline out: fed a position that has
+    // not changed, an enlarged cursor would never shrink again.
+    let mut cursor_shake_seen: Option<(i32, i32)> = None;
+    let cursor_shake_epoch = Instant::now();
     let startup_ready_deadline = config
         .startup_ready_timeout
         .map(|timeout| started + timeout);

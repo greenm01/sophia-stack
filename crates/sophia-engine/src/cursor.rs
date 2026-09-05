@@ -253,3 +253,183 @@ pub fn x11_core_left_ptr_cursor(generation: u64) -> CursorAsset {
     CursorAsset::new(10, 16, 1, 1, generation, pixels)
         .expect("the embedded X11 left_ptr asset is valid")
 }
+
+/// How far the pointer must travel before a movement counts as deliberate.
+pub const CURSOR_SHAKE_MIN_DELTA: i32 = 16;
+/// How close together two reversals must be to belong to the same shake.
+pub const CURSOR_SHAKE_MAX_GAP_MSEC: u64 = 180;
+/// How long the whole gesture may take.
+pub const CURSOR_SHAKE_WINDOW_MSEC: u64 = 650;
+/// How long the enlarged cursor lingers after the pointer stops.
+pub const CURSOR_SHAKE_RESTORE_DELAY_MSEC: u64 = 700;
+/// How many direction changes make a shake.
+pub const CURSOR_SHAKE_TRIGGER_REVERSALS: u32 = 3;
+
+/// What a shake asks the session to do about the cursor.
+///
+/// An action rather than a size, because the Engine owns the cursor and the
+/// detector is only reading the pointer. It says a cursor should be easier to
+/// find; it does not resolve a theme or raster anything.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CursorShakeAction {
+    Enlarge,
+    Restore,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum CursorShakeAxis {
+    #[default]
+    Undecided,
+    Horizontal,
+    Vertical,
+}
+
+/// Recognises the gesture of shaking the pointer to find it.
+///
+/// A reversal detector rather than a speed threshold: what distinguishes
+/// looking for the cursor from moving it somewhere is changing direction
+/// repeatedly, and a threshold on speed alone fires when someone throws the
+/// pointer across three monitors on purpose.
+///
+/// The detector holds no clock. Every decision is a function of the timestamps
+/// it is handed, which is what makes the gesture testable without one.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CursorShakeDetector {
+    last: Option<(i32, i32, u64)>,
+    gesture_started_msec: Option<u64>,
+    axis: CursorShakeAxis,
+    sign: i32,
+    reversals: u32,
+    enlarged: bool,
+    restore_due_msec: u64,
+}
+
+impl CursorShakeDetector {
+    /// The size an enlarged cursor is drawn at.
+    ///
+    /// Doubling is enough to catch the eye on a small cursor but not on a
+    /// large one, so a flat addition takes over where doubling stops helping.
+    /// The ceiling is what the Engine will raster, and a base already at the
+    /// ceiling simply does not grow -- the caller sees no size change and can
+    /// decline the gesture rather than paint the same cursor twice.
+    #[must_use]
+    pub const fn enlarged_size(base: u32) -> u32 {
+        let doubled = base.saturating_mul(2);
+        let stepped = base.saturating_add(24);
+        let wanted = if doubled > stepped { doubled } else { stepped };
+        if wanted > MAX_CURSOR_EDGE {
+            MAX_CURSOR_EDGE
+        } else {
+            wanted
+        }
+    }
+
+    #[must_use]
+    pub const fn is_enlarged(&self) -> bool {
+        self.enlarged
+    }
+
+    fn clear_gesture(&mut self) {
+        self.gesture_started_msec = None;
+        self.axis = CursorShakeAxis::Undecided;
+        self.sign = 0;
+        self.reversals = 0;
+    }
+
+    /// Feeds one pointer position to the detector.
+    ///
+    /// `enabled` is passed per call rather than stored so that turning the
+    /// feature off restores a cursor that is currently enlarged, instead of
+    /// leaving it big until something else happens to move.
+    pub fn observe_motion(
+        &mut self,
+        enabled: bool,
+        x: i32,
+        y: i32,
+        now_msec: u64,
+    ) -> Option<CursorShakeAction> {
+        if !enabled {
+            let restore = self.enlarged.then_some(CursorShakeAction::Restore);
+            self.enlarged = false;
+            self.last = None;
+            self.clear_gesture();
+            return restore;
+        }
+        if self.enlarged {
+            // Still moving, so the cursor is still being looked for. The
+            // countdown starts when the pointer stops, not when it grew.
+            self.restore_due_msec = now_msec.saturating_add(CURSOR_SHAKE_RESTORE_DELAY_MSEC);
+        }
+        let Some((last_x, last_y, last_msec)) = self.last else {
+            self.last = Some((x, y, now_msec));
+            return None;
+        };
+
+        let (dx, dy) = (x - last_x, y - last_y);
+        if dx.abs().max(dy.abs()) < CURSOR_SHAKE_MIN_DELTA {
+            return None;
+        }
+        let (axis, sign) = if dx.abs() >= dy.abs() {
+            (CursorShakeAxis::Horizontal, dx.signum())
+        } else {
+            (CursorShakeAxis::Vertical, dy.signum())
+        };
+        let gap = now_msec.saturating_sub(last_msec);
+        self.last = Some((x, y, now_msec));
+
+        // A different axis, or too long a pause, is a new gesture rather than
+        // a continuation of this one.
+        if gap > CURSOR_SHAKE_MAX_GAP_MSEC || self.axis != axis {
+            self.clear_gesture();
+            self.axis = axis;
+            self.sign = sign;
+            self.gesture_started_msec = Some(now_msec);
+            return None;
+        }
+        if self.sign == sign {
+            return None;
+        }
+
+        match self.gesture_started_msec {
+            Some(started) if now_msec.saturating_sub(started) <= CURSOR_SHAKE_WINDOW_MSEC => {
+                self.reversals += 1;
+            }
+            // Reversing after the window closed starts counting again from
+            // this reversal, which is what keeps a slow waggle from ever
+            // accumulating three.
+            _ => {
+                self.gesture_started_msec = Some(now_msec);
+                self.reversals = 1;
+            }
+        }
+        self.sign = sign;
+
+        if self.reversals < CURSOR_SHAKE_TRIGGER_REVERSALS {
+            return None;
+        }
+        self.restore_due_msec = now_msec.saturating_add(CURSOR_SHAKE_RESTORE_DELAY_MSEC);
+        self.clear_gesture();
+        if self.enlarged {
+            return None;
+        }
+        self.enlarged = true;
+        Some(CursorShakeAction::Enlarge)
+    }
+
+    /// Asks whether an enlarged cursor has lingered long enough.
+    ///
+    /// Separate from motion because the restore is what happens when the
+    /// pointer stops, and a detector that only ran on movement could never
+    /// observe stopping.
+    pub fn tick(&mut self, enabled: bool, now_msec: u64) -> Option<CursorShakeAction> {
+        if !self.enlarged {
+            return None;
+        }
+        if enabled && now_msec < self.restore_due_msec {
+            return None;
+        }
+        self.enlarged = false;
+        self.clear_gesture();
+        Some(CursorShakeAction::Restore)
+    }
+}

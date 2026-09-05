@@ -595,6 +595,37 @@ mod persistent_native_scanout {
             Ok(scanout)
         }
 
+        /// Repaints every head's cursor with a new asset.
+        ///
+        /// Each group scans out its own cursor buffer, so all of them are
+        /// repainted or the pointer would change appearance depending on which
+        /// display it happened to be over. A group that refuses leaves the
+        /// earlier ones already repainted; that is a cursor drawn at two sizes
+        /// across two monitors for as long as it takes the caller to ask for
+        /// the old one back, which is worth strictly less than the alternative
+        /// of never being able to change it at all.
+        #[cfg(feature = "seat-control")]
+        pub fn replace_hardware_cursor_asset(
+            &mut self,
+            cursor: sophia_engine::CursorAsset,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            for group in &mut self.groups {
+                group.session.set_hardware_cursor_asset(cursor.clone())?;
+            }
+            Ok(())
+        }
+
+        /// Whether every head could hold a cursor of this size.
+        ///
+        /// All of them, because a cursor that only some displays can show is
+        /// not a cursor the session can offer.
+        #[cfg(feature = "seat-control")]
+        pub fn hardware_cursor_admits_size(&self, width: u32, height: u32) -> bool {
+            self.groups
+                .iter()
+                .all(|group| group.session.hardware_cursor_admits_size(width, height))
+        }
+
         fn new_with_selection(
             selection: crate::RealAtomicScanoutSelectionSet,
             grouping: &crate::NativeMirrorGrouping,

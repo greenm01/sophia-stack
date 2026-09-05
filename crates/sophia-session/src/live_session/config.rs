@@ -110,6 +110,14 @@ struct PersistentXtermSessionConfig {
     core_config_state: sophia_config::CoreConfigState,
     surface_chrome_style: sophia_engine::SurfaceChromeStyle,
     cursor_resolution: sophia_renderer_live::CursorResolution,
+    /// The same cursor rastered larger, for shake-to-find.
+    ///
+    /// Resolved once at startup rather than when the gesture fires: reading an
+    /// XCursor file is filesystem work, and the pointer path is the last place
+    /// that should be doing it. `None` means the gesture is off, or that the
+    /// enlarged size is one this cursor or this hardware cannot show, in which
+    /// case there is nothing to switch to and the session says so.
+    cursor_shake_resolution: Option<sophia_renderer_live::CursorResolution>,
     verbose_diagnostics: bool,
     inject_output_size: Option<Size>,
     inject_surface_resize: Option<Size>,
@@ -260,15 +268,32 @@ impl PersistentXtermSessionConfig {
             cursor_shape,
             core_snapshot.generation.raw(),
         );
-        if desktop_cursor.is_some_and(|cursor| cursor.shake_to_find == Some(true)) {
-            // Accepted by the schema and not yet acted on. Saying so is the
-            // point: a key that silently does nothing is worse than one that
-            // is refused, and the operator is looking at a cursor that will
-            // not grow when they shake it.
-            crate::session_eprintln!(
-                "sophia_live_cursor schema=1 status=shake_to_find_deferred reason=runtime_asset_replacement_unbuilt"
-            );
-        }
+        let cursor_shake_resolution = desktop_cursor
+            .is_some_and(|cursor| cursor.shake_to_find == Some(true))
+            .then(|| {
+                let enlarged = sophia_engine::CursorShakeDetector::enlarged_size(cursor_size);
+                if enlarged <= cursor_size {
+                    // A cursor already at the size the Engine will raster
+                    // cannot grow, so there is nothing the gesture could do.
+                    crate::session_eprintln!(
+                        "sophia_live_cursor schema=1 status=shake_to_find_inert reason=size_at_maximum size={cursor_size}"
+                    );
+                    return None;
+                }
+                let resolution = sophia_renderer_live::resolve_cursor_theme(
+                    cursor_theme,
+                    enlarged,
+                    cursor_shape,
+                    core_snapshot.generation.raw(),
+                );
+                crate::session_println!(
+                    "sophia_live_cursor schema=1 status=shake_to_find_ready base_size={cursor_size} enlarged_size={} effective_size={}",
+                    enlarged,
+                    resolution.effective_nominal_size,
+                );
+                Some(resolution)
+            })
+            .flatten();
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")
@@ -987,6 +1012,7 @@ impl PersistentXtermSessionConfig {
             desktop_profile_activation: sophia_config::DesktopProfileActivationModel::default(),
             surface_chrome_style: Self::surface_chrome_style(core_snapshot.fallback_chrome),
             cursor_resolution,
+            cursor_shake_resolution,
             verbose_diagnostics: core_snapshot.verbose_diagnostics,
             core_config_source,
             core_config_state,
