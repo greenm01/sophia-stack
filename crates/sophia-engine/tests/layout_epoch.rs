@@ -748,7 +748,7 @@ fn recovery_extent_is_reconciled_within_chrome_content_bounds() {
 #[test]
 fn an_accepted_size_keeps_its_position_outside_the_bounds() {
     let surface = SurfaceId::new(1, 1);
-    let mut coordinator = LayoutEpochCoordinator::default();
+    let coordinator = LayoutEpochCoordinator::default();
     let bounds = Rect {
         x: 8,
         y: 22,
