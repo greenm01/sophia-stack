@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -213,3 +213,19 @@ for control in DiscardCounters ForgetFailure RequireResume; do
         exit 1
     }
 done
+
+control_dir="$TEMP_DIR/RetainedCompositionAdmissionSuppressed"
+mkdir "$control_dir"
+cp "$MODEL_DIR/RetainedCompositionAdmission.tla" "$MODEL_DIR/RetainedCompositionAdmissionSuppressed.cfg" "$control_dir/"
+if (
+    cd "$control_dir"
+    timeout 30m java -XX:+UseParallelGC -jar "$JAR_PATH" -deadlock -workers 1 \
+        -config RetainedCompositionAdmissionSuppressed.cfg RetainedCompositionAdmission.tla
+) >"$control_dir/control.log" 2>&1; then
+    echo "TLA+ retained-composition negative control unexpectedly passed" >&2
+    exit 1
+fi
+grep -Fq 'Invariant CpuHasOnlyCpuSources is violated.' "$control_dir/control.log" || {
+    echo "TLA+ retained-composition control failed for the wrong reason" >&2
+    exit 1
+}

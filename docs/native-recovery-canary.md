@@ -1,15 +1,25 @@
 # Native recovery canaries
 
-CP-14.3's recovery implementation has deterministic coverage. Physical acceptance
-still requires the two runs below. They use the normal Hagia launcher and do not
-create, reopen, or alter a desktop-comparison run.
+CP-14.3's recovery implementation has deterministic coverage. Both physical
+canaries passed on the preserved candidate in
+`.artifacts/diagnostics/cp14-3-mixed-source-20260905T005021Z/`: suspended shutdown
+in `attempts/03-suspended-deadline-pass/`, and two VT returns followed by normal
+logout in `attempts/04-vt-return-pass/`. See the [research log](research-log.md)
+for evidence and limits. Recovery stage 1 is complete; these procedures remain
+available for focused regression checks. They use the normal Hagia launcher
+and do not create, reopen, or alter a desktop-comparison run.
 
 ## Prepare once
 
 Build Sophia with `cargo build --offline --release -p sophia-cli --features native-session`.
 Use compatible Hagia and Narthex executables, Hagia's normal desktop profile, and
 an explicit Engine configuration. Preserve copies of all three executables and
-both profiles in a private diagnostic directory. Record their SHA-256 digests,
+both profiles in a private diagnostic directory. Set profile files to mode 0600
+and executable copies to mode 0700; source checkout permissions are not a safe
+installation default. Validate both profiles with `sophia config check` and the
+complete run arguments with `--validate-session-args` before the TTY handoff.
+A newer Hagia default profile may need a compatible canary profile for the
+selected Sophia build. Record their SHA-256 digests,
 repository revisions and dirty state, the Sophia patch when applicable, and the
 launcher scripts' digests. A binary digest identifies the executable even when
 its source checkout has changed since it was built.

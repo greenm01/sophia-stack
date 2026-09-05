@@ -19412,3 +19412,103 @@ Neither has been run. Stage 1's physical acceptance and CP-14.3 remain open. No
 comparison row was rerun or modified; the existing row-10 partial and sealed
 samples retain their original candidate identity. No live session was started or
 installed by this implementation.
+
+
+## 2026-09-04 — Firefox interaction exposes deduplicated GPU composition admission
+
+The first CP-14.3 physical attempt did not start Sophia: the prepared core profile
+retained group-write permission (`UnsafeMode`). Offline checking then caught
+Hagia's newer `scratchpad-size` default, unsupported by this Sophia profile parser.
+The bundle now uses mode 0600 profiles and an explicit, compatible recovery
+profile. Both complete launcher argument vectors pass `--validate-session-args`
+before takeover. The failed setup attempt is retained separately.
+
+The retry reached native rendering and Firefox, then failed during a tab
+interaction before any VT transition. The operator reports being in Firefox and
+possibly clicking a new or existing tab. The runtime error was
+`production CPU cycle failed in phase KmsSubmit: MissingSource(DmaBuf { handle: 7 })`.
+Only startup native epoch 1 opened; the suspended-deadline canary never started.
+Native cleanup drained both pending heads with zero abandoned scanouts and zero
+cleanup errors. Frontend/application cleanup was clean. The TTY handoff restored
+the manager using its safe baseline and reported usable manager input; this is
+separate from successful canary acceptance.
+
+Evidence is preserved under
+`.artifacts/diagnostics/cp14-3-recovery-20260905T002819Z/attempts/02-mixed-composition-crash/`,
+including logs, binary/profile manifest, source identity, checksums and the
+operator's observation. The frozen failed executable remains unchanged.
+
+Source inspection and a failing deterministic regression expose a concrete
+routing defect consistent with the failure: a changed presentation order used
+whether retained frame queueing produced a *new* frame to decide whether GPU
+content should be preserved. Retained queueing legitimately produces none when
+an identical newest frame is already pending or displayed. GPU visibility has
+already been evaluated against the new presentation order, so the extra
+order-change condition incorrectly sends those DMA-BUF sources to CPU-only
+head lowering. The fix preserves a visible GPU projection regardless of whether
+queueing was deduplicated. Removing the last GPU surface still admits CPU
+composition. The exact physical tab gesture has not been replayed deterministically;
+a physical retry remains necessary to establish that this fixes the observed run.
+
+`RetainedCompositionAdmission` passes 22 states; its old-rule negative control
+fails `CpuHasOnlyCpuSources` on an already-owned GPU frame after an order change.
+The regression failed before the fix, and all 24 focused visual-runtime tests
+pass afterward. The initial full gate exposed ambient configuration in session
+unit tests: the operator's Hagia profile now contains unsupported `view-name`
+settings. Verification is rerun with an isolated `XDG_CONFIG_HOME`; the personal
+profile is left unchanged. The isolated full gate passed 2,350 test executions,
+archive/reader checks, and hardware buffer-age equivalence; the release build
+and both offline canary argument checks passed. The new frozen bundle is
+`.artifacts/diagnostics/cp14-3-mixed-source-20260905T005021Z/`; `/tmp/c` points to it.
+No physical acceptance checkbox is closed by these deterministic results.
+
+## 2026-09-04 — Physical suspended-deadline retry passes
+
+The operator reports "seems to be working" on the fixed candidate. The run in
+`.artifacts/diagnostics/cp14-3-mixed-source-20260905T005021Z/resume/` exited 0
+after 90,542 ms without the earlier `MissingSource` failure. Native epoch 1
+closed on seat release, settled with 3,427 submissions, 3,425 retirements,
+zero submit/retire/settlement failures, and no remaining native work. The seat
+then suspended. Runtime-deadline quiescence completed in 539 ms with zero
+authority, coordinator, CPU, or native work pending and no new owner opening.
+The final record retained native presentation and retirement totals; application
+and frontend cleanup was clean. TTY handoff restored the manager's safe baseline
+and reported both origin and manager input usable, with the manager ready.
+
+Credit this as the suspended-deadline canary based on the recorded behavior,
+despite its `resume` directory name and 90-second rather than 60-second budget.
+The VT-return check remains open: there is no epoch 2 or post-resume retirement.
+The operator's general observation does not establish an exact replay of the
+previous Firefox tab gesture or separate visual acceptance of both outputs.
+Preserve this successful evidence and run only the remaining VT-return check;
+no comparison rows or unrelated workflow evidence are reset.
+
+## 2026-09-04 — Physical VT return and recovery stage pass
+
+The operator reports "done" after the VT-return procedure. The same frozen
+candidate ran for 32,144 ms in
+`.artifacts/diagnostics/cp14-3-mixed-source-20260905T005021Z/vt-return/` and
+exited 0 after normal logout. Two seat releases and returns opened native
+epochs 2 and 3. All three owners closed settled, with retirements of 27, 229,
+and 19; the final session correctly retained their sum, 275, and all 281
+submissions. There were no native submit, retirement, or settlement failures,
+and no remaining in-flight or cleanup obligation.
+
+Browser launch was committed after the first return and logout after the
+second. The session routed 24 physical keys and flushed all 301 expected input
+events. These records establish post-resume input actions and presentation;
+the operator did not supply a separate typed-text or per-output visual report.
+Logout quiescence completed in 46 ms with zero pending authority, coordinator,
+CPU, or native work. Frontend/application cleanup was clean. TTY handoff
+restored usable origin and manager input using the manager's safe baseline;
+the manager was ready and no emergency recovery was required. The client XIO
+message occurred after normal logout began, rather than preceding a session
+failure.
+
+Logs, launcher scripts, candidate identity, operator observation, and checksums
+are preserved under the bundle's `attempts/04-vt-return-pass/`. Together with
+`attempts/03-suspended-deadline-pass/`, this closes CP-14.3 stage 1. Stage 2
+now establishes normal live-session use; broader workflow and two-output/tab
+acceptance remain open. Neither recovery test nor the deferred comparison
+matrix needs restarting to advance. This result changes documentation only;
+the previously passing code gate is unchanged.

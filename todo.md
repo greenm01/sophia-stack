@@ -132,8 +132,20 @@ retain the change in exit criteria. Work through these stages in order.
   immediate shutdown after resume, rejected VT switches, topology replacement,
   suspension across the deadline, and failure retention. Lifecycle model and
   negative controls pass; `cargo xtask check` passes (2,348 test executions).
-- [ ] Run the two [physical Firefox/VT/deadline canaries](docs/native-recovery-canary.md).
-  Procedures and a release build are prepared; physical acceptance remains open.
+- [x] Complete the physical suspended-deadline canary. The fixed candidate's
+  retry retained 3,425 native retirements, shut down while suspended at its
+  90-second deadline, drained in 539 ms with zero pending work, and restored
+  fallback input with exit status 0. The operator reports it seems to work.
+- [x] Complete the [physical VT-return canary](docs/native-recovery-canary.md).
+  Two returns opened epochs 2 and 3 with 229 and 19 subsequent retirements;
+  session totals retained all 275 retirements across three settled owners.
+  Browser launch and logout were accepted after resume. Normal logout drained
+  in 46 ms with zero pending work, native failures, or emergency recovery;
+  fallback input was restored and exit status was 0. The operator reports done.
+  The Firefox deduplicated-GPU routing regression is fixed; the isolated full
+  gate passes 2,350 test executions. Both recovery canaries now pass.
+
+Stage 1 is complete. Next: establish the normal live session in stage 2.
 
 Exit: recovery and bounded shutdown pass without contradictory counters,
 abandoned accepted work, or loss of the fallback desktop. The

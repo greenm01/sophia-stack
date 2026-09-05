@@ -730,3 +730,19 @@ fn only_logical_scene_content_can_own_a_cpu_progress_target() {
         None,
     );
 }
+
+#[test]
+fn deduplicated_gpu_projection_survives_a_changed_presentation_order() {
+    // No submission is currently in flight, and the matching newest scene
+    // already has a native owner: deduplication legitimately queues no frame.
+    let preserve = live_production_should_preserve_gpu_output(true, false, false, true, true);
+    assert!(preserve, "an unchanged owned GPU frame is not a CPU source");
+    assert!(reduce_live_production_frame_defer(false, true, preserve));
+}
+
+#[test]
+fn removing_the_last_gpu_surface_still_admits_cpu_composition() {
+    let preserve = live_production_should_preserve_gpu_output(true, false, false, true, false);
+    assert!(!preserve);
+    assert!(!reduce_live_production_frame_defer(false, true, preserve));
+}

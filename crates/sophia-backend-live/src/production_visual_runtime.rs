@@ -1562,11 +1562,14 @@ pub const fn live_production_should_preserve_gpu_output(
     native_enabled: bool,
     gpu_present_submitted: bool,
     retained_projection_queued: bool,
-    presentation_order_changed: bool,
+    _presentation_order_changed: bool,
     committed_projection_requires_gpu: bool,
 ) -> bool {
+    // GPU visibility is already evaluated against the new presentation order.
+    // Retained queueing may be suppressed because the exact frame is already
+    // owned; zero newly queued frames cannot make its DMA-BUFs CPU-readable.
     native_enabled
         && (gpu_present_submitted
             || retained_projection_queued
-            || (!presentation_order_changed && committed_projection_requires_gpu))
+            || committed_projection_requires_gpu)
 }
