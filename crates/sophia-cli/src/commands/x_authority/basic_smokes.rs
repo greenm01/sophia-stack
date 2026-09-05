@@ -87,6 +87,85 @@ fn run_x_authority_x11_smoke() -> Result<XAuthorityX11SmokeReport, Box<dyn std::
     })
 }
 
+/// Drives MIT-SHM 1.2 over a real socket, both directions of descriptor.
+///
+/// The wire tests cover decode and dispatch, and cannot cover the part that
+/// actually carries a descriptor: `CreateSegment` puts one in a reply and
+/// `AttachFd` takes one from a request, and both of those live in the socket
+/// layer. This is the only test that crosses that boundary.
+///
+/// The proof is not that the requests are accepted. It is that memory written
+/// through the descriptor the server returned is memory the server holds --
+/// otherwise a server could satisfy every check here by handing back any
+/// descriptor at all.
+fn run_x_authority_shm_fd_smoke() -> Result<XAuthorityShmFdSmokeReport, Box<dyn std::error::Error>> {
+    use x11rb::connection::Connection;
+    use std::os::fd::AsFd as _;
+    use x11rb::protocol::shm::ConnectionExt as _;
+
+    let display_number = 7990 + (std::process::id() % 200);
+    let display = format!(":{display_number}");
+    let socket_path = std::path::PathBuf::from(format!("/tmp/.X11-unix/X{display_number}"));
+    std::fs::create_dir_all("/tmp/.X11-unix")?;
+    let server_path = socket_path.clone();
+    let server = std::thread::spawn(move || {
+        run_x11_core_socket_server_once(&server_path, NamespaceId::from_raw(66))
+    });
+    wait_for_socket_path(&socket_path)?;
+
+    let (connection, _screen) = x11rb::connect(Some(&display))?;
+    let version = connection.shm_query_version()?.reply()?;
+    let mut errors = 0usize;
+
+    // CreateSegment: the server allocates and hands the descriptor back.
+    const SEGMENT_BYTES: u32 = 4096;
+    let segment = connection.generate_id()?;
+    let created = connection
+        .shm_create_segment(segment, SEGMENT_BYTES, false)?
+        .reply()?;
+    let returned = created.shm_fd;
+    let mapping = sophia_sysv_shm::DescriptorMapping::map(returned.as_fd(), false)?;
+    let pattern: Vec<u8> = (0..64u16).map(|value| value as u8).collect();
+    mapping.write_bytes(128, &pattern)?;
+    let read_back = mapping.copy_bytes(128, pattern.len())?;
+    if read_back != pattern {
+        errors += 1;
+    }
+
+    // AttachFd: the client passes one the other way.
+    let (ours, descriptor) = sophia_sysv_shm::DescriptorMapping::create_sealed(4096)?;
+    drop(ours);
+    let attached = connection.generate_id()?;
+    connection
+        .shm_attach_fd(attached, descriptor, false)?
+        .check()?;
+    connection.shm_detach(attached)?.check()?;
+
+    // A size beyond what the adapter maps is refused rather than allocated.
+    let oversize = connection.generate_id()?;
+    let oversize_refused = connection
+        .shm_create_segment(oversize, u32::MAX, false)?
+        .reply()
+        .is_err();
+
+    connection.shm_detach(segment)?.check()?;
+    drop(connection);
+    let _ = server.join();
+    let _ = std::fs::remove_file(&socket_path);
+
+    Ok(XAuthorityShmFdSmokeReport {
+        display,
+        major_version: version.major_version,
+        minor_version: version.minor_version,
+        created_bytes: usize::try_from(SEGMENT_BYTES).unwrap_or(0),
+        written: pattern.len(),
+        read_back: read_back.len(),
+        attached_fd_segments: 1,
+        oversize_refused,
+        errors,
+    })
+}
+
 fn run_x_authority_x11rb_smoke() -> Result<XAuthorityX11rbSmokeReport, Box<dyn std::error::Error>> {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{
@@ -357,6 +436,7 @@ fn run_x_authority_external_probe_smoke_spec(
         command: &command,
         display_mode: spec.display_mode,
         command_args: spec.args,
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(spec.namespace),
@@ -395,6 +475,7 @@ fn run_x_authority_xmobar_smoke()
         command: &command,
         display_mode: ExternalProbeDisplayMode::Environment,
         command_args: &[config],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(62),
@@ -455,6 +536,7 @@ fn run_x_authority_quickshell_smoke()
         command: &command,
         display_mode: ExternalProbeDisplayMode::Environment,
         command_args: &["--path", config],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(63),
@@ -477,6 +559,64 @@ fn run_x_authority_quickshell_smoke()
         // Quickshell reads the session bus for tray and notification services.
         // It runs without one, and pointing it at a dead socket only adds noise
         // to a probe about the X wire.
+        isolate_session_bus: false,
+    })
+}
+
+/// The same shell, rendering in software rather than through GL.
+///
+/// A second variant of one binary rather than a change to the first, as
+/// `zenity` and `zenity_render` already are, so the GL probe keeps proving the
+/// GL path.
+///
+/// It does not prove MIT-SHM 1.2, and the reason is worth stating: Qt does not
+/// allocate a backing store until something exposes its window, and offline
+/// there is no policy client to map a dock. The trace reaches
+/// `ShmQueryVersion` and stops. `x-authority-shm-fd-smoke` proves the segment
+/// requests deterministically instead; what this adds is that the software
+/// path draws no protocol error on the way.
+fn run_x_authority_quickshell_software_smoke()
+-> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
+    let command = match std::env::var_os("SOPHIA_QUICKSHELL_BIN") {
+        Some(path) => std::path::PathBuf::from(path),
+        None => resolve_external_probe_binary("quickshell", "quickshell")?,
+    };
+    if !command.is_file() {
+        return Err(format!(
+            "quickshell smoke executable does not exist: {}",
+            command.display()
+        )
+        .into());
+    }
+    let config = std::env::var_os("SOPHIA_QUICKSHELL_CONFIG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir()?.join("tools/fixtures/quickshell_sophia/shell.qml"));
+    if !config.is_file() {
+        return Err(
+            format!("quickshell smoke config does not exist: {}", config.display()).into(),
+        );
+    }
+    let config = config
+        .to_str()
+        .ok_or("quickshell smoke config path is not valid UTF-8")?;
+    let (display, socket_path) = temp_xauthority_display(7_950)?;
+    run_x_authority_external_probe_smoke(ExternalProbeInvocation {
+        label: "quickshell_software",
+        command: &command,
+        display_mode: ExternalProbeDisplayMode::Environment,
+        command_args: &["--path", config],
+        extra_env: &[("QT_QUICK_BACKEND", "software")],
+        display,
+        socket_path,
+        namespace: NamespaceId::from_raw(65),
+        // As the GL variant: a dock is not mapped without a policy client.
+        require_transactions: false,
+        pixel_proof: ExternalProbePixelProof::None,
+        allow_proof_kill_without_transactions: true,
+        allow_client_failure_without_x_error: false,
+        render_device_provider: None,
+        pixmap_allocator: None,
+        proof_timeout: Duration::from_secs(20),
         isolate_session_bus: false,
     })
 }
@@ -579,6 +719,7 @@ fn run_x_authority_zenity_render_smoke()
             "--text",
             "Sophia GTK render-provider probe",
         ],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(60),
@@ -606,6 +747,7 @@ fn run_x_authority_vkcube_smoke()
         command: &command,
         display_mode: ExternalProbeDisplayMode::Environment,
         command_args: &["--wsi", "xcb", "--c", "2", "--suppress_popups"],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(58),
@@ -638,6 +780,7 @@ fn run_x_authority_glxgears_smoke()
             "-geometry",
             "500x500",
         ],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(59),
@@ -680,6 +823,7 @@ fn run_x_authority_glx_pbuffer_smoke()
         command: &command,
         display_mode: ExternalProbeDisplayMode::Environment,
         command_args: &["64", "64", &image.to_string_lossy()],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(64),
@@ -732,6 +876,7 @@ fn run_x_authority_browser_smoke()
             "--disable-background-networking",
             "about:blank",
         ],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(65),
@@ -770,6 +915,7 @@ fn run_x_authority_kitty_smoke()
             "-c",
             "printf 'Sophia Kitty proof\\n'; sleep 5",
         ],
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(62),

@@ -146,6 +146,9 @@ pub struct XAuthorityRuntime {
     /// and compared, and a mapping is neither. Dropped when the segment is
     /// detached or its client goes away, which is what unmaps it.
     shm_descriptor_mappings: BTreeMap<crate::XResourceId, Arc<sophia_sysv_shm::ClientMapping>>,
+    /// Descriptors a `CreateSegment` reply still owes its client, held only
+    /// until the socket layer puts them on the wire.
+    shm_reply_descriptors: BTreeMap<crate::XResourceId, std::os::fd::OwnedFd>,
     dri3_pixmaps: BTreeMap<crate::XResourceId, XDri3PixmapRecord>,
     next_dma_buf_handle: u64,
     dri3_fences: BTreeMap<crate::XResourceId, sophia_protocol::FenceHandle>,
@@ -185,6 +188,7 @@ impl Default for XAuthorityRuntime {
             shm_pixmaps: Default::default(),
             shm_mappings: Default::default(),
             shm_descriptor_mappings: Default::default(),
+            shm_reply_descriptors: Default::default(),
             dri3_pixmaps: Default::default(),
             next_dma_buf_handle: 1,
             dri3_fences: Default::default(),

@@ -87,6 +87,10 @@ pub const X_MIT_SHM_DETACH_MINOR_OPCODE: u8 = 2;
 pub const X_MIT_SHM_PUT_IMAGE_MINOR_OPCODE: u8 = 3;
 pub const X_MIT_SHM_GET_IMAGE_MINOR_OPCODE: u8 = 4;
 pub const X_MIT_SHM_CREATE_PIXMAP_MINOR_OPCODE: u8 = 5;
+/// MIT-SHM 1.2: the client passes a descriptor instead of a SysV id.
+pub const X_MIT_SHM_ATTACH_FD_MINOR_OPCODE: u8 = 6;
+/// MIT-SHM 1.2: the server allocates and hands the descriptor back.
+pub const X_MIT_SHM_CREATE_SEGMENT_MINOR_OPCODE: u8 = 7;
 pub const X_RANDR_EXTENSION_NAME: &str = "RANDR";
 pub const X_RANDR_MAJOR_OPCODE: u8 = 132;
 pub const X_RANDR_FIRST_EVENT: u8 = 64;
@@ -408,6 +412,9 @@ const X_MIT_SHM_DETACH_REQ_LEN: usize = 8;
 const X_MIT_SHM_PUT_IMAGE_REQ_LEN: usize = 40;
 const X_MIT_SHM_GET_IMAGE_REQ_LEN: usize = 32;
 const X_MIT_SHM_CREATE_PIXMAP_REQ_LEN: usize = 28;
+/// The descriptor arrives out of band, so it occupies no request bytes.
+const X_MIT_SHM_ATTACH_FD_REQ_LEN: usize = 12;
+const X_MIT_SHM_CREATE_SEGMENT_REQ_LEN: usize = 16;
 const X_RANDR_QUERY_VERSION_REQ_LEN: usize = 12;
 const X_RANDR_SELECT_INPUT_REQ_LEN: usize = 12;
 const X_RANDR_GET_SCREEN_SIZE_RANGE_REQ_LEN: usize = 8;

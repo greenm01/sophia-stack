@@ -8,6 +8,8 @@ fn dispatch_shm_request(
         &request,
             XWireRequest::BigRequestsEnable
             | XWireRequest::ShmAttach { .. }
+            | XWireRequest::ShmAttachFd { .. }
+            | XWireRequest::ShmCreateSegment { .. }
             | XWireRequest::ShmDetach { .. }
             | XWireRequest::ShmCreatePixmap { .. }
             | XWireRequest::ShmPutImage { .. }
@@ -43,6 +45,75 @@ fn dispatch_shm_request(
                             context.major_opcode,
                             u16::from(crate::X_MIT_SHM_ATTACH_MINOR_OPCODE),
                             u32::try_from(segment.local.raw()).unwrap_or(0)))],
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // The descriptor is not here: the socket layer owns it and
+                // records the segment once it has mapped it. This validates
+                // the name so a client learns about a bad id from the request
+                // that used it, and nothing is recorded that has no memory.
+                XWireRequest::ShmAttachFd { segment, .. } => XDispatchResult {
+                    response: None,
+                    outputs: if runtime
+                        .validate_shm_segment_access(context.namespace, segment)
+                        .is_ok()
+                    {
+                        vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadIdChoice,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(segment.local.raw()).unwrap_or(0),
+                            minor_code: u16::from(crate::X_MIT_SHM_ATTACH_FD_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })]
+                    } else {
+                        Vec::new()
+                    },
+                    metadata_candidates: Vec::new(),
+                },
+                XWireRequest::ShmCreateSegment {
+                    segment,
+                    size,
+                    read_only,
+                } => {
+                    let outputs = if runtime
+                        .validate_shm_segment_access(context.namespace, segment)
+                        .is_ok()
+                    {
+                        vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadIdChoice,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(segment.local.raw()).unwrap_or(0),
+                            minor_code: u16::from(crate::X_MIT_SHM_CREATE_SEGMENT_MINOR_OPCODE),
+                            major_code: context.major_opcode,
+                        })]
+                    } else {
+                        match runtime.create_shm_descriptor_segment(
+                            context.namespace,
+                            segment,
+                            size,
+                            read_only,
+                            u64::from(context.sequence),
+                        ) {
+                            // The descriptor rides out with the reply, put
+                            // there by the socket layer.
+                            Ok(()) => vec![XClientOutput::Reply(XClientReply::ShmCreateSegment {
+                                sequence: context.sequence,
+                            })],
+                            // A size beyond what this will map is the ordinary
+                            // way here: the request carries a CARD32 and the
+                            // adapter has a ceiling.
+                            Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u16::from(crate::X_MIT_SHM_CREATE_SEGMENT_MINOR_OPCODE),
+                                u32::try_from(segment.local.raw()).unwrap_or(0),
+                            ))],
+                        }
                     };
                     XDispatchResult {
                         response: None,

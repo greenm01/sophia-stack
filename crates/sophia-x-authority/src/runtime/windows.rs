@@ -69,6 +69,40 @@ impl XAuthorityRuntime {
          Ok(())
      }
 
+     /// Allocates a segment the server owns, for `CreateSegment`.
+     ///
+     /// The descriptor is kept until the socket layer takes it for the reply,
+     /// because only that layer can put one on the wire.
+     pub fn create_shm_descriptor_segment(
+         &mut self,
+         namespace: NamespaceId,
+         segment: crate::XResourceId,
+         size: u32,
+         read_only: bool,
+         generation: u64,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         let len = usize::try_from(size).map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+         let (mapping, descriptor) = sophia_sysv_shm::DescriptorMapping::create_sealed(len)
+             .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+         self.attach_shm_descriptor_segment(
+             namespace,
+             segment,
+             std::sync::Arc::new(sophia_sysv_shm::ClientMapping::Descriptor(mapping)),
+             read_only,
+             generation,
+         )?;
+         self.shm_reply_descriptors.insert(segment, descriptor);
+         Ok(())
+     }
+
+     /// Takes the descriptor a `CreateSegment` reply owes the client.
+     pub fn take_shm_reply_descriptor(
+         &mut self,
+         segment: crate::XResourceId,
+     ) -> Option<std::os::fd::OwnedFd> {
+         self.shm_reply_descriptors.remove(&segment)
+     }
+
      /// The mapping behind a segment, whichever way it was named.
      ///
      /// This is what lets the image paths stop knowing about SysV ids: a

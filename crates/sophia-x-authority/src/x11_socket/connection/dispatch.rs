@@ -549,6 +549,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     }
                     let event_selection = x11_core_event_selection_update(&request);
                     let dri3_open = matches!(&request, crate::XWireRequest::Dri3Open { .. });
+                    let shm_attach_fd = match &request {
+                        crate::XWireRequest::ShmAttachFd {
+                            segment,
+                            read_only,
+                        } => Some((*segment, *read_only)),
+                        _ => None,
+                    };
+                    let shm_created_segment = match &request {
+                        crate::XWireRequest::ShmCreateSegment { segment, .. } => Some(*segment),
+                        _ => None,
+                    };
                     let dri3_recovered_pixmap = match &request {
                         crate::XWireRequest::Dri3BufferFromPixmap { pixmap }
                         | crate::XWireRequest::Dri3BuffersFromPixmap { pixmap } => Some(*pixmap),
@@ -1527,6 +1538,58 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 ))
                             })?);
                         }
+                    }
+                    // The descriptor is the segment's memory, so it is mapped
+                    // here rather than in dispatch, which never sees it. A
+                    // descriptor that cannot be mapped leaves nothing recorded
+                    // and the client is told, instead of holding a segment name
+                    // that answers with no memory.
+                    if dispatch_succeeded
+                        && let Some((segment, read_only)) = shm_attach_fd
+                    {
+                        let mapped = received_fds
+                            .first()
+                            .ok_or(sophia_sysv_shm::AccessError::MissingSegment)
+                            .and_then(|descriptor| {
+                                sophia_sysv_shm::DescriptorMapping::map(
+                                    descriptor.as_fd(),
+                                    read_only,
+                                )
+                            });
+                        match mapped {
+                            Ok(mapping) => runtime
+                                .attach_shm_descriptor_segment(
+                                    namespace,
+                                    segment,
+                                    Arc::new(sophia_sysv_shm::ClientMapping::Descriptor(mapping)),
+                                    read_only,
+                                    u64::from(sequence),
+                                )
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to record MIT-SHM segment: {error:?}"
+                                    ))
+                                })?,
+                            Err(_) => {
+                                output.outputs =
+                                    vec![crate::XClientOutput::Error(crate::XClientError {
+                                        code: crate::XErrorCode::BadValue,
+                                        sequence,
+                                        resource_id: u32::try_from(segment.local.raw())
+                                            .unwrap_or(0),
+                                        minor_code: u16::from(
+                                            crate::X_MIT_SHM_ATTACH_FD_MINOR_OPCODE,
+                                        ),
+                                        major_code: crate::X_MIT_SHM_MAJOR_OPCODE,
+                                    })];
+                            }
+                        }
+                    }
+                    if dispatch_succeeded
+                        && let Some(segment) = shm_created_segment
+                        && let Some(descriptor) = runtime.take_shm_reply_descriptor(segment)
+                    {
+                        server_reply_fds.push(descriptor);
                     }
                     if dispatch_succeeded && dri3_open {
                         match state.open_render_device_fd() {

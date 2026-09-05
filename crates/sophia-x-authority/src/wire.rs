@@ -517,6 +517,20 @@ pub enum XWireRequest {
         shmid: u32,
         read_only: bool,
     },
+    /// MIT-SHM 1.2 `AttachFd`. The descriptor is delivered by the socket
+    /// layer rather than carried here, which is why this looks lighter than
+    /// `ShmAttach` while doing more.
+    ShmAttachFd {
+        segment: XResourceId,
+        read_only: bool,
+    },
+    /// MIT-SHM 1.2 `CreateSegment`. The server allocates, and the reply hands
+    /// the client a descriptor for the memory.
+    ShmCreateSegment {
+        segment: XResourceId,
+        size: u32,
+        read_only: bool,
+    },
     ShmDetach {
         segment: XResourceId,
     },

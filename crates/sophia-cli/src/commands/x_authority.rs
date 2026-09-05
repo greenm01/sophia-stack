@@ -81,6 +81,15 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 
     if args
         .iter()
+        .any(|arg| arg == "x-authority-quickshell-software-smoke")
+    {
+        let report = run_x_authority_quickshell_software_smoke()?;
+        print_external_probe_smoke_report("x-authority-quickshell-software-smoke", &report);
+        return Ok(true);
+    }
+
+    if args
+        .iter()
         .any(|arg| arg == "x-authority-zenity-render-smoke")
     {
         let report = run_x_authority_zenity_render_smoke()?;
@@ -236,6 +245,23 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
             report.stderr_bytes,
             report.mentions_sophia,
             report.mentions_root
+        );
+        return Ok(true);
+    }
+
+    if args.iter().any(|arg| arg == "x-authority-shm-fd-smoke") {
+        let report = run_x_authority_shm_fd_smoke()?;
+        println!(
+            "x-authority-shm-fd-smoke display={} shm_version={}.{} created_bytes={} written={} read_back={} attached_fd_segments={} oversize_refused={} errors={}",
+            report.display,
+            report.major_version,
+            report.minor_version,
+            report.created_bytes,
+            report.written,
+            report.read_back,
+            report.attached_fd_segments,
+            report.oversize_refused,
+            report.errors,
         );
         return Ok(true);
     }

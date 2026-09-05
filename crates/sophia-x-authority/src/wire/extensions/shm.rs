@@ -25,6 +25,33 @@ fn decode_mit_shm(
                 read_only: bytes[12] != 0,
             })
         }
+        X_MIT_SHM_ATTACH_FD_MINOR_OPCODE => {
+            require_exact_len(
+                X_MIT_SHM_MAJOR_OPCODE,
+                X_MIT_SHM_ATTACH_FD_REQ_LEN,
+                bytes.len(),
+            )?;
+            let segment = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(segment)?;
+            Ok(XWireRequest::ShmAttachFd {
+                segment: XResourceId::new(u64::from(segment), 1),
+                read_only: bytes[8] != 0,
+            })
+        }
+        X_MIT_SHM_CREATE_SEGMENT_MINOR_OPCODE => {
+            require_exact_len(
+                X_MIT_SHM_MAJOR_OPCODE,
+                X_MIT_SHM_CREATE_SEGMENT_REQ_LEN,
+                bytes.len(),
+            )?;
+            let segment = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(segment)?;
+            Ok(XWireRequest::ShmCreateSegment {
+                segment: XResourceId::new(u64::from(segment), 1),
+                size: context.byte_order.u32(&bytes[8..12]),
+                read_only: bytes[12] != 0,
+            })
+        }
         X_MIT_SHM_DETACH_MINOR_OPCODE => {
             require_exact_len(
                 X_MIT_SHM_MAJOR_OPCODE,

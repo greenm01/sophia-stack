@@ -5,6 +5,7 @@ fn encode_render_extension_reply(
     if !matches!(
         &reply,
             XClientReply::ShmQueryVersion { .. }
+            | XClientReply::ShmCreateSegment { .. }
             | XClientReply::ShmGetImage { .. }
             | XClientReply::Dri3QueryVersion { .. }
             | XClientReply::Dri3Open { .. }
@@ -70,6 +71,14 @@ fn encode_render_extension_reply(
                 XClientReply::Dri3Open { sequence } => {
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
+                    out[1] = 1;
+                    out
+                }
+                XClientReply::ShmCreateSegment { sequence } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    // `nfd`, as `Dri3Open` above: one descriptor accompanies
+                    // this reply.
                     out[1] = 1;
                     out
                 }

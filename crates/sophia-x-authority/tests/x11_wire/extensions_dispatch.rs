@@ -1335,3 +1335,97 @@ fn xkb_rmlvo_validation_rejects_empty_and_unbounded_configuration() {
         XkbKeyboardError::InvalidConfiguration
     );
 }
+
+/// MIT-SHM 1.2 refuses what it cannot honour, at the request that asked.
+///
+/// `ShmQueryVersion` advertises 1.2, so these two opcodes have to exist or the
+/// advertisement is a lie -- which is exactly what it was until they did, and
+/// a Qt shell paid for believing it. The socket round trip is proven by
+/// `x-authority-shm-fd-smoke`; what is checked here is the refusals, which a
+/// well-behaved client never reaches.
+#[test]
+fn shm_descriptor_segments_refuse_a_bad_size_and_a_used_name() {
+    let namespace = NamespaceId::from_raw(70);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    // A CARD32 can name four gigabytes; the adapter will not map it.
+    let oversize = 0x22_0701;
+    let request = decode_x11_core_request(
+        context(namespace, 700, XByteOrder::LittleEndian),
+        &mit_shm_create_segment_request(XByteOrder::LittleEndian, oversize, u32::MAX, false),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 20, XByteOrder::LittleEndian, X_MIT_SHM_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Error(XClientError {
+                minor_code: 7,
+                major_code: X_MIT_SHM_MAJOR_OPCODE,
+                ..
+            })]
+        ),
+        "{:?}",
+        result.outputs
+    );
+
+    // A size it will map is accepted, and the reply is what carries the
+    // descriptor out.
+    let segment = 0x22_0702;
+    let request = decode_x11_core_request(
+        context(namespace, 701, XByteOrder::LittleEndian),
+        &mit_shm_create_segment_request(XByteOrder::LittleEndian, segment, 4096, false),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 21, XByteOrder::LittleEndian, X_MIT_SHM_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Reply(XClientReply::ShmCreateSegment { .. })]
+        ),
+        "{:?}",
+        result.outputs
+    );
+
+    // Naming it again is the client's mistake, and it is told which request
+    // made it rather than being left to guess.
+    let request = decode_x11_core_request(
+        context(namespace, 702, XByteOrder::LittleEndian),
+        &mit_shm_attach_fd_request(XByteOrder::LittleEndian, segment, false),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 22, XByteOrder::LittleEndian, X_MIT_SHM_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Error(XClientError {
+                code: XErrorCode::BadIdChoice,
+                minor_code: 6,
+                major_code: X_MIT_SHM_MAJOR_OPCODE,
+                ..
+            })]
+        ),
+        "{:?}",
+        result.outputs
+    );
+}

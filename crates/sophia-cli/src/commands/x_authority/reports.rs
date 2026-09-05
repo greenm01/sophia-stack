@@ -6,6 +6,25 @@ struct XAuthorityX11SmokeReport {
     errors: usize,
 }
 
+/// What the MIT-SHM 1.2 round trip proved.
+///
+/// `written` and `read_back` are the point: a descriptor the server handed
+/// over is only evidence if the memory behind it is the memory the server
+/// holds, and the only way to know is to write through one side and read the
+/// other.
+#[derive(Clone, Debug)]
+struct XAuthorityShmFdSmokeReport {
+    display: String,
+    major_version: u16,
+    minor_version: u16,
+    created_bytes: usize,
+    written: usize,
+    read_back: usize,
+    attached_fd_segments: usize,
+    oversize_refused: bool,
+    errors: usize,
+}
+
 #[derive(Clone, Debug)]
 struct XAuthorityX11rbSmokeReport {
     display: String,

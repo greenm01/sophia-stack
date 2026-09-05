@@ -1,7 +1,11 @@
 impl XWireRequest {
     pub const fn required_fd_count(&self) -> usize {
         match self {
-            Self::Dri3PixmapFromBuffer { .. } | Self::Dri3FenceFromFd { .. } => 1,
+            Self::Dri3PixmapFromBuffer { .. }
+            | Self::Dri3FenceFromFd { .. }
+            // The segment's memory is the descriptor; without it there is
+            // nothing to attach.
+            | Self::ShmAttachFd { .. } => 1,
             Self::Dri3PixmapFromBuffers { num_buffers, .. } => *num_buffers as usize,
             _ => 0,
         }

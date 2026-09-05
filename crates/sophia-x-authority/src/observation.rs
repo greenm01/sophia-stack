@@ -18,6 +18,11 @@ pub enum X11ObservedRequestStage {
     GlxCreateWindow,
     Dri3PixmapFromBuffers,
     PresentPixmap,
+    /// MIT-SHM 1.2. Worth naming because its absence is invisible: a client
+    /// refused a segment falls back to the wire and looks identical from
+    /// outside, only slower.
+    ShmCreateSegment,
+    ShmAttachFd,
     KeyboardMapping,
     SelectionRequest,
     DisconnectCleanup,
@@ -35,6 +40,8 @@ impl X11ObservedRequestStage {
             Self::GlxCreateWindow => "GLX:CreateWindow",
             Self::Dri3PixmapFromBuffers => "DRI3:PixmapFromBuffers",
             Self::PresentPixmap => "PRESENT:Pixmap",
+            Self::ShmCreateSegment => "SHM:CreateSegment",
+            Self::ShmAttachFd => "SHM:AttachFd",
             Self::KeyboardMapping => "GetKeyboardMapping",
             Self::SelectionRequest => "RequestSelection",
             Self::DisconnectCleanup => "DisconnectCleanup",

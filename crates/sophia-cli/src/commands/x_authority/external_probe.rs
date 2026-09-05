@@ -29,6 +29,9 @@ struct ExternalProbeInvocation<'a> {
     command: &'a std::path::Path,
     display_mode: ExternalProbeDisplayMode,
     command_args: &'a [&'a str],
+    /// Environment the client needs beyond the display, as a property of the
+    /// client rather than a special case on its name.
+    extra_env: &'a [(&'a str, &'a str)],
     display: String,
     socket_path: std::path::PathBuf,
     namespace: NamespaceId,
@@ -63,6 +66,7 @@ fn run_x_authority_external_probe_smoke(
         command,
         display_mode,
         command_args,
+        extra_env,
         display,
         socket_path,
         namespace,
@@ -189,6 +193,9 @@ fn run_x_authority_external_probe_smoke(
                 command.env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/dev/null");
             }
         }
+    }
+    for (name, value) in extra_env {
+        command.env(name, value);
     }
     command
         .args(command_args)

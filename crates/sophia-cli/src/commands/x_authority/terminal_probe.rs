@@ -13,6 +13,7 @@ pub(crate) fn collect_x_authority_xterm_render_authority_batches(
         command: &command,
         display_mode: spec.display_mode,
         command_args: spec.args,
+        extra_env: &[],
         display,
         socket_path,
         namespace: NamespaceId::from_raw(spec.namespace),

@@ -15,6 +15,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-runtime-smoke");
     println!("commands: x-authority-x11-smoke");
     println!("commands: x-authority-x11rb-smoke");
+    println!("commands: x-authority-shm-fd-smoke");
     println!("commands: x-authority-xdpyinfo-smoke");
     println!("commands: x-authority-xlib-smoke");
     println!("commands: x-authority-xlib-drawing-smoke");
@@ -40,6 +41,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-vkcube-admission-smoke");
     println!("commands: x-authority-xmobar-smoke");
     println!("commands: x-authority-quickshell-smoke");
+    println!("commands: x-authority-quickshell-software-smoke");
     println!("commands: x-authority-present-pixmap-smoke");
     #[cfg(feature = "native-session")]
     println!(

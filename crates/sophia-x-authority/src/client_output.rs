@@ -402,6 +402,11 @@ pub enum XClientReply {
     Dri3Open {
         sequence: u16,
     },
+    /// `CreateSegment`: the body says nothing, and the descriptor beside it
+    /// says everything. The socket layer supplies that descriptor.
+    ShmCreateSegment {
+        sequence: u16,
+    },
     Dri3GetSupportedModifiers {
         sequence: u16,
         window_modifiers: Vec<u64>,
