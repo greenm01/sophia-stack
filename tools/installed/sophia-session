@@ -12,7 +12,29 @@ export SOPHIA_REQUIRE_RUNTIME_DIR=true
 export SOPHIA_REQUIRE_LOCAL_VT=true
 export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
 export SOPHIA_NATIVE_WM_BIN="$RELEASE_DIR/target/release/sophia-wm-demo"
-export SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
+# The policy client may be taken from a developer path so it can be replaced
+# while a session runs. The release binary stays exactly as packaged and
+# checksummed; nothing here writes to /opt. The override is opt-in by the file
+# existing, and is refused unless the caller owns it and no one else can write
+# it, because this names the process that will be handed the WM socket.
+sophia_dev_wm="${SOPHIA_HAGIA_DEV_BIN:-${XDG_STATE_HOME:-$HOME/.local/state}/sophia/dev/hagia}"
+if [[ -n "${SOPHIA_HAGIA_BIN:-}" ]]; then
+    : # An explicit value wins, which is how the gates point at their fixtures.
+elif [[ -x "$sophia_dev_wm" ]]; then
+    if [[ ! -O "$sophia_dev_wm" ]]; then
+        echo "sophia: refusing developer WM owned by another user: $sophia_dev_wm" >&2
+        exit 1
+    fi
+    if [[ "$(stat -c %A "$sophia_dev_wm")" == *w*w* ]]; then
+        echo "sophia: refusing group- or world-writable developer WM: $sophia_dev_wm" >&2
+        exit 1
+    fi
+    SOPHIA_HAGIA_BIN="$sophia_dev_wm"
+    echo "sophia: using developer policy client $sophia_dev_wm" >&2
+else
+    SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
+fi
+export SOPHIA_HAGIA_BIN
 export SOPHIA_HAGIA_SHELL_BIN="$RELEASE_DIR/target/release/narthex"
 export SOPHIA_TTY_MODE_HELPER="$RELEASE_DIR/tools/sophia_tty_mode.py"
 

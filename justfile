@@ -103,6 +103,15 @@ check:
 install-session:
     @tools/install_session_from_head.sh
 
+# Needs no sudo and never touches the installed release: the policy client is
+# taken from a developer path the session prefers when it exists. A session
+# already running from the release cannot be reloaded in place, so the first
+# run installs the binary and asks for one log out.
+
+# Rebuild Hagia and restart it in the running session, keeping the windows.
+reload-wm:
+    @tools/reload_policy_client.sh
+
 # Prepare the signed, immutable diagnostic matrix.
 desktop-comparison-prepare run:
     @cargo --quiet xtask conformance desktop-comparison prepare "{{ run }}"

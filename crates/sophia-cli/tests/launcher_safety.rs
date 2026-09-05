@@ -366,3 +366,73 @@ fn installer_verifies_root_owned_staging_before_immutable_promotion() {
     assert!(verify < promote);
     assert!(!INSTALLER.contains("\"$artifact/tools/verify_packaged_policy.sh\""));
 }
+
+/// The developer policy client is opt-in, owner-only, and never the release.
+///
+/// This path names the process that will be handed the WM socket, so the
+/// checks around it are the point of the feature rather than decoration. A
+/// binary someone else can write is a binary someone else can make the window
+/// manager.
+#[test]
+fn a_developer_policy_client_is_refused_unless_the_caller_alone_can_write_it() {
+    let override_block = INSTALLED_SESSION
+        .split_once("sophia_dev_wm=")
+        .expect("installed session launcher offers no developer policy client")
+        .1;
+    let export = override_block
+        .find("export SOPHIA_HAGIA_BIN")
+        .expect("the developer override never exports the policy client");
+    let decision = &override_block[..export];
+
+    assert!(
+        decision.contains("-O \"$sophia_dev_wm\""),
+        "a developer policy client owned by another user must be refused"
+    );
+    assert!(
+        decision.contains("*w*w*"),
+        "a group- or world-writable developer policy client must be refused"
+    );
+    assert!(
+        decision.contains("exit 1"),
+        "an unsafe developer policy client must stop the session rather than \
+         fall back to the release, which would silently ignore the operator"
+    );
+    assert!(
+        decision.contains("$RELEASE_DIR/target/release/hagia"),
+        "the release binary must remain the default when no override exists"
+    );
+
+    // The override is chosen only when the file is there, so a machine that
+    // never created one behaves exactly as before.
+    let opt_in = decision
+        .find("elif [[ -x \"$sophia_dev_wm\" ]]")
+        .expect("the developer override is not opt-in by the file existing");
+    assert!(
+        decision[..opt_in].contains("-n \"${SOPHIA_HAGIA_BIN:-}\""),
+        "an explicit SOPHIA_HAGIA_BIN must still win, which is how gates point \
+         at their fixtures"
+    );
+}
+
+/// Reloading must never write into the installed release.
+#[test]
+fn the_reload_tool_leaves_the_installed_release_alone() {
+    const RELOAD: &str = include_str!("../../../tools/reload_policy_client.sh");
+    assert!(
+        !RELOAD.contains("/opt/sophia"),
+        "the reload tool must not touch the checksummed release"
+    );
+    assert!(
+        !RELOAD.contains("sudo"),
+        "reloading a policy client is not a privileged operation"
+    );
+    assert!(
+        RELOAD.contains("rolling back"),
+        "a reload that does not come back must restore what it replaced"
+    );
+    assert!(
+        RELOAD.contains("status=(layout_committed|focus_committed)"),
+        "a started process is not a working one; the reload must wait for the \
+         session to accept a projection from the replacement"
+    );
+}
