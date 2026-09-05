@@ -198,6 +198,81 @@ pub fn reduce_live_production_native_submission_owner(
     }
 }
 
+/// Everything that disagreed when a retirement failed the ownership check.
+///
+/// The check used to end the session with a sentence naming nothing, so the
+/// only way to tell which transition produced it was to read the source and
+/// infer from surrounding log lines. These are the facts that separate the
+/// candidates, carried to the message.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionNativeOwnershipMismatch {
+    pub retired_frame: LiveProductionNativeFrameId,
+    pub content_frame: LiveProductionNativeFrameId,
+    pub content_transaction: Option<TransactionId>,
+    pub submitted_frame: Option<LiveProductionNativeFrameId>,
+    pub in_flight_frame: Option<LiveProductionNativeFrameId>,
+    pub in_flight_transaction: Option<TransactionId>,
+}
+
+impl LiveProductionNativeOwnershipMismatch {
+    /// Which shape of disagreement this is.
+    ///
+    /// A scheduler holding nothing, a scheduler holding a later present, and a
+    /// frame reserved but never submitted are three different bugs. Reporting
+    /// them with one sentence is what made this expensive to diagnose.
+    pub fn kind(self) -> &'static str {
+        if self.content_frame != self.retired_frame {
+            "content_names_another_frame"
+        } else if self.in_flight_frame == Some(self.retired_frame) {
+            "reserved_but_not_submitted"
+        } else if self.submitted_frame.is_none() && self.in_flight_frame.is_none() {
+            "no_present_in_flight"
+        } else {
+            "superseded_by_later_present"
+        }
+    }
+}
+
+impl core::fmt::Display for LiveProductionNativeOwnershipMismatch {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            formatter,
+            "DMA Present retired on a native frame with different ownership: \
+kind={} retired_frame={} content_frame={} content_transaction={:?} \
+submitted_frame={:?} in_flight_frame={:?} in_flight_transaction={:?}",
+            self.kind(),
+            self.retired_frame.raw(),
+            self.content_frame.raw(),
+            self.content_transaction.map(TransactionId::raw),
+            self.submitted_frame.map(LiveProductionNativeFrameId::raw),
+            self.in_flight_frame.map(LiveProductionNativeFrameId::raw),
+            self.in_flight_transaction.map(TransactionId::raw),
+        )
+    }
+}
+
+impl LiveProductionVisualRuntime {
+    /// Assembles the mismatch record from the retirement and what the
+    /// scheduler currently holds for that output.
+    fn ownership_mismatch(
+        &self,
+        output: OutputId,
+        retirement: LiveProductionNativeFrameRetirement,
+    ) -> LiveProductionNativeOwnershipMismatch {
+        LiveProductionNativeOwnershipMismatch {
+            retired_frame: retirement.frame,
+            content_frame: retirement.content.frame(),
+            content_transaction: match retirement.content {
+                LiveProductionScanoutContent::MixedPresent { transaction, .. } => Some(transaction),
+                _ => None,
+            },
+            submitted_frame: self.present_scheduler.submitted_frame(output),
+            in_flight_frame: self.present_scheduler.in_flight_frame(output),
+            in_flight_transaction: self.present_scheduler.in_flight_transaction(),
+        }
+    }
+}
+
 pub fn reduce_live_production_native_retirement_owner(
     retired_frame: LiveProductionNativeFrameId,
     retired_content: LiveProductionScanoutContent,
@@ -834,9 +909,10 @@ impl LiveProductionVisualRuntime {
                     return Ok(retired);
                 }
                 LiveProductionNativeRetirementOwner::InvalidDmaOwnership => {
-                    return Err(
-                        "DMA Present retired on a native frame with different ownership".into(),
-                    );
+                    return Err(self
+                        .ownership_mismatch(selected_output, retirement)
+                        .to_string()
+                        .into());
                 }
             }
         }
@@ -863,7 +939,10 @@ impl LiveProductionVisualRuntime {
             LiveProductionScanoutContent::MixedPresent { transaction, .. }
                 if Some(transaction) == self.present_scheduler.in_flight_transaction()
         ) {
-            return Err("DMA Present retired on a native frame with different ownership".into());
+            return Err(self
+                .ownership_mismatch(output, retirement)
+                .to_string()
+                .into());
         }
         let terminal =
             self.present_scheduler

@@ -338,6 +338,17 @@ tranche with a named driver and exit gate.
 - Extend launch-placement or output-scoped workspace policy only for a named
   unmet workflow; opaque launch provenance and active-output selection already
   exist. Native tab implementation is complete; acceptance belongs to CP-14.3.
+- Expose per-head scanout framebuffer handles from `sophia-backend-live` so a
+  requested output topology can be applied inside a live session.
+  `compose_from_current_framebuffer` in `desktop_output_heads.rs` reads the
+  CRTC's current framebuffer, which is correct for a standalone command that
+  composes nothing and empty inside a session, whose atomic commits leave the
+  legacy field unset. A head's own submissions are `pub(crate)`, so this is new
+  public surface. It is followed by an unanswered question: whether an atomic
+  modeset is safe while the session owns and is flipping those planes.
+  `apply_requested_native_output_topology` already runs after startup presents
+  and declines cleanly, so the gap reads in every session log as
+  `sophia_live_native_topology_apply status=declined reason=heads`.
 - Define a bounded redacted workspace/layout/focus status feed and opaque
   launcher action; add lock, screenshot, wallpaper, and audio through their
   owning shell/session capabilities. The wire is not what blocks these:

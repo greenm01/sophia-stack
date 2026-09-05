@@ -760,3 +760,70 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
     runtime.shutdown_presentations().unwrap();
     assert_eq!(runtime.diagnostics().live_sources, 0);
 }
+
+/// The three ways ownership can disagree are three different bugs, and the
+/// message has to tell them apart. Reporting all of them with one sentence
+/// naming no frame is what made this cost a session to diagnose.
+#[test]
+fn an_ownership_mismatch_names_which_disagreement_it_is() {
+    use sophia_backend_live::LiveProductionNativeOwnershipMismatch;
+
+    let retired = LiveProductionNativeFrameId::from_raw(4346);
+    let successor = LiveProductionNativeFrameId::from_raw(4347);
+    let transaction = TransactionId::from_raw(38244);
+
+    let base = LiveProductionNativeOwnershipMismatch {
+        retired_frame: retired,
+        content_frame: retired,
+        content_transaction: Some(transaction),
+        submitted_frame: None,
+        in_flight_frame: None,
+        in_flight_transaction: None,
+    };
+
+    // Nothing in flight at all: the scheduler finished or dropped the present
+    // before its retirement arrived.
+    assert_eq!(base.kind(), "no_present_in_flight");
+
+    // A later present holds the scheduler. This is the shape the crashed
+    // session showed, with a newer frame already submitted.
+    let superseded = LiveProductionNativeOwnershipMismatch {
+        submitted_frame: Some(successor),
+        in_flight_frame: Some(successor),
+        in_flight_transaction: Some(TransactionId::from_raw(38245)),
+        ..base
+    };
+    assert_eq!(superseded.kind(), "superseded_by_later_present");
+
+    // Reserved for this output but never submitted: an ownership question,
+    // not a presentation one, which is why in_flight_frame is consulted.
+    let reserved = LiveProductionNativeOwnershipMismatch {
+        submitted_frame: None,
+        in_flight_frame: Some(retired),
+        ..base
+    };
+    assert_eq!(reserved.kind(), "reserved_but_not_submitted");
+
+    // The content disagrees with the frame it retired under, which is a
+    // corrupt record rather than a scheduling race.
+    let mismatched = LiveProductionNativeOwnershipMismatch {
+        content_frame: successor,
+        ..base
+    };
+    assert_eq!(mismatched.kind(), "content_names_another_frame");
+
+    // Every fact reaches the message; a kind alone would not locate it.
+    let rendered = superseded.to_string();
+    for fragment in [
+        "kind=superseded_by_later_present",
+        "retired_frame=4346",
+        "content_transaction=Some(38244)",
+        "submitted_frame=Some(4347)",
+        "in_flight_transaction=Some(38245)",
+    ] {
+        assert!(
+            rendered.contains(fragment),
+            "missing {fragment} in {rendered}"
+        );
+    }
+}
