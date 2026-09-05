@@ -4,9 +4,13 @@ use crate::desktop_output_activation::{
     NativeOutputActivationFailure, NativeOutputActivationSettlement,
     NativeOutputRollbackSettlement, UnavailableNativeOutputExecutor, run_native_output_activation,
 };
-use crate::desktop_output_commit::NativeOutputTopologyValidationExecutor;
+use crate::desktop_output_commit::{
+    NativeOutputCommitExecutor, NativeOutputHeadSet, NativeOutputTopologyValidationExecutor,
+};
+use crate::desktop_output_frames::{NativeOutputFrameTarget, native_output_apply_admission};
 use crate::desktop_output_heads::{
-    LiveNativeOutputTopologyHardware, resolve_native_output_topology_heads,
+    LiveNativeOutputTopologyHardware, resolve_native_output_scanout_heads,
+    resolve_native_output_topology_heads,
 };
 use crate::desktop_output_topology::{
     NativeOutputActivationPlan, prepare_native_output_activation_plan,
@@ -510,7 +514,7 @@ pub(crate) fn run_persistent_xterm_session(
     if let Some(physical_input) = physical_input.as_ref() {
         let policy = physical_input.policy_report();
         crate::session_println!(
-            "sophia_live_session_input_pipeline schema=3 status=poller_ready source={} seat={} devices={} active={} keyboards={} pointers={} touch={} tap_capable={} tap_enabled={}",
+            "sophia_live_session_input_pipeline schema=4 status=poller_ready source={} seat={} devices={} active={} keyboards={} pointers={} touch={} tap_capable={} tap_enabled={} pointer_configured={} settings_unsupported={}",
             if policy.udev_managed { "udev" } else { "paths" },
             config.input_seat.as_deref().unwrap_or("explicit"),
             policy.devices_added,
@@ -519,7 +523,11 @@ pub(crate) fn run_persistent_xterm_session(
             policy.pointers,
             policy.touch_devices,
             policy.tap_capable,
-            policy.tap_enabled
+            policy.tap_enabled,
+            policy.pointer_configured,
+            // A preference a device did not have is skipped, not refused. It is
+            // counted here so the skip is visible rather than silent.
+            policy.pointer_settings_unsupported
         );
         std::io::stdout().flush()?;
     }
@@ -963,6 +971,7 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout.presentation_outputs,
             native_scanout.heads.len(),
         );
+        apply_requested_native_output_topology(native_scanout, &config);
     }
 
     let (primary_child, secondary_children) = process.children_mut();
@@ -1091,3 +1100,122 @@ mod tests;
 #[cfg(test)]
 #[path = "../tests/support/mirror_gate_session_config.rs"]
 mod mirror_gate_session_config;
+
+/// Applies the profile's requested output topology once the session owns
+/// framebuffers.
+///
+/// Startup validates this same candidate before any buffer exists, which
+/// answers whether the kernel would take it. This is where it is taken.
+/// The order is forced: a modeset needs a framebuffer sized for the mode it
+/// sets, which is exactly what `native_output_apply_admission` checks, and no
+/// such buffer exists until scanout is presenting.
+///
+/// A refusal here is never a session failure. The desktop is already on screen
+/// under the topology the kernel chose at bootstrap; losing a requested refresh
+/// rate is not a reason to lose the desktop. Every outcome is logged with the
+/// same vocabulary `sophia native-topology apply` uses, so the two paths read
+/// alike.
+fn apply_requested_native_output_topology(
+    native: &LiveProductionNativeScanout,
+    config: &PersistentXtermSessionConfig,
+) {
+    let declined = |reason: &str, detail: String| {
+        crate::session_println!(
+            "sophia_live_native_topology_apply schema=1 status=declined reason={reason} detail={detail}"
+        );
+    };
+
+    let capabilities = match native.output_capabilities() {
+        Ok(capabilities) => capabilities,
+        Err(error) => return declined("capabilities", error.to_string()),
+    };
+    let topology = match project_native_output_topology(&capabilities, &native.outputs()) {
+        Ok(topology) => topology,
+        Err(error) => return declined("topology", error.to_string()),
+    };
+    let reconciled = match sophia_config::reconcile_desktop_output_candidate(
+        config.output_profile.candidate(),
+        &topology,
+    ) {
+        Ok(reconciled) => reconciled,
+        Err(error) => return declined("reconcile", error.to_string()),
+    };
+    let plan = match prepare_native_output_activation_plan(&capabilities, &topology, &reconciled) {
+        Ok(plan) => plan,
+        Err(error) => return declined("plan", error.to_string()),
+    };
+    let generation = plan.generation().raw();
+
+    // The frame each head is actually scanning out, not the size its mode says
+    // it should be. Those differ during a mode change, and the difference is
+    // the whole question the admission gate answers.
+    let frame_targets = native
+        .outputs()
+        .into_iter()
+        .flat_map(|output| {
+            native
+                .head_indices(output.id)
+                .into_iter()
+                .map(move |index| (output, index))
+        })
+        .filter_map(|(output, index)| {
+            let selection = native.selection(index);
+            let (_, size) = sophia_backend_live::read_native_current_framebuffer(
+                native.card(index),
+                selection,
+            )?;
+            Some(NativeOutputFrameTarget {
+                connector: capabilities
+                    .iter()
+                    .find(|capability| capability.connector_id() == selection.connector_id())?
+                    .connector_name()
+                    .to_owned(),
+                output: output.id,
+                target: sophia_backend_live::LiveGbmEglFrameTargetRecord::new(size),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let admission = native_output_apply_admission(&plan, &frame_targets);
+    if !admission.is_ready() {
+        return declined("not_admitted", admission.to_string());
+    }
+
+    let hardware = LiveNativeOutputTopologyHardware::new(native, &capabilities);
+    let resolved = match resolve_native_output_scanout_heads(&plan, &capabilities, &hardware) {
+        Ok(resolved) => resolved,
+        Err(error) => return declined("heads", error.to_string()),
+    };
+    // One atomic request cannot span two DRM devices, so a topology that does
+    // is not applicable as a unit.
+    let Some(card) = crate::plan_validation_device(native, &plan) else {
+        return declined(
+            "multi_device",
+            "topology spans more than one card".to_owned(),
+        );
+    };
+    let heads = resolved.len();
+    let head_set = NativeOutputHeadSet {
+        apply: resolved.apply().to_vec(),
+        rollback: resolved.rollback().to_vec(),
+    };
+    let mut executor = NativeOutputCommitExecutor::activating(card, &head_set);
+    let report = match run_native_output_activation(plan, &mut executor) {
+        Ok(report) => report,
+        Err(error) => return declined("activation", error.to_string()),
+    };
+    let (settlement, rollback) = match report.settlement {
+        NativeOutputActivationSettlement::Activated { .. } => ("activated", "none"),
+        NativeOutputActivationSettlement::Rejected { rollback, .. } => (
+            "not_applied",
+            match rollback {
+                NativeOutputRollbackSettlement::Failed(_) => "failed",
+                NativeOutputRollbackSettlement::NotRequired => "not_required",
+                NativeOutputRollbackSettlement::Succeeded => "restored",
+            },
+        ),
+    };
+    crate::session_println!(
+        "sophia_live_native_topology_apply schema=1 status={settlement} rollback={rollback} heads={heads} generation={generation}"
+    );
+}

@@ -162,12 +162,19 @@ impl NativeLibinputEventReader {
                     }
                     if device.has_capability(DeviceCapability::Pointer) {
                         policy.pointers = policy.pointers.saturating_add(1);
-                        if apply_native_pointer_policy(&mut device, self.pointer_policy) {
+                        let outcome = apply_native_pointer_policy(&mut device, self.pointer_policy);
+                        policy.pointer_settings_unsupported = policy
+                            .pointer_settings_unsupported
+                            .saturating_add(outcome.unsupported);
+                        if outcome.accepted() {
                             if self.pointer_policy.requires_device_configuration() {
                                 policy.pointer_configured =
                                     policy.pointer_configured.saturating_add(1);
                             }
                         } else {
+                            if policy.refused_setting.is_none() {
+                                policy.refused_setting = outcome.refused;
+                            }
                             policy.configuration_failures =
                                 policy.configuration_failures.saturating_add(1);
                         }
@@ -354,7 +361,10 @@ pub enum NativeLibinputOpenError {
     TooManyDevices,
     InvalidDevicePath,
     DeviceUnavailable,
-    DeviceConfigurationFailed,
+    /// A device refused a setting for a reason other than not having it.
+    /// Carries which setting, because a session that will not start has
+    /// to say what it would not accept.
+    DeviceConfigurationFailed(&'static str),
     SeatAssignmentFailed,
     MissingKeyboard,
     MissingPointer,
@@ -371,7 +381,12 @@ pub struct NativeLibinputPolicyReport {
     pub tap_capable: usize,
     pub tap_enabled: usize,
     pub pointer_configured: usize,
+    /// Preferences a device did not have. Counted, never fatal.
+    pub pointer_settings_unsupported: usize,
     pub configuration_failures: usize,
+    /// The first setting a device refused for a reason other than not having
+    /// it, so a fatal configuration says which knob it died on.
+    pub refused_setting: Option<&'static str>,
     pub udev_managed: bool,
 }
 
@@ -402,9 +417,12 @@ pub fn open_native_libinput_path_poller_with_pointer_policy(
     max_read_per_poll: usize,
     pointer_policy: NativeLibinputPointerPolicy,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
-    let pointer_policy = pointer_policy
-        .validate()
-        .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed)?;
+    let pointer_policy =
+        pointer_policy
+            .validate()
+            .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed(
+                "pointer-policy-bounds",
+            ))?;
     if paths.is_empty() {
         return Err(NativeLibinputOpenError::NoDevices);
     }
@@ -428,8 +446,12 @@ pub fn open_native_libinput_path_poller_with_pointer_policy(
         }
         if device.has_capability(DeviceCapability::Pointer) {
             policy.pointers = policy.pointers.saturating_add(1);
-            if !apply_native_pointer_policy(&mut device, pointer_policy) {
-                return Err(NativeLibinputOpenError::DeviceConfigurationFailed);
+            let outcome = apply_native_pointer_policy(&mut device, pointer_policy);
+            policy.pointer_settings_unsupported = policy
+                .pointer_settings_unsupported
+                .saturating_add(outcome.unsupported);
+            if let Some(setting) = outcome.refused {
+                return Err(NativeLibinputOpenError::DeviceConfigurationFailed(setting));
             }
             if pointer_policy.requires_device_configuration() {
                 policy.pointer_configured = policy.pointer_configured.saturating_add(1);
@@ -440,13 +462,20 @@ pub fn open_native_libinput_path_poller_with_pointer_policy(
         }
         if device.config_tap_finger_count() > 0 {
             policy.tap_capable = policy.tap_capable.saturating_add(1);
-            device
-                .config_tap_set_enabled(true)
-                .map_err(|_| NativeLibinputOpenError::DeviceConfigurationFailed)?;
-            if !device.config_tap_enabled() {
-                return Err(NativeLibinputOpenError::DeviceConfigurationFailed);
+            match device.config_tap_set_enabled(true) {
+                Ok(()) if device.config_tap_enabled() => {
+                    policy.tap_enabled = policy.tap_enabled.saturating_add(1);
+                }
+                // A device reporting fingers whose tap will not turn on has no
+                // tap to give. It is not a reason to refuse the seat.
+                Ok(()) | Err(input::DeviceConfigError::Unsupported) => {
+                    policy.pointer_settings_unsupported =
+                        policy.pointer_settings_unsupported.saturating_add(1);
+                }
+                Err(_) => {
+                    return Err(NativeLibinputOpenError::DeviceConfigurationFailed("tap"));
+                }
             }
-            policy.tap_enabled = policy.tap_enabled.saturating_add(1);
         }
     }
     Ok(NativeLibinputEventPoller::new(
@@ -524,9 +553,12 @@ fn finish_udev_open(
     max_read_per_poll: usize,
     pointer_policy: NativeLibinputPointerPolicy,
 ) -> Result<NativeLibinputEventPoller<NativeLibinputEventReader>, NativeLibinputOpenError> {
-    let pointer_policy = pointer_policy
-        .validate()
-        .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed)?;
+    let pointer_policy =
+        pointer_policy
+            .validate()
+            .ok_or(NativeLibinputOpenError::DeviceConfigurationFailed(
+                "pointer-policy-bounds",
+            ))?;
     let mut reader = NativeLibinputEventReader::new_with_policies(
         libinput,
         devices,
@@ -545,7 +577,9 @@ fn finish_udev_open(
         return Err(NativeLibinputOpenError::MissingPointer);
     }
     if policy.configuration_failures > 0 {
-        return Err(NativeLibinputOpenError::DeviceConfigurationFailed);
+        return Err(NativeLibinputOpenError::DeviceConfigurationFailed(
+            policy.refused_setting.unwrap_or("unknown-setting"),
+        ));
     }
     Ok(NativeLibinputEventPoller::new(
         reader,
