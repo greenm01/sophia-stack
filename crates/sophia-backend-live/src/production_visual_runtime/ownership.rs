@@ -190,6 +190,25 @@ pub fn reduce_live_production_native_retirement_owner(
 }
 
 impl LiveProductionVisualRuntime {
+    /// Skips a present whose frame can no longer complete, without touching
+    /// the exporter.
+    ///
+    /// Topology quiescence rolls back the skipped present's renderer image,
+    /// and it may: nothing else is composing while it forces the seat quiet.
+    /// A supersession skip runs in the middle of frame service, where the
+    /// exporter is already at work on the successor — rolling the image back
+    /// there poisoned the very next export, and one InvalidTarget later the
+    /// session was gone. The skipped frame has retired; there is no pending
+    /// layer to un-stage, only a live exporter to break.
+    fn skip_superseded_present(&mut self) -> Option<u64> {
+        let skipped = self
+            .present_scheduler
+            .take_submitted()
+            .or_else(|| self.present_scheduler.take_rendering())?;
+        let _ = self.reject_gpu_presentation(skipped.transaction);
+        Some(skipped.transaction.raw())
+    }
+
     /// Settles one submission against what the cohort expected of it.
     ///
     /// Only an exact identity match advances the cohort. Stale present
@@ -229,9 +248,7 @@ impl LiveProductionVisualRuntime {
                 );
             }
             LiveProductionNativeSubmissionOwner::OvertookPendingPresent => {
-                let skipped = self
-                    .skip_in_flight_present(Some(native_scanout), |_| {})
-                    .map(|present| present.transaction.raw());
+                let skipped = self.skip_superseded_present();
                 tracing::warn!(
                     "sophia_live_native_scanout schema=1 status=superseded output={} reason=present_overtaken_at_submit skipped_transaction={skipped:?} expected={expected:?}",
                     output.raw(),
@@ -257,7 +274,6 @@ output={} submitted_content={submitted_content:?} expected={expected:?}",
     /// submission found a pending present and died on it.
     pub(super) fn settle_superseded_retirement(
         &mut self,
-        native_scanout: &mut LiveProductionNativeScanout,
         output: OutputId,
         frame: LiveProductionNativeFrameId,
     ) {
@@ -267,9 +283,7 @@ output={} submitted_content={submitted_content:?} expected={expected:?}",
             frame.raw(),
         );
         if self.present_scheduler.in_flight_frame(output) == Some(frame) {
-            let skipped = self
-                .skip_in_flight_present(Some(native_scanout), |_| {})
-                .map(|present| present.transaction.raw());
+            let skipped = self.skip_superseded_present();
             tracing::warn!(
                 "sophia_live_native_scanout schema=1 status=superseded output={} reason=present_skipped_after_supersession skipped_transaction={skipped:?}",
                 output.raw(),

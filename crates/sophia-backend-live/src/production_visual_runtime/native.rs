@@ -635,9 +635,9 @@ impl LiveProductionVisualRuntime {
             }
             Some(Status::ScanoutExportPending) | None => {}
             Some(Status::AlreadyInFlight | Status::CleanupPending) => {}
-            Some(_) => {
+            Some(status) => {
                 return Err(format!(
-                    "Present output cohort failed while servicing output {}",
+                    "Present output cohort failed while servicing output {}: submit_status={status:?}",
                     selected_output.raw()
                 )
                 .into());
@@ -757,11 +757,7 @@ impl LiveProductionVisualRuntime {
                     return Ok(retired);
                 }
                 LiveProductionNativeRetirementOwner::SupersededDmaPresent => {
-                    self.settle_superseded_retirement(
-                        native_scanout,
-                        selected_output,
-                        retirement.frame,
-                    );
+                    self.settle_superseded_retirement(selected_output, retirement.frame);
                     self.publish_presented_input_layers(native_scanout);
                     return Ok(None);
                 }
