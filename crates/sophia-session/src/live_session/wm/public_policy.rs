@@ -2928,7 +2928,7 @@ impl LiveWmSession {
             sophia_config::restage_desktop_profile(&reloaded, &public._profile_fragments)?;
         let key = sophia_config::DesktopProfileActivationKey::from(&reloaded);
         sophia_config::validate_desktop_profile_fragments(&fragments, key)?;
-        let digest = reloaded.digest.clone();
+        let digest = reloaded.digest;
         let generation = reloaded.generation.raw();
 
         public._profile_fragments = fragments;
