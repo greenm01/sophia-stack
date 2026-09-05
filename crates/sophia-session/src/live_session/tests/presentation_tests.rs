@@ -13,6 +13,7 @@ fn layer_snapshots_from_committed(
         .iter()
         .enumerate()
         .map(|(stack_rank, surface)| LayerSnapshot {
+            output: None,
             surface: surface.surface,
             authority_local_id: None,
             namespace: None,

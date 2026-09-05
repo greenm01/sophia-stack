@@ -703,6 +703,7 @@ fn a_first_candidate_deferred_from_an_in_flight_layout_queues_recovery() {
     layout.pending = Some(PendingLiveWmLayout {
         transaction: layout_transaction,
         layers: vec![LayerSnapshot {
+            output: None,
             surface,
             authority_local_id: None,
             namespace: None,

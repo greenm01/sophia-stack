@@ -42,6 +42,7 @@ fn geometry() -> Rect {
 
 fn layer(surface: SurfaceId) -> LayerSnapshot {
     LayerSnapshot {
+        output: None,
         surface,
         authority_local_id: None,
         namespace: None,

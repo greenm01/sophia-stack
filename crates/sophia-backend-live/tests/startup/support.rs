@@ -34,6 +34,7 @@ fn motion_event(serial: u64, x: f64, y: f64) -> InputEventPacket {
 
 fn test_layer(raw_surface: u32) -> LayerSnapshot {
     LayerSnapshot {
+        output: None,
         surface: SurfaceId::new(raw_surface, 1),
         authority_local_id: None,
         namespace: Some(NamespaceId::from_raw(7)),

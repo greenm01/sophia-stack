@@ -68,6 +68,7 @@ fn explicit_pointer_grab_control_activates_and_releases_a_presented_root_anchor(
         output: OutputId::from_raw(2),
         epoch: 5,
         layers: vec![LayerSnapshot {
+            output: None,
             surface,
             authority_local_id: None,
             namespace: None,
@@ -784,6 +785,7 @@ fn client_positioned_pointer_target_focuses_containing_managed_surface_for_same_
         height: 600,
     };
     let layer = |surface, stack_rank| LayerSnapshot {
+        output: None,
         surface,
         authority_local_id: None,
         namespace: None,

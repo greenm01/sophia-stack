@@ -171,6 +171,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     LayerSnapshot {
+        output: None,
         surface,
         authority_local_id: None,
         namespace: None,
@@ -264,6 +265,7 @@ fn planning_layers_for(
             layout.layers.get(&surface).cloned().or_else(|| {
                 let facts = layout.layout_facts(surface)?;
                 Some(LayerSnapshot {
+                    output: None,
                     surface: facts.surface,
                     authority_local_id: None,
                     namespace: None,

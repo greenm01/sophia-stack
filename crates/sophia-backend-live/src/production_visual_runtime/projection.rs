@@ -625,6 +625,7 @@ mod tests {
         assert_eq!(runtime.input_projections()[0].output, primary.id);
         assert_eq!(runtime.input_projections()[1].output, secondary.id);
         let layer_for = |surface, handle| LayerSnapshot {
+            output: None,
             surface,
             authority_local_id: None,
             namespace: Some(NamespaceId::from_raw(3)),
