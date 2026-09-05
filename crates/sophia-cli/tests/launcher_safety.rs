@@ -429,6 +429,23 @@ fn the_reload_tool_leaves_the_installed_release_alone() {
         RELOAD.contains("rolling back"),
         "a reload that does not come back must restore what it replaced"
     );
+    // The running client is identified before the new binary lands. Installing
+    // unlinks the old inode, after which /proc/PID/exe reads as "(deleted)",
+    // so a check made afterwards would fail against its own install.
+    let install = RELOAD
+        .find("mv -f \"$staged\"")
+        .expect("the reload tool never installs the binary");
+    let identify = RELOAD
+        .find("running_exe=")
+        .expect("the reload tool never identifies the running client");
+    assert!(
+        identify < install,
+        "the running client must be identified before its binary is replaced"
+    );
+    assert!(
+        RELOAD.contains("% (deleted)"),
+        "a client whose binary was already replaced is still that client"
+    );
     assert!(
         RELOAD.contains("status=(layout_committed|focus_committed)"),
         "a started process is not a working one; the reload must wait for the \

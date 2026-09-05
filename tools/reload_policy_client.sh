@@ -28,6 +28,21 @@ note "building Hagia from $hagia_root"
 (cd "$hagia_root" && nimble build -d:release >/dev/null) || die "Hagia build failed"
 [[ -x "$built" ]] || die "the build produced no executable at $built"
 
+# Ask which binary the session is running BEFORE replacing it. Installing
+# unlinks the old inode, after which /proc/PID/exe reads as "... (deleted)"
+# and no comparison against the path can match -- the check would fail
+# against the very install it just performed.
+running="$(pgrep -x hagia || true)"
+running_exe=""
+if [[ -n "$running" ]]; then
+    running_exe="$(readlink -f "/proc/$running/exe" 2>/dev/null || true)"
+    # A client whose binary has already been replaced reads as "... (deleted)".
+    # That is the kernel saying this path's file was swapped underneath it,
+    # which is exactly the client a reload wants to replace -- so the suffix is
+    # stripped rather than treated as a different program.
+    running_exe="${running_exe% (deleted)}"
+fi
+
 mkdir -p "$(dirname "$policy_bin")"
 backup=""
 if [[ -e "$policy_bin" ]]; then
@@ -41,14 +56,13 @@ install -m 700 "$built" "$staged"
 mv -f "$staged" "$policy_bin"
 note "installed $(cd "$hagia_root" && git rev-parse --short HEAD) to $policy_bin"
 
-running="$(pgrep -x hagia || true)"
 if [[ -z "$running" ]]; then
     note "no session is running; the next one starts on this build"
     exit 0
 fi
-if [[ "$(readlink -f "/proc/$running/exe" 2>/dev/null || true)" != "$(readlink -f "$policy_bin")" ]]; then
+if [[ "$running_exe" != "$(readlink -f "$policy_bin")" ]]; then
     note "the running session started from another policy client:"
-    note "  $(readlink -f "/proc/$running/exe" 2>/dev/null || echo unknown)"
+    note "  ${running_exe:-unknown}"
     note "it predates this one being installed here; the next session start uses it"
     exit 0
 fi
