@@ -349,6 +349,10 @@ tranche with a named driver and exit gate.
   `apply_requested_native_output_topology` already runs after startup presents
   and declines cleanly, so the gap reads in every session log as
   `sophia_live_native_topology_apply status=declined reason=heads`.
+  What it costs on this seat: DP-1 is a DELL S3222DGM whose EDID offers
+  2560x1440 at 120Hz, the profile requests exactly that, and the session runs
+  it at 60. DP-2 is a DELL P2319H that tops out at 1920x1080 at 60, so it is
+  already at its best and only DP-1 is waiting on this.
 - Define a bounded redacted workspace/layout/focus status feed and opaque
   launcher action; add lock, screenshot, wallpaper, and audio through their
   owning shell/session capabilities. The wire is not what blocks these:
