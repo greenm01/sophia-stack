@@ -971,7 +971,6 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout.presentation_outputs,
             native_scanout.heads.len(),
         );
-        apply_requested_native_output_topology(native_scanout, &config);
     }
 
     let (primary_child, secondary_children) = process.children_mut();

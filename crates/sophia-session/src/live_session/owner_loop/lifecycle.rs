@@ -947,6 +947,11 @@
                 ready_outputs,
                 output_count,
             );
+            // Only now does every head scan out a frame it composed itself.
+            // Before this point a CRTC still holds whatever the display
+            // manager left, and a modeset judged against that buffer is judged
+            // against the wrong desktop.
+            apply_requested_native_output_topology(native, config);
             std::io::stdout().flush()?;
         }
         // Pixel content is application-readiness evidence, not transport
