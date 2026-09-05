@@ -737,3 +737,38 @@ fn recovery_extent_is_reconciled_within_chrome_content_bounds() {
         outer_bounds
     );
 }
+
+/// A surface whose size was accepted keeps the position it was given, even
+/// past the edge of the bounds.
+///
+/// A scrolling layout puts columns off screen deliberately: that is what makes
+/// a strip longer than the display reachable. Repositioning them back inside
+/// does not keep anything safe -- it rewrites the layout, and the column that
+/// should have been off to the right lands on top of the one already there.
+#[test]
+fn an_accepted_size_keeps_its_position_outside_the_bounds() {
+    let surface = SurfaceId::new(1, 1);
+    let mut coordinator = LayoutEpochCoordinator::default();
+    let bounds = Rect {
+        x: 8,
+        y: 22,
+        width: 2544,
+        height: 1408,
+    };
+    let offscreen = Rect {
+        x: 2553,
+        y: 22,
+        width: 1258,
+        height: 1408,
+    };
+    let transaction = layout_transaction([(surface, offscreen)]);
+
+    let reconciled = coordinator
+        .reconcile_transaction(&transaction, bounds)
+        .unwrap();
+
+    assert_eq!(
+        reconciled.transaction.render_positions[0].geometry, offscreen,
+        "a column placed past the right edge must stay there"
+    );
+}

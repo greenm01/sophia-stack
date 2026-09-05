@@ -246,9 +246,29 @@ impl LayoutEpochCoordinator {
                     surface: placement.surface,
                 },
             )?;
+            // Reposition only a surface we resized. Growing one to its
+            // minimum can push it past the edge, and moving it back is the
+            // only way to honour both the minimum and the bounds -- that is
+            // what this clamp is for.
+            //
+            // A surface whose size was accepted keeps the position it was
+            // given, outside these bounds included. A scrolling layout puts
+            // columns past the edge on purpose, and clamping them back does
+            // not keep anything safe: it silently rewrites the layout and
+            // lands a new column on top of one already on screen.
+            let resized =
+                reconciled.width != proposed.width || reconciled.height != proposed.height;
             let geometry = Rect {
-                x: placement.geometry.x.clamp(bounds.x, max_x),
-                y: placement.geometry.y.clamp(bounds.y, max_y),
+                x: if resized {
+                    placement.geometry.x.clamp(bounds.x, max_x)
+                } else {
+                    placement.geometry.x
+                },
+                y: if resized {
+                    placement.geometry.y.clamp(bounds.y, max_y)
+                } else {
+                    placement.geometry.y
+                },
                 width: reconciled.width,
                 height: reconciled.height,
             };
