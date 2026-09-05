@@ -16,12 +16,14 @@ type CpuCycleOutcome = (
 mod authority;
 mod compositor_graphics;
 mod native;
+mod ownership;
 mod present;
 mod projection;
 mod service;
 mod software_present;
 pub use compositor_graphics::live_present_head_composition_sources;
 pub use native::*;
+pub use ownership::*;
 pub use service::*;
 
 fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {
