@@ -163,6 +163,12 @@ is the starting evidence; no new comparison run is required.
 - [ ] Reuse the existing launcher and installed session path; identify the exact
   Sophia/Hagia/Narthex binaries and profiles, retain a known working fallback,
   and document start, normal logout, emergency escape, and rollback.
+  Release `0.1.0-417e97d2e25b` is packaged with Hagia `38ea8da` and checked
+  executable/profile digests. The personal profile's two legacy application IDs
+  were corrected with operator approval; paired parser checks and complete
+  session-argument preflight pass. Installation awaits local sudo authentication
+  through the prepared `/tmp/i` shortcut; the existing installed release remains
+  selected until then.
 - [ ] Pass a short physical acceptance check: start normally, launch terminal
   and Firefox, type and change focus, resize, use both outputs, return from a
   VT, and log out cleanly. Include a basic tab-layout interaction.
