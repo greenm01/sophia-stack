@@ -3,6 +3,7 @@ use super::super::{
     LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild, OutputProofRollbackAfterApply,
     begin_output_topology_first_presentation_rollback, hardware_output_snapshot_is_stale,
 };
+use crate::live_session::desktop_profile_reload_effects;
 use sophia_protocol::{OutputId, Size, TransactionId};
 use std::cell::RefCell;
 
@@ -451,4 +452,108 @@ fn a_second_policy_change_waits_until_post_commit_presentation_settles() {
     assert!(owner.begin_policy_change().is_err());
     assert!(owner.observe_presentation(5));
     assert_eq!(owner.begin_policy_change(), Ok(true));
+}
+
+fn profile_value(key: &str, encoded: &str) -> sophia_config::DesktopProfileValue {
+    sophia_config::DesktopProfileValue {
+        key: key.to_owned(),
+        encoded: encoded.to_owned(),
+        provenance: sophia_config::DesktopValueProvenance {
+            path: std::path::PathBuf::from("/etc/hagia/config.kdl"),
+            ordinal: 1,
+        },
+    }
+}
+
+fn profile_generation(
+    sections: &[(sophia_config::DesktopAuthority, &str)],
+) -> sophia_config::DesktopProfileGeneration {
+    sophia_config::DesktopProfileGeneration {
+        generation: sophia_config::ConfigGeneration::INITIAL,
+        digest: sophia_config::ConfigDigest::new([0; 32]),
+        sources: Vec::new(),
+        candidates: sections
+            .iter()
+            .map(|(authority, encoded)| {
+                (
+                    *authority,
+                    sophia_config::DesktopAuthorityCandidate {
+                        authority: *authority,
+                        generation: sophia_config::ConfigGeneration::INITIAL,
+                        digest: sophia_config::ConfigDigest::new([0; 32]),
+                        values: vec![profile_value("value", encoded)],
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_reload_that_left_the_displays_alone_builds_no_topology() {
+    // The property that keeps a reload cheap. Editing a keybinding is the
+    // common case by a wide margin, and it must not cost the operator a
+    // modeset: the output section is untouched, so no candidate is ever built
+    // and there is nothing that could blink a display.
+    use sophia_config::DesktopAuthority;
+
+    let before = profile_generation(&[
+        (DesktopAuthority::Shortcut, "super+l"),
+        (DesktopAuthority::Output, "DP-1 2560x1440@120"),
+    ]);
+    let after = profile_generation(&[
+        (DesktopAuthority::Shortcut, "super+semicolon"),
+        (DesktopAuthority::Output, "DP-1 2560x1440@120"),
+    ]);
+
+    let effects = desktop_profile_reload_effects(&before, &after);
+    assert!(!effects.output_changed);
+    assert_eq!(effects.deferred, vec![DesktopAuthority::Shortcut]);
+}
+
+#[test]
+fn a_reload_that_changed_the_displays_asks_for_a_topology_and_defers_nothing_else() {
+    use sophia_config::DesktopAuthority;
+
+    let before = profile_generation(&[(DesktopAuthority::Output, "DP-1 2560x1440@120")]);
+    let after = profile_generation(&[(DesktopAuthority::Output, "DP-1 2560x1440@60")]);
+
+    let effects = desktop_profile_reload_effects(&before, &after);
+    assert!(effects.output_changed);
+    // Output is the one non-policy authority a reload can act on, so it must
+    // never also be reported as deferred -- an operator reading both lines
+    // would not know which one happened.
+    assert!(effects.deferred.is_empty());
+}
+
+#[test]
+fn every_other_authority_is_still_deferred_by_a_reload() {
+    // The honesty half: these were applied when the session started and a
+    // reload cannot revisit them, so each one says so rather than letting a
+    // changed key look effective.
+    use sophia_config::DesktopAuthority;
+
+    let sections = [
+        DesktopAuthority::Shell,
+        DesktopAuthority::Shortcut,
+        DesktopAuthority::Session,
+        DesktopAuthority::Input,
+        DesktopAuthority::Broker,
+    ];
+    let before = profile_generation(
+        &sections
+            .iter()
+            .map(|authority| (*authority, "before"))
+            .collect::<Vec<_>>(),
+    );
+    let after = profile_generation(
+        &sections
+            .iter()
+            .map(|authority| (*authority, "after"))
+            .collect::<Vec<_>>(),
+    );
+
+    let effects = desktop_profile_reload_effects(&before, &after);
+    assert!(!effects.output_changed);
+    assert_eq!(effects.deferred.len(), sections.len());
 }

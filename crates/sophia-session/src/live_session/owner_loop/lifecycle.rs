@@ -947,11 +947,20 @@
                 ready_outputs,
                 output_count,
             );
-            // Only now does every head scan out a frame it composed itself.
-            // Before this point a CRTC still holds whatever the display
-            // manager left, and a modeset judged against that buffer is judged
-            // against the wrong desktop.
-            apply_requested_native_output_topology(native, config);
+            // The profile's topology is applied by the output-authority
+            // transaction, not from here: it quiesces presentation, prepares a
+            // framebuffer per head and retains a rollback, which is what a
+            // modeset needs and what this point in startup cannot offer.
+            //
+            // A second apply used to be attempted here, judged against the
+            // legacy CRTC framebuffer. Atomic commits leave that field unset,
+            // so it declined every session with `reason=heads` -- harmless in
+            // itself, but it read as "output configuration does nothing" for
+            // long enough to be worth removing, and had the read ever
+            // succeeded it would have modeset without quiescing first.
+            crate::session_println!(
+                "sophia_live_native_topology_apply schema=2 status=owned_by_output_authority"
+            );
             std::io::stdout().flush()?;
         }
         // Pixel content is application-readiness evidence, not transport

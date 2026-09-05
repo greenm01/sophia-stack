@@ -448,3 +448,99 @@ fn a_mirror_group_admits_heads_running_different_modes() {
         topology.connectors[1].current.position
     );
 }
+
+#[test]
+fn a_profile_mode_the_hardware_lacks_is_refused_and_names_the_connector() {
+    // The reload path builds its candidate through exactly these stages, so
+    // this is what a typo'd mode in a reloaded profile costs: a refusal that
+    // says which display it was about, and no topology change. Getting this
+    // wrong in the other direction -- quietly substituting a mode that does
+    // exist -- would leave the operator looking at a display they did not ask
+    // for with nothing in the log to explain it.
+    let capabilities = [capability(1, "DP-1", 2560, 1440, true)
+        .bind_head(RenderHeadId::from_raw(11))
+        .unwrap()];
+    let outputs = [output(1, 2560, 1440, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let profile = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(4),
+        digest: ConfigDigest::new([4; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: "DP-1".to_owned(),
+            mode: Some(DesktopOutputMode::Exact {
+                width: 2560,
+                height: 1440,
+                refresh_millihz: 144_000,
+            }),
+            scale: None,
+            position: Some((0, 0)),
+            transform: None,
+            enabled: Some(true),
+            focus_at_startup: Some(true),
+            vrr: None,
+            mirror_fit: None,
+            mirror: Vec::new(),
+        }],
+    };
+
+    let error = reconcile_desktop_output_candidate(&profile, &topology)
+        .expect_err("a refresh the connector does not advertise cannot be reconciled");
+    let refusal = error.to_string();
+    assert!(refusal.contains("DP-1"), "{refusal}");
+    assert!(refusal.contains("mode"), "{refusal}");
+}
+
+#[test]
+fn a_profile_mode_the_hardware_offers_is_taken_exactly() {
+    // The companion to the refusal above, and the reason the exact match is
+    // safe to insist on: DRM reports an integer vertical refresh, so a monitor
+    // whose 120 Hz timing is really 119.9976 Hz still answers to 120_000 and a
+    // profile never has to name a fraction.
+    let capabilities = [capability(1, "DP-1", 2560, 1440, true)
+        .bind_head(RenderHeadId::from_raw(11))
+        .unwrap()];
+    let outputs = [output(1, 2560, 1440, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let profile = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(4),
+        digest: ConfigDigest::new([4; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: "DP-1".to_owned(),
+            mode: Some(DesktopOutputMode::Exact {
+                width: 2560,
+                height: 1440,
+                refresh_millihz: 120_000,
+            }),
+            scale: None,
+            position: Some((0, 0)),
+            transform: None,
+            enabled: Some(true),
+            focus_at_startup: Some(true),
+            vrr: None,
+            mirror_fit: None,
+            mirror: Vec::new(),
+        }],
+    };
+
+    let reconciliation = reconcile_desktop_output_candidate(&profile, &topology).unwrap();
+    let plan =
+        prepare_native_output_activation_plan(&capabilities, &topology, &reconciliation).unwrap();
+    let snapshot = project_live_output_authority_snapshot(&capabilities, &outputs, 7).unwrap();
+    let candidate = prepare_native_output_authority_candidate(
+        &plan,
+        &capabilities,
+        &snapshot,
+        OutputHeadMapping::Exact,
+    )
+    .unwrap();
+
+    let chosen = snapshot.heads[0]
+        .modes
+        .iter()
+        .find(|mode| mode.mode == candidate.heads[0].mode)
+        .expect("the candidate names a mode the head advertises");
+    assert_eq!(chosen.refresh_millihz, 120_000);
+    candidate.validate_against(&snapshot).unwrap();
+}

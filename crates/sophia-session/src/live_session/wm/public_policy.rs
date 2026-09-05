@@ -181,6 +181,13 @@ struct LivePublicPolicyState {
     output_service: Option<sophia_runtime::OutputTransportService>,
     output_authority: Option<crate::live_output_authority::LiveOutputAuthorityOwner>,
     output_effect_dispatched: bool,
+    /// A reloaded profile asked for a different output topology, and the owner
+    /// loop has not yet built a candidate from it.
+    ///
+    /// The request is a flag rather than the candidate itself because building
+    /// one needs the native scanout, which the policy state does not hold; the
+    /// owner loop has it and does the work when the session is next idle.
+    output_topology_reload_pending: bool,
     /// Private desktop-profile transaction. It shares the physical authority
     /// reducer with client proposals but has no protocol peer awaiting an outcome.
     startup_output_transaction: Option<TransactionId>,
@@ -1061,6 +1068,93 @@ impl LivePublicPolicyState {
         Some(effect)
     }
 
+    fn published_output_snapshot(&self) -> Option<sophia_protocol::OutputAuthoritySnapshot> {
+        self.output_authority
+            .as_ref()
+            .map(|authority| authority.published().clone())
+    }
+
+    fn take_output_topology_reload_request(&mut self) -> bool {
+        std::mem::take(&mut self.output_topology_reload_pending)
+    }
+
+    /// Admits a topology a reloaded profile asked for, as an ordinary
+    /// candidate.
+    ///
+    /// This is the same admission the startup effect uses, and it carries no
+    /// privilege of its own: the effect it leaves behind is drained, quiesced,
+    /// prepared and rolled back by exactly the machinery that already runs at
+    /// session start. A reload is not a second way to set a mode, only a second
+    /// occasion to use the first one.
+    ///
+    /// Whether the topology actually differs is decided before this is called,
+    /// by comparing the reloaded profile's output values against the running
+    /// ones. A reload that changed a keybinding never reaches here, which is
+    /// what keeps it from blinking a display.
+    ///
+    /// Returns whether an effect is now waiting to be drained.
+    fn admit_reloaded_output_topology(
+        &mut self,
+        candidate: sophia_protocol::OutputTopologyCandidate,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let connection_epoch = self.connection_epoch;
+        let capabilities = self.output_capabilities.clone();
+        let Some(authority) = self.output_authority.as_mut() else {
+            crate::session_eprintln!(
+                "sophia_live_output_authority schema=3 status=reload_declined reason=no_authority"
+            );
+            return Ok(false);
+        };
+        if authority.active_transaction().is_some() {
+            // Something is already mid-flight. Refusing is right: a reload can
+            // be repeated, whereas interrupting a transaction cannot be undone.
+            crate::session_eprintln!(
+                "sophia_live_output_authority schema=3 status=reload_declined reason=candidate_active"
+            );
+            return Ok(false);
+        }
+        let transaction = TransactionId::from_raw(self.next_output_snapshot_transaction);
+        self.next_output_snapshot_transaction =
+            self.next_output_snapshot_transaction.saturating_add(1);
+        let admission = match authority.admit(
+            transaction,
+            &sophia_protocol::OutputV1Proposal {
+                connection_epoch,
+                candidate,
+            },
+            &capabilities,
+        ) {
+            Ok(admission) => admission,
+            Err(error) => {
+                // A mode the hardware will not take is the operator's typo far
+                // more often than it is our defect, so it costs them a log line
+                // and not their desktop.
+                crate::session_eprintln!(
+                    "sophia_live_output_authority schema=3 status=reload_declined reason=not_admitted detail={error}"
+                );
+                return Ok(false);
+            }
+        };
+        if !matches!(
+            admission,
+            crate::live_output_authority::LiveOutputAuthorityAdmission::Prepared
+        ) {
+            crate::session_eprintln!(
+                "sophia_live_output_authority schema=3 status=reload_declined reason=not_prepared"
+            );
+            return Ok(false);
+        }
+        // The latch is what the startup effect left set. Clearing it is what
+        // makes this candidate reachable by the same drain.
+        self.output_effect_dispatched = false;
+        crate::session_println!(
+            "sophia_live_output_authority schema=3 status=reload_effect_pending transaction={}",
+            transaction.raw(),
+        );
+        Ok(true)
+    }
+
+
     fn output_topology_effect_pending(&self) -> bool {
         !self.output_effect_dispatched
             && self
@@ -1648,6 +1742,26 @@ impl LiveWmSession {
         self.public.as_mut()?.take_output_topology_effect()
     }
 
+    fn take_output_topology_reload_request(&mut self) -> bool {
+        self.public
+            .as_mut()
+            .is_some_and(LivePublicPolicyState::take_output_topology_reload_request)
+    }
+
+    fn published_output_snapshot(&self) -> Option<sophia_protocol::OutputAuthoritySnapshot> {
+        self.public.as_ref()?.published_output_snapshot()
+    }
+
+    fn admit_reloaded_output_topology(
+        &mut self,
+        candidate: sophia_protocol::OutputTopologyCandidate,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        match self.public.as_mut() {
+            Some(public) => public.admit_reloaded_output_topology(candidate),
+            None => Ok(false),
+        }
+    }
+
     fn output_topology_cancellation_reason(
         &self,
         transaction: TransactionId,
@@ -2061,6 +2175,7 @@ impl LiveWmSession {
             output_service,
             output_authority,
             output_effect_dispatched: false,
+            output_topology_reload_pending: false,
             startup_output_transaction,
             output_cancel_requested: None,
             output_pending_connection_epoch: None,
@@ -2888,6 +3003,48 @@ pub(crate) enum DesktopProfileReloadOutcome {
     RestartRequired,
 }
 
+/// What a reloaded desktop profile changed, split by who can act on it.
+///
+/// The policy authority is carried by a client restart and the output
+/// authority by a topology transaction. Every other authority was applied by
+/// the session when it started, and saying so beats letting an operator
+/// believe a key they changed took effect.
+///
+/// Deciding on the profile's own values, rather than on the topology a
+/// candidate would resolve to, is what keeps a reload that edited a keybinding
+/// from disturbing a display: no change in the output section means no
+/// transaction is ever built, so nothing can blink.
+struct DesktopProfileReloadEffects {
+    output_changed: bool,
+    deferred: Vec<sophia_config::DesktopAuthority>,
+}
+
+fn desktop_profile_reload_effects(
+    before: &sophia_config::DesktopProfileGeneration,
+    after: &sophia_config::DesktopProfileGeneration,
+) -> DesktopProfileReloadEffects {
+    let mut effects = DesktopProfileReloadEffects {
+        output_changed: false,
+        deferred: Vec::new(),
+    };
+    for authority in sophia_config::DesktopAuthority::ALL {
+        if authority == sophia_config::DesktopAuthority::Policy {
+            continue;
+        }
+        let previous = before.candidates.get(&authority);
+        let next = after.candidates.get(&authority);
+        if previous.map(|candidate| &candidate.values) == next.map(|candidate| &candidate.values) {
+            continue;
+        }
+        if authority == sophia_config::DesktopAuthority::Output {
+            effects.output_changed = true;
+        } else {
+            effects.deferred.push(authority);
+        }
+    }
+    effects
+}
+
 impl LiveWmSession {
     /// Re-reads the desktop profile and stages it for the policy client.
     ///
@@ -2931,7 +3088,9 @@ impl LiveWmSession {
             next_generation,
         );
         let sophia_config::PreparedDesktopProfile {
-            profile: reloaded, ..
+            profile: reloaded,
+            candidates: reloaded_candidates,
+            ..
         } = match loaded {
             Ok(loaded) => loaded,
             Err(error) => {
@@ -2952,24 +3111,14 @@ impl LiveWmSession {
             return Ok(DesktopProfileReloadOutcome::Unchanged);
         }
 
-        // Only the policy authority is carried by a client restart. Every other
-        // authority was applied by the session itself when it started, and
-        // saying so beats letting an operator believe a key they changed took
-        // effect.
-        for authority in sophia_config::DesktopAuthority::ALL {
-            if authority == sophia_config::DesktopAuthority::Policy {
-                continue;
-            }
-            let before = config.desktop_profile.candidates.get(&authority);
-            let after = reloaded.candidates.get(&authority);
-            if before.map(|candidate| &candidate.values) != after.map(|candidate| &candidate.values)
-            {
-                crate::session_eprintln!(
-                    "sophia_live_desktop_profile schema=1 status=reload_deferred authority={} reason=applied_at_session_start",
-                    authority.name(),
-                );
-            }
+        let effects = desktop_profile_reload_effects(&config.desktop_profile, &reloaded);
+        for authority in &effects.deferred {
+            crate::session_eprintln!(
+                "sophia_live_desktop_profile schema=1 status=reload_deferred authority={} reason=applied_at_session_start",
+                authority.name(),
+            );
         }
+        let output_changed = effects.output_changed;
 
         let fragments =
             sophia_config::restage_desktop_profile(&reloaded, &public._profile_fragments)?;
@@ -2980,6 +3129,17 @@ impl LiveWmSession {
 
         public._profile_fragments = fragments;
         public.profile_key = Some(key);
+        if output_changed {
+            // The prepared candidate replaces the one startup used, so the
+            // owner loop builds its plan from the profile now on disk. The
+            // flag is all that is set here: turning it into a topology needs
+            // the native scanout, which lives in the owner loop.
+            config.replace_output_profile(reloaded_candidates.output)?;
+            public.output_topology_reload_pending = true;
+            crate::session_println!(
+                "sophia_live_desktop_profile schema=1 status=reload_output_pending"
+            );
+        }
         config.desktop_profile = reloaded;
         self.request_deliberate_restart();
         crate::session_println!(

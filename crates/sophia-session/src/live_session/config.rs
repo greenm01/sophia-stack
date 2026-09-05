@@ -135,6 +135,20 @@ struct PersistentXtermSessionConfig {
 }
 
 impl PersistentXtermSessionConfig {
+    /// Adopts the output profile a reloaded desktop profile prepared.
+    ///
+    /// The prepared type is private to this module, so a reload cannot build
+    /// one where it runs; it hands the candidate here instead. Replacing the
+    /// profile does not change any display by itself -- it changes what the
+    /// next topology candidate is built from.
+    pub(crate) fn replace_output_profile(
+        &mut self,
+        candidate: sophia_config::DesktopOutputCandidate,
+    ) -> Result<(), sophia_config::DesktopProfileCandidateSlotError> {
+        self.output_profile = PreparedOutputProfile::new(candidate)?;
+        Ok(())
+    }
+
     pub(super) fn keyboard_mapper(&self) -> XCoreKeyboardMapper {
         XCoreKeyboardMapper::with_locks(self.initial_caps_lock, self.initial_num_lock)
     }

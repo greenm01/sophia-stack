@@ -4,13 +4,9 @@ use crate::desktop_output_activation::{
     NativeOutputActivationFailure, NativeOutputActivationSettlement,
     NativeOutputRollbackSettlement, UnavailableNativeOutputExecutor, run_native_output_activation,
 };
-use crate::desktop_output_commit::{
-    NativeOutputCommitExecutor, NativeOutputHeadSet, NativeOutputTopologyValidationExecutor,
-};
-use crate::desktop_output_frames::{NativeOutputFrameTarget, native_output_apply_admission};
+use crate::desktop_output_commit::NativeOutputTopologyValidationExecutor;
 use crate::desktop_output_heads::{
-    LiveNativeOutputTopologyHardware, resolve_native_output_scanout_heads,
-    resolve_native_output_topology_heads,
+    LiveNativeOutputTopologyHardware, resolve_native_output_topology_heads,
 };
 use crate::desktop_output_topology::{
     NativeOutputActivationPlan, prepare_native_output_activation_plan,
@@ -1099,128 +1095,40 @@ include!("live_session/owner_loop_state.rs");
 include!("live_session/output_topology_owner.rs");
 include!("live_session/owner_loop.rs");
 
+/// Builds the topology candidate a reloaded profile asks for.
+///
+/// The same four steps startup takes, run again against the hardware as it is
+/// now: capabilities, the topology they project, the profile reconciled onto
+/// it, and the activation plan that becomes a candidate. Running them again
+/// rather than reusing startup's plan is deliberate -- a display may have been
+/// unplugged since, and a plan built against absent hardware is exactly the
+/// kind of thing the candidate preparation is there to refuse.
+fn build_reloaded_output_topology_candidate(
+    native: &LiveProductionNativeScanout,
+    config: &PersistentXtermSessionConfig,
+    snapshot: &sophia_protocol::OutputAuthoritySnapshot,
+    mapping: sophia_protocol::OutputHeadMapping,
+) -> Result<sophia_protocol::OutputTopologyCandidate, Box<dyn std::error::Error>> {
+    let capabilities = native.output_capabilities()?;
+    let topology = project_native_output_topology(&capabilities, &native.outputs())?;
+    let reconciled = sophia_config::reconcile_desktop_output_candidate(
+        config.output_profile.candidate(),
+        &topology,
+    )?;
+    let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
+    Ok(prepare_native_output_authority_candidate(
+        &plan,
+        &capabilities,
+        snapshot,
+        mapping,
+    )?)
+}
+
 mod tests;
 
 #[cfg(test)]
 #[path = "../tests/support/mirror_gate_session_config.rs"]
 mod mirror_gate_session_config;
-
-/// Applies the profile's requested output topology once the session owns
-/// framebuffers.
-///
-/// Startup validates this same candidate before any buffer exists, which
-/// answers whether the kernel would take it. This is where it is taken.
-/// The order is forced: a modeset needs a framebuffer sized for the mode it
-/// sets, which is exactly what `native_output_apply_admission` checks, and no
-/// such buffer exists until scanout is presenting.
-///
-/// A refusal here is never a session failure. The desktop is already on screen
-/// under the topology the kernel chose at bootstrap; losing a requested refresh
-/// rate is not a reason to lose the desktop. Every outcome is logged with the
-/// same vocabulary `sophia native-topology apply` uses, so the two paths read
-/// alike.
-fn apply_requested_native_output_topology(
-    native: &LiveProductionNativeScanout,
-    config: &PersistentXtermSessionConfig,
-) {
-    let declined = |reason: &str, detail: String| {
-        crate::session_println!(
-            "sophia_live_native_topology_apply schema=1 status=declined reason={reason} detail={detail}"
-        );
-    };
-
-    let capabilities = match native.output_capabilities() {
-        Ok(capabilities) => capabilities,
-        Err(error) => return declined("capabilities", error.to_string()),
-    };
-    let topology = match project_native_output_topology(&capabilities, &native.outputs()) {
-        Ok(topology) => topology,
-        Err(error) => return declined("topology", error.to_string()),
-    };
-    let reconciled = match sophia_config::reconcile_desktop_output_candidate(
-        config.output_profile.candidate(),
-        &topology,
-    ) {
-        Ok(reconciled) => reconciled,
-        Err(error) => return declined("reconcile", error.to_string()),
-    };
-    let plan = match prepare_native_output_activation_plan(&capabilities, &topology, &reconciled) {
-        Ok(plan) => plan,
-        Err(error) => return declined("plan", error.to_string()),
-    };
-    let generation = plan.generation().raw();
-
-    // The frame each head is actually scanning out, taken from the head that
-    // composed it. A standalone command reads the CRTC's current framebuffer
-    // because it composes nothing itself and what is on screen is the only
-    // frame available to it; inside a session that read answers nothing, since
-    // the session drives its heads through atomic commits that leave the
-    // legacy CRTC framebuffer unset.
-    //
-    // Per head rather than per output: a mirror group's connectors run their
-    // own modes and own buffers, and each head records its own size.
-    let frame_targets = native
-        .heads
-        .iter()
-        .enumerate()
-        .filter(|(_, head)| head.enabled)
-        .filter_map(|(index, head)| {
-            let selection = native.selection(index);
-            Some(NativeOutputFrameTarget {
-                connector: capabilities
-                    .iter()
-                    .find(|capability| capability.connector_id() == selection.connector_id())?
-                    .connector_name()
-                    .to_owned(),
-                output: head.output.id,
-                target: sophia_backend_live::LiveGbmEglFrameTargetRecord::new(head.output.size),
-            })
-        })
-        .collect::<Vec<_>>();
-
-    let admission = native_output_apply_admission(&plan, &frame_targets);
-    if !admission.is_ready() {
-        return declined("not_admitted", admission.to_string());
-    }
-
-    let hardware = LiveNativeOutputTopologyHardware::new(native, &capabilities);
-    let resolved = match resolve_native_output_scanout_heads(&plan, &capabilities, &hardware) {
-        Ok(resolved) => resolved,
-        Err(error) => return declined("heads", error.to_string()),
-    };
-    // One atomic request cannot span two DRM devices, so a topology that does
-    // is not applicable as a unit.
-    let Some(card) = crate::plan_validation_device(native, &plan) else {
-        return declined(
-            "multi_device",
-            "topology spans more than one card".to_owned(),
-        );
-    };
-    let heads = resolved.len();
-    let head_set = NativeOutputHeadSet {
-        apply: resolved.apply().to_vec(),
-        rollback: resolved.rollback().to_vec(),
-    };
-    let mut executor = NativeOutputCommitExecutor::activating(card, &head_set);
-    let report = match run_native_output_activation(plan, &mut executor) {
-        Ok(report) => report,
-        Err(error) => return declined("activation", error.to_string()),
-    };
-    let (settlement, rollback) = match report.settlement {
-        NativeOutputActivationSettlement::Activated { .. } => ("activated", "none"),
-        NativeOutputActivationSettlement::Rejected { rollback, .. } => (
-            "not_applied",
-            match rollback {
-                NativeOutputRollbackSettlement::Failed(_) => "failed",
-                NativeOutputRollbackSettlement::NotRequired => "not_required",
-                NativeOutputRollbackSettlement::Succeeded => "restored",
-            },
-        ),
-    };
-    crate::session_println!(
-        "sophia_live_native_topology_apply schema=1 status={settlement} rollback={rollback} heads={heads} generation={generation}"
-    );
-}
 
 #[cfg(test)]
 #[path = "../tests/support/live_control.rs"]

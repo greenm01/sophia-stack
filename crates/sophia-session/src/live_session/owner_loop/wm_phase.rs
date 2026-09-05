@@ -751,6 +751,40 @@
                 active_output_topology_preparation = None;
             }
         }
+        // A reloaded profile asking for different displays becomes an ordinary
+        // candidate here, where the native scanout is in reach. The effect it
+        // leaves behind is drained by the block below, on this same iteration,
+        // so a reload and a startup reach the modeset by one road.
+        if active_output_topology_preparation.is_none()
+            && output_topology_owner.phase == LiveOutputTopologyPhase::Stable
+            && wm.ordinary_policy_settlement_idle()
+            && wm.take_output_topology_reload_request()
+        {
+            match (native_scanout.as_ref(), wm.published_output_snapshot()) {
+                (Some(native), Some(snapshot)) => {
+                    match build_reloaded_output_topology_candidate(
+                        native,
+                        config,
+                        &snapshot,
+                        initial_head_mapping,
+                    ) {
+                        Ok(candidate) => {
+                            wm.admit_reloaded_output_topology(candidate)?;
+                        }
+                        // A profile naming a mode or a connector the hardware
+                        // does not have is the ordinary way to reach this, and
+                        // it must cost the operator a log line rather than the
+                        // desktop they are looking at.
+                        Err(error) => crate::session_eprintln!(
+                            "sophia_live_output_authority schema=3 status=reload_declined reason=candidate detail={error}"
+                        ),
+                    }
+                }
+                _ => crate::session_eprintln!(
+                    "sophia_live_output_authority schema=3 status=reload_declined reason=no_native_authority"
+                ),
+            }
+        }
         if active_output_topology_preparation.is_none()
             && runtime.is_some()
             && pending_wm_update.is_none()
