@@ -20,6 +20,22 @@ transport, library requirement, or alternate Engine entry point.
 
 ## The Decision
 
+### Scripting Boundary
+
+[Scripting Sophia](scripting.md) defines generic session-owned command routing
+for replaceable desktop clients. A shell does not serve a script-facing
+endpoint, acquire WM authority, or export its broker-issued activations as
+general command tokens. Script invocation also does not authorize disclosure
+of the shell's descriptors to that caller.
+
+Generic shell command discovery and invocation are future extensions requiring
+negotiated vocabulary, explicit outcomes, and the existing recipient,
+generation, and presentation checks. The current descriptor/candidate and
+activation-acknowledgement messages provide no generic shell command catalog.
+The proposed scripting CLI and endpoint are unimplemented.
+
+### Vocabulary Development
+
 Derive the complete `sophia_shell_v1` from a working shell rather than from
 first principles. Use Noctalia as the broad vocabulary driver and the separate
 Hagia Shell as the first small implementation that can falsify the lifecycle.

@@ -82,6 +82,22 @@ Dock.app but left no sanctioned seam for third-party window management, which
 is why tiling tools there have to disable system protection to work at all.
 `sophia_wm_v1` is that missing seam.
 
+## Scripting And Live Control
+
+[Scripting Sophia](scripting.md) defines the proposed `sophia msg` interface
+for any conforming WM or shell. The session admits and authorizes callers,
+routes commands to their responsible owner, and reports correlated outcomes.
+WM action semantics remain in the WM; shell behavior stays within the shell
+role. Neither client serves a scripting socket.
+
+The CLI and public control endpoint are unimplemented. Existing named WM
+actions and session reload/restart operations provide the first intended
+command scope; generic shell commands require a separately negotiated
+extension. Namespace admission does not grant desktop-control authority,
+and command invocation does not grant application-data access. The scripting
+contract distinguishes host-user administration, confined callers, and future
+namespace-scoped automation without choosing a default access policy.
+
 ## The Ladder
 
 **A window manager**, in the dwm, niri, or xmonad tradition. One binary

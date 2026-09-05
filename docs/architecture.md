@@ -579,6 +579,13 @@ one protocol, which makes a single path enforceable. Removing this rule
 reintroduces the fragmentation it prevents. See
 `docs/sophia-indicator-descriptor.md`.
 
+[Scripting Sophia](scripting.md) applies this boundary to the proposed public
+control interface: the session owns caller admission, authorization, and
+routing; WM and shell clients retain their respective command semantics and
+existing role connections. A scripting caller acquires no role authority or
+application-data access merely by reaching that endpoint. The target contract
+is documented; the endpoint and `sophia msg` CLI are unimplemented.
+
 ## Protocol Frontends
 
 A protocol frontend parses one client protocol, owns its object/resource

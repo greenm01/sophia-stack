@@ -236,6 +236,14 @@ that separate displays flip at one simultaneous physical instant.
 
 ## Actions And Interactions
 
+The proposed [scripting contract](scripting.md) reuses the registered,
+argument-free policy-action path after session-owned caller authorization.
+Command meaning remains private WM policy. The WM neither serves a scripting
+endpoint nor receives caller credentials, namespace identity, or application
+metadata. A script request is not a synthetic physical-input event. The public
+CLI is unimplemented; parameterized commands require a separate bounded
+argument contract and do not follow from the existing action ordinal.
+
 Engine matches registered physical chords before client routing, emits one
 activation on the initial press, suppresses repeat activations until release,
 and exposes only the action ID and reduced snapshot context. No rejected action

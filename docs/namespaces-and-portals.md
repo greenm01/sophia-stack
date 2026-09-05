@@ -97,6 +97,23 @@ so portal and metadata policy retain the same trust model across protocols.
 
 ## Admission
 
+### Relationship To Scripting
+
+A resource namespace is distinct from an OS process protection domain and
+from permission to control the desktop. A confined X namespace alone does not
+prevent a process from reaching a host Unix socket. A new scripting connection
+must receive its own verified session admission and command authorization;
+X admission, matching UID, or a caller-supplied namespace ID is insufficient
+to establish that authority implicitly.
+
+[Scripting Sophia](scripting.md#namespace-and-caller-security) owns the target
+distinction between namespace-scoped automation and deliberately authorized
+desktop administration. Neither grants application-data disclosure or portal
+transfers by implication. Its proposed public endpoint is unimplemented and
+does not change the namespace or portal capabilities described here.
+
+### X Client Admission
+
 An X listener is transport, not identity. After setup authentication and before
 allocating an X client identity or resource range, accepting a connection
 consults a session admission interface using peer credentials, configured

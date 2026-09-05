@@ -51,6 +51,14 @@ implementation to choose whichever form it prefers.
 
 ## Common Developer Lifecycle
 
+The proposed public [scripting interface](scripting.md) is a separate
+session-owned control service. Its callers are not supervised role peers,
+and commands do not tunnel WM, shell, or broker packets through another
+endpoint. Existing role negotiation and authority boundaries remain intact.
+The scripting document establishes target behavior, not a new wire schema;
+its control protocol and any generic shell-command extension still require
+specification and conformance evidence.
+
 Role interfaces use the same conceptual lifecycle even when their frozen
 message names differ:
 

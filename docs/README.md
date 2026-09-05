@@ -41,6 +41,9 @@ wins when prose disagrees.
   dependency direction, canonical checks, and presentation ownership.
 - [Configuration](configuration.md) defines the two KDL 2 ownership domains,
   source precedence, strict validation, and transactional hot reload.
+- [Scripting Sophia](scripting.md) defines the unimplemented target contract
+  for session-owned scripting, generic WM/shell integration, caller authority,
+  namespace boundaries, and the proposed `sophia msg` CLI.
 
 Normative documents describe both current and target contracts. They must label
 unimplemented target behavior explicitly.

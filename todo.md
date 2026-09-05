@@ -328,6 +328,13 @@ tranche with a named driver and exit gate.
 
 ### Native WM and shell product
 
+- Implement the generic session-owned [scripting contract](docs/scripting.md)
+  only after promotion of a bounded slice. The proposed `sophia msg` first
+  exposes registered argument-free WM actions and session reload/restart;
+  shell commands need a negotiated extension. Define caller authorization,
+  access defaults, wire, limits, and completion/recovery evidence before
+  enablement. Documentation establishes the target, not a shipped interface
+  or a new daily-driver acceptance gate.
 - Harden the implemented issuer-scoped action checks and reservation/work-area
   coordination only against a named remaining lifecycle gap; preserve existing
   offline conformance and distinguish it from signed physical acceptance.
