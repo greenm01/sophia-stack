@@ -1,0 +1,14 @@
+[package]
+name = "sophia-linux-peer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+libc = "0.2"
+
+[lints.rust]
+# Narrow Linux socket ABI adapters; consumers retain unsafe_code = forbid.
+unsafe_code = "allow"

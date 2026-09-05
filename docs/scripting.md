@@ -1,10 +1,10 @@
 # Scripting Sophia
 
-**Role:** normative target architecture and proposed CLI contract.
-**Status:** unimplemented control service and CLI. `sophia msg` is proposed;
-none of the command examples below is currently available. The experimental
-[control v1 wire](sophia-control-v1.md) is specified with offline conformance
-artifacts. It is disabled by default and requires explicit host-control opt-in.
+**Role:** normative architecture and CLI contract.
+**Status:** experimental session control service and `sophia msg` implemented
+for registered policy actions and confirmed WM restart. Control is disabled by
+default; `session { control "host-admin"; }` enables it at session startup.
+Profile reload, shell commands, and delegated access remain future work.
 
 Sophia supports the architectural goal of a scriptable display server with
 replaceable window-manager and shell clients. Scripts request deliberate
@@ -23,14 +23,14 @@ and companion wire specification define the first independent-client surface.
 
 ## Current And Proposed Support
 
-| Capability | Current state | Proposed scripting support |
+| Capability | Current state | Extension boundary |
 | --- | --- | --- |
-| Named WM actions | The WM registers bounded action names and ordinals; existing policy requests carry argument-free actions | Discover and invoke actions through the session control endpoint |
-| Profile reload and WM restart | Session operations exist independently of a message CLI | Expose correlated command results through the same owning services |
+| Named WM actions | The WM registers bounded action names and ordinals; existing policy requests carry argument-free actions | Implemented discovery and invocation through the session endpoint |
+| WM restart | Scripted restart completes after the intended replacement commits a usable policy | Profile reload remains unadvertised pending transactional repair |
 | Shell behavior | Negotiated descriptor, candidate, presentation, and activation exchanges | A generic shell command catalog needs a separate protocol extension |
 | Parameterized commands | The WM action path has no arbitrary argument payload | Specify a bounded argument contract before adding setters |
 | State queries and event subscriptions | Role snapshots serve their admitted recipients | A scripting disclosure and subscription contract is future work |
-| Public control endpoint | Wire specified; no `sophia msg` service exists | Implement and verify host admission, owner settlement, limits, and recovery before enabling it |
+| Public control endpoint | Explicit host-admin opt-in, bounded worker, typed owner settlement | Delegated callers need a separate authorization contract |
 
 The existence of a session operation or role message does not make it a public
 scripting API. In particular, a shell activation acknowledgement is not a
@@ -73,17 +73,22 @@ continue through their existing authority paths, including Engine commits and
 broker-mediated activation. Session reload, restart, and launch retain their
 session ownership even when a WM exposes bindings that request them.
 
-## Proposed CLI
+## CLI
 
-These forms describe the intended first interface; they are not runnable
-commands today:
-
-```text
+```sh
 sophia msg commands
-sophia msg policy <registered-action>
-sophia msg session reload-profile
+sophia msg policy 'registered action name'
 sophia msg session restart-wm
+sophia msg --json commands
 ```
+
+An explicit `--socket /absolute/path` overrides `SOPHIA_CONTROL_SOCKET`.
+The session exports that variable to its host application launches. There is
+no guessed endpoint. Human-readable output is the default; `--json` uses the
+independent reference client's catalog/outcome shape. Exit status is 0 for
+successful owner settlement, 1 for a server-reported failure, and 2 for local,
+transport, or uncertain-reply failure. The client never retries a mutation.
+`reload-profile` is reserved on the wire but is not advertised or dispatched.
 
 `commands` discovers the operations available to the authorized caller in the
 current session. Policy names come from the active WM's admitted catalog;
@@ -152,9 +157,20 @@ only a terminal or a selected executable. Owner-only filesystem permissions
 exclude other users; they do not provide a same-user application allowlist.
 This mode must be named explicitly and must not be advertised as
 namespace-restricted scripting. Control v1 selects this mode only through an
-explicit host-administration opt-in; the default is disabled. OS-confined and
-protected role processes are excluded. Verified host protection-domain
-admission remains an implementation gate, not a property of the socket wire.
+explicit host-administration opt-in; the default is disabled. On Linux the
+service pins the socket's peer with `SO_PEERPIDFD`, checks the session UID and
+current credentials, and compares pinned user, mount, and PID namespaces.
+Sophia's protected roles occupy different namespaces and receive neither the
+socket mount nor inherited control descriptors. A supplied socket path does
+not bypass admission. Admission is checked again before command dispatch.
+
+These checks establish the supported Sophia/Linux boundary. They do not attest
+arbitrary third-party confinement: seccomp, Landlock, cgroups, or another
+sandbox sharing all three namespaces do not by themselves exclude a caller.
+An authorized host process can proxy its authority. The mode trusts that host
+user domain; it supplies neither per-executable grants nor per-message sender
+identity. Missing kernel/proc prerequisites disable the endpoint while the
+desktop continues. See the [wire admission contract](sophia-control-v1.md#scope-and-authority).
 
 Selective grants require an enforceable caller boundary. They cannot establish
 isolation from an unconfined process that can replace authorized tools, read
@@ -197,7 +213,7 @@ under their owning lifecycle rules. Unauthorized or malformed requests must
 have no side effects. Failures preserve the last coherent state according to
 the owner's recovery contract.
 
-Before exposing reload and restart through this interface, verify their
+Before exposing reload through this interface, verify its
 owner's validation, checkpoint, rollback, and completion behavior. Structural
 profile validation alone cannot certify settings whose semantics belong to
 the WM. A rejected candidate must preserve or restore the working state;
@@ -229,22 +245,22 @@ Scripting-client authors discover available names and support, handle terminal
 outcomes, and treat replacement or reconnect as a fresh authority context.
 The interface must be implementable from its published contract and
 schema using ordinary Unix IPC, without a required SDK or a reference WM or
-shell executable. The proposed CLI is a convenience client of that interface.
+shell executable. The CLI is a convenience client of that interface.
 
-## Implementation Prerequisites
+## Verification And Remaining Work
 
-Service implementation remains candidate work. Control v1 now specifies
-endpoint discovery, host-only opt-in, negotiation and layouts, numeric bounds,
-command-specific completion, and compatibility. Before enablement, implement
-and review race-resistant host protection-domain admission, dispatch-time
-authorization, owner settlement/rollback, revocation, and measured service
-budgets. The schema, independent client, and offline fixtures do not prove
-these runtime properties. Delegated grants and shell commands need later
-protocol extensions; existing WM and shell wire capabilities are unchanged.
+`tools/check_control_protocol.sh` checks generated vectors, Rust and independent
+Python clients, the real endpoint, config opt-in, sequencing, cancellation,
+deadlines, and queue pressure. `--live-owner` also runs the namespace denial
+proof and a supervised policy fixture through the live session's action and
+restart settlement paths. These tests need Linux Unix sockets and bubblewrap;
+they do not install software or launch a graphical session.
 
-Acceptance must cover unauthorized callers and forged namespace claims,
-cross-namespace denial, protected-role isolation, stale/replayed requests,
-disconnect ambiguity, ordered mutations, restart and invalid-profile recovery,
-slow readers and overload, bounded resources, and input/frame-service
-progress during command traffic. Read/query disclosure requires separate
-evidence. Existing role conformance does not prove this new service secure.
+A short optional installed-session smoke discovers commands, invokes one safe
+registered action, and requests restart while checking the desktop remains
+usable. Physical input/frame fairness under sustained traffic remains an
+operator observation, not a claim established by codec tests. This feature
+adds no 36-row acceptance gate. Reload rollback, delegated grants, shell
+commands, parameters, queries, and subscriptions need their own implementation
+and evidence before publication. Existing WM and shell wire capabilities are
+unchanged.

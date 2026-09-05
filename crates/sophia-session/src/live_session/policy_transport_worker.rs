@@ -160,6 +160,10 @@ impl PolicyTransportWorker {
 
 impl Drop for PolicyTransportWorker {
     fn drop(&mut self) {
+        // A producer may be blocked on the one-slot event queue when the owner
+        // retires this worker. Disconnect that queue before joining it.
+        let (_, closed_events) = sync_channel(POLICY_TRANSPORT_CAPACITY);
+        drop(std::mem::replace(&mut self.events, closed_events));
         if let Some(commands) = self.commands.take() {
             let _ = commands.try_send(PolicyTransportCommand::Stop);
         }
@@ -372,3 +376,7 @@ fn run_policy_transport(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/control_worker_shutdown.rs"]
+mod control_worker_shutdown;

@@ -5,6 +5,8 @@
 
 #[cfg(target_os = "linux")]
 mod broker_transport;
+#[cfg(target_os = "linux")]
+mod control;
 mod error;
 mod output_ipc;
 #[cfg(target_os = "linux")]
@@ -40,6 +42,8 @@ mod prelude {
 
 #[cfg(target_os = "linux")]
 pub use broker_transport::*;
+#[cfg(target_os = "linux")]
+pub use control::*;
 pub use error::*;
 pub use output_ipc::*;
 #[cfg(target_os = "linux")]

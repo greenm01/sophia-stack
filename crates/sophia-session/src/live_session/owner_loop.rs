@@ -19,6 +19,7 @@ struct SessionLoopResources<'a> {
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
     seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
+    scripting: &'a mut LiveControlState,
     metadata_broker: &'a mut Option<LiveMetadataBroker>,
     metadata_shell: &'a mut Option<LiveMetadataShell>,
     /// Which connectors share one logical output, from the profile loaded at
@@ -258,6 +259,7 @@ fn run_session_loop_inner(
         native_scanout,
         seat_controller,
         wm_session,
+        scripting,
         metadata_broker,
         metadata_shell,
         mirror_grouping,

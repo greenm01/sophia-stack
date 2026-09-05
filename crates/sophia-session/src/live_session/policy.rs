@@ -720,7 +720,7 @@ fn execute_committed_session_actions(
         let app = config
             .application_for_action(action)
             .ok_or("WM requested an unadvertised session application")?;
-        PersistentXtermSessionConfig::spawn_session_application(app, &config.display, xauthority)
+        PersistentXtermSessionConfig::spawn_session_application(app, &config.display, xauthority, config.control_socket.as_deref())
             .map(|child| (Some(app.id.clone()), child))
     } else {
         let program = match intent.application {

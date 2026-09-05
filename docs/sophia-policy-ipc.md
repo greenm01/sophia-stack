@@ -26,7 +26,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
 | `sophia_shell_v1` major 1 revision 1 | metadata-bearing shell | experimental title-only descriptor switcher | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
 | `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
-| `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental wire and offline client conformance; service unimplemented | [Sophia Control v1](sophia-control-v1.md) |
+| `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
 
 A shared envelope or implementation crate does not give one interface the
@@ -52,14 +52,14 @@ implementation to choose whichever form it prefers.
 
 ## Common Developer Lifecycle
 
-The proposed public [scripting interface](scripting.md) is a separate
+The public [scripting interface](scripting.md) is a separate
 session-owned control service. Its callers are not supervised role peers,
 and commands do not tunnel WM, shell, or broker packets through another
 endpoint. Existing role negotiation and authority boundaries remain intact.
 The experimental [control v1 specification](sophia-control-v1.md) and
 [schema](../protocol/sophia-control-v1.kdl) define its separate wire surface
 (kinds 128–134), with generated tables, vectors, and an independent example.
-The control service and CLI remain unimplemented. Generic shell commands
+The control service and CLI implement policy actions and confirmed restart. Generic shell commands
 still require a negotiated extension; control adds no role capability.
 
 Role interfaces use the same conceptual lifecycle even when their frozen

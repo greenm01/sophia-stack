@@ -1,4 +1,5 @@
 {
+    scripting.service(wm_session.as_mut(), &layout, output, logout_requested);
     if active_output_topology_preparation.is_none()
         && wm_session
             .as_ref()

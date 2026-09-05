@@ -2,6 +2,7 @@
 mod backend;
 mod config;
 mod help;
+mod msg;
 mod runtime;
 mod x_authority;
 
@@ -49,6 +50,9 @@ mod prelude {
 }
 
 pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if args.first().is_some_and(|arg| arg == "msg") {
+        std::process::exit(msg::run(&args[1..]));
+    }
     if config::try_run(args)? {
         return Ok(());
     }

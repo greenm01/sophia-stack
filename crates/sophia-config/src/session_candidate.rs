@@ -7,6 +7,13 @@ use crate::{
 
 pub const DESKTOP_SESSION_MAX_APPLICATION_NAME_BYTES: usize = 64;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopControlAccess {
+    #[default]
+    Disabled,
+    HostAdmin,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopSessionCandidate {
     pub generation: ConfigGeneration,
@@ -15,6 +22,7 @@ pub struct DesktopSessionCandidate {
     pub browser: Option<String>,
     pub startup: Option<String>,
     pub logout_enabled: Option<bool>,
+    pub control: DesktopControlAccess,
 }
 
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
@@ -74,6 +82,7 @@ pub fn prepare_desktop_session_candidate(
         browser: None,
         startup: None,
         logout_enabled: None,
+        control: DesktopControlAccess::Disabled,
     };
     for value in &candidate.values {
         let node = single_node(&value.encoded)?;
@@ -82,6 +91,16 @@ pub fn prepare_desktop_session_candidate(
             "browser" => prepared.browser = Some(application_name(&node, "browser")?),
             "startup" => prepared.startup = Some(application_name(&node, "startup")?),
             "logout" => prepared.logout_enabled = Some(logout_enabled(&node)?),
+            "control" => {
+                if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
+                    return Err(schema_error("control requires one access mode"));
+                }
+                prepared.control = match node.get(0).and_then(|value| value.as_string()) {
+                    Some("disabled") => DesktopControlAccess::Disabled,
+                    Some("host-admin") => DesktopControlAccess::HostAdmin,
+                    _ => return Err(schema_error("control must be disabled or host-admin")),
+                };
+            }
             _ => return Err(schema_error("candidate contains a non-session setting")),
         }
     }

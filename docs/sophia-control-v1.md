@@ -1,10 +1,10 @@
 # Sophia Control v1
 
 **Role:** normative scripting wire and lifecycle specification.
-**Status:** experimental major 1, revision 1; specified, with offline wire
-fixtures and an independent client example. The session endpoint, host
-admission, command settlement adapter, and `sophia msg` CLI are unimplemented.
-Nothing in this document enables control in an installed session.
+**Status:** experimental major 1, revision 1; Linux session endpoint, Rust and
+independent Python clients, policy settlement, and confirmed WM restart are
+implemented. Control remains disabled by default. Profile reload is reserved
+but unadvertised until its transactional recovery is repaired.
 
 [Scripting Sophia](scripting.md) owns the generic authority contract;
 [the native protocol family](sophia-policy-ipc.md) owns the common envelope.
@@ -29,20 +29,29 @@ synthetic input, metadata queries, event subscriptions, FD transfer, and
 delegated grants are absent. No generic extension blob is reserved for them.
 Future support requires a separately specified, negotiated revision.
 
-Control is **disabled by default**. An explicit host-administration profile
-may enable it. This is an access policy, not a new configuration key in the
-current parser. A future implementation must define and validate that key.
+Control is **disabled by default**. The desktop profile's session owner accepts
+`control "disabled"` or `control "host-admin"`; this is startup-only access
+policy. CLI/environment options cannot enable the listener. A profile reload
+cannot change the running session's control admission mode.
 
-Admission requires kernel peer credentials identifying the session user AND
-verified membership in the host protection domain. Protected role processes
-and OS-confined callers are excluded. Unverifiable membership is denied.
-Owner-only directory/socket permissions and a matching UID are necessary but
-insufficient. Peer identity must be pinned against PID reuse; an executable
-path, caller-supplied PID, namespace ID, environment variable, or socket path
-is not proof. Before shipping, the platform admission design must establish
-how protection domains and their transitions are verified without races.
+Linux admission requires the kernel peer UID to match the session user and a
+socket-derived `SO_PEERPIDFD`. The service checks that pidfd before and after
+opening the peer's proc directory, retains both descriptors, and compares the
+peer's user, mount, and PID namespaces against pinned session namespace
+handles. It checks all four current UIDs and pidfd liveness again before
+dispatch and excludes the supervised WM identity. Sophia's protected role
+launches use distinct namespaces, explicit mounts, cleared environments, and
+FD allowlists; they cannot acquire this endpoint through their role grants.
+Missing pidfd/namespace/proc prerequisites leave control disabled without
+preventing desktop startup. Dead or unverifiable peers are denied.
 
-This mode trusts **all reachable unconfined processes of the session user**,
+This is a concrete Sophia/Linux protection boundary, not attestation of every
+OS sandbox. A third-party sandbox sharing the session's user, mount, and PID
+namespaces can satisfy admission even if it applies seccomp, Landlock, or
+cgroup restrictions. Owner-only permissions and UID alone are insufficient;
+caller-supplied PID, namespace IDs, executable names, and paths are not proof.
+
+This mode trusts **all reachable processes of the session user in the admitted host domain**,
 including a browser running in that domain. A Sophia resource namespace alone
 does not establish OS confinement. Excluding protected processes also needs
 enforced socket/descriptor isolation: authenticating the original connector
@@ -51,8 +60,9 @@ Do not claim per-message sender authentication from connection credentials.
 Delegation to confined callers needs a later contract, not weaker admission.
 
 The runtime filters discovery and rechecks authorization at admission and
-immediately before dispatch. A security transition closes affected connections
-and prevents undispatched work from running. It cannot undo committed work.
+immediately before dispatch. An observed admission loss denies or closes the affected request and prevents
+undispatched work from running. Credentials authenticate the connector; they
+cannot atomically attest arbitrary process transitions after inspection. It cannot undo committed work.
 Caller identities never cross into WM policy; only the admitted opaque action
 uses the existing WM request/projection path. Features describe wire support,
 not permission. Desktop control grants no clipboard, capture, title, or other
@@ -63,8 +73,10 @@ application-data access.
 A client uses an explicit `--socket PATH` or `SOPHIA_CONTROL_SOCKET`; an explicit
 path wins. The value must be an absolute filesystem path. No X property,
 role endpoint, guessed socket, abstract socket, or TCP fallback is allowed.
-The session publishes the path only for enabled host control, inside its
-owner-only runtime directory. Possession of the path conveys no authority.
+The session creates a fresh random directory (0700) under the existing private
+`XDG_RUNTIME_DIR`, binds `control.sock` (0600), and exports its absolute path to
+host application launches only when control is enabled. Socket and peer
+descriptors are close-on-exec. Session teardown removes its own endpoint. Possession of the path conveys no authority.
 Clients should check server peer UID against their expected session user;
 that check cannot defend against another already trusted host-user process.
 
@@ -280,8 +292,8 @@ S -> CommandsReply(4, generation=G2, ...)
 
 The independent [Python client](../bindings/python/sophia_control_v1.py)
 uses only the standard library and this wire contract, with no Sophia codec
-or WM dependency. It is an example against future/test peers, not the installed
-`sophia msg` command. It defaults to JSON output and requires explicit invocation:
+or WM dependency. It interoperates with the implemented session endpoint and
+defaults to JSON output; the installed `sophia msg` defaults to human output:
 
 ```sh
 python3 bindings/python/sophia_control_v1.py --socket /absolute/test.sock commands
@@ -289,20 +301,28 @@ python3 bindings/python/sophia_control_v1.py --socket /absolute/test.sock policy
 tools/check_control_protocol.sh
 ```
 
-The check regenerates artifacts in check mode and exercises the independent
-codec/client with generated samples, malformed cases, and fragmented fake
-streams. These are offline wire/client checks, not a server or security proof.
+The check validates generated artifacts, both codecs, real endpoint clients,
+config admission, sequencing, overload and command/frame deadlines. Add
+`--live-owner` for bubblewrap namespace denial and supervised policy owner
+settlement, including withholding the commit after replacement to prove that
+restart admission alone cannot report success. It launches no desktop.
 
-Before a live endpoint may ship, its integration suite must additionally prove:
+Installed-session smoke, after enabling host-admin and starting a new session:
+run `sophia msg commands`, invoke one safe advertised action with
+`sophia msg policy 'NAME'`, then `sophia msg session restart-wm`. Check continued
+input and rendering. This optional smoke is separate from the automated proof;
+no installation or graphical session launch is performed by the check script.
+
+The acceptance obligations and remaining limits are:
 
 | Scenario | Required evidence from real service/owners |
 | --- | --- |
-| Admission | Wrong user, unverifiable domain, protected roles, OS confinement and descriptor inheritance denied; host mode explicitly enabled |
+| Admission | Session UID, socket-derived pidfd and matching user/mount/PID namespaces; Sophia protected roles denied; broader sandbox attestation excluded |
 | Negotiation/sequencing | Unsupported revision/features, pipelining, zero/duplicate/decreasing IDs close only the offender with no invalid dispatch |
 | Authorization/catalog | Filtered discovery, dispatch-time recheck, stale mapping and forged scope denial; no role/private metadata leaks |
 | WM settlement | Action correlation through projection commit, rejection and accepted no-op; no queue-only success |
 | Replacement | Pending old requests never retarget; requested restart survives its own generation change and settles on the intended usable replacement |
-| Reload | Invalid WM-owned settings preserve/restore the working profile; unchanged and accepted candidates report only their proven state |
+| Reload | Deferred: reload remains unadvertised until invalid WM settings preserve/restore the working profile |
 | Disconnect/deadline | Before/after dispatch, partial replies and uncertain effects; no replay, bounded abandoned work and recovery |
 | Resource pressure | Connection/queue overload, partial-frame trickle, slow readers, bounded buffers and fair input/frame progress under floods |
 

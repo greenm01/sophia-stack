@@ -78,6 +78,10 @@ impl LiveWmSession {
         settlement: LivePolicySettlementIdentity,
     ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM settlement lost its session")?;
+        let scripted_action = public.in_flight_request.as_ref().is_some_and(|request| {
+            matches!(request.cause, sophia_protocol::PolicyRequestCause::Action { activation_serial, .. }
+                if public.control_tickets.contains_key(&activation_serial))
+        });
         let layout_committed = result.update.commit.outcome == TransactionOutcome::Committed;
         if settlement.session_operation {
             let (transaction, request) = public
@@ -197,7 +201,7 @@ impl LiveWmSession {
         } else {
             self.stale_responses = self.stale_responses.saturating_add(1);
         }
-        let physical_action = if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
+        let physical_action = if !scripted_action && outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
             match result.source {
                 Some(LiveWmProposalSource::Action(action)) => Some(action),
                 _ => None,
@@ -219,7 +223,9 @@ impl LiveWmSession {
 
 impl Drop for LiveWmSession {
     fn drop(&mut self) {
+        self.control_restart.take();
         let _ = self.supervisor.terminate();
+        self.control_lifetime.take();
         let _ = std::fs::remove_file(&self.socket_path);
     }
 }

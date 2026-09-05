@@ -84,23 +84,23 @@ is why tiling tools there have to disable system protection to work at all.
 
 ## Scripting And Live Control
 
-[Scripting Sophia](scripting.md) defines the proposed `sophia msg` interface
+[Scripting Sophia](scripting.md) defines the experimental `sophia msg` interface
 for any conforming WM or shell. The session admits and authorizes callers,
 routes commands to their responsible owner, and reports correlated outcomes.
 WM action semantics remain in the WM; shell behavior stays within the shell
 role. Neither client serves a scripting socket.
 
-The CLI and public control endpoint are unimplemented. Existing named WM
-actions and session reload/restart operations provide the first intended
-command scope; generic shell commands require a separately negotiated
-extension. Namespace admission does not grant desktop-control authority,
-and command invocation does not grant application-data access. The scripting
-contract distinguishes host-user administration, confined callers, and future
-namespace-scoped automation. The experimental [control v1 wire](sophia-control-v1.md)
-is specified for independent clients: disabled by default, explicit host-control
-opt-in, one outstanding request per stream, and owner-settled results. Confined
-delegation and shell commands require future extensions. Offline wire checks
-do not establish the still-unimplemented endpoint's security or live behavior.
+The CLI and Linux session endpoint implement discovery, registered argument-free
+WM actions, and confirmed WM restart. Policy success follows Engine commit;
+restart success follows the intended replacement's first usable commit.
+`session { control "host-admin"; }` explicitly enables the startup-only listener;
+the default is disabled. The [control v1 wire](sophia-control-v1.md) supports
+independent clients with one outstanding request per stream and no automatic
+mutation replay. Linux peer admission checks the session UID and pinned user,
+mount, and PID namespaces. It excludes Sophia's protected roles without
+claiming universal sandbox attestation. Desktop control grants no application
+data access. Reload, delegated callers, and generic shell commands remain
+unadvertised future work.
 
 ## The Ladder
 

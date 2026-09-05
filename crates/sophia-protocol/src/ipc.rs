@@ -1,5 +1,6 @@
 mod broker;
 mod broker_v1;
+mod control_v1;
 mod cursor;
 mod frame;
 mod output_v1;
@@ -15,6 +16,7 @@ mod wm_v1_records;
 
 pub use broker::{decode_broker_health_frame, encode_broker_health_frame};
 pub use broker_v1::*;
+pub use control_v1::*;
 pub use frame::{decode_frame, encode_frame};
 pub use output_v1::*;
 pub use portal::{

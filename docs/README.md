@@ -41,9 +41,9 @@ wins when prose disagrees.
   dependency direction, canonical checks, and presentation ownership.
 - [Configuration](configuration.md) defines the two KDL 2 ownership domains,
   source precedence, strict validation, and transactional hot reload.
-- [Scripting Sophia](scripting.md) defines the unimplemented target contract
+- [Scripting Sophia](scripting.md) defines the implemented experimental contract
   for session-owned scripting, generic WM/shell integration, caller authority,
-  namespace boundaries, and the proposed `sophia msg` CLI.
+  namespace boundaries, and the `sophia msg` CLI.
 
 Normative documents describe both current and target contracts. They must label
 unimplemented target behavior explicitly.
@@ -60,8 +60,8 @@ candidates that role may exchange.
   source hierarchy, evolution rules, and per-role stability discipline.
 - [Sophia Control v1](sophia-control-v1.md) specifies the experimental scripting
   wire, host-control opt-in, catalog generations, and owner-settled outcomes.
-  Its schema, generated vectors, and independent client are offline artifacts;
-  the session control service and `sophia msg` CLI remain unimplemented.
+  The session service and `sophia msg` implement policy actions and confirmed
+  restart; reload and delegated access remain unadvertised.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.

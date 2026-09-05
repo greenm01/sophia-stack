@@ -992,6 +992,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-linux-peer"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "sophia-policy-protocol-gen"
 version = "0.1.0"
 dependencies = [
@@ -1041,6 +1048,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sophia-engine",
+ "sophia-linux-peer",
  "sophia-protocol",
  "sophia-wm-demo",
  "tracing-subscriber",

@@ -328,18 +328,19 @@ tranche with a named driver and exit gate.
 
 ### Native WM and shell product
 
-- Implement the generic session-owned [scripting contract](docs/scripting.md)
-  only after promotion of a bounded slice. The proposed `sophia msg` first
-  exposes registered argument-free WM actions and session reload/restart;
-  shell commands need a negotiated extension. The experimental
-  [control v1 wire](docs/sophia-control-v1.md), KDL schema, generated vectors,
-  and independent client are specified and checked offline. Access is disabled
-  by default with explicit host-administration opt-in; revision 1 has one
-  outstanding request per connection and owner settlement. Before enablement,
-  implement verified host-domain admission, catalog/action correlation,
-  reload/restart settlement and rollback, bounded transport, and measured
-  input/frame fairness. Delegated grants remain a later extension. This is
-  neither a shipped service nor a new daily-driver acceptance gate.
+- [x] Implement the bounded session-owned [control v1](docs/sophia-control-v1.md)
+  endpoint and `sophia msg`: startup-only `session.control "host-admin"`, disabled
+  by default, socket-derived pidfd and user/mount/PID namespace admission,
+  bounded worker, exact catalog/action correlation, Engine-settled policy
+  actions, and asynchronous WM restart confirmed by replacement commit.
+  Generic WM/shell authority boundaries and their existing wires are preserved.
+- [ ] Optional short installed control smoke: discover, invoke a safe registered
+  action, restart WM, and observe continued input/rendering. Automated endpoint
+  and supervised-owner evidence is separate; do not restart the 36-row gate.
+- [ ] Repair transactional profile reload before advertising `reload-profile`.
+  Keep shell commands, delegated grants, parameters, queries, and subscriptions
+  behind separately specified contracts. Linux admission does not attest
+  arbitrary third-party sandboxes sharing the host namespaces.
 - Harden the implemented issuer-scoped action checks and reservation/work-area
   coordination only against a named remaining lifecycle gap; preserve existing
   offline conformance and distinguish it from signed physical acceptance.

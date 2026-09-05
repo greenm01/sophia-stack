@@ -1,3 +1,5 @@
+#![cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+
 use std::collections::BTreeMap;
 
 use sophia_backend_live::live_surfaces_owned_by_output;

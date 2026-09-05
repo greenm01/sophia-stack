@@ -111,6 +111,8 @@ struct LiveWmSession {
     max_queue_dwell: Duration,
     restarts: usize,
     degraded: bool,
+    control_restart: Option<ControlRestartJob>,
+    control_lifetime: Option<ControlProcessLifetime>,
 }
 
 struct LiveWmProposal {

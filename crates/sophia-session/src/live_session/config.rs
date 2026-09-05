@@ -57,6 +57,8 @@ struct PersistentXtermSessionConfig {
     applications: SessionApplicationConfig,
     _session_application_overrides: SessionApplicationOverrides,
     session_profile: PreparedSessionProfile,
+    control_access: sophia_config::DesktopControlAccess,
+    control_socket: Option<std::path::PathBuf>,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
     max_ticks: Option<usize>,
@@ -901,6 +903,8 @@ impl PersistentXtermSessionConfig {
             startup_ready_timeout,
             applications,
             _session_application_overrides: session_application_overrides,
+            control_access: session_profile.candidate().control,
+            control_socket: None,
             session_profile,
             max_ticks,
             inject_text,
@@ -1051,8 +1055,10 @@ impl PersistentXtermSessionConfig {
         app: &SessionApplicationSpec,
         display: &str,
         xauthority: &std::path::Path,
+        control_socket: Option<&std::path::Path>,
     ) -> Result<Child, Box<dyn std::error::Error>> {
         let mut command = std::process::Command::new(&app.executable);
+        configure_control_environment(&mut command, control_socket);
         command
             .args(&app.arguments)
             .env("DISPLAY", display)

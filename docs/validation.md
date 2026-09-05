@@ -76,11 +76,14 @@ Narthex run their own `SOPHIA_STACK_ROOT=/path/to/sophia-stack nimble test` gate
 These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
 
 `tools/check_control_protocol.sh` checks the experimental
-[control v1 wire](sophia-control-v1.md): generated schema artifacts and an
-independent client exercise framing, catalog bounds, correlation, and failure
-handling. The session endpoint is unimplemented. Host-domain admission,
-dispatch/settlement, reload/restart recovery, pressure, and input/frame fairness
-remain live-service implementation gates listed in that specification.
+[control v1 wire](sophia-control-v1.md), independent Python and Rust clients,
+real Unix endpoint, config opt-in, sequencing, dispatch recheck, cancellation,
+deadlines, and bounded queue pressure. Add `--live-owner` to require the
+bubblewrap namespace denial proof and the live session owner fixture: policy
+success waits for Engine settlement; restart waits for the intended
+replacement's first commit. These tests use temporary sockets and supervised
+test processes, not a graphical session. Installed input/render fairness is a
+short optional operator smoke. Scripted reload remains deferred.
 
 `ShellWorkAreaCoordination` checks that a future ready shell reservation,
 derived work area, and exact WM projection promote as one coherent generation;

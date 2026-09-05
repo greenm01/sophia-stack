@@ -174,6 +174,9 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
+    control_generation: u64,
+    control_catalog_serial: u64,
+    control_tickets: BTreeMap<u64, sophia_runtime::ControlTicket>,
     worker: Option<PolicyTransportWorker>,
     output_service: Option<sophia_runtime::OutputTransportService>,
     output_authority: Option<crate::live_output_authority::LiveOutputAuthorityOwner>,
@@ -1359,6 +1362,17 @@ impl LivePublicPolicyState {
     /// never coming and died on its socket deadline, and the resulting restarts
     /// exhausted the supervisor budget.
     fn settle_public_projection(&mut self, outcome: sophia_protocol::PolicyProjectionOutcome) {
+        if let Some(sophia_protocol::PolicyProjectionRequest {
+            cause: sophia_protocol::PolicyRequestCause::Action { activation_serial, .. }, ..
+        }) = self.in_flight_request.as_ref()
+            && let Some(ticket) = self.control_tickets.remove(activation_serial)
+        {
+            ticket.finish(match outcome {
+                sophia_protocol::PolicyProjectionOutcome::Committed => sophia_protocol::ControlOutcome::Committed,
+                sophia_protocol::PolicyProjectionOutcome::RejectedInvalid | sophia_protocol::PolicyProjectionOutcome::RejectedStale => sophia_protocol::ControlOutcome::Rejected,
+                _ => sophia_protocol::ControlOutcome::Indeterminate,
+            });
+        }
         if let Some((surface, _)) = consume_public_launch_classification(
             &mut self.launch_classifications,
             self.in_flight_source,
@@ -1746,6 +1760,9 @@ impl LiveWmSession {
 
 impl Drop for LivePublicPolicyState {
     fn drop(&mut self) {
+        for (_, ticket) in std::mem::take(&mut self.control_tickets) {
+            ticket.finish(if ticket.dispatched() { sophia_protocol::ControlOutcome::Indeterminate } else { sophia_protocol::ControlOutcome::Stale });
+        }
         // The checkpoint parent outlives each peer endpoint so supervised
         // replacement can preserve private policy state. Drop the endpoint
         // worker first, then remove the checkpoint and its session directory.
@@ -2032,6 +2049,9 @@ impl LiveWmSession {
             .map(|output| output.id)
             .collect::<BTreeSet<_>>();
         let mut public = LivePublicPolicyState {
+            control_generation: 1,
+            control_catalog_serial: 1,
+            control_tickets: BTreeMap::new(),
             _profile_fragments: profile_fragments,
             _profile_slot: policy_profile,
             profile_key,
@@ -2114,6 +2134,8 @@ impl LiveWmSession {
             max_queue_dwell: Duration::ZERO,
             restarts: 0,
             degraded: false,
+            control_restart: None,
+            control_lifetime: None,
         };
         crate::session_println!(
             "sophia_live_wm schema=4 status=ready adapter=sophia_wm_v1 socket=session_owned epoch=1 restarts=0"
@@ -2127,6 +2149,7 @@ impl LiveWmSession {
         _output: sophia_engine::HeadlessOutput,
         allow_new_cycle: bool,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.control_restart.is_some() || self.degraded { return Ok(None); }
         let chrome_style = self.candidate_chrome_style();
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;
@@ -2192,6 +2215,9 @@ impl LiveWmSession {
                         self.stage_visual_chrome(self.candidate_chrome_style());
                         self.shortcuts = Some(sophia_engine::WmShortcutRouter::new(registry));
                         public.actions = configuration.actions.clone();
+                        // Invalidate queued scripts in this same turn, before another cause can dispatch.
+                        public.control_generation = 0;
+                        public.control_catalog_serial = public.control_catalog_serial.checked_add(1).ok_or("control catalog serial exhausted")?;
                         public.configured = true;
                         sophia_protocol::PolicyProjectionOutcome::Committed
                     }
@@ -2388,6 +2414,19 @@ impl LiveWmSession {
                 let Some(cause) = public.queue.pop_front() else {
                     break None;
                 };
+                if let sophia_protocol::PolicyRequestCause::Action { activation_serial, .. } = cause.cause
+                    && let Some(ticket) = public.control_tickets.get(&activation_serial)
+                {
+                    if ticket.cancelled() || ticket.generation != public.control_generation {
+                        ticket.finish(sophia_protocol::ControlOutcome::Stale);
+                        public.control_tickets.remove(&activation_serial);
+                        continue;
+                    }
+                    if !ticket.claim() {
+                        public.queue.push_front(cause);
+                        break None;
+                    }
+                }
                 if policy_cause_subject_is_live(cause.cause, &scene) {
                     break Some(cause);
                 }
@@ -2450,6 +2489,10 @@ impl LiveWmSession {
         layout: &mut PersistentLiveLayout,
         output: sophia_engine::HeadlessOutput,
     ) -> Result<Option<LiveWmProposal>, Box<dyn std::error::Error>> {
+        if self.control_restart.is_some() {
+            self.poll_control_restart(layout, output);
+            return Ok(None);
+        }
         if self.degraded {
             return Ok(None);
         }
@@ -2497,6 +2540,10 @@ impl LiveWmSession {
         }
         let mut public = self.public.take().expect("public WM state is present");
         public.worker.take();
+        self.control_lifetime.take();
+        for (_, ticket) in std::mem::take(&mut public.control_tickets) {
+            ticket.finish(if ticket.dispatched() { sophia_protocol::ControlOutcome::Indeterminate } else { sophia_protocol::ControlOutcome::Stale });
+        }
         let _ = public.reducer.disconnect(public.connection_epoch);
         self.shortcuts = None;
         self.force_transport_restart = false;

@@ -143,6 +143,7 @@ include!("live_session/policy.rs");
 include!("live_session/presentation.rs");
 include!("live_session/startup.rs");
 include!("live_session/wm.rs");
+include!("live_session/control.rs");
 
 const SESSION_AUTHORITY_CAPACITY: usize = 256;
 const SESSION_KEY_CAPACITY: usize = 64;
@@ -567,6 +568,7 @@ pub(crate) fn run_persistent_xterm_session(
     } else {
         None
     };
+    let mut scripting = LiveControlState::start(&mut config);
     let mut wm_session = LiveWmSession::from_config(
         &config,
         &initial_outputs,
@@ -716,6 +718,7 @@ pub(crate) fn run_persistent_xterm_session(
         (None, None)
     };
     if let Some(terminal_command) = terminal_command.as_mut() {
+        configure_control_environment(terminal_command, config.control_socket.as_deref());
         terminal_command
             .env("DISPLAY", &config.display)
             .env("XAUTHORITY", xauthority.path())
@@ -842,6 +845,7 @@ pub(crate) fn run_persistent_xterm_session(
                 app,
                 &config.display,
                 xauthority.path(),
+                config.control_socket.as_deref(),
             )?,
         );
         crate::session_println!(
@@ -996,6 +1000,7 @@ pub(crate) fn run_persistent_xterm_session(
             native_scanout: &mut native_scanout,
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
+            scripting: &mut scripting,
             metadata_broker: &mut metadata_broker,
             metadata_shell: &mut metadata_shell,
             mirror_grouping: &mirror_grouping,
@@ -1216,3 +1221,7 @@ fn apply_requested_native_output_topology(
         "sophia_live_native_topology_apply schema=1 status={settlement} rollback={rollback} heads={heads} generation={generation}"
     );
 }
+
+#[cfg(test)]
+#[path = "../tests/support/live_control.rs"]
+mod live_control_tests;

@@ -124,6 +124,10 @@ impl ProcessSupervisor {
         self.process
     }
 
+    pub fn launch_spec(&self) -> &ProcessLaunchSpec {
+        &self.spec
+    }
+
     pub fn child_id(&self) -> Option<u32> {
         self.child.as_ref().map(|child| child.child.id())
     }
