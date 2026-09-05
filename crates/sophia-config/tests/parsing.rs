@@ -245,7 +245,12 @@ fn cursor_configuration_is_bounded_and_semantic() {
 }
 
 #[test]
-fn cursor_change_is_staged_as_one_restart_candidate() {
+fn a_cursor_change_applies_without_a_restart() {
+    // It used to be staged for restart, because the KMS path refused a second
+    // cursor asset once its buffer existed. The buffer is sized to the
+    // driver's cursor dimensions rather than to the raster, so a replacement
+    // repaints the buffer the plane is already scanning; nothing about the
+    // cursor needs the session to start again.
     let active =
         parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).expect("valid active config");
     let mut state = CoreConfigState::from_snapshot(active);
@@ -255,11 +260,11 @@ fn cursor_change_is_staged_as_one_restart_candidate() {
         .reload(candidate.as_bytes())
         .expect("valid cursor candidate");
 
-    assert_eq!(report.disposition, ReloadDisposition::PendingRestart);
+    assert_eq!(report.disposition, ReloadDisposition::Applied);
     assert!(report.delta.cursor_changed);
-    assert!(report.delta.restart_required);
-    assert_eq!(state.active().cursor.shape, "text");
-    assert_eq!(state.pending_restart().unwrap().cursor.shape, "pointer");
+    assert!(!report.delta.restart_required);
+    assert_eq!(state.active().cursor.shape, "pointer");
+    assert!(state.pending_restart().is_none());
 }
 
 #[test]

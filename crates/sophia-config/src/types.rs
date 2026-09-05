@@ -361,8 +361,7 @@ impl CoreConfigDelta {
                 || active.input.xkb != candidate.input.xkb
                 || active.outputs != candidate.outputs
                 || active.namespace_profile != candidate.namespace_profile
-                || active.external_wm != candidate.external_wm
-                || active.cursor != candidate.cursor,
+                || active.external_wm != candidate.external_wm,
         }
     }
 

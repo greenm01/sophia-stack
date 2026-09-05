@@ -142,7 +142,79 @@ struct PersistentXtermSessionConfig {
     firefox_m10_lifecycle_proof: bool,
 }
 
+/// Resolves the cursor the session draws, and the enlarged one a shake shows.
+///
+/// One function because startup and a core-config reload have to agree about
+/// precedence. If they disagreed, editing the core config would quietly take a
+/// cursor the profile had claimed, and only after a reload -- the kind of
+/// difference nobody finds until they are looking at the wrong pointer.
+///
+/// The shape stays core-only: it names a semantic cursor the Engine draws,
+/// which is not a thing a desktop profile has an opinion about.
+fn resolve_desktop_cursor(
+    desktop: Option<&sophia_config::DesktopCursorCandidate>,
+    core: &sophia_config::CursorConfig,
+) -> Result<
+    (
+        sophia_renderer_live::CursorResolution,
+        Option<sophia_renderer_live::CursorResolution>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let shape = sophia_engine::CursorShape::parse(&core.shape)
+        .ok_or("validated core config has an unknown cursor shape")?;
+    let theme = desktop
+        .and_then(|cursor| cursor.theme.as_deref())
+        .unwrap_or(&core.theme);
+    let size = desktop.and_then(|cursor| cursor.size).unwrap_or(core.size);
+    let base = sophia_renderer_live::resolve_cursor_theme(theme, size, shape, 0);
+    let shake = desktop
+        .is_some_and(|cursor| cursor.shake_to_find == Some(true))
+        .then(|| {
+            let enlarged = sophia_engine::CursorShakeDetector::enlarged_size(size);
+            if enlarged <= size {
+                // A cursor already at the size the Engine will raster cannot
+                // grow, so there is nothing the gesture could do.
+                crate::session_eprintln!(
+                    "sophia_live_cursor schema=1 status=shake_to_find_inert reason=size_at_maximum size={size}"
+                );
+                return None;
+            }
+            let resolution = sophia_renderer_live::resolve_cursor_theme(theme, enlarged, shape, 0);
+            crate::session_println!(
+                "sophia_live_cursor schema=1 status=shake_to_find_ready base_size={size} enlarged_size={enlarged} effective_size={}",
+                resolution.effective_nominal_size,
+            );
+            Some(resolution)
+        })
+        .flatten();
+    Ok((base, shake))
+}
+
 impl PersistentXtermSessionConfig {
+    /// Re-resolves the cursor after the core config changed.
+    ///
+    /// The desktop profile still wins per key, so a core edit to a theme the
+    /// profile also names changes nothing -- which is the same answer startup
+    /// would give, and the reason both go through one function.
+    ///
+    /// Returns the asset the backends should now draw, or `None` when the
+    /// effective cursor did not actually change.
+    pub(crate) fn reload_cursor(
+        &mut self,
+        core: &sophia_config::CursorConfig,
+    ) -> Result<Option<sophia_engine::CursorAsset>, Box<dyn std::error::Error>> {
+        let (base, shake) = resolve_desktop_cursor(self.input_profile.candidate().cursor.as_ref(), core)?;
+        if base.asset.digest() == self.cursor_resolution.asset.digest() {
+            self.cursor_shake_resolution = shake;
+            return Ok(None);
+        }
+        let asset = base.asset.clone();
+        self.cursor_resolution = base;
+        self.cursor_shake_resolution = shake;
+        Ok(Some(asset))
+    }
+
     /// Adopts the output profile a reloaded desktop profile prepared.
     ///
     /// The prepared type is private to this module, so a reload cannot build
@@ -250,50 +322,8 @@ impl PersistentXtermSessionConfig {
         // that states no cursor at all leaves the core config in charge. That
         // is what lets one file describe a whole desktop without making the
         // core config unusable for a session that has no profile.
-        //
-        // The shape stays core-only: it names a semantic cursor the Engine
-        // draws, which is not a thing a desktop profile has an opinion about.
-        let cursor_shape = sophia_engine::CursorShape::parse(&core_snapshot.cursor.shape)
-            .ok_or("validated core config has an unknown cursor shape")?;
-        let desktop_cursor = desktop_input.cursor.as_ref();
-        let cursor_theme = desktop_cursor
-            .and_then(|cursor| cursor.theme.as_deref())
-            .unwrap_or(&core_snapshot.cursor.theme);
-        let cursor_size = desktop_cursor
-            .and_then(|cursor| cursor.size)
-            .unwrap_or(core_snapshot.cursor.size);
-        let cursor_resolution = sophia_renderer_live::resolve_cursor_theme(
-            cursor_theme,
-            cursor_size,
-            cursor_shape,
-            core_snapshot.generation.raw(),
-        );
-        let cursor_shake_resolution = desktop_cursor
-            .is_some_and(|cursor| cursor.shake_to_find == Some(true))
-            .then(|| {
-                let enlarged = sophia_engine::CursorShakeDetector::enlarged_size(cursor_size);
-                if enlarged <= cursor_size {
-                    // A cursor already at the size the Engine will raster
-                    // cannot grow, so there is nothing the gesture could do.
-                    crate::session_eprintln!(
-                        "sophia_live_cursor schema=1 status=shake_to_find_inert reason=size_at_maximum size={cursor_size}"
-                    );
-                    return None;
-                }
-                let resolution = sophia_renderer_live::resolve_cursor_theme(
-                    cursor_theme,
-                    enlarged,
-                    cursor_shape,
-                    core_snapshot.generation.raw(),
-                );
-                crate::session_println!(
-                    "sophia_live_cursor schema=1 status=shake_to_find_ready base_size={cursor_size} enlarged_size={} effective_size={}",
-                    enlarged,
-                    resolution.effective_nominal_size,
-                );
-                Some(resolution)
-            })
-            .flatten();
+        let (cursor_resolution, cursor_shake_resolution) =
+            resolve_desktop_cursor(desktop_input.cursor.as_ref(), &core_snapshot.cursor)?;
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")

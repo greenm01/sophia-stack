@@ -155,6 +155,36 @@ macro_rules! service_core_config_reload {
                                 .unwrap_or(config.surface_chrome_style);
                             runtime.set_surface_chrome_style(style);
                         }
+                        if report.delta.cursor_changed {
+                            // The desktop profile still wins per key, so this
+                            // may resolve to the cursor already on screen --
+                            // which is why the asset is compared rather than
+                            // the config that produced it.
+                            match config.reload_cursor(&snapshot.cursor) {
+                                Ok(Some(asset)) => {
+                                    scene.set_cursor_asset(asset.clone());
+                                    if let Some(native) = native_scanout.as_mut()
+                                        && let Err(error) =
+                                            native.replace_hardware_cursor_asset(asset)
+                                    {
+                                        crate::session_eprintln!(
+                                            "sophia_live_cursor schema=1 status=reload_declined detail={error}"
+                                        );
+                                    }
+                                    crate::session_println!(
+                                        "sophia_live_cursor schema=1 status=reloaded theme={} size={}",
+                                        config.cursor_resolution.effective_theme,
+                                        config.cursor_resolution.effective_nominal_size,
+                                    );
+                                }
+                                Ok(None) => crate::session_println!(
+                                    "sophia_live_cursor schema=1 status=reload_unchanged reason=profile_overrides"
+                                ),
+                                Err(error) => crate::session_eprintln!(
+                                    "sophia_live_cursor schema=1 status=reload_declined detail={error}"
+                                ),
+                            }
+                        }
                         if config.verbose_diagnostics {
                             crate::session_println!(
                                 "sophia_config_reload_detail schema=2 source={:?} pending_restart=false applications={} repeat_delay_ms={} repeat_interval_ms={} chrome_clearance={}",
