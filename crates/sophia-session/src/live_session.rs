@@ -1145,32 +1145,30 @@ fn apply_requested_native_output_topology(
     };
     let generation = plan.generation().raw();
 
-    // The frame each head is actually scanning out, not the size its mode says
-    // it should be. Those differ during a mode change, and the difference is
-    // the whole question the admission gate answers.
+    // The frame each head is actually scanning out, taken from the head that
+    // composed it. A standalone command reads the CRTC's current framebuffer
+    // because it composes nothing itself and what is on screen is the only
+    // frame available to it; inside a session that read answers nothing, since
+    // the session drives its heads through atomic commits that leave the
+    // legacy CRTC framebuffer unset.
+    //
+    // Per head rather than per output: a mirror group's connectors run their
+    // own modes and own buffers, and each head records its own size.
     let frame_targets = native
-        .outputs()
-        .into_iter()
-        .flat_map(|output| {
-            native
-                .head_indices(output.id)
-                .into_iter()
-                .map(move |index| (output, index))
-        })
-        .filter_map(|(output, index)| {
+        .heads
+        .iter()
+        .enumerate()
+        .filter(|(_, head)| head.enabled)
+        .filter_map(|(index, head)| {
             let selection = native.selection(index);
-            let (_, size) = sophia_backend_live::read_native_current_framebuffer(
-                native.card(index),
-                selection,
-            )?;
             Some(NativeOutputFrameTarget {
                 connector: capabilities
                     .iter()
                     .find(|capability| capability.connector_id() == selection.connector_id())?
                     .connector_name()
                     .to_owned(),
-                output: output.id,
-                target: sophia_backend_live::LiveGbmEglFrameTargetRecord::new(size),
+                output: head.output.id,
+                target: sophia_backend_live::LiveGbmEglFrameTargetRecord::new(head.output.size),
             })
         })
         .collect::<Vec<_>>();
