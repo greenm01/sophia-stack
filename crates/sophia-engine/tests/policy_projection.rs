@@ -429,8 +429,11 @@ fn presentation_geometry_and_focus_are_validated_against_output_roles() {
     let mut reducer = PolicyProjectionReducer::new(initial).unwrap();
     reducer.connect(1).unwrap();
 
+    // Reaching above the work area into the shell's strut is no longer a
+    // refusal: the Engine owns what is drawn there. An empty rectangle still
+    // is one, because it names no pixels at all rather than pixels elsewhere.
     let request = reducer.issue_request(vec![output(1)]).unwrap();
-    let outside_work_area = placed(
+    let above_work_area = placed(
         surface_id(1),
         1,
         Rect {
@@ -444,7 +447,27 @@ fn presentation_geometry_and_focus_are_validated_against_output_roles() {
         reducer.apply_proposal(&proposal(
             &request,
             51,
-            vec![projected(output(1), vec![outside_work_area], None)],
+            vec![projected(output(1), vec![above_work_area], None)],
+        )),
+        PolicyProjectionOutcome::Committed
+    );
+
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let empty = placed(
+        surface_id(1),
+        1,
+        Rect {
+            x: 0,
+            y: 10,
+            width: 0,
+            height: 90,
+        },
+    );
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            52,
+            vec![projected(output(1), vec![empty], None)],
         )),
         PolicyProjectionOutcome::RejectedInvalid
     );
@@ -652,17 +675,79 @@ fn a_scene_may_report_a_surface_larger_than_its_shrunken_output() {
     reducer.observe_scene(scene(2, &[oversized])).unwrap();
 }
 
-/// A proposal placing a surface outside the work area is still refused.
+/// A proposal may place a surface outside its output, because a scrolling
+/// layout has to.
+///
+/// Columns scrolled past an edge keep their place in the strip and come back
+/// when the camera moves. Refusing them made the policy pre-solve visibility —
+/// a pixel question asked of a client that cannot see pixels — and made the
+/// Engine dictate which layouts were expressible. Deciding what is drawn is
+/// the Engine's job, and it can do that with the whole strip in hand.
 #[test]
-fn a_proposal_may_not_place_a_surface_outside_its_output() {
+fn a_proposal_may_place_a_surface_outside_its_output() {
     let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
     reducer.connect(1).unwrap();
+
+    // Taller than the output, the shape the old rule refused.
     let request = reducer.issue_request(vec![output(1)]).unwrap();
-    let outside = Rect {
+    let overflowing = Rect {
         x: 0,
         y: 0,
         width: 50,
         height: 400,
+    };
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            7,
+            vec![projected(
+                output(1),
+                vec![placed(surface_id(1), 1, overflowing)],
+                None
+            )],
+        )),
+        PolicyProjectionOutcome::Committed
+    );
+
+    // Scrolled off to the left, so its x is negative and its right edge is
+    // still on screen. This is the ordinary state of a column behind the
+    // camera.
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let scrolled_left = Rect {
+        x: -30,
+        y: 0,
+        width: 50,
+        height: 50,
+    };
+    assert_eq!(
+        reducer.apply_proposal(&proposal(
+            &request,
+            8,
+            vec![projected(
+                output(1),
+                vec![placed(surface_id(1), 1, scrolled_left)],
+                None
+            )],
+        )),
+        PolicyProjectionOutcome::Committed
+    );
+}
+
+/// What replaced containment: a rectangle whose far edge cannot be computed.
+///
+/// Every consumer derives a right and bottom edge, so this is the invariant
+/// that actually had to survive. A layout decision must not become an overflow
+/// somewhere downstream.
+#[test]
+fn a_proposal_may_not_place_a_surface_whose_edges_overflow() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let unrepresentable = Rect {
+        x: i32::MAX - 10,
+        y: 0,
+        width: 50,
+        height: 50,
     };
 
     assert_eq!(
@@ -671,7 +756,7 @@ fn a_proposal_may_not_place_a_surface_outside_its_output() {
             7,
             vec![projected(
                 output(1),
-                vec![placed(surface_id(1), 1, outside)],
+                vec![placed(surface_id(1), 1, unrepresentable)],
                 None
             )],
         )),

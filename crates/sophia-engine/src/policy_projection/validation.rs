@@ -270,7 +270,20 @@ pub(super) fn validate_output_projection(
         let valid_geometry = if placement.presentation.fullscreen {
             placement.geometry == bounds
         } else {
-            rect_contains(work_area, placement.geometry)
+            // Deliberately not containment. A scrolling layout puts columns
+            // outside the work area on purpose: they keep their place in the
+            // strip and return when the camera moves. Requiring every window
+            // to fit made the policy pre-solve visibility, which is a pixel
+            // question asked of a client that cannot see pixels, and it made
+            // the Engine dictate which layouts were expressible. Both belong
+            // the other way round: the policy says where a window sits, and
+            // the Engine decides what is drawn.
+            //
+            // What remains is the invariant that outliving containment
+            // actually matters: every consumer computes a right and bottom
+            // edge, so a rectangle whose edges do not fit would turn a layout
+            // decision into an overflow somewhere downstream.
+            rect_edges_are_representable(placement.geometry)
         };
         if placement.geometry.is_empty()
             || !valid_geometry
@@ -314,6 +327,11 @@ pub(super) fn validate_output_projection(
         return Err(PolicyProjectionError::InvalidSurface);
     }
     Ok(())
+}
+
+/// Whether a rectangle's far edges can be computed without overflowing.
+fn rect_edges_are_representable(rect: Rect) -> bool {
+    rect.x.checked_add(rect.width).is_some() && rect.y.checked_add(rect.height).is_some()
 }
 
 pub(super) fn rect_contains(outer: Rect, inner: Rect) -> bool {
