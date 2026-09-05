@@ -169,11 +169,11 @@ fn dispatch_shm_request(
                         height: i32::from(src_height),
                     });
                     let image = runtime
-                        .shm_segment_shmid(context.namespace, segment)
+                        .shm_segment_mapping(context.namespace, segment)
                         .ok()
-                        .and_then(|shmid| {
-                            copy_shm_image_region(XShmImageCopy {
-                                shmid,
+                        .and_then(|mapping| {
+                            copy_shm_image_region(
+                                XShmImageCopy {
                                 offset,
                                 total_width,
                                 total_height,
@@ -183,7 +183,9 @@ fn dispatch_shm_request(
                                 src_height,
                                 depth,
                                 format,
-                            })
+                                },
+                                |offset, len| mapping.copy_bytes(offset, len).ok(),
+                            )
                         });
                     // `copy_shm_image_region` already normalized the segment
                     // into tight ZPixmap depth-24/32 rows or returned nothing,
@@ -265,21 +267,34 @@ fn dispatch_shm_request(
                             .map_err(XShmGetImageError::Image)
                         })
                         .and_then(|readback| {
-                            let shmid = runtime
-                                .shm_segment_shmid(context.namespace, segment)
+                            // A segment the client attached read-only is not
+                            // somewhere pixels may be written back to, and
+                            // saying so is the whole meaning of the flag.
+                            if runtime
+                                .shm_segment_is_read_only(context.namespace, segment)
+                                .map_err(XShmGetImageError::Runtime)?
+                            {
+                                return Err(XShmGetImageError::Runtime(
+                                    XAuthorityRuntimeError::CrossNamespaceDenied,
+                                ));
+                            }
+                            let mapping = runtime
+                                .shm_segment_mapping(context.namespace, segment)
                                 .map_err(XShmGetImageError::Runtime)?;
-                            sophia_sysv_shm::write_bytes(
-                                shmid,
-                                usize::try_from(offset).map_err(|_| {
+                            mapping
+                                .write_bytes(
+                                    usize::try_from(offset).map_err(|_| {
+                                        XShmGetImageError::Runtime(
+                                            XAuthorityRuntimeError::InvalidResource,
+                                        )
+                                    })?,
+                                    &readback.data,
+                                )
+                                .map_err(|_| {
                                     XShmGetImageError::Runtime(
                                         XAuthorityRuntimeError::InvalidResource,
                                     )
-                                })?,
-                                &readback.data,
-                            )
-                            .map_err(|_| {
-                                XShmGetImageError::Runtime(XAuthorityRuntimeError::InvalidResource)
-                            })?;
+                                })?;
                             Ok(readback)
                         });
                     let outputs = match result {

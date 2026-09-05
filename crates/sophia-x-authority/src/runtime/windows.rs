@@ -33,8 +33,69 @@ impl XAuthorityRuntime {
          generation: u64,
      ) -> Result<(), XAuthorityRuntimeError> {
          self.shm_segments
-             .attach(namespace, segment, shmid, read_only, generation)
+             .attach(
+                 namespace,
+                 segment,
+                 crate::XShmBacking::Sysv(shmid),
+                 read_only,
+                 generation,
+             )
              .map_err(Into::into)
+     }
+
+     /// Records a segment the client named with a descriptor.
+     ///
+     /// The mapping is already made -- validating the descriptor is the
+     /// caller's business, because only it knows whether the descriptor came
+     /// from the client or from us.
+     pub fn attach_shm_descriptor_segment(
+         &mut self,
+         namespace: NamespaceId,
+         segment: crate::XResourceId,
+         mapping: std::sync::Arc<sophia_sysv_shm::ClientMapping>,
+         read_only: bool,
+         generation: u64,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         self.shm_segments
+             .attach(
+                 namespace,
+                 segment,
+                 crate::XShmBacking::Descriptor,
+                 read_only,
+                 generation,
+             )
+             .map_err(XAuthorityRuntimeError::from)?;
+         self.shm_descriptor_mappings.insert(segment, mapping);
+         Ok(())
+     }
+
+     /// The mapping behind a segment, whichever way it was named.
+     ///
+     /// This is what lets the image paths stop knowing about SysV ids: a
+     /// segment answers with memory, not with the name it was given.
+     pub fn shm_segment_mapping(
+         &mut self,
+         namespace: NamespaceId,
+         segment: crate::XResourceId,
+     ) -> Result<std::sync::Arc<sophia_sysv_shm::ClientMapping>, XAuthorityRuntimeError> {
+         let record = self.shm_segments.lookup(namespace, segment)?;
+         match record.backing {
+             crate::XShmBacking::Descriptor => self
+                 .shm_descriptor_mappings
+                 .get(&segment)
+                 .cloned()
+                 .ok_or(XAuthorityRuntimeError::UnknownResource),
+             crate::XShmBacking::Sysv(shmid) => {
+                 if let Some(mapping) = self.shm_mappings.get(&shmid).and_then(Weak::upgrade) {
+                     return Ok(mapping);
+                 }
+                 let mapping = sophia_sysv_shm::ClientMapping::attach_sysv(shmid)
+                     .map(std::sync::Arc::new)
+                     .map_err(|_| XAuthorityRuntimeError::InvalidResource)?;
+                 self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
+                 Ok(mapping)
+             }
+         }
      }
  
      pub fn detach_shm_segment(
@@ -42,9 +103,12 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          segment: crate::XResourceId,
      ) -> Result<(), XAuthorityRuntimeError> {
-         self.shm_segments
-             .detach(namespace, segment)
-             .map_err(Into::into)
+         self.shm_segments.detach(namespace, segment)?;
+         // Dropping the mapping is what unmaps it. A pixmap still bound to the
+         // same memory holds its own reference, so this detaches the segment
+         // without pulling the memory out from under it.
+         self.shm_descriptor_mappings.remove(&segment);
+         Ok(())
      }
  
      pub fn validate_shm_segment_access(
@@ -58,14 +122,16 @@ impl XAuthorityRuntime {
              .map_err(Into::into)
      }
  
-     pub fn shm_segment_shmid(
+     /// Whether a segment refuses writes, which `GetImage` has to ask before
+     /// it reads pixels into one.
+     pub fn shm_segment_is_read_only(
          &self,
          namespace: NamespaceId,
          segment: crate::XResourceId,
-     ) -> Result<u32, XAuthorityRuntimeError> {
+     ) -> Result<bool, XAuthorityRuntimeError> {
          self.shm_segments
              .lookup(namespace, segment)
-             .map(|record| record.shmid)
+             .map(|record| record.read_only)
              .map_err(Into::into)
      }
  

@@ -303,6 +303,76 @@ impl Drop for DescriptorMapping {
     }
 }
 
+/// Shared memory a client made available, however the client named it.
+///
+/// The two backings differ only in how they were obtained, so callers that
+/// copy pixels should not have to care which one they hold. Keeping the choice
+/// here rather than in the X frontend is what makes MIT-SHM 1.2 a second
+/// variant of an existing path instead of a second path.
+#[derive(Debug)]
+pub enum ClientMapping {
+    /// 1.1: named by SysV id, which `write_bytes` still needs to reattach for
+    /// a write, since the read mapping is `SHM_RDONLY`.
+    Sysv {
+        shmid: u32,
+        mapping: ReadOnlyMapping,
+    },
+    /// 1.2: named by descriptor.
+    Descriptor(DescriptorMapping),
+}
+
+impl ClientMapping {
+    pub fn attach_sysv(shmid: u32) -> Result<Self, AccessError> {
+        Ok(Self::Sysv {
+            shmid,
+            mapping: ReadOnlyMapping::attach(shmid)?,
+        })
+    }
+
+    pub const fn len(&self) -> usize {
+        match self {
+            Self::Sysv { mapping, .. } => mapping.len(),
+            Self::Descriptor(mapping) => mapping.len(),
+        }
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn copy_bytes(&self, offset: usize, len: usize) -> Result<Vec<u8>, AccessError> {
+        match self {
+            Self::Sysv { mapping, .. } => mapping.copy_bytes(offset, len),
+            Self::Descriptor(mapping) => mapping.copy_bytes(offset, len),
+        }
+    }
+
+    pub fn copy_rows(
+        &self,
+        offset: usize,
+        stride: usize,
+        row_offset: usize,
+        row_bytes: usize,
+        row_count: usize,
+    ) -> Result<Vec<u8>, AccessError> {
+        match self {
+            Self::Sysv { mapping, .. } => {
+                mapping.copy_rows(offset, stride, row_offset, row_bytes, row_count)
+            }
+            Self::Descriptor(mapping) => {
+                mapping.copy_rows(offset, stride, row_offset, row_bytes, row_count)
+            }
+        }
+    }
+
+    pub fn write_bytes(&self, offset: usize, bytes: &[u8]) -> Result<(), AccessError> {
+        match self {
+            Self::Sysv { shmid, .. } => write_bytes(*shmid, offset, bytes),
+            Self::Descriptor(mapping) => mapping.write_bytes(offset, bytes),
+        }
+    }
+}
+
 fn descriptor_len(descriptor: BorrowedFd<'_>) -> Result<usize, AccessError> {
     let mut status = core::mem::MaybeUninit::<libc::stat>::zeroed();
     // SAFETY: status points to writable storage for `fstat`.

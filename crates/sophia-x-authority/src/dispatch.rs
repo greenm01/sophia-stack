@@ -630,7 +630,6 @@ fn extension_query_result(name: &str) -> XExtensionQueryResult {
 }
 
 struct XShmImageCopy {
-    shmid: u32,
     offset: u32,
     total_width: u16,
     total_height: u16,
@@ -642,9 +641,17 @@ struct XShmImageCopy {
     format: u8,
 }
 
-fn copy_shm_image_region(copy: XShmImageCopy) -> Option<Vec<u8>> {
+/// Cuts a rectangle out of a client's shared-memory image.
+///
+/// The bytes arrive through `read` rather than from a SysV id, because a
+/// segment can be named either way now and the arithmetic below is the same
+/// for both. `read` is handed the offset and length this validated, so a
+/// caller cannot be asked for a region the checks here did not approve.
+fn copy_shm_image_region(
+    copy: XShmImageCopy,
+    read: impl FnOnce(usize, usize) -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
     let XShmImageCopy {
-        shmid,
         offset,
         total_width,
         total_height,
@@ -676,8 +683,7 @@ fn copy_shm_image_region(copy: XShmImageCopy) -> Option<Vec<u8>> {
     if total_len > MAX_IMAGE_BYTES {
         return None;
     }
-    let source =
-        sophia_sysv_shm::copy_bytes(shmid, usize::try_from(offset).ok()?, total_len).ok()?;
+    let source = read(usize::try_from(offset).ok()?, total_len)?;
     let row_len = src_width.checked_mul(BYTES_PER_PIXEL)?;
     let mut image = Vec::with_capacity(row_len.checked_mul(src_height)?);
     for row in src_y..src_y.checked_add(src_height)? {

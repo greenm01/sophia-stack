@@ -116,7 +116,6 @@ impl XAuthorityRuntime {
         segment: crate::XResourceId,
         offset: u32,
     ) -> Result<(), XAuthorityRuntimeError> {
-        let shmid = self.shm_segment_shmid(namespace, segment)?;
         let byte_len =
             software_pixmap_byte_len(size).ok_or(XAuthorityRuntimeError::InvalidResource)?;
         let end = usize::try_from(offset)
@@ -126,23 +125,12 @@ impl XAuthorityRuntime {
         if end > crate::X_AUTHORITY_SOFTWARE_BUFFER_MAX_BYTES {
             return Err(XAuthorityRuntimeError::InvalidResource);
         }
-        let mapping = self
-            .shm_mappings
-            .get(&shmid)
-            .and_then(Weak::upgrade)
-            .map_or_else(
-                || {
-                    sophia_sysv_shm::ReadOnlyMapping::attach(shmid)
-                        .map(Arc::new)
-                        .map_err(|_| XAuthorityRuntimeError::InvalidResource)
-                },
-                Ok,
-            )?;
+        // Whichever way the segment was named, the pixmap binds to memory.
+        let mapping = self.shm_segment_mapping(namespace, segment)?;
         if end > mapping.len() {
             return Err(XAuthorityRuntimeError::InvalidResource);
         }
         self.create_pixmap(namespace, pixmap, size, depth, generation)?;
-        self.shm_mappings.insert(shmid, Arc::downgrade(&mapping));
         self.shm_pixmaps.insert(
             pixmap,
             XShmPixmapBinding {

@@ -4,13 +4,37 @@ use sophia_protocol::NamespaceId;
 
 use crate::{XAuthorityAccessError, XResourceId};
 
+/// How a client named the memory behind a segment.
+///
+/// The mapping itself is not held here: this record is compared and cloned,
+/// and a live mapping is neither. The runtime keeps the mapping beside the
+/// table, keyed by the same segment id.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XShmBacking {
+    /// MIT-SHM 1.1, named by SysV id.
+    Sysv(u32),
+    /// MIT-SHM 1.2, named by a descriptor the client passed or the server
+    /// allocated.
+    Descriptor,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XShmSegmentRecord {
     pub id: XResourceId,
     pub namespace: NamespaceId,
-    pub shmid: u32,
+    pub backing: XShmBacking,
     pub read_only: bool,
     pub generation: u64,
+}
+
+impl XShmSegmentRecord {
+    /// The SysV id, when that is how this segment was named.
+    pub const fn sysv_shmid(&self) -> Option<u32> {
+        match self.backing {
+            XShmBacking::Sysv(shmid) => Some(shmid),
+            XShmBacking::Descriptor => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -27,7 +51,7 @@ impl XShmSegmentTable {
         &mut self,
         namespace: NamespaceId,
         id: XResourceId,
-        shmid: u32,
+        backing: XShmBacking,
         read_only: bool,
         generation: u64,
     ) -> Result<(), XAuthorityAccessError> {
@@ -43,7 +67,7 @@ impl XShmSegmentTable {
             XShmSegmentRecord {
                 id,
                 namespace,
-                shmid,
+                backing,
                 read_only,
                 generation,
             },
