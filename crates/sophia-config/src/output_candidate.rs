@@ -333,7 +333,7 @@ fn output_transform(node: &KdlNode) -> Result<DesktopOutputTransform, DesktopPro
 /// config: silently defaulting would put the wrong thing on a screen and give
 /// nothing to search for.
 fn output_mirror_fit(node: &KdlNode) -> Result<DesktopMirrorFit, DesktopProfileError> {
-    match one_string(node, "output mirror-fit")?.as_ref() {
+    match one_string(node, "output mirror-fit")? {
         "fit" => Ok(DesktopMirrorFit::Fit),
         "cover" => Ok(DesktopMirrorFit::Cover),
         "exact" => Ok(DesktopMirrorFit::Exact),

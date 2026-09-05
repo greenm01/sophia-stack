@@ -53,9 +53,7 @@ if replacement.outputs() != outputs {
     );
     crate::session_println!(
         "sophia_live_session_startup schema=3 status=recovered attempt=1 reason={} outcome={} drained={} abandoned_scanouts={}",
-        recovery_reason
-            .expect("startup recovery requires an admitted transport reason")
-            .reduced_name(),
+        recovery_reason.reduced_name(),
         suspended.outcome.reduced_name(),
         suspended.outcome.drained(),
         suspended.abandoned_scanouts,

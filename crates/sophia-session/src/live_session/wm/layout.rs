@@ -1040,10 +1040,9 @@ impl PersistentLiveLayout {
         &mut self,
         session_controls: &mut SessionControlQueue,
     ) -> Result<Option<LiveWmCommitResult>, Box<dyn std::error::Error>> {
-        if !self
+        if self
             .pending
-            .as_ref()
-            .is_some_and(|pending| Instant::now() >= pending.deadline)
+            .as_ref().is_none_or(|pending| Instant::now() < pending.deadline)
         {
             return Ok(None);
         }

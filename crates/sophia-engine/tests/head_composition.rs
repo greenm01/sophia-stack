@@ -3,8 +3,8 @@ use sophia_protocol::*;
 
 fn variant(variant: u32, density: u32, source: u64) -> SurfaceContentVariant {
     let size = Size {
-        width: i32::try_from((800_u64 * u64::from(density) + 999) / 1_000).unwrap(),
-        height: i32::try_from((600_u64 * u64::from(density) + 999) / 1_000).unwrap(),
+        width: i32::try_from((800_u64 * u64::from(density)).div_ceil(1_000)).unwrap(),
+        height: i32::try_from((600_u64 * u64::from(density)).div_ceil(1_000)).unwrap(),
     };
     SurfaceContentVariant {
         variant,

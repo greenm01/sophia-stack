@@ -452,9 +452,8 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
     assert_eq!(broker.route_pending(), Ok(1));
     assert!(channels.input.try_recv().is_err());
 
-    assert_eq!(
-        broker.registry.remove_surface(old_surface).unwrap(),
-        true
+    assert!(
+        broker.registry.remove_surface(old_surface).unwrap()
     );
     broker
         .registry

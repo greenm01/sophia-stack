@@ -114,8 +114,14 @@ impl<Crtc: Copy + Debug + Eq> LegacyHardwareCursorController<Crtc> {
                 "legacy hardware cursor was updated before initialization",
             ));
         }
-        for previous in self.active_crtcs.iter().copied().collect::<Vec<_>>() {
-            if !targets.iter().any(|target| target.crtc == previous) {
+        let stale = self
+            .active_crtcs
+            .iter()
+            .copied()
+            .filter(|previous| !targets.iter().any(|target| target.crtc == *previous))
+            .collect::<Vec<_>>();
+        for previous in stale {
+            {
                 device.hide_cursor(previous)?;
                 self.active_crtcs.retain(|active| *active != previous);
             }

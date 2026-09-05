@@ -1,5 +1,9 @@
 use super::*;
 
+/// Head composition frames grouped by the output that will scan them out.
+type HeadCompositionFramesByOutput =
+    Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>;
+
 pub(super) struct LiveProductionRetainedCompositionSourceSet {
     pub committed: Vec<CommittedSurfaceState>,
     pub presentation_order: Vec<SurfaceId>,
@@ -168,10 +172,7 @@ impl LiveProductionVisualRuntime {
         native_scanout: &LiveProductionNativeScanout,
         cpu_layers: &[LiveCpuPresentationLayer],
         scene_generation: u64,
-    ) -> Result<
-        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {
         let committed = self.production.committed_surfaces();
         // One source per layer per head, and each carries the client's pixels.
         // The clone is a refcount bump: the registry, this frame, and every
@@ -392,10 +393,7 @@ impl LiveProductionVisualRuntime {
         &self,
         native_scanout: &LiveProductionNativeScanout,
         source_set: &LiveProductionRetainedCompositionSourceSet,
-    ) -> Result<
-        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {
         self.outputs
             .logical_viewports()
             .map(|(output, logical_viewport)| {
@@ -424,10 +422,7 @@ impl LiveProductionVisualRuntime {
         &self,
         scene: &LiveProductionCpuScene,
         native_scanout: &LiveProductionNativeScanout,
-    ) -> Result<
-        Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {
         let source_set =
             self.retained_composition_source_set(scene, self.in_flight_direct(native_scanout))?;
         self.retained_output_head_composition_frames_from_sources(native_scanout, &source_set)

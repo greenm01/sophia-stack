@@ -25,9 +25,9 @@ fn offset(haystack: &str, needle: &str) -> usize {
 /// it from being reached.
 #[test]
 fn a_moved_work_area_is_relaid_out_before_public_policy_is_polled() {
-    let relayout = offset(&WM_SESSION[..], "if self.work_area_relayout_required {");
+    let relayout = offset(WM_SESSION, "if self.work_area_relayout_required {");
     let public_return = offset(
-        &WM_SESSION[..],
+        WM_SESSION,
         "self.poll_public_request(layout, output, allow_new_cycle)",
     );
     assert!(
@@ -45,7 +45,7 @@ fn a_moved_work_area_is_relaid_out_before_public_policy_is_polled() {
         "a second reader would make the ordering above insufficient"
     );
     // And the capability it reaches genuinely submits to the public policy.
-    let enqueue = offset(&WM_SESSION[..], "fn enqueue_relayout(");
+    let enqueue = offset(WM_SESSION, "fn enqueue_relayout(");
     WM_SESSION[enqueue..]
         .find("let public = self.public.as_mut().ok_or(\"public WM state is unavailable\")?;")
         .expect("enqueue_relayout submits through public policy state");

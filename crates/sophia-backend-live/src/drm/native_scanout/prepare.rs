@@ -411,12 +411,18 @@ where
     }
 }
 
+#[expect(
+    clippy::result_large_err,
+    reason = "the error is the prepared scanout handed back for reuse. Boxing \
+it would allocate on the submit path to move a value the caller already owns \
+and is about to use again"
+)]
 pub fn prepare_native_topology_head_from_prepared_scanout(
     prepared: LibdrmNativePrimaryPlanePreparedScanout,
     vrr_enabled: Option<bool>,
 ) -> Result<LibdrmNativePrimaryPlanePreparedTopologyHead, LibdrmNativePrimaryPlanePreparedScanout> {
     if prepared.request_scope != LibdrmNativeAtomicCommitRequestScope::Modeset
-        || !prepared.resources.mode_blob.is_some_and(|blob| blob != 0)
+        || prepared.resources.mode_blob.is_none_or(|blob| blob == 0)
     {
         return Err(prepared);
     }
@@ -547,21 +553,21 @@ where
     // A rejected combined commit retries with the primary alone. The frame
     // survives and the cursor stays pending for a later commit -- the
     // model's NoFrameLostToCursor, as a second submit rather than a hope.
-    if submit == LibdrmNativeAtomicCommitSubmitStatus::Rejected {
-        if let Some(retry) = prepared.retry_without_cursor.take() {
-            let (flags, request) = retry.into_native();
-            if let Ok(fence) = submit_atomic_commit_with_optional_out_fence(
-                device,
-                flags,
-                request,
-                prepared.selected,
-                prepared.property_handles,
-                prepared.commit_flags,
-            ) {
-                submit = LibdrmNativeAtomicCommitSubmitStatus::Submitted;
-                cursor_dropped = true;
-                completion_fence = fence;
-            }
+    if submit == LibdrmNativeAtomicCommitSubmitStatus::Rejected
+        && let Some(retry) = prepared.retry_without_cursor.take()
+    {
+        let (flags, request) = retry.into_native();
+        if let Ok(fence) = submit_atomic_commit_with_optional_out_fence(
+            device,
+            flags,
+            request,
+            prepared.selected,
+            prepared.property_handles,
+            prepared.commit_flags,
+        ) {
+            submit = LibdrmNativeAtomicCommitSubmitStatus::Submitted;
+            cursor_dropped = true;
+            completion_fence = fence;
         }
     }
     let mut result = LibdrmNativePrimaryPlaneScanoutSubmitResult::from_descriptor(

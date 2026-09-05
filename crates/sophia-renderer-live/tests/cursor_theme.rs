@@ -1,11 +1,14 @@
 use sophia_engine::CursorShape;
 use sophia_renderer_live::{CursorThemeError, decode_xcursor_asset, resolve_cursor_theme};
 
+/// One cursor frame: width, height, delay, hotspot, and its fill byte.
+type CursorFrameSpec = (u32, u32, u32, (u32, u32), u8);
+
 fn cursor_file(size: u32, width: u32, height: u32, hotspot: (u32, u32)) -> Vec<u8> {
     cursor_file_with_frames(&[(size, width, height, hotspot, 0x7f)])
 }
 
-fn cursor_file_with_frames(frames: &[(u32, u32, u32, (u32, u32), u8)]) -> Vec<u8> {
+fn cursor_file_with_frames(frames: &[CursorFrameSpec]) -> Vec<u8> {
     let toc_end = 16 + frames.len() * 12;
     let mut position = u32::try_from(toc_end).unwrap();
     let mut bytes = Vec::new();

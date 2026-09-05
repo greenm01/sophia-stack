@@ -40,9 +40,7 @@ pub(super) fn copy_buffer_region(
     destination_x: i32,
     destination_y: i32,
 ) -> Option<Rect> {
-    let Some((mut left, mut top, right, bottom)) = clipped_bounds(source.size, source_rect) else {
-        return None;
-    };
+    let (mut left, mut top, right, bottom) = clipped_bounds(source.size, source_rect)?;
     let mut target_x = destination_x.saturating_add(i32::try_from(left).unwrap_or(i32::MAX));
     let mut target_y = destination_y.saturating_add(i32::try_from(top).unwrap_or(i32::MAX));
     if target_x < 0 {
@@ -85,17 +83,11 @@ pub(super) fn copy_buffer_region(
             .saturating_add(row)
             .saturating_mul(destination_stride)
             .saturating_add(target_x.saturating_mul(4));
-        let Some(source_row) = source
+        let source_row = source
             .bytes
-            .get(source_offset..source_offset.saturating_add(byte_width))
-        else {
-            return None;
-        };
-        let Some(destination_row) = destination_bytes
-            .get_mut(destination_offset..destination_offset.saturating_add(byte_width))
-        else {
-            return None;
-        };
+            .get(source_offset..source_offset.saturating_add(byte_width))?;
+        let destination_row = destination_bytes
+            .get_mut(destination_offset..destination_offset.saturating_add(byte_width))?;
         destination_row.copy_from_slice(source_row);
     }
     (width != 0 && height != 0).then_some(Rect {

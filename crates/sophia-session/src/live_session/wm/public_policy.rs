@@ -625,7 +625,7 @@ impl LivePublicPolicyState {
                 Some(service) => match service.try_event() {
                     Ok(Some(event)) => event,
                     Ok(None) => break,
-                    Err(()) => {
+                    Err(_disconnected) => {
                         self.output_service.take();
                         crate::session_println!(
                             "sophia_live_output_authority schema=1 status=degraded reason=service_disconnected preserved_topology=true"
@@ -2409,7 +2409,7 @@ impl LiveWmSession {
                 .try_command(PolicyTransportCommand::Cycle {
                     snapshot_transaction,
                     request_transaction,
-                    scene,
+                    scene: Box::new(scene),
                     actions: public.actions.clone(),
                     classifications,
                     request: request.clone(),

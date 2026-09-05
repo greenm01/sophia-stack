@@ -449,7 +449,7 @@ pub fn decode_wm_v1_projection_output_records(
         let focus_generation = cursor.u32()?;
         let reserved = cursor.u32()?;
         if reserved != 0 {
-            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+            return Err(IpcCodecError::ReservedNonZero(reserved));
         }
         records.push(WmV1ProjectionOutputRecord {
             output,
@@ -708,7 +708,7 @@ pub fn decode_wm_v1_projection_output_status_records(
         let layout_len = cursor.u16()?;
         let reserved = cursor.u32()?;
         if reserved != 0 {
-            return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+            return Err(IpcCodecError::ReservedNonZero(reserved));
         }
         let mut layout = [0u8; 32];
         layout.copy_from_slice(cursor.slice(32)?);

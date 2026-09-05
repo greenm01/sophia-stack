@@ -1,5 +1,11 @@
 use super::*;
 
+/// Candidate resources split into the ones to enable and the ones to disable.
+type CandidateResourceSplit<Enabled, Disabled> = (
+    Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
+    Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
+);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveProductionSemanticStartupBarrier {
     Waiting,
@@ -567,12 +573,7 @@ impl<Enabled, Disabled> LiveProductionNativeTopologyResourceCohort<Enabled, Disa
         self.rollback.remove(&head)
     }
 
-    pub fn into_remaining(
-        self,
-    ) -> (
-        Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
-        Vec<LiveProductionNativeTopologyCandidateResource<Enabled, Disabled>>,
-    ) {
+    pub fn into_remaining(self) -> CandidateResourceSplit<Enabled, Disabled> {
         (
             self.candidate.into_values().collect(),
             self.rollback.into_values().collect(),
@@ -1977,21 +1978,20 @@ impl LiveProductionNativeScanout {
                     LiveProductionNativeTopologyCandidateResource::Disabled(_) => {}
                 }
             }
-            if let Some(rollback) = state.resources.take_rollback(head_plan.head) {
-                if let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback {
-                    let cancelled = crate::cancel_prepared_rendered_topology_head(
-                        self.groups[head_plan.card_index].session.card(),
-                        owner,
-                    );
-                    if let Some(cleanup) = cancelled.cleanup {
-                        self.output_topology_cleanup.push((
-                            head_plan.head,
-                            cleanup.map_scanout_buffer(|owner| {
-                                Box::new(owner) as Box<dyn std::any::Any>
-                            }),
-                        ));
-                        cleanup_pending = cleanup_pending.saturating_add(1);
-                    }
+            if let Some(rollback) = state.resources.take_rollback(head_plan.head)
+                && let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback
+            {
+                let cancelled = crate::cancel_prepared_rendered_topology_head(
+                    self.groups[head_plan.card_index].session.card(),
+                    owner,
+                );
+                if let Some(cleanup) = cancelled.cleanup {
+                    self.output_topology_cleanup.push((
+                        head_plan.head,
+                        cleanup
+                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                    ));
+                    cleanup_pending = cleanup_pending.saturating_add(1);
                 }
             }
         }
@@ -2707,20 +2707,19 @@ impl LiveProductionNativeScanout {
                     LiveProductionNativeTopologyCandidateResource::Disabled(_) => {}
                 }
             }
-            if let Some(rollback) = state.resources.take_rollback(head_plan.head) {
-                if let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback {
-                    let cancelled = crate::cancel_prepared_rendered_topology_head(
-                        self.groups[head_plan.card_index].session.card(),
-                        owner,
-                    );
-                    if let Some(cleanup) = cancelled.cleanup {
-                        self.output_topology_cleanup.push((
-                            head_plan.head,
-                            cleanup.map_scanout_buffer(|owner| {
-                                Box::new(owner) as Box<dyn std::any::Any>
-                            }),
-                        ));
-                    }
+            if let Some(rollback) = state.resources.take_rollback(head_plan.head)
+                && let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = rollback
+            {
+                let cancelled = crate::cancel_prepared_rendered_topology_head(
+                    self.groups[head_plan.card_index].session.card(),
+                    owner,
+                );
+                if let Some(cleanup) = cancelled.cleanup {
+                    self.output_topology_cleanup.push((
+                        head_plan.head,
+                        cleanup
+                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                    ));
                 }
             }
         }

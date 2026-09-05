@@ -160,7 +160,7 @@ impl LiveOutputAuthorityOwner {
         }
         published
             .validate()
-            .map_err(|error| LiveOutputAuthorityProjectionError::InvalidSnapshot(error))?;
+            .map_err(LiveOutputAuthorityProjectionError::InvalidSnapshot)?;
         let allocator =
             LiveLogicalOutputAllocator::after(published.groups.iter().map(|group| group.output))
                 .ok_or(LiveOutputAuthorityOwnerError::TopologyEpochExhausted)?;
@@ -193,7 +193,7 @@ impl LiveOutputAuthorityOwner {
         }
         replacement
             .validate()
-            .map_err(|error| LiveOutputAuthorityProjectionError::InvalidSnapshot(error))?;
+            .map_err(LiveOutputAuthorityProjectionError::InvalidSnapshot)?;
         if replacement.topology_epoch < self.published.topology_epoch {
             return Err(LiveOutputAuthorityOwnerError::StalePublishedSnapshot);
         }

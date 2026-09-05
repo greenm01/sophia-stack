@@ -95,7 +95,7 @@ fn single_node(encoded: &str) -> Result<KdlNode, DesktopProfileError> {
     Ok(document.nodes()[0].clone())
 }
 
-fn positional_string<'a>(node: &'a KdlNode, index: usize) -> Option<&'a str> {
+fn positional_string(node: &KdlNode, index: usize) -> Option<&str> {
     node.get(index).and_then(|value| value.as_string())
 }
 

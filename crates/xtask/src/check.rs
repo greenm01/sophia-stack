@@ -37,17 +37,11 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "cargo",
         &["test", "--offline", "--workspace", "--all-features"],
     )?;
-    command(
-        repo,
-        "cargo",
-        &[
-            "clippy",
-            "--offline",
-            "--workspace",
-            "--all-features",
-            "--all-targets",
-        ],
-    )?;
+    // `clippy.toml` sits at the workspace root, and clippy resolves it from
+    // the crate being linted rather than walking up to find it, so a
+    // workspace run would silently use the defaults instead. Pointing it here
+    // is what makes the two recorded thresholds apply.
+    clippy(repo)?;
     sophia_conformance::profile::check_every_profile(&[])?;
     layout(repo)?;
     anchored_readers(repo)?;
@@ -300,6 +294,26 @@ fn hardware_proof(repo: &Path, tool: &str, subject: &str) -> Result<String, Stri
             "{subject}: not proved here, this host has no device"
         )),
         _ => Err(format!("{tool} exited with {status}")),
+    }
+}
+
+fn clippy(repo: &Path) -> Result<(), String> {
+    let status = Command::new("cargo")
+        .current_dir(repo)
+        .env("CLIPPY_CONF_DIR", repo)
+        .args([
+            "clippy",
+            "--offline",
+            "--workspace",
+            "--all-features",
+            "--all-targets",
+        ])
+        .status()
+        .map_err(|error| format!("could not run cargo clippy: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("cargo clippy exited with {status}"))
     }
 }
 

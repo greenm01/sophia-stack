@@ -123,7 +123,7 @@ struct NativeFrameTargetSet {
 
 struct PersistentCompositionTarget {
     target: NativeRenderTarget,
-    surface: std::sync::Arc<NativeFrameSurface>,
+    surface: std::rc::Rc<NativeFrameSurface>,
     import_cache: NativeDmaBufImportCache,
     preferred_modifiers: Vec<gbm::Modifier>,
     /// Identifies this bundle for the lifetime of the context. A rebuild takes
@@ -709,7 +709,7 @@ where
     ) -> Result<
         (
             NativeRenderTarget,
-            std::sync::Arc<NativeFrameSurface>,
+            std::rc::Rc<NativeFrameSurface>,
             std::time::Duration,
         ),
         NativeGbmScanoutBufferExportDetail,

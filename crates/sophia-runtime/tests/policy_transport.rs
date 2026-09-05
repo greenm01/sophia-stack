@@ -186,7 +186,8 @@ fn startup_profile_transport_drives_exact_prepare_activate_and_rollback() {
         )
         .unwrap();
     assert_eq!(model.phase(), PolicyProfileHandoffPhase::Active);
-    for (kind, transaction) in [(PolicyProfileHandoffKind::Rollback, 3)] {
+    {
+        let (kind, transaction) = (PolicyProfileHandoffKind::Rollback, 3);
         let settled = transport
             .execute_profile_handoff_step(&model, kind, TransactionId::from_raw(transaction))
             .unwrap();

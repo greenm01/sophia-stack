@@ -804,9 +804,7 @@ fn the_legacy_path_over_a_capable_card_is_accepted() {
 #[test]
 fn the_previous_cursor_schema_still_verifies() {
     let legacy = cursor_record("legacy_ioctl", 13, 0);
-    let schema_four = format!(
-        "sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates=13 hidden_updates=0 hardware_failures=0"
-    );
+    let schema_four = "sophia_live_session_cursor schema=4 path=legacy_ioctl moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 updates_primary_in_flight=4 buttons_routed=0 hardware_updates=13 hidden_updates=0 hardware_failures=0".to_string();
     let text = cursor_log().replace(&legacy, &schema_four);
     let report = cursor_verification(&text).expect("archive 0004's shape still reads");
     assert!(

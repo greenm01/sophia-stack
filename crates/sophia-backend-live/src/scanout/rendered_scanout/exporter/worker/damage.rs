@@ -158,8 +158,8 @@ fn slot_repaint_table(
                         .map(|rect| sophia_renderer_live::NativeCompositionDamageRect {
                             x: rect.x,
                             y: rect.y,
-                            width: i32::from(rect.width),
-                            height: i32::from(rect.height),
+                            width: rect.width,
+                            height: rect.height,
                         })
                         .collect(),
                 ));

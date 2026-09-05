@@ -757,13 +757,12 @@ fn a_first_candidate_deferred_from_an_in_flight_layout_queues_recovery() {
         "the deferred candidate needs a successor layout after the live epoch settles",
     );
     assert!(
-        layout
+        !layout
             .pending
             .as_ref()
             .unwrap()
             .staged_transactions
-            .get(&surface)
-            .is_none(),
+            .contains_key(&surface),
         "a candidate at 300x300 cannot be smuggled into the older 1278x1424 layout",
     );
 }

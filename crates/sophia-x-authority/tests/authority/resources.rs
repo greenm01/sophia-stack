@@ -1068,7 +1068,7 @@ fn offscreen_pixmap_upload_survives_copy_into_presented_window() {
         panic!("first window copy must replace its CPU buffer");
     };
     assert_eq!(snapshot.drawable, window);
-    assert!(snapshot.bytes.iter().any(|byte| *byte == 0x7f));
+    assert!(snapshot.bytes.contains(&0x7f));
 }
 
 #[test]
@@ -1147,7 +1147,7 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
         panic!("first software Present must replace the presentation buffer");
     };
     assert_eq!(snapshot.drawable, window);
-    assert!(snapshot.bytes.iter().any(|byte| *byte == 0x5a));
+    assert!(snapshot.bytes.contains(&0x5a));
     assert_eq!(
         response.transactions[0].target_buffer(),
         BufferSource::CpuBuffer {
@@ -1248,8 +1248,8 @@ fn software_present_materializes_pixmap_pixels_for_the_renderer() {
         .unwrap();
     let materialized = materialized.get(&snapshot.handle).unwrap();
     assert_eq!(materialized.generation, 2);
-    assert!(materialized.bytes.iter().any(|byte| *byte == 0x5a));
-    assert!(materialized.bytes.iter().any(|byte| *byte == 0x6b));
+    assert!(materialized.bytes.contains(&0x5a));
+    assert!(materialized.bytes.contains(&0x6b));
 }
 
 #[test]

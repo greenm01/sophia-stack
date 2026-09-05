@@ -526,9 +526,11 @@ fn spawn_x11_input_event_writer(
                         | XAuthorityPointerEventKind::Axis {
                             button, pressed, ..
                         } => {
-                            let button_mask = (button <= 5)
-                                .then_some(1_u16 << (u32::from(button) + 7))
-                                .unwrap_or(0);
+                            let button_mask = if button <= 5 {
+                                1_u16 << (u32::from(button) + 7)
+                            } else {
+                                0
+                            };
                             if pressed {
                                 state | button_mask
                             } else {

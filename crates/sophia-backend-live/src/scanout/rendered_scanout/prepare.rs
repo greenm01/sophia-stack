@@ -399,6 +399,12 @@ where
 }
 
 #[cfg(feature = "libdrm-events")]
+#[expect(
+    clippy::result_large_err,
+    reason = "the error is the prepared scanout handed back for reuse. Boxing \
+it would allocate on the submit path to move a value the caller already owns \
+and is about to use again"
+)]
 pub fn prepare_rendered_topology_head_from_prepared_scanout<Owner>(
     prepared: LivePreparedRenderedPrimaryPlaneScanout<Owner>,
     vrr_enabled: Option<bool>,

@@ -5,13 +5,12 @@
         .transpose()?
         .flatten();
     let monitor_notice = if active_output_topology_preparation.is_some() {
-        if let Some(notice) = polled_monitor_notice {
-            if deferred_output_topology_notice
+        if let Some(notice) = polled_monitor_notice
+            && deferred_output_topology_notice
                 .is_none_or(|deferred| notice.sequence > deferred.sequence)
             {
                 deferred_output_topology_notice = Some(notice);
             }
-        }
         None
     } else {
         polled_monitor_notice.or_else(|| deferred_output_topology_notice.take())
@@ -95,7 +94,7 @@
             Some(controller) => {
                 LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                     &controller.device_opener(),
-                    &mirror_grouping,
+                    mirror_grouping,
                     initial_head_mapping,
                     config.cursor_resolution.asset.clone(),
                 )

@@ -34,6 +34,10 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// A fixed set of resource snapshots beside the window/serial pairs observed
+/// with them.
+type ResourceSnapshotsWithWindows<const N: usize> = ([ResourceSnapshot; N], Vec<(u32, u64)>);
+
 const SESSION_PREFIX: &str = "desktop_comparison_session schema=1 status=ready ";
 const RESOURCE_INTERVAL: Duration = Duration::from_secs(1);
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -992,7 +996,7 @@ fn sample_process_populations<const N: usize>(
     proc_root: &Path,
     roots: [&BTreeSet<u32>; N],
     workload: &WorkloadOwner,
-) -> Result<([ResourceSnapshot; N], Vec<(u32, u64)>), String> {
+) -> Result<ResourceSnapshotsWithWindows<N>, String> {
     if N == 0 {
         return Err("process sampling requires at least one population".to_owned());
     }

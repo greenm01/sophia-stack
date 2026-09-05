@@ -114,7 +114,8 @@ fn public_profile_activation_promotes_local_slots_and_pauses_at_policy() {
             &mut executor,
         )
         .unwrap();
-    drop(executor);
+    // Ends the borrow; the executor holds nothing that needs dropping.
+    let _ = executor;
     let policy_effect = report.effect.unwrap();
 
     assert_eq!(
@@ -165,7 +166,8 @@ fn public_profile_activation_promotes_local_slots_and_pauses_at_policy() {
         &mut rollback_executor,
     )
     .unwrap();
-    drop(rollback_executor);
+    // Ends the borrow; the executor holds nothing that needs dropping.
+    let _ = rollback_executor;
     assert_eq!(
         rolled_back.phase(),
         sophia_config::DesktopProfileActivationPhase::Idle

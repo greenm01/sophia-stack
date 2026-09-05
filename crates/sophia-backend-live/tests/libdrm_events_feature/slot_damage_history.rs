@@ -90,8 +90,8 @@ fn slot_damage_covers(rects: &[sophia_protocol::Rect], probe: sophia_protocol::R
     rects.iter().any(|rect| {
         rect.x <= probe.x
             && rect.y <= probe.y
-            && rect.x + i32::from(rect.width) >= probe.x + i32::from(probe.width)
-            && rect.y + i32::from(rect.height) >= probe.y + i32::from(probe.height)
+            && rect.x + rect.width >= probe.x + probe.width
+            && rect.y + rect.height >= probe.y + probe.height
     })
 }
 

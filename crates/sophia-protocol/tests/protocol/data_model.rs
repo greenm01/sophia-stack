@@ -598,8 +598,8 @@ fn one_label_bound_is_shared_by_every_hop() {
 }
 
 fn content_variant(variant: u32, density_millis: u32) -> SurfaceContentVariant {
-    let width = i32::try_from((640_u64 * u64::from(density_millis) + 999) / 1_000).unwrap_or(0);
-    let height = i32::try_from((480_u64 * u64::from(density_millis) + 999) / 1_000).unwrap_or(0);
+    let width = i32::try_from((640_u64 * u64::from(density_millis)).div_ceil(1_000)).unwrap_or(0);
+    let height = i32::try_from((480_u64 * u64::from(density_millis)).div_ceil(1_000)).unwrap_or(0);
     SurfaceContentVariant {
         variant,
         source: BufferSource::CpuBuffer {

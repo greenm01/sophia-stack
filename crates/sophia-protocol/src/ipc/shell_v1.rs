@@ -407,7 +407,7 @@ fn validate_candidate(candidate: &ShellV1Candidate) -> Result<(), IpcCodecError>
     {
         return Err(IpcCodecError::InvalidRecord("shell_candidate"));
     }
-    if candidate.visible != !candidate.entries.is_empty() {
+    if candidate.visible == candidate.entries.is_empty() {
         return Err(IpcCodecError::InvalidRecord("shell_candidate_visibility"));
     }
     if let Some(reservation) = candidate.reservation {

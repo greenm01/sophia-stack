@@ -371,10 +371,10 @@ impl LiveProductionVisualRuntime {
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
         for surface in removed_surfaces {
-            if let Some(displayed) = self.displayed_surfaces.remove(surface) {
-                if let Some(native) = native_scanout.as_deref_mut() {
-                    native.evict_renderer_image(displayed.layer.image_id)?;
-                }
+            if let Some(displayed) = self.displayed_surfaces.remove(surface)
+                && let Some(native) = native_scanout.as_deref_mut()
+            {
+                native.evict_renderer_image(displayed.layer.image_id)?;
             }
         }
         Ok(())
@@ -586,7 +586,9 @@ impl LiveProductionVisualRuntime {
             .into_iter()
             .next()
             .ok_or("persistent backend runtime has no outputs")?;
-        drop(adapter);
+        // Ends the borrow rather than releasing a resource: the adapter owns
+        // nothing that needs dropping here.
+        let _ = adapter;
         if !native_head_frames.is_empty() {
             return Err("native head composition named an unknown logical output".into());
         }

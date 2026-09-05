@@ -81,12 +81,9 @@ pub fn check(text: &str, log: &str) -> Result<Vec<String>, String> {
     // Nothing may flip while the overlay is up. An activation ends the
     // eligibility episode, so a flip inside the window would be a frame that
     // reached the plane under a stamp the activation invalidated.
-    if let Some((line, _)) = episodes(text)
-        .filter(|(index, status)| {
-            *status == "flipped" && *index > window.activated && *index < window.withdrawn
-        })
-        .next()
-    {
+    if let Some((line, _)) = episodes(text).find(|(index, status)| {
+        *status == "flipped" && *index > window.activated && *index < window.withdrawn
+    }) {
         return Err(format!(
             "a client buffer reached the plane at line {line} while the overlay was up: {log}"
         ));

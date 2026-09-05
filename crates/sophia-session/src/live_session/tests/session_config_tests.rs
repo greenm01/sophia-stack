@@ -1114,13 +1114,13 @@ fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
 
 #[test]
 fn application_admission_outlives_a_policy_response() {
-    assert!(SESSION_APP_ADMISSION_TIMEOUT_MSEC > SESSION_POLICY_RESPONSE_TIMEOUT_MSEC);
+    const { assert!(SESSION_APP_ADMISSION_TIMEOUT_MSEC > SESSION_POLICY_RESPONSE_TIMEOUT_MSEC) };
 }
 
 #[test]
 fn policy_deadlines_follow_response_and_admission_order() {
-    assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC > 3_000);
-    assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC < SESSION_APP_ADMISSION_TIMEOUT_MSEC);
+    const { assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC > 3_000) };
+    const { assert!(SESSION_POLICY_RESPONSE_TIMEOUT_MSEC < SESSION_APP_ADMISSION_TIMEOUT_MSEC) };
 }
 
 #[test]

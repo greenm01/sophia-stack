@@ -125,14 +125,10 @@ where
     }
     *rendered_primary_plane_scanout_in_flight_ticks = 0;
     *rendered_primary_plane_runtime_scanout_state = runtime_scanout_state;
-    if matches!(
-        runtime_scanout_state,
-        Some(RuntimeScanoutState::Rejected | RuntimeScanoutState::Deferred)
-    ) {
-        push_pending_runtime_scanout_state(
-            pending_runtime_scanout_states,
-            runtime_scanout_state.expect("matched runtime scanout state"),
-        );
+    if let Some(state @ (RuntimeScanoutState::Rejected | RuntimeScanoutState::Deferred)) =
+        runtime_scanout_state
+    {
+        push_pending_runtime_scanout_state(pending_runtime_scanout_states, state);
     }
 
     LiveTrackedRenderedPrimaryPlaneScanoutSubmitReport {

@@ -185,7 +185,7 @@ pub fn decode_x_window_type_facts(
     if record.format != 32 {
         return Some(Err(XWindowTypeDecodeError::InvalidFormat));
     }
-    if record.bytes.is_empty() || record.bytes.len() % 4 != 0 {
+    if record.bytes.is_empty() || !record.bytes.len().is_multiple_of(4) {
         return Some(Err(XWindowTypeDecodeError::InvalidLength));
     }
 

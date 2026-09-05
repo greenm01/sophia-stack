@@ -581,13 +581,7 @@ impl PolicyProjectionReducer {
         &self,
         request: &PolicyProjectionRequest,
         proposal: &PolicyProjectionProposal,
-    ) -> Result<
-        (
-            BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
-            BTreeMap<OutputId, PolicyProjectionOutputStatus>,
-        ),
-        PolicyProjectionError,
-    > {
+    ) -> Result<IndicatorsAndStatusesByOutput, PolicyProjectionError> {
         if proposal.indicators.len() > POLICY_MAX_INDICATORS
             || proposal.output_statuses.len() > POLICY_MAX_OUTPUT_STATUSES
         {
@@ -654,3 +648,9 @@ impl PolicyProjectionReducer {
 mod validation;
 
 use validation::*;
+
+/// Indicators and output status, each grouped by the output they describe.
+type IndicatorsAndStatusesByOutput = (
+    BTreeMap<OutputId, Vec<PolicyProjectionIndicator>>,
+    BTreeMap<OutputId, PolicyProjectionOutputStatus>,
+);

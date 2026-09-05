@@ -395,15 +395,19 @@ pub fn resolve_live_output_topology_candidate(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mirror_grouping = NativeMirrorGrouping::new(candidate.groups.iter().filter_map(|group| {
-        (group.members.len() > 1).then(|| {
-            group
-                .members
-                .iter()
-                .map(|member| names[&member.head].to_owned())
-                .collect::<Vec<_>>()
-        })
-    }))
+    let mirror_grouping = NativeMirrorGrouping::new(
+        candidate
+            .groups
+            .iter()
+            .filter(|&group| group.members.len() > 1)
+            .map(|group| {
+                group
+                    .members
+                    .iter()
+                    .map(|member| names[&member.head].to_owned())
+                    .collect::<Vec<_>>()
+            }),
+    )
     .map_err(LiveOutputAuthorityProjectionError::InvalidMirrorGrouping)?;
     let primary_output = output_ids[usize::from(candidate.primary_group_index)];
     let primary_heads = candidate

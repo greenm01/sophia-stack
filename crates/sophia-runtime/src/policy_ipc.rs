@@ -165,7 +165,7 @@ struct ProjectionTransfer {
 ///
 /// Socket I/O may queue a complete transfer, but only `settle_queued` can
 /// admit it. This preserves the connection epoch across a worker disconnect.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct PolicyConnectionState {
     connected: bool,
     negotiated: bool,
@@ -175,21 +175,6 @@ pub struct PolicyConnectionState {
     used_transactions: BTreeSet<TransactionId>,
     transfer: Option<ProjectionTransfer>,
     queued: Option<AssembledPolicyProjection>,
-}
-
-impl Default for PolicyConnectionState {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            negotiated: false,
-            connection_epoch: 0,
-            selected_revision: 0,
-            selected_capabilities: 0,
-            used_transactions: BTreeSet::new(),
-            transfer: None,
-            queued: None,
-        }
-    }
 }
 
 impl PolicyConnectionState {

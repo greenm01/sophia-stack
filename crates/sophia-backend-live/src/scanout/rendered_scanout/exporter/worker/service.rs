@@ -206,11 +206,9 @@ where
                 });
             }
             WorkerCommand::ClearImages { completion_sender } => {
-                let result = context.as_mut().map_or(Ok(0), |context| {
-                    context
-                        .clear_renderer_images()
-                        .map_err(LiveRendererScanoutBufferExportDetail::from)
-                });
+                let result = context
+                    .as_mut()
+                    .map_or(Ok(0), |context| context.clear_renderer_images());
                 let persistent_render_stats = context.as_ref().map_or_else(
                     LiveNativePersistentRenderStats::default,
                     NativeGbmRenderedScanoutContext::persistent_render_stats,

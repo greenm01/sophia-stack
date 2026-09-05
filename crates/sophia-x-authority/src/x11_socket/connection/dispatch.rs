@@ -1184,15 +1184,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         .outputs
                         .iter()
                         .any(|output| matches!(output, crate::XClientOutput::Error(_)));
-                    let removed_surface_routes = dispatch_succeeded
-                        .then(|| {
+                    let removed_surface_routes = if dispatch_succeeded { {
                             output
                                 .response
                                 .as_ref()
                                 .map(|response| response.removed_surfaces.clone())
                                 .unwrap_or_default()
-                        })
-                        .unwrap_or_default();
+                        } } else { Default::default() };
                     let present_configure = dispatch_succeeded
                         .then_some(hierarchy_geometry)
                         .flatten()
@@ -1922,7 +1920,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             outputs: Vec::new(),
             metadata_candidates: Vec::new(),
         };
-        let result = observer(X11DispatchObservation {
+        
+        observer(X11DispatchObservation {
             transaction,
             client,
             admission: admission_lease.as_ref().map(|lease| lease.context()),
@@ -1945,8 +1944,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             released_dma_bufs: release.released_dma_bufs,
             released_fences: release.released_fences,
             server_reply_fd_count: 0,
-        });
-        result
+        })
     };
     let admission_result = admission_lease.as_mut().map_or(Ok(()), |lease| {
         lease.revoke().map_err(|error| {

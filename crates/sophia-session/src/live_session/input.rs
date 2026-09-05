@@ -167,14 +167,10 @@ fn place_pointer_event_for_routing(
     )
 }
 
-fn input_projection_for_pointer<'a>(
-    projections: Option<&'a [sophia_backend_live::LivePresentedInputProjection]>,
-    pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
-    output_index: Option<usize>,
-    fallback_layers: &'a [LayerSnapshot],
-    fallback_output: Option<sophia_protocol::OutputId>,
-    fallback_epoch: u64,
-) -> (
+/// What the pointer path needs from a presented projection: the layers, the
+/// indicator and chrome hit targets with their rectangles, and the output and
+/// epoch they belong to.
+type PointerInputProjection<'a> = (
     &'a [LayerSnapshot],
     &'a [sophia_engine::IndicatorChromeHitTarget],
     Option<sophia_protocol::Rect>,
@@ -182,7 +178,16 @@ fn input_projection_for_pointer<'a>(
     Option<sophia_protocol::Rect>,
     Option<sophia_protocol::OutputId>,
     u64,
-) {
+);
+
+fn input_projection_for_pointer<'a>(
+    projections: Option<&'a [sophia_backend_live::LivePresentedInputProjection]>,
+    pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
+    output_index: Option<usize>,
+    fallback_layers: &'a [LayerSnapshot],
+    fallback_output: Option<sophia_protocol::OutputId>,
+    fallback_epoch: u64,
+) -> PointerInputProjection<'a> {
     output_index
         .and_then(|index| pointer_outputs.and_then(|outputs| outputs.get(index)))
         .and_then(|output| {

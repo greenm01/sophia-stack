@@ -1,0 +1,21 @@
+# Two clippy thresholds this workspace sets deliberately. Both are style
+# limits whose defaults are tuned for application code; the code they fire on
+# here is doing the thing the lint is trying to discourage, on purpose, and
+# for a stated reason. Anything past these numbers is still a smell and still
+# reported.
+
+# Draw calls, scanout exports and transport constructors take parameters that
+# are genuinely independent of each other: a texture and its source rect and
+# its clip and its sampling mode are not a "configuration", and grouping them
+# would invent a struct whose only purpose is to lower a count. Ten is the
+# widest of them; an eleventh argument means the function has grown a second
+# job.
+too-many-arguments-threshold = 10
+
+# Several senders return the value they could not send, so a caller can
+# recover it rather than reconstructing it: `SendError<T>` and `TrySendError<T>`
+# carry the route, `try_send` on the policy transport carries the command back,
+# and the scanout preparers hand back the prepared scanout for reuse. Boxing
+# those would allocate on the submit path and, worse, hide that the error is
+# the value. The largest is 240 bytes.
+large-error-threshold = 256

@@ -1507,9 +1507,9 @@ fn decode_placement_record(
 }
 
 fn encode_presentation(state: PolicyPresentationState) -> u16 {
-    u16::from(state.fullscreen) * POLICY_PRESENTATION_FULLSCREEN
-        | u16::from(state.maximized) * POLICY_PRESENTATION_MAXIMIZED
-        | u16::from(state.minimized) * POLICY_PRESENTATION_MINIMIZED
+    (u16::from(state.fullscreen) * POLICY_PRESENTATION_FULLSCREEN)
+        | (u16::from(state.maximized) * POLICY_PRESENTATION_MAXIMIZED)
+        | (u16::from(state.minimized) * POLICY_PRESENTATION_MINIMIZED)
 }
 
 fn encode_rgb(color: WmRgb8) -> u32 {

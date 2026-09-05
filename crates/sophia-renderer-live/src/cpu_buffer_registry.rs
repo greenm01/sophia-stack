@@ -151,6 +151,10 @@ impl LiveCpuBufferRegistry {
         self.buffers.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.buffers.is_empty()
+    }
+
     pub fn total_bytes(&self) -> usize {
         self.buffers.values().fold(0usize, |total, buffer| {
             total.saturating_add(buffer.bytes.len())

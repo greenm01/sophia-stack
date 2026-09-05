@@ -32,6 +32,13 @@ pub enum OutputTransportServiceCommand {
     Stop,
 }
 
+/// The service's sender is gone, so no further event can arrive.
+///
+/// A named type rather than `()`, so a caller reads why the call failed
+/// instead of inferring it from the one thing that can go wrong today.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OutputTransportServiceDisconnected;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutputTransportServiceEvent {
     Connected {
@@ -123,11 +130,13 @@ impl OutputTransportService {
         self.commands.send(command).map_err(|error| error.0)
     }
 
-    pub fn try_event(&self) -> Result<Option<OutputTransportServiceEvent>, ()> {
+    pub fn try_event(
+        &self,
+    ) -> Result<Option<OutputTransportServiceEvent>, OutputTransportServiceDisconnected> {
         match self.events.try_recv() {
             Ok(event) => Ok(Some(event)),
             Err(TryRecvError::Empty) => Ok(None),
-            Err(TryRecvError::Disconnected) => Err(()),
+            Err(TryRecvError::Disconnected) => Err(OutputTransportServiceDisconnected),
         }
     }
 

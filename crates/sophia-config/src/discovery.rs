@@ -67,10 +67,10 @@ impl fmt::Display for ConfigIoError {
 }
 
 pub fn default_user_config_root() -> Option<PathBuf> {
-    if let Some(root) = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
-        if root.is_absolute() {
-            return Some(root);
-        }
+    if let Some(root) = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+        && root.is_absolute()
+    {
+        return Some(root);
     }
     std::env::var_os("HOME")
         .map(PathBuf::from)

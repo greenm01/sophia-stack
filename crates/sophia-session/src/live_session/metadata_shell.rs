@@ -2,6 +2,10 @@ use super::*;
 mod tabs;
 use tabs::LiveTabSession;
 
+/// A shell observation: which surface it names, on which output, at which
+/// generation. Absent when the shell has nothing to report.
+type ShellSurfaceObservation = Option<(Option<SurfaceId>, sophia_protocol::OutputId, u64)>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum LiveMetadataShellPoll {
     Healthy,
@@ -550,10 +554,7 @@ impl LiveMetadataShell {
     pub(super) fn poll_activation(
         &mut self,
         broker: &LiveMetadataBroker,
-    ) -> Result<
-        Option<(Option<SurfaceId>, sophia_protocol::OutputId, u64)>,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<ShellSurfaceObservation, Box<dyn std::error::Error>> {
         let Some(pending) = self.activating.as_ref() else {
             return Ok(None);
         };

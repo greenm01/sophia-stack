@@ -81,16 +81,22 @@ fn native_capabilities_project_in_engine_semantic_order() {
 fn native_projection_rejects_cross_owner_inconsistency() {
     let capability = capability(1, "DP-1", 2560, 1440, true);
     assert_eq!(
-        project_native_output_topology(&[capability.clone()], &[output(1, 1920, 1080, 1)]),
+        project_native_output_topology(
+            std::slice::from_ref(&capability),
+            &[output(1, 1920, 1080, 1)]
+        ),
         Err(NativeOutputTopologyProjectionError::PixelSizeMismatch(1))
     );
     assert_eq!(
-        project_native_output_topology(&[capability.clone()], &[output(2, 2560, 1440, 1)]),
+        project_native_output_topology(
+            std::slice::from_ref(&capability),
+            &[output(2, 2560, 1440, 1)]
+        ),
         Err(NativeOutputTopologyProjectionError::MissingCapability(2))
     );
     assert_eq!(
         project_native_output_topology(
-            &[capability.clone()],
+            std::slice::from_ref(&capability),
             &[output(1, 2560, 1440, 1), output(1, 2560, 1440, 1),]
         ),
         Err(NativeOutputTopologyProjectionError::DuplicateOutput(1))

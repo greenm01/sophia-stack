@@ -151,7 +151,7 @@ impl XSoftwareBufferStore {
         let mut presentation_damage = Vec::with_capacity(damage.len());
         for rect in damage {
             if let Some(rect) = copy_buffer_region(
-                &source,
+                source,
                 presentation_buffer,
                 *rect,
                 source_offset_x,

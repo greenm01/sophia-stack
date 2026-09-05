@@ -89,9 +89,9 @@
             }
         };
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
-        if session_controls.pending_len() == 0 {
-            native_frame_control_priority_cycles = 0;
-        } else if native_frame_service_preemption {
+        // Nothing waiting, or the frame service already preempted: either way
+        // the control path has no backlog to earn priority for.
+        if session_controls.pending_len() == 0 || native_frame_service_preemption {
             native_frame_control_priority_cycles = 0;
         } else {
             native_frame_control_priority_cycles =
@@ -100,7 +100,7 @@
         match authority_batch {
             Ok(batch) => {
                 let ingress = drain_queued_authority_batches(
-                    &authority_receiver,
+                    authority_receiver,
                     &mut pending_authority_batches,
                     AUTHORITY_DRAIN_CAPACITY,
                     Duration::from_millis(2),
@@ -400,7 +400,7 @@
                             )?;
                         }
                     }
-                    let layout_observation = layout.observe_authority_batch(&batch);
+                    let layout_observation = layout.observe_authority_batch(batch);
                     if layout_observation.client_route_invalid {
                         return Err("frontend surface-owner route changed without retirement".into());
                     }
@@ -485,8 +485,8 @@
                         );
                     }
                 }
-                if wm_update.is_none() {
-                    if let Some(result) =
+                if wm_update.is_none()
+                    && let Some(result) =
                         layout.expire_pending(&mut session_controls)?
                     {
                         wm_update = Some(apply_wm_commit_result!(
@@ -494,7 +494,6 @@
                             focus.focused_surface(seat)
                         ));
                     }
-                }
                 if wm_update.is_none()
                     && layout.pending.is_none()
                     && let Some(surface) = layout.next_unmanaged_surface()
@@ -644,7 +643,7 @@
                 // discovering one batch at a time.
                 if !output_topology_quarantined {
                     let ingress = drain_queued_authority_batches(
-                        &authority_receiver,
+                        authority_receiver,
                         &mut pending_authority_batches,
                         AUTHORITY_DRAIN_CAPACITY,
                         Duration::from_millis(2),

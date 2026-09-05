@@ -329,8 +329,7 @@ fn verify_checksums(run: &Path) -> Result<(), String> {
 fn parse_identity(text: &str) -> Result<Identity, String> {
     let line = text
         .lines()
-        .filter(|line| line.starts_with(IDENTITY_PREFIX))
-        .last()
+        .rfind(|line| line.starts_with(IDENTITY_PREFIX))
         .ok_or("direct-scanout evidence has no bound identity")?;
     let fields = parse_fields(
         line.strip_prefix(IDENTITY_PREFIX)

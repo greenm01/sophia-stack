@@ -53,7 +53,7 @@ pub enum OutputProposalAdmission {
 /// The active candidate is never replaced in place. One complete latest
 /// proposal may wait behind it; replacing that queued value returns the old
 /// identity so the owner can emit an explicit stale terminal outcome.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct OutputConnectionState {
     connected: bool,
     negotiated: bool,
@@ -62,20 +62,6 @@ pub struct OutputConnectionState {
     used_transactions: BTreeSet<TransactionId>,
     active: Option<AdmittedOutputProposal>,
     queued: Option<AdmittedOutputProposal>,
-}
-
-impl Default for OutputConnectionState {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            negotiated: false,
-            connection_epoch: 0,
-            selected_capabilities: 0,
-            used_transactions: BTreeSet::new(),
-            active: None,
-            queued: None,
-        }
-    }
 }
 
 impl OutputConnectionState {

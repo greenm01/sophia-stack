@@ -231,7 +231,7 @@ fn present_candidate_preserves_unrelated_committed_surface_identity() {
             .map(|state| state.committed_generation),
         Some(bar_generation)
     );
-    assert_eq!(coordinator.committed_surfaces(), [bar.clone()]);
+    assert_eq!(coordinator.committed_surfaces(), std::slice::from_ref(&bar));
     let commit = coordinator.apply_prepared_surface_commit(prepared);
     assert_eq!(commit.outcome, TransactionOutcome::Committed);
     assert_eq!(coordinator.committed_surfaces().len(), 2);

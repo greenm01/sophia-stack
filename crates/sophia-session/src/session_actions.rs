@@ -95,9 +95,7 @@ impl SessionLaunchQueue {
         &mut self,
         surface: SurfaceId,
     ) -> Option<SessionLaunchSurfaceObservation> {
-        let Some(admission) = self.admission.as_mut() else {
-            return None;
-        };
+        let admission = self.admission.as_mut()?;
         if admission
             .observed_surfaces()
             .any(|candidate| candidate == surface)

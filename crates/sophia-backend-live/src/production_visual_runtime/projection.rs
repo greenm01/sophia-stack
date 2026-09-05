@@ -38,15 +38,15 @@ impl LiveProductionVisualRuntime {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
-            if let Some(bounds) = self.outputs.logical_viewport(output) {
-                if let Ok(list) = self.display_list_for_output(
+            if let Some(bounds) = self.outputs.logical_viewport(output)
+                && let Ok(list) = self.display_list_for_output(
                     output,
                     bounds,
                     self.production.committed_surfaces(),
                     &self.presentation_order,
-                ) {
-                    self.tab_frames.insert(output, list);
-                }
+                )
+            {
+                self.tab_frames.insert(output, list);
             }
             let (chrome_targets, chrome_occlusion) = self
                 .outputs
@@ -116,10 +116,8 @@ impl LiveProductionVisualRuntime {
             ) = native_scanout.presented_output_frame(output).map_or_else(
                 || (Vec::new(), Vec::new(), None, Vec::new(), None, 0),
                 |presented| {
-                    let logical_viewport = self
-                        .outputs
-                        .logical_viewport(output)
-                        .unwrap_or(Rect::default());
+                    let logical_viewport =
+                        self.outputs.logical_viewport(output).unwrap_or_default();
                     let (chrome_targets, chrome_occlusion) =
                         presented_chrome_projection(presented, logical_viewport);
                     let (descriptor_targets, descriptor_occlusion) =
@@ -253,9 +251,11 @@ fn direct_descriptor_projection(
             || (Vec::new(), None),
             |overlay| {
                 (
-                    interactive
-                        .then(|| overlay.targets.clone())
-                        .unwrap_or_default(),
+                    if interactive {
+                        overlay.targets.clone()
+                    } else {
+                        Default::default()
+                    },
                     Some(overlay.geometry),
                 )
             },

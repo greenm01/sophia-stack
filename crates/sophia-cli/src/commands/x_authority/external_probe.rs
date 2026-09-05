@@ -361,10 +361,10 @@ fn run_x_authority_external_probe_smoke(
         .into());
     }
 
-    if !require_transactions
-        && !output.status.success()
-        && !(allow_proof_kill_without_transactions && proof_window_killed)
-        && !(allow_client_failure_without_x_error && requests > 0)
+    if !(require_transactions
+        || output.status.success()
+        || (allow_proof_kill_without_transactions && proof_window_killed)
+        || (allow_client_failure_without_x_error && requests > 0))
     {
         return Err(format!(
             "{label} probe failed for {display}: status={status} requests={requests} opcode_count={opcode_count} opcodes={opcodes} details={details} stderr={} first_error={}",

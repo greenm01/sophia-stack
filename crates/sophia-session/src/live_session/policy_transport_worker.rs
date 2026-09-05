@@ -23,7 +23,9 @@ pub(super) enum PolicyTransportCommand {
     Cycle {
         snapshot_transaction: TransactionId,
         request_transaction: TransactionId,
-        scene: PolicySceneSnapshot,
+        /// Boxed because the scene is most of this variant, and every other
+        /// command in the same queue would otherwise be sized by it.
+        scene: Box<PolicySceneSnapshot>,
         actions: Vec<PolicyActionRegistration>,
         classifications: Vec<sophia_protocol::PolicySurfaceClassification>,
         request: PolicyProjectionRequest,

@@ -5,6 +5,14 @@ use sophia_renderer_live::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
+/// What one CPU cycle produced: the submission, the surfaces it committed,
+/// and how far the cycle got.
+type CpuCycleOutcome = (
+    LiveProductionCpuCycleSubmission<crate::LiveBackendRuntimeTickReport>,
+    Vec<CommittedSurfaceState>,
+    LiveProductionCpuProgress,
+);
+
 mod authority;
 mod compositor_graphics;
 mod native;
@@ -504,14 +512,7 @@ impl LiveProductionVisualRuntime {
     pub fn run_cpu_production_cycle(
         &mut self,
         request: LiveProductionCycleRequest<'_>,
-    ) -> Result<
-        (
-            LiveProductionCpuCycleSubmission<crate::LiveBackendRuntimeTickReport>,
-            Vec<CommittedSurfaceState>,
-            LiveProductionCpuProgress,
-        ),
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<CpuCycleOutcome, Box<dyn std::error::Error>> {
         let LiveProductionCycleRequest {
             batch,
             scene,

@@ -103,14 +103,16 @@ impl VisibilityObservation {
 }
 
 pub(super) enum VisibilityProbe {
-    X11(X11Probe),
+    /// Boxed because an X11 probe is far larger than a Niri one, and every
+    /// value of this enum would otherwise carry the difference.
+    X11(Box<X11Probe>),
     Niri(NiriProbe),
 }
 
 impl VisibilityProbe {
     pub(super) fn connect(stack: &str) -> Result<Self, String> {
         match stack {
-            "sophia" | "xlibre-xmonad" => X11Probe::connect().map(Self::X11),
+            "sophia" | "xlibre-xmonad" => X11Probe::connect().map(Box::new).map(Self::X11),
             "niri" => NiriProbe::connect().map(Self::Niri),
             _ => Err("prepared schedule contains an unknown stack".to_owned()),
         }

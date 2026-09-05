@@ -542,7 +542,7 @@ fn children(node: &KdlNode) -> Result<&KdlDocument, ConfigParseError> {
     })
 }
 
-fn entry_argument<'a>(node: &'a KdlNode, index: usize) -> Result<&'a KdlEntry, ConfigParseError> {
+fn entry_argument(node: &KdlNode, index: usize) -> Result<&KdlEntry, ConfigParseError> {
     node.entry(index).ok_or_else(|| {
         ConfigParseError::Schema(format!(
             "missing argument {index} on node {:?}",
@@ -560,12 +560,12 @@ fn property<'a>(node: &'a KdlNode, name: &str) -> Result<&'a KdlValue, ConfigPar
     })
 }
 
-fn string_argument<'a>(
-    node: &'a KdlNode,
+fn string_argument(
+    node: &KdlNode,
     index: usize,
     minimum: usize,
     maximum: usize,
-) -> Result<&'a str, ConfigParseError> {
+) -> Result<&str, ConfigParseError> {
     bounded_string(
         entry_argument(node, index)?.value(),
         minimum,

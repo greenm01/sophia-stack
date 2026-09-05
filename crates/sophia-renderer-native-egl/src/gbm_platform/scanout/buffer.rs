@@ -15,7 +15,7 @@ pub struct NativeGbmOwnedScanoutBuffer {
     _buffer: Option<gbm::BufferObject<()>>,
     _egl_surface: Option<NativeEglSurfaceOwner>,
     _surface: Option<gbm::Surface<()>>,
-    _frame_surface: Option<std::sync::Arc<NativeFrameSurface>>,
+    _frame_surface: Option<std::rc::Rc<NativeFrameSurface>>,
 }
 
 #[derive(Debug)]

@@ -120,7 +120,7 @@ fn create_native_render_target<T: std::os::fd::AsFd>(
 ) -> Result<
     (
         NativeRenderTarget,
-        std::sync::Arc<NativeFrameSurface>,
+        std::rc::Rc<NativeFrameSurface>,
         std::time::Duration,
     ),
     NativeGbmScanoutBufferExportDetail,
@@ -194,7 +194,7 @@ fn create_native_frame_surface<T: std::os::fd::AsFd>(
     height: u32,
     config: khronos_egl::Config,
     candidate: &RenderedScanoutCandidate,
-) -> Result<std::sync::Arc<NativeFrameSurface>, NativeGbmScanoutBufferExportDetail> {
+) -> Result<std::rc::Rc<NativeFrameSurface>, NativeGbmScanoutBufferExportDetail> {
     use gbm::AsRaw as _;
 
     let gbm_surface = create_rendered_scanout_surface(
@@ -213,7 +213,7 @@ fn create_native_frame_surface<T: std::os::fd::AsFd>(
         return Err(NativeGbmScanoutBufferExportDetail::EglSurfaceUnavailable);
     };
     trace_native_lifecycle("frame_surface_created");
-    Ok(std::sync::Arc::new(NativeFrameSurface {
+    Ok(std::rc::Rc::new(NativeFrameSurface {
         egl_surface: NativeEglSurfaceOwner {
             destroy_surface: unsafe {
                 std::mem::transmute::<
@@ -232,7 +232,7 @@ fn render_native_target_frame(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
     target: &mut NativeRenderTarget,
-    surface: std::sync::Arc<NativeFrameSurface>,
+    surface: std::rc::Rc<NativeFrameSurface>,
     pixels: &[u8],
 ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
     let egl_surface = surface.egl_surface();
@@ -275,7 +275,7 @@ fn render_native_target_dmabuf(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
     target: &mut NativeRenderTarget,
-    surface: std::sync::Arc<NativeFrameSurface>,
+    surface: std::rc::Rc<NativeFrameSurface>,
     frame: NativeDmaBufFrame<'_>,
 ) -> Result<NativeGbmOwnedScanoutBuffer, NativeGbmScanoutBufferExportDetail> {
     const EGL_LINUX_DMA_BUF_EXT: khronos_egl::Enum = 0x3270;
@@ -427,7 +427,7 @@ fn render_native_target_composition(
     egl: &khronos_egl::DynamicInstance<khronos_egl::EGL1_5>,
     display: khronos_egl::Display,
     target: &mut NativeRenderTarget,
-    surface: std::sync::Arc<NativeFrameSurface>,
+    surface: std::rc::Rc<NativeFrameSurface>,
     import_cache: &mut NativeDmaBufImportCache,
     renderer_images: &std::collections::BTreeMap<NativeRendererImageId, NativeRendererImage>,
     frame: NativeCompositionFrame<'_>,

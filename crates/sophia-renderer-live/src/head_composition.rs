@@ -193,7 +193,7 @@ pub fn lower_head_composition_plan_with_caches(
                 let source = sources
                     .iter()
                     .find(|source| source.surface == *surface && source.source == binding.source)
-                    .ok_or_else(|| match binding.source {
+                    .ok_or(match binding.source {
                         BufferSource::CpuBuffer { handle } => {
                             LiveHeadCompositionLoweringError::MissingCpuSource(handle)
                         }
@@ -271,7 +271,7 @@ pub fn lower_head_composition_plan_with_caches(
         let source = sources
             .iter()
             .find(|source| source.source == cursor.source)
-            .ok_or_else(|| match cursor.source {
+            .ok_or(match cursor.source {
                 BufferSource::CpuBuffer { handle } => {
                     LiveHeadCompositionLoweringError::MissingCpuSource(handle)
                 }

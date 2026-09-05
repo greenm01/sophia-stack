@@ -78,7 +78,9 @@ fn unequal_mirror_heads_emit_one_deduplicated_density_union() {
         ),
     ];
     let mut tracker = SurfaceRasterRequirementTracker::new();
-    let first = tracker.reconcile(&[snapshot.clone()], &targets).unwrap();
+    let first = tracker
+        .reconcile(std::slice::from_ref(&snapshot), &targets)
+        .unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].logical_extent, logical);
     assert_eq!(

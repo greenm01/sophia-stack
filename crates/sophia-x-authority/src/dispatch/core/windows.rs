@@ -79,12 +79,10 @@ fn dispatch_core_window_request(
                     let mut response = runtime.apply(packet);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
-                    {
-                        if let Err(error) = runtime.set_window_parent(namespace, *window, parent) {
+                        && let Err(error) = runtime.set_window_parent(namespace, *window, parent) {
                             let _ = runtime.destroy_window(namespace, *window);
                             response = XAuthorityResponsePacket::rejected(transaction, error);
                         }
-                    }
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
                     {

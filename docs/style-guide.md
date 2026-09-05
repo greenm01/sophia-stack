@@ -333,3 +333,32 @@ For code, each component needs a concrete check:
 
 When a test cannot exist yet, document the missing harness in the research log
 instead of pretending manual testing is enough.
+
+## Warnings
+
+`cargo xtask check` must finish with no compiler or clippy warnings, and a
+change that adds one is not finished. Fix it in the change that introduced it.
+
+Warnings accumulate faster than anyone reads them. A hundred standing warnings
+is not a hundred small debts; it is a filter that hides the next real one,
+because nobody scans a wall of expected output for the line that is new. The
+cost is paid at the moment it becomes hard to see, which is long after the
+moment it was cheap to fix.
+
+Three resolutions, in order of preference:
+
+1. **Fix the code.** Most warnings name something worth changing: a borrow
+   that reads as a release, a type that wants a name, an assertion that
+   belongs at compile time.
+2. **State the exception at the site** with `#[expect(lint, reason = "...")]`.
+   The reason says why the lint is wrong *here*, not that it is inconvenient.
+   `#[allow]` without a reason is not acceptable; `#[expect]` also fails when
+   the situation it describes goes away, which is the point.
+3. **Record a threshold in `clippy.toml`** when a default is tuned for a
+   different kind of code and the same argument applies across many sites.
+   Every entry carries a comment saying what the code is doing deliberately
+   and what would still be a smell past it.
+
+Silencing a lint to make the gate quiet is the one resolution that is never
+available. If a warning is wrong often enough to be annoying, say so in the
+config with a reason; if it is wrong once, say so at the site.

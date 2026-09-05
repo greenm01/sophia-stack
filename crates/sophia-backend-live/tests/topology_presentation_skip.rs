@@ -200,6 +200,12 @@ impl Fixture {
             .unwrap();
     }
 
+    #[expect(
+        dead_code,
+        reason = "kept beside the fixture it belongs to; the \
+current tests build their batches inline, and removing it would make the \
+next one that needs a batch reinvent it"
+    )]
     fn batch(&self, group: LiveProductionAuthorityGroup) -> LiveProductionAuthorityBatch {
         LiveProductionAuthorityBatch {
             groups: vec![group],

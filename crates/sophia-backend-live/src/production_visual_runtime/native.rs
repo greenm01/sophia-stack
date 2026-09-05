@@ -363,7 +363,7 @@ impl LiveProductionVisualRuntime {
     /// and only the attributed counter differs.
     fn skip_in_flight_present(
         &mut self,
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
         attribute: impl FnOnce(&mut Self),
     ) -> Option<LiveProductionSubmittedPresent> {
         let skipped = self
@@ -371,7 +371,7 @@ impl LiveProductionVisualRuntime {
             .take_submitted()
             .or_else(|| self.present_scheduler.take_rendering());
         if let Some(present) = skipped.as_ref() {
-            if let Some(native_scanout) = native_scanout.as_deref_mut() {
+            if let Some(native_scanout) = native_scanout {
                 let _ = native_scanout.rollback_renderer_image(present.displayed_layer.image_id);
             }
             if self.reject_gpu_presentation(present.transaction) {
@@ -425,7 +425,7 @@ impl LiveProductionVisualRuntime {
 
     fn detach_native_scanout(
         &mut self,
-        mut native_scanout: Option<&mut LiveProductionNativeScanout>,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
         outputs: &[sophia_engine::HeadlessOutput],
         outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
@@ -435,11 +435,10 @@ impl LiveProductionVisualRuntime {
                 .as_deref()
                 .map_or(0, LiveProductionNativeScanout::head_scanout_in_flight_count),
         );
-        let skipped_present =
-            self.skip_in_flight_present(native_scanout.as_deref_mut(), |runtime| {
-                runtime.native_suspend_present_rejections =
-                    runtime.native_suspend_present_rejections.saturating_add(1);
-            });
+        let skipped_present = self.skip_in_flight_present(native_scanout, |runtime| {
+            runtime.native_suspend_present_rejections =
+                runtime.native_suspend_present_rejections.saturating_add(1);
+        });
         self.reject_software_presents();
         let invalidation_epoch = self
             .input_projections

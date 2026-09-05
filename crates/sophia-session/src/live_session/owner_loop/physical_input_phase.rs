@@ -983,22 +983,20 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         let output_bounds=wm_output_bounds(&outputs);
                         if let Some(output)=outputs.iter().find(|o|o.id==shell_output).copied() {
                             let activation_surfaces=live_shell_activation_surfaces(&layout.layers,&layout.presentation_roles);
-                            if let Some(surface)=surface.filter(|s|activation_surfaces.contains(s)) {
-                                if let Some(wm)=wm_session.as_mut(){
+                            if let Some(surface)=surface.filter(|s|activation_surfaces.contains(s))
+                                && let Some(wm)=wm_session.as_mut(){
                                     let admitted=wm.enqueue_focus(surface,&layout,output)?;
                                     crate::session_println!("sophia_live_metadata_shell schema=1 status=activation_admitted activation={activation} outcome={admitted:?} target=redacted");
                                 }
-                            }
                             let bounds=output_bounds.iter().find(|(o,_)|*o==shell_output).map(|(_,b)|*b).ok_or("shell output bounds missing")?;
                             let root=wm_root_bounds(&output_bounds).ok_or("shell root bounds missing")?;
                             shell.request_candidate(broker,output,bounds,root,&output_bounds,&activation_surfaces)?;
                         }
                     }
-                    if let Some(overlay)=shell.poll_candidate(broker)? {
-                        if let Err(error)=runtime.set_descriptor_overlay(overlay,&scene,native_scanout.as_mut()) {
+                    if let Some(overlay)=shell.poll_candidate(broker)?
+                        && let Err(error)=runtime.set_descriptor_overlay(overlay,&scene,native_scanout.as_mut()) {
                             shell.reject_pending()?;return Err(error);
                         }
-                    }
                     Ok(())
                 })();
                 if let Err(error)=service {

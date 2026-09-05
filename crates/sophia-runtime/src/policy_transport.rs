@@ -308,21 +308,21 @@ impl PolicyWmSessionTransport {
         &mut self,
         frame: &[u8],
     ) -> Result<PolicyClientEvent, PolicyTransportError> {
-        let (header, _) = decode_frame(&frame)?;
+        let (header, _) = decode_frame(frame)?;
         match header.message_kind {
             IpcMessageKind::WmV1ProjectionBegin => {
-                let (transaction, begin) = decode_wm_v1_projection_begin_frame(&frame)?;
+                let (transaction, begin) = decode_wm_v1_projection_begin_frame(frame)?;
                 self.connection.begin_projection(transaction, begin)?;
                 Ok(PolicyClientEvent::ProjectionPending)
             }
             IpcMessageKind::WmV1ProjectionChunk => {
-                let (transaction, chunk) = decode_wm_v1_projection_chunk_frame(&frame)?;
+                let (transaction, chunk) = decode_wm_v1_projection_chunk_frame(frame)?;
                 self.connection
                     .append_projection_chunk(transaction, chunk)?;
                 Ok(PolicyClientEvent::ProjectionPending)
             }
             IpcMessageKind::WmV1ProjectionEnd => {
-                let (transaction, end) = decode_wm_v1_projection_end_frame(&frame)?;
+                let (transaction, end) = decode_wm_v1_projection_end_frame(frame)?;
                 self.connection.finish_projection(transaction, end)?;
                 Ok(PolicyClientEvent::Projection(
                     self.connection
@@ -331,7 +331,7 @@ impl PolicyWmSessionTransport {
                 ))
             }
             IpcMessageKind::WmV1PolicyConfiguration => {
-                let (transaction, wire) = decode_wm_v1_policy_configuration_frame(&frame)?;
+                let (transaction, wire) = decode_wm_v1_policy_configuration_frame(frame)?;
                 let configuration = decode_wm_v1_policy_configuration(&wire)?;
                 self.connection.admit_control_message(
                     transaction,
@@ -344,7 +344,7 @@ impl PolicyWmSessionTransport {
                 })
             }
             IpcMessageKind::WmV1PolicyDirty => {
-                let (transaction, wire) = decode_wm_v1_policy_dirty_frame(&frame)?;
+                let (transaction, wire) = decode_wm_v1_policy_dirty_frame(frame)?;
                 let request = decode_wm_v1_policy_dirty(&wire)?;
                 self.connection.admit_control_message(
                     transaction,
@@ -357,7 +357,7 @@ impl PolicyWmSessionTransport {
                 })
             }
             IpcMessageKind::WmV1SessionOperationRequest => {
-                let (transaction, wire) = decode_wm_v1_session_operation_request_frame(&frame)?;
+                let (transaction, wire) = decode_wm_v1_session_operation_request_frame(frame)?;
                 let request = decode_wm_v1_policy_session_operation_request(&wire)?;
                 self.connection.admit_control_message(
                     transaction,

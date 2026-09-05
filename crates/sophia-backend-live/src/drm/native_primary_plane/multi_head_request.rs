@@ -612,7 +612,7 @@ fn reject_invalid_heads(
             return Some(LibdrmNativeMultiHeadRequestBuildStatus::InvalidSize);
         }
         if scope == LibdrmNativeAtomicCommitRequestScope::Modeset
-            && !objects.mode_blob.is_some_and(|blob| blob != 0)
+            && objects.mode_blob.is_none_or(|blob| blob == 0)
         {
             return Some(LibdrmNativeMultiHeadRequestBuildStatus::MissingModeBlob);
         }

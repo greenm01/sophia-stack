@@ -7,6 +7,10 @@
 use super::*;
 use std::sync::Arc;
 
+/// A closure that mutates a batch before it is merged, so a test can block
+/// one merge without spelling the boxed closure type at every use.
+type BatchBlocker = Box<dyn Fn(&mut XAuthorityObservedTransactionBatch)>;
+
 fn content_batch(transaction: u64) -> XAuthorityObservedTransactionBatch {
     let mut batch = wm_update_coordinator_batch(TransactionId::from_raw(transaction));
     batch
@@ -46,7 +50,7 @@ fn pure_content_batches_merge_into_one_run() {
 fn a_resource_or_present_batch_ends_the_run() {
     // Each of these carries an edge whose ordering against a later batch in
     // the same cycle is not something merging may reorder.
-    let blockers: Vec<Box<dyn Fn(&mut XAuthorityObservedTransactionBatch)>> = vec![
+    let blockers: Vec<BatchBlocker> = vec![
         Box::new(|batch| batch.removed_surfaces.push(SurfaceId::new(9, 1))),
         Box::new(|batch| {
             batch
@@ -61,7 +65,7 @@ fn a_resource_or_present_batch_ends_the_run() {
         let head = content_batch(1);
         let mut third = content_batch(3);
         blocker(&mut third);
-        let queued = vec![content_batch(2), third, content_batch(4)];
+        let queued = [content_batch(2), third, content_batch(4)];
         assert_eq!(
             authority_merge_run_len(&head, queued.iter(), true, AUTHORITY_MERGE_RUN_LIMIT),
             2,
@@ -84,7 +88,7 @@ fn a_raster_response_batch_may_open_but_not_join_a_run() {
     assert_eq!(
         authority_merge_run_len(
             &head,
-            vec![content_batch(2), content_batch(3)].iter(),
+            [content_batch(2), content_batch(3)].iter(),
             true,
             AUTHORITY_MERGE_RUN_LIMIT,
         ),
@@ -97,7 +101,7 @@ fn a_raster_response_batch_may_open_but_not_join_a_run() {
     assert_eq!(
         authority_merge_run_len(
             &content_batch(1),
-            vec![content_batch(2), follower].iter(),
+            [content_batch(2), follower].iter(),
             true,
             AUTHORITY_MERGE_RUN_LIMIT,
         ),
@@ -109,7 +113,7 @@ fn a_raster_response_batch_may_open_but_not_join_a_run() {
 #[test]
 fn a_busy_admission_pipeline_commits_one_batch_per_cycle() {
     let head = content_batch(1);
-    let queued = vec![content_batch(2), content_batch(3)];
+    let queued = [content_batch(2), content_batch(3)];
     assert_eq!(
         authority_merge_run_len(&head, queued.iter(), false, AUTHORITY_MERGE_RUN_LIMIT),
         1
@@ -119,7 +123,7 @@ fn a_busy_admission_pipeline_commits_one_batch_per_cycle() {
 #[test]
 fn a_repeated_transaction_identity_ends_the_run() {
     let head = content_batch(1);
-    let queued = vec![content_batch(2), content_batch(2), content_batch(4)];
+    let queued = [content_batch(2), content_batch(2), content_batch(4)];
     assert_eq!(
         authority_merge_run_len(&head, queued.iter(), true, AUTHORITY_MERGE_RUN_LIMIT),
         2,
@@ -144,7 +148,7 @@ fn a_metadata_only_batch_neither_merges_nor_counts_as_engine_work() {
     assert!(!authority_batch_is_pure_content(&empty));
     assert!(!authority_batch_has_engine_work(&empty));
     assert_eq!(
-        authority_merge_run_len(&empty, vec![content_batch(6)].iter(), true, 16),
+        authority_merge_run_len(&empty, [content_batch(6)].iter(), true, 16),
         1
     );
     assert!(authority_batch_has_engine_work(&content_batch(7)));
@@ -158,7 +162,7 @@ fn a_single_batch_run_reproduces_the_historical_cadence() {
         1
     );
     assert_eq!(
-        authority_merge_run_len(&head, vec![content_batch(2)].iter(), true, 1),
+        authority_merge_run_len(&head, [content_batch(2)].iter(), true, 1),
         1,
         "a limit of one is exactly today's behavior"
     );
@@ -197,7 +201,7 @@ fn a_transaction_heavy_batch_ends_the_run_early() {
     assert_eq!(
         authority_merge_run_len(
             &head,
-            vec![heavy, content_batch(3)].iter(),
+            [heavy, content_batch(3)].iter(),
             true,
             AUTHORITY_MERGE_RUN_LIMIT,
         ),

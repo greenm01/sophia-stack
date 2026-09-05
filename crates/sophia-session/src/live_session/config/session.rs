@@ -162,11 +162,10 @@ impl SessionApplicationConfig {
             if !profile_is_compiled_default {
                 return Err(SessionApplicationConfigError::UnavailableShortcutCapability);
             }
-            if let sophia_config::DesktopShortcutTarget::Session(shortcut) = binding.target {
-                if !dropped.contains(&shortcut) {
+            if let sophia_config::DesktopShortcutTarget::Session(shortcut) = binding.target
+                && !dropped.contains(&shortcut) {
                     dropped.push(shortcut);
                 }
-            }
         }
         Ok(dropped)
     }

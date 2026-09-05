@@ -185,7 +185,7 @@
                 let mut resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),
-                        &mirror_grouping,
+                        mirror_grouping,
                         initial_head_mapping,
                         config.cursor_resolution.asset.clone(),
                     )?;
@@ -300,7 +300,7 @@
                 let mut resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),
-                        &mirror_grouping,
+                        mirror_grouping,
                         initial_head_mapping,
                         config.cursor_resolution.asset.clone(),
                     )?;
@@ -961,7 +961,7 @@
             startup_native_recovery_reason(missing_output_callback, started.elapsed());
         if !startup_ready_reported
             && !startup_native_recovery_attempted
-            && recovery_reason.is_some()
+            && let Some(recovery_reason) = recovery_reason
             && runtime.is_some()
             && native_scanout.is_some()
             && seat_controller.is_some()
@@ -1270,5 +1270,5 @@
             metrics.session_ticks = metrics.session_ticks.saturating_add(1);
         }
 
-        ()
+        
 }
