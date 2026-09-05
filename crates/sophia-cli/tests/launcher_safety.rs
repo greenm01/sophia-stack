@@ -367,17 +367,16 @@ fn installer_verifies_root_owned_staging_before_immutable_promotion() {
     assert!(!INSTALLER.contains("\"$artifact/tools/verify_packaged_policy.sh\""));
 }
 
-/// The developer policy client is opt-in, owner-only, and never the release.
+/// The policy client is owner-only, and the release remains the fallback.
 ///
 /// This path names the process that will be handed the WM socket, so the
-/// checks around it are the point of the feature rather than decoration. A
-/// binary someone else can write is a binary someone else can make the window
-/// manager.
+/// checks around it are the point rather than decoration. A binary someone
+/// else can write is a binary someone else can make the window manager.
 #[test]
-fn a_developer_policy_client_is_refused_unless_the_caller_alone_can_write_it() {
+fn a_user_policy_client_is_refused_unless_its_owner_alone_can_write_it() {
     let override_block = INSTALLED_SESSION
-        .split_once("sophia_dev_wm=")
-        .expect("installed session launcher offers no developer policy client")
+        .split_once("sophia_user_wm=")
+        .expect("installed session launcher never looks for a user policy client")
         .1;
     let export = override_block
         .find("export SOPHIA_HAGIA_BIN")
@@ -385,28 +384,28 @@ fn a_developer_policy_client_is_refused_unless_the_caller_alone_can_write_it() {
     let decision = &override_block[..export];
 
     assert!(
-        decision.contains("-O \"$sophia_dev_wm\""),
-        "a developer policy client owned by another user must be refused"
+        decision.contains("-O \"$sophia_user_wm\""),
+        "a policy client owned by another user must be refused"
     );
     assert!(
         decision.contains("*w*w*"),
-        "a group- or world-writable developer policy client must be refused"
+        "a group- or world-writable policy client must be refused"
     );
     assert!(
         decision.contains("exit 1"),
-        "an unsafe developer policy client must stop the session rather than \
-         fall back to the release, which would silently ignore the operator"
+        "an unsafe policy client must stop the session rather than fall back to \
+         the release, which would silently run something else"
     );
     assert!(
         decision.contains("$RELEASE_DIR/target/release/hagia"),
         "the release binary must remain the default when no override exists"
     );
 
-    // The override is chosen only when the file is there, so a machine that
-    // never created one behaves exactly as before.
+    // The user copy is chosen only when it is there, so an install that never
+    // placed one still starts on the packaged binary.
     let opt_in = decision
-        .find("elif [[ -x \"$sophia_dev_wm\" ]]")
-        .expect("the developer override is not opt-in by the file existing");
+        .find("elif [[ -x \"$sophia_user_wm\" ]]")
+        .expect("the user policy client is not chosen by the file existing");
     assert!(
         decision[..opt_in].contains("-n \"${SOPHIA_HAGIA_BIN:-}\""),
         "an explicit SOPHIA_HAGIA_BIN must still win, which is how gates point \

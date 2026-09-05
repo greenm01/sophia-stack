@@ -12,25 +12,26 @@ export SOPHIA_REQUIRE_RUNTIME_DIR=true
 export SOPHIA_REQUIRE_LOCAL_VT=true
 export SOPHIA_BIN="$RELEASE_DIR/target/release/sophia"
 export SOPHIA_NATIVE_WM_BIN="$RELEASE_DIR/target/release/sophia-wm-demo"
-# The policy client may be taken from a developer path so it can be replaced
-# while a session runs. The release binary stays exactly as packaged and
-# checksummed; nothing here writes to /opt. The override is opt-in by the file
-# existing, and is refused unless the caller owns it and no one else can write
-# it, because this names the process that will be handed the WM socket.
-sophia_dev_wm="${SOPHIA_HAGIA_DEV_BIN:-${XDG_STATE_HOME:-$HOME/.local/state}/sophia/dev/hagia}"
+# The policy client is a blind client: it sees no pixels, holds no
+# privileges, and every proposal it makes is validated by the Engine before
+# anything is drawn. It does not need to be immutable the way the Engine does,
+# so it lives where its owner can replace it, and `just reload-wm` swaps it
+# while the desktop keeps running. `install-session` puts it there; the copy
+# inside the release is the fallback for an install that never ran it, and is
+# what the gates and the promotion session use.
+sophia_user_wm="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/bin/hagia"
 if [[ -n "${SOPHIA_HAGIA_BIN:-}" ]]; then
     : # An explicit value wins, which is how the gates point at their fixtures.
-elif [[ -x "$sophia_dev_wm" ]]; then
-    if [[ ! -O "$sophia_dev_wm" ]]; then
-        echo "sophia: refusing developer WM owned by another user: $sophia_dev_wm" >&2
+elif [[ -x "$sophia_user_wm" ]]; then
+    if [[ ! -O "$sophia_user_wm" ]]; then
+        echo "sophia: refusing a policy client owned by another user: $sophia_user_wm" >&2
         exit 1
     fi
-    if [[ "$(stat -c %A "$sophia_dev_wm")" == *w*w* ]]; then
-        echo "sophia: refusing group- or world-writable developer WM: $sophia_dev_wm" >&2
+    if [[ "$(stat -c %A "$sophia_user_wm")" == *w*w* ]]; then
+        echo "sophia: refusing a group- or world-writable policy client: $sophia_user_wm" >&2
         exit 1
     fi
-    SOPHIA_HAGIA_BIN="$sophia_dev_wm"
-    echo "sophia: using developer policy client $sophia_dev_wm" >&2
+    SOPHIA_HAGIA_BIN="$sophia_user_wm"
 else
     SOPHIA_HAGIA_BIN="$RELEASE_DIR/target/release/hagia"
 fi

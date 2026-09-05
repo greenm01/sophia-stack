@@ -83,6 +83,16 @@ fi
 [[ "$(sed -n 's/^commit=//p' /opt/sophia/current/manifest)" == "$commit" ]]
 (cd /opt/sophia/current && sha256sum --check SHA256SUMS) >/dev/null
 
+# Put the policy client where its owner can replace it. It is a blind client
+# the Engine validates, so it does not need the release's immutability, and
+# keeping it here is what lets `just reload-wm` swap it without a logout. It
+# comes from the release that was just verified, so this is the same binary
+# either way.
+policy_bin="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/bin/hagia"
+mkdir -p "$(dirname "$policy_bin")"
+install -m 700 /opt/sophia/current/target/release/hagia "$policy_bin"
+printf 'Policy client installed at %s\n' "$policy_bin"
+
 hagia_commit="$(sed -n 's/^hagia_source_commit=//p' /opt/sophia/current/manifest)"
 printf '\n%s\n' "Installed Sophia ${commit:0:8} with Hagia ${hagia_commit:0:7}."
 printf '%s\n' \

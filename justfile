@@ -103,10 +103,10 @@ check:
 install-session:
     @tools/install_session_from_head.sh
 
-# Needs no sudo and never touches the installed release: the policy client is
-# taken from a developer path the session prefers when it exists. A session
-# already running from the release cannot be reloaded in place, so the first
-# run installs the binary and asks for one log out.
+# Needs no privileges. The policy client is a blind client the Engine
+# validates, so it lives where its owner can replace it rather than inside the
+# checksummed release, and a reload is an ordinary file replacement followed by
+# a supervised restart. A reload that does not settle is rolled back.
 
 # Rebuild Hagia and restart it in the running session, keeping the windows.
 reload-wm:

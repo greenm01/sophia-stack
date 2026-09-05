@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Replace the policy client of a running session and restart it in place.
+# Rebuild the policy client and restart it inside the running session.
 #
-# The window manager is a supervised child that reconnects and reloads its
-# checkpoint, so swapping the binary and ending the process is a reload: the
-# windows, the workspaces and the scroller camera survive it. That only works
-# when the session was started against a developer path, because a release in
-# /opt is checksummed and must stay byte-for-byte what was packaged.
+# The window manager is a supervised child whose state is checkpointed, so
+# replacing the binary and ending the process is a reload: the windows, the
+# workspaces and the scroller camera come back with it. It lives where its
+# owner can write it, so none of this needs privileges.
 #
 # A reload that does not come back is rolled back to the binary it replaced,
 # because the alternative is a desktop with no window manager.
@@ -13,10 +12,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
-hagia_built="${SOPHIA_HAGIA_BIN_SOURCE:-$hagia_root/hagia}"
-dev_bin="${SOPHIA_HAGIA_DEV_BIN:-${XDG_STATE_HOME:-$HOME/.local/state}/sophia/dev/hagia}"
-state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/hagia-session"
-log="$state_dir/session.log"
+built="${SOPHIA_HAGIA_BIN_SOURCE:-$hagia_root/hagia}"
+policy_bin="${SOPHIA_HAGIA_BIN:-${XDG_STATE_HOME:-$HOME/.local/state}/sophia/bin/hagia}"
+log="${XDG_STATE_HOME:-$HOME/.local/state}/sophia/hagia-session/session.log"
 
 note() { printf 'reload: %s\n' "$1"; }
 die() { printf 'reload: %s\n' "$1" >&2; exit 1; }
@@ -24,39 +22,34 @@ die() { printf 'reload: %s\n' "$1" >&2; exit 1; }
 [[ -d "$hagia_root" ]] || die "no Hagia worktree at $hagia_root (set SOPHIA_HAGIA_ROOT)"
 note "building Hagia from $hagia_root"
 (cd "$hagia_root" && nimble build -d:release >/dev/null) || die "Hagia build failed"
-[[ -x "$hagia_built" ]] || die "build produced no executable at $hagia_built"
+[[ -x "$built" ]] || die "the build produced no executable at $built"
 
-mkdir -p "$(dirname "$dev_bin")"
-chmod 700 "$(dirname "$dev_bin")"
-
-# Install first, so a session that is not running still ends up on the new
-# binary the next time it starts.
-staged="$dev_bin.staged.$$"
+mkdir -p "$(dirname "$policy_bin")"
 backup=""
-if [[ -e "$dev_bin" ]]; then
-    backup="$dev_bin.previous"
-    cp -p "$dev_bin" "$backup"
+if [[ -e "$policy_bin" ]]; then
+    backup="$policy_bin.previous"
+    cp -p "$policy_bin" "$backup"
 fi
-cp "$hagia_built" "$staged"
-chmod 700 "$staged"
-mv -f "$staged" "$dev_bin"
-note "installed $(cd "$hagia_root" && git rev-parse --short HEAD) to $dev_bin"
+# Replace by rename so no session can observe a half-written binary, and so a
+# client already running keeps the inode it started from.
+staged="$policy_bin.staged.$$"
+install -m 700 "$built" "$staged"
+mv -f "$staged" "$policy_bin"
+note "installed $(cd "$hagia_root" && git rev-parse --short HEAD) to $policy_bin"
 
 running="$(pgrep -x hagia || true)"
 if [[ -z "$running" ]]; then
-    note "no running policy client; the next session start will use it"
+    note "no session is running; the next one starts on this build"
+    exit 0
+fi
+if [[ "$(readlink -f "/proc/$running/exe" 2>/dev/null || true)" != "$(readlink -f "$policy_bin")" ]]; then
+    note "the running session started from another policy client:"
+    note "  $(readlink -f "/proc/$running/exe" 2>/dev/null || echo unknown)"
+    note "it predates this one being installed here; the next session start uses it"
     exit 0
 fi
 
-current_exe="$(readlink -f "/proc/$running/exe" 2>/dev/null || true)"
-if [[ "$current_exe" != "$(readlink -f "$dev_bin")" ]]; then
-    note "the running session uses $current_exe"
-    note "it was not started in developer mode, so it cannot be reloaded in place"
-    note "log out and back in once; the session picks up $dev_bin by itself"
-    exit 0
-fi
-
-before_lines="$(wc -l < "$log" 2>/dev/null || echo 0)"
+before="$(wc -l < "$log" 2>/dev/null || echo 1)"
 note "restarting policy client $running"
 kill -TERM "$running"
 
@@ -64,33 +57,32 @@ settled=""
 for _ in $(seq 1 100); do
     sleep 0.1
     replacement="$(pgrep -x hagia || true)"
-    if [[ -n "$replacement" && "$replacement" != "$running" ]]; then
-        # Started is not the same as working. A committed layout is the
-        # session's own word that the replacement negotiated the protocol and
-        # produced a projection it accepted, which a binary that merely
-        # launches cannot fake.
-        if tail -n +"$before_lines" "$log" 2>/dev/null \
-            | grep -qE "sophia_live_wm schema=[0-9]+ status=(layout_committed|focus_committed)"; then
-            settled="$replacement"
-            break
-        fi
+    [[ -n "$replacement" && "$replacement" != "$running" ]] || continue
+    # Started is not working. A committed layout is the session's own word
+    # that the replacement negotiated the protocol and produced a projection
+    # it accepted, which a binary that merely launches cannot fake.
+    if tail -n "+$before" "$log" 2>/dev/null \
+        | grep -qE "sophia_live_wm schema=[0-9]+ status=(layout_committed|focus_committed)"; then
+        settled="$replacement"
+        break
     fi
 done
 
 if [[ -n "$settled" ]]; then
-    note "reloaded; policy client is now $settled"
+    note "reloaded; the policy client is now $settled"
     exit 0
 fi
 
-if [[ -z "$backup" ]]; then
-    die "the new policy client did not come back and there is nothing to roll back to"
-fi
-note "the new policy client did not come back; rolling back"
-cp -p "$backup" "$dev_bin"
+[[ -n "$backup" ]] || die "the new policy client never settled and there is nothing to roll back to"
+note "the new policy client never settled; rolling back"
+cp -p "$backup" "$policy_bin"
 survivor="$(pgrep -x hagia || true)"
 [[ -n "$survivor" ]] && kill -TERM "$survivor" 2>/dev/null || true
 for _ in $(seq 1 100); do
     sleep 0.1
-    [[ -n "$(pgrep -x hagia || true)" ]] && { note "rolled back to the previous policy client"; exit 1; }
+    if [[ -n "$(pgrep -x hagia || true)" ]]; then
+        note "rolled back to the previous policy client"
+        exit 1
+    fi
 done
-die "rolled back but no policy client is running; the session may need a restart"
+die "rolled back but nothing is running; the session needs a restart"
