@@ -24,7 +24,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | Interface | Authorized role | Current status | Role specification |
 | --- | --- | --- | --- |
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
-| `sophia_shell_v1` major 1 revision 1 | metadata-bearing shell | experimental title-only descriptor switcher | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
+| `sophia_shell_v1` major 1 revision 2 | metadata-bearing shell | experimental descriptor switcher, reservations, and persistent tabs; revision 1 supported | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
 | `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
 | `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
@@ -126,6 +126,14 @@ The wire specification is independently implementable. A client does not need
 to link a Sophia library, use Rust, run a generator, or adopt Wayland, CBOR, or
 another serialization runtime.
 
+Role protocols are also independent of application frontends and UI toolkits.
+`sophia_shell_v1` uses its admitted native role endpoint without an X11 or
+Wayland connection. Future application frontends must translate into Engine's
+protocol-neutral boundary; they do not redefine the shell interface. X11 is
+the sole active application frontend. Quickshell and other downstream adapters
+may supply requirements and conformance evidence, but their object models,
+rendering APIs, and dependencies have no wire authority.
+
 Sophia retains its fixed 24-byte little-endian envelope:
 
 ```text
@@ -155,7 +163,7 @@ The current public role schemas are:
 
 - `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3; and
 - `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
-revision 1.
+revision 2, retaining revision-1 support.
 
 The separate scripting service uses `protocol/sophia-control-v1.kdl` for
 experimental control major 1 revision 1. It shares this family's envelope but
@@ -402,16 +410,17 @@ required before the interface revision can be called stable.
 
 The protocol family reserves a distinct shell role and endpoint, not placeholder
 shell messages in the WM interface. Experimental `sophia_shell_v1` revision 1
-is now modeled and specified for the smallest title-only descriptor-switcher
-workflow. It is a falsifiable pre-stability contract, not the complete shell
-display-list, reservation, or service vocabulary.
+provides the title-only descriptor switcher and bounded reservations; revision
+2 adds persistent tab descriptors. These are falsifiable pre-stability
+contracts. Arbitrary content and broader service vocabulary remain future work.
 
 The [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) specializes
 the common negotiation, complete-fact-set, bounded-candidate, explicit-outcome,
 epoch, and recovery lifecycle here. It does not define a shell-only transport
 or an alternate route into Engine.
 
-Its minimum boundary is already fixed: Engine retains rendering and hit-testing;
+Its minimum boundary is already fixed: Engine retains composition and physical
+hit-testing, and renders the current descriptor chrome;
 brokers retain metadata sanitization; the shell receives only authorized
 presentation facts and emits bounded shell proposals or opaque actions. Shell
 authority cannot set application placement or focus, and WM authority cannot

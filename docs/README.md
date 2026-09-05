@@ -92,6 +92,10 @@ candidates that role may exchange.
 
 ## Subsystem Contracts And Current Status
 
+- [Native Shell Reference-Client Audit](shell-reference-client-audit.md) records
+  the Quickshell downstream baseline, generic panel/popout requirements, and
+  the independent-client acceptance gate for future content support. It is
+  preparation evidence, not an implemented content protocol.
 - [Sophia X Server Frontend](sophia-x-authority.md) records the native X11
   frontend boundary, implemented surface, and remaining production gaps.
 - [Sophia Window Manager API](sophia-wm-api.md) defines the native,

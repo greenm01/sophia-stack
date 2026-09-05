@@ -56,6 +56,29 @@ testing from the first day — your decoder either parses the same bytes the
 Rust, C, and Nim decoders parse, or it doesn't, and no one has to take your
 word for it either way.
 
+## Application Frontends And Shell Toolkits
+
+`sophia_shell_v1` is a native Sophia role protocol independent of the protocol
+applications use. An X11 application connects to the X Server Frontend; a
+native shell connects to its separately admitted shell endpoint. A future
+Wayland or native application frontend could translate into Engine's existing
+authority boundaries while the shell keeps speaking the same role protocol.
+Implementing another application frontend remains separate product work; X11
+is today's application path and development priority.
+
+Quickshell is a downstream reference for developing richer shell capabilities.
+Qt/QML types, toolkit plugins, rendering integration, and shell configuration
+belong in that downstream implementation. They are not Sophia dependencies or
+public wire types. Other native toolkits and languages must be able to build
+the same shell behavior from the published protocol. Narthex remains the
+independent descriptor reference; Noctalia remains another source of workflow
+evidence.
+
+The [reference-client audit](shell-reference-client-audit.md) starts with one
+panel and one interactive popout. This is preparation for a future content
+capability, not implemented content support. An ordinary X11 Quickshell panel
+exercises the application frontend and does not acquire the native shell role.
+
 ## The Components
 
 A complete desktop is three processes beside Engine, each one independently
@@ -68,8 +91,9 @@ replaceable:
 | Broker | `sophia_broker_v1` | in-tree | no | redacted descriptors |
 
 The window manager never learns titles, application identities, or pixel
-content. The shell never learns surface identities or coordinates — the
-conformance evidence records `surface_ids_disclosed=0 coordinates_disclosed=0`
+content. The current descriptor shell never learns surface identities or
+coordinates: conformance evidence records
+`surface_ids_disclosed=0 coordinates_disclosed=0`
 on every run. The broker issues and revokes the opaque action capabilities
 that let a shell activate a window it can't name.
 
@@ -358,9 +382,9 @@ anybody:
 
 The shell interface is the moving part. Revision 1 provides a switcher and
 bounded reservations; revision 2 adds persistent WM tab descriptors. Broader
-content support is still being derived from a working shell's enumerated needs
-plus a classic desktop's. If you're building in this space now, you're early
-enough to shape that capability.
+content support is still being derived from independent shell workflows,
+including Quickshell and the retained Noctalia survey. If you're building in
+this space now, you're early enough to shape that capability.
 
 ### Tabbed WM layouts
 

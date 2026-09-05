@@ -32,20 +32,53 @@ Generic shell command discovery and invocation are future extensions requiring
 negotiated vocabulary, explicit outcomes, and the existing recipient,
 generation, and presentation checks. The current descriptor/candidate and
 activation-acknowledgement messages provide no generic shell command catalog.
-The proposed scripting CLI and endpoint are unimplemented.
+The experimental `sophia msg` CLI and control endpoint implement policy actions
+and confirmed WM restart; generic shell commands remain unimplemented.
 
 ### Vocabulary Development
 
-Derive the complete `sophia_shell_v1` from a working shell rather than from
-first principles. Use Noctalia as the broad vocabulary driver and the separate
-Hagia Shell as the first small implementation that can falsify the lifecycle.
+Derive capabilities from retained shell workflows and prove them with
+independent clients. Quickshell is the first downstream content-adapter
+reference; its Qt/QML implementation supplies workload evidence, never protocol
+authority. Noctalia's native scene-graph and service survey below remains a
+second source of requirements. Narthex remains the maintained, independent
+descriptor client.
 
-`docs/sophia-policy-ipc.md` already fixes the gating condition:
-`sophia_shell_v1` will be modeled and specified "only when retained shell
-workflows establish its smallest useful display-list, hit-target,
-presentation-data, and action vocabulary." This note proposes Noctalia as the
-retained workflow that establishes it, and records what that workflow already
-demonstrates.
+Sophia's normative architecture, common protocol contract, role semantics, and
+schema own the interface. No reference client's object model, dependencies, or
+private APIs may become requirements for another implementation. A future
+content capability must be exercised by both Quickshell and an independently
+written non-Qt client using the same published contract.
+
+### Frontend And Toolkit Independence
+
+`sophia_shell_v1` is Sophia's native shell-role interface over the common Unix
+IPC transport. It does not run through X11 or require a Wayland connection.
+Application frontends translate their own protocols into Engine transactions;
+shells communicate through a separately admitted role endpoint. A future
+Wayland or native application frontend can use the same Engine boundaries
+without redefining the shell contract. X11 remains the sole active application
+authority and the daily-driver priority; adding another frontend is separate
+product work.
+
+The wire carries generic capabilities, bounded proposals, opaque identities,
+and broker-approved presentation data. XIDs, Wayland objects, Qt classes, QML
+trees, and graphics-API objects do not become shell wire types. Other languages
+and toolkits can implement the contract using ordinary IPC without linking
+Sophia or Quickshell libraries. This independence does not claim portability
+of the current Linux session implementation to every operating system.
+
+Engine retains physical input, authoritative geometry, presentation, and GPU
+composition. The blind WM retains spatial policy. A future content shell may
+rasterize its own widgets under a separately admitted capability; its toolkit
+adapter owns local widget behavior and the translation of authorized shell
+events. Engine still selects the presented target and controls disclosure and
+capture. Content authorization grants neither foreign pixels nor WM authority.
+
+The [reference-client audit](shell-reference-client-audit.md) bounds the first
+panel-and-popout workflow. The admitted preparation milestone documents that
+workflow and establishes the downstream build; it adds no content messages,
+capability assignments, Qt dependency, or runtime defaults to Sophia.
 
 ## The First Experimental Slice
 
@@ -76,7 +109,7 @@ cross-process proof runs both C and Hagia clients through presentation,
 activation, and complete withdrawal.
 
 The same slice now runs in a normal Hagia session when its shell profile is
-enabled. Sophia launches `hagia-shell --serve` in its own Bubblewrap domain,
+enabled. Sophia launches `narthex --serve` in its own Bubblewrap domain,
 and `session:window-switcher` asks it for a candidate drawn only from current
 presented policy-managed descriptors. Engine renders and
 publishes the exact targets. A click returns to the shell for acknowledgement,
@@ -94,8 +127,9 @@ vocabulary remain out of revision 1.
 That diversity kept the interface honest. It had to be language-neutral, wide
 enough to carry a real window manager, and narrow enough to stay metadata-blind.
 
-The shell interface has no comparable client. Specified in isolation it fails
-in one of two directions:
+Narthex and the independent C proof exercise the descriptor lifecycle. Rich
+content has no comparable implemented client yet. Specified in isolation it
+fails in one of two directions:
 
 - **Too narrow.** It cannot carry a real desktop, every shell falls back to the
   X11 compatibility path, and the native interface becomes decorative.
@@ -150,14 +184,15 @@ rasterize glyphs into A8 textures, not to draw the interface.
 
 ## The Rendering Fork
 
-Noctalia draws its own pixels. `docs/sophia-policy-ipc.md` states that for the
-shell interface "Engine retains rendering and hit-testing" and the shell "emits
-bounded shell proposals or opaque actions." `docs/compositor-graphics.md`
-describes the mechanism: a bounded immutable display list of visual intent,
-lowered by Engine into its own primitives and cached textures.
+Noctalia draws its own pixels. The current descriptor interface lets Engine
+render and hit-test the chrome while the shell submits bounded proposals and
+opaque actions. `docs/compositor-graphics.md` describes the broader direction:
+a bounded immutable display list of visual intent, lowered by Engine into its
+own primitives and cached textures.
 
-Those two facts are incompatible, and the incompatibility defines two distinct
-paths that must not be conflated.
+The descriptor revisions cannot carry that renderer's output. A future content
+capability must bridge the gap without importing toolkit semantics. There are
+two distinct integration paths.
 
 **Path A — X11 compatibility client.** Noctalia keeps its renderer and runs
 through the Sophia X Server Frontend, obtaining pixels through EGL on X11 and
@@ -170,16 +205,16 @@ tray or XEmbed, approximates layer placement with override-redirect windows and
 `_NET_WM_STRUT_PARTIAL`, and is precisely the shell-as-X11-application model
 the native interface exists to replace.
 
-**Path B — native shell client.** Noctalia targets `sophia_shell_v1`, emits a
-display list, and Engine renders. Its GLES2 backend, shader programs, and
-texture management become dead weight; `src/render/` is rewritten from a
-renderer into a display-list emitter. This is architecturally correct and
-substantially more work.
+**Path B — native shell client.** A client targets `sophia_shell_v1` and submits
+bounded visual intent and, once specified, its own raster content. Engine
+validates and composites it. A toolkit may retain its rasterizer behind generic
+content resources; rewriting that toolkit into an Engine display-list emitter
+is not required. The cached-texture and compositing-operator rules below govern
+which work stays client-side.
 
-The two paths are not sequential, and Path A is not a stepping stone to Path B.
-They diverge at the renderer. Committing to Path A as an interim measure means
-building throwaway integration and accreting compatibility expectations that
-make Path B harder to justify later.
+An X11 compatibility probe can establish ordinary Qt or GLES transport behavior.
+It does not prove native shell admission, content transport, or lifecycle.
+The native adapter needs its own implementation and evidence.
 
 **Noctalia is a useful specification driver for Path B regardless of whether
 Noctalia itself is ever ported.** Its value here is evidentiary, not
@@ -424,19 +459,21 @@ simplification rather than a port.
 Recorded here because a driving client creates continuous pressure to relax
 them:
 
-- The shell receives only broker-approved presentation facts. Titles, classes,
-  PIDs, paths, XIDs, namespace identities, and portal payloads stay out
-  regardless of what the driving client's widgets would like to display.
+- The shell receives only broker-approved presentation facts, including the
+  current bounded sanitized labels. Raw titles, classes, PIDs, paths, XIDs,
+  namespace identities, and portal payloads stay out regardless of what the
+  driving client's widgets would like to display.
 - Shell authority cannot set application placement or focus. Dock and taskbar
   activation is an opaque action submitted for adjudication, not a focus call.
 - WM authority cannot acquire shell metadata. Hagia's blind spatial-policy
-  projection stays blind; `hagia-shell` is a separately authorized process in
+  projection stays blind; Narthex or a content shell is separately authorized in
   a different protection domain, with no ambient IPC or shared writable state
   that recombines the roles.
-- Engine retains rendering, hit-testing, physical input, grabs, and cursor
-  state. Precommitted hover/pressed alternatives may switch locally without
-  changing meaning or geometry; continuous visuals remain shell-owned display
-  list commits. General animation ownership remains evidence-driven.
+- Engine retains composition, physical hit-testing, physical input, capture,
+  and cursor authority. Future content shells may rasterize their own widgets
+  and perform local widget hit testing only on authorized input. Precommitted
+  alternatives and content updates remain bounded proposals; Engine owns the
+  animation clock and presentation schedule.
 - The shell endpoint is distinct from `sophia_wm_v1`. Endpoint credentials do
   not prevent same-process collusion. Sharing an executable, repository, or
   language is permitted only through separately supervised protection domains.
@@ -522,161 +559,58 @@ integers collide. Concrete records and limits remain schema work.
 
 ## Roadmap Placement
 
-This direction sits in `todo.md` under **Post-Promotion Capability Roadmap**
-and is gated behind existing work. It cannot start earlier than its
-dependencies allow:
+`todo.md` owns execution order. CP-14.3 remains the X11 development-session
+priority. CP-15.1 audits the native protocol-family lifecycle; CP-15.2 provides
+one family conformance surface. Shell stabilization remains behind both gates.
 
-- **Milestone 12** must complete. The installed daily-driver candidate is the
-  current promotion vehicle and takes precedence.
-- **Milestone 13's bootstrap policy path** must be usable and recoverable.
-  Retained Triad shell behavior must then help drive the shell contract before
-  `sophia_wm_v1` freezes; otherwise the product port cannot falsify missing WM
-  correspondence or cross-authority operations in time.
+The admitted parallel preparation tranche establishes the Quickshell fork,
+build baseline, and [panel-and-popout audit](shell-reference-client-audit.md).
+It can refine requirements without adding Engine behavior or changing wire
+records. The build's success or environmental blocker must be recorded; a
+blocked build does not become a completed milestone.
 
-### Sequencing: Port Before Freeze, Separate Interface Families
+A later content prototype needs separate admission with a named workflow and
+exit gate. It must specify and model the minimum generic content boundary,
+publish schema and corpus evidence, and exercise it with Quickshell and an
+independent non-Qt client. Existing descriptor clients remain supported. It
+cannot borrow the stable WM interface's status or reopen frozen WM records to
+accommodate a toolkit.
 
-The two interfaces retain separate endpoints, roles, schemas, and disclosure
-budgets, but their experimental development may overlap. The ordering is:
+### Reference Workloads And Evidence
 
-1. prove the narrow Hagia WM boundary and use it in ordinary sessions;
-2. port retained Triad policy and shell workflows against experimental WM and
-   shell contracts;
-3. use those workflows to revise either contract while changes are cheap; and
-4. freeze each interface only after its demanding client and conformance gates
-   close.
+The Noctalia survey above remains research provenance for native shell needs,
+including compositing, metadata, and authority-specific services. Its scene
+graph is useful input, but a native client need not expose its toolkit's tree
+or replace its own rasterizer with Sophia primitives. Cached client content
+provides the intended escape hatch for ordinary widget drawing.
 
-Four constraints still apply:
+Quickshell supplies a different reference: a reusable QML shell framework with
+existing window backends and a Qt Quick renderer. The downstream fork tests
+whether a generic shell boundary can support that rendering model. Narthex
+continues to prove the confined descriptor tier. A separate non-Qt content
+client will test whether the richer contract can be implemented from its
+published specification alone.
 
-- **The specification process is the risky part, not the interface.** Milestone
-  13 exercises a full pipeline: ratified boundary, formal model, declarative
-  schema, generated Rust and C99 codecs, checked-in golden vectors, and an
-  independently implemented client that passes a cross-repository conformance
-  gate. Hagia has already shown that pipeline works end to end in a third
-  language. Debugging that machinery once, on the simpler and better-understood
-  interface, is much cheaper than debugging it twice concurrently.
-- **Freezing still requires quiet.** Shell-driven discoveries are intentionally
-  resolved before the WM freeze. Once the retained port ledger closes, new
-  shell work cannot casually reopen the WM contract.
-- **The minimum live shell slice is complete in source.** Engine reduces a
-  bounded title-only descriptor candidate into generic rectangle and cached-text
-  commands plus exact presented opaque targets, then lowers the same logical
-  projection independently per head. The protected `hagia-shell` client now
-  drives that path from a shell-enabled shortcut through issuer validation and
-  WM focus adjudication. Explicit X-grab arbitration and compiled-profile
-  enablement are complete; installed presentation and reconnect evidence is the
-  next dependency. General graphics-
-  efficiency work remains in Milestone 14 and `docs/compositor-graphics.md`.
-- **The metadata-broker prerequisite is complete.** `sophia_broker_v1` now
-  hosts the redacted presentation feed in a separate protected domain and
-  commits sanitized descriptors to Engine's `ChromeDescriptorTable`. Signed
-  Hagia archives `0004` and `0005` prove its real-session lifecycle. The data
-  source and descriptor rendering reference therefore no longer block shell
-  modeling. The protected external lifecycle is now implemented; its signed
-  installed evidence remains open.
+Classical X11 desktops and X11 Quickshell panels remain application-frontend
+workloads. Their compatibility results cannot establish native shell
+conformance. Conversely, a successful native shell prototype cannot establish
+X11 application compatibility or physical presentation quality.
 
-Open question 2 asks whether the shared transport can carry shell texture
-traffic given the 64 KiB frame limit, single in-flight transfer, and bytes-only
-wire. That question reaches back into shared code in `sophia-runtime`, so it
-must be answered during the experimental port rather than after either freeze.
-
-The risk is bounded, not fatal: the 24-byte envelope is deliberately
-role-neutral and each role negotiates its own family and revision, so a
-shell-role descriptor extension is additive and does not rewrite the WM
-contract. The exposure is implementation coupling in the shared transport, not
-wire-format lock-in. The shell still requires its own ratification, model,
-schema, and independent client rather than borrowing WM records.
-
-Requirements capture — this document and any refinement of it — is also
-free-running. It consumes no Engine or protocol work and blocks nothing.
-
-### Choosing The Driving Client
-
-`docs/specification.md` states Sophia must serve "a lean native policy client,
-a conventional environment such as Xfce, and designs that do
-not look much like today's window managers." Xfce is therefore an architectural
-target, and it is a strong candidate for a driving client — but for a different
-interface than this one.
-
-| | Xfce | Noctalia |
-| --- | --- | --- |
-| Native display system | X11 | Wayland |
-| Rendering model | GTK3 immediate drawing into Cairo | retained scene graph of typed nodes |
-| Emits a display list | no, and never will | structurally yes, unserialized |
-| Real installed users | many | few |
-| Admission model fit | unmodified retained workflow | requires a port |
-| Drives | X11 compatibility completeness | `sophia_shell_v1` vocabulary |
-
-The distinction is not quality, it is which interface each one can falsify.
-
-Xfce is a GTK3 application stack that draws its own pixels through Cairo and
-consumes EWMH, struts, and XEmbed. Under Sophia it is a Path A client
-permanently. It cannot exercise a display-list protocol because it will never
-produce a display list, so it cannot falsify a single design decision in
-`sophia_shell_v1`. What it *can* falsify is the X11 compatibility surface —
-frontend coverage, strut and work-area reservation, and tray/XEmbed admission —
-and it fits the existing unmodified-retained-workflow admission model used by
-ordinary X11 applications.
-
-Noctalia's value is narrower and more specific: `src/render/scene/` is already a
-retained tree of typed primitives with hit-test areas attached. That is
-structurally the artifact `sophia_shell_v1` is trying to standardize, minus
-serialization. A driving client for a display-list protocol has to *have* a
-display list, and among realistic candidates Noctalia does and Xfce does not.
-
-Two honest caveats on Noctalia. Its requirements arrive expressed in Wayland
-protocol terms that do not all translate, so the capability tables above are a
-translation exercise rather than a direct reading. And its user base is small,
-so it carries less weight as evidence of what a desktop *must* have.
-
-**Recommended: both, on different interfaces.** Xfce as a classical
-compatibility profile under **Classical X11 WM Compatibility**, alongside the
-existing i3, dwm, and qtile candidates. Noctalia as the display-list and
-capability driver for `sophia_shell_v1`. Neither substitutes for the other, and
-neither should be cited as evidence for the other's interface.
-
-Existing roadmap items this direction feeds, all under **Native Sophia
-Follow-Ups** and **Status, Launcher, And Shell Integration**:
-
-- Model and publish `sophia_shell_v1` through the same formal, schema, C
-  client, and permanent-compatibility process. This note supplies the input
-  evidence that item is waiting on.
-- Build `hagia-shell` as one ordinary separately authorized shell client. The
-  display-list delta and capability tables above are its requirement set.
-- Define a bounded redacted status feed. The presentation-data table narrows
-  this from open-ended to a specific list.
-- Implement lock, screenshot, wallpaper, and audio actions through their owning
-  boundaries. The session-services and capture tables enumerate them.
-- Admit tray/XEmbed only from a retained application workflow.
-
-**Proposed process shape.** Milestone 13 is the template, and the shell
-interface should follow its five-stage structure rather than inventing a new
-one: ratify and model the boundary, publish a dependency-free wire contract,
-project the state the interface exposes, prove one demanding client and freeze
-the interface, then migrate and promote.
-
-**Proposed first gate, ahead of any specification work.** A bounded rendering
-probe answering open question 1, since a negative answer invalidates Path B
-before any schema is written. Two independent measurements:
-
-- Emit a representative Noctalia bar frame as a display list against the
-  proposed vocabulary, and measure list size, submission cost, and Engine
-  lowering cost at a realistic update rate.
-- Separately, admit Noctalia as an X11 client through the frontend under Path A
-  purely as GPU-transport evidence, proving EGL-on-X11 reaches Engine
-  presentation. This is a compatibility-matrix entry, not a product direction,
-  and the distinction should be stated in the matrix entry itself so it is not
-  later cited as shell support.
-
-Neither probe commits the project to porting Noctalia.
+Transport feasibility remains open: measure cached content, changed bytes,
+damage, allocation lifetime, and frame pacing before choosing any transfer
+extension. Shared family framing is retained; a toolkit-specific channel or
+private Engine ingress is not an alternative to specifying the boundary.
 
 ## Non-Goals
 
 - This is not a commitment to port Noctalia. Noctalia is a specification input.
 - This is not a commitment to run Noctalia under Sophia in any form.
-- This does not promote Path A. Any X11 admission of Noctalia is transport
-  evidence for the compatibility matrix only.
+- X11 shell applications are compatibility workloads; they do not implement
+  the native shell role. Noctalia has no admitted implementation tranche.
 - This does not expand the display-list vocabulary. It records a candidate
   delta and a proposed disposition for each entry; expansion follows the normal
   demonstrated-use process.
+- Preparation does not implement rich content, add an application frontend,
+  port a full desktop shell, or install a replacement live shell.
 - This does not alter `sophia_wm_v1`, Hagia's blindness, or any existing
   authority boundary.

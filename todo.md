@@ -54,6 +54,9 @@ Status vocabulary:
   reference client; Narthex is the independent shell reference client.
 - Public role protocols carry bounded semantic policy, never shader programs.
   Engine retains compositor authority and any private renderer-provider seam.
+- Shell IPC is independent of application frontends and UI toolkits. Quickshell
+  is a downstream content reference; it adds no Qt dependency to Sophia.
+  Narthex remains the independent descriptor reference.
 - QEMU may prove deterministic protocol and policy behavior. Only physical
   evidence may prove DRM, input-device, VT, display-manager, latency, or visible
   pixels.
@@ -286,6 +289,11 @@ evidence may change that order.
 
 These rows do not reorder the critical path.
 
+- [x] Shell reference preparation: generic boundary documented, Quickshell fork
+  and `sophia` branch established, Void baseline built, and
+  [panel/popout requirements and results retained](docs/shell-reference-client-audit.md).
+  Eight of nine test suites passed; the existing popup-movement failure is
+  downstream baseline debt. This completes preparation, not content support.
 - [ ] Repair the evidence readers still pinned below their emitter. Ten accept
   `sophia_live_session status=bounded_complete` at schema 15 or lower against an
   emitter that writes 16, and nine accept `sophia_live_wm status=ready` at
@@ -339,6 +347,12 @@ tranche with a named driver and exit gate.
 
 ### Native WM and shell product
 
+- Before admitting a content prototype, characterize Quickshell's retained
+  popup-movement failure with an isolated display backend. After the CP-15
+  coherence gates, separately admit one panel/popout workflow and require an
+  independent C content client against the same public shell contract. The
+  [audit](docs/shell-reference-client-audit.md) owns requirements; this does not
+  add a frontend, toolkit dependency, content wire, or live-session change.
 - [x] Implement the bounded session-owned [control v1](docs/sophia-control-v1.md)
   endpoint and `sophia msg`: startup-only `session.control "host-admin"`, disabled
   by default, socket-derived pidfd and user/mount/PID namespace admission,
