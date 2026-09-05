@@ -6,6 +6,10 @@
 # workspaces and the scroller camera come back with it. It lives where its
 # owner can write it, so none of this needs privileges.
 #
+# A running session can do this from a keybinding now -- session:restart-wm,
+# Ctrl+Alt+f5 in the shipped profile -- which does not rebuild anything. This
+# script is the developer's version: build first, then restart.
+#
 # A reload that does not come back is rolled back to the binary it replaced,
 # because the alternative is a desktop with no window manager.
 set -euo pipefail
@@ -51,12 +55,21 @@ fi
 
 before="$(wc -l < "$log" 2>/dev/null || echo 1)"
 note "restarting policy client $running"
-kill -TERM "$running"
+# HUP rather than TERM: Hagia answers it by writing its checkpoint at the next
+# committed cycle and exiting cleanly, so the windows are recorded before the
+# process goes. TERM ends it wherever it happens to be.
+kill -HUP "$running"
+hup_deadline=$((SECONDS + 5))
 
 settled=""
 for _ in $(seq 1 100); do
     sleep 0.1
     replacement="$(pgrep -x hagia || true)"
+    if [[ "$replacement" == "$running" && $SECONDS -ge $hup_deadline ]]; then
+        note "no response to HUP after 5s; ending it"
+        kill -TERM "$running" 2>/dev/null || true
+        hup_deadline=$((SECONDS + 3600))
+    fi
     [[ -n "$replacement" && "$replacement" != "$running" ]] || continue
     # Started is not working. A committed layout is the session's own word
     # that the replacement negotiated the protocol and produced a projection

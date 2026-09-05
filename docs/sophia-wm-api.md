@@ -1,8 +1,10 @@
 # Sophia Window Manager API
 
 **Role:** normative native spatial-policy protocol.
-**Status:** `sophia_wm_v1` interface major 1, wire revision 3 is stable. The
-experimental Rust API v7 transport has been removed.
+**Status:** `sophia_wm_v1` interface major 1 is in progress at wire revision 3.
+Revisions advance as the protocol grows; negotiation, not a freeze, is what
+keeps clients and servers compatible. The experimental Rust API v7 transport
+has been removed.
 
 Sophia has one spatial-policy role. A WM speaks that role directly over the
 language-neutral `sophia_wm_v1` IPC protocol. It is neither an application
@@ -52,8 +54,8 @@ ambient IPC that recombines their authority.
 ## Removed Experimental API v7
 
 The client-hosted Rust socket, revision negotiation, workspace reducer, policy
-reload frames, demo server, and Engine transport were removed after the
-revision-3 freeze gates closed. Configuration accepts only
+reload frames, demo server, and Engine transport were removed once revision 3
+passed its gates. Configuration accepts only
 `--wm-interface=sophia_wm_v1`; `api_v7` fails closed. There is no alternate
 workspace-policy transport.
 
@@ -143,7 +145,8 @@ continuous interaction geometry may coalesce to their latest state.
 `SnapshotOutput` carries only opaque output identity and generation, visible
 focus, full logical bounds, and policy work area. It carries no scale,
 transform, mode, connector identity, enabled flag, or reserved expansion
-space. That omission is permanent for stable revision 3:
+space. Revision 3 omits them deliberately, and each omission is a decision
+with a reason rather than a gap waiting to be filled:
 
 - **Scale never crosses.** Engine hands policy a logical space already expressed
   in the applicable scale.
@@ -333,14 +336,30 @@ a client-specific adapter.
 
 ## Stability Gate
 
-The revision-3 freeze required retained Triad behavior to stop exposing missing
-WM facts or operations and required the independently implemented Hagia, Rust,
-and C clients to pass identical negotiation, snapshot, projection, action,
-focus, multi-output, rejection, timeout, restart, and last-layout tests. Those
-gates passed, including the retained physical-output apply/rollback evidence
-and an immutable archived C99 client.
+Revision 3 required retained Triad behavior to stop exposing missing WM facts
+or operations, and required the independently implemented Hagia, Rust, and C
+clients to pass identical negotiation, snapshot, projection, action, focus,
+multi-output, rejection, timeout, restart, and last-layout tests. Those gates
+passed, including the retained physical-output apply/rollback evidence and an
+immutable archived C99 client.
 
-`sophia_wm_v1` major 1 revision 3 is therefore stable. Later shell, broker,
-portal, and output work remains separately gated and cannot reopen its frozen
-records. Stable revisions remain supported according to the [Sophia Native
-Protocol Family](sophia-policy-ipc.md).
+Revision 3 is therefore complete, which is not the same as final. This
+protocol is a work in progress and later revisions may add records, message
+kinds and vocabulary. What holds compatibility together is negotiation: a
+client names the range it can speak in `ClientHello` and the server selects
+one in `ServerWelcome`, so a newer client meeting an older server operates at
+the revision they agree on with the newer vocabulary simply absent.
+
+That contract carries real weight here, because the policy client and the
+Engine can be replaced independently -- the client lives where its owner can
+rewrite it and the Engine ships in a signed release. A version skew is
+therefore ordinary rather than exceptional, and the rule for it is: operate at
+the selected revision, or refuse naming both revisions. Never parse a record
+one side meant differently. The immutable archived revision-3 C99 client
+exists to keep older-revision service honest as newer ones land.
+
+A record that has shipped in a released revision does not change shape within
+that revision; a new revision is how a shape changes. Later shell, broker,
+portal, and output work remains separately gated. Released revisions remain
+supported according to the [Sophia Native Protocol
+Family](sophia-policy-ipc.md).

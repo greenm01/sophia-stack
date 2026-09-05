@@ -1,15 +1,20 @@
-# `sophia_wm_v1` Freeze Surface
+# `sophia_wm_v1` Wire-Change Surface
 
-**Role:** pre-freeze decision record for wire-layout risk.
+**Role:** decision record for wire-layout risk.
 
-Freezing `sophia_wm_v1` makes its message and record layouts permanent. This
-file enumerates, for every retained row in Hagia's port ledger, whether closing
-that row can require a wire change — and if so, which kind. Its purpose is to
-convert an unbounded "we might need to change the wire later" risk into a bounded
-list of decisions that can be made while changes are still cheap.
+This file enumerates, for every retained row in Hagia's port ledger, whether
+closing that row can require a wire change — and if so, which kind. It was
+written to bound the risk of freezing the protocol. `sophia_wm_v1` is no longer
+frozen: it is a work in progress whose revisions advance, with
+`ClientHello`/`ServerWelcome` negotiation as the compatibility contract (see
+`docs/sophia-wm-api.md`).
 
-The gate this serves is `todo.md`'s freeze item, whose first condition is that
-the retained Triad behavior port completes. The canonical ledger is
+The survey outlived the freeze, because the facts in it are about wire cost
+rather than permission. Knowing which rows are additive, which need a new
+message kind, and which need a new revision is what makes it possible to
+advance a revision deliberately instead of discovering the cost afterwards.
+Read a "wire impact" column as an estimate of what a change costs, not as a
+verdict on whether it is allowed. The canonical ledger is
 `docs/triad-port-ledger.md` in the Hagia repository, at Triad baseline
 `fb8fb27ec294e0fe2361375de0b2fa8c08be0ca9`. See
 `docs/triad-port-ledger-pointer.md`.
@@ -18,27 +23,27 @@ the retained Triad behavior port completes. The canonical ledger is
 
 ## The Direction Rule
 
-Every "is this pre-freeze only?" question reduces to one check, so establish it
-first:
+Every "what does this addition cost?" question reduces to one check, so
+establish it first:
 
 - **Client to server, additive forever.** The server simply accepts more than it
   used to, and an older client never sends the new value. Inbound capability
   gating already exists (`crates/sophia-runtime/src/policy_ipc.rs:289`, `:461`,
   `:496`).
-- **Server to client, irreversible without outbound gating.** A frozen client
-  rejects what it cannot decode, so the producer must consult the negotiated
-  capability set. It now does: `encode_wm_v1_policy_snapshot` takes the selected
+- **Server to client, needs outbound gating.** A client speaking an older
+  revision rejects what it cannot decode, so the producer must consult the
+  negotiated capability set. It now does: `encode_wm_v1_policy_snapshot` takes the selected
   capabilities and omits governed record kinds along with their declared counts
   (`crates/sophia-protocol/src/ipc/wm_v1_records.rs:609`), and the production
   caller passes what negotiation actually selected
   (`crates/sophia-session/src/live_session/policy_transport_worker.rs:258`).
 
-So the sentence "a client that never negotiates the capability never receives it"
-holds in both directions. That is what makes a server-to-client addition reversible
-after the freeze, and it is why the decisions below are bounded rather than
-now-or-never. The gate covers governed record kinds only; enum values inside
-already-sent records sit at fixed offsets and no gate reaches them, which is why
-enum vocabularies remain the binding constraint.
+So the sentence "a client that never negotiates the capability never receives
+it" holds in both directions. That is what lets a server-to-client addition
+land without stranding older clients. The gate covers governed record kinds
+only; enum values inside already-sent records sit at fixed offsets and no gate
+reaches them, which is why widening an enum vocabulary is the change that costs
+a revision rather than a capability bit.
 
 Note which direction the pointer work sits in: `ProjectionRequest` is
 `direction="session-to-policy"` — server to client — and carries
