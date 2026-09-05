@@ -127,6 +127,45 @@ fn older_software_frame_may_retire_after_next_dma_frame_submits() {
     );
 }
 
+/// The shape a live session actually produced, sixty-five seconds in, when a
+/// Firefox extension popup recomposed while a frame was already in flight.
+///
+/// A submit pass that finds a frame already in flight records nothing, so the
+/// cohort never marks that output submitted and `submitted_frame` answers
+/// `None` for a frame the kernel is about to retire. The reservation is the
+/// session's only remaining claim on it, which is why ownership asks
+/// `owns_frame` rather than which frame is current.
+#[test]
+fn a_frame_reserved_but_never_recorded_is_still_ours() {
+    let retired = LiveProductionNativeFrameId::from_raw(2608);
+    let present = LiveProductionScanoutContent::MixedPresent {
+        frame: retired,
+        transaction: TransactionId::from_raw(12795),
+        nonzero_rgb_pixels: 985,
+    };
+
+    assert_eq!(
+        reduce_live_production_native_retirement_owner(retired, present, None, true),
+        LiveProductionNativeRetirementOwner::SupersededDmaPresent,
+        "a reserved frame the cohort never recorded must not end the session"
+    );
+
+    use sophia_backend_live::LiveProductionNativeOwnershipMismatch;
+    let observed = LiveProductionNativeOwnershipMismatch {
+        retired_frame: retired,
+        content_frame: retired,
+        content_transaction: Some(TransactionId::from_raw(12795)),
+        submitted_frame: None,
+        in_flight_frame: Some(retired),
+        in_flight_transaction: Some(TransactionId::from_raw(12795)),
+    };
+    assert_eq!(
+        observed.kind(),
+        "reserved_but_not_submitted",
+        "the diagnostic that found this must keep naming it"
+    );
+}
+
 #[test]
 fn ordinary_head_composition_submission_does_not_advance_a_present_cohort() {
     let frame = LiveProductionNativeFrameId::from_raw(43);

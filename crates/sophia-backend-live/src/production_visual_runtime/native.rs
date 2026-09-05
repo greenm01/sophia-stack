@@ -753,7 +753,7 @@ impl LiveProductionVisualRuntime {
                 retirement.content,
                 self.present_scheduler.submitted_frame(selected_output),
                 self.present_scheduler
-                    .was_submitted(selected_output, retirement.frame),
+                    .owns_frame(selected_output, retirement.frame),
             ) {
                 LiveProductionNativeRetirementOwner::IndependentFrame => {
                     let settlement = self.settle_software_present_frame(retirement)?;
@@ -809,8 +809,7 @@ impl LiveProductionVisualRuntime {
             retirement.frame,
             retirement.content,
             self.present_scheduler.submitted_frame(output),
-            self.present_scheduler
-                .was_submitted(output, retirement.frame),
+            self.present_scheduler.owns_frame(output, retirement.frame),
         ) != LiveProductionNativeRetirementOwner::SubmittedDmaPresent
         {
             return Err("GPU retirement does not own the selected output frame".into());

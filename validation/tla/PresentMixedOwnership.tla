@@ -23,6 +23,12 @@ EXTENDS Naturals, FiniteSets
  * the failure this module exists to exclude, because in the running system *
  * that verdict ends the session.                                           *
  *                                                                          *
+ * A submit pass that finds a frame already in flight records nothing, so a  *
+ * frame can be in the kernel while the cohort has never marked its output   *
+ * submitted. The reservation is then the only evidence the session put it   *
+ * there, and treating that as unowned is what ended a session sixty-five    *
+ * seconds after it started.                                                 *
+ *                                                                          *
  * Deliberately not modelled: pixel content, fences and all timing (a       *
  * retirement's arrival order is the only timing that matters here), and    *
  * buffer release, which `PresentFlipOwnership` owns for the direct path    *
@@ -44,25 +50,28 @@ NoFrame == 0
 
 VARIABLES
     next,        \* the next frame identity to hand out
-    submitted,   \* every frame this session gave the kernel
+    submitted,   \* frames the cohort recorded as submitted
+    reserved,    \* frames in the kernel the cohort never recorded
     scheduler,   \* the frame the scheduler names for this output, or NoFrame
     inKernel,    \* frames the kernel still owes a retirement for
     settled,     \* frames whose retirement was accepted
     stranded     \* frames whose retirement was judged unowned
 
-vars == <<next, submitted, scheduler, inKernel, settled, stranded>>
+vars == <<next, submitted, reserved, scheduler, inKernel, settled, stranded>>
 
 TypeOK ==
     /\ next \in 1 .. (MaxFrames + 1)
     /\ submitted \subseteq Frames
+    /\ reserved \subseteq Frames
     /\ scheduler \in Frames \cup {NoFrame}
-    /\ inKernel \subseteq submitted
-    /\ settled \subseteq submitted
+    /\ inKernel \subseteq (submitted \cup reserved)
+    /\ settled \subseteq (submitted \cup reserved)
     /\ stranded \subseteq Frames
 
 Init ==
     /\ next = 1
     /\ submitted = {}
+    /\ reserved = {}
     /\ scheduler = NoFrame
     /\ inKernel = {}
     /\ settled = {}
@@ -79,7 +88,7 @@ Submit ==
     /\ inKernel' = inKernel \cup {next}
     /\ scheduler' = next
     /\ next' = next + 1
-    /\ UNCHANGED <<settled, stranded>>
+    /\ UNCHANGED <<reserved, settled, stranded>>
 
 (***************************************************************************
  * A scene-driven composition takes the scheduler without submitting a      *
@@ -89,7 +98,20 @@ Submit ==
 Supersede ==
     /\ scheduler # NoFrame
     /\ scheduler' = NoFrame
-    /\ UNCHANGED <<next, submitted, inKernel, settled, stranded>>
+    /\ UNCHANGED <<next, submitted, reserved, inKernel, settled, stranded>>
+
+(***************************************************************************
+ * A frame reaches the kernel on a pass that finds it already in flight, so *
+ * nothing records the submission. The scheduler still reserves it, and     *
+ * that reservation is the session's only claim on it.                      *
+ ***************************************************************************)
+ReserveWithoutRecording ==
+    /\ next <= MaxFrames
+    /\ reserved' = reserved \cup {next}
+    /\ inKernel' = inKernel \cup {next}
+    /\ scheduler' = next
+    /\ next' = next + 1
+    /\ UNCHANGED <<submitted, settled, stranded>>
 
 (***************************************************************************
  * Ownership is a question about what this session submitted, not about     *
@@ -97,7 +119,9 @@ Supersede ==
  * settles whether or not it was superseded first.                          *
  ***************************************************************************)
 OwnsRetirement(f) ==
-    IF SchedulerOnlyOwnership THEN f = scheduler ELSE f \in submitted
+    IF SchedulerOnlyOwnership
+      THEN f = scheduler
+      ELSE f \in (submitted \cup reserved)
 
 Retire(f) ==
     /\ f \in inKernel
@@ -108,10 +132,11 @@ Retire(f) ==
          ELSE /\ stranded' = stranded \cup {f}
               /\ UNCHANGED settled
     /\ scheduler' = IF scheduler = f THEN NoFrame ELSE scheduler
-    /\ UNCHANGED <<next, submitted>>
+    /\ UNCHANGED <<next, submitted, reserved>>
 
 Next ==
     \/ Submit
+    \/ ReserveWithoutRecording
     \/ Supersede
     \/ \E f \in inKernel : Retire(f)
 
@@ -125,7 +150,7 @@ FairSpec ==
  * Safety. A retirement is accepted only for a frame this session gave the  *
  * kernel. This is the rule the running check is defending, and it stays.   *
  ***************************************************************************)
-SettledWereSubmitted == settled \subseteq submitted
+SettledWereSubmitted == settled \subseteq (submitted \cup reserved)
 
 (***************************************************************************
  * Safety. Nothing this session submitted is ever judged unowned. A         *
@@ -136,7 +161,7 @@ SettledWereSubmitted == settled \subseteq submitted
  * frame, which is what the code does today, and this is the invariant that *
  * then fails.                                                              *
  ***************************************************************************)
-NoSubmittedFrameIsStranded == stranded \cap submitted = {}
+NoSubmittedFrameIsStranded == stranded \cap (submitted \cup reserved) = {}
 
 (***************************************************************************
  * Progress. Every frame the kernel holds eventually settles. A stranded    *

@@ -660,12 +660,30 @@ impl LiveProductionPresentScheduler {
         queued.chain(in_flight)
     }
 
-    /// Whether this session gave the kernel this frame for this output.
+    /// Whether this frame is this session's to retire on this output.
     ///
-    /// Ownership is a question about what was submitted, not about what the
-    /// scheduler names now. `PresentMixedOwnership` states the distinction and
-    /// its negative control shows what judging by the current frame costs.
-    pub fn was_submitted(
+    /// Three things make it ours, and only the first is about being current.
+    /// The frame the cohort names as submitted is ours. A frame we submitted
+    /// earlier and have since displaced is ours, because the kernel retires
+    /// what it scanned out rather than what the scheduler now believes. And a
+    /// frame still reserved for the output is ours even though the cohort has
+    /// not marked it submitted: a submit pass that finds it already in flight
+    /// records nothing, so the reservation is the only remaining evidence that
+    /// we put it there.
+    ///
+    /// `PresentMixedOwnership` states this; its negative control is the
+    /// version that asks only which frame is current.
+    pub fn owns_frame(
+        &self,
+        output: sophia_protocol::OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) -> bool {
+        self.submitted_frame(output) == Some(frame)
+            || self.in_flight_frame(output) == Some(frame)
+            || self.was_submitted(output, frame)
+    }
+
+    fn was_submitted(
         &self,
         output: sophia_protocol::OutputId,
         frame: LiveProductionNativeFrameId,
