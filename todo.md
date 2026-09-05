@@ -166,9 +166,14 @@ is the starting evidence; no new comparison run is required.
   Release `0.1.0-417e97d2e25b` is packaged with Hagia `38ea8da` and checked
   executable/profile digests. The personal profile's two legacy application IDs
   were corrected with operator approval; paired parser checks and complete
-  session-argument preflight pass. Installation awaits local sudo authentication
-  through the prepared `/tmp/i` shortcut; the existing installed release remains
-  selected until then.
+  session-argument preflight pass. That release was installed and started,
+  which surfaced two session-ending defects now fixed in `e18beede`: a pointer
+  preference a device could not hold failed the whole seat, and the requested
+  output topology was validated and then never applied. Release
+  `0.1.0-e18beede1831` packages those with Hagia `5662d43`, whose profile
+  validation now refuses a trigger Sophia cannot bind to a keycode — the second
+  defect that ended a login, and one `hagia config check` had been calling
+  valid. Installation of that release awaits local sudo authentication.
 - [ ] Pass a short physical acceptance check: start normally, launch terminal
   and Firefox, type and change focus, resize, use both outputs, return from a
   VT, and log out cleanly. Include a basic tab-layout interaction.
