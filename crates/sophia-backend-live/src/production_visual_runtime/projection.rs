@@ -399,6 +399,10 @@ fn presented_input_layer_snapshots(
         .map(|(index, state)| LayerSnapshot {
             surface: state.surface,
             authority_local_id: None,
+            // Rebuilt from what the Engine committed, which records pixels
+            // rather than which policy placed them. Ownership travels with the
+            // proposal, not with a read-back.
+            output: None,
             namespace: metadata
                 .get(&state.surface)
                 .and_then(|metadata| metadata.namespace),
@@ -424,6 +428,8 @@ fn layer_snapshot(
     LayerSnapshot {
         surface: state.surface,
         authority_local_id: None,
+        // As above: a read-back of committed pixels names no owner.
+        output: None,
         namespace: metadata.and_then(|metadata| metadata.namespace),
         stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
         geometry: state.geometry,

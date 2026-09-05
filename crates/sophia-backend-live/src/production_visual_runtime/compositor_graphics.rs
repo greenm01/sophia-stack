@@ -166,6 +166,33 @@ pub fn live_present_head_composition_sources<'a>(
     Ok(sources)
 }
 
+/// The surfaces one head composites: those whose projection placed them on it.
+///
+/// Geometry still decides how much of a surface a head shows -- a column half
+/// past the edge shows its visible half -- but it does not decide which head
+/// shows it. Selecting by rectangle instead drew one display's window on the
+/// display beside it, because a scrolling strip runs past its own edge on
+/// purpose and the neighbour's rectangle starts there.
+///
+/// A surface no projection has placed belongs to no head. Nothing is
+/// presented before its first placement, so that is unobservable rather than
+/// a window that never appears.
+pub fn live_surfaces_owned_by_output(
+    presentation_order: &[SurfaceId],
+    surface_outputs: &BTreeMap<SurfaceId, OutputId>,
+    output: OutputId,
+) -> Vec<SurfaceId> {
+    presentation_order
+        .iter()
+        .copied()
+        .filter(|surface| {
+            surface_outputs
+                .get(surface)
+                .is_some_and(|owner| *owner == output)
+        })
+        .collect()
+}
+
 impl LiveProductionVisualRuntime {
     pub(super) fn cpu_output_head_composition_frames_from_layers(
         &self,
@@ -529,9 +556,19 @@ impl LiveProductionVisualRuntime {
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
+        // A head composites the surfaces whose projection placed them on it,
+        // and no others. Geometry still decides how much of a surface this
+        // head shows -- a column half past the edge shows its visible half --
+        // but it does not decide which head shows it.
+        //
+        // A surface no projection has placed belongs to no head. Nothing is
+        // presented before its first placement, so that is unobservable
+        // rather than a window that never appears.
+        let owned =
+            live_surfaces_owned_by_output(presentation_order, &self.surface_outputs, output);
         let mut display_list = surface_chrome_display_list_for_surfaces(
             output,
-            presentation_order,
+            &owned,
             &self.chrome_surfaces,
             committed_surfaces,
             self.focused_surface,

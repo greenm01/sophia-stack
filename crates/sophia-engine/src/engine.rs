@@ -17,6 +17,9 @@ pub fn layer_templates_from_surface_transactions(
         .map(|(index, transaction)| LayerSnapshot {
             surface: transaction.surface,
             authority_local_id: None,
+            // A template describes a transaction, not a placement, so it names
+            // no output. The placement path fills this in.
+            output: None,
             namespace: transaction.namespace,
             stack_rank: u32::try_from(index).unwrap_or(u32::MAX),
             geometry: transaction.target_geometry,

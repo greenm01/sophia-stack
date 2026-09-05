@@ -102,6 +102,20 @@ pub struct LayerSnapshot {
     pub transform: Transform,
     pub generation: u64,
     pub resize_sync: ResizeSyncCapability,
+    /// The output whose projection placed this layer, if one did.
+    ///
+    /// Composition selects by this rather than by which output rectangle the
+    /// geometry falls in. A scrolling layout puts columns past the edge of
+    /// their own display on purpose, and with a second display to the right
+    /// "past the edge" and "inside the neighbour" are the same region -- so
+    /// geometry alone drew one display's window on another. Geometry still
+    /// decides how much of a layer an output shows; it does not decide which
+    /// output shows it.
+    ///
+    /// `None` means no policy has placed it, and such a layer is composited
+    /// by no output. That is observable only if something could be presented
+    /// before its first placement; the admission path places first.
+    pub output: Option<OutputId>,
 }
 
 impl LayerSnapshot {

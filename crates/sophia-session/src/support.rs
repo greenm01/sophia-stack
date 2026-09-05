@@ -26,6 +26,8 @@ pub fn synthetic_layers() -> Vec<LayerSnapshot> {
     vec![LayerSnapshot {
         surface: SurfaceId::new(1, 1),
         authority_local_id: None,
+        // Synthetic: no projection placed it.
+        output: None,
         namespace: None,
         stack_rank: 0,
         geometry: Rect {

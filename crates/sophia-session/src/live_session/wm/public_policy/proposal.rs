@@ -147,6 +147,9 @@ fn public_live_proposal(
         .find(|projection| projection.output == active_output)
         .and_then(|projection| projection.focus);
     for projection in projections {
+        // The output this projection placed for. Every layer built below is
+        // composited by this head and no other.
+        let owning_output = projection.output;
         for placement in projection.placements {
             let materialized = content
                 .get(&placement.surface)
@@ -165,6 +168,9 @@ fn public_live_proposal(
                 LayerSnapshot {
                     surface: facts.surface,
                     authority_local_id: None,
+                    // The projection that placed this names the output, and
+                    // that is what decides which head composites it.
+                    output: Some(owning_output),
                     namespace: None,
                     stack_rank: facts.stack_rank,
                     geometry: facts.geometry,

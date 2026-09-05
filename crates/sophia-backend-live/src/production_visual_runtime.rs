@@ -21,7 +21,9 @@ mod present;
 mod projection;
 mod service;
 mod software_present;
-pub use compositor_graphics::live_present_head_composition_sources;
+pub use compositor_graphics::{
+    live_present_head_composition_sources, live_surfaces_owned_by_output,
+};
 pub use native::*;
 pub use ownership::*;
 pub use service::*;
@@ -263,6 +265,7 @@ pub struct LiveProductionVisualRuntime {
     retired_software_presents_overflowed: bool,
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
+    surface_outputs: BTreeMap<SurfaceId, OutputId>,
     chrome_surfaces: Vec<SurfaceId>,
     focused_surface: Option<SurfaceId>,
     surface_chrome_style: SurfaceChromeStyle,
@@ -378,6 +381,7 @@ impl LiveProductionVisualRuntime {
             retired_software_presents_overflowed: false,
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
+            surface_outputs: BTreeMap::new(),
             chrome_surfaces: Vec::new(),
             focused_surface: None,
             surface_chrome_style: SurfaceChromeStyle::default(),
@@ -1044,6 +1048,17 @@ impl LiveProductionVisualRuntime {
         self.presentation_order.clear();
         self.presentation_order
             .extend(layout.iter().map(|layer| layer.surface));
+        // Which head composites each surface. A scrolling layout puts columns
+        // past the edge of their own display on purpose, and with a second
+        // display beside it, "past the edge" and "inside the neighbour" are
+        // the same region -- so without this, geometry alone drew one
+        // display's window on another.
+        self.surface_outputs.clear();
+        for layer in layout {
+            if let Some(output) = layer.output {
+                self.surface_outputs.insert(layer.surface, output);
+            }
+        }
         for layer in layout {
             self.present_scheduler
                 .reproject_surface(layer.surface, layer.geometry);

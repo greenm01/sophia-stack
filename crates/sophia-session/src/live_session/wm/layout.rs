@@ -456,6 +456,9 @@ impl PersistentLiveLayout {
                     let layer = LayerSnapshot {
                         surface: transaction.surface,
                         authority_local_id: None,
+                        // Not a policy placement: this is the layout's own
+                        // record of a transaction. The proposal sets the owner.
+                        output: None,
                         namespace: None,
                         stack_rank: if policy_managed {
                             u32::try_from(index).unwrap_or(u32::MAX - 1)
