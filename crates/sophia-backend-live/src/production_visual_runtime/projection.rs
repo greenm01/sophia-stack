@@ -397,6 +397,7 @@ fn presented_input_layer_snapshots(
         .iter()
         .enumerate()
         .map(|(index, state)| LayerSnapshot {
+            translation: None,
             surface: state.surface,
             authority_local_id: None,
             // Rebuilt from what the Engine committed, which records pixels
@@ -426,6 +427,7 @@ fn layer_snapshot(
     metadata: Option<&LiveSurfaceProjectionMetadata>,
 ) -> LayerSnapshot {
     LayerSnapshot {
+        translation: None,
         surface: state.surface,
         authority_local_id: None,
         // As above: a read-back of committed pixels names no owner.
@@ -625,6 +627,7 @@ mod tests {
         assert_eq!(runtime.input_projections()[0].output, primary.id);
         assert_eq!(runtime.input_projections()[1].output, secondary.id);
         let layer_for = |surface, handle| LayerSnapshot {
+            translation: None,
             output: None,
             surface,
             authority_local_id: None,

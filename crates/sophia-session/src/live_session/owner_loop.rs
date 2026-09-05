@@ -369,6 +369,8 @@ fn run_session_loop_inner(
         .as_ref()
         .and_then(|wm| wm.surface_chrome_style())
         .unwrap_or(config.surface_chrome_style);
+    let window_transitions_enabled = !std::env::var("SOPHIA_ENABLE_WINDOW_TRANSITIONS")
+        .is_ok_and(|value| value == "0");
     let mut runtime = if initialize_empty_runtime {
         let indicator_strip_enabled = wm_session
             .as_ref()
@@ -381,6 +383,7 @@ fn run_session_loop_inner(
         )
         .with_surface_chrome_style(initial_border_style)
         .with_indicator_strip_enabled(indicator_strip_enabled);
+        initialized.set_transitions_enabled(window_transitions_enabled);
         initialized.set_indicator_publication(
             wm_session
                 .as_ref()

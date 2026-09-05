@@ -105,14 +105,19 @@ unadvertised future work.
 ## The Ladder
 
 **A window manager**, in the dwm, niri, or xmonad tradition. One binary
-speaking `sophia_wm_v1`. The interface carries twelve capability bits, from
-`bindings` alone up to `tab_groups`; negotiate the ones you need and
+speaking `sophia_wm_v1`. The interface carries thirteen capability bits, from
+`bindings` alone up to `translation_groups`; negotiate the ones you need and
 ignore the rest. A minimal tiler is a reducer — snapshot in, projection out —
 and you inherit the session's shell (or none), the portals, and the
 compatibility layer for free. Start from `protocol/archive/sophia-wm-v1-r3/`,
 which is self-contained: the frozen spec, a generated C codec, a worked
 client, and checksums. Hagia is the full-width reference.
 `docs/sophia-wm-api.md` and `docs/wm-v1-freeze-surface.md` own the details.
+
+For smooth positional transitions, submit final placements with optional
+[translation groups](window-transitions.md). Engine owns the GPU timeline,
+frame pacing and presented input geometry; the WM retains camera and navigation
+policy. Shell clients do not acquire rendering or animation authority.
 
 Don't mistake this rung for a lesser desktop. What makes niri daily-drivable
 isn't that the compositor does everything; it's that the environment around

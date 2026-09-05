@@ -166,7 +166,8 @@ fn public_live_proposal(
                     .layout_facts(placement.surface)
                     .ok_or("public WM projection names a missing planning surface")?;
                 LayerSnapshot {
-                    surface: facts.surface,
+                    translation: None,
+            surface: facts.surface,
                     authority_local_id: None,
                     // The projection that placed this names the output, and
                     // that is what decides which head composites it.

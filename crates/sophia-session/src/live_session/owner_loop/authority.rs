@@ -5,7 +5,7 @@
             }
             _ => None,
         };
-        if native_frame_service_request
+        if runtime.as_ref().is_some_and(|r| r.translation_frames_pending()) || native_frame_service_request
             .as_ref()
             .is_some_and(native_frame_service_requires_owner_progress)
         {
@@ -15,7 +15,7 @@
         let paced_repaint_preemption = runtime.is_some()
             && native_scanout.is_some()
             && !native_frame_service_preempted_previous_cycle
-            && primary_frame_pacer.repaint_due(Instant::now());
+            && (primary_frame_pacer.repaint_due(Instant::now()) || runtime.as_ref().is_some_and(|r| r.translation_frame_due()));
         let native_frame_service_preemption = paced_repaint_preemption
             || native_frame_service_request
             .as_ref()
@@ -68,6 +68,7 @@
                     // spinning while a renderer or policy response is pending.
                     let now = Instant::now();
                     let mut wait = primary_frame_pacer.cap_wait(now, Duration::from_millis(1));
+                    if let Some(runtime) = runtime.as_ref() { wait = runtime.translation_cap_wait(now, wait); }
                     if let Some(quiescence) = session_quiescence.as_ref() {
                         wait = wait.min(quiescence.deadline.saturating_duration_since(now));
                     }
@@ -85,6 +86,7 @@
                     session_controls.pending_len() != 0
                         || explicit_pointer_grabs.pending() != 0,
                 );
+                let maximum = runtime.as_ref().map_or(maximum, |r| r.translation_cap_wait(now, maximum));
                 authority_receiver.recv_timeout(primary_frame_pacer.cap_wait(now, maximum))
             }
         };
@@ -725,7 +727,7 @@
                     let native_work_remains = native_frame_service_requires_owner_progress(
                         &runtime.native_output_service_request(native_scanout)?,
                     );
-                    if native_work_remains {
+                    if native_work_remains || runtime.translation_frames_pending() {
                         native_frame_service_deadline_armed = true;
                         native_frame_idle_service_cycles = 0;
                     } else if native_frame_service_deadline_armed {

@@ -26,6 +26,8 @@ impl LiveProductionVisualRuntime {
             self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
         };
+        native_scanout
+            .set_translation_motion_active(self.translations.active(self.translation_time()));
         let queued = self
             .present_scheduler
             .front()

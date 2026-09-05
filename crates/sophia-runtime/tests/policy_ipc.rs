@@ -432,3 +432,62 @@ fn tab_projection_extensions_require_negotiation_and_follow_the_frozen_prefix() 
         }
     }
 }
+
+#[test]
+fn translation_extensions_require_negotiation_and_preserve_prefix_count() {
+    use sophia_protocol::{
+        PROJECTION_TRANSLATION_GROUP_RECORD_KIND, SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS,
+    };
+    for enabled in [false, true] {
+        let mut connection = PolicyConnectionState::default();
+        connection.connect(1).unwrap();
+        connection
+            .negotiate(&WmV1ClientHello {
+                minimum_revision: 3,
+                maximum_revision: 3,
+                capabilities: if enabled {
+                    SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS
+                } else {
+                    0
+                },
+            })
+            .unwrap();
+        let tx = TransactionId::from_raw(90);
+        connection
+            .begin_projection(tx, projection_begin(1))
+            .unwrap();
+        let extension = |ordinal| WmV1ProjectionChunk {
+            connection_epoch: 1,
+            ordinal,
+            record_kind: PROJECTION_TRANSLATION_GROUP_RECORD_KIND,
+            item_count: 1,
+            data: vec![0; 32],
+        };
+        assert!(
+            connection
+                .append_projection_chunk(tx, extension(0))
+                .is_err()
+        );
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 0, 1, 1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 1, 2, 2))
+            .unwrap();
+        let appended = connection.append_projection_chunk(tx, extension(2));
+        if enabled {
+            appended.unwrap();
+            connection.finish_projection(tx, projection_end(1)).unwrap();
+            let Some(QueuedPolicyProjection::Admitted(assembled)) = connection.settle_queued()
+            else {
+                panic!("missing admitted transfer")
+            };
+            let transfer = assembled.into_wire_transfer();
+            assert_eq!(transfer.begin.chunk_count, 2);
+            assert_eq!(transfer.end.chunk_count, 2);
+            assert_eq!(transfer.chunks.len(), 3);
+        } else {
+            assert_eq!(appended, Err(PolicyTransferError::UnsupportedCapability));
+        }
+    }
+}

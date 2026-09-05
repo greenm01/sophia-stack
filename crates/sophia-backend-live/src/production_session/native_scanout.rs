@@ -60,6 +60,7 @@ mod persistent_native_scanout {
         pub max_service_skew: usize,
         /// Whether the session asked for direct scanout at all.
         pub direct_scanout_admissible: bool,
+        translation_motion_active: bool,
         /// Whether startup readiness has proven a picture reached glass. Until
         /// it has, every head composes: the proof reads composed pixels, and a
         /// direct frame produces none.
@@ -898,6 +899,7 @@ mod persistent_native_scanout {
                 max_in_flight_per_output: 0,
                 max_service_skew: 0,
                 direct_scanout_admissible: false,
+                translation_motion_active: false,
                 direct_scanout_admitted: false,
                 pending_frame_supersessions: 0,
                 cost: crate::DirectScanoutCost::default(),
@@ -3115,7 +3117,10 @@ mod persistent_native_scanout {
             // proof could be made, and the proof reads composed pixels.
             self.direct_scanout_admissible = Self::direct_scanout_enabled();
             self.exporters[index].set_direct_scanout_enabled(
-                self.direct_scanout_admitted && self.direct_scanout_admissible && !mirrored,
+                self.direct_scanout_admitted
+                    && self.direct_scanout_admissible
+                    && !mirrored
+                    && !self.translation_motion_active,
             );
             if Self::shared_renderer_worker_enabled() {
                 let group = self.heads[index].group;
@@ -3278,7 +3283,24 @@ mod persistent_native_scanout {
             }
             for index in 0..self.exporters.len() {
                 let mirrored = self.head_indices(self.heads[index].output.id).len() > 1;
-                self.exporters[index].set_direct_scanout_enabled(!mirrored);
+                self.exporters[index]
+                    .set_direct_scanout_enabled(!mirrored && !self.translation_motion_active);
+            }
+        }
+
+        pub fn set_translation_motion_active(&mut self, active: bool) {
+            if self.translation_motion_active == active {
+                return;
+            }
+            self.translation_motion_active = active;
+            for index in 0..self.exporters.len() {
+                let mirrored = self.head_indices(self.heads[index].output.id).len() > 1;
+                self.exporters[index].set_direct_scanout_enabled(
+                    !active
+                        && self.direct_scanout_admitted
+                        && self.direct_scanout_admissible
+                        && !mirrored,
+                );
             }
         }
 

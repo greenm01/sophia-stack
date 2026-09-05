@@ -302,6 +302,7 @@ impl LiveProductionVisualRuntime {
         // One readiness pass per card, before any output can retire, submit a
         // successor, or declare its outstanding request stalled.
         native_scanout.pump_native_completions()?;
+        self.service_translation_frames(native_scanout, scene)?;
         let initial = self.native_output_service_request(native_scanout)?;
         let mut reducer = OutputFrameServiceReducer::begin(&initial)
             .map_err(|error| format!("invalid output frame service state: {error:?}"))?;
@@ -342,6 +343,7 @@ impl LiveProductionVisualRuntime {
         // outstanding request still lacking both proofs may terminate.
         if native_scanout.page_flip_hard_stall().is_some() {
             native_scanout.pump_native_completions()?;
+            self.service_translation_frames(native_scanout, scene)?;
             if let Some(retired) = self.retire_native_scanout(native_scanout)? {
                 retired_present = Some(retired);
             }

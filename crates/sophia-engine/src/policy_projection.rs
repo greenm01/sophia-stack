@@ -252,7 +252,7 @@ impl PolicyProjectionReducer {
         {
             return PolicyProjectionOutcome::RejectedStale;
         }
-        if !proposal.transaction.is_valid() {
+        if !proposal.transaction.is_valid() || !crate::policy_translation_groups_valid(proposal) {
             return PolicyProjectionOutcome::RejectedInvalid;
         }
         let Ok(candidate) = self.validated_candidate(&request, proposal) else {

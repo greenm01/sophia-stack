@@ -171,6 +171,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 fn test_layer(surface: SurfaceId, geometry: Rect) -> LayerSnapshot {
     LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,
@@ -265,6 +266,7 @@ fn planning_layers_for(
             layout.layers.get(&surface).cloned().or_else(|| {
                 let facts = layout.layout_facts(surface)?;
                 Some(LayerSnapshot {
+                    translation: None,
                     output: None,
                     surface: facts.surface,
                     authority_local_id: None,
@@ -578,6 +580,7 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
     let mut layout = PersistentLiveLayout::default();
     layout.layout_epochs.set_recovery_extent(surface, safe);
     let proposal = sophia_protocol::PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(9),
         connection_epoch: 1,
@@ -667,6 +670,7 @@ fn public_policy_reconciliation_keeps_policy_omission_but_drives_changed_content
         height: 400,
     };
     let proposal = sophia_protocol::PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(10),
         connection_epoch: 1,
@@ -761,6 +765,7 @@ fn public_policy_fullscreen_reconciliation_preserves_the_full_output() {
         height: 1440 - sophia_engine::INDICATOR_STRIP_HEIGHT,
     };
     let proposal = sophia_protocol::PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(11),
         connection_epoch: 1,
@@ -858,6 +863,7 @@ fn public_policy_materializes_reconciled_content_without_committing_content_to_t
     let mut layout = PersistentLiveLayout::default();
     layout.layers.insert(surface, test_layer(surface, outer));
     let proposal = sophia_protocol::PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(11),
         connection_epoch: 1,

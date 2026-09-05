@@ -592,6 +592,7 @@ fn newly_queued_present_uses_the_committed_presentation_layout() {
         height: 1426,
     };
     let layout = [sophia_protocol::LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,
@@ -763,6 +764,7 @@ fn present_released_after_commit_runs_when_its_surface_is_visible() {
         LiveProductionPresentDisposition::StageLayout { epoch },
     );
     let layout = [sophia_protocol::LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,
@@ -1164,6 +1166,7 @@ fn later_epoch_present_does_not_supersede_another_surface() {
         height: 48,
     };
     let layout = [sophia_protocol::LayerSnapshot {
+        translation: None,
         output: None,
         surface: second_surface,
         authority_local_id: None,

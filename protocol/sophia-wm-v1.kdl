@@ -11,6 +11,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "profile_activation" bit=9
     capability "launch_placement" bit=10
     capability "tab_groups" bit=11
+    capability "translation_groups" bit=12
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -138,6 +139,22 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "focused" type="u32" sample=1
     }
     extension-record "ProjectionTabMember" transfer="projection" kind=65282 gate="tab_groups" max=2048 {
+        field "output" type="u64" sample=1
+        field "group" type="u64" sample=1
+        field "surface_index" type="u32" sample=1
+        field "surface_generation" type="u32" sample=1
+    }
+
+    // Presentation-only shared translation; placement and authority stay final.
+    extension-record "ProjectionTranslationGroup" transfer="projection" kind=65283 gate="translation_groups" max=16 {
+        field "output" type="u64" sample=1
+        field "group" type="u64" sample=1
+        field "x" type="i32" sample=1
+        field "y" type="i32" sample=0
+        field "member_count" type="u32" sample=1
+        field "reserved" type="u32" sample=0
+    }
+    extension-record "ProjectionTranslationMember" transfer="projection" kind=65284 gate="translation_groups" max=1024 {
         field "output" type="u64" sample=1
         field "group" type="u64" sample=1
         field "surface_index" type="u32" sample=1

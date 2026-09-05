@@ -454,7 +454,8 @@ impl PersistentLiveLayout {
                         geometry = center_geometry_without_scaling(geometry, output);
                     }
                     let layer = LayerSnapshot {
-                        surface: transaction.surface,
+                        translation: None,
+            surface: transaction.surface,
                         authority_local_id: None,
                         // Not a policy placement: this is the layout's own
                         // record of a transaction. The proposal sets the owner.

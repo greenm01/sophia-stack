@@ -425,3 +425,27 @@ Transfer: `projection`; record kind: 0xFF02; gated on capability `tab_groups`; m
 | 8 | `group` | `u64` | little-endian |
 | 16 | `surface_index` | `u32` | little-endian |
 | 20 | `surface_generation` | `u32` | little-endian |
+
+## `ProjectionTranslationGroup` extension record
+
+Transfer: `projection`; record kind: 0xFF03; gated on capability `translation_groups`; maximum records: 16; fixed size: 32 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `group` | `u64` | little-endian |
+| 16 | `x` | `i32` | little-endian |
+| 20 | `y` | `i32` | little-endian |
+| 24 | `member_count` | `u32` | little-endian |
+| 28 | `reserved` | `u32` | little-endian |
+
+## `ProjectionTranslationMember` extension record
+
+Transfer: `projection`; record kind: 0xFF04; gated on capability `translation_groups`; maximum records: 1024; fixed size: 24 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `group` | `u64` | little-endian |
+| 16 | `surface_index` | `u32` | little-endian |
+| 20 | `surface_generation` | `u32` | little-endian |

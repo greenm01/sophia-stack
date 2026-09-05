@@ -455,6 +455,7 @@ fn software_present_during_seat_lifetime(suspended: bool) {
         released_fences: Vec::new(),
     };
     let layout = [LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,
@@ -709,6 +710,7 @@ fn deferred_successor_present_retains_resources_until_stream_admission() {
         height: size.height,
     };
     let layout = [LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,

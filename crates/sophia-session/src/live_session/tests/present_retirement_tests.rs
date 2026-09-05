@@ -12,6 +12,7 @@ fn hold_resize(
     layout.pending = Some(PendingLiveWmLayout {
         transaction,
         layers: vec![LayerSnapshot {
+            translation: None,
             output: None,
             surface,
             authority_local_id: None,

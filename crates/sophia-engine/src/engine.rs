@@ -15,6 +15,7 @@ pub fn layer_templates_from_surface_transactions(
         .iter()
         .enumerate()
         .map(|(index, transaction)| LayerSnapshot {
+            translation: None,
             surface: transaction.surface,
             authority_local_id: None,
             // A template describes a transaction, not a placement, so it names

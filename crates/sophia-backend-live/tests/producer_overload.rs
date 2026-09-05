@@ -38,6 +38,7 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
         height: size.height,
     };
     let layout = [LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,

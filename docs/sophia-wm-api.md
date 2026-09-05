@@ -2,6 +2,10 @@
 
 **Role:** normative native spatial-policy protocol.
 **Status:** `sophia_wm_v1` interface major 1 is in progress at wire revision 3.
+
+The optional [window translation contract](window-transitions.md) adds generic
+shared positional targets without changing frozen revision-3 records. WMs own
+spatial policy; Engine owns the presentation timeline and GPU rendering.
 Revisions advance as the protocol grows; negotiation, not a freeze, is what
 keeps clients and servers compatible. The experimental Rust API v7 transport
 has been removed.

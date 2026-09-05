@@ -8,6 +8,44 @@ use sophia_protocol::{
 };
 
 #[test]
+fn translation_groups_cannot_duplicate_members_or_cross_affected_outputs() {
+    for invalid_case in 0..4 {
+        let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+        reducer.connect(1).unwrap();
+        let request = reducer.issue_request(vec![output(1)]).unwrap();
+        let mut proposal = proposal(
+            &request,
+            7,
+            vec![projected(
+                output(1),
+                vec![placed(surface_id(1), 1, rect(0, 0))],
+                Some(surface_id(1)),
+            )],
+        );
+        proposal
+            .translation_groups
+            .push(sophia_protocol::PolicyTranslationGroup {
+                output: output(1),
+                group: 1,
+                x: -100,
+                y: 0,
+                members: vec![surface_id(1)],
+            });
+        match invalid_case {
+            0 => proposal.translation_groups[0].members.push(surface_id(1)),
+            1 => proposal.translation_groups[0].output = output(2),
+            2 => proposal.translation_groups[0].members[0] = surface_id(2),
+            _ => proposal.outputs[0].placements[0].presentation.fullscreen = true,
+        }
+        assert_eq!(
+            reducer.apply_proposal(&proposal),
+            PolicyProjectionOutcome::RejectedInvalid
+        );
+        assert_eq!(reducer.commit_serial(), 0);
+    }
+}
+
+#[test]
 fn duplicate_surface_across_outputs_rejects_without_partial_commit() {
     let scene = scene(1, &[surface(1), surface(2)]);
     let mut reducer = PolicyProjectionReducer::new(scene).unwrap();
@@ -600,6 +638,7 @@ fn proposal(
     outputs: Vec<PolicyOutputProjection>,
 ) -> PolicyProjectionProposal {
     PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(transaction),
         connection_epoch: request.connection_epoch,

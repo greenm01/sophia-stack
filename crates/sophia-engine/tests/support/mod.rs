@@ -69,6 +69,7 @@ pub use std::time::Duration;
 
 pub fn test_layer(surface_index: u32, stack_rank: u32, x: i32, damage: Region) -> LayerSnapshot {
     LayerSnapshot {
+        translation: None,
         output: None,
         surface: SurfaceId::new(surface_index, 1),
         authority_local_id: None,

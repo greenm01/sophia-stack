@@ -310,6 +310,7 @@ fn size(width: i32, height: i32) -> Size {
 
 fn layer(surface: SurfaceId, generation: u64) -> LayerSnapshot {
     LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: None,
@@ -473,6 +474,7 @@ fn resize_projection_preserves_generation_chain_and_cpu_updates() {
     let layers = BTreeMap::from([(
         surface,
         LayerSnapshot {
+            translation: None,
             output: None,
             surface,
             authority_local_id: None,

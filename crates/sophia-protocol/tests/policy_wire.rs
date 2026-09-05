@@ -143,6 +143,37 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 .data
                 .clone()
             }
+            "projection_translation_group" | "projection_translation_member" => {
+                let find = |name: &str| {
+                    RECORD_CORPUS
+                        .lines()
+                        .find_map(|line| line.strip_prefix(&format!("{name}|")))
+                        .map(decode_hex)
+                        .unwrap()
+                };
+                let chunks = vec![
+                    WmV1ProjectionChunk {
+                        connection_epoch: 1,
+                        ordinal: 0,
+                        record_kind: PROJECTION_TRANSLATION_GROUP_RECORD_KIND,
+                        item_count: 1,
+                        data: find("projection_translation_group"),
+                    },
+                    WmV1ProjectionChunk {
+                        connection_epoch: 1,
+                        ordinal: 1,
+                        record_kind: PROJECTION_TRANSLATION_MEMBER_RECORD_KIND,
+                        item_count: 1,
+                        data: find("projection_translation_member"),
+                    },
+                ];
+                let groups = decode_wm_translation_groups(&chunks).unwrap();
+                assert_eq!(groups[0].group, 1);
+                encode_wm_translation_groups(&groups, 1, 0).unwrap()
+                    [usize::from(name == "projection_translation_member")]
+                .data
+                .clone()
+            }
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");

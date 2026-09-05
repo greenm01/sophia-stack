@@ -21,6 +21,7 @@ mod present;
 mod projection;
 mod service;
 mod software_present;
+mod translation;
 pub use compositor_graphics::{
     live_present_head_composition_sources, live_surfaces_owned_by_output,
 };
@@ -266,6 +267,9 @@ pub struct LiveProductionVisualRuntime {
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
+    translations: TranslationTimeline,
+    translation_origin: Instant,
+    translation_deadlines: BTreeMap<OutputId, Instant>,
     chrome_surfaces: Vec<SurfaceId>,
     focused_surface: Option<SurfaceId>,
     surface_chrome_style: SurfaceChromeStyle,
@@ -382,6 +386,9 @@ impl LiveProductionVisualRuntime {
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
             surface_outputs: BTreeMap::new(),
+            translations: TranslationTimeline::default(),
+            translation_origin: Instant::now(),
+            translation_deadlines: BTreeMap::new(),
             chrome_surfaces: Vec::new(),
             focused_surface: None,
             surface_chrome_style: SurfaceChromeStyle::default(),
@@ -559,6 +566,9 @@ impl LiveProductionVisualRuntime {
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
         let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
+        if let Some(native) = native_scanout.as_deref_mut() {
+            native.set_translation_motion_active(self.translations.active(self.translation_time()));
+        }
         let chrome_surfaces_changed = self.set_chrome_surfaces(chrome_surfaces);
         let indicator_publication_changed =
             self.indicator_strip_enabled && self.set_indicator_publication(indicator_publication);
@@ -1039,6 +1049,24 @@ impl LiveProductionVisualRuntime {
     }
 
     fn apply_presentation_layout(&mut self, layout: &[LayerSnapshot]) -> bool {
+        let now = Instant::now();
+        let time = self.translation_time();
+        if self.translations.replace_targets(layout, time) {
+            tracing::debug!(
+                event = "translation_targets",
+                active = self.translations.active(time),
+                members = layout
+                    .iter()
+                    .filter(|layer| layer.translation.is_some())
+                    .count(),
+                "updated Engine presentation translation targets"
+            );
+        }
+        for output in self.outputs.logical_viewports().map(|(id, _)| id) {
+            if self.translations.active_on(output, time) {
+                self.translation_deadlines.entry(output).or_insert(now);
+            }
+        }
         let order_changed = self.presentation_order.len() != layout.len()
             || self
                 .presentation_order

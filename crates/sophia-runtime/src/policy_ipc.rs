@@ -29,7 +29,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
     | SOPHIA_WM_CAPABILITY_INDICATORS
     | SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS;
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -93,7 +94,11 @@ pub struct AssembledPolicySnapshot {
 
 impl AssembledPolicyProjection {
     pub fn into_wire_transfer(self) -> WmV1ProjectionTransfer {
-        let chunk_count = self.chunks.len() as u16;
+        let chunk_count = self
+            .chunks
+            .iter()
+            .take_while(|chunk| chunk.record_kind < 0xff00)
+            .count() as u16;
         WmV1ProjectionTransfer {
             transaction: self.transaction,
             begin: WmV1ProjectionBegin {
@@ -325,8 +330,20 @@ impl PolicyConnectionState {
             chunk.record_kind,
             sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND
                 | sophia_protocol::PROJECTION_TAB_MEMBER_RECORD_KIND
+                | sophia_protocol::PROJECTION_TRANSLATION_GROUP_RECORD_KIND
+                | sophia_protocol::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
         ) {
-            if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS == 0 {
+            let translation = matches!(
+                chunk.record_kind,
+                sophia_protocol::PROJECTION_TRANSLATION_GROUP_RECORD_KIND
+                    | sophia_protocol::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
+            );
+            let capability = if translation {
+                sophia_protocol::SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS
+            } else {
+                sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS
+            };
+            if self.selected_capabilities & capability == 0 {
                 return Err(PolicyTransferError::UnsupportedCapability);
             }
             if transfer.chunks.len() < usize::from(transfer.begin.chunk_count)
@@ -334,12 +351,17 @@ impl PolicyConnectionState {
             {
                 return Err(PolicyTransferError::RecordCountMismatch);
             }
-            let (size, maximum) =
-                if chunk.record_kind == sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND {
-                    (48, sophia_protocol::POLICY_MAX_TAB_GROUPS)
+            let (size, maximum) = if translation {
+                if chunk.record_kind == sophia_protocol::PROJECTION_TRANSLATION_GROUP_RECORD_KIND {
+                    (32, sophia_protocol::POLICY_MAX_OUTPUTS)
                 } else {
-                    (24, sophia_protocol::POLICY_MAX_TAB_MEMBERS)
-                };
+                    (24, sophia_protocol::POLICY_MAX_SURFACES)
+                }
+            } else if chunk.record_kind == sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND {
+                (48, sophia_protocol::POLICY_MAX_TAB_GROUPS)
+            } else {
+                (24, sophia_protocol::POLICY_MAX_TAB_MEMBERS)
+            };
             let prior: usize = transfer
                 .chunks
                 .iter()

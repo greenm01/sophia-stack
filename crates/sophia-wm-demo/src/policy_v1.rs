@@ -482,6 +482,7 @@ pub fn tile_policy_scene(
         });
     }
     Ok(PolicyProjectionProposal {
+        translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction,
         connection_epoch: request.connection_epoch,

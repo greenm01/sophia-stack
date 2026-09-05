@@ -305,6 +305,8 @@ impl LiveProductionVisualRuntime {
             self.production.committed_surfaces(),
             None,
         )?;
+        self.translations.settle();
+        self.translation_deadlines.clear();
         self.native_suspended = true;
         // A suspended/revoked output no longer has a visible native
         // interaction snapshot. Do not retain routes into retired pixels.
@@ -497,6 +499,9 @@ impl LiveProductionVisualRuntime {
                 tab_occlusions: Vec::new(),
             })
             .collect();
+        self.translations.settle();
+        self.translation_deadlines.clear();
+        native_scanout.set_translation_motion_active(false);
         self.outputs = next;
         self.input_projections = input_projections;
         Ok(())

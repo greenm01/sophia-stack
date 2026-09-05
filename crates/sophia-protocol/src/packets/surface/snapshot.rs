@@ -76,6 +76,7 @@ impl SurfaceSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerSnapshot {
+    pub translation: Option<crate::LayerTranslation>,
     pub surface: SurfaceId,
     pub authority_local_id: Option<AuthorityLocalId>,
     pub namespace: Option<NamespaceId>,

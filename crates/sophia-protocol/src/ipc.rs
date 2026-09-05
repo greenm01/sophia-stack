@@ -31,3 +31,6 @@ pub use wm_tab_groups::*;
 pub use wm_v1::*;
 pub use wm_v1_profile::*;
 pub use wm_v1_records::*;
+
+mod wm_translation;
+pub use wm_translation::*;

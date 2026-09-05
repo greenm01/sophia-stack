@@ -2413,7 +2413,7 @@ impl LiveWmSession {
                         let projections = staged.projections();
                         let active_output = projection.active_output;
                         public.staged = Some(staged);
-                        Some(public_live_proposal(
+                        let mut live = public_live_proposal(
                             layout,
                             active_output,
                             projections,
@@ -2421,7 +2421,26 @@ impl LiveWmSession {
                             source,
                             identity,
                             &reconciliation.content,
-                        )?)
+                        )?;
+                        for layer in &mut live.layers {
+                            if !projection.outputs.iter().any(|output| {
+                                Some(output.output) == layer.output
+                            }) {
+                                continue;
+                            }
+                            layer.translation = projection.translation_groups.iter()
+                                .find(|group| {
+                                    Some(group.output) == layer.output
+                                        && group.members.contains(&layer.surface)
+                                })
+                                .map(|group| sophia_protocol::LayerTranslation {
+                                    connection_epoch: projection.connection_epoch,
+                                    group: group.group,
+                                    x: group.x,
+                                    y: group.y,
+                                });
+                        }
+                        Some(live)
                     }
                     Err(outcome) => {
                         defer_cycle = true;

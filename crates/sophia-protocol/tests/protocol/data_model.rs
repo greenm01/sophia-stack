@@ -224,6 +224,7 @@ fn stale_surface_id_fails_closed() {
 #[test]
 fn committed_state_keeps_the_raster_size_not_the_placement() {
     let layer = LayerSnapshot {
+        translation: None,
         output: None,
         surface: SurfaceId::new(6, 1),
         authority_local_id: None,
@@ -279,6 +280,7 @@ fn committed_state_keeps_the_raster_size_not_the_placement() {
 fn layer_snapshot_is_cloneable_frame_data() {
     let surface = SurfaceId::new(0, 1);
     let snapshot = LayerSnapshot {
+        translation: None,
         output: None,
         surface,
         authority_local_id: Some(AuthorityLocalId::new(42, 1)),
@@ -359,6 +361,7 @@ fn authority_surface_carries_protocol_ownership_without_metadata() {
 #[test]
 fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
     let layer = LayerSnapshot {
+        translation: None,
         output: None,
         surface: SurfaceId::new(4, 1),
         authority_local_id: Some(AuthorityLocalId::new(0x99, 2)),
@@ -420,6 +423,7 @@ fn surface_transaction_carries_atomic_geometry_buffer_and_readiness() {
 #[test]
 fn committed_surface_state_is_cloneable_visual_state() {
     let layer = LayerSnapshot {
+        translation: None,
         output: None,
         surface: SurfaceId::new(5, 1),
         authority_local_id: None,

@@ -27,3 +27,6 @@ pub use shell_v1::*;
 pub use surface::*;
 pub use tab_groups::*;
 pub use wm::*;
+
+mod translation;
+pub use translation::*;

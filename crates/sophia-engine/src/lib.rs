@@ -92,3 +92,6 @@ pub use sophia_runtime::{RuntimeScanoutState, SessionRuntimeObservation};
 
 mod tab_chrome;
 pub use tab_chrome::*;
+
+mod translation;
+pub use translation::*;

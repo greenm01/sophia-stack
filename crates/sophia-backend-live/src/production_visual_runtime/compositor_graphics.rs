@@ -264,11 +264,14 @@ impl LiveProductionVisualRuntime {
             .outputs
             .logical_viewport(output)
             .ok_or("head composition targets an unknown logical output")?;
+        let (presented, display_list) =
+            self.translations
+                .project(output, committed, display_list, self.translation_time());
         let snapshot = sophia_engine::output_scene_snapshot_from_committed_in_view(
             output,
             scene_generation.max(1),
             logical_viewport,
-            committed,
+            &presented,
             display_list,
             None,
         )?;
@@ -373,14 +376,24 @@ impl LiveProductionVisualRuntime {
             .to_vec();
         let retained_order =
             live_production_retained_surface_order(&self.presentation_order, &committed);
-        let display_list = self.display_list(&committed, &retained_order)?;
+        let display_lists = self
+            .outputs
+            .logical_viewports()
+            .map(|(output, viewport)| {
+                self.display_list_for_output(output, viewport, &committed, &retained_order)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let cpu_layers = scene.presentation_variant_layers(&committed, &retained_order);
         let in_flight = self.present_scheduler.in_flight_displayed_layer();
         let mut sources = Vec::new();
-        for command in &display_list.commands {
+        let mut seen = BTreeSet::new();
+        for command in display_lists.iter().flat_map(|list| &list.commands) {
             let CompositorDisplayCommand::Surface { surface } = command else {
                 continue;
             };
+            if !seen.insert(*surface) {
+                continue;
+            }
             let committed_source = committed
                 .iter()
                 .find(|state| state.surface == *surface)

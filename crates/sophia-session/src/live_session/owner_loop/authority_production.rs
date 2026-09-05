@@ -23,6 +23,7 @@
                 let runtime = runtime
                     .as_mut()
                     .expect("persistent backend runtime was initialized above");
+                runtime.set_transitions_enabled(window_transitions_enabled);
                 if let Some(update) = wm_update.as_ref() {
                     match update.commit.outcome {
                         TransactionOutcome::Committed => {

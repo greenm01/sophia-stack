@@ -154,11 +154,16 @@ is the starting evidence; no new comparison run is required.
 
 #### 2. Establish the live session
 
+- [ ] Accept the scrolling repair in normal use: three Kitty windows, reversal,
+  insertion/close, vertical scrolling and both outputs. The implementation adds
+  committed Hagia camera anchors and Engine GPU translation; see the
+  [contract and focused check](docs/window-transitions.md). Physical acceptance
+  remains pending; the running installed session has not been replaced.
 - [ ] Revalidate installed startup after the output-ownership repair. Release
   `0.1.0-86b5fe1d20bc` exited on the first Kitty Present after losing its output
-  assignment. Cached placement ownership and per-output Present source
-  discovery are repaired in source with focused regressions; install and
-  physical startup/both-output acceptance remain pending. See the
+  assignment. The operator entered installed fix `84c109c6`; logs confirm two
+  outputs settled, continuing GPU Presents, and no startup fatal error.
+  Visible both-output behavior and normal logout still need acceptance. See the
   [diagnosis](docs/research-log.md#2026-09-05-installed-startup-loses-the-first-windows-output-ownership).
 - [x] Delegate WM policy-setting validation to Hagia. Sophia preserves bounded
   ordered policy fragments; Hagia validates values before activation. The
