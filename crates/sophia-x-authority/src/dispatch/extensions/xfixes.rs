@@ -28,8 +28,8 @@ fn dispatch_xfixes_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(region.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_XFIXES_CREATE_REGION_MINOR_OPCODE),
+                                u32::try_from(region.local.raw()).unwrap_or(0)))
                         });
                     XDispatchResult {
                         response: None,
@@ -46,8 +46,8 @@ fn dispatch_xfixes_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(region.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_XFIXES_SET_REGION_MINOR_OPCODE),
+                                u32::try_from(region.local.raw()).unwrap_or(0)))
                         });
                     XDispatchResult {
                         response: None,
@@ -64,8 +64,8 @@ fn dispatch_xfixes_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(region.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_XFIXES_DESTROY_REGION_MINOR_OPCODE),
+                                u32::try_from(region.local.raw()).unwrap_or(0)))
                         });
                     XDispatchResult {
                         response: None,
@@ -97,13 +97,12 @@ fn dispatch_xfixes_request(
                     } else if let Err(error) =
                         validate_window_or_root_access(runtime, context.namespace, window)
                     {
-                        let mut error = x_error_from_runtime(
+                        let error = x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        );
-                        error.minor_code = crate::X_XFIXES_SELECT_SELECTION_INPUT_MINOR_OPCODE.into();
+                            u16::from(crate::X_XFIXES_SELECT_SELECTION_INPUT_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0));
                         Some(XClientOutput::Error(error))
                     } else {
                         None

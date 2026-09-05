@@ -71,8 +71,8 @@ fn dispatch_core_property_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(change.window.local.raw()).unwrap_or(0),
-                            )),
+                                0,
+                                u32::try_from(change.window.local.raw()).unwrap_or(0))),
                             Vec::new(),
                             None,
                         ),
@@ -187,8 +187,8 @@ fn dispatch_core_property_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))],
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))],
                             None,
                         ),
                         Ok(()) => {
@@ -292,8 +292,8 @@ fn dispatch_core_property_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else {
                         x_client_outputs_from_property_read(
                             &context,
@@ -319,8 +319,8 @@ fn dispatch_core_property_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::ListProperties {
                             sequence: context.sequence,
@@ -386,8 +386,8 @@ fn dispatch_core_property_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(destination.local.raw()).unwrap_or(0),
-                        ))],
+                            0,
+                            u32::try_from(destination.local.raw()).unwrap_or(0)))],
                     };
                     XDispatchResult {
                         response: None,

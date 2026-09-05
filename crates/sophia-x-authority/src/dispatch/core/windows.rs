@@ -179,8 +179,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))]
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else if let Some(override_redirect) = override_redirect {
                         match runtime.set_window_override_redirect(
                             context.namespace,
@@ -197,8 +197,8 @@ fn dispatch_core_window_request(
                                     error,
                                     context.sequence,
                                     context.major_opcode,
-                                    u32::try_from(window.local.raw()).unwrap_or(0),
-                                ))]
+                                    0,
+                                    u32::try_from(window.local.raw()).unwrap_or(0)))]
                             }
                         }
                     } else {
@@ -224,8 +224,8 @@ fn dispatch_core_window_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         let (_, visual, colormap) = runtime.window_visual(window);
                         let override_redirect = runtime
@@ -263,8 +263,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))]
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
                         }
                     };
                     XDispatchResult {
@@ -306,8 +306,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))],
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))],
                         ),
                     };
                     XDispatchResult {
@@ -381,8 +381,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))]
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
                         }
                     };
                     XDispatchResult {
@@ -406,8 +406,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))]
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
                         }
                     };
                     XDispatchResult {
@@ -466,8 +466,8 @@ fn dispatch_core_window_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else {
                         match runtime.window_geometry(context.namespace, window) {
                             Ok(geometry) if before != Some(geometry) || !client_controls => {
@@ -493,8 +493,8 @@ fn dispatch_core_window_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))],
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))],
                         }
                     };
                     XDispatchResult {
@@ -526,8 +526,8 @@ fn dispatch_core_window_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(drawable.local.raw()).unwrap_or(0),
-                        )),
+                            0,
+                            u32::try_from(drawable.local.raw()).unwrap_or(0))),
                     };
                     XDispatchResult {
                         response: None,
@@ -599,8 +599,8 @@ fn dispatch_core_window_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        )),
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0))),
                         };
                     XDispatchResult {
                         response: None,
@@ -685,8 +685,8 @@ fn outputs_from_map_response(
             error,
             context.sequence,
             context.major_opcode,
-            u32::try_from(window.local.raw()).unwrap_or(0),
-        ))];
+            0,
+            u32::try_from(window.local.raw()).unwrap_or(0)))];
     }
     let Some(crate::XMapState::Unviewable | crate::XMapState::Viewable) = map_state else {
         return Vec::new();

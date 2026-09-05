@@ -138,8 +138,8 @@ fn dispatch_glx_request(
                                     error,
                                     context.sequence,
                                     context.major_opcode,
-                                    id.local.raw() as u32,
-                                ))
+                                    u16::from(crate::X_GLX_CREATE_CONTEXT_MINOR_OPCODE),
+                                    id.local.raw() as u32))
                             })
                             .into_iter()
                             .collect()
@@ -168,8 +168,8 @@ fn dispatch_glx_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                id.local.raw() as u32,
-                            ))
+                                u16::from(crate::X_GLX_DESTROY_CONTEXT_MINOR_OPCODE),
+                                id.local.raw() as u32))
                         })
                         .into_iter()
                         .collect();
@@ -230,8 +230,8 @@ fn dispatch_glx_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            id.local.raw() as u32,
-                        ))],
+                            u16::from(crate::X_GLX_IS_DIRECT_MINOR_OPCODE),
+                            id.local.raw() as u32))],
                     };
                     XDispatchResult {
                         response: None,
@@ -259,8 +259,8 @@ fn dispatch_glx_request(
                                     error,
                                     context.sequence,
                                     context.major_opcode,
-                                    glx_window.local.raw() as u32,
-                                ))
+                                    u16::from(crate::X_GLX_CREATE_WINDOW_MINOR_OPCODE),
+                                    glx_window.local.raw() as u32))
                             })
                             .into_iter()
                             .collect()
@@ -300,8 +300,8 @@ fn dispatch_glx_request(
                                     error,
                                     context.sequence,
                                     context.major_opcode,
-                                    pbuffer.local.raw() as u32,
-                                ))
+                                    u16::from(crate::X_GLX_CREATE_PBUFFER_MINOR_OPCODE),
+                                    pbuffer.local.raw() as u32))
                             })
                             .into_iter()
                             .collect()
@@ -344,8 +344,8 @@ fn dispatch_glx_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            glx_context.local.raw() as u32,
-                        ))],
+                            u16::from(crate::X_GLX_QUERY_CONTEXT_MINOR_OPCODE),
+                            glx_context.local.raw() as u32))],
                     };
                     XDispatchResult {
                         response: None,
@@ -366,8 +366,8 @@ fn dispatch_glx_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                drawable.local.raw() as u32,
-                            ))
+                                u16::from(crate::X_GLX_CHANGE_DRAWABLE_ATTRIBUTES_MINOR_OPCODE),
+                                drawable.local.raw() as u32))
                         })
                         .into_iter()
                         .collect();
@@ -386,8 +386,8 @@ fn dispatch_glx_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                pbuffer.local.raw() as u32,
-                            ))
+                                u16::from(crate::X_GLX_DESTROY_PBUFFER_MINOR_OPCODE),
+                                pbuffer.local.raw() as u32))
                         })
                         .into_iter()
                         .collect();
@@ -423,8 +423,8 @@ fn dispatch_glx_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            drawable.local.raw() as u32,
-                        ))],
+                            u16::from(crate::X_GLX_MAKE_CONTEXT_CURRENT_MINOR_OPCODE),
+                            drawable.local.raw() as u32))],
                     };
                     XDispatchResult {
                         response: None,
@@ -441,8 +441,8 @@ fn dispatch_glx_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                glx_window.local.raw() as u32,
-                            ))
+                                u16::from(crate::X_GLX_DELETE_WINDOW_MINOR_OPCODE),
+                                glx_window.local.raw() as u32))
                         })
                         .into_iter()
                         .collect();
@@ -494,8 +494,8 @@ fn dispatch_glx_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            drawable.local.raw() as u32,
-                        ))],
+                            u16::from(crate::X_GLX_GET_DRAWABLE_ATTRIBUTES_MINOR_OPCODE),
+                            drawable.local.raw() as u32))],
                     };
                     XDispatchResult {
                         response: None,

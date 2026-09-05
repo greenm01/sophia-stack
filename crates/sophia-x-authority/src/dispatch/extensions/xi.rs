@@ -344,8 +344,8 @@ fn dispatch_x_input_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                resource_id,
-                            ))
+                                u16::from(crate::X_INPUT_CHANGE_CURSOR_MINOR_OPCODE),
+                                resource_id))
                         })
                         .into_iter()
                         .collect();
@@ -432,8 +432,8 @@ fn dispatch_x_input_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_INPUT_SELECT_EVENTS_MINOR_OPCODE),
+                                u32::try_from(window.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect::<Vec<_>>();

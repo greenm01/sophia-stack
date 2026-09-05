@@ -53,8 +53,8 @@ fn dispatch_sync_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(counter.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_SYNC_CREATE_COUNTER_MINOR_OPCODE),
+                                u32::try_from(counter.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();
@@ -73,8 +73,8 @@ fn dispatch_sync_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(counter.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_SYNC_SET_COUNTER_MINOR_OPCODE),
+                                u32::try_from(counter.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();
@@ -93,8 +93,8 @@ fn dispatch_sync_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(counter.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_SYNC_CHANGE_COUNTER_MINOR_OPCODE),
+                                u32::try_from(counter.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();
@@ -114,8 +114,8 @@ fn dispatch_sync_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(counter.local.raw()).unwrap_or(0),
-                        ))],
+                            u16::from(crate::X_SYNC_QUERY_COUNTER_MINOR_OPCODE),
+                            u32::try_from(counter.local.raw()).unwrap_or(0)))],
                     };
                     XDispatchResult {
                         response: None,
@@ -132,8 +132,8 @@ fn dispatch_sync_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(counter.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_SYNC_DESTROY_COUNTER_MINOR_OPCODE),
+                                u32::try_from(counter.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();
@@ -152,8 +152,8 @@ fn dispatch_sync_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(fence.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_SYNC_DESTROY_FENCE_MINOR_OPCODE),
+                                u32::try_from(fence.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();

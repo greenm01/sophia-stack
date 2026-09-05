@@ -71,6 +71,7 @@ fn dispatch_present_request(
                             error,
                             context.sequence,
                             context.major_opcode,
+                            u16::from(crate::X_PRESENT_SELECT_INPUT_MINOR_OPCODE),
                             u32::try_from(window.local.raw()).unwrap_or(0),
                         ))]
                     } else {
@@ -90,14 +91,13 @@ fn dispatch_present_request(
                     let outputs = if let Err(error) =
                         runtime.validate_dri3_drawable_access(context.namespace, window)
                     {
-                        let mut error = x_error_from_runtime(
+                        vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
+                            u16::from(crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE),
                             u32::try_from(window.local.raw()).unwrap_or(0),
-                        );
-                        error.minor_code = u16::from(crate::X_PRESENT_NOTIFY_MSC_MINOR_OPCODE);
-                        vec![XClientOutput::Error(error)]
+                        ))]
                     } else {
                         Vec::new()
                     };
@@ -192,6 +192,7 @@ fn dispatch_present_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
+                                u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
                                 u32::try_from(pixmap.local.raw()).unwrap_or(0),
                             ))],
                             metadata_candidates: Vec::new(),
@@ -232,6 +233,7 @@ fn dispatch_present_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
+                                u16::from(crate::X_PRESENT_PIXMAP_MINOR_OPCODE),
                                 u32::try_from(pixmap.local.raw()).unwrap_or(0),
                             ))]
                         }

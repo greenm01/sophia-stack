@@ -49,8 +49,8 @@ fn dispatch_core_input_discovery_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(focus.local.raw()).unwrap_or(0),
-                        ))],
+                            0,
+                            u32::try_from(focus.local.raw()).unwrap_or(0)))],
                         Ok(()) if previous == focus => Vec::new(),
                         Ok(()) => {
                             let mut outputs = Vec::with_capacity(2);
@@ -134,8 +134,8 @@ fn dispatch_core_input_discovery_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(source.local.raw()).unwrap_or(0),
-                            ))
+                                0,
+                                u32::try_from(source.local.raw()).unwrap_or(0)))
                         } else if let Err(error) =
                             runtime.validate_drawable_access(context.namespace, destination)
                         {
@@ -143,8 +143,8 @@ fn dispatch_core_input_discovery_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(destination.local.raw()).unwrap_or(0),
-                            ))
+                                0,
+                                u32::try_from(destination.local.raw()).unwrap_or(0)))
                         } else {
                             XClientOutput::Reply(XClientReply::TranslateCoordinates {
                                 sequence: context.sequence,

@@ -151,8 +151,8 @@ fn dispatch_core_grab_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else {
                         runtime
                             .input_authority_mut()
@@ -211,8 +211,8 @@ fn dispatch_core_grab_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))],
+                            0,
+                            u32::try_from(window.local.raw()).unwrap_or(0)))],
                         Ok(()) => runtime
                             .input_authority_mut()
                             .grab_key(

@@ -41,8 +41,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))]
+                            u16::from(crate::X_RANDR_SELECT_INPUT_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else {
                         Vec::new()
                     };
@@ -72,8 +72,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            u16::from(crate::X_RANDR_GET_SCREEN_SIZE_RANGE_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::RandrGetScreenSizeRange {
                             sequence: context.sequence,
@@ -104,8 +104,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            u16::from(crate::X_RANDR_GET_SCREEN_RESOURCES_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::RandrGetScreenResources {
                             sequence: context.sequence,
@@ -354,8 +354,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            u16::from(crate::X_RANDR_GET_OUTPUT_PRIMARY_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::RandrGetOutputPrimary {
                             sequence: context.sequence,
@@ -382,8 +382,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            u16::from(crate::X_RANDR_GET_PROVIDERS_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::RandrGetProviders {
                             sequence: context.sequence,
@@ -412,8 +412,8 @@ fn dispatch_randr_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(window.local.raw()).unwrap_or(0),
-                        ))
+                            u16::from(crate::X_RANDR_GET_MONITORS_MINOR_OPCODE),
+                            u32::try_from(window.local.raw()).unwrap_or(0)))
                     } else {
                         XClientOutput::Reply(XClientReply::RandrGetMonitors {
                             sequence: context.sequence,

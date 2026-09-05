@@ -61,8 +61,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(gc.local.raw()).unwrap_or(0),
-                    ))
+                        0,
+                        u32::try_from(gc.local.raw()).unwrap_or(0)))
                 })
                 .into_iter()
                 .collect();
@@ -104,8 +104,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(gc.local.raw()).unwrap_or(0),
-                    ))
+                        0,
+                        u32::try_from(gc.local.raw()).unwrap_or(0)))
                 })
                 .into_iter()
                 .collect();
@@ -193,8 +193,8 @@ fn dispatch_core_resource_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(window.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(window.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -220,8 +220,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(font.local.raw()).unwrap_or(0),
-                    ))],
+                        0,
+                        u32::try_from(font.local.raw()).unwrap_or(0)))],
                 },
                 None => {
                     tracing::debug!(
@@ -304,8 +304,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(cursor.local.raw()).unwrap_or(0),
-                    ))
+                        0,
+                        u32::try_from(cursor.local.raw()).unwrap_or(0)))
                 })
                 .into_iter()
                 .collect();
@@ -330,16 +330,16 @@ fn dispatch_core_resource_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(source_font.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(source_font.local.raw()).unwrap_or(0)))]
             } else if let Some(mask_font) = mask_font {
                 if let Err(error) = runtime.validate_font_access(context.namespace, mask_font) {
                     vec![XClientOutput::Error(x_error_from_runtime(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(mask_font.local.raw()).unwrap_or(0),
-                    ))]
+                        0,
+                        u32::try_from(mask_font.local.raw()).unwrap_or(0)))]
                 } else {
                     match runtime.create_cursor(
                         context.namespace,
@@ -351,8 +351,8 @@ fn dispatch_core_resource_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(cursor.local.raw()).unwrap_or(0),
-                        ))],
+                            0,
+                            u32::try_from(cursor.local.raw()).unwrap_or(0)))],
                     }
                 }
             } else {
@@ -363,8 +363,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(cursor.local.raw()).unwrap_or(0),
-                    ))],
+                        0,
+                        u32::try_from(cursor.local.raw()).unwrap_or(0)))],
                 }
             };
             XDispatchResult {
@@ -380,8 +380,8 @@ fn dispatch_core_resource_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(cursor.local.raw()).unwrap_or(0),
-                ))],
+                    0,
+                    u32::try_from(cursor.local.raw()).unwrap_or(0)))],
             };
             XDispatchResult {
                 response: None,
@@ -396,8 +396,8 @@ fn dispatch_core_resource_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(cursor.local.raw()).unwrap_or(0),
-                ))],
+                    0,
+                    u32::try_from(cursor.local.raw()).unwrap_or(0)))],
             };
             XDispatchResult {
                 response: None,
@@ -478,8 +478,8 @@ fn dispatch_core_resource_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(pixmap.local.raw()).unwrap_or(0),
-                    ))]
+                        0,
+                        u32::try_from(pixmap.local.raw()).unwrap_or(0)))]
                 } else {
                     Vec::new()
                 };
@@ -542,8 +542,8 @@ fn core_resource_validation_error(
                 runtime_error,
                 context.sequence,
                 context.major_opcode,
-                resource_id,
-            )
+                0,
+                resource_id)
             .code
         }
     };

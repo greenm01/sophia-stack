@@ -41,8 +41,8 @@ fn dispatch_shm_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(segment.local.raw()).unwrap_or(0),
-                        ))],
+                            u16::from(crate::X_MIT_SHM_ATTACH_MINOR_OPCODE),
+                            u32::try_from(segment.local.raw()).unwrap_or(0)))],
                     };
                     XDispatchResult {
                         response: None,
@@ -61,8 +61,8 @@ fn dispatch_shm_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(segment.local.raw()).unwrap_or(0),
-                        ))],
+                            u16::from(crate::X_MIT_SHM_DETACH_MINOR_OPCODE),
+                            u32::try_from(segment.local.raw()).unwrap_or(0)))],
                     };
                     XDispatchResult {
                         response: None,
@@ -116,8 +116,8 @@ fn dispatch_shm_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(pixmap.local.raw()).unwrap_or(0),
-                            ))
+                                u16::from(crate::X_MIT_SHM_CREATE_PIXMAP_MINOR_OPCODE),
+                                u32::try_from(pixmap.local.raw()).unwrap_or(0)))
                         })
                         .into_iter()
                         .collect();
@@ -214,8 +214,8 @@ fn dispatch_shm_request(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(drawable.local.raw()).unwrap_or(0),
-                        ))]
+                            u16::from(crate::X_MIT_SHM_PUT_IMAGE_MINOR_OPCODE),
+                            u32::try_from(drawable.local.raw()).unwrap_or(0)))]
                     } else if send_event {
                         vec![XClientOutput::Event(XClientEvent::ShmCompletion {
                             sequence: context.sequence,
@@ -304,8 +304,8 @@ fn dispatch_shm_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(segment.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_MIT_SHM_GET_IMAGE_MINOR_OPCODE),
+                                u32::try_from(segment.local.raw()).unwrap_or(0)))]
                         }
                     };
                     XDispatchResult {

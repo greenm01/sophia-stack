@@ -56,8 +56,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -126,8 +126,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -219,8 +219,8 @@ fn dispatch_core_drawing_request(
                         error,
                         context.sequence,
                         context.major_opcode,
-                        u32::try_from(destination.local.raw()).unwrap_or(0),
-                    ))]
+                        0,
+                        u32::try_from(destination.local.raw()).unwrap_or(0)))]
                 }
             };
             XDispatchResult {
@@ -261,8 +261,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -297,8 +297,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -333,8 +333,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -396,8 +396,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -507,8 +507,8 @@ fn dispatch_core_drawing_request(
                     error,
                     context.sequence,
                     context.major_opcode,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0),
-                ))]
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
             } else {
                 Vec::new()
             };
@@ -539,8 +539,8 @@ fn core_draw_validation_error(
                 runtime_error,
                 context.sequence,
                 context.major_opcode,
-                u32::try_from(resource.local.raw()).unwrap_or(0),
-            )
+                0,
+                u32::try_from(resource.local.raw()).unwrap_or(0))
             .code
         }
     };

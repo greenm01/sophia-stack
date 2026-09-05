@@ -28,13 +28,12 @@ fn dispatch_dri3_request(
                         })]
                     } else if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable)
                     {
-                        let mut error = x_error_from_runtime(
+                        let error = x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
-                            u32::try_from(drawable.local.raw()).unwrap_or(0),
-                        );
-                        error.minor_code = u16::from(crate::X_DRI3_OPEN_MINOR_OPCODE);
+                            u16::from(crate::X_DRI3_OPEN_MINOR_OPCODE),
+                            u32::try_from(drawable.local.raw()).unwrap_or(0));
                         vec![XClientOutput::Error(error)]
                     } else {
                         vec![XClientOutput::Reply(XClientReply::Dri3Open {
@@ -63,8 +62,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(drawable.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_PIXMAP_FROM_BUFFER_MINOR_OPCODE),
+                                u32::try_from(drawable.local.raw()).unwrap_or(0)))]
                         } else if let Err(error) = runtime.create_dri3_pixmap(
                             context.namespace,
                             pixmap,
@@ -80,8 +79,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(pixmap.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_PIXMAP_FROM_BUFFER_MINOR_OPCODE),
+                                u32::try_from(pixmap.local.raw()).unwrap_or(0)))]
                         } else {
                             Vec::new()
                         };
@@ -109,8 +108,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_PIXMAP_FROM_BUFFERS_MINOR_OPCODE),
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
                         } else if let Err(error) = runtime.create_dri3_pixmap_from_buffers(
                             context.namespace,
                             pixmap,
@@ -128,8 +127,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(pixmap.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_PIXMAP_FROM_BUFFERS_MINOR_OPCODE),
+                                u32::try_from(pixmap.local.raw()).unwrap_or(0)))]
                         } else {
                             Vec::new()
                         };
@@ -148,8 +147,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(drawable.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_FENCE_FROM_FD_MINOR_OPCODE),
+                                u32::try_from(drawable.local.raw()).unwrap_or(0)))]
                         } else if let Err(error) =
                             runtime.create_dri3_fence(context.namespace, fence, u64::from(context.sequence))
                         {
@@ -157,8 +156,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(fence.local.raw()).unwrap_or(0),
-                            ))]
+                                u16::from(crate::X_DRI3_FENCE_FROM_FD_MINOR_OPCODE),
+                                u32::try_from(fence.local.raw()).unwrap_or(0)))]
                         } else {
                             Vec::new()
                         };
@@ -300,8 +299,8 @@ fn dispatch_dri3_request(
                                 error,
                                 context.sequence,
                                 context.major_opcode,
-                                u32::try_from(window.local.raw()).unwrap_or(0),
-                            ))],
+                                u16::from(crate::X_DRI3_GET_SUPPORTED_MODIFIERS_MINOR_OPCODE),
+                                u32::try_from(window.local.raw()).unwrap_or(0)))],
                         }
                     } else {
                         vec![XClientOutput::Reply(

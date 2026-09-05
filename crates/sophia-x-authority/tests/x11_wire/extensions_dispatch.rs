@@ -697,6 +697,54 @@ fn root_scoped_requests_are_admitted_without_a_client_window() {
     );
 }
 
+/// Present refusals name the request that produced them.
+///
+/// The equivalent XFIXES assertion below has existed for some time; Present
+/// had none, and that is how a live session came to report nine refusals under
+/// `major=138 minor=0`. Minor 0 is `QueryVersion`, which takes no drawable and
+/// cannot return `BadWindow`, so the evidence named a request that could not
+/// have failed and the real one stayed hidden.
+#[test]
+fn present_event_selection_refuses_an_unknown_window_by_name() {
+    let namespace = NamespaceId::from_raw(63);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let unknown = 0x22_0998;
+
+    let request = decode_x11_core_request(
+        context(namespace, 603, XByteOrder::LittleEndian),
+        &present_select_input_request(XByteOrder::LittleEndian, 0x220401, unknown, 0),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            11,
+            XByteOrder::LittleEndian,
+            X_PRESENT_MAJOR_OPCODE,
+        ),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            result.outputs.as_slice(),
+            [XClientOutput::Error(XClientError {
+                code: XErrorCode::BadWindow,
+                resource_id,
+                minor_code: 3,
+                major_code: X_PRESENT_MAJOR_OPCODE,
+                ..
+            })] if *resource_id == unknown
+        ),
+        "{:?}",
+        result.outputs
+    );
+}
+
 /// The root is admitted; an id that is neither the root nor a client window is
 /// still refused, and still names the request that refused it.
 #[test]

@@ -26,10 +26,20 @@ pub fn x_error_from_wire_parse(
     }
 }
 
+/// Turns a runtime refusal into the X error a client sees.
+///
+/// `minor_code` is the failing request's minor opcode, or `0` for a core
+/// request, which has none. It is a parameter rather than a default because
+/// this used to hardcode zero: every extension refusal that came through here
+/// then claimed to be minor opcode 0, which in most extensions is
+/// `QueryVersion` -- a request that usually takes no resource and so cannot
+/// produce the error being reported. A live session refused nine Present
+/// requests and the evidence named a request that could not have failed.
 pub fn x_error_from_runtime(
     error: XAuthorityRuntimeError,
     sequence: u16,
     major_code: u8,
+    minor_code: u16,
     resource_id: u32,
 ) -> XClientError {
     let code = match error {
@@ -51,7 +61,7 @@ pub fn x_error_from_runtime(
         code,
         sequence,
         resource_id,
-        minor_code: 0,
+        minor_code,
         major_code,
     }
 }

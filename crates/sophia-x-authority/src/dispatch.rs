@@ -379,6 +379,7 @@ fn dispatch_text_draw(
             error,
             context.sequence,
             context.major_opcode,
+            0,
             u32::try_from(drawable.local.raw()).unwrap_or(0),
         ))]
     } else {
@@ -489,6 +490,7 @@ fn dispatch_poly_text8(
             error,
             context.sequence,
             context.major_opcode,
+            0,
             u32::try_from(drawable.local.raw()).unwrap_or(0),
         ))]
     } else {
@@ -863,6 +865,7 @@ fn outputs_from_authority_response(
             error,
             context.sequence,
             context.major_opcode,
+            0,
             resource_from_kind(kind),
         ))];
     }
