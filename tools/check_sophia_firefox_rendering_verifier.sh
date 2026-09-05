@@ -145,3 +145,11 @@ if "$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"; t
     exit 1
 fi
 echo 'Firefox rendering canary verifier fixtures passed'
+
+# The same opaque frame IDs in different native owners cannot complete an old
+# geometry/readback join. A boundary between two complete joins stays valid.
+owner_close='sophia_live_native_owner schema=1 status=closed epoch=1 reason=seat_release settled=true settlement_failures=0'
+awk -v boundary="$owner_close" '/scene_generation=901 surface=/ { print boundary } { print }' "$FIXTURE" >"$TEMP_FILE"
+"$ROOT_DIR/tools/verify_sophia_firefox_rendering_physical.sh" "$TEMP_FILE"
+awk -v boundary="$owner_close" '/status=retired output=1 head=1 submission=25/ { print boundary } { print }' "$FIXTURE" >"$TEMP_FILE"
+expect_failure 'a native retirement joined across owner epochs'

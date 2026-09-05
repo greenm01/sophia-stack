@@ -632,10 +632,11 @@ Offline regressions are
 CP-14.3 in [the active roadmap](../todo.md#critical-path) owns Milestone 14's
 current exit: a recoverable Hagia development session using terminal, Firefox,
 clipboard, layouts/tabs, two monitors, dependable input, VT recovery, and logout.
-The native evidence-lifetime and suspended-deadline fixes remain the first task.
-This is a target acceptance policy, not a claim that those fixes or workflows
-have passed. Diagnostics improvements and the short session checklist are queued
-there; no new gate command is introduced by this policy change.
+The native evidence-lifetime and suspended-deadline implementation passes its
+lifecycle model, regression tests, and repository gate. The two
+[physical recovery canaries](native-recovery-canary.md) remain the first operator
+task. This does not establish development-session workflow acceptance.
+Diagnostics improvements and the broader session checklist remain queued.
 
 Start with a short physical Firefox/VT/deadline canary after the lifecycle
 regressions pass. The normal-session acceptance check then covers startup,

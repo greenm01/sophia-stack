@@ -125,3 +125,14 @@ pub(super) fn disconnect_frontend_for_drain(
         XServerFrontendServiceCommand::DrainAndDisconnect,
     )
 }
+
+/// Recheck at the recovery boundary: draining the old owner can itself consume
+/// the remaining runtime budget. Seat notifications never extend that budget.
+pub(super) fn native_recovery_allowed(
+    deadline: Option<Instant>,
+    now: Instant,
+    quiescing: bool,
+    draining_keys: bool,
+) -> bool {
+    !quiescing && !draining_keys && deadline.is_none_or(|deadline| now < deadline)
+}

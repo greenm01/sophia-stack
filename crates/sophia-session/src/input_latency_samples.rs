@@ -52,7 +52,7 @@ pub struct InputLatencySamples {
     pending: VecDeque<PendingInputLatencySample>,
     settled: VecDeque<InputLatencySample>,
     evicted: usize,
-    /// Presses that never found a flip, dropped when the pending queue filled.
+    /// Unshown presses abandoned by queue overflow or native owner replacement.
     abandoned: usize,
 }
 
@@ -76,6 +76,13 @@ impl InputLatencySamples {
             self.abandoned = self.abandoned.saturating_add(1);
         }
         self.pending.push_back(sample);
+    }
+
+    /// Frame IDs and submission counters restart with each native owner.
+    /// Preserve completed samples and explicitly abandon unjoinable presses.
+    pub fn close_native_owner(&mut self) {
+        self.abandoned = self.abandoned.saturating_add(self.pending.len());
+        self.pending.clear();
     }
 
     /// Settle every press that this page flip showed.

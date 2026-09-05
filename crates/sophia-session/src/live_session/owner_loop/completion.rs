@@ -712,13 +712,17 @@
         )
         .into());
     }
-    let native_in_flight = runtime
+    let native_totals = native_evidence.snapshot(native_scanout.as_ref());
+    if let Some(native) = native_scanout.as_ref() {
+        native_evidence.close(&NativeEvidenceSnapshot::capture(native), "completion");
+    }
+    let native_in_flight = native_totals.in_flight || runtime
         .as_ref()
         .is_some_and(LiveProductionVisualRuntime::native_scanout_in_flight)
         || native_scanout
             .as_ref()
             .is_some_and(LiveProductionNativeScanout::any_head_scanout_in_flight);
-    let native_cleanup_pending = runtime
+    let native_cleanup_pending = native_totals.cleanup_pending || runtime
         .as_ref()
         .is_some_and(LiveProductionVisualRuntime::native_cleanup_pending)
         || native_scanout
@@ -747,10 +751,7 @@
             policy.touch_devices,
         );
     }
-    let native_resources = native_scanout.as_ref().map_or_else(
-        sophia_backend_live::LivePersistentRenderMetrics::default,
-        LiveProductionNativeScanout::persistent_render_metrics,
-    );
+    let native_resources = native_totals.resources;
     let native_target_creations = native_resources.target_creations;
     let native_target_recreations = native_resources.target_recreations;
     let native_pipeline_creations = native_resources.pipeline_creations;
@@ -760,10 +761,7 @@
     let native_max_frame_surface_create = native_resources.max_frame_surface_create;
     let native_max_render = native_resources.max_render;
     let native_max_upload = native_resources.max_upload;
-    let direct_scanout_totals = native_scanout.as_ref().map_or_else(
-        sophia_backend_live::LiveProductionDirectScanoutTotals::default,
-        sophia_backend_live::LiveProductionNativeScanout::direct_scanout_totals,
-    );
+    let direct_scanout_totals = native_totals.direct;
     crate::session_println!(
         "sophia_live_native_resources schema=12 status=complete target_creations={} pipeline_creations={} frame_surface_creations={} cpu_target_creations={} dmabuf_target_creations={} composition_target_creations={} composition_target_reuses={} generation_replacements={} recovery_replacements={} snapshot_captures={} snapshot_promotions={} snapshot_rollbacks={} snapshot_evictions={} snapshot_live_entries={} snapshot_live_bytes={} import_cache_imports={} import_cache_hits={} import_cache_evictions={} import_cache_live_entries={} import_cache_descriptor_mismatches={} import_cache_capacity_rejections={} exact_nearest_draws={} sharp_downscale_draws={} sharp_upscale_draws={} linear_fallback_draws={} worker_requests={} worker_completions={} worker_failures={} worker_soft_stalls={} worker_hard_stalls={} worker_release_enqueue_failures={} frame_slot_acquisitions={} frame_slot_reuses={} frame_slot_deferrals={} frame_slot_stale_releases={} frame_slots_leased={} frame_slots_high_watermark={} max_in_flight_per_output={} pending_frame_supersessions={} frame_slot_partial_repaints={} frame_slot_full_repaints={} frame_slot_history_invalidations={} frame_slot_history_records={} max_worker_request_msec={} renderer_workers={} worker_result_misroutes={} worker_max_service_skew={} direct_scanout_attempts={} direct_scanout_flips={} direct_scanout_tests={} direct_scanout_test_rejections={} direct_scanout_refusals={} direct_scanout_unsupported={} direct_scanout_fallbacks={}",
         native_resources.target_creations,
@@ -803,12 +801,8 @@
         native_resources.frame_slot_stale_releases,
         native_resources.frame_slots_leased,
         native_resources.frame_slots_high_watermark,
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.max_in_flight_per_output),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.pending_frame_supersessions),
+        native_totals.max_in_flight_per_output,
+        native_totals.pending_frame_supersessions,
         native_resources.frame_slot_partial_repaints,
         native_resources.frame_slot_full_repaints,
         native_resources.frame_slot_history_invalidations,
@@ -816,9 +810,7 @@
         native_resources.max_worker_request.as_millis(),
         native_resources.renderer_workers,
         native_resources.worker_result_misroutes,
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.max_service_skew),
+        native_totals.max_service_skew,
         direct_scanout_totals.attempts,
         direct_scanout_totals.flips,
         direct_scanout_totals.tests,
@@ -837,19 +829,17 @@
             Vec::new,
             sophia_backend_live::LiveProductionNativeScanout::direct_scanout_head_verdicts,
         );
-        let mut totals = [0usize; sophia_engine::DirectScanoutVerdict::COUNT];
+        let totals = native_totals.verdicts;
         for (output, head, verdicts) in &heads {
             let mut record = format!(
                 "sophia_live_direct_scanout_verdicts schema=2 status=head output={} head={}",
                 output.raw(),
                 head.raw(),
             );
-            for ((verdict, count), total) in
+            for (verdict, count) in
                 std::iter::zip(sophia_engine::DirectScanoutVerdict::VERDICTS, verdicts)
-                    .zip(&mut totals)
             {
                 record.push_str(&format!(" {}={count}", verdict.reduced_name()));
-                *total = total.saturating_add(*count);
             }
             crate::session_println!("{record}");
         }
@@ -871,8 +861,8 @@
     // Absent populations are omitted rather than reported as zero. A session
     // that never composed has nothing to compare against, and a zero would
     // read as free instead of as absent.
-    if let Some(native_scanout) = native_scanout.as_ref() {
-        let cost = native_scanout.direct_scanout_cost();
+    if native_evidence.enabled() {
+        let cost = &native_totals.cost;
         for (population, samples) in [("direct", &cost.direct), ("composed", &cost.composed)] {
             let offer = samples.offer_to_submit.summary();
             let flip = samples.submit_to_flip.summary();
@@ -919,12 +909,12 @@
             );
         }
     }
-    if let Some(native_scanout) = native_scanout.as_ref() {
+    if native_evidence.enabled() {
         crate::session_println!(
             "sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps={} fallbacks={} pending={}",
-            native_scanout.kernel_page_flip_timestamps,
-            native_scanout.kernel_page_flip_timestamp_missing,
-            native_scanout.pending_kernel_page_flip_timestamps(),
+            native_totals.kernel_page_flip_timestamps,
+            native_totals.kernel_page_flip_timestamp_missing,
+            native_scanout.as_ref().map_or(0, LiveProductionNativeScanout::pending_kernel_page_flip_timestamps),
         );
     }
     // The sampled population, reported without a verdict. Whether it grew is
@@ -1000,50 +990,22 @@
         },
         cursor_moves_coalesced,
         cursor_max_motion_to_submit.max(
-            native_scanout
-                .as_ref()
-                .map_or(Duration::ZERO, |scanout| scanout.max_cursor_queue_delay)
+            native_totals.max_cursor_queue_delay
         ).as_millis(),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.max_cursor_initialization.as_millis()),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_initialization_deferrals),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.max_cursor_update.as_millis()),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_updates_primary_in_flight),
+        native_totals.max_cursor_initialization.as_millis(),
+        native_totals.cursor_initialization_deferrals,
+        native_totals.max_cursor_update.as_millis(),
+        native_totals.cursor_updates_primary_in_flight,
         physical_pointer_buttons_routed,
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_updates),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_hidden_updates),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_update_failures),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_updates_queued),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_updates_coalesced),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_updates_ridden),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_only_commits),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_combined_drops),
-        native_scanout
-            .as_ref()
-            .map_or(0, |scanout| scanout.cursor_legacy_fallbacks),
+        native_totals.cursor_updates,
+        native_totals.cursor_hidden_updates,
+        native_totals.cursor_update_failures,
+        native_totals.cursor_updates_queued,
+        native_totals.cursor_updates_coalesced,
+        native_totals.cursor_updates_ridden,
+        native_totals.cursor_only_commits,
+        native_totals.cursor_combined_drops,
+        native_totals.cursor_legacy_fallbacks,
         native_scanout
             .as_ref()
             .map_or(0, |scanout| scanout.pending_atomic_cursor_count()),
@@ -1216,32 +1178,18 @@
         } else {
             "disabled"
         },
-        if native_scanout.is_some() {
+        if native_evidence.enabled() {
             "enabled"
         } else {
             "disabled"
         },
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.submissions),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.submit_deferred),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.submit_failures),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.retirements),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.retire_failures),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.max_in_flight_ticks),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.max_submit_to_page_flip.as_millis()),
+        native_totals.submissions,
+        native_totals.submit_deferred,
+        native_totals.submit_failures,
+        native_totals.retirements,
+        native_totals.retire_failures,
+        native_totals.max_in_flight_ticks,
+        native_totals.max_submit_to_page_flip.as_millis(),
         native_max_upload.as_millis(),
         native_max_target_create.as_millis(),
         native_max_frame_surface_create.as_millis(),
@@ -1251,24 +1199,12 @@
         native_pipeline_creations,
         native_frame_surface_creations,
         native_uploads,
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.callback_accepted),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.callback_rejected),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.callback_queue_saturated),
-        native_scanout
-            .as_ref()
-            .map_or(0, |native| native.nonzero_exports),
-        native_scanout
-            .as_ref()
-            .map_or(0, LiveProductionNativeScanout::mixed_exports),
-        native_scanout
-            .as_ref()
-            .map_or(0, LiveProductionNativeScanout::export_attempts),
+        native_totals.callback_accepted,
+        native_totals.callback_rejected,
+        native_totals.callback_queue_saturated,
+        native_totals.nonzero_exports,
+        native_totals.mixed_exports,
+        native_totals.export_attempts,
         native_in_flight,
         native_cleanup_pending,
         if physical_input.is_some() {
@@ -1340,32 +1276,23 @@
     {
         return Err("persistent Present resources did not retire exactly once".into());
     }
-    if let (Some(_), Some(native_scanout)) = (runtime.as_ref(), native_scanout.as_ref())
-        && (native_scanout.submissions == 0
-            || native_scanout.retirements == 0
-            || native_scanout.nonzero_exports == 0
-            || native_scanout.submit_failures != 0
-            || native_scanout.retire_failures != 0
-            || native_scanout.callback_rejected != 0
-            || native_scanout.callback_queue_saturated != 0
-            || native_scanout.vsync_overlap_rejections != 0
-            || native_scanout.page_flip_phase_rejections != 0
-            || native_in_flight
-            || native_cleanup_pending)
+    if native_evidence.enabled()
+        && (!native_totals.clean() || native_in_flight || native_cleanup_pending
+            || native_evidence.unsettled_owners != 0 || native_evidence.settlement_failures != 0)
     {
         return Err(format!(
-            "persistent native scanout did not submit, retire, and drain cleanly: overlap_rejections={} phase_rejections={}",
-            native_scanout.vsync_overlap_rejections,
-            native_scanout.page_flip_phase_rejections,
-        )
-        .into());
+            "persistent native scanout did not submit, retire, and drain cleanly: overlap_rejections={} phase_rejections={} unsettled_owners={}",
+            native_totals.vsync_overlap_rejections,
+            native_totals.page_flip_phase_rejections,
+            native_evidence.unsettled_owners,
+        ).into());
     }
     if let Some(native_scanout) = native_scanout.as_ref() {
         crate::session_println!(
             "sophia_live_vsync schema=1 status=complete outputs={} overlap_rejections={} phase_rejections={} policy=page_flip_paced",
             native_scanout.heads.len(),
-            native_scanout.vsync_overlap_rejections,
-            native_scanout.page_flip_phase_rejections,
+            native_totals.vsync_overlap_rejections,
+            native_totals.page_flip_phase_rejections,
         );
         let mut content_evidence = Vec::with_capacity(native_scanout.heads.len());
         for head in &native_scanout.heads {

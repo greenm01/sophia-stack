@@ -204,3 +204,19 @@ fn stage_percentiles_come_from_their_own_populations() {
     assert_eq!(summary.max_dwell_to_submit_usec, 25_000);
     assert_eq!(summary.p99_dwell_to_submit_usec, 4_000);
 }
+
+#[test]
+fn native_replacement_keeps_samples_but_never_joins_old_pending_presses() {
+    let mut samples = InputLatencySamples::new();
+    samples.observe_press(press(1, 1_000, 10));
+    samples.observe_page_flip(11, FRESH, 2_000, 3_000);
+    samples.observe_press(press(2, 4_000, 11));
+    samples.close_native_owner();
+    samples.observe_press(press(3, 10_000, 0));
+    samples.observe_page_flip(1, 1, 11_000, 12_000);
+    let summary = samples.summary().unwrap();
+    assert_eq!(summary.samples, 2);
+    assert_eq!(summary.abandoned, 1);
+    assert_eq!(summary.pending, 0);
+    assert_eq!(summary.max_usec, 2_000);
+}

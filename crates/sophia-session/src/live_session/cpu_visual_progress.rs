@@ -162,6 +162,18 @@ impl CpuVisualProgress {
         Ok(())
     }
 
+    pub(super) fn close_native_owner(&mut self) {
+        let released = u64::try_from(self.queued.len()).unwrap_or(u64::MAX);
+        self.queued.clear();
+        self.superseded_updates = self.superseded_updates.saturating_add(released);
+        self.lifecycle_superseded_updates =
+            self.lifecycle_superseded_updates.saturating_add(released);
+        self.last_seen_submissions = 0;
+        self.last_presented_checksum = None;
+        // A seat pause is not an inter-frame sample.
+        self.previous_retirement_after_ready = None;
+    }
+
     pub(super) fn observe_native_scanout(
         &mut self,
         native_scanout: &LiveProductionNativeScanout,

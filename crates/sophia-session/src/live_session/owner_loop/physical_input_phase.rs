@@ -1075,7 +1075,37 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         service_core_config_reload!();
         service_session_controls!();
-        include!("topology_phase.rs");
+        // Deadlines and acknowledgments belong to the session, not to DRM.
+        // Service them before any seat wait or renderer replacement can continue.
+        InputDeliveryPhase {
+            receiver: input_delivery_receiver,
+            state: &mut input_delivery,
+            client_key_release_barrier: &mut client_key_release_barrier,
+            proof_started_at: &mut input_proof_started_at,
+            post_input_deadline: &mut post_input_deadline,
+        }.drain()?;
+        if (post_input_deadline.is_none() || input_presented_latency.is_some())
+            && deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            if config.input_proof_requested() && injection_checksum.is_none() {
+                return Err(
+                    "persistent live session startup budget elapsed before a focused terminal frame was ready for input proof"
+                        .into(),
+                );
+            }
+            // The global runtime budget bounds startup. Once input has been
+            // injected, its delivery and pixel/semantic stages own narrower
+            // explicit deadlines. Ending here can strand already-routed keys
+            // without giving the frontend a chance to acknowledge them.
+            if global_runtime_deadline_ends_session(config.input_proof_requested()) {
+                service_runtime_deadline_key_drain!();
+            }
+        }
+        let native_shutdown_started = session_quiescence.is_some()
+            || runtime_deadline_key_drain.is_draining();
+        if !native_shutdown_started {
+            include!("topology_phase.rs");
+        }
         include!("lifecycle.rs");
         include!("wm_phase.rs");
         include!("authority.rs");

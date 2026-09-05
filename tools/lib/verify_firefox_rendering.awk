@@ -7,8 +7,8 @@ function fail(message) {
     exit 1
 }
 function positive(value) { return value ~ /^[1-9][0-9]*$/ }
-function scene_key() { return f["output"] SUBSEP f["head"] SUBSEP f["scene_generation"] }
-function frame_key() { return f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
+function scene_key() { return owner_epoch SUBSEP f["output"] SUBSEP f["head"] SUBSEP f["scene_generation"] }
+function frame_key() { return owner_epoch SUBSEP f["output"] SUBSEP f["head"] SUBSEP f["frame"] }
 function action_launch() {
     # The current emitter writes schema 2, then one schema-1 compatibility
     # echo. Consume only that echo; another launch must still fail the gate.
@@ -37,6 +37,14 @@ function action_launch() {
     }
     event = $1
     status = f["status"]
+    # Frame and scene IDs are local to a replaceable native owner. A close
+    # separates all following preparation/activation records from its lifetime.
+    if (event == "sophia_live_native_owner" && status == "closed") {
+        if (f["schema"] != 1 || !positive(f["epoch"])) fail("invalid native owner epoch")
+        if (f["settled"] != "true" || f["settlement_failures"] + 0 != 0)
+            fail("unsettled native owner")
+        owner_epoch++
+    }
     if (event == "sophia_session_app" && status == "started") {
         if (f["id"] == "terminal" && f["source"] == "startup") terminals++
         if ((f["id"] == "browser" || f["id"] == "firefox") && f["source"] == "action") {

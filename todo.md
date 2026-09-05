@@ -124,14 +124,16 @@ retain the change in exit criteria. Work through these stages in order.
 
 #### 1. Recover reliably
 
-- [ ] Preserve session-wide native evidence across scanout replacement,
+- [x] Preserve session-wide native evidence across scanout replacement,
   retaining earlier failures and each owner's drain obligations.
-- [ ] Honor runtime deadlines while the seat is suspended, without requiring
+- [x] Honor runtime deadlines while the seat is suspended, without requiring
   reacquisition to begin shutdown.
-- [ ] Add regressions for retirement before replacement, repeated resume,
+- [x] Add regressions for retirement before replacement, repeated resume,
   immediate shutdown after resume, rejected VT switches, topology replacement,
-  suspension across the deadline, and failure retention. Then run a short
-  physical Firefox/VT/deadline canary.
+  suspension across the deadline, and failure retention. Lifecycle model and
+  negative controls pass; `cargo xtask check` passes (2,348 test executions).
+- [ ] Run the two [physical Firefox/VT/deadline canaries](docs/native-recovery-canary.md).
+  Procedures and a release build are prepared; physical acceptance remains open.
 
 Exit: recovery and bounded shutdown pass without contradictory counters,
 abandoned accepted work, or loss of the fallback desktop. The

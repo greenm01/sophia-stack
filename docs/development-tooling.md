@@ -87,10 +87,11 @@ the default atomic path rather than selecting it. Each has a matching
 
 The active development-session path is CP-14.3 in `todo.md`. Reuse the existing
 `sophia session run` entry, installed launcher, and necessary TTY adapter, with
-exact binary/profile identity and a known working fallback. The roadmap queues
-the remaining lifecycle fixes, short physical acceptance checklist, per-session
-diagnostic preservation, and incident markers; these are not new commands
-already provided by this document. Extend existing bounded telemetry first.
+exact binary/profile identity and a known working fallback. The lifecycle fixes have passed deterministic verification; the
+[two recovery canaries](native-recovery-canary.md) remain pending. The roadmap
+queues the broader physical acceptance checklist, per-session diagnostic
+preservation, and incident markers; those are not new commands already provided
+by this document. Extend existing bounded telemetry first.
 Production session events stay in `sophia-session`; developer evidence packaging
 and validation stay in `sophia-conformance`/`xtask`. Expensive tracing and pixel
 inspection remain opt-in.

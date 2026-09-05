@@ -4,6 +4,7 @@
                 seat_state = seat_state.observe(event);
             }
             if seat_state == sophia_backend_live::LiveSeatState::Active
+                && native_recovery_allowed!()
                 && let Some((terminal, queued_at)) = pending_virtual_terminal
             {
                 InputDeliveryPhase {
@@ -63,6 +64,7 @@
                 };
                 match quiesced {
                     Ok(report) => {
+                        native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                         suspended_renderer_images = match (runtime.as_ref(), native_scanout.as_mut())
                         {
                             (Some(runtime), Some(native)) => {
@@ -74,7 +76,7 @@
                             "sophia_live_renderer_handoff schema=1 status=captured images={}",
                             suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
                         );
-                        native_scanout.take();
+                        close_native_owner!("seat_release");
                         seat_release_prepared = true;
                         crate::session_println!(
                             "sophia_live_session_vt schema=6 status=quiesced target={terminal} outcome={} drained={} abandoned_scanouts={} skipped_present={}",
@@ -97,6 +99,7 @@
                             }
                             Err(error) => {
                                 seat_release_prepared = false;
+                                if !native_recovery_allowed!() { continue; }
                                 let mut resumed =
                                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                                         &controller.device_opener(),
@@ -118,6 +121,7 @@
                                         suspended_renderer_images.take(),
                                     )?;
                                     publish_resumed_topology_transport!(resumed);
+                                    native_evidence.open("seat_resume");
                                     *native_scanout = Some(resumed);
                                     crate::session_println!(
                                         "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=switch_rejected"
@@ -150,6 +154,7 @@
                         }
                     }
                     Err(error) => {
+                        native_evidence.observe_settlement(false, 0);
                         let device_map = sophia_backend_live::NativeLibinputDeviceMap::new(
                             SeatId::from_raw(SESSION_SEAT_RAW),
                         )
@@ -171,6 +176,7 @@
                 std::io::stdout().flush()?;
             }
             if seat_state == sophia_backend_live::LiveSeatState::Active
+                && native_recovery_allowed!()
                 && let Some((terminal, requested_at)) = requested_virtual_terminal
                 && requested_at.elapsed() >= Duration::from_secs(2)
             {
@@ -197,6 +203,7 @@
                         suspended_renderer_images.take(),
                     )?;
                     publish_resumed_topology_transport!(resumed);
+                    native_evidence.open("seat_resume");
                     *native_scanout = Some(resumed);
                     crate::session_println!(
                         "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=disable_timeout"
@@ -228,6 +235,7 @@
                 std::io::stdout().flush()?;
             }
             if seat_state == sophia_backend_live::LiveSeatState::Active
+                && native_recovery_allowed!()
                 && requested_virtual_terminal.is_some()
             {
                 std::thread::sleep(Duration::from_millis(2));
@@ -259,6 +267,7 @@
                     && let Some(runtime) = runtime.as_mut()
                 {
                     let report = runtime.suspend_revoked_native_scanout(&outputs)?;
+                    native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                     let discarded_renderer_images = runtime.discard_retained_renderer_images();
                     suspended_renderer_images = None;
                     crate::session_println!(
@@ -272,7 +281,7 @@
                         "sophia_live_renderer_handoff schema=1 status=discarded images={discarded_renderer_images} source=forced_detach"
                     );
                 }
-                native_scanout.take();
+                close_native_owner!("seat_release");
                 controller.acknowledge_disable()?;
                 seat_state = seat_state.released();
                 seat_release_prepared = false;
@@ -284,7 +293,9 @@
                 crate::session_println!("sophia_live_seat schema=1 status=suspended");
                 std::io::stdout().flush()?;
             }
-            if seat_state == sophia_backend_live::LiveSeatState::AcquirePending {
+            if seat_state == sophia_backend_live::LiveSeatState::AcquirePending
+                && native_recovery_allowed!()
+            {
                 crate::session_println!("sophia_live_seat schema=1 status=acquire_pending");
                 let mut resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
@@ -316,6 +327,7 @@
                         suspended_renderer_images.take(),
                     )?;
                     publish_resumed_topology_transport!(resumed);
+                    native_evidence.open("seat_resume");
                     *native_scanout = Some(resumed);
                     // CPU snapshots live in the Engine scene, outside the imported
                     // renderer-image table. Record both recovery paths separately.
@@ -340,10 +352,6 @@
                 seat_state = seat_state.acquired();
                 crate::session_println!("sophia_live_seat schema=1 status=active source=resume");
                 std::io::stdout().flush()?;
-            }
-            if seat_state == sophia_backend_live::LiveSeatState::Suspended {
-                std::thread::sleep(Duration::from_millis(5));
-                continue;
             }
             if seat_state == sophia_backend_live::LiveSeatState::Failed {
                 return Err("invalid libseat lifecycle transition".into());
@@ -571,22 +579,12 @@
             }
             return Err("persistent live session input pixels were not presented within the post-flush proof window".into());
         }
-        if (post_input_deadline.is_none() || input_presented_latency.is_some())
-            && deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        if matches!(seat_state, sophia_backend_live::LiveSeatState::Suspended
+            | sophia_backend_live::LiveSeatState::AcquirePending)
+            && session_quiescence.is_none()
         {
-            if config.input_proof_requested() && injection_checksum.is_none() {
-                return Err(
-                    "persistent live session startup budget elapsed before a focused terminal frame was ready for input proof"
-                        .into(),
-                );
-            }
-            // The global runtime budget bounds startup. Once input has been
-            // injected, its delivery and pixel/semantic stages own narrower
-            // explicit deadlines. Ending here can strand already-routed keys
-            // without giving the frontend a chance to acknowledge them.
-            if global_runtime_deadline_ends_session(config.input_proof_requested()) {
-                service_runtime_deadline_key_drain!();
-            }
+            std::thread::sleep(Duration::from_millis(5));
+            continue;
         }
         if let (Some(runtime), Some(native_scanout)) = (runtime.as_mut(), native_scanout.as_mut())
             && native_scanout.output_topology_allows_frame_service()

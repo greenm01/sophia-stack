@@ -26,6 +26,9 @@ impl LiveProductionVisualRuntime {
     /// Publishes the committed scene for runtimes whose output tick is also
     /// their presentation boundary (currently the non-native/headless path).
     pub(super) fn publish_committed_input_layers(&mut self) {
+        if self.native_suspended {
+            return;
+        }
         let input_layers = input_layer_snapshots(
             self.production.committed_surfaces(),
             &self.presentation_order,

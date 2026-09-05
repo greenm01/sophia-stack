@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
+for model in NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -187,4 +187,29 @@ for control in TabDescriptorStaleCandidate TabDescriptorLostCapture; do
         TabDescriptorLostCapture) invariant=ExactActivation ;;
     esac
     grep -Fq "Invariant $invariant is violated." "$log" || { cat "$log"; exit 1; }
+done
+
+for control in DiscardCounters ForgetFailure RequireResume; do
+    control_dir="$TEMP_DIR/NativeSessionLifecycle$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/NativeSessionLifecycle.tla" "$control_dir/"
+    cp "$MODEL_DIR/NativeSessionLifecycle$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (
+        cd "$control_dir"
+        timeout 30m java -XX:+UseParallelGC -jar "$JAR_PATH" -deadlock -workers 1 -fp 0 \
+            -config "NativeSessionLifecycle$control.cfg" NativeSessionLifecycle.tla
+    ) >"$log" 2>&1; then
+        echo "TLA+ native lifecycle negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        DiscardCounters) expected='Invariant EvidenceRetained is violated.' ;;
+        ForgetFailure) expected='Invariant FailureRetained is violated.' ;;
+        RequireResume) expected='Temporal properties were violated.' ;;
+    esac
+    grep -Fq "$expected" "$log" || {
+        echo "TLA+ native lifecycle control failed for the wrong reason: $control" >&2
+        exit 1
+    }
 done

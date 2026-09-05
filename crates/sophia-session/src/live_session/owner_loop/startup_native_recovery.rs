@@ -1,20 +1,22 @@
 {
 startup_native_recovery_attempted = true;
-let mut current = native_scanout
-    .take()
+let current = native_scanout
+    .as_mut()
     .ok_or("startup native recovery lost the active scanout")?;
 let suspended = runtime
     .as_mut()
     .ok_or("startup native recovery lost the visual runtime")?
-    .suspend_native_scanout(&mut current, &outputs, Duration::from_millis(100))?;
+    .suspend_native_scanout(current, &outputs, Duration::from_millis(100))?;
+native_evidence.observe_settlement(suspended.outcome.drained(), suspended.abandoned_scanouts);
 let renderer_handoff = capture_renderer_image_handoff(
     runtime
         .as_ref()
         .ok_or("startup native recovery lost the visual runtime")?,
-    &mut current,
+    current,
     output.id,
 )?;
-drop(current);
+close_native_owner!("startup_recovery");
+if !native_recovery_allowed!() { continue; }
 let mut replacement = LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
     &seat_controller
         .as_ref()
@@ -43,6 +45,7 @@ if replacement.outputs() != outputs {
         &mut scene,
         Some(renderer_handoff),
     )?;
+    native_evidence.open("startup_recovery");
     *native_scanout = Some(replacement);
     let _ = reduce_session_startup(
         &mut startup_readiness,

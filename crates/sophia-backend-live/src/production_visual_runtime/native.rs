@@ -367,6 +367,7 @@ impl LiveProductionVisualRuntime {
             self.production.committed_surfaces(),
             None,
         )?;
+        self.native_suspended = true;
         // A suspended/revoked output no longer has a visible native
         // interaction snapshot. Do not retain routes into retired pixels.
         self.input_projections = (0..self.outputs.output_count())
@@ -434,6 +435,7 @@ impl LiveProductionVisualRuntime {
         // Install the runtime privately, lower the restored scene for every
         // native head, and synchronously present each complete output cohort.
         self.outputs = resumed_outputs;
+        self.native_suspended = false;
         let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
         if batches.len() != self.outputs.output_count() {
             return Err("native resume produced partial logical-output coverage".into());

@@ -292,6 +292,15 @@ fn recent_cpu_update_residency_bridges_patch_gaps_and_remains_bounded() {
 
 #[test]
 fn software_present_applies_grouped_pixels_and_routes_feedback() {
+    software_present_during_seat_lifetime(false);
+}
+
+#[test]
+fn suspended_native_owner_drains_software_present_without_presentation_or_input() {
+    software_present_during_seat_lifetime(true);
+}
+
+fn software_present_during_seat_lifetime(suspended: bool) {
     let size = Size {
         width: 2,
         height: 1,
@@ -381,6 +390,9 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
     }];
     let mut scene = LiveProductionCpuScene::new(size);
     let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
+    if suspended {
+        runtime.suspend_revoked_native_scanout(&[output]).unwrap();
+    }
     let (submission, committed, progress) = runtime
         .run_cpu_production_cycle(LiveProductionCycleRequest {
             batch: &batch,
@@ -412,23 +424,35 @@ fn software_present_applies_grouped_pixels_and_routes_feedback() {
     let mut outcomes = Vec::new();
     runtime.drain_present_feedback_into(&mut outcomes).unwrap();
     assert_eq!(outcomes.len(), 1);
+    let complete = LivePresentProtocolFeedback::Complete {
+        transaction,
+        ust: 0,
+        msc: 0,
+        disposition: if suspended {
+            LivePresentBufferDisposition::Skipped
+        } else {
+            LivePresentBufferDisposition::Copied
+        },
+    };
+    let idle = LivePresentProtocolFeedback::Idle { transaction };
     assert_eq!(
         outcomes[0].feedback,
-        [
-            LivePresentProtocolFeedback::Idle { transaction },
-            LivePresentProtocolFeedback::Complete {
-                transaction,
-                ust: 0,
-                msc: 0,
-                disposition: LivePresentBufferDisposition::Copied,
-            },
-        ]
+        if suspended {
+            vec![complete, idle]
+        } else {
+            vec![idle, complete]
+        }
     );
     assert_eq!(runtime.diagnostics().live_presentations, 0);
     let mut retired = Vec::new();
     runtime
         .drain_retired_software_presents_into(&mut retired)
         .unwrap();
+    if suspended {
+        assert!(retired.is_empty());
+        assert!(runtime.input_layers().is_empty());
+        return;
+    }
     assert_eq!(
         retired,
         [sophia_backend_live::LiveProductionRetiredSoftwarePresent {

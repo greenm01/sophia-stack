@@ -446,3 +446,40 @@ fn queued_owner_capacity_fails_closed() {
     assert!(record.contains("pending_updates=17"));
     assert!(record.contains("accounted_updates=17"));
 }
+
+#[test]
+fn new_owner_counts_from_zero_without_matching_a_recycled_native_frame() {
+    let now = Instant::now();
+    let surface = SurfaceId::new(1, 1);
+    let mut progress = CpuVisualProgress::default();
+    progress.observe_ready(now, 100, Some(10), 60_000);
+    progress
+        .observe_production(
+            &production(1, Some(identity(1, surface)), vec![], target(1, 20)),
+            now,
+        )
+        .unwrap();
+    progress.observe_primary_state(101, content(101, 10), 60_000, now, |_| true);
+    progress.close_native_owner();
+    progress.observe_primary_state(
+        1,
+        content(1, 20),
+        60_000,
+        now + Duration::from_secs(60),
+        |_| true,
+    );
+    assert_eq!(progress.primary_retirements, 2);
+    assert_eq!(progress.presented_updates, 0);
+    assert_eq!(progress.lifecycle_superseded_updates, 1);
+    assert_eq!(progress.display_max_gap, Duration::ZERO);
+    assert!(progress.is_settled());
+    progress
+        .observe_production(
+            &production(1, Some(identity(2, surface)), vec![], target(2, 30)),
+            now,
+        )
+        .unwrap();
+    progress.observe_primary_state(2, content(2, 30), 60_000, now, |_| false);
+    assert_eq!(progress.presented_updates, 1);
+    assert_eq!(progress.primary_retirements, 3);
+}

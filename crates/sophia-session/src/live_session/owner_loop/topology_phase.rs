@@ -61,6 +61,7 @@
         if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
             match runtime.suspend_native_scanout(native, &outputs, Duration::from_secs(2)) {
                 Ok(report) => {
+                        native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                     renderer_handoff = Some(capture_renderer_image_handoff(
                         runtime,
                         native,
@@ -74,7 +75,9 @@
                     );
                 }
                 Err(error) => {
+                    native_evidence.observe_settlement(false, 0);
                     let report = runtime.suspend_revoked_native_scanout(&outputs)?;
+                    native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                     let discarded = runtime.discard_retained_renderer_images();
                     renderer_handoff = None;
                     tracing::warn!(
@@ -85,8 +88,9 @@
                 }
             }
         }
-        native_scanout.take();
+        close_native_owner!("topology_rebuild");
 
+        if !native_recovery_allowed!() { continue; }
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
                 LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
@@ -239,6 +243,7 @@
                         )
                     });
                 }
+                native_evidence.open("topology_rebuild");
                 *native_scanout = Some(replacement);
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",

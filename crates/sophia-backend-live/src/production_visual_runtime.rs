@@ -227,6 +227,9 @@ fn replace_displayed_surface(
 }
 
 pub struct LiveProductionVisualRuntime {
+    /// A revoked native seat must not acquire headless presentation semantics
+    /// while final authority removals are drained.
+    native_suspended: bool,
     production: sophia_engine::ProductionSessionCoordinator,
     outputs: LiveProductionOutputRuntimeSet,
     surface_metadata: BTreeMap<SurfaceId, projection::LiveSurfaceProjectionMetadata>,
@@ -345,6 +348,7 @@ impl LiveProductionVisualRuntime {
             })
             .collect();
         Ok(Self {
+            native_suspended: false,
             production,
             outputs: output_runtimes,
             surface_metadata: BTreeMap::new(),
@@ -861,6 +865,8 @@ impl LiveProductionVisualRuntime {
             }
             if native_enabled {
                 self.frame_unframed_software_presents(scene, output_descriptors)?;
+            } else if self.native_suspended {
+                self.reject_software_presents();
             } else {
                 self.settle_unframed_software_presents_without_native()?;
             }
@@ -870,7 +876,7 @@ impl LiveProductionVisualRuntime {
         }
         // Native input advances only when retire_native_scanout_output
         // observes the corresponding accepted page flip.
-        if !native_enabled {
+        if !native_enabled && !self.native_suspended {
             self.publish_committed_input_layers();
         }
         Ok((report.submission, report.committed_surfaces, cpu_progress))
@@ -1002,6 +1008,8 @@ impl LiveProductionVisualRuntime {
                 .clone();
             if native_enabled {
                 self.frame_unframed_software_presents(scene, output_descriptors)?;
+            } else if self.native_suspended {
+                self.reject_software_presents();
             } else {
                 self.settle_unframed_software_presents_without_native()?;
             }

@@ -542,6 +542,31 @@ fn run_session_loop_inner(
     let mut startup_ready_reported = false;
     let mut cpu_visual_progress = CpuVisualProgress::default();
     let mut session_quiescence = None::<SessionQuiescence>;
+    let mut native_evidence = NativeSessionEvidence::default();
+    if native_scanout.is_some() {
+        native_evidence.open("startup");
+    }
+    macro_rules! native_recovery_allowed {
+        () => {
+            crate::live_session::shutdown::native_recovery_allowed(deadline, Instant::now(),
+                session_quiescence.is_some(), runtime_deadline_key_drain.is_draining())
+        };
+    }
+    macro_rules! close_native_owner {
+        ($reason:literal) => {{
+            if let Some(native) = native_scanout.take() {
+                cpu_visual_progress.observe_native_scanout(&native, Instant::now());
+                cpu_visual_progress.close_native_owner();
+                input_latency_samples.close_native_owner();
+                input_change_submission_baseline = None;
+                input_change_frame_baseline = None;
+                startup_required_submissions = None;
+                native_evidence.close(&NativeEvidenceSnapshot::capture(&native), $reason);
+            }
+        }};
+    }
+
+
     // Inert unless the session asked for it; see `direct_overlay_proof`.
     let mut direct_overlay_proof =
         crate::live_session::direct_overlay_proof::DirectOverlayProof::new(

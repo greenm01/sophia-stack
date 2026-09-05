@@ -328,3 +328,21 @@ fn initial_frontend_stop_failure_is_retained() {
     assert!(stop_frontend_intake(&sender, &mut stopped).is_err());
     assert!(!stopped);
 }
+
+#[test]
+fn recovery_cannot_extend_the_deadline_or_bypass_an_existing_drain() {
+    use super::super::shutdown::native_recovery_allowed;
+    let now = Instant::now();
+    let deadline = now + Duration::from_millis(10);
+    // Rejected VT, disable timeout, resume and topology all share this guard.
+    assert!(native_recovery_allowed(Some(deadline), now, false, false));
+    assert!(!native_recovery_allowed(
+        Some(deadline),
+        deadline,
+        false,
+        false
+    ));
+    assert!(!native_recovery_allowed(None, now, true, false));
+    assert!(!native_recovery_allowed(None, now, false, true));
+    assert!(native_recovery_allowed(None, now, false, false));
+}
