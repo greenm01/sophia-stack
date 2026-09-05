@@ -358,3 +358,42 @@ fn a_recovery_request_naming_a_withdrawn_surface_is_filtered_before_it_is_issued
     assert_eq!(configures[0].surface, live);
     assert_eq!(configures[0].size, committed);
 }
+
+/// Closing an application with more surfaces than the queue is deep must not
+/// end the session.
+///
+/// Withdrawals used to name their surface as the source. The queue
+/// deduplicates by source, so they never coalesced with one another, and
+/// quitting a browser holding seventeen surfaces overflowed a sixteen-deep
+/// queue and killed the session with "WM surface_removed request exceeded the
+/// owner queue capacity". They are relayouts now, and a relayout already
+/// pending is the same relayout.
+#[test]
+fn withdrawing_many_surfaces_at_once_coalesces_into_one_relayout() {
+    let mut queue = VecDeque::new();
+    let outputs = &[1u64];
+
+    // Comfortably more surfaces than WM_OWNER_REQUEST_CAPACITY.
+    let mut admissions = Vec::new();
+    for _ in 0..64 {
+        admissions.push(enqueue_public_policy_cause(
+            &mut queue,
+            None,
+            false,
+            relayout_cause(outputs),
+        ));
+    }
+
+    assert_eq!(admissions[0], LiveWmRequestAdmission::Admitted);
+    assert!(
+        admissions[1..]
+            .iter()
+            .all(|admission| *admission == LiveWmRequestAdmission::Duplicate),
+        "every later withdrawal must fold into the pending relayout"
+    );
+    assert!(
+        !admissions.contains(&LiveWmRequestAdmission::RejectedCapacity),
+        "a capacity rejection here is the session ending"
+    );
+    assert_eq!(queue.len(), 1, "the whole burst is one relayout");
+}

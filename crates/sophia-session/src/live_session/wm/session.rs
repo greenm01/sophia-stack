@@ -345,7 +345,20 @@ impl LiveWmSession {
             .map(|output| output.id)
             .ok_or("public WM has no live output")?;
         Ok(public.queue_cause(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Manage(surface),
+            // Relayout rather than Manage, so closing an application asks for
+            // one relayout instead of one per surface it owned.
+            //
+            // The queue deduplicates by source, and Manage names a surface, so
+            // withdrawals never coalesced with each other: quitting a browser
+            // with seventeen surfaces filled a sixteen-deep queue and ended
+            // the session. Nothing downstream wanted the identity here --
+            // Manage carries it so a committed proposal can claim a launch
+            // classification, which is about a surface arriving, and the
+            // per-surface bookkeeping for a departure already happened on the
+            // line above. The policy interface is snapshot-based, so one
+            // relayout after any number of removals still tells the whole
+            // truth.
+            source: LiveWmProposalSource::Relayout,
             cause: sophia_protocol::PolicyRequestCause::SceneChanged,
             affected_outputs: public.all_outputs(active),
         }))
