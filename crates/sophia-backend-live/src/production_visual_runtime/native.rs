@@ -162,6 +162,11 @@ fn advance_renderer_image_resume(
 pub enum LiveProductionNativeRetirementOwner {
     IndependentFrame,
     SubmittedDmaPresent,
+    /// A frame this session submitted, displaced by a later present before the
+    /// kernel retired it. Ordinary: the kernel retires what it scanned out,
+    /// not what the scheduler now names. It settles without advancing present
+    /// feedback, because a superseded frame is not the frame on glass.
+    SupersededDmaPresent,
     InvalidDmaOwnership,
 }
 
@@ -277,6 +282,10 @@ pub fn reduce_live_production_native_retirement_owner(
     retired_frame: LiveProductionNativeFrameId,
     retired_content: LiveProductionScanoutContent,
     submitted_dma_frame: Option<LiveProductionNativeFrameId>,
+    // Whether this session ever gave the kernel this frame for this output.
+    // Ownership is that question; `submitted_dma_frame` answers only which
+    // frame is current.
+    session_submitted: bool,
 ) -> LiveProductionNativeRetirementOwner {
     if retired_content.frame() != retired_frame {
         return LiveProductionNativeRetirementOwner::InvalidDmaOwnership;
@@ -286,6 +295,9 @@ pub fn reduce_live_production_native_retirement_owner(
             if submitted == retired_frame =>
         {
             LiveProductionNativeRetirementOwner::SubmittedDmaPresent
+        }
+        (LiveProductionScanoutContent::MixedPresent { .. }, _) if session_submitted => {
+            LiveProductionNativeRetirementOwner::SupersededDmaPresent
         }
         (LiveProductionScanoutContent::MixedPresent { .. }, _) => {
             LiveProductionNativeRetirementOwner::InvalidDmaOwnership
@@ -889,6 +901,8 @@ impl LiveProductionVisualRuntime {
                 retirement.frame,
                 retirement.content,
                 self.present_scheduler.submitted_frame(selected_output),
+                self.present_scheduler
+                    .was_submitted(selected_output, retirement.frame),
             ) {
                 LiveProductionNativeRetirementOwner::IndependentFrame => {
                     let settlement = self.settle_software_present_frame(retirement)?;
@@ -907,6 +921,20 @@ impl LiveProductionVisualRuntime {
                         self.publish_presented_input_layers(native_scanout);
                     }
                     return Ok(retired);
+                }
+                LiveProductionNativeRetirementOwner::SupersededDmaPresent => {
+                    // The frame on glass moved on before the kernel reported
+                    // this one. Present feedback belongs to the successor, so
+                    // this settles quietly rather than advancing it, and the
+                    // event is logged because a supersession that is never
+                    // counted is a supersession nobody can find later.
+                    tracing::warn!(
+                        "sophia_live_native_scanout schema=1 status=superseded output={} frame={} reason=retired_after_successor",
+                        selected_output.raw(),
+                        retirement.frame.raw(),
+                    );
+                    self.publish_presented_input_layers(native_scanout);
+                    return Ok(None);
                 }
                 LiveProductionNativeRetirementOwner::InvalidDmaOwnership => {
                     return Err(self
@@ -930,6 +958,8 @@ impl LiveProductionVisualRuntime {
             retirement.frame,
             retirement.content,
             self.present_scheduler.submitted_frame(output),
+            self.present_scheduler
+                .was_submitted(output, retirement.frame),
         ) != LiveProductionNativeRetirementOwner::SubmittedDmaPresent
         {
             return Err("GPU retirement does not own the selected output frame".into());

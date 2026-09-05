@@ -152,7 +152,24 @@ pub struct LiveProductionPresentScheduler {
     max_pending_queued: usize,
     max_total_queued: usize,
     diagnose_first_mixed_export: bool,
+    /// Frames this session has given the kernel, newest last, per output.
+    ///
+    /// The scheduler holds one present in flight, so what it names is what is
+    /// current, not what it owns. A later composition displaces an earlier
+    /// frame that is still in the kernel, and the kernel retires what it
+    /// scanned out. Without this, that retirement is indistinguishable from
+    /// one naming a frame the session never submitted, and the two have
+    /// opposite meanings: the first is ordinary, the second is a broken
+    /// invariant. Bounded, because it answers a question about recent frames.
+    submitted_history: BTreeMap<sophia_protocol::OutputId, VecDeque<LiveProductionNativeFrameId>>,
 }
+
+/// How many submitted frames an output remembers.
+///
+/// Only frames the kernel has not yet retired can be asked about, and that
+/// count is bounded by the in-flight limit; this is that bound with room to
+/// spare rather than a tuned number.
+const SUBMITTED_HISTORY_PER_OUTPUT: usize = 8;
 
 impl LiveProductionPresentScheduler {
     pub fn with_controls(
@@ -505,6 +522,15 @@ impl LiveProductionPresentScheduler {
             return Err("output submission targets an unrelated Present cohort");
         }
         use sophia_engine::TransactionPresentationTransition as Transition;
+        if let Some(frame) = rendering.frame(output) {
+            let history = self.submitted_history.entry(output).or_default();
+            if !history.contains(&frame) {
+                history.push_back(frame);
+                while history.len() > SUBMITTED_HISTORY_PER_OUTPUT {
+                    history.pop_front();
+                }
+            }
+        }
         let transition = rendering.output_cohort.mark_submitted(output);
         let all_submitted = rendering.output_cohort.all_submitted();
         let transaction = rendering.transaction;
@@ -632,6 +658,21 @@ impl LiveProductionPresentScheduler {
                 _ => None,
             });
         queued.chain(in_flight)
+    }
+
+    /// Whether this session gave the kernel this frame for this output.
+    ///
+    /// Ownership is a question about what was submitted, not about what the
+    /// scheduler names now. `PresentMixedOwnership` states the distinction and
+    /// its negative control shows what judging by the current frame costs.
+    pub fn was_submitted(
+        &self,
+        output: sophia_protocol::OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) -> bool {
+        self.submitted_history
+            .get(&output)
+            .is_some_and(|history| history.contains(&frame))
     }
 
     pub fn in_flight_transaction(&self) -> Option<TransactionId> {

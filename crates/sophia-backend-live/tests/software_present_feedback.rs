@@ -92,20 +92,38 @@ fn older_software_frame_may_retire_after_next_dma_frame_submits() {
     };
 
     assert_eq!(
-        reduce_live_production_native_retirement_owner(retired, software, Some(successor)),
+        reduce_live_production_native_retirement_owner(retired, software, Some(successor), false),
         LiveProductionNativeRetirementOwner::IndependentFrame
     );
+
+    let present = LiveProductionScanoutContent::MixedPresent {
+        frame: retired,
+        transaction: TransactionId::from_raw(699),
+        nonzero_rgb_pixels: 985,
+    };
+
+    // A frame this session gave the kernel, displaced by a later present
+    // before the kernel reported it. The kernel retires what it scanned out,
+    // so this is ordinary and must not end the session. See
+    // `PresentMixedOwnership`, whose scheduler-only control is this case.
     assert_eq!(
-        reduce_live_production_native_retirement_owner(
-            retired,
-            LiveProductionScanoutContent::MixedPresent {
-                frame: retired,
-                transaction: TransactionId::from_raw(699),
-                nonzero_rgb_pixels: 985,
-            },
-            Some(successor),
-        ),
+        reduce_live_production_native_retirement_owner(retired, present, Some(successor), true),
+        LiveProductionNativeRetirementOwner::SupersededDmaPresent
+    );
+
+    // The same shape for a frame this session never submitted stays fatal.
+    // That is the invariant the check exists to defend: a retirement naming a
+    // buffer we never gave the kernel means we do not know what is on glass.
+    assert_eq!(
+        reduce_live_production_native_retirement_owner(retired, present, Some(successor), false),
         LiveProductionNativeRetirementOwner::InvalidDmaOwnership
+    );
+
+    // Nothing in flight at all, which the crashed session also showed, is
+    // still a supersession when the frame was ours.
+    assert_eq!(
+        reduce_live_production_native_retirement_owner(retired, present, None, true),
+        LiveProductionNativeRetirementOwner::SupersededDmaPresent
     );
 }
 
