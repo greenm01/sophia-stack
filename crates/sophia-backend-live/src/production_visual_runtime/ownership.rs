@@ -79,6 +79,19 @@ pub enum LiveProductionNativeRetirementOwner {
 pub enum LiveProductionNativeSubmissionOwner {
     IndependentFrame,
     SubmittedDmaPresent,
+    /// Present content whose identity the cohort no longer names. It is still
+    /// this session's frame on its way to the kernel, so it is recorded as
+    /// owned and its retirement settles quietly; the cohort is not advanced,
+    /// because feedback for one present must not be earned by another's frame.
+    StalePresentContent,
+    /// Scene-driven content submitted while a present was still pending. The
+    /// plane has moved on, so that present can never complete on this output
+    /// and is skipped the way topology quiescence skips one: settled as
+    /// Skipped so no client hangs waiting for feedback.
+    OvertookPendingPresent,
+    /// Content and cohort half-agree on identity: same frame with a different
+    /// transaction, or same transaction with a different frame. That is state
+    /// that has split rather than raced, and it stays fatal.
     InvalidDmaOwnership,
 }
 
@@ -101,9 +114,27 @@ pub fn reduce_live_production_native_submission_owner(
         ) if frame == expected_frame && transaction == expected_transaction => {
             LiveProductionNativeSubmissionOwner::SubmittedDmaPresent
         }
-        (LiveProductionScanoutContent::MixedPresent { .. }, _) | (_, Some(_)) => {
+        // Exactly one half of the identity matches. Content and cohort agree
+        // on which present or which frame but not both, which is bookkeeping
+        // that has split, not a race that has ordered itself badly.
+        (
+            LiveProductionScanoutContent::MixedPresent {
+                frame, transaction, ..
+            },
+            Some((expected_frame, expected_transaction)),
+        ) if frame == expected_frame || transaction == expected_transaction => {
             LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
         }
+        // Present content whose identity the cohort no longer names at all: a
+        // stale mixed frame reaching the kernel after its present moved on.
+        (LiveProductionScanoutContent::MixedPresent { .. }, _) => {
+            LiveProductionNativeSubmissionOwner::StalePresentContent
+        }
+        // Scene-driven content submitting while a present is still pending:
+        // the plane has moved on, and the pending present can no longer
+        // complete on this output. Killing the session here is what a click
+        // on a browser popup used to cost.
+        (_, Some(_)) => LiveProductionNativeSubmissionOwner::OvertookPendingPresent,
         (_, None) => LiveProductionNativeSubmissionOwner::IndependentFrame,
     }
 }
@@ -155,5 +186,94 @@ pub fn reduce_live_production_native_retirement_owner(
             LiveProductionNativeRetirementOwner::InvalidDmaOwnership
         }
         (_, _) => LiveProductionNativeRetirementOwner::IndependentFrame,
+    }
+}
+
+impl LiveProductionVisualRuntime {
+    /// Settles one submission against what the cohort expected of it.
+    ///
+    /// Only an exact identity match advances the cohort. Stale present
+    /// content is remembered so its retirement is owned; scene content that
+    /// overtook a pending present skips that present, settling its client as
+    /// Skipped, because the plane has moved on and the wait can never end.
+    /// Half-matching identity stays fatal, with every fact in the message.
+    pub(super) fn settle_submission_ownership(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        output: OutputId,
+        submitted_content: LiveProductionScanoutContent,
+        expected_present: Option<(LiveProductionNativeFrameId, TransactionId)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let expected =
+            expected_present.map(|(frame, transaction)| (frame.raw(), transaction.raw()));
+        match reduce_live_production_native_submission_owner(submitted_content, expected_present) {
+            LiveProductionNativeSubmissionOwner::IndependentFrame => {}
+            LiveProductionNativeSubmissionOwner::SubmittedDmaPresent => {
+                if let Some(transaction) = self.present_scheduler.mark_output_submitted(output)? {
+                    native_scanout.discard_presentation_feedback(Some(output));
+                    self.presentation_feedback
+                        .resources_mut()
+                        .mark_submitted(transaction)?;
+                }
+                native_scanout.activate_deferred_mirror_generation(output)?;
+            }
+            LiveProductionNativeSubmissionOwner::StalePresentContent => {
+                // Ours, late. Own its retirement; advance nothing.
+                if let Some(frame) = native_scanout.submitted_frame(output) {
+                    self.present_scheduler
+                        .remember_kernel_submission(output, frame);
+                }
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} reason=stale_present_submitted expected={expected:?}",
+                    output.raw(),
+                );
+            }
+            LiveProductionNativeSubmissionOwner::OvertookPendingPresent => {
+                let skipped = self
+                    .skip_in_flight_present(Some(native_scanout), |_| {})
+                    .map(|present| present.transaction.raw());
+                tracing::warn!(
+                    "sophia_live_native_scanout schema=1 status=superseded output={} reason=present_overtaken_at_submit skipped_transaction={skipped:?} expected={expected:?}",
+                    output.raw(),
+                );
+            }
+            LiveProductionNativeSubmissionOwner::InvalidDmaOwnership => {
+                return Err(format!(
+                    "native output submission does not match its Present ownership: \
+output={} submitted_content={submitted_content:?} expected={expected:?}",
+                    output.raw(),
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Settles a superseded retirement, and the cohort that may still wait on
+    /// it.
+    ///
+    /// Settling the frame while leaving its cohort was the zombie a browser
+    /// popup exposed: the cohort's wait could never end, and the next scene
+    /// submission found a pending present and died on it.
+    pub(super) fn settle_superseded_retirement(
+        &mut self,
+        native_scanout: &mut LiveProductionNativeScanout,
+        output: OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) {
+        tracing::warn!(
+            "sophia_live_native_scanout schema=1 status=superseded output={} frame={} reason=retired_after_successor",
+            output.raw(),
+            frame.raw(),
+        );
+        if self.present_scheduler.in_flight_frame(output) == Some(frame) {
+            let skipped = self
+                .skip_in_flight_present(Some(native_scanout), |_| {})
+                .map(|present| present.transaction.raw());
+            tracing::warn!(
+                "sophia_live_native_scanout schema=1 status=superseded output={} reason=present_skipped_after_supersession skipped_transaction={skipped:?}",
+                output.raw(),
+            );
+        }
     }
 }

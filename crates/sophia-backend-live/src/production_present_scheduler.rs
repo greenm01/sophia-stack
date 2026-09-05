@@ -683,6 +683,24 @@ impl LiveProductionPresentScheduler {
             || self.was_submitted(output, frame)
     }
 
+    /// Records a frame this session put in the kernel outside any cohort
+    /// advance, so its retirement is owned. Stale present content reaches the
+    /// kernel without earning a cohort mark, and forgetting it would turn its
+    /// ordinary retirement into a fatal one.
+    pub fn remember_kernel_submission(
+        &mut self,
+        output: sophia_protocol::OutputId,
+        frame: LiveProductionNativeFrameId,
+    ) {
+        let history = self.submitted_history.entry(output).or_default();
+        if !history.contains(&frame) {
+            history.push_back(frame);
+            while history.len() > SUBMITTED_HISTORY_PER_OUTPUT {
+                history.pop_front();
+            }
+        }
+    }
+
     fn was_submitted(
         &self,
         output: sophia_protocol::OutputId,

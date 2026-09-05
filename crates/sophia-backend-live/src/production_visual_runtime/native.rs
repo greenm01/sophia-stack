@@ -213,7 +213,7 @@ impl LiveProductionVisualRuntime {
     /// Shared by suspend and by topology escalation so the two cannot drift:
     /// both need the same "this present will never reach a screen" settlement,
     /// and only the attributed counter differs.
-    fn skip_in_flight_present(
+    pub(super) fn skip_in_flight_present(
         &mut self,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
         attribute: impl FnOnce(&mut Self),
@@ -622,29 +622,12 @@ impl LiveProductionVisualRuntime {
                     .present_scheduler
                     .unsubmitted_frame(selected_output)
                     .zip(self.present_scheduler.in_flight_transaction());
-                match reduce_live_production_native_submission_owner(
+                self.settle_submission_ownership(
+                    native_scanout,
+                    selected_output,
                     submitted_content,
                     expected_present,
-                ) {
-                    LiveProductionNativeSubmissionOwner::IndependentFrame => {}
-                    LiveProductionNativeSubmissionOwner::SubmittedDmaPresent => {
-                        if let Some(transaction) = self
-                            .present_scheduler
-                            .mark_output_submitted(selected_output)?
-                        {
-                            native_scanout.discard_presentation_feedback(Some(selected_output));
-                            self.presentation_feedback
-                                .resources_mut()
-                                .mark_submitted(transaction)?;
-                        }
-                        native_scanout.activate_deferred_mirror_generation(selected_output)?;
-                    }
-                    LiveProductionNativeSubmissionOwner::InvalidDmaOwnership => {
-                        return Err(
-                            "native output submission does not match its Present ownership".into(),
-                        );
-                    }
-                }
+                )?;
                 let submitted = native_scanout
                     .submitted_frame(selected_output)
                     .ok_or("native submit did not retain its frame identity")?;
@@ -774,15 +757,10 @@ impl LiveProductionVisualRuntime {
                     return Ok(retired);
                 }
                 LiveProductionNativeRetirementOwner::SupersededDmaPresent => {
-                    // The frame on glass moved on before the kernel reported
-                    // this one. Present feedback belongs to the successor, so
-                    // this settles quietly rather than advancing it, and the
-                    // event is logged because a supersession that is never
-                    // counted is a supersession nobody can find later.
-                    tracing::warn!(
-                        "sophia_live_native_scanout schema=1 status=superseded output={} frame={} reason=retired_after_successor",
-                        selected_output.raw(),
-                        retirement.frame.raw(),
+                    self.settle_superseded_retirement(
+                        native_scanout,
+                        selected_output,
+                        retirement.frame,
                     );
                     self.publish_presented_input_layers(native_scanout);
                     return Ok(None);

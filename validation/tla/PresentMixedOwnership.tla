@@ -40,10 +40,16 @@ CONSTANTS
     \* Judge ownership by the frame the scheduler names right now, which is
     \* what the running code does. The negative control sets this TRUE and the
     \* stranding invariant then fails, which is the bug stated as a model.
-    SchedulerOnlyOwnership
+    SchedulerOnlyOwnership,
+    \* Leave a cohort pending after its frame settles superseded, which is
+    \* what the code did after the first fix. The zombie control sets this
+    \* TRUE and the cohort-settlement property then fails: settling the frame
+    \* while leaving its cohort is how a browser popup ended a session.
+    LeaveCohortPending
 
 ASSUME MaxFrames \in Nat /\ MaxFrames >= 2
 ASSUME SchedulerOnlyOwnership \in BOOLEAN
+ASSUME LeaveCohortPending \in BOOLEAN
 
 Frames == 1 .. MaxFrames
 NoFrame == 0
@@ -55,9 +61,10 @@ VARIABLES
     scheduler,   \* the frame the scheduler names for this output, or NoFrame
     inKernel,    \* frames the kernel still owes a retirement for
     settled,     \* frames whose retirement was accepted
-    stranded     \* frames whose retirement was judged unowned
+    stranded,    \* frames whose retirement was judged unowned
+    pending      \* the frame the present cohort still waits on, or NoFrame
 
-vars == <<next, submitted, reserved, scheduler, inKernel, settled, stranded>>
+vars == <<next, submitted, reserved, scheduler, inKernel, settled, stranded, pending>>
 
 TypeOK ==
     /\ next \in 1 .. (MaxFrames + 1)
@@ -67,6 +74,7 @@ TypeOK ==
     /\ inKernel \subseteq (submitted \cup reserved)
     /\ settled \subseteq (submitted \cup reserved)
     /\ stranded \subseteq Frames
+    /\ pending \in Frames \cup {NoFrame}
 
 Init ==
     /\ next = 1
@@ -76,6 +84,7 @@ Init ==
     /\ inKernel = {}
     /\ settled = {}
     /\ stranded = {}
+    /\ pending = NoFrame
 
 (***************************************************************************
  * Composing and submitting a mixed frame. The scheduler names it, which    *
@@ -84,9 +93,11 @@ Init ==
  ***************************************************************************)
 Submit ==
     /\ next <= MaxFrames
+    /\ pending = NoFrame
     /\ submitted' = submitted \cup {next}
     /\ inKernel' = inKernel \cup {next}
     /\ scheduler' = next
+    /\ pending' = next
     /\ next' = next + 1
     /\ UNCHANGED <<reserved, settled, stranded>>
 
@@ -98,7 +109,7 @@ Submit ==
 Supersede ==
     /\ scheduler # NoFrame
     /\ scheduler' = NoFrame
-    /\ UNCHANGED <<next, submitted, reserved, inKernel, settled, stranded>>
+    /\ UNCHANGED <<next, submitted, reserved, inKernel, settled, stranded, pending>>
 
 (***************************************************************************
  * A frame reaches the kernel on a pass that finds it already in flight, so *
@@ -107,9 +118,11 @@ Supersede ==
  ***************************************************************************)
 ReserveWithoutRecording ==
     /\ next <= MaxFrames
+    /\ pending = NoFrame
     /\ reserved' = reserved \cup {next}
     /\ inKernel' = inKernel \cup {next}
     /\ scheduler' = next
+    /\ pending' = next
     /\ next' = next + 1
     /\ UNCHANGED <<submitted, settled, stranded>>
 
@@ -123,6 +136,12 @@ OwnsRetirement(f) ==
       THEN f = scheduler
       ELSE f \in (submitted \cup reserved)
 
+(***************************************************************************
+ * A cohort waiting on a frame that retires without its mark can never end   *
+ * its wait. The code's resolution is to skip that present, settling its     *
+ * client as Skipped; leaving the cohort pending is the zombie that poisons  *
+ * the next submission.                                                      *
+ ***************************************************************************)
 Retire(f) ==
     /\ f \in inKernel
     /\ inKernel' = inKernel \ {f}
@@ -132,6 +151,7 @@ Retire(f) ==
          ELSE /\ stranded' = stranded \cup {f}
               /\ UNCHANGED settled
     /\ scheduler' = IF scheduler = f THEN NoFrame ELSE scheduler
+    /\ pending' = IF pending = f /\ ~LeaveCohortPending THEN NoFrame ELSE pending
     /\ UNCHANGED <<next, submitted, reserved>>
 
 Next ==
@@ -169,5 +189,13 @@ NoSubmittedFrameIsStranded == stranded \cap (submitted \cup reserved) = {}
  * can persist is a model of a desktop that dies.                           *
  ***************************************************************************)
 EveryKernelFrameSettles == [](inKernel # {} => <>(inKernel = {}))
+
+(***************************************************************************
+ * Progress. A pending present eventually stops pending: it completes, or   *
+ * its frame retires and it is skipped with it. A cohort that outlives its  *
+ * frame blocks every later submission, which in the running system is a    *
+ * fatal on the next recomposition.                                          *
+ ***************************************************************************)
+PendingPresentSettles == [](pending # NoFrame => <>(pending = NoFrame))
 
 =============================================================================

@@ -200,6 +200,32 @@ grep -Fq 'Invariant NoSubmittedFrameIsStranded is violated.' "$log" || {
     exit 1
 }
 
+# Settling a superseded frame while leaving its cohort pending is the zombie
+# that ended a session on the next recomposition. A passing run here would
+# mean the model no longer detects it.
+control=PresentMixedOwnershipZombieCohort
+control_dir="$TEMP_DIR/$control"
+mkdir "$control_dir"
+cp "$MODEL_DIR/PresentMixedOwnership.tla" "$control_dir/"
+cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+log="$control_dir/control.log"
+if (
+    cd "$control_dir"
+    java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock \
+        -workers 1 \
+        -fp 0 \
+        -config "$control.cfg" \
+        PresentMixedOwnership.tla
+) >"$log" 2>&1; then
+    echo "TLA+ negative control unexpectedly passed: $control" >&2
+    exit 1
+fi
+grep -Fq 'Temporal property PendingPresentSettles was violated.' "$log" || {
+    echo "TLA+ zombie-cohort control failed for the wrong reason" >&2
+    exit 1
+}
+
 for control in TabDescriptorStaleCandidate TabDescriptorLostCapture; do
     control_dir="$TEMP_DIR/$control"
     mkdir "$control_dir"

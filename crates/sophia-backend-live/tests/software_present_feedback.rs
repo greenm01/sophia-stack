@@ -189,13 +189,40 @@ fn ordinary_head_composition_submission_does_not_advance_a_present_cohort() {
         reduce_live_production_native_submission_owner(present, Some((frame, transaction))),
         LiveProductionNativeSubmissionOwner::SubmittedDmaPresent
     );
+    // Scene-driven content while a present is pending is the plane moving
+    // on, not corruption. This exact shape was fatal, and what it cost was a
+    // session ending seven seconds in when a browser popup recomposed while
+    // present 1231 was still waiting for a frame that had already retired.
     assert_eq!(
         reduce_live_production_native_submission_owner(ordinary, Some((frame, transaction))),
+        LiveProductionNativeSubmissionOwner::OvertookPendingPresent
+    );
+    // Present content the cohort no longer names is stale but still ours.
+    assert_eq!(
+        reduce_live_production_native_submission_owner(present, None),
+        LiveProductionNativeSubmissionOwner::StalePresentContent
+    );
+    // Half-matching identity is the shape that stays fatal: content and
+    // cohort agree on the frame or the transaction but not both, which is
+    // bookkeeping that has split rather than a race that ordered itself
+    // badly.
+    let other_frame = LiveProductionNativeFrameId::from_raw(frame.raw() + 1);
+    let other_transaction = TransactionId::from_raw(transaction.raw() + 1);
+    assert_eq!(
+        reduce_live_production_native_submission_owner(present, Some((frame, other_transaction))),
         LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
     );
     assert_eq!(
-        reduce_live_production_native_submission_owner(present, None),
+        reduce_live_production_native_submission_owner(present, Some((other_frame, transaction))),
         LiveProductionNativeSubmissionOwner::InvalidDmaOwnership
+    );
+    // A fully different expectation means the cohort moved on: stale, owned.
+    assert_eq!(
+        reduce_live_production_native_submission_owner(
+            present,
+            Some((other_frame, other_transaction))
+        ),
+        LiveProductionNativeSubmissionOwner::StalePresentContent
     );
 }
 
