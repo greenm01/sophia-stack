@@ -89,6 +89,20 @@ check-layout:
 check:
     @cargo --quiet xtask check
 
+# The one recipe that does not route through `cargo xtask`: installing a
+# session is an operator action on a physical machine, not a gate CI can run,
+# and putting it behind the canonical CI interface would misrepresent it as
+# one. It delegates to `tools/`, where the packaging and installation scripts
+# it composes already live.
+#
+# Everything is derived from the worktree, so there is no commit hash to keep
+# up to date, and it is idempotent: installing what is already installed
+# reports that and stops.
+
+# Package this commit and install it as the live session. Prompts for sudo.
+install-session:
+    @tools/install_session_from_head.sh
+
 # Prepare the signed, immutable diagnostic matrix.
 desktop-comparison-prepare run:
     @cargo --quiet xtask conformance desktop-comparison prepare "{{ run }}"
