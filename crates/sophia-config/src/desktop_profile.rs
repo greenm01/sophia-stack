@@ -704,7 +704,9 @@ fn validate_setting(
         DesktopAuthority::Session => {
             ["terminal", "browser", "logout", "startup", "control"].contains(&name)
         }
-        DesktopAuthority::Input => ["inherit-sophia", "keyboard", "pointer"].contains(&name),
+        DesktopAuthority::Input => {
+            ["inherit-sophia", "keyboard", "pointer", "cursor"].contains(&name)
+        }
         DesktopAuthority::Output => ["inherit-sophia", "named"].contains(&name),
         DesktopAuthority::Broker => ["enabled", "capability"].contains(&name),
     };

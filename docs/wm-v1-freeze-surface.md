@@ -240,7 +240,7 @@ anyway, because it is the only shell question with a back-edge into shared code.
 | 3 | Output mode, scale, position, transform, VRR, enablement, power, reservations | Partial | None, **conditional on Decision 4** |
 | 4 | Launch, startup environment, configured processes, shell supervision | Complete | None — retained registered launches use opaque session-operation tokens |
 | 5 | Lock, logout, session exit, idle inhibition, shortcut inhibition | Excluded | None — clean logout remains retained elsewhere; the security authority is post-freeze |
-| 6 | Cursor theme, visibility, inactivity, and find feedback | Excluded | None — Engine owns the cursor; later configuration and shell feedback stay outside WM policy |
+| 6 | Cursor theme, visibility, inactivity, and find feedback | Excluded from WM policy; theme and size configurable | None on the wire — the Engine still owns the cursor. Theme and size are stated in the desktop profile's `input { cursor { … } }` and applied by the session, which needs no WM vocabulary. Shake-to-find parses and is not yet acted on; visibility and inactivity remain unbuilt |
 | 7 | Configuration discovery, validation, activation, reload, rollback | Complete | **Message** only for excluded watched reload; retained startup activation and rollback need no new message |
 
 ### Brokers And Portals

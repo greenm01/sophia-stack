@@ -354,6 +354,97 @@ input {
 }
 
 #[test]
+fn input_candidate_carries_a_cursor_the_profile_may_state_in_part() {
+    // Every cursor field is optional because the profile overrides the core
+    // config rather than replacing it. A desktop that names only a theme has
+    // said nothing about size, and must not be read as having asked for the
+    // default one -- that is the difference between one file describing a
+    // whole desktop and one file quietly overwriting another.
+    let root = temporary_directory("input-cursor-candidate");
+    let profile_path = root.join("config.kdl");
+    write_profile(
+        &profile_path,
+        r#"schema 1
+input {
+  cursor {
+    theme "WhiteSur-cursors"
+    size 24
+    shake-to-find #true
+  }
+}
+"#,
+    );
+    let profile = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let input =
+        prepare_desktop_input_candidate(profile.candidates.get(&DesktopAuthority::Input).unwrap())
+            .unwrap();
+    let cursor = input.cursor.unwrap();
+    assert_eq!(cursor.theme.as_deref(), Some("WhiteSur-cursors"));
+    assert_eq!(cursor.size, Some(24));
+    assert_eq!(cursor.shake_to_find, Some(true));
+
+    write_profile(
+        &profile_path,
+        "schema 1\ninput { cursor { theme \"Adwaita\"; } }\n",
+    );
+    let partial = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let partial =
+        prepare_desktop_input_candidate(partial.candidates.get(&DesktopAuthority::Input).unwrap())
+            .unwrap();
+    let partial = partial.cursor.unwrap();
+    assert_eq!(partial.theme.as_deref(), Some("Adwaita"));
+    assert_eq!(partial.size, None);
+    assert_eq!(partial.shake_to_find, None);
+
+    // The migration writes string values bare, as it does for every other
+    // migrated string, so the form it emits has to be the form this accepts.
+    write_profile(
+        &profile_path,
+        "schema 1\ninput { cursor { theme WhiteSur-cursors; size 24; } }\n",
+    );
+    let migrated = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let migrated =
+        prepare_desktop_input_candidate(migrated.candidates.get(&DesktopAuthority::Input).unwrap())
+            .unwrap();
+    let migrated = migrated.cursor.unwrap();
+    assert_eq!(migrated.theme.as_deref(), Some("WhiteSur-cursors"));
+    assert_eq!(migrated.size, Some(24));
+
+    // A profile with no cursor block has not overridden anything, which is
+    // what leaves the core config in charge for a session that has one.
+    write_profile(&profile_path, "schema 1\ninput { inherit-sophia #true }\n");
+    let absent = load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL).unwrap();
+    let absent =
+        prepare_desktop_input_candidate(absent.candidates.get(&DesktopAuthority::Input).unwrap())
+            .unwrap();
+    assert!(absent.cursor.is_none());
+
+    for source in [
+        // Beyond the size the renderer will raster.
+        "schema 1\ninput { cursor { size 129; } }\n",
+        "schema 1\ninput { cursor { size 0; } }\n",
+        // A theme name becomes a directory under an icon path.
+        "schema 1\ninput { cursor { theme \"../etc\"; } }\n",
+        "schema 1\ninput { cursor { theme \"\"; } }\n",
+        // Stated twice, so which one was meant is unknowable.
+        "schema 1\ninput { cursor { theme \"a\"; theme \"b\"; } }\n",
+        // The shape stays core-only, so naming it here is a mistake worth
+        // reporting rather than a value to ignore.
+        "schema 1\ninput { cursor { shape \"left_ptr\"; } }\n",
+    ] {
+        write_profile(&profile_path, source);
+        assert!(
+            matches!(
+                load_desktop_profile(Some(&profile_path), ConfigGeneration::INITIAL),
+                Err(DesktopProfileError::Schema(message)) if message.contains("input candidate")
+            ),
+            "{source}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_mirror_group_carries_its_fit_policy() {
     // Named rather than inferred: an operator who would rather crop than see
     // black bars says so. An unknown name is refused, because silently defaulting

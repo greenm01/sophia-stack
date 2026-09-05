@@ -200,14 +200,6 @@ impl PersistentXtermSessionConfig {
         };
         let core_config_state = sophia_config::CoreConfigState::load(&core_config_source)?;
         let core_snapshot = core_config_state.active();
-        let cursor_shape = sophia_engine::CursorShape::parse(&core_snapshot.cursor.shape)
-            .ok_or("validated core config has an unknown cursor shape")?;
-        let cursor_resolution = sophia_renderer_live::resolve_cursor_theme(
-            &core_snapshot.cursor.theme,
-            core_snapshot.cursor.size,
-            cursor_shape,
-            core_snapshot.generation.raw(),
-        );
         let explicit_desktop_profile = arg_value(args, "--desktop-profile").map(Into::into);
         if no_config && explicit_desktop_profile.is_some() {
             return Err("--no-config and --desktop-profile are mutually exclusive".into());
@@ -245,6 +237,38 @@ impl PersistentXtermSessionConfig {
         let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
         let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;
         let desktop_input = input_profile.candidate();
+        // The profile overrides the core config rather than replacing it, so a
+        // desktop that states only a theme keeps the core size and a desktop
+        // that states no cursor at all leaves the core config in charge. That
+        // is what lets one file describe a whole desktop without making the
+        // core config unusable for a session that has no profile.
+        //
+        // The shape stays core-only: it names a semantic cursor the Engine
+        // draws, which is not a thing a desktop profile has an opinion about.
+        let cursor_shape = sophia_engine::CursorShape::parse(&core_snapshot.cursor.shape)
+            .ok_or("validated core config has an unknown cursor shape")?;
+        let desktop_cursor = desktop_input.cursor.as_ref();
+        let cursor_theme = desktop_cursor
+            .and_then(|cursor| cursor.theme.as_deref())
+            .unwrap_or(&core_snapshot.cursor.theme);
+        let cursor_size = desktop_cursor
+            .and_then(|cursor| cursor.size)
+            .unwrap_or(core_snapshot.cursor.size);
+        let cursor_resolution = sophia_renderer_live::resolve_cursor_theme(
+            cursor_theme,
+            cursor_size,
+            cursor_shape,
+            core_snapshot.generation.raw(),
+        );
+        if desktop_cursor.is_some_and(|cursor| cursor.shake_to_find == Some(true)) {
+            // Accepted by the schema and not yet acted on. Saying so is the
+            // point: a key that silently does nothing is worse than one that
+            // is refused, and the operator is looking at a cursor that will
+            // not grow when they shake it.
+            crate::session_eprintln!(
+                "sophia_live_cursor schema=1 status=shake_to_find_deferred reason=runtime_asset_replacement_unbuilt"
+            );
+        }
         let display = arg_value(args, "--display").unwrap_or_else(|| ":77".to_owned());
         let display_number = parse_display_number(&display)?;
         let normal_session = args.iter().any(|arg| arg == "--session-mode=normal")

@@ -39,6 +39,21 @@ pub struct DesktopPointerCandidate {
     pub scroll_factor: Option<f64>,
 }
 
+/// The pointer's appearance, as the desktop profile may state it.
+///
+/// Every field is optional because the profile overrides the core config
+/// rather than replacing it: a profile that names only a theme keeps the core
+/// size, and a profile with no cursor block at all leaves the core config
+/// entirely in charge. `shape` is deliberately absent -- it selects a semantic
+/// cursor the Engine draws, which is not something a desktop profile has an
+/// opinion about.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DesktopCursorCandidate {
+    pub theme: Option<String>,
+    pub size: Option<u32>,
+    pub shake_to_find: Option<bool>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DesktopInputCandidate {
     pub generation: ConfigGeneration,
@@ -46,6 +61,7 @@ pub struct DesktopInputCandidate {
     pub inherit_sophia: bool,
     pub keyboard: Option<DesktopKeyboardCandidate>,
     pub pointer: Option<DesktopPointerCandidate>,
+    pub cursor: Option<DesktopCursorCandidate>,
 }
 
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
@@ -225,6 +241,55 @@ fn parse_pointer(node: &KdlNode) -> Result<DesktopPointerCandidate, DesktopProfi
     Ok(result)
 }
 
+fn parse_cursor(node: &KdlNode) -> Result<DesktopCursorCandidate, DesktopProfileError> {
+    let mut result = DesktopCursorCandidate::default();
+    for child in children(node, "cursor")?.nodes() {
+        match child.name().value() {
+            "theme" if result.theme.is_none() => {
+                let theme = one_string(
+                    child,
+                    "theme",
+                    1,
+                    crate::SOPHIA_CONFIG_MAX_CURSOR_NAME_BYTES,
+                )?;
+                // The same alphabet the core config accepts. A theme name
+                // becomes a directory under an icon path, so anything outside
+                // it is a traversal attempt or a typo, and neither should
+                // reach the filesystem.
+                if !theme
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+                {
+                    return Err(schema_error(
+                        "cursor theme contains an unsupported character",
+                    ));
+                }
+                result.theme = Some(theme);
+            }
+            "size" if result.size.is_none() => {
+                let size = one_integer(
+                    child,
+                    "size",
+                    1,
+                    i128::from(crate::SOPHIA_CONFIG_MAX_CURSOR_SIZE),
+                )?;
+                result.size = Some(
+                    u32::try_from(size)
+                        .map_err(|_| schema_error("cursor size is outside its supported range"))?,
+                );
+            }
+            "shake-to-find" if result.shake_to_find.is_none() => {
+                result.shake_to_find = Some(one_bool(child, "shake-to-find")?);
+            }
+            "theme" | "size" | "shake-to-find" => {
+                return Err(schema_error("duplicate cursor setting"));
+            }
+            _ => return Err(schema_error("unsupported cursor setting")),
+        }
+    }
+    Ok(result)
+}
+
 pub fn prepare_desktop_input_candidate(
     candidate: &DesktopAuthorityCandidate,
 ) -> Result<DesktopInputCandidate, DesktopProfileError> {
@@ -237,6 +302,7 @@ pub fn prepare_desktop_input_candidate(
         inherit_sophia: true,
         keyboard: None,
         pointer: None,
+        cursor: None,
     };
     let mut inheritance_seen = false;
     for value in &candidate.values {
@@ -252,7 +318,10 @@ pub fn prepare_desktop_input_candidate(
             "pointer" if prepared.pointer.is_none() => {
                 prepared.pointer = Some(parse_pointer(&node)?)
             }
-            "inherit-sophia" | "keyboard" | "pointer" => {
+            "cursor" if prepared.cursor.is_none() => {
+                prepared.cursor = Some(parse_cursor(&node)?);
+            }
+            "inherit-sophia" | "keyboard" | "pointer" | "cursor" => {
                 return Err(schema_error("duplicate input setting"));
             }
             _ => return Err(schema_error("candidate contains a non-input setting")),
