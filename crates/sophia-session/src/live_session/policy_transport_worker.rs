@@ -377,6 +377,5 @@ fn run_policy_transport(
     }
 }
 
-#[cfg(test)]
 #[path = "../../tests/support/control_worker_shutdown.rs"]
 mod control_worker_shutdown;
