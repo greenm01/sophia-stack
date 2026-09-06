@@ -551,6 +551,26 @@ struct XExtensionQueryResult {
     first_error: u8,
 }
 
+/// A client-supplied extension name, made safe to put in a log.
+///
+/// The name arrives as arbitrary bytes from a client that has not been
+/// authenticated for anything in particular. Newlines and control characters
+/// would let it forge evidence lines in a log an operator reads, and an
+/// unbounded name would let it flood one, so both are cut off here.
+fn loggable_extension_name(name: &str) -> String {
+    const MAX_LOGGED_NAME_BYTES: usize = 64;
+    name.chars()
+        .take(MAX_LOGGED_NAME_BYTES)
+        .map(|character| {
+            if character.is_ascii_graphic() || character == ' ' {
+                character
+            } else {
+                '.'
+            }
+        })
+        .collect()
+}
+
 fn extension_query_result(name: &str) -> XExtensionQueryResult {
     match name {
         X_SOPHIA_PRESENT_EXTENSION_NAME => XExtensionQueryResult {

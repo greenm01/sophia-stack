@@ -193,6 +193,24 @@ fn dispatch_core_input_discovery_request(
                 }
                 XWireRequest::QueryExtension { name } => {
                     let extension = extension_query_result(&name);
+                    if !extension.present {
+                        // The only record of what this server was asked for and
+                        // could not provide. A client asks once per extension
+                        // per connection and then quietly does without, so
+                        // without this line a missing extension is invisible
+                        // until someone notices the consequence -- which is how
+                        // XF86VidMode went unnoticed until a browser logged a
+                        // failure once per frame.
+                        //
+                        // The name is the client's own bytes, so it is bounded
+                        // and stripped to printable ASCII before it reaches a
+                        // log a person will read.
+                        tracing::info!(
+                            "sophia_x11_authority_extension schema=1 status=absent client={} name={:?}",
+                            context.client_id,
+                            loggable_extension_name(&name),
+                        );
+                    }
                     XDispatchResult {
                         response: None,
                         outputs: vec![XClientOutput::Reply(XClientReply::QueryExtension {
