@@ -1879,7 +1879,7 @@ fn render_refusals_split_between_not_offered_and_not_that_version() {
 
     // Within the advertised 0.4: the never-implemented five, the declined
     // trapezoid family, and the base requests still to be implemented.
-    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 8, 17] {
+    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 17] {
         let (code, named) = refusal_for(minor);
         assert_eq!(code, XErrorCode::BadImplementation, "minor {minor}");
         assert_eq!(named, u16::from(minor));
@@ -2245,4 +2245,313 @@ fn render_pictures_die_with_the_drawable_they_view() {
         &[],
     );
     assert_eq!(RenderFixture::error_of(&fixture.send(&reuse)), None);
+}
+
+impl RenderFixture {
+    const SOURCE_PIXMAP: u32 = 0x0020_0110;
+    const SOURCE_PICTURE: u32 = 0x0020_0111;
+
+    /// A second depth-32 pixmap and picture, to composite from.
+    fn add_source(&mut self, width: u16, height: u16, repeat: bool) {
+        let create = create_pixmap_request(
+            Self::ORDER,
+            32,
+            Self::SOURCE_PIXMAP,
+            X_SETUP_DEFAULT_ROOT,
+            width,
+            height,
+        );
+        assert!(self.send(&create).outputs.is_empty(), "source pixmap");
+        let values: &[(u32, u32)] = if repeat { &[(0, 1)] } else { &[] };
+        let picture = render_create_picture_request(
+            Self::ORDER,
+            Self::SOURCE_PICTURE,
+            Self::SOURCE_PIXMAP,
+            X_RENDER_FORMAT_ARGB32,
+            values,
+        );
+        assert!(self.send(&picture).outputs.is_empty(), "source picture");
+    }
+
+    /// Fill the source picture with one premultiplied colour, using Src.
+    fn fill_source(&mut self, color: [u16; 4], rect: Rect) {
+        let request = render_fill_rectangles_request(Self::ORDER, 1, Self::SOURCE_PICTURE, color, &[rect]);
+        assert!(self.send(&request).outputs.is_empty(), "source fill");
+    }
+
+    fn fill_destination(&mut self, color: [u16; 4], rect: Rect) {
+        let request = render_fill_rectangles_request(Self::ORDER, 1, Self::PICTURE, color, &[rect]);
+        assert!(self.send(&request).outputs.is_empty(), "destination fill");
+    }
+}
+
+/// Composite blends a source picture over a destination, and the resulting
+/// bytes are the ones the protocol's formula produces.
+#[test]
+fn render_composite_blends_a_source_picture_over_a_destination() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    };
+    fixture.add_source(4, 4, false);
+    // Half-alpha premultiplied blue over opaque red, the same arithmetic the
+    // fill test verifies, now carried through a sampled source plane.
+    fixture.fill_source([0, 0, 0x8080, 0x8080], whole);
+    fixture.fill_destination([0xffff, 0, 0, 0xffff], whole);
+
+    let result = fixture.send(&render_composite_request(
+        RenderFixture::ORDER,
+        3,
+        RenderFixture::SOURCE_PICTURE,
+        0,
+        RenderFixture::PICTURE,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        4,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(2, 2), [0x80, 0, 0x7f, 0xff]);
+}
+
+/// A one-pixel repeating picture covers a whole destination.
+///
+/// This is how every toolkit paints a solid colour before CreateSolidFill
+/// existed, and CreateSolidFill entered at 0.10 -- above what is advertised
+/// -- so for a client talking to this server it is the only way.
+#[test]
+fn render_composite_repeats_a_one_pixel_source_across_the_destination() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    fixture.add_source(1, 1, true);
+    fixture.fill_source(
+        [0, 0xffff, 0, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+
+    let result = fixture.send(&render_composite_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::SOURCE_PICTURE,
+        0,
+        RenderFixture::PICTURE,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        4,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    for (x, y) in [(0, 0), (3, 3), (1, 2)] {
+        assert_eq!(fixture.pixel(x, y), [0, 0xff, 0, 0xff], "at {x},{y}");
+    }
+
+    // A non-repeating source of the same size reads transparent black
+    // outside its one pixel, which is the protocol's other answer.
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    fixture.add_source(1, 1, false);
+    fixture.fill_source(
+        [0, 0xffff, 0, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+    let result = fixture.send(&render_composite_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::SOURCE_PICTURE,
+        0,
+        RenderFixture::PICTURE,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        4,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(0, 0), [0, 0xff, 0, 0xff]);
+    assert_eq!(fixture.pixel(3, 3), [0, 0, 0, 0], "outside a bounded source");
+}
+
+/// Compositing a picture onto itself reads the pixels it started with.
+///
+/// A client scrolling a window sends exactly this. Sampling into an owned
+/// plane before writing is what makes the answer independent of the
+/// direction the loop runs; reading the destination live would smear the
+/// overlapping region.
+#[test]
+fn render_composite_onto_itself_reads_the_pixels_it_started_with() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 1);
+    // A distinct value in the leftmost column only.
+    fixture.fill_destination(
+        [0xffff, 0, 0, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+    // Shift right by one: each destination pixel takes its left neighbour.
+    let result = fixture.send(&render_composite_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        0,
+        RenderFixture::PICTURE,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        3,
+        1,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(1, 0), [0, 0, 0xff, 0xff], "shifted red");
+    // If the destination had been read live, the red would have smeared
+    // across every column instead of moving one place.
+    assert_eq!(fixture.pixel(2, 0), [0, 0, 0, 0], "must not smear");
+    assert_eq!(fixture.pixel(3, 0), [0, 0, 0, 0], "must not smear");
+}
+
+/// A mask attenuates the source, and a component-alpha mask attenuates each
+/// channel separately.
+///
+/// The second is the subpixel-antialiasing path Xft uses when configured for
+/// LCD filtering. Treating it as a plain mask renders text with colour
+/// fringes that read as a display fault rather than a server one, which is
+/// why it is implemented rather than ignored.
+#[test]
+fn render_composite_masks_attenuate_the_source_per_channel_when_asked() {
+    let mask_pixmap = 0x0020_0120;
+    let mask_picture = 0x0020_0121;
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 2,
+    };
+
+    for component_alpha in [false, true] {
+        let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+        fixture.add_source(2, 2, false);
+        fixture.fill_source([0xffff, 0xffff, 0xffff, 0xffff], whole);
+
+        let create = create_pixmap_request(
+            RenderFixture::ORDER,
+            32,
+            mask_pixmap,
+            X_SETUP_DEFAULT_ROOT,
+            2,
+            2,
+        );
+        assert!(fixture.send(&create).outputs.is_empty());
+        let values: &[(u32, u32)] = if component_alpha { &[(12, 1)] } else { &[] };
+        let picture = render_create_picture_request(
+            RenderFixture::ORDER,
+            mask_picture,
+            mask_pixmap,
+            X_RENDER_FORMAT_ARGB32,
+            values,
+        );
+        assert!(fixture.send(&picture).outputs.is_empty());
+        // A mask that is fully opaque in blue only: alpha 0xff, blue 0xff,
+        // green and red zero.
+        let fill = render_fill_rectangles_request(
+            RenderFixture::ORDER,
+            1,
+            mask_picture,
+            [0, 0, 0xffff, 0xffff],
+            &[whole],
+        );
+        assert!(fixture.send(&fill).outputs.is_empty());
+
+        let result = fixture.send(&render_composite_request(
+            RenderFixture::ORDER,
+            3,
+            RenderFixture::SOURCE_PICTURE,
+            mask_picture,
+            RenderFixture::PICTURE,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            2,
+            2,
+        ));
+        assert_eq!(RenderFixture::error_of(&result), None);
+        if component_alpha {
+            // Only the blue channel is covered, so only blue survives.
+            assert_eq!(fixture.pixel(0, 0), [0xff, 0, 0, 0xff]);
+        } else {
+            // The mask's alpha is opaque, so the white source passes whole.
+            assert_eq!(fixture.pixel(0, 0), [0xff, 0xff, 0xff, 0xff]);
+        }
+    }
+}
+
+/// Compositing onto an RGB24 destination discards the result's alpha.
+///
+/// The format has no alpha component, so the protocol defines the result
+/// that way; the store's slot keeps a zero alpha byte and the window buffer
+/// tag stays XR24, which is what the compositor was promised.
+#[test]
+fn render_composite_onto_an_opaque_format_discards_result_alpha() {
+    let mut fixture = RenderFixture::new();
+    let create = create_pixmap_request(
+        RenderFixture::ORDER,
+        24,
+        RenderFixture::PIXMAP,
+        X_SETUP_DEFAULT_ROOT,
+        2,
+        2,
+    );
+    assert!(fixture.send(&create).outputs.is_empty());
+    let picture = render_create_picture_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_RGB24,
+        &[],
+    );
+    assert!(fixture.send(&picture).outputs.is_empty());
+
+    let result = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        [0, 0, 0xffff, 0xffff],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        }],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(0, 0), [0xff, 0, 0, 0], "alpha byte stays zero");
 }

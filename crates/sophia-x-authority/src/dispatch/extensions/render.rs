@@ -146,6 +146,7 @@ fn dispatch_render_picture_request(
             | XWireRequest::RenderSetPictureClipRectangles { .. }
             | XWireRequest::RenderFreePicture { .. }
             | XWireRequest::RenderFillRectangles { .. }
+            | XWireRequest::RenderComposite { .. }
     ) {
         return Unhandled(request);
     }
@@ -269,6 +270,80 @@ fn dispatch_render_picture_request(
                         render_picture_error_code(error),
                         u32::try_from(picture.local.raw()).unwrap_or(0),
                         crate::X_RENDER_FILL_RECTANGLES_MINOR_OPCODE,
+                    )],
+                    metadata_candidates: Vec::new(),
+                },
+            }
+        }
+        XWireRequest::RenderComposite {
+            op,
+            source,
+            mask,
+            destination,
+            source_x,
+            source_y,
+            mask_x,
+            mask_y,
+            destination_x,
+            destination_y,
+            width,
+            height,
+        } => {
+            let transaction = context.transaction;
+            if !crate::software::render_operator_is_implemented(op) {
+                return Handled(XDispatchResult {
+                    response: None,
+                    outputs: vec![render_error_output(
+                        context,
+                        render_operator_refusal(op),
+                        0,
+                        crate::X_RENDER_COMPOSITE_MINOR_OPCODE,
+                    )],
+                    metadata_candidates: Vec::new(),
+                });
+            }
+            match runtime.render_apply_composite(
+                transaction,
+                context.namespace,
+                op,
+                source,
+                mask,
+                destination,
+                (source_x, source_y),
+                (mask_x, mask_y),
+                (destination_x, destination_y),
+                width,
+                height,
+            ) {
+                Ok(response) => {
+                    let outputs =
+                        if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u16::from(crate::X_RENDER_COMPOSITE_MINOR_OPCODE),
+                                u32::try_from(destination.local.raw()).unwrap_or(0),
+                            ))]
+                        } else {
+                            Vec::new()
+                        };
+                    XDispatchResult {
+                        response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                Err(error) => XDispatchResult {
+                    response: Some(XAuthorityResponsePacket::rejected(
+                        transaction,
+                        XAuthorityRuntimeError::InvalidResource,
+                    )),
+                    outputs: vec![render_error_output(
+                        context,
+                        render_picture_error_code(error),
+                        u32::try_from(destination.local.raw()).unwrap_or(0),
+                        crate::X_RENDER_COMPOSITE_MINOR_OPCODE,
                     )],
                     metadata_candidates: Vec::new(),
                 },

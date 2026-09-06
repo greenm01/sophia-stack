@@ -21,8 +21,8 @@ pub(crate) use raster_variants::{
 };
 pub use raster_variants::{XPutImageSemantics, XRasterFallbackCause};
 pub use render_ops::XRenderPictFormatKind;
-use render_ops::render_fill_rect;
-pub(crate) use render_ops::render_operator_is_implemented;
+pub(crate) use render_ops::{XRenderSamplePlane, render_operator_is_implemented};
+use render_ops::{render_composite_rect, render_fill_rect};
 pub use update::{
     X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
     XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
@@ -235,6 +235,58 @@ impl XSoftwareBufferStore {
             fill_rect(buffer, *rect, gc.foreground, gc);
         }
         finish_immutable_update(buffer, handle, replaced, union_rects(damage))
+    }
+
+    /// Lift a drawable's pixels into an owned sample plane, so compositing
+    /// can read them while the destination is being written -- including
+    /// when source and destination are the same drawable.
+    ///
+    /// A drawable with no backing yet samples as transparent black, which is
+    /// what an untouched picture contains.
+    pub(crate) fn render_sample_plane(
+        &self,
+        drawable: XResourceId,
+        format: XRenderPictFormatKind,
+        repeat: bool,
+    ) -> XRenderSamplePlane {
+        match self.buffers.get(&drawable) {
+            Some(buffer) => XRenderSamplePlane::from_buffer(buffer, format, repeat),
+            None => XRenderSamplePlane::empty(repeat),
+        }
+    }
+
+    /// Composite a sampled source, and optionally a mask, onto a rectangle
+    /// of a picture.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_composite(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        op: u8,
+        source: &XRenderSamplePlane,
+        mask: Option<&XRenderSamplePlane>,
+        component_alpha: bool,
+        source_origin: (i32, i32),
+        mask_origin: (i32, i32),
+        rect: Rect,
+        clip: &[Rect],
+        format: XRenderPictFormatKind,
+    ) -> Option<XAuthorityCpuDrawResult> {
+        let handle = self.allocate_handle();
+        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        render_composite_rect(
+            buffer,
+            op,
+            source,
+            mask,
+            component_alpha,
+            source_origin,
+            mask_origin,
+            rect,
+            clip,
+            format,
+        );
+        finish_immutable_update(buffer, handle, replaced, Some(rect))
     }
 
     /// Fill rectangles of a picture with one premultiplied color through a

@@ -582,6 +582,21 @@ pub enum XWireRequest {
         color: [u16; 4],
         rectangles: Vec<Rect>,
     },
+    /// `RenderComposite`: source, optional mask and destination pictures.
+    RenderComposite {
+        op: u8,
+        source: XResourceId,
+        mask: Option<XResourceId>,
+        destination: XResourceId,
+        source_x: i16,
+        source_y: i16,
+        mask_x: i16,
+        mask_y: i16,
+        destination_x: i16,
+        destination_y: i16,
+        width: u16,
+        height: u16,
+    },
     /// A RENDER minor Sophia does not implement, decoded so the refusal can
     /// name it.
     RenderUnimplemented {

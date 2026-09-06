@@ -173,3 +173,159 @@ pub(super) fn render_fill_rect(
         }
     }
 }
+
+/// One picture's pixels, lifted out of the store before the destination is
+/// mutated.
+///
+/// Compositing reads the source and mask while writing the destination, and
+/// all three may be the same drawable -- a client scrolling a window
+/// composites it onto itself. Sampling into an owned snapshot first is what
+/// makes the overlapping case correct rather than dependent on the direction
+/// the loop happens to run.
+pub(crate) struct XRenderSamplePlane {
+    pixels: Vec<[u8; 4]>,
+    width: usize,
+    height: usize,
+    repeat: bool,
+}
+
+impl XRenderSamplePlane {
+    pub(crate) fn from_buffer(
+        buffer: &XAuthorityCpuBufferSnapshot,
+        format: XRenderPictFormatKind,
+        repeat: bool,
+    ) -> Self {
+        let width = usize::try_from(buffer.size.width).unwrap_or(0);
+        let height = usize::try_from(buffer.size.height).unwrap_or(0);
+        let stride = usize::try_from(buffer.stride).unwrap_or(0);
+        let mut pixels = Vec::with_capacity(width.saturating_mul(height));
+        for y in 0..height {
+            for x in 0..width {
+                let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+                let slot: [u8; 4] = buffer
+                    .bytes
+                    .get(offset..offset.saturating_add(4))
+                    .and_then(|slice| slice.try_into().ok())
+                    .unwrap_or([0; 4]);
+                pixels.push(format.read(slot));
+            }
+        }
+        Self {
+            pixels,
+            width,
+            height,
+            repeat,
+        }
+    }
+
+    /// The sample at a picture coordinate. Outside the picture, a repeating
+    /// source wraps -- which is what makes the one-pixel repeating picture
+    /// every toolkit uses as a solid color work -- and a non-repeating one
+    /// reads as transparent black, per the protocol.
+    fn sample(&self, x: i32, y: i32) -> [u8; 4] {
+        if self.width == 0 || self.height == 0 {
+            return [0; 4];
+        }
+        let width = self.width as i32;
+        let height = self.height as i32;
+        let (x, y) = if self.repeat {
+            (x.rem_euclid(width), y.rem_euclid(height))
+        } else if x < 0 || y < 0 || x >= width || y >= height {
+            return [0; 4];
+        } else {
+            (x, y)
+        };
+        let index = (y as usize)
+            .saturating_mul(self.width)
+            .saturating_add(x as usize);
+        self.pixels.get(index).copied().unwrap_or([0; 4])
+    }
+}
+
+/// Composite a source, and optionally a mask, onto a destination rectangle.
+///
+/// `component_alpha` is the subpixel-antialiasing path: the mask's channels
+/// each attenuate the matching source channel rather than the mask's alpha
+/// attenuating all of them. Xft configured for LCD filtering sends this, and
+/// treating it as a plain mask renders text with colour fringes that look
+/// like a display problem rather than a server one.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn render_composite_rect(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    op: u8,
+    source: &XRenderSamplePlane,
+    mask: Option<&XRenderSamplePlane>,
+    component_alpha: bool,
+    source_origin: (i32, i32),
+    mask_origin: (i32, i32),
+    rect: Rect,
+    clip: &[Rect],
+    format: XRenderPictFormatKind,
+) {
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+        return;
+    };
+    let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let bytes = bytes_mut(buffer);
+    for y in top..bottom {
+        for x in left..right {
+            if !render_point_in_clip(x, y, clip) {
+                continue;
+            }
+            let dx = i32::try_from(x).unwrap_or(i32::MAX).saturating_sub(rect.x);
+            let dy = i32::try_from(y).unwrap_or(i32::MAX).saturating_sub(rect.y);
+            let mut src = source.sample(
+                source_origin.0.saturating_add(dx),
+                source_origin.1.saturating_add(dy),
+            );
+            let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+            let Some(slot) = bytes.get_mut(offset..offset.saturating_add(4)) else {
+                continue;
+            };
+            let existing: [u8; 4] = slot.try_into().unwrap_or([0; 4]);
+            let dst = format.read(existing);
+            let blended = match mask {
+                Some(mask) => {
+                    let sample = mask.sample(
+                        mask_origin.0.saturating_add(dx),
+                        mask_origin.1.saturating_add(dy),
+                    );
+                    if component_alpha {
+                        // dst.c = src.c * m.c + dst.c * (1 - src.a * m.c),
+                        // per channel, which is why this cannot go through
+                        // the shared operator table.
+                        let mut out = [0u8; 4];
+                        for channel in 0..4 {
+                            let coverage = sample[channel];
+                            let contribution = mul_div_255(src[channel], coverage);
+                            let attenuation = 255 - mul_div_255(src[3], coverage);
+                            out[channel] =
+                                contribution.saturating_add(mul_div_255(dst[channel], attenuation));
+                        }
+                        out
+                    } else {
+                        for channel in src.iter_mut() {
+                            *channel = mul_div_255(*channel, sample[3]);
+                        }
+                        render_blend_pixel(op, src, dst)
+                    }
+                }
+                None => render_blend_pixel(op, src, dst),
+            };
+            slot.copy_from_slice(&format.write(blended));
+        }
+    }
+}
+
+impl XRenderSamplePlane {
+    /// A plane with no pixels: every sample is transparent black, which is
+    /// what a picture over a drawable that has never been drawn contains.
+    pub(crate) fn empty(repeat: bool) -> Self {
+        Self {
+            pixels: Vec::new(),
+            width: 0,
+            height: 0,
+            repeat,
+        }
+    }
+}

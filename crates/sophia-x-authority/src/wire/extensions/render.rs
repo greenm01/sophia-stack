@@ -87,6 +87,28 @@ fn decode_render(
                 rectangles: decode_render_rectangles(context.byte_order, &bytes[20..]),
             })
         }
+        X_RENDER_COMPOSITE_MINOR_OPCODE => {
+            require_exact_len(X_RENDER_MAJOR_OPCODE, 36, bytes.len())?;
+            let mask = context.byte_order.u32(&bytes[12..16]);
+            Ok(XWireRequest::RenderComposite {
+                op: bytes[4],
+                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+                // Mask None is the common case: a plain blit sends zero here.
+                mask: (mask != 0).then(|| XResourceId::new(u64::from(mask), 1)),
+                destination: XResourceId::new(
+                    u64::from(context.byte_order.u32(&bytes[16..20])),
+                    1,
+                ),
+                source_x: context.byte_order.i16(&bytes[20..22]),
+                source_y: context.byte_order.i16(&bytes[22..24]),
+                mask_x: context.byte_order.i16(&bytes[24..26]),
+                mask_y: context.byte_order.i16(&bytes[26..28]),
+                destination_x: context.byte_order.i16(&bytes[28..30]),
+                destination_y: context.byte_order.i16(&bytes[30..32]),
+                width: context.byte_order.u16(&bytes[32..34]),
+                height: context.byte_order.u16(&bytes[34..36]),
+            })
+        }
         // Decoded so the refusal can name the request. RENDER has thirty-six
         // minors and this server implements a subset; a parse rejection would
         // tell a client only that the extension exists, not which request it

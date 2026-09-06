@@ -888,3 +888,37 @@ fn render_set_picture_clip_rectangles_request(
     }
     out
 }
+
+#[allow(clippy::too_many_arguments)]
+fn render_composite_request(
+    byte_order: XByteOrder,
+    op: u8,
+    source: u32,
+    mask: u32,
+    destination: u32,
+    source_x: i16,
+    source_y: i16,
+    mask_x: i16,
+    mask_y: i16,
+    destination_x: i16,
+    destination_y: i16,
+    width: u16,
+    height: u16,
+) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_COMPOSITE_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 9);
+    out.push(op);
+    out.extend_from_slice(&[0, 0, 0]);
+    push_u32(&mut out, byte_order, source);
+    push_u32(&mut out, byte_order, mask);
+    push_u32(&mut out, byte_order, destination);
+    push_i16(&mut out, byte_order, source_x);
+    push_i16(&mut out, byte_order, source_y);
+    push_i16(&mut out, byte_order, mask_x);
+    push_i16(&mut out, byte_order, mask_y);
+    push_i16(&mut out, byte_order, destination_x);
+    push_i16(&mut out, byte_order, destination_y);
+    push_u16(&mut out, byte_order, width);
+    push_u16(&mut out, byte_order, height);
+    out
+}

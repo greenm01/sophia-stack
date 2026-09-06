@@ -232,6 +232,109 @@ impl XAuthorityRuntime {
         }
     }
 
+    /// Look a picture up and return its record, without borrowing the map.
+    fn render_picture_record(
+        &self,
+        namespace: NamespaceId,
+        picture: crate::XResourceId,
+    ) -> Result<XRenderPictureRecord, XRenderPictureError> {
+        self.resources
+            .lookup(namespace, picture, XResourceKind::Picture)
+            .map_err(|_| XRenderPictureError::UnknownPicture)?;
+        self.render_pictures
+            .get(&picture)
+            .cloned()
+            .ok_or(XRenderPictureError::UnknownPicture)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_apply_composite(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        op: u8,
+        source: crate::XResourceId,
+        mask: Option<crate::XResourceId>,
+        destination: crate::XResourceId,
+        source_origin: (i16, i16),
+        mask_origin: (i16, i16),
+        destination_origin: (i16, i16),
+        width: u16,
+        height: u16,
+    ) -> Result<XAuthorityResponsePacket, XRenderPictureError> {
+        let source_record = self.render_picture_record(namespace, source)?;
+        let destination_record = self.render_picture_record(namespace, destination)?;
+        let mask_record = match mask {
+            Some(mask) => Some(self.render_picture_record(namespace, mask)?),
+            None => None,
+        };
+        if width == 0 || height == 0 {
+            return Ok(XAuthorityResponsePacket::accepted(transaction));
+        }
+        let Some((size, window_generation)) =
+            self.render_target_geometry(namespace, &destination_record)
+        else {
+            return Err(XRenderPictureError::Drawable);
+        };
+        // Sampled before the destination is touched, so a picture composited
+        // onto itself reads its original pixels throughout.
+        let source_plane = self.software_buffers.render_sample_plane(
+            source_record.drawable,
+            source_record.format,
+            source_record.repeat,
+        );
+        let mask_plane = mask_record.as_ref().map(|record| {
+            self.software_buffers.render_sample_plane(
+                record.drawable,
+                record.format,
+                record.repeat,
+            )
+        });
+        let component_alpha = mask_record
+            .as_ref()
+            .is_some_and(|record| record.component_alpha);
+        let rect = Rect {
+            x: i32::from(destination_origin.0),
+            y: i32::from(destination_origin.1),
+            width: i32::from(width),
+            height: i32::from(height),
+        };
+        let clip = Self::render_translated_clip(&destination_record);
+        let Some(result) = self.software_buffers.render_composite(
+            destination_record.drawable,
+            size,
+            op,
+            &source_plane,
+            mask_plane.as_ref(),
+            component_alpha,
+            (i32::from(source_origin.0), i32::from(source_origin.1)),
+            (i32::from(mask_origin.0), i32::from(mask_origin.1)),
+            rect,
+            &clip,
+            destination_record.format,
+        ) else {
+            return Ok(XAuthorityResponsePacket::rejected(
+                transaction,
+                XAuthorityRuntimeError::InvalidResource,
+            ));
+        };
+        let Some(generation) = window_generation else {
+            return Ok(XAuthorityResponsePacket::accepted(transaction));
+        };
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported(
+            XRasterUnsupportedKind::RenderOperation,
+        ));
+        Ok(self.finish_drawing_update(XDrawingUpdate::core_draw(
+            transaction,
+            namespace,
+            destination_record.drawable,
+            result.handle(),
+            Region::single(rect),
+            generation,
+            250,
+        )))
+    }
+
     pub(crate) fn render_apply_fill_rectangles(
         &mut self,
         transaction: TransactionId,
