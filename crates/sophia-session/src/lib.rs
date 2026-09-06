@@ -27,6 +27,8 @@ pub mod desktop_output_frames;
 #[cfg(feature = "native-session")]
 pub mod desktop_output_heads;
 #[cfg(feature = "native-session")]
+pub mod desktop_output_publication;
+#[cfg(feature = "native-session")]
 pub mod desktop_output_topology;
 pub mod desktop_profile_activation;
 pub mod emergency_input;

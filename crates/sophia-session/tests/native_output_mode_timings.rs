@@ -3,14 +3,15 @@
 use sophia_backend_live::{
     LibdrmNativeModeResolutionStatus, LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
     LibdrmNativeVrrPropertyDiscoveryStatus, LiveLogicalOutputAllocator,
-    project_live_output_authority_snapshot, resolve_live_output_topology_candidate,
-    resolve_native_output_mode_index,
+    project_live_output_authority_candidate_snapshot, project_live_output_authority_snapshot,
+    resolve_live_output_topology_candidate, resolve_native_output_mode_index,
 };
 use sophia_config::{
     ConfigDigest, ConfigGeneration, DesktopOutputCandidate, reconcile_desktop_output_candidate,
 };
 use sophia_engine::{HeadlessOutput, RenderHeadId};
 use sophia_protocol::*;
+use sophia_session::desktop_output_publication::prepare_output_topology_publication;
 use sophia_session::desktop_output_topology::{
     prepare_native_output_activation_plan, project_native_output_topology,
 };
@@ -146,6 +147,32 @@ fn opaque_authority_modes_resolve_to_the_advertised_full_modeline() {
         )
         .unwrap();
         assert_eq!(resolved.targets[0].timing, expected);
+        let applied =
+            project_live_output_authority_candidate_snapshot(&snapshot, &candidate, &resolved, 2)
+                .unwrap();
+        let publication = prepare_output_topology_publication(&applied, &resolved, 2).unwrap();
+        assert_eq!(publication.outputs[0].timing, expected.mode);
+        assert_eq!(publication.outputs[0].refresh_millihz, 60_000);
+        assert_eq!(publication.generation, 2);
+
+        // Timing is backend metadata; logical geometry and nominal rate must
+        // still agree with the authority before anything reaches the frontend.
+        let mut drifted = resolved.clone();
+        drifted.logical_viewports[0].logical.x += 1;
+        assert!(prepare_output_topology_publication(&applied, &drifted, 2).is_err());
+        let mut drifted = resolved.clone();
+        drifted.targets[0].timing.refresh_millihz = 120_000;
+        assert!(prepare_output_topology_publication(&applied, &drifted, 2).is_err());
+
+        let mut synthetic = resolved.clone();
+        synthetic.targets[0].timing.mode = None;
+        assert!(
+            prepare_output_topology_publication(&applied, &synthetic, 2)
+                .unwrap()
+                .outputs[0]
+                .timing
+                .is_none()
+        );
         assert_eq!(
             resolve_native_output_mode_index(capabilities[0].modes(), resolved.targets[0].timing)
                 .index,

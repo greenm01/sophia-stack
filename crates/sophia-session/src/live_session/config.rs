@@ -16,11 +16,13 @@ mod session_profile;
 mod wm_proof;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
+use crate::desktop_output_publication::{
+    output_topology_from_authority_at_generation, prepare_output_topology_publication,
+};
 use output::{
     LiveOutputAuthorityBootstrap, PreparedOutputProfile, output_topology_from_engine_outputs,
-    output_topology_from_authority_at_generation,
     output_topology_from_engine_outputs_at_generation,
-    output_topology_from_resolved_at_generation, resolved_output_bounds, wm_output_bounds,
+    resolved_output_bounds, wm_output_bounds,
     wm_root_bounds,
 };
 use output_proof::{

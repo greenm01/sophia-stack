@@ -613,20 +613,11 @@
                         .checked_add(1)
                         .ok_or("output publication generation exhausted")?;
                     if !execution.frontend_candidate_published {
-                        let snapshot = output_topology_from_authority_at_generation(
+                        let snapshot = prepare_output_topology_publication(
                             &execution.effect.candidate_snapshot,
-                            generation,
-                        )?;
-                        let resolved_snapshot = output_topology_from_resolved_at_generation(
                             &execution.effect.resolved,
                             generation,
                         )?;
-                        if snapshot != resolved_snapshot {
-                            return Err(
-                                "candidate authority and native topology projections disagree"
-                                    .into(),
-                            );
-                        }
                         let (ack_sender, ack_receiver) = sync_channel(1);
                         frontend_service_sender.send(
                             XServerFrontendServiceCommand::UpdateOutputTopology {

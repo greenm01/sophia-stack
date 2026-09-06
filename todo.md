@@ -142,8 +142,10 @@ retain the change in exit criteria. Work through these stages in order.
   validation because the selected `brave-origin` browser was unregistered; its
   explicit core registration now passes installed-session validation. The next
   login exposed duplicate nominal DRM modes in the output projection; the
-  projection and full-modeline selection fixes need installation before retry.
-  Physical acceptance remains pending. No live reload was performed.
+  projection and full-modeline selection fixes are installed. That release
+  presented both heads, then rejected frontend publication because the authority
+  snapshot lacks backend timing metadata. The publication repair needs the next
+  release; physical acceptance remains pending. No live reload was performed.
 
 #### 1. Recover reliably
 
