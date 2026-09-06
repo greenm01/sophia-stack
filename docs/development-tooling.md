@@ -139,6 +139,20 @@ workspace manifest instead of depending on the caller's directory; a parent
 gate passes down its already-running absolute xtask executable. Installed
 sessions invoke `sophia` directly.
 
+## Build Directory Isolation
+
+Give each checkout its own Cargo target directory. Do not point a temporary
+worktree at another checkout's `target`, through either `CARGO_TARGET_DIR` or a
+symlink. Tooling and fixtures embed `CARGO_MANIFEST_DIR`; a reused artifact can
+retain the other checkout's path and make `cargo xtask check` inspect that tree
+instead of the one from which it was invoked. Keep Cargo's registry cache
+shared, but keep workspace build artifacts separate.
+
+If a check reports repository paths from another checkout, correct the target
+directory first, then clear the affected workspace package artifacts and rebuild
+from the intended checkout. Do not hide the mismatch with sibling-repository
+overrides: those overrides can make the wrong checkout's check pass.
+
 ## Check Contract
 
 `cargo xtask check` is the canonical offline, non-hardware repository gate. It
