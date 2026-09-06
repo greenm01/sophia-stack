@@ -236,14 +236,16 @@ impl PreparedOutputProfile {
         })
     }
 
-    pub(super) fn candidate(&self) -> &sophia_config::DesktopOutputCandidate {
-        debug_assert_eq!(
-            self.slot().participant().phase(),
-            sophia_config::DesktopProfileParticipantPhase::Prepared
-        );
-        self.slot()
-            .candidate()
-            .expect("trusted startup retains its prepared output candidate")
+    // Public-policy admission activates this slot before runtime setup. A
+    // reload stages a prepared candidate again; read the payload for that phase.
+    pub(super) fn current(&self) -> &sophia_config::DesktopOutputCandidate {
+        use sophia_config::DesktopProfileParticipantPhase;
+        match self.slot().participant().phase() {
+            DesktopProfileParticipantPhase::Prepared => self.slot().candidate(),
+            DesktopProfileParticipantPhase::Activated => self.slot().active(),
+            _ => None,
+        }
+        .expect("runtime setup requires a prepared or activated output profile")
     }
 
     pub(super) const fn slot(

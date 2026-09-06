@@ -204,7 +204,7 @@ impl PersistentXtermSessionConfig {
         &mut self,
         core: &sophia_config::CursorConfig,
     ) -> Result<Option<sophia_engine::CursorAsset>, Box<dyn std::error::Error>> {
-        let (base, shake) = resolve_desktop_cursor(self.input_profile.candidate().cursor.as_ref(), core)?;
+        let (base, shake) = resolve_desktop_cursor(self.input_profile.current().cursor.as_ref(), core)?;
         if base.asset.digest() == self.cursor_resolution.asset.digest() {
             self.cursor_shake_resolution = shake;
             return Ok(None);
@@ -234,7 +234,7 @@ impl PersistentXtermSessionConfig {
     }
 
     pub(super) fn native_pointer_policy(&self) -> sophia_backend_live::NativeLibinputPointerPolicy {
-        let Some(candidate) = self.input_profile.candidate().pointer else {
+        let Some(candidate) = self.input_profile.current().pointer else {
             return sophia_backend_live::NativeLibinputPointerPolicy::default();
         };
         sophia_backend_live::NativeLibinputPointerPolicy {
@@ -316,7 +316,7 @@ impl PersistentXtermSessionConfig {
         let session_profile = PreparedSessionProfile::new(session_profile_candidate)?;
         let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
         let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;
-        let desktop_input = input_profile.candidate();
+        let desktop_input = input_profile.current();
         // The profile overrides the core config rather than replacing it, so a
         // desktop that states only a theme keeps the core size and a desktop
         // that states no cursor at all leaves the core config in charge. That
@@ -841,8 +841,12 @@ impl PersistentXtermSessionConfig {
                     .into(),
             );
         }
+        let no_input = args.iter().any(|argument| argument == "--no-input");
         let input_devices_argument = arg_value(args, "--input-devices");
         let input_seat_argument = arg_value(args, "--input-seat");
+        if no_input && (native_scanout || input_devices_argument.is_some() || input_seat_argument.is_some()) {
+            return Err("--no-input requires a non-native session without input overrides".into());
+        }
         if input_devices_argument.is_some() && input_seat_argument.is_some() {
             return Err("--input-seat and --input-devices are mutually exclusive".into());
         }
@@ -854,7 +858,7 @@ impl PersistentXtermSessionConfig {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| {
-                if input_seat_argument.is_some() {
+                if no_input || input_seat_argument.is_some() {
                     Vec::new()
                 } else {
                     match &core_snapshot.input.source {
@@ -871,7 +875,7 @@ impl PersistentXtermSessionConfig {
             return Err("--input-devices accepts 1-16 comma-separated absolute paths".into());
         }
         let input_seat = input_seat_argument.or_else(|| {
-            if input_devices.is_empty() {
+            if !no_input && input_devices.is_empty() {
                 match &core_snapshot.input.source {
                     sophia_config::InputSourceConfig::Seat(seat) => Some(seat.clone()),
                     sophia_config::InputSourceConfig::Devices(_) => None,

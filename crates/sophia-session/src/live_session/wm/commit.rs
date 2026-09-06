@@ -143,8 +143,13 @@ impl LiveWmSession {
                 .ok_or("public projection settled without its staged reducer successor")?;
             public.reducer.commit_staged(staged)
         } else {
+            let stale = public.staged.as_ref().is_some_and(|staged| {
+                public.reducer.revalidate_staged(staged)
+                    == sophia_protocol::PolicyProjectionOutcome::RejectedStale
+            });
             public.staged = None;
-            public.reducer.timeout(settlement.request_id)
+            let timeout = public.reducer.timeout(settlement.request_id);
+            if stale { sophia_protocol::PolicyProjectionOutcome::RejectedStale } else { timeout }
         };
         let proof_restart_action = if outcome
             == sophia_protocol::PolicyProjectionOutcome::Committed

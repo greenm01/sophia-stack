@@ -351,10 +351,10 @@ pub(crate) fn run_persistent_xterm_session(
     // below -- a rescan that regrouped differently would change the desktop's
     // identity behind policy's back.
     let mirror_grouping = sophia_backend_live::NativeMirrorGrouping::new(
-        config.output_profile.candidate().mirror_groups(),
+        config.output_profile.current().mirror_groups(),
     )
     .map_err(|error| format!("configured mirror grouping is invalid: {error:?}"))?;
-    let initial_head_mapping = match config.output_profile.candidate().mirror_fit() {
+    let initial_head_mapping = match config.output_profile.current().mirror_fit() {
         Some(sophia_config::DesktopMirrorFit::Cover) => sophia_protocol::OutputHeadMapping::Cover,
         Some(sophia_config::DesktopMirrorFit::Exact) => sophia_protocol::OutputHeadMapping::Exact,
         Some(sophia_config::DesktopMirrorFit::Fit) | None => {
@@ -404,7 +404,7 @@ pub(crate) fn run_persistent_xterm_session(
         }
         let topology = project_native_output_topology(&capabilities, &native.outputs())?;
         let reconciled = sophia_config::reconcile_desktop_output_candidate(
-            config.output_profile.candidate(),
+            config.output_profile.current(),
             &topology,
         )?;
         let activation =
@@ -1112,7 +1112,7 @@ fn build_reloaded_output_topology_candidate(
     let capabilities = native.output_capabilities()?;
     let topology = project_native_output_topology(&capabilities, &native.outputs())?;
     let reconciled = sophia_config::reconcile_desktop_output_candidate(
-        config.output_profile.candidate(),
+        config.output_profile.current(),
         &topology,
     )?;
     let plan = prepare_native_output_activation_plan(&capabilities, &topology, &reconciled)?;
@@ -1133,3 +1133,9 @@ mod mirror_gate_session_config;
 #[cfg(test)]
 #[path = "../tests/support/live_control.rs"]
 mod live_control_tests;
+
+#[cfg(test)]
+#[path = "../tests/support/panel_session_config.rs"]
+mod panel_session_config;
+
+include!("live_session/cpu_surface_sample.rs");

@@ -157,6 +157,19 @@ is the starting evidence; no new comparison run is required.
 
 #### 2. Establish the live session
 
+- [x] Add the [opt-in Quickshell X11 panel](docs/quickshell-x11-panel.md) and
+  `cargo xtask panel` launcher with explicit GPU/software selection and retained
+  binary identity. Isolated normal-session CPU content, popup update/withdrawal,
+  work-area release/reacquisition and clean normal-exit teardown pass.
+  Runtime profile activation and stale resize/work-area startup races repaired.
+  `cargo xtask check` passes (2,430 Rust test executions).
+- [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
+  popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
+  shell content and DMS remain deferred; this is an X11 compatibility client.
+- [ ] Diagnose the forced-deadline control drain race captured in
+  `/tmp/sophia-panel-probe-v5` (12 dispatched, 11 delivered, one pending).
+  Normal-exit probe success does not waive this separate shutdown finding.
+
 - [ ] Accept the scrolling repair in normal use: three Kitty windows, reversal,
   insertion/close, vertical scrolling and both outputs. The implementation adds
   committed Hagia camera anchors and Engine GPU translation; see the

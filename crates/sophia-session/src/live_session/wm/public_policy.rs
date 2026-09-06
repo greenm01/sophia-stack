@@ -2312,6 +2312,9 @@ impl LiveWmSession {
                         .session_operation_slot
                         .is_none_or(|slot| admitted_slots.contains(&slot))
                 });
+                if !slots_valid {
+                    crate::session_eprintln!("sophia_live_wm_configuration schema=1 status=rejected reason=unavailable_session_slot");
+                }
                 let registry = slots_valid
                     .then(|| {
                         resolve_public_shortcuts(
@@ -2322,7 +2325,12 @@ impl LiveWmSession {
                             &configuration,
                         )
                     })
-                    .and_then(Result::ok);
+                    .and_then(|result| {
+                        if let Err(reason) = &result {
+                            crate::session_eprintln!("sophia_live_wm_configuration schema=1 status=rejected reason={reason:?}");
+                        }
+                        result.ok()
+                    });
                 let outcome = match registry {
                     Some(registry)
                         if configuration.connection_epoch == public.connection_epoch => {
@@ -2904,6 +2912,15 @@ impl LiveWmSession {
         public.output_generations = next_generations;
         public.live_output_ids = next_live;
         public.output_bounds = next_bounds;
+        for (output, work) in &next_work_areas {
+            if public.work_areas.get(output) != Some(work) {
+                crate::session_println!(
+                    "sophia_live_work_area schema=1 output={} x={} y={} width={} height={} app_reservations={} shell_reservations={}",
+                    output.raw(), work.x, work.y, work.width, work.height,
+                    layout.active_output_reservations().len(), self.shell_reservation_bands.len(),
+                );
+            }
+        }
         public.work_areas = next_work_areas;
         public.active_output = next_active;
         public.queue = next_queue;
@@ -2922,26 +2939,29 @@ impl LiveWmSession {
     fn prepare_public_layout_commit(
         &mut self,
         layout: &PersistentLiveLayout,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let Some(identity) = layout
             .pending
             .as_ref()
             .and_then(|pending| pending.policy_settlement)
         else {
-            return Ok(());
+            return Ok(true);
         };
         if identity.session_operation {
-            return Ok(());
+            return Ok(true);
         }
         let public = self.public.as_mut().ok_or("public settlement lost its session")?;
         if public.prepared == Some(identity) {
-            return Ok(());
+            return Ok(true);
         }
         let staged = public
             .staged
             .as_ref()
             .ok_or("ready public layout lost its staged reducer successor")?;
         let outcome = public.reducer.revalidate_staged(staged);
+        if outcome == sophia_protocol::PolicyProjectionOutcome::RejectedStale {
+            return Ok(false);
+        }
         if outcome != sophia_protocol::PolicyProjectionOutcome::Committed {
             return Err(format!(
                 "ready public layout failed canonical revalidation: {outcome:?}"
@@ -2955,7 +2975,7 @@ impl LiveWmSession {
             identity.request_id,
             identity.scene_generation,
         );
-        Ok(())
+        Ok(true)
     }
 
     fn trigger_public_proof_fault(&mut self, point: PublicPolicyFaultPoint) -> bool {

@@ -915,6 +915,8 @@ let mut primary_frame_pacer = sophia_engine::PrimaryFramePacer::new(primary_fram
 // Samples the gauges the completion record reports once, so a verifier can ask
 // whether they grew rather than only whether they drained.
 let mut resource_sampler = LiveResourceSampler::new(started);
+let mut next_surface_sample = started + Duration::from_secs(1);
+let mut surface_samples = 0_u32;
 let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
@@ -936,6 +938,14 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         // than a moment inside one. The gauge reads walk a map and read
         // /proc, which is why they happen on a cadence rather than per pass.
         let sample_now = Instant::now();
+        // Opt-in startup diagnostics are bounded in both time and surface count.
+        if config.verbose_diagnostics && surface_samples < 60 && sample_now >= next_surface_sample {
+            surface_samples += 1;
+            next_surface_sample = sample_now + Duration::from_secs(1);
+            if let Some(runtime) = runtime.as_ref() {
+                log_cpu_surface_sample(&scene, runtime.committed_surfaces(), surface_samples);
+            }
+        }
         if resource_sampler.is_due(sample_now) {
             let native_resources = native_scanout.as_ref().map_or_else(
                 sophia_backend_live::LivePersistentRenderMetrics::default,

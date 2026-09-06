@@ -12,3 +12,5 @@ pub mod direct_scanout_cursor;
 pub mod direct_scanout_gate;
 pub mod direct_scanout_overlay;
 pub mod profile;
+
+pub mod panel;

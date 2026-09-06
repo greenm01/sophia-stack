@@ -539,8 +539,18 @@ macro_rules! service_layout_progress {
         }
         if pending_wm_update.is_none() && layout.pending_is_ready() {
             if let Some(wm) = wm_session.as_mut() {
-                wm.prepare_public_layout_commit(&layout)?;
-                if wm.trigger_public_proof_fault(PublicPolicyFaultPoint::Prepared) {
+                if !wm.prepare_public_layout_commit(&layout)? {
+                    // Reservations can advance the canonical scene while a client
+                    // answers a resize. Retire the old epoch through normal recovery
+                    // before asking policy for a projection against the new work area.
+                    layout.force_pending_timeout();
+                    if let Some(result) = layout.expire_pending(&mut session_controls)? {
+                        pending_wm_update = Some(apply_wm_commit_result!(
+                            result,
+                            focus.focused_surface(seat)
+                        ));
+                    }
+                } else if wm.trigger_public_proof_fault(PublicPolicyFaultPoint::Prepared) {
                     let _ = wm.poll_restart(&mut layout, output)?;
                 }
             }

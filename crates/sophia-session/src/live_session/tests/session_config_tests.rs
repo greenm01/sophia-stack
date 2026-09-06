@@ -1019,12 +1019,12 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
     );
     for (generation, digest) in [
         (
-            first.input_profile.candidate().generation,
-            first.input_profile.candidate().digest,
+            first.input_profile.current().generation,
+            first.input_profile.current().digest,
         ),
         (
-            first.output_profile.candidate().generation,
-            first.output_profile.candidate().digest,
+            first.output_profile.current().generation,
+            first.output_profile.current().digest,
         ),
         (
             first.shortcut_profile_candidate.generation,
