@@ -870,6 +870,7 @@ impl XAuthorityRuntime {
         self.resources
             .lookup(namespace, cursor, XResourceKind::Cursor)?;
         self.resources.remove(cursor);
+        self.render_cursor_images.remove(&cursor);
         Ok(())
     }
 

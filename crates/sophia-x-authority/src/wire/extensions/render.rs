@@ -230,6 +230,17 @@ fn decode_render(
                 minor_opcode: minor,
             })
         }
+        X_RENDER_CREATE_CURSOR_MINOR_OPCODE => {
+            require_exact_len(X_RENDER_MAJOR_OPCODE, 16, bytes.len())?;
+            let cursor = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(cursor)?;
+            Ok(XWireRequest::RenderCreateCursor {
+                cursor: XResourceId::new(u64::from(cursor), 1),
+                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+                hotspot_x: context.byte_order.u16(&bytes[12..14]),
+                hotspot_y: context.byte_order.u16(&bytes[14..16]),
+            })
+        }
         // Decoded so the refusal can name the request. RENDER has thirty-six
         // minors and this server implements a subset; a parse rejection would
         // tell a client only that the extension exists, not which request it

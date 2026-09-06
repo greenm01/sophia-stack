@@ -399,9 +399,10 @@ These rows do not reorder the critical path.
   margin, and the one worth doing properly. Done at version 0.4, which is
   exactly what is implemented: the advertisement was withheld through three
   commits until the requests behind it answered, because the base protocol has
-  no version gate. The Quickshell trace now reaches opcode 144. Client-visible
-  ARGB cursors (minor 27, version 0.5) remain. See the `RENDER compositing and
-  glyphs` matrix row.
+  no version gate. The Quickshell trace now reaches opcode 144. Version 0.5
+  adds ARGB cursors, which are stored but not yet displayed -- putting a
+  client's cursor on screen needs authority-to-engine plumbing that does not
+  exist. See the `RENDER compositing and glyphs` matrix row.
 - [ ] Implement `SHAPE`. Quickshell asks for it in the same trace. Small: a
   handful of requests for non-rectangular window regions, and Sophia already
   carries region machinery for XFIXES.

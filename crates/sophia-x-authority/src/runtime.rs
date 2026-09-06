@@ -161,6 +161,9 @@ pub struct XAuthorityRuntime {
     /// store after `ReferenceGlyphSet`.
     render_glyphsets: BTreeMap<crate::XResourceId, u64>,
     render_glyph_stores: BTreeMap<u64, XRenderGlyphStore>,
+    /// Cursor images a client supplied through RENDER. Stored so the resource
+    /// is real and FreeCursor means something; display stays config-driven.
+    render_cursor_images: BTreeMap<crate::XResourceId, XRenderCursorImage>,
     next_glyph_store: u64,
     next_fence_handle: u64,
     graphics_contexts: XGraphicsContextTable,
@@ -205,6 +208,7 @@ impl Default for XAuthorityRuntime {
             render_pictures: Default::default(),
             render_glyphsets: Default::default(),
             render_glyph_stores: Default::default(),
+            render_cursor_images: Default::default(),
             next_glyph_store: 1,
             next_fence_handle: 1,
             graphics_contexts: Default::default(),

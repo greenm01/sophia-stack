@@ -633,6 +633,13 @@ pub enum XWireRequest {
         elements: Vec<XRenderGlyphElement>,
         minor_opcode: u8,
     },
+    /// `RenderCreateCursor`: a cursor image taken from a picture.
+    RenderCreateCursor {
+        cursor: XResourceId,
+        source: XResourceId,
+        hotspot_x: u16,
+        hotspot_y: u16,
+    },
     /// A RENDER minor Sophia does not implement, decoded so the refusal can
     /// name it.
     RenderUnimplemented {

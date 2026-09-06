@@ -376,6 +376,7 @@ fn dispatch_render_glyph_request(
             | XWireRequest::RenderAddGlyphs { .. }
             | XWireRequest::RenderFreeGlyphs { .. }
             | XWireRequest::RenderCompositeGlyphs { .. }
+            | XWireRequest::RenderCreateCursor { .. }
     ) {
         return Unhandled(request);
     }
@@ -518,6 +519,64 @@ fn dispatch_render_glyph_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
+            }
+        }
+        XWireRequest::RenderCreateCursor {
+            cursor,
+            source,
+            hotspot_x,
+            hotspot_y,
+        } => {
+            let outcome = runtime.render_create_cursor(
+                context.namespace,
+                cursor,
+                source,
+                hotspot_x,
+                hotspot_y,
+                u64::from(context.sequence),
+            );
+            XDispatchResult {
+                response: None,
+                outputs: outcome
+                    .err()
+                    .map(|error| {
+                        let (code, resource_id) = match error {
+                            crate::XRenderCursorError::Picture(error) => (
+                                render_picture_error_code(error),
+                                u32::try_from(source.local.raw()).unwrap_or(0),
+                            ),
+                            crate::XRenderCursorError::IdInUse => (
+                                XErrorCode::BadIdChoice,
+                                u32::try_from(cursor.local.raw()).unwrap_or(0),
+                            ),
+                            // A picture with no alpha cannot describe a
+                            // cursor's shape, which is a mismatch between the
+                            // argument and the request rather than a bad id.
+                            crate::XRenderCursorError::NotArgb32 => (
+                                XErrorCode::BadMatch,
+                                u32::try_from(source.local.raw()).unwrap_or(0),
+                            ),
+                            crate::XRenderCursorError::HotspotOutsideImage => {
+                                (XErrorCode::BadValue, u32::from(hotspot_x))
+                            }
+                            // Refused rather than scaled: a cursor silently
+                            // resized is a cursor whose hotspot no longer
+                            // points where the client put it.
+                            crate::XRenderCursorError::TooLarge => (
+                                XErrorCode::BadAlloc,
+                                u32::try_from(source.local.raw()).unwrap_or(0),
+                            ),
+                        };
+                        render_error_output(
+                            context,
+                            code,
+                            resource_id,
+                            crate::X_RENDER_CREATE_CURSOR_MINOR_OPCODE,
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+                metadata_candidates: Vec::new(),
             }
         }
         other => return Unhandled(other),

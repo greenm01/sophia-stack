@@ -1153,6 +1153,38 @@ fn run_x_authority_render_smoke()
         glyph_image.data[3],
     ];
 
+    // A cursor from a picture, the shape libXcursor sends. The source is
+    // already premultiplied, which is what the engine's asset contract wants.
+    let cursor_pixmap = connection.generate_id()?;
+    connection.create_pixmap(32, cursor_pixmap, root, 8, 8)?;
+    let cursor_picture = connection.generate_id()?;
+    connection.render_create_picture(
+        cursor_picture,
+        cursor_pixmap,
+        argb32,
+        &CreatePictureAux::new(),
+    )?;
+    connection.render_fill_rectangles(
+        PictOp::SRC,
+        cursor_picture,
+        x11rb::protocol::render::Color {
+            red: 0x8080,
+            green: 0,
+            blue: 0,
+            alpha: 0x8080,
+        },
+        &[x11rb::protocol::xproto::Rectangle {
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+        }],
+    )?;
+    let cursor = connection.generate_id()?;
+    connection.render_create_cursor(cursor, cursor_picture, 1, 1)?;
+    connection.free_cursor(cursor)?;
+    connection.flush()?;
+
     let mut errors = 0usize;
     while let Some(event) = connection.poll_for_event()? {
         if matches!(event, Event::Error(_)) {

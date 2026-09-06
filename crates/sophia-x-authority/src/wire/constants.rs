@@ -522,7 +522,7 @@ pub const X_RENDER_GLYPH_ERROR_OFFSET: u8 = 4;
 /// client's error handler rather than in its fallback. This constant moves
 /// only when the requests behind the next version answer.
 pub const X_RENDER_MAJOR_VERSION: u32 = 0;
-pub const X_RENDER_MINOR_VERSION: u32 = 4;
+pub const X_RENDER_MINOR_VERSION: u32 = 5;
 
 // The RENDER request minors, all of them, in protocol order, the GLX way:
 // the ones Sophia does not implement are named too, each with why, so the

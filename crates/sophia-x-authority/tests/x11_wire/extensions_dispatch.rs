@@ -1708,7 +1708,7 @@ fn render_handshake_answers_the_lower_version_and_the_visuals_formats() {
     let mut properties = XPropertyTable::new();
 
     // The version answered is the lower of the two.
-    for (asked, answered) in [((0, 99), (0, 4)), ((0, 2), (0, 2)), ((1, 0), (0, 4))] {
+    for (asked, answered) in [((0, 99), (0, 5)), ((0, 2), (0, 2)), ((1, 0), (0, 5))] {
         let request = decode_x11_core_request(
             context(namespace, 701, byte_order),
             &render_query_version_request(byte_order, asked.0, asked.1),
@@ -1866,7 +1866,7 @@ fn render_refusals_split_between_not_offered_and_not_that_version() {
         assert_eq!(named, u16::from(minor));
     }
     // Beyond 0.4, or defined by no version at all.
-    for minor in [2, 16, 27, 28, 31, 32, 33, 36, 99] {
+    for minor in [2, 16, 28, 31, 32, 33, 36, 99] {
         let (code, named) = refusal_for(minor);
         assert_eq!(code, XErrorCode::BadRequest, "minor {minor}");
         assert_eq!(named, u16::from(minor));
@@ -2753,4 +2753,118 @@ fn render_is_advertised_once_its_requests_answer() {
     assert_eq!(encoded[0][8], 1, "present");
     assert_eq!(encoded[0][9], X_RENDER_MAJOR_OPCODE);
     assert_eq!(encoded[0][11], X_RENDER_FIRST_ERROR, "first error");
+}
+
+/// A RENDER cursor stores the picture's premultiplied pixels, and FreeCursor
+/// releases them.
+///
+/// RENDER pictures are premultiplied already, which is the engine's
+/// `CursorAsset` contract exactly -- unlike core `CreateCursor`, whose source
+/// and mask bitmaps carry no alpha at all. Storing the image makes the
+/// resource real; putting it on screen is a separate step, and the cursor the
+/// compositor draws stays the configured one until that lands.
+#[test]
+fn render_cursors_store_the_pictures_premultiplied_pixels() {
+    let cursor = 0x0020_0140;
+    let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+    // Half-alpha red, premultiplied, filling the picture.
+    fixture.fill_destination(
+        [0x8080, 0, 0, 0x8080],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        },
+    );
+    let result = fixture.send(&render_create_cursor_request(
+        RenderFixture::ORDER,
+        cursor,
+        RenderFixture::PICTURE,
+        1,
+        1,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    let image = fixture
+        .runtime
+        .render_cursor_image(XResourceId::new(u64::from(cursor), 1))
+        .expect("the cursor image must be stored");
+    assert_eq!((image.width, image.height), (2, 2));
+    assert_eq!((image.hotspot_x, image.hotspot_y), (1, 1));
+    // Stored exactly as the picture holds them: premultiplied [b, g, r, a].
+    assert_eq!(&image.premultiplied_bgra[0..4], &[0, 0, 0x80, 0x80]);
+    // Every channel is at or below its alpha, which is the invariant the
+    // engine validates -- so a stored image is always one it could accept.
+    for pixel in image.premultiplied_bgra.chunks_exact(4) {
+        assert!(
+            pixel[0..3].iter().all(|channel| *channel <= pixel[3]),
+            "not premultiplied: {pixel:?}"
+        );
+    }
+
+    let free = fixture.send(&free_cursor_request(RenderFixture::ORDER, cursor));
+    assert_eq!(RenderFixture::error_of(&free), None);
+    assert!(
+        fixture
+            .runtime
+            .render_cursor_image(XResourceId::new(u64::from(cursor), 1))
+            .is_none(),
+        "FreeCursor must release the image"
+    );
+}
+
+/// A cursor is refused on the terms that keep the stored image usable.
+#[test]
+fn render_cursors_are_refused_when_the_picture_cannot_describe_one() {
+    // A picture with no alpha cannot describe a cursor's shape.
+    let mut fixture = RenderFixture::new();
+    let create = create_pixmap_request(
+        RenderFixture::ORDER,
+        24,
+        RenderFixture::PIXMAP,
+        X_SETUP_DEFAULT_ROOT,
+        2,
+        2,
+    );
+    assert!(fixture.send(&create).outputs.is_empty());
+    let picture = render_create_picture_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_RGB24,
+        &[],
+    );
+    assert!(fixture.send(&picture).outputs.is_empty());
+    let result = fixture.send(&render_create_cursor_request(
+        RenderFixture::ORDER,
+        0x0020_0141,
+        RenderFixture::PICTURE,
+        0,
+        0,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), Some(XErrorCode::BadMatch));
+
+    // A hotspot outside the image would point somewhere the cursor is not.
+    let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+    let result = fixture.send(&render_create_cursor_request(
+        RenderFixture::ORDER,
+        0x0020_0142,
+        RenderFixture::PICTURE,
+        2,
+        0,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), Some(XErrorCode::BadValue));
+
+    // Larger than the engine accepts is refused rather than scaled: a cursor
+    // silently resized is one whose hotspot no longer points where the client
+    // put it.
+    let mut fixture = RenderFixture::with_argb_pixmap(200, 200);
+    let result = fixture.send(&render_create_cursor_request(
+        RenderFixture::ORDER,
+        0x0020_0143,
+        RenderFixture::PICTURE,
+        0,
+        0,
+    ));
+    assert_eq!(RenderFixture::error_of(&result), Some(XErrorCode::BadAlloc));
 }

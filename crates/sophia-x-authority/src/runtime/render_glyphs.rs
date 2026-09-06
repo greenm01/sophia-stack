@@ -404,3 +404,116 @@ pub(crate) enum XRenderCompositeGlyphsError {
     Picture(XRenderPictureError),
     Glyph(XRenderGlyphError),
 }
+
+/// A cursor image a client supplied through RENDER.
+///
+/// The bytes are premultiplied little-endian `[b, g, r, a]`, which is the
+/// engine's `CursorAsset` contract exactly -- RENDER pictures are already
+/// premultiplied, unlike core `CreateCursor`'s source and mask bitmaps.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XRenderCursorImage {
+    pub width: u16,
+    pub height: u16,
+    pub hotspot_x: u16,
+    pub hotspot_y: u16,
+    pub premultiplied_bgra: Vec<u8>,
+}
+
+/// Why a RENDER cursor was refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XRenderCursorError {
+    Picture(XRenderPictureError),
+    IdInUse,
+    /// The source picture is not a premultiplied 32-bit format, so it has no
+    /// alpha for the cursor's shape.
+    NotArgb32,
+    /// The hotspot lies outside the image.
+    HotspotOutsideImage,
+    /// Larger than the engine will accept as a cursor.
+    TooLarge,
+}
+
+/// The largest cursor edge the engine's `CursorAsset` accepts. Kept here as a
+/// named constant rather than reached for across the crate boundary, and
+/// checked at ingest so a stored image is always one the engine could take.
+const X_RENDER_MAX_CURSOR_EDGE: u16 = 128;
+
+impl XAuthorityRuntime {
+    pub(crate) fn render_create_cursor(
+        &mut self,
+        namespace: NamespaceId,
+        cursor: crate::XResourceId,
+        source: crate::XResourceId,
+        hotspot_x: u16,
+        hotspot_y: u16,
+        generation: u64,
+    ) -> Result<(), XRenderCursorError> {
+        let record = self
+            .render_picture_record(namespace, source)
+            .map_err(XRenderCursorError::Picture)?;
+        if !matches!(record.format, crate::XRenderPictFormatKind::Argb32) {
+            return Err(XRenderCursorError::NotArgb32);
+        }
+        if self.resource_id_in_use(cursor) {
+            return Err(XRenderCursorError::IdInUse);
+        }
+        let size = self
+            .render_target_geometry(namespace, &record)
+            .map(|(size, _)| size)
+            .ok_or(XRenderCursorError::Picture(XRenderPictureError::Drawable))?;
+        let width = u16::try_from(size.width).map_err(|_| XRenderCursorError::TooLarge)?;
+        let height = u16::try_from(size.height).map_err(|_| XRenderCursorError::TooLarge)?;
+        if width > X_RENDER_MAX_CURSOR_EDGE || height > X_RENDER_MAX_CURSOR_EDGE {
+            return Err(XRenderCursorError::TooLarge);
+        }
+        if hotspot_x >= width || hotspot_y >= height {
+            return Err(XRenderCursorError::HotspotOutsideImage);
+        }
+        let region = Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        };
+        let mut pixels = self
+            .software_buffers
+            .image_region(record.drawable, region)
+            .unwrap_or_else(|| vec![0; usize::from(width) * usize::from(height) * 4]);
+        // The engine validates premultiplication and rejects a pixel whose
+        // colour exceeds its alpha. A client can send one -- nothing on the
+        // wire enforces the invariant -- so clamp at ingest rather than
+        // storing an image the engine would later refuse.
+        for pixel in pixels.chunks_exact_mut(4) {
+            let alpha = pixel[3];
+            for channel in &mut pixel[0..3] {
+                *channel = (*channel).min(alpha);
+            }
+        }
+        self.resources
+            .insert(cursor, XResourceKind::Cursor, namespace, generation)
+            .map_err(|_| XRenderCursorError::IdInUse)?;
+        self.render_cursor_images.insert(
+            cursor,
+            XRenderCursorImage {
+                width,
+                height,
+                hotspot_x,
+                hotspot_y,
+                premultiplied_bgra: pixels,
+            },
+        );
+        Ok(())
+    }
+
+    /// The stored image for a cursor, if a client supplied one.
+    ///
+    /// Public because the session's cursor plumbing will read it from outside
+    /// this crate once client-visible cursors land; today its only consumer
+    /// is the proof that the image is stored and released.
+    pub fn render_cursor_image(
+        &self,
+        cursor: crate::XResourceId,
+    ) -> Option<&XRenderCursorImage> {
+        self.render_cursor_images.get(&cursor)
+    }
+}

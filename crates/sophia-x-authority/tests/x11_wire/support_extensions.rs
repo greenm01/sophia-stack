@@ -1024,3 +1024,26 @@ fn render_composite_glyphs8_request(
     out.resize(out.len() + (padded - ids.len()), 0);
     out
 }
+
+fn render_create_cursor_request(
+    byte_order: XByteOrder,
+    cursor: u32,
+    source: u32,
+    hotspot_x: u16,
+    hotspot_y: u16,
+) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_CREATE_CURSOR_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, cursor);
+    push_u32(&mut out, byte_order, source);
+    push_u16(&mut out, byte_order, hotspot_x);
+    push_u16(&mut out, byte_order, hotspot_y);
+    out
+}
+
+fn free_cursor_request(byte_order: XByteOrder, cursor: u32) -> Vec<u8> {
+    let mut out = vec![95, 0];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, cursor);
+    out
+}
