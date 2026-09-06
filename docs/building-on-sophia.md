@@ -27,8 +27,9 @@ only the operation that opens the menu. See [application launchers](application-
 Sophia doesn't divide the desktop by feature. It divides it by who may see
 pixels.
 
-- **Engine** composites the scene, owns every pixel, and is the only process
-  that reads them.
+- **Engine** owns the composed scene, its presentation, and access to foreign
+  scene pixels. Clients may create and read their own content; reading another
+  domain's pixels requires a portal grant.
 - **Policy clients** — the window manager and the shell — decide what happens.
   They draw nothing, or they draw blind.
 - **Portals** move data between confinement domains: one transfer at a time,
@@ -102,7 +103,7 @@ replaceable:
 | Component | Protocol | Reference | May draw? | Sees |
 | --- | --- | --- | --- | --- |
 | Window manager | `sophia_wm_v1` (r3, frozen) | [Hagia](https://github.com/sophia-org/hagia) | no | geometry, window facts |
-| Shell | `sophia_shell_v1` (r2, experimental; r1 supported) | [Narthex](https://github.com/sophia-org/narthex) | no; descriptor chrome is Engine-rendered | sanitized labels |
+| Shell | `sophia_shell_v1` (r4, experimental; r1–3 supported) | [Narthex](https://github.com/sophia-org/narthex) | current descriptors: no; proposed content capability: own content only | authorized presentation facts |
 | Broker | `sophia_broker_v1` | in-tree | no | redacted descriptors |
 
 The window manager never learns titles, application identities, or pixel
@@ -358,25 +359,51 @@ to implement. The spanning mechanism is capability negotiation inside a
 single family, and it's proven: `sophia_wm_v1` carries a trivial tiler and
 Hagia's full policy surface on the same frozen wire through optional capabilities.
 
-The open question for the shell family isn't width. It's who gates the width:
-whether the session's desktop profile decides which capabilities a shell may
-negotiate, the way it already caps panel depth — "the session and not the
-shell decides," as `docs/configuration.md` puts it. A locked-down machine
-could then run a confined, descriptor-only shell while a workstation runs a
-full content shell, with the difference bound into the profile digest the
-evidence chain already records.
+The [content-shell proposal](content-shell.md) makes the session's operator
+policy the gate for content capability. Selecting a shell does not grant every
+capability it requests. The proposed grant is explicit, established at startup,
+and recorded in the effective profile and its evidence identity. Content remains
+unimplemented; there is no configuration key that enables it today.
 
 ## Two Kinds of Shell, Named Honestly
 
-Descriptor mode and content mode aren't feature tiers. They're trust tiers.
+Sophia has two architectural models for native shells. Descriptor mode is
+implemented; content mode is a proposed capability in the same protocol family.
+Narthex remains the maintained descriptor reference, including its native
+application launcher. Neither model is a requirement to use a particular toolkit.
 
-A descriptor shell can't draw a phishing prompt, because it can't draw. A
-content shell chooses what appears in its own surfaces, though it still reads
-nothing. Moving up the ladder trades confinement for expressiveness, and the
-protocol should keep that trade visible rather than let it blur. That's why
-the small confined reference, Narthex, stays maintained even after richer
-shells exist: it's the standing proof that the confined tier carries a useful
-desktop, not just a demo.
+| Developer choice | Descriptor shell today | Proposed content shell |
+| --- | --- | --- |
+| Visual design | Supported ordering, selection, visibility, and appearance settings | Own widgets, typography, artwork, and internal layout |
+| Drawing | Engine renders fixed feature vocabulary | Shell rasterizes its content; Engine validates and composites it |
+| Input | Engine supplies exact presented actions and feature-specific input | Same authority, with separately admitted interaction extensions |
+| Effects | Only the feature's admitted vocabulary | Own-content artwork plus negotiated Engine effects and transitions |
+| Trust | Less freedom to misrepresent visual meaning | Arbitrary artwork requires trusting the shell's presentation more |
+
+Suppose an Aurora developer wants a custom panel with an illustrated button and
+an anchored popout. Aurora renders those widgets and proposes their content and
+targets. Engine places and presents them, then sends an action for the exact
+button the user activated. Aurora changes its local state and submits new
+content. It need not translate its toolkit into an Engine widget tree.
+
+Aurora can generate effects from its own artwork. A backdrop blur instead needs
+foreign scene pixels, so it requests a supported Engine effect without receiving
+those pixels. A novel scene-sampling effect needs separately trusted renderer
+integration under the graphics contract, not a shader uploaded by the shell.
+Engine retains transition timing and presentation scheduling.
+
+Arbitrary artwork can imitate another interface or mislabel an action. Validating
+a presented target does not prove that its label is honest. Descriptor constraints
+reduce that freedom; they do not establish a general phishing-prevention claim.
+Content permission still grants no foreign pixels, WM authority, or process
+execution. A custom launcher therefore needs explicit identity and activation
+semantics beyond the first panel/popout workflow.
+
+One admitted native shell may combine both capabilities once content exists, for
+example a custom panel with a descriptor launcher. This proposal does not add
+multiple native shell clients. See [Content Shells](content-shell.md) for the
+behavioral contract and [desktop composition](desktop-composition.md) for the
+user's component choices.
 
 ## Verification Culture
 

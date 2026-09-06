@@ -6,6 +6,11 @@ and role schema remain authoritative.
 **Status:** source audit and downstream build baseline; no native content
 capability or Quickshell Sophia backend is implemented.
 
+The [content-shell proposal](content-shell.md) now collects the behavioral
+requirements for the panel/popout workflow. This audit owns its source evidence
+and feasibility questions; the proposal specifies the intended lifecycle and
+authority boundary. Neither admits runtime implementation or assigns wire types.
+
 ## Baseline And Purpose
 
 The first downstream reference is [sophia-org/quickshell](https://github.com/sophia-org/quickshell),
@@ -28,8 +33,9 @@ application metadata, a desktop-service port, or a new application frontend.
 
 ## Capability And Ownership Matrix
 
-Current means implemented shell revisions 1/2. Proposed means a requirement
-for later specification, not an allocated capability or wire record.
+Current means implemented shell revisions 1–4: descriptors, tabs, reference
+sheets, and the application launcher. Proposed means a content requirement,
+not an allocated capability or wire record.
 
 | Workflow need | Current support or gap | Owner and required boundary |
 | --- | --- | --- |
@@ -38,7 +44,7 @@ for later specification, not an allocated capability or wire record.
 | Work-area reservation | Current bounded, output-scoped reservation candidates | Session caps the claim; Engine coordinates coherent presentation/work area; WM chooses application layout |
 | Output and panel geometry | Current snapshot supplies opaque output identity/generation; geometry stays Engine-private | Proposed shell-local geometry and scale facts must expose only what the content role needs; frontend resource identities stay private |
 | Anchored popout | No arbitrary content surface, parent/anchor, or dismissal vocabulary | Proposed generic shell-owned roles and bounded placement intents; Engine resolves authoritative geometry and stacking |
-| Button and popout interaction | Current discrete descriptor activations; no general Qt event stream | Extend the target-resolved input contract only as needed; Engine chooses the presented target and validates capture; adapter maps granted actions or local input into its own widgets |
+| Button and popout interaction | Current discrete descriptor activations; no general Qt event stream | First content workflow uses coordinate-free discrete targets; adapter maps actions to widgets. Any later local-coordinate input requires a separate grant |
 | Text entry and keyboard modes | Not needed by the first control; no generic content keyboard contract | Deferred; future keyboard disclosure/focus requires explicit admission, not an X11 grab or ambient key feed |
 | Content updates and pacing | Prepared/presented outcomes exist for descriptor candidates; no content upload or pacing wire | Proposed resource generations, bounded uploads and feedback; Engine owns the presentation clock, damage and backpressure |
 | Hot reload and disconnect | Current recipient epochs, complete snapshots, stale-work rejection, inert retained descriptor pixels | Specify content-resource retirement and reservation cleanup together; Qt generations cannot extend revoked authority |

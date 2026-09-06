@@ -84,6 +84,41 @@ among several clients will require explicit role assignment and protocol work.
 There is no first-client-wins selection, and an X11 panel does not become the
 native shell by appearing in the startup list.
 
+## Choose a shell and its permissions
+
+Today, the native shell uses descriptors. Narthex chooses among the features
+Sophia knows how to draw: a switcher, tabs, shortcut help, and the application
+launcher. Its own configuration controls the choices and appearance settings
+those features support. Changing shells does not change the application's
+execution policy or give the WM access to shell metadata.
+
+The proposed content model would let a shell draw its own widgets, typography,
+and artwork. Sophia would still control placement, GPU composition, physical
+input, and presentation. Such a shell could provide a custom panel while using
+the existing descriptor launcher. These are capabilities of the one admitted
+native shell, not two native shell processes.
+
+Choosing that shell and permitting custom content would be separate operator
+decisions. Under the proposal, content is denied unless the session policy
+explicitly grants it at startup. The shell cannot grant itself more permission.
+The grant would be recorded with the effective profile. Content support and its
+configuration syntax do not exist yet; there is no setting to add to your
+current profile to enable it.
+
+The added permission concerns what the shell can show you. A content shell
+could imitate a prompt or mislabel a button inside its own space, so you would
+need to trust its presentation more. That permission would not let it read other
+applications' pixels, capture the desktop, run arbitrary commands, or replace
+the lock screen. Those operations have separate authorities. Descriptor
+restrictions reduce visual freedom without promising that a shell can never
+mislead you.
+
+Your Quickshell X11 panel remains an ordinary application under its existing
+application policy. The proposed native-shell restrictions do not retroactively
+confine it or grant it the native role. See the
+[content-shell proposal](content-shell.md) for the developer contract; X11
+compatibility and your current shell selection remain the development priority.
+
 ## Understand startup and restart
 
 Login applications start once when the session opens. Reloading the WM or

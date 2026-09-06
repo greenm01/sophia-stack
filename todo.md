@@ -73,9 +73,10 @@ Status vocabulary:
   ported to the language-neutral protocols.
 - The common native protocol-family contract is ratified. The role-by-role
   lifecycle audit and one family-level conformance entry point are not complete.
-- `sophia_shell_v1` revision 2 is experimental, with revision-1 clients still
-  supported. Narthex implements switcher, bounded reservation, and persistent
-  tab descriptors; Sophia owns geometry, rendering, input, and presentation.
+- `sophia_shell_v1` revision 4 is experimental, with revision-1–3 clients still
+  supported. Narthex implements switcher, bounded reservation, persistent tabs,
+  reference sheets, and the application launcher; Sophia owns geometry,
+  rendering, input, and presentation. Content capability remains unimplemented.
   The family audit, stabilization, and current signed physical tab acceptance
   remain open. Hagia's native trees and tab protocol pass offline verification.
 - Milestone 14 has retained physical evidence for frame slots, buffer-age damage,
@@ -365,6 +366,11 @@ These rows do not reorder the critical path.
   [panel/popout requirements and results retained](docs/shell-reference-client-audit.md).
   Eight of nine test suites passed; the existing popup-movement failure is
   downstream baseline debt. This completes preparation, not content support.
+- [x] Document descriptor and content shell models and the proposed
+  [content-shell behavioral contract](docs/content-shell.md): explicit operator
+  admission, panel/popout lifecycle, input and visual trust boundaries, and
+  independent-client acceptance. No content wire, runtime capability, or
+  configuration is implemented by this documentation milestone.
 - [ ] Repair the evidence readers still pinned below their emitter. Ten accept
   `sophia_live_session status=bounded_complete` at schema 15 or lower against an
   emitter that writes 16, and nine accept `sophia_live_wm status=ready` at
@@ -456,8 +462,10 @@ tranche with a named driver and exit gate.
   popup-movement failure with an isolated display backend. After the CP-15
   coherence gates, separately admit one panel/popout workflow and require an
   independent C content client against the same public shell contract. The
-  [audit](docs/shell-reference-client-audit.md) owns requirements; this does not
-  add a frontend, toolkit dependency, content wire, or live-session change.
+  [audit](docs/shell-reference-client-audit.md) owns feasibility evidence and the
+  [proposal](docs/content-shell.md) collects the behavioral requirements. Transport,
+  pixel semantics, numeric bounds, wire design, modeling, and a conformance
+  corpus remain prerequisites; documenting them admits no runtime implementation.
 - [x] Implement the bounded session-owned [control v1](docs/sophia-control-v1.md)
   endpoint and `sophia msg`: startup-only `session.control "host-admin"`, disabled
   by default, socket-derived pidfd and user/mount/PID namespace admission,

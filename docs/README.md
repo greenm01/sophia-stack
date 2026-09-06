@@ -99,6 +99,11 @@ candidates that role may exchange.
 
 ## Subsystem Contracts And Current Status
 
+- [Content Shells](content-shell.md) proposes the behavioral contract for
+  custom shell content alongside the implemented descriptor model: explicit
+  admission, panel/popout presentation, target-resolved input, and bounded
+  resource lifetime. It is unimplemented and assigns no wire or configuration
+  syntax.
 - [Native Shell Reference-Client Audit](shell-reference-client-audit.md) records
   the Quickshell downstream baseline, generic panel/popout requirements, and
   the independent-client acceptance gate for future content support. It is

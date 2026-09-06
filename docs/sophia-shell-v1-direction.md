@@ -1,10 +1,11 @@
 # Sophia Shell Interface Direction
 
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
-**Status:** revision 3 adds [read-only reference sheets](shell-reference-sheets.md)
-and active shortcut catalogs. Revision 2 persistent tabs and revision 1 switcher
-and reservation clients remain supported. These extensions grant no blind-content
-rendering capability. The interface is not stable.
+**Status:** revision 4 adds the [native application launcher](application-launcher.md).
+Revision 3 reference sheets, revision 2 persistent tabs, and revision 1 switcher
+and reservation clients remain supported. These are descriptor capabilities;
+the [content-shell behavioral proposal](content-shell.md) is unimplemented and
+assigns no wire types. The interface is not stable.
 
 The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
 records how broader shell vocabulary will be derived, the external evidence
@@ -20,6 +21,23 @@ candidates, and authority constraints. It does not define a shell-only
 transport, library requirement, or alternate Engine entry point.
 
 ## The Decision
+
+### Descriptor And Content Shells
+
+Maintain both architectural models. Narthex remains the independent descriptor
+reference; a separately admitted content capability will let a shell rasterize
+its own widgets. The [content-shell proposal](content-shell.md) collects that
+model's behavioral requirements, beginning with a panel and anchored popout.
+It owns the proposed content behavior; this direction note retains research
+provenance and feasibility questions. The existing normative contracts still
+take precedence over both.
+
+The session's operator policy must explicitly permit content before the shell
+can negotiate it. Content permission is distinct from executable selection and
+does not grant foreign pixels, ambient input, application execution, or WM
+authority. Arbitrary artwork adds visual impersonation risk. One admitted shell
+may combine content and descriptor capabilities; this is not a proposal for
+multiple native shell clients or an automatic promotion of X11 panels.
 
 ### Scripting Boundary
 
@@ -77,9 +95,10 @@ events. Engine still selects the presented target and controls disclosure and
 capture. Content authorization grants neither foreign pixels nor WM authority.
 
 The [reference-client audit](shell-reference-client-audit.md) bounds the first
-panel-and-popout workflow. The admitted preparation milestone documents that
-workflow and establishes the downstream build; it adds no content messages,
-capability assignments, Qt dependency, or runtime defaults to Sophia.
+panel-and-popout workflow. Preparation establishes that workflow and the
+downstream build; the [content-shell proposal](content-shell.md) now specifies
+its behavior. Neither adds content messages, capability assignments, Qt
+dependencies, or runtime defaults to Sophia.
 
 ## The First Experimental Slice
 
@@ -274,12 +293,11 @@ exists in the vocabulary: **client-rasterized image textures.**
 
 A shell that wants an audio visualizer rasterizes it and uploads a texture.
 Engine composites the texture without learning what it depicts. Novelty stays
-client-side, the primitive set stays small, and the boundary holds. This is
-formally codified as **The Compositing Operator Rule** (see `docs/compositor-graphics.md`):
-the Engine only admits a primitive if it represents a mathematical 2D compositing
-operation that the client cannot execute itself due to security (pixel blindness). This
-should be an explicit stated rule of the specification process, not an outcome
-negotiated per primitive.
+client-side and the primitive set stays small. The
+[graphics contract](compositor-graphics.md) governs primitive admission: scene
+sampling stays in Engine, and recurring analytic operators may also qualify
+through bandwidth preservation and resolution independence. A toolkit's demand
+for a novel widget does not itself justify a new Engine primitive.
 
 ## Visual Style And Effect Contract
 
@@ -313,19 +331,12 @@ that wants richer WM-branded visuals supplies them through a separately
 authorized companion shell or, after evidence, a capability-gated WM extension.
 It does not move metadata or compositor state into blind spatial policy.
 
-Engine owns one animation clock for client content and compositor visuals. A
-shell may declare a bounded transition target, duration class, and easing
-policy once the eventual schema admits them; it does not drive an independent
-per-frame timeline. Ordinary changing shell content may still submit new
-generations, but those commits are content updates rather than authority over
-Engine's frame schedule.
-
-Content-addressed cached textures are the initial novelty path to model and
-measure. Stable content uploads once and later display lists reference its
-bounded handle. This does not yet prove that the current bytes-only transport
-can carry the required upload workload. Descriptor passing remains deferred
-until measured damage, bandwidth, power, fencing, and lifetime evidence shows
-that cached bytes are insufficient.
+The [content contract](content-shell.md#visual-style-effects-and-pacing) collects
+the pacing and reuse requirements. Engine owns the animation clock; a shell
+declares admitted transition intent or submits new content generations under
+backpressure. Cached content is the initial transport experiment. Its bandwidth,
+damage, power, and lifetime costs must be measured before selecting a transport
+extension.
 
 ### DMA-BUF Handoffs Are A Candidate
 
@@ -506,11 +517,12 @@ desktop. Lock, session takeover, and other security surfaces follow their
 separate preemptive authority path and never depend on shell or WM
 acknowledgement.
 
-Tier 0 avoids this cycle. Engine/session configuration reserves its bounded
-indicator strip before producing the WM work rectangle; policy descriptors
-change strip contents, not its geometry. Policy loss clears the descriptor but
-does not silently grow the work area while no WM is available to reproject the
-applications.
+The earlier Tier-0 prototype avoided this cycle by reserving a fixed indicator
+strip before the WM projection. That automatic strip is removed from the normal
+session. The user's selected shell supplies panel UI and proposes its reservation;
+publishing policy indicators alone creates no bar or reserved space. The content
+proposal therefore keeps reservation changes in the coherent presentation bundle
+rather than relying on a built-in strip.
 
 Opaque actions are capabilities, not globally meaningful integers. Each is
 bound to an issuer role/authority and revocation epoch, recipient role/epoch,
@@ -532,7 +544,8 @@ integers collide. Concrete records and limits remain schema work.
    uses begin/chunk/end transfers for anything larger, permits one transfer in
    flight per direction, and describes a bytes-only wire with no file-descriptor
    passing. A 1920x40 bar at ARGB8888 is roughly 307 KiB, or five chunks for a
-   single full upload. A continuously animating widget is not expressible.
+   single full upload. Continuous content animation has not been shown to meet
+   the required pacing and bandwidth bounds through this path.
    The selected first experiment uploads content once and references it by
    handle thereafter. It preserves the bytes-only wire but does not help
    genuinely per-frame content. A descriptor-passing side channel may be
@@ -555,8 +568,12 @@ integers collide. Concrete records and limits remain schema work.
    rendering them and does not choose ordering or recency.
 6. *Answered.* Engine owns the animation clock. The shell declares bounded
    transition intent and submits content generations; it does not drive frames.
-7. Where does the launcher live? It needs a text input, a result list, and
-   arbitrary launch, and it straddles shell, broker, and session capability.
+7. *Answered for descriptors.* Revision 4's [launcher](application-launcher.md)
+   assigns search and ordering to the shell, drawing and input to Engine, and
+   catalog policy and execution to the session. It grants no arbitrary launch
+   authority to the shell. A later custom-content launcher still needs the
+   [identity and activation contract](content-shell.md#a-later-custom-launcher)
+   that arbitrary artwork makes necessary.
 
 ## Roadmap Placement
 
@@ -571,7 +588,8 @@ records. The build's success or environmental blocker must be recorded; a
 blocked build does not become a completed milestone.
 
 A later content prototype needs separate admission with a named workflow and
-exit gate. It must specify and model the minimum generic content boundary,
+exit gate. The behavioral proposal does not bypass that gate. The prototype must
+turn the [content contract](content-shell.md) into a modeled generic wire boundary,
 publish schema and corpus evidence, and exercise it with Quickshell and an
 independent non-Qt client. Existing descriptor clients remain supported. It
 cannot borrow the stable WM interface's status or reopen frozen WM records to

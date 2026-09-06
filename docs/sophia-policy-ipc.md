@@ -411,8 +411,11 @@ required before the interface revision can be called stable.
 The protocol family reserves a distinct shell role and endpoint, not placeholder
 shell messages in the WM interface. Experimental `sophia_shell_v1` revision 1
 provides the title-only descriptor switcher and bounded reservations; revision
-2 adds persistent tab descriptors. These are falsifiable pre-stability
-contracts. Arbitrary content and broader service vocabulary remain future work.
+2 adds persistent tab descriptors, revision 3 adds reference sheets, and revision
+4 adds the application catalog and launcher. These are experimental descriptor
+contracts. The [content-shell proposal](content-shell.md) describes a separately
+admitted future capability within this family; it assigns no wire records or
+revision. Arbitrary content and broader service vocabulary remain unimplemented.
 
 The [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) specializes
 the common negotiation, complete-fact-set, bounded-candidate, explicit-outcome,
