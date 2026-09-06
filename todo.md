@@ -157,6 +157,9 @@ is the starting evidence; no new comparison run is required.
 
 #### 2. Establish the live session
 
+- [x] Allow local session installation from signed local Hagia commits without
+  requiring a push or `origin/master` equality. Retain source signature,
+  committed-profile, manifest identity and artifact verification checks.
 - [x] Add the [opt-in Quickshell X11 panel](docs/quickshell-x11-panel.md) and
   `cargo xtask panel` launcher with explicit GPU/software selection and retained
   binary identity. Isolated normal-session CPU content, popup update/withdrawal,

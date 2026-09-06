@@ -807,6 +807,13 @@ digests and Git identities, and installation verifies the artifact before an
 atomic `/opt/sophia/current` switch. No package contains an X11 WM bridge, an
 embedded legacy WM, or bridge-specific configuration.
 
+Local installation does not require pushing or fetching either repository.
+Hagia may be ahead of `origin/master` or have no remote-tracking branch;
+packaging still verifies its source-commit signature and committed default
+profile, records exact commit and binary hashes, and requires a clean Sophia
+worktree. Publication is a separate step. Rebuild changed Hagia sources before
+`just install-session`, since the installer can reuse an existing executable.
+
 Run the self-contained packaging/install regression with:
 
 ```sh

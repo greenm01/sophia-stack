@@ -72,11 +72,8 @@ if [[ -n "$hagia_bin" ]]; then
         echo "Hagia's source commit does not have a valid signature." >&2
         exit 1
     }
-    hagia_upstream="$(git -C "$hagia_root" rev-parse --verify refs/remotes/origin/master 2>/dev/null || true)"
-    [[ "$hagia_source_commit" == "$hagia_upstream" ]] || {
-        echo "Hagia HEAD must equal the locally known origin/master before packaging." >&2
-        exit 1
-    }
+    # Local signed commits are installable. Release identity comes from the
+    # exact commit and packaged hashes, independently of remote publication.
     "$hagia_bin" config check --config="$hagia_default_profile" >/dev/null
     target/release/sophia config check \
         --desktop-profile="$hagia_default_profile" >/dev/null

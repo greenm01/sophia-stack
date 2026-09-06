@@ -3,6 +3,22 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-09-06: local installation does not require publication
+
+Remove the Hagia `HEAD == origin/master` packaging prerequisite. A local
+development install should not require a network push, and a remote-tracking
+ref is not release identity. Keep the existing source-commit signature and
+default-profile checks, clean Sophia worktree requirement, manifest commit and
+binary hashes, and installed artifact verification. Signed local Hagia commits
+are installable even when ahead of the remote or without a tracking ref.
+Historical physical-proof workflows retain their separate prerequisites.
+
+The installer still accepts existing policy executables, so changed Hagia
+sources must be rebuilt before packaging. This change removes the publication
+dependency without changing that build behavior or reloading the live session.
+Validation: shell syntax and diff checks pass, as does the existing temporary
+install/activation/rollback regression, including artifact rejection cases.
+
 ## 2026-09-06: panel popout visibility and new-window camera focus
 
 Normal use of installed `8b750b30` exposed two issues. Clicking Panel test
