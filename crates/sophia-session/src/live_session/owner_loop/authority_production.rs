@@ -74,15 +74,12 @@
                 let mut presentation_layout = Vec::with_capacity(layout.layers.len());
                 for layer in layout.layers.values() {
                     let visible = if layout.is_client_positioned(layer.surface) {
-                        layout.client_positioned_mapped(layer.surface)
-                            && match layout.presentation_owner(layer.surface) {
-                                Some(owner) if !layout.knows_surface(owner) => false,
-                                Some(owner) => match wm_session.as_ref() {
-                                    Some(wm) => wm.surface_visible_on_any_output(owner, &outputs)?,
-                                    None => layout.mapped_surfaces.contains(&owner),
-                                },
-                                None => true,
+                        layout.client_positioned_visible(layer.surface, |owner| {
+                            match wm_session.as_ref() {
+                                Some(wm) => wm.surface_visible_on_any_output(owner, &outputs),
+                                None => Ok(layout.mapped_surfaces.contains(&owner)),
                             }
+                        })?
                     } else {
                         match wm_session.as_ref() {
                         Some(wm) => {

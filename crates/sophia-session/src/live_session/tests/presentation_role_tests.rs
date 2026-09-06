@@ -2,6 +2,9 @@ use super::*;
 use crate::live_session::PersistentLiveLayout;
 use sophia_protocol::{SurfaceConstraints, TransactionId};
 
+#[path = "../../../tests/support/presentation_owner_visibility.rs"]
+mod presentation_owner_visibility;
+
 #[test]
 fn client_positioned_role_transition_withdraws_surface_from_wm_policy() {
     let surface = SurfaceId::new(44, 1);

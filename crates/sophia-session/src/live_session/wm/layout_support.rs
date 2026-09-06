@@ -1,3 +1,32 @@
+impl PersistentLiveLayout {
+    fn client_positioned_visible<E>(
+        &self,
+        surface: SurfaceId,
+        mut managed_visible: impl FnMut(SurfaceId) -> Result<bool, E>,
+    ) -> Result<bool, E> {
+        let mut current = surface;
+        // Panels and nested popups bypass WM placement. Follow their mapped
+        // ownership chain before consulting policy for a managed ancestor.
+        // A cycle or a stale owner cannot establish visible ancestry.
+        for _ in 0..=self.presentation_owners.len() {
+            if !self.knows_surface(current) {
+                return Ok(false);
+            }
+            if !self.is_client_positioned(current) {
+                return managed_visible(current);
+            }
+            if !self.client_positioned_mapped(current) {
+                return Ok(false);
+            }
+            match self.presentation_owner(current) {
+                Some(owner) => current = owner,
+                None => return Ok(true),
+            }
+        }
+        Ok(false)
+    }
+}
+
 fn reconcile_live_layout_progress(
     layout: &mut PersistentLiveLayout,
     update_slot_available: bool,

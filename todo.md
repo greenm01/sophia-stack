@@ -179,6 +179,10 @@ is the starting evidence; no new comparison run is required.
 - [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
   popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
   shell content and DMS remain deferred; this is an X11 compatibility client.
+  On `8b750b30`, clicking Panel test blinked only the terminal border and showed
+  no popout. Repair client-positioned owner visibility without asking the WM
+  to place the panel. Focused owner-chain regressions and the isolated software
+  content probe pass; the physical popout still needs confirmation.
 - [ ] Diagnose the forced-deadline control drain race captured in
   `/tmp/sophia-panel-probe-v5` (12 dispatched, 11 delivered, one pending).
   Normal-exit probe success does not waive this separate shutdown finding.
@@ -188,6 +192,10 @@ is the starting evidence; no new comparison run is required.
   committed Hagia camera anchors and Engine GPU translation; see the
   [contract and focused check](docs/window-transitions.md). Physical acceptance
   remains pending; the running installed session has not been replaced.
+  The `8b750b30` normal-use report found that new terminals retained the previous
+  focus, so the camera correctly stayed on the old window. Hagia now selects
+  eligible new admissions in the active view and places unassigned windows on
+  the active output. Validate opening on both monitors after installing it.
 - [ ] Revalidate installed startup after the output-ownership repair. Release
   `0.1.0-86b5fe1d20bc` exited on the first Kitty Present after losing its output
   assignment. The operator entered installed fix `84c109c6`; logs confirm two
