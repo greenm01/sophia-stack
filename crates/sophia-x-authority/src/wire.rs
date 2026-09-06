@@ -28,6 +28,7 @@ include!("wire/extensions/sync.rs");
 include!("wire/extensions/xfixes.rs");
 include!("wire/extensions/xf86_vidmode.rs");
 include!("wire/extensions/xc_misc.rs");
+include!("wire/extensions/render.rs");
 include!("wire/extensions/xi.rs");
 include!("wire/extensions/xkb.rs");
 include!("wire/validation.rs");
@@ -546,6 +547,20 @@ pub enum XWireRequest {
     XCMiscGetXIDList {
         count: u32,
     },
+    /// `RenderQueryVersion`. The client states its own version and receives
+    /// the lower of the two.
+    RenderQueryVersion {
+        major: u32,
+        minor: u32,
+    },
+    /// `RenderQueryPictFormats`: the pixel layouts pictures may take, and
+    /// which visual each one belongs to.
+    RenderQueryPictFormats,
+    /// A RENDER minor Sophia does not implement, decoded so the refusal can
+    /// name it.
+    RenderUnimplemented {
+        minor_opcode: u8,
+    },
     /// `XF86VidModeQueryVersion`. Carries nothing; the answer is a constant.
     XF86VidModeQueryVersion,
     /// `XF86VidModeGetModeLine`, for one X screen.
@@ -1046,6 +1061,7 @@ pub fn decode_x11_core_request(
         X_XFIXES_MAJOR_OPCODE => decode_xfixes(context, bytes),
         X_XF86_VIDMODE_MAJOR_OPCODE => decode_xf86_vidmode(context, bytes),
         X_XC_MISC_MAJOR_OPCODE => decode_xc_misc(context, bytes),
+        X_RENDER_MAJOR_OPCODE => decode_render(context, bytes),
         X_GLX_MAJOR_OPCODE => decode_glx(context, bytes),
         X_SYNC_MAJOR_OPCODE => decode_sync(context, bytes),
         other => Err(XWireParseError::UnknownOpcode(other)),

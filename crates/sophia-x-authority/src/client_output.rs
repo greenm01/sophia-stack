@@ -1,6 +1,8 @@
 use crate::{
-    X_ATOM_NONE, XAuthorityRuntimeError, XByteOrder, XColorRgb16, XResourceId, XTimestamp,
-    XWireParseError, padded_len,
+    X_ATOM_NONE, X_RENDER_FORMAT_A1, X_RENDER_FORMAT_A8, X_RENDER_FORMAT_ARGB32,
+    X_RENDER_FORMAT_RGB24, X_RENDER_PICT_TYPE_DIRECT, X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_VISUAL,
+    XAuthorityRuntimeError, XByteOrder, XColorRgb16, XResourceId, XTimestamp, XWireParseError,
+    padded_len,
 };
 use sophia_protocol::Rect;
 
@@ -9,6 +11,7 @@ include!("client_output/replies/core_late.rs");
 include!("client_output/replies/glx_sync.rs");
 include!("client_output/replies/randr.rs");
 include!("client_output/replies/render_extensions.rs");
+include!("client_output/replies/x_render.rs");
 include!("client_output/replies/xi.rs");
 include!("client_output/replies/xkb.rs");
 include!("client_output/errors.rs");
@@ -418,6 +421,19 @@ pub enum XClientReply {
     XCMiscGetXIDList {
         sequence: u16,
         ids: Vec<u32>,
+    },
+    RenderQueryVersion {
+        sequence: u16,
+        major_version: u32,
+        minor_version: u32,
+    },
+    /// The four picture formats and the visual each belongs to.
+    ///
+    /// Carries only the sequence: the formats are the pixel layouts this
+    /// server can represent, which is a property of the server rather than of
+    /// any request, so the encoder owns the table.
+    RenderQueryPictFormats {
+        sequence: u16,
     },
     XF86VidModeQueryVersion {
         sequence: u16,
@@ -882,6 +898,10 @@ pub fn encode_x_client_reply(byte_order: XByteOrder, reply: XClientReply) -> Vec
         Err(reply) => reply,
     };
     let reply = match encode_render_extension_reply(byte_order, reply) {
+        Ok(bytes) => return bytes,
+        Err(reply) => reply,
+    };
+    let reply = match encode_x_render_reply(byte_order, reply) {
         Ok(bytes) => return bytes,
         Err(reply) => reply,
     };

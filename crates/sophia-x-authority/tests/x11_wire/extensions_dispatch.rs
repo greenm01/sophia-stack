@@ -1692,3 +1692,202 @@ fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
         other => panic!("{other:?}"),
     }
 }
+
+/// The RENDER handshake answers before the extension is advertised, and the
+/// formats it reports are the visuals' formats.
+///
+/// The advertisement stays off until the compositing core behind it answers
+/// -- QueryExtension presence alone licenses a client to send CreatePicture
+/// and Composite, so flipping it on with only the handshake implemented would
+/// repeat the MIT-SHM over-promise. The handshake itself must still be
+/// correct, which is what this proves.
+#[test]
+fn render_handshake_answers_the_lower_version_and_the_visuals_formats() {
+    let namespace = NamespaceId::from_raw(86);
+    let byte_order = XByteOrder::LittleEndian;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    // Not yet advertised: a client asking by name is told the extension is
+    // absent, whatever the dispatcher can already answer.
+    let query = decode_x11_core_request(
+        context(namespace, 700, byte_order),
+        &query_extension_request(byte_order, X_RENDER_EXTENSION_NAME),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, byte_order, 98),
+        query,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(byte_order);
+    assert_eq!(encoded[0][8], 0, "RENDER must not be advertised yet");
+
+    // The version answered is the lower of the two.
+    for (asked, answered) in [((0, 99), (0, 4)), ((0, 2), (0, 2)), ((1, 0), (0, 4))] {
+        let request = decode_x11_core_request(
+            context(namespace, 701, byte_order),
+            &render_query_version_request(byte_order, asked.0, asked.1),
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, 2, byte_order, X_RENDER_MAJOR_OPCODE),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let encoded = result.encoded_outputs(byte_order);
+        assert_eq!(read_u32(byte_order, &encoded[0][8..12]), answered.0);
+        assert_eq!(read_u32(byte_order, &encoded[0][12..16]), answered.1);
+    }
+
+    // The four formats, and their agreement with the setup visuals. A client
+    // binds a format to a visual and expects core-drawn bytes to mean the
+    // same thing through RENDER, so the shifts and masks here must
+    // reconstruct exactly the channel masks the visual advertises.
+    let request = decode_x11_core_request(
+        context(namespace, 702, byte_order),
+        &render_query_pict_formats_request(byte_order),
+    )
+    .unwrap();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, byte_order, X_RENDER_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = result.encoded_outputs(byte_order);
+    let reply = &encoded[0];
+    assert_eq!(read_u32(byte_order, &reply[8..12]), 4, "format count");
+    assert_eq!(read_u32(byte_order, &reply[12..16]), 1, "screen count");
+    assert_eq!(read_u32(byte_order, &reply[16..20]), 2, "depth count");
+    assert_eq!(read_u32(byte_order, &reply[20..24]), 2, "visual count");
+    let channel = |offset: usize| -> u32 {
+        u32::from(read_u16(byte_order, &reply[offset + 2..offset + 4]))
+            << read_u16(byte_order, &reply[offset..offset + 2])
+    };
+    let mut formats = std::collections::BTreeMap::new();
+    for index in 0..4 {
+        let offset = 32 + index * 28;
+        let id = read_u32(byte_order, &reply[offset..offset + 4]);
+        let depth = reply[offset + 5];
+        let (red, green, blue, alpha) = (
+            channel(offset + 8),
+            channel(offset + 12),
+            channel(offset + 16),
+            channel(offset + 20),
+        );
+        formats.insert(id, (depth, red, green, blue, alpha));
+    }
+    let argb_visual = x_true_color_visual(X_SETUP_ARGB_VISUAL).unwrap();
+    assert_eq!(
+        formats.get(&X_RENDER_FORMAT_ARGB32),
+        Some(&(
+            32,
+            argb_visual.red_mask,
+            argb_visual.green_mask,
+            argb_visual.blue_mask,
+            argb_visual.alpha_mask,
+        ))
+    );
+    let default_visual = x_true_color_visual(X_SETUP_DEFAULT_VISUAL).unwrap();
+    assert_eq!(
+        formats.get(&X_RENDER_FORMAT_RGB24),
+        Some(&(
+            24,
+            default_visual.red_mask,
+            default_visual.green_mask,
+            default_visual.blue_mask,
+            0,
+        ))
+    );
+    assert_eq!(formats.get(&X_RENDER_FORMAT_A8), Some(&(8, 0, 0, 0, 0xff)));
+    assert_eq!(formats.get(&X_RENDER_FORMAT_A1), Some(&(1, 0, 0, 0, 0x1)));
+
+    // The screen maps each visual-bearing depth to its format.
+    let screen = 32 + 4 * 28;
+    assert_eq!(read_u32(byte_order, &reply[screen..screen + 4]), 2);
+    assert_eq!(
+        read_u32(byte_order, &reply[screen + 4..screen + 8]),
+        X_RENDER_FORMAT_RGB24,
+        "fallback format"
+    );
+    let depth24 = screen + 8;
+    assert_eq!(reply[depth24], 24);
+    assert_eq!(read_u16(byte_order, &reply[depth24 + 2..depth24 + 4]), 1);
+    assert_eq!(
+        read_u32(byte_order, &reply[depth24 + 8..depth24 + 12]),
+        X_SETUP_DEFAULT_VISUAL
+    );
+    assert_eq!(
+        read_u32(byte_order, &reply[depth24 + 12..depth24 + 16]),
+        X_RENDER_FORMAT_RGB24
+    );
+    let depth32 = depth24 + 16;
+    assert_eq!(reply[depth32], 32);
+    assert_eq!(
+        read_u32(byte_order, &reply[depth32 + 8..depth32 + 12]),
+        X_SETUP_ARGB_VISUAL
+    );
+    assert_eq!(
+        read_u32(byte_order, &reply[depth32 + 12..depth32 + 16]),
+        X_RENDER_FORMAT_ARGB32
+    );
+}
+
+/// RENDER refusals are two-tier, and each names the minor it declines.
+///
+/// A minor defined within the advertised version answers BadImplementation:
+/// the request exists here and is not offered, which is also what Xorg
+/// answers for the five it never wrote. A minor beyond the advertised
+/// version answers BadRequest, because a genuine server of that version had
+/// no dispatch entry for it at all. The split is what lets a client's
+/// version-gated fallback logic work unmodified.
+#[test]
+fn render_refusals_split_between_not_offered_and_not_that_version() {
+    let namespace = NamespaceId::from_raw(87);
+    let byte_order = XByteOrder::LittleEndian;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let mut refusal_for = |minor: u8| -> (XErrorCode, u16) {
+        let request = decode_x11_core_request(
+            context(namespace, 710, byte_order),
+            &render_minor_request(byte_order, minor),
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, 4, byte_order, X_RENDER_MAJOR_OPCODE),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        match result.outputs.as_slice() {
+            [XClientOutput::Error(error)] => {
+                assert_eq!(error.major_code, X_RENDER_MAJOR_OPCODE);
+                (error.code, error.minor_code)
+            }
+            other => panic!("minor {minor} produced {other:?}"),
+        }
+    };
+
+    // Within the advertised 0.4: the never-implemented five and the declined
+    // trapezoid family, plus the base requests later phases implement.
+    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 4, 8, 17, 26] {
+        let (code, named) = refusal_for(minor);
+        assert_eq!(code, XErrorCode::BadImplementation, "minor {minor}");
+        assert_eq!(named, u16::from(minor));
+    }
+    // Beyond 0.4, or defined by no version at all.
+    for minor in [2, 16, 27, 28, 31, 32, 33, 36, 99] {
+        let (code, named) = refusal_for(minor);
+        assert_eq!(code, XErrorCode::BadRequest, "minor {minor}");
+        assert_eq!(named, u16::from(minor));
+    }
+}

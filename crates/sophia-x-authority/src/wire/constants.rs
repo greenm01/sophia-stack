@@ -494,3 +494,122 @@ pub const X_QUERY_COLORS_MAX_PIXELS: usize = 256;
 pub const X_POLY_TEXT8_MAX_BYTES: usize = 64 * 1024;
 pub const X_IMAGE_TEXT8_MAX_BYTES: usize = 64 * 1024;
 pub const X_ALLOC_NAMED_COLOR_MAX_NAME_BYTES: usize = 256;
+
+/// The compositing and antialiased-text extension every modern toolkit asks
+/// for first.
+///
+/// Both Quickshell and Brave asked for this by name and were refused; the
+/// absent-extension log is what put it here. A client refused RENDER does not
+/// fail -- it falls back to core drawing and looks wrong or feels slow, which
+/// is the kind of degradation that never shows up in an error trace.
+pub const X_RENDER_EXTENSION_NAME: &str = "RENDER";
+pub const X_RENDER_MAJOR_OPCODE: u8 = 144;
+/// The base for RENDER's five errors: PictFormat, Picture, PictOp, GlyphSet
+/// and Glyph, in that order. XInput holds 160 and its protocol defines five
+/// errors of its own, so 160..=164 stay reserved for it.
+pub const X_RENDER_FIRST_ERROR: u8 = 165;
+pub const X_RENDER_PICT_FORMAT_ERROR_OFFSET: u8 = 0;
+pub const X_RENDER_PICTURE_ERROR_OFFSET: u8 = 1;
+pub const X_RENDER_PICT_OP_ERROR_OFFSET: u8 = 2;
+pub const X_RENDER_GLYPH_SET_ERROR_OFFSET: u8 = 3;
+pub const X_RENDER_GLYPH_ERROR_OFFSET: u8 = 4;
+/// The advertised version is the promise, and it tracks what is implemented.
+///
+/// 0.4 is the whole base protocol; 0.5 adds ARGB cursors; 0.6 transforms and
+/// filters; 0.10 solid fills and gradients; 0.11 the PDF blend operators.
+/// MIT-SHM taught what advertising past the implementation costs: a version
+/// reply that over-promises sends a client down a path that ends in the
+/// client's error handler rather than in its fallback. This constant moves
+/// only when the requests behind the next version answer.
+pub const X_RENDER_MAJOR_VERSION: u32 = 0;
+pub const X_RENDER_MINOR_VERSION: u32 = 4;
+
+// The RENDER request minors, all of them, in protocol order, the GLX way:
+// the ones Sophia does not implement are named too, each with why, so the
+// difference between "declined" and "not yet written" survives here rather
+// than in someone's memory. Refusals are two-tier. A minor defined within the
+// advertised version but not implemented answers BadImplementation, which is
+// also what Xorg answers for the five it never wrote. A minor beyond the
+// advertised version answers BadRequest, because a genuine server of that
+// version had no dispatch entry for it at all.
+pub const X_RENDER_QUERY_VERSION_MINOR_OPCODE: u8 = 0;
+pub const X_RENDER_QUERY_PICT_FORMATS_MINOR_OPCODE: u8 = 1;
+/// Indexed-visual palettes for PictTypeIndexed formats. Sophia's visuals are
+/// fixed TrueColor, so no indexed format exists to query. Version 0.7.
+pub const X_RENDER_QUERY_PICT_INDEX_VALUES_MINOR_OPCODE: u8 = 2;
+/// Never implemented by any server, Xorg included; the protocol reserved the
+/// name and nothing was ever behind it.
+pub const X_RENDER_QUERY_DITHERS_MINOR_OPCODE: u8 = 3;
+pub const X_RENDER_CREATE_PICTURE_MINOR_OPCODE: u8 = 4;
+pub const X_RENDER_CHANGE_PICTURE_MINOR_OPCODE: u8 = 5;
+pub const X_RENDER_SET_PICTURE_CLIP_RECTANGLES_MINOR_OPCODE: u8 = 6;
+pub const X_RENDER_FREE_PICTURE_MINOR_OPCODE: u8 = 7;
+pub const X_RENDER_COMPOSITE_MINOR_OPCODE: u8 = 8;
+/// Never implemented by Xorg; clients scale through transforms instead.
+pub const X_RENDER_SCALE_MINOR_OPCODE: u8 = 9;
+/// The polygon rasterizer family, declined for now rather than forever: no
+/// measured client sends these -- Qt and Chromium composite through GL, Xft
+/// needs only glyphs -- and the refusal log will say if one appears. A cairo
+/// client drawing over XRender would send these; none has been observed.
+pub const X_RENDER_TRAPEZOIDS_MINOR_OPCODE: u8 = 10;
+/// Declined with the trapezoid family, for the same reason.
+pub const X_RENDER_TRIANGLES_MINOR_OPCODE: u8 = 11;
+/// Declined with the trapezoid family, for the same reason.
+pub const X_RENDER_TRI_STRIP_MINOR_OPCODE: u8 = 12;
+/// Declined with the trapezoid family, for the same reason.
+pub const X_RENDER_TRI_FAN_MINOR_OPCODE: u8 = 13;
+/// Never implemented by any server; reserved in the protocol and abandoned.
+pub const X_RENDER_COLOR_TRAPEZOIDS_MINOR_OPCODE: u8 = 14;
+/// Never implemented by any server; reserved in the protocol and abandoned.
+pub const X_RENDER_COLOR_TRIANGLES_MINOR_OPCODE: u8 = 15;
+// Minor 16 was reserved for a Transform request that never entered the
+// protocol; it is not a request at any version and answers BadRequest.
+pub const X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE: u8 = 17;
+pub const X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE: u8 = 18;
+pub const X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE: u8 = 19;
+pub const X_RENDER_ADD_GLYPHS_MINOR_OPCODE: u8 = 20;
+/// Never implemented by any server; glyphs arrive through AddGlyphs.
+pub const X_RENDER_ADD_GLYPHS_FROM_PICTURE_MINOR_OPCODE: u8 = 21;
+pub const X_RENDER_FREE_GLYPHS_MINOR_OPCODE: u8 = 22;
+pub const X_RENDER_COMPOSITE_GLYPHS_8_MINOR_OPCODE: u8 = 23;
+pub const X_RENDER_COMPOSITE_GLYPHS_16_MINOR_OPCODE: u8 = 24;
+pub const X_RENDER_COMPOSITE_GLYPHS_32_MINOR_OPCODE: u8 = 25;
+pub const X_RENDER_FILL_RECTANGLES_MINOR_OPCODE: u8 = 26;
+/// Client-supplied ARGB cursors, the libXcursor path. Version 0.5.
+pub const X_RENDER_CREATE_CURSOR_MINOR_OPCODE: u8 = 27;
+/// Picture-space transforms. Version 0.6, above what is advertised.
+pub const X_RENDER_SET_PICTURE_TRANSFORM_MINOR_OPCODE: u8 = 28;
+/// Version 0.6, above what is advertised.
+pub const X_RENDER_QUERY_FILTERS_MINOR_OPCODE: u8 = 29;
+/// Version 0.6, above what is advertised.
+pub const X_RENDER_SET_PICTURE_FILTER_MINOR_OPCODE: u8 = 30;
+/// Version 0.8, above what is advertised.
+pub const X_RENDER_CREATE_ANIM_CURSOR_MINOR_OPCODE: u8 = 31;
+/// Version 0.9, above what is advertised.
+pub const X_RENDER_ADD_TRAPS_MINOR_OPCODE: u8 = 32;
+/// Version 0.10, above what is advertised.
+pub const X_RENDER_CREATE_SOLID_FILL_MINOR_OPCODE: u8 = 33;
+/// Version 0.10, above what is advertised.
+pub const X_RENDER_CREATE_LINEAR_GRADIENT_MINOR_OPCODE: u8 = 34;
+/// Version 0.10, above what is advertised.
+pub const X_RENDER_CREATE_RADIAL_GRADIENT_MINOR_OPCODE: u8 = 35;
+/// Version 0.10, above what is advertised.
+pub const X_RENDER_CREATE_CONICAL_GRADIENT_MINOR_OPCODE: u8 = 36;
+pub const X_RENDER_LAST_MINOR_OPCODE: u8 = X_RENDER_CREATE_CONICAL_GRADIENT_MINOR_OPCODE;
+
+// The four picture formats Sophia offers, one per representable pixel layout.
+// Their identifiers live in low server-owned XID space beside the setup-owned
+// root window at 0x20, below every client's resource range.
+/// Premultiplied 32-bit ARGB, the depth-32 visual's format.
+pub const X_RENDER_FORMAT_ARGB32: u32 = 0x26;
+/// 24-bit RGB with no alpha component, the default visual's format.
+pub const X_RENDER_FORMAT_RGB24: u32 = 0x27;
+/// 8-bit alpha, the mask format antialiased glyph coverage arrives in.
+pub const X_RENDER_FORMAT_A8: u32 = 0x28;
+/// 1-bit alpha, the mask format for sharp edges.
+pub const X_RENDER_FORMAT_A1: u32 = 0x29;
+/// PictTypeDirect; Sophia offers no indexed formats.
+pub const X_RENDER_PICT_TYPE_DIRECT: u8 = 1;
+
+const X_RENDER_QUERY_VERSION_REQ_LEN: usize = 12;
+const X_RENDER_QUERY_PICT_FORMATS_REQ_LEN: usize = 4;

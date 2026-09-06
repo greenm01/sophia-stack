@@ -790,3 +790,24 @@ fn read_x_reply(stream: &mut std::os::unix::net::UnixStream,
     fill_from_socket(stream, &mut record[32..]);
     record
 }
+
+fn render_query_version_request(byte_order: XByteOrder, major: u32, minor: u32) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_QUERY_VERSION_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 3);
+    push_u32(&mut out, byte_order, major);
+    push_u32(&mut out, byte_order, minor);
+    out
+}
+
+fn render_query_pict_formats_request(byte_order: XByteOrder) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_QUERY_PICT_FORMATS_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 1);
+    out
+}
+
+/// A bare header-only request for any RENDER minor, for probing refusals.
+fn render_minor_request(byte_order: XByteOrder, minor_opcode: u8) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, minor_opcode];
+    push_u16(&mut out, byte_order, 1);
+    out
+}
