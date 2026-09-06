@@ -544,3 +544,78 @@ fn a_profile_mode_the_hardware_offers_is_taken_exactly() {
     assert_eq!(chosen.refresh_millihz, 120_000);
     candidate.validate_against(&snapshot).unwrap();
 }
+
+/// A measured timing must not disturb what a profile matches.
+///
+/// The mode matcher compares `refresh_millihz` with exact equality, and a
+/// profile writes `@120` as 120000. The panel actually runs at 119.997 Hz, and
+/// now that the server carries that number, the temptation is to let it become
+/// the refresh -- at which point `mode "2560x1440@120"` matches nothing and the
+/// display silently drops to its other mode.
+///
+/// So the nominal rate stays nominal. This holds that line.
+#[test]
+fn a_measured_timing_does_not_change_what_a_profile_matches() {
+    let measured = sophia_protocol::OutputModeTiming {
+        clock_khz: 497_751,
+        hdisplay: 2560,
+        hsync_start: 2608,
+        hsync_end: 2640,
+        htotal: 2720,
+        hskew: 0,
+        vdisplay: 1440,
+        vsync_start: 1443,
+        vsync_end: 1448,
+        vtotal: 1525,
+        flags: 0,
+    };
+    // The two numbers disagree, which is the entire point.
+    assert_eq!(measured.measured_refresh_millihz(), Some(119_997));
+
+    let mut nominal = LibdrmNativeOutputTiming::new(2560, 1440, 120_000);
+    nominal.mode = Some(measured);
+    assert_eq!(nominal.refresh_millihz, 120_000);
+
+    let sixty = LibdrmNativeOutputTiming::new(2560, 1440, 60_000);
+    let capabilities = [LibdrmNativeOutputCapability::new(
+        OutputId::from_raw(1),
+        1,
+        "DP-1",
+        [sixty, nominal],
+        Some(nominal),
+        sixty,
+        LibdrmNativeVrrPropertyDiscoveryStatus::Unsupported,
+    )
+    .unwrap()
+    .bind_head(RenderHeadId::from_raw(11))
+    .unwrap()];
+    let outputs = [output(1, 2560, 1440, 1)];
+    let topology = project_native_output_topology(&capabilities, &outputs).unwrap();
+    let profile = DesktopOutputCandidate {
+        generation: ConfigGeneration::from_raw(4),
+        digest: ConfigDigest::new([4; 32]),
+        inherit_sophia: true,
+        named: vec![DesktopNamedOutputCandidate {
+            connector: "DP-1".to_owned(),
+            mode: Some(DesktopOutputMode::Exact {
+                width: 2560,
+                height: 1440,
+                refresh_millihz: 120_000,
+            }),
+            scale: None,
+            position: Some((0, 0)),
+            transform: None,
+            enabled: Some(true),
+            focus_at_startup: Some(true),
+            vrr: None,
+            mirror_fit: None,
+            mirror: Vec::new(),
+        }],
+    };
+
+    let reconciliation = reconcile_desktop_output_candidate(&profile, &topology)
+        .expect("a nominal @120 must still match a mode measured at 119.997 Hz");
+    let plan =
+        prepare_native_output_activation_plan(&capabilities, &topology, &reconciliation).unwrap();
+    assert_eq!(plan.targets()[0].requested().mode.refresh_millihz, 120_000);
+}

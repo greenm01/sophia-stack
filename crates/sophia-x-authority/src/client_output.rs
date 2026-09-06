@@ -402,6 +402,20 @@ pub enum XClientReply {
     Dri3Open {
         sequence: u16,
     },
+    XF86VidModeQueryVersion {
+        sequence: u16,
+        major_version: u16,
+        minor_version: u16,
+    },
+    /// The modeline of the screen's primary output.
+    ///
+    /// Carries the timing rather than a summary of it, because the client
+    /// computing a refresh rate from this wants `clock / (htotal * vtotal)`
+    /// exactly -- that is the whole reason the request exists.
+    XF86VidModeGetModeLine {
+        sequence: u16,
+        timing: sophia_protocol::OutputModeTiming,
+    },
     /// `CreateSegment`: the body says nothing, and the descriptor beside it
     /// says everything. The socket layer supplies that descriptor.
     ShmCreateSegment {

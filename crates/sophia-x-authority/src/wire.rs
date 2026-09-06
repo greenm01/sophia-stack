@@ -26,6 +26,7 @@ include!("wire/extensions/shm.rs");
 include!("wire/extensions/sophia_present.rs");
 include!("wire/extensions/sync.rs");
 include!("wire/extensions/xfixes.rs");
+include!("wire/extensions/xf86_vidmode.rs");
 include!("wire/extensions/xi.rs");
 include!("wire/extensions/xkb.rs");
 include!("wire/validation.rs");
@@ -531,6 +532,26 @@ pub enum XWireRequest {
         size: u32,
         read_only: bool,
     },
+    /// `XF86VidModeQueryVersion`. Carries nothing; the answer is a constant.
+    XF86VidModeQueryVersion,
+    /// `XF86VidModeGetModeLine`, for one X screen.
+    ///
+    /// Sophia has one screen spanning every output, so the screen number is
+    /// decoded and checked rather than used to select a display.
+    XF86VidModeGetModeLine {
+        screen: u16,
+    },
+    /// `XF86VidModeSetClientVersion`. Recorded and answered, because the
+    /// library sends it and expects no reply.
+    XF86VidModeSetClientVersion {
+        major: u16,
+        minor: u16,
+    },
+    /// A minor opcode this server does not implement, kept so the refusal can
+    /// name the request rather than the extension.
+    XF86VidModeUnimplemented {
+        minor_opcode: u8,
+    },
     ShmDetach {
         segment: XResourceId,
     },
@@ -1009,6 +1030,7 @@ pub fn decode_x11_core_request(
         X_DRI3_MAJOR_OPCODE => decode_dri3(context, bytes),
         X_PRESENT_MAJOR_OPCODE => decode_present(context, bytes),
         X_XFIXES_MAJOR_OPCODE => decode_xfixes(context, bytes),
+        X_XF86_VIDMODE_MAJOR_OPCODE => decode_xf86_vidmode(context, bytes),
         X_GLX_MAJOR_OPCODE => decode_glx(context, bytes),
         X_SYNC_MAJOR_OPCODE => decode_sync(context, bytes),
         other => Err(XWireParseError::UnknownOpcode(other)),

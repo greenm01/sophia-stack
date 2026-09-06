@@ -319,6 +319,28 @@ pub const X_GLX_TRUE_COLOR_VALUE: u32 = 0x8002;
 /// `GLX_RGBA_BIT`: the only render type Sophia offers. Colour-index rendering
 /// went with indirect GL.
 pub const X_GLX_RGBA_BIT_VALUE: u32 = 0x1;
+/// The legacy mode-line extension, which Mesa still uses for one thing.
+///
+/// `glXGetMscRateOML` is implemented in Mesa by asking this extension for the
+/// modeline and dividing the clock by the total pixels in a frame. RandR
+/// superseded the extension for everything else two decades ago, so only the
+/// two requests that answer take part here.
+pub const X_XF86_VIDMODE_EXTENSION_NAME: &str = "XFree86-VidModeExtension";
+pub const X_XF86_VIDMODE_MAJOR_OPCODE: u8 = 142;
+pub const X_XF86_VIDMODE_QUERY_VERSION_MINOR_OPCODE: u8 = 0;
+pub const X_XF86_VIDMODE_GET_MODE_LINE_MINOR_OPCODE: u8 = 1;
+/// Sent by `libXxf86vm` once it has seen a major version of 2 or more, so
+/// refusing it would break the exchange immediately after `QueryVersion`
+/// succeeded.
+pub const X_XF86_VIDMODE_SET_CLIENT_VERSION_MINOR_OPCODE: u8 = 14;
+/// Answering 2 is what selects the modern reply shape in `libXxf86vm`;
+/// answering 0 or 1 selects a shorter, differently laid out one.
+pub const X_XF86_VIDMODE_MAJOR_VERSION: u16 = 2;
+pub const X_XF86_VIDMODE_MINOR_VERSION: u16 = 2;
+const X_XF86_VIDMODE_QUERY_VERSION_REQ_LEN: usize = 4;
+const X_XF86_VIDMODE_GET_MODE_LINE_REQ_LEN: usize = 8;
+const X_XF86_VIDMODE_SET_CLIENT_VERSION_REQ_LEN: usize = 8;
+
 pub const X_SYNC_EXTENSION_NAME: &str = "SYNC";
 pub const X_SYNC_MAJOR_OPCODE: u8 = 141;
 pub const X_SYNC_FIRST_EVENT: u8 = 68;

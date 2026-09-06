@@ -5,6 +5,8 @@ fn encode_render_extension_reply(
     if !matches!(
         &reply,
             XClientReply::ShmQueryVersion { .. }
+            | XClientReply::XF86VidModeQueryVersion { .. }
+            | XClientReply::XF86VidModeGetModeLine { .. }
             | XClientReply::ShmCreateSegment { .. }
             | XClientReply::ShmGetImage { .. }
             | XClientReply::Dri3QueryVersion { .. }
@@ -72,6 +74,37 @@ fn encode_render_extension_reply(
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     out[1] = 1;
+                    out
+                }
+                XClientReply::XF86VidModeQueryVersion {
+                    sequence,
+                    major_version,
+                    minor_version,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u16(byte_order, &mut out[8..10], major_version);
+                    put_u16(byte_order, &mut out[10..12], minor_version);
+                    out
+                }
+                XClientReply::XF86VidModeGetModeLine { sequence, timing } => {
+                    // The version 2 reply is fifty-two bytes: thirty-two of
+                    // header and body, then five more words. `privsize` is the
+                    // last of them and stays zero -- private timing data is an
+                    // XFree86 driver notion with nothing behind it here.
+                    let mut out = vec![0; 52];
+                    write_reply_header(byte_order, &mut out, sequence, 5);
+                    put_u32(byte_order, &mut out[8..12], timing.clock_khz);
+                    put_u16(byte_order, &mut out[12..14], timing.hdisplay);
+                    put_u16(byte_order, &mut out[14..16], timing.hsync_start);
+                    put_u16(byte_order, &mut out[16..18], timing.hsync_end);
+                    put_u16(byte_order, &mut out[18..20], timing.htotal);
+                    put_u16(byte_order, &mut out[20..22], timing.hskew);
+                    put_u16(byte_order, &mut out[22..24], timing.vdisplay);
+                    put_u16(byte_order, &mut out[24..26], timing.vsync_start);
+                    put_u16(byte_order, &mut out[26..28], timing.vsync_end);
+                    put_u16(byte_order, &mut out[28..30], timing.vtotal);
+                    put_u32(byte_order, &mut out[32..36], timing.flags);
                     out
                 }
                 XClientReply::ShmCreateSegment { sequence } => {

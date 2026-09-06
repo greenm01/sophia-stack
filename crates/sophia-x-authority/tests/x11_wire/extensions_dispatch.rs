@@ -1431,3 +1431,198 @@ fn shm_descriptor_segments_refuse_a_bad_size_and_a_used_name() {
         result.outputs
     );
 }
+
+/// A 2560x1440 mode at a nominal 120 Hz, with the blanking a real panel has.
+///
+/// It does not run at 120: `497'751 kHz` over `2720 * 1525` pixels is
+/// 119.997 Hz. That gap is the reason this extension is worth answering, and
+/// the reason the nominal rate is kept beside the measured one rather than
+/// replaced by it.
+fn dp1_timing() -> sophia_protocol::OutputModeTiming {
+    sophia_protocol::OutputModeTiming {
+        clock_khz: 497_751,
+        hdisplay: 2560,
+        hsync_start: 2608,
+        hsync_end: 2640,
+        htotal: 2720,
+        hskew: 0,
+        vdisplay: 1440,
+        vsync_start: 1443,
+        vsync_end: 1448,
+        vtotal: 1525,
+        flags: 0,
+    }
+}
+
+fn vidmode_topology(timing: Option<sophia_protocol::OutputModeTiming>) -> OutputTopologySnapshot {
+    OutputTopologySnapshot {
+        generation: 1,
+        primary: OutputId::from_raw(1),
+        outputs: vec![OutputTopologyEntry {
+            output: OutputId::from_raw(1),
+            logical: Rect {
+                x: 0,
+                y: 0,
+                width: 2560,
+                height: 1440,
+            },
+            pixel_size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            scale: 1,
+            // Nominal, as a profile writes it and the matcher compares it.
+            refresh_millihz: 120_000,
+            timing,
+        }],
+    }
+}
+
+/// The modeline reported is the one the display is running.
+///
+/// Mesa implements `glXGetMscRateOML` by dividing this clock by these totals,
+/// so the arithmetic below is what a GL client ends up believing about the
+/// refresh rate. Brave asked for it once per frame and was told the extension
+/// did not exist.
+#[test]
+fn vidmode_reports_the_measured_modeline_not_the_nominal_rate() {
+    let namespace = NamespaceId::from_raw(80);
+    let mut runtime = XAuthorityRuntime::with_output_topology(vidmode_topology(Some(dp1_timing())))
+        .unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let result = dispatch_x11_wire_request(
+        dispatch_context(
+            namespace,
+            30,
+            XByteOrder::LittleEndian,
+            X_XF86_VIDMODE_MAJOR_OPCODE,
+        ),
+        XWireRequest::XF86VidModeGetModeLine { screen: 0 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let timing = match result.outputs.as_slice() {
+        [XClientOutput::Reply(XClientReply::XF86VidModeGetModeLine { timing, .. })] => *timing,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(timing, dp1_timing());
+
+    // What Mesa computes, and the point of the whole exercise: the measured
+    // rate is not the nominal one, and only this reply can say so.
+    let measured = timing.measured_refresh_millihz().unwrap();
+    assert_eq!(measured, 119_997);
+    assert_ne!(measured, 120_000);
+}
+
+/// An output with no measured timing is refused, not answered with a guess.
+///
+/// A client given invented timings computes a refresh rate from them and
+/// believes it. One given an error falls back to its own default and knows
+/// that it did.
+#[test]
+fn vidmode_refuses_an_output_whose_timing_was_never_measured() {
+    let namespace = NamespaceId::from_raw(81);
+    let mut runtime = XAuthorityRuntime::with_output_topology(vidmode_topology(None)).unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    for screen in [0u16, 3] {
+        let result = dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                31,
+                XByteOrder::LittleEndian,
+                X_XF86_VIDMODE_MAJOR_OPCODE,
+            ),
+            XWireRequest::XF86VidModeGetModeLine { screen },
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(
+            matches!(
+                result.outputs.as_slice(),
+                [XClientOutput::Error(XClientError {
+                    code: XErrorCode::BadValue,
+                    minor_code: 1,
+                    major_code: X_XF86_VIDMODE_MAJOR_OPCODE,
+                    ..
+                })]
+            ),
+            "screen {screen}: {:?}",
+            result.outputs
+        );
+    }
+}
+
+/// Version two is what makes `libXxf86vm` read the modern reply shape, and
+/// `SetClientVersion` is what it sends immediately afterwards.
+///
+/// Refusing that second request would end the exchange one step after the
+/// first had just succeeded. Everything else in the extension is declined by
+/// name, because Sophia owns modesetting and a client must not reach for it
+/// through a legacy extension.
+#[test]
+fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
+    let namespace = NamespaceId::from_raw(82);
+    let mut runtime = XAuthorityRuntime::with_output_topology(vidmode_topology(Some(dp1_timing())))
+        .unwrap();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let mut dispatch = |request| {
+        dispatch_x11_wire_request(
+            dispatch_context(
+                namespace,
+                32,
+                XByteOrder::LittleEndian,
+                X_XF86_VIDMODE_MAJOR_OPCODE,
+            ),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+    };
+
+    let version = dispatch(XWireRequest::XF86VidModeQueryVersion);
+    assert!(
+        matches!(
+            version.outputs.as_slice(),
+            [XClientOutput::Reply(XClientReply::XF86VidModeQueryVersion {
+                major_version: 2,
+                ..
+            })]
+        ),
+        "{:?}",
+        version.outputs
+    );
+
+    let client_version = dispatch(XWireRequest::XF86VidModeSetClientVersion {
+        major: 2,
+        minor: 2,
+    });
+    assert!(
+        client_version.outputs.is_empty(),
+        "SetClientVersion must be accepted silently: {:?}",
+        client_version.outputs
+    );
+
+    // SwitchToMode, as an example of the surface that stays closed.
+    let refused = dispatch(XWireRequest::XF86VidModeUnimplemented { minor_opcode: 10 });
+    assert!(
+        matches!(
+            refused.outputs.as_slice(),
+            [XClientOutput::Error(XClientError {
+                code: XErrorCode::BadRequest,
+                minor_code: 10,
+                major_code: X_XF86_VIDMODE_MAJOR_OPCODE,
+                ..
+            })]
+        ),
+        "{:?}",
+        refused.outputs
+    );
+}
