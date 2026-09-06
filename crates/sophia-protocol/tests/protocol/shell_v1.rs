@@ -241,9 +241,9 @@ fn shell_v1_rejects_reserved_and_unknown_envelope_fields() {
         required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
     })
     .unwrap();
-    frame[6..8].copy_from_slice(&114_u16.to_le_bytes());
+    frame[6..8].copy_from_slice(&123_u16.to_le_bytes());
     assert_eq!(
         decode_shell_v1_client_hello_frame(&frame),
-        Err(IpcCodecError::UnknownMessageKind(114))
+        Err(IpcCodecError::UnknownMessageKind(123))
     );
 }

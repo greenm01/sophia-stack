@@ -131,6 +131,15 @@ retain the change in exit criteria. Work through these stages in order.
   login applications. Native shortcut help was reported working in the
   installed session on 2026-09-06; see the research log.
 
+- [x] Implement the native application launcher through the generic revision-4
+  shell protocol: session-owned catalog and execution policy, Engine-owned
+  input/GPU presentation, and independent Narthex search. Hagia exposes only
+  session operation slot 7. See [application launcher](docs/application-launcher.md).
+- [ ] Install the coordinated Sophia/Hagia/Narthex changes and accept
+  Super+Space through normal use: search, keyboard/click activation, Escape,
+  terminal entries and opening a third window. The desktop-composition and
+  native-launcher configuration is staged; no live reload has been performed.
+
 #### 1. Recover reliably
 
 - [x] Preserve session-wide native evidence across scanout replacement,
@@ -464,13 +473,13 @@ tranche with a named driver and exit gate.
   2560x1440 at 120Hz, the profile requests exactly that, and the session runs
   it at 60. DP-2 is a DELL P2319H that tops out at 1920x1080 at 60, so it is
   already at its best and only DP-1 is waiting on this.
-- Define a bounded redacted workspace/layout/focus status feed and opaque
-  launcher action; add lock, screenshot, wallpaper, and audio through their
-  owning shell/session capabilities. The wire is not what blocks these:
+- Define a bounded redacted workspace/layout/focus status feed. The native
+  launcher action is implemented above; add lock, screenshot, wallpaper and
+  audio through their owning shell/session capabilities. The wire is not what blocks these:
   `SnapshotSessionOperation` (record kind 4, max 256) already advertises
   every operation with its slot each snapshot, and a policy client resolves
   slot to operation and sends `SessionOperationRequest`, so no revision is
-  needed. What is closed is this repository's own vocabulary — the five
+  needed. What is closed is this repository's own vocabulary — the
   variants of `DesktopSessionShortcut` in `crates/sophia-config/src/
   shortcut_candidate.rs` and `WmActionBehavior` in `.../types.rs` — plus each
   behavior's implementation, lock's being a security transition rather than a

@@ -20,6 +20,7 @@ pub struct DesktopSessionCandidate {
     pub digest: ConfigDigest,
     pub terminal: Option<String>,
     pub browser: Option<String>,
+    pub application_catalog: Option<String>,
     pub startup: Option<Vec<String>>,
     pub logout_enabled: Option<bool>,
     pub control: DesktopControlAccess,
@@ -144,6 +145,7 @@ pub fn prepare_desktop_session_candidate(
         digest: candidate.digest,
         terminal: None,
         browser: None,
+        application_catalog: None,
         startup: None,
         logout_enabled: None,
         control: DesktopControlAccess::Disabled,
@@ -154,6 +156,9 @@ pub fn prepare_desktop_session_candidate(
         match node.name().value() {
             "terminal" => prepared.terminal = Some(application_name(&node, "terminal")?),
             "browser" => prepared.browser = Some(application_name(&node, "browser")?),
+            "application-catalog" => {
+                prepared.application_catalog = Some(application_name(&node, "application-catalog")?)
+            }
             "startup" => {
                 prepared.startup = Some(application_names(
                     &node,

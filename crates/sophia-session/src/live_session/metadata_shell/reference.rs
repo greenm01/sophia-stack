@@ -92,7 +92,12 @@ impl LiveMetadataShell {
         scene: &sophia_renderer_live::LiveProductionCpuScene,
         mut native: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.connected || !self.transport.supports_shortcut_catalog() {
+        if (self.launcher_busy()
+            && self.reference.request.is_none()
+            && self.reference.pending.is_none())
+            || !self.connected
+            || !self.transport.supports_shortcut_catalog()
+        {
             return Ok(());
         }
         // An empty desktop can have a retired frame without a semantic input

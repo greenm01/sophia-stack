@@ -94,6 +94,8 @@ macro_rules! drain_physical_input {
                     chrome_captures: &mut chrome_captures,
                     descriptor_captures: &mut descriptor_captures,
                     reference_capture: &mut reference_capture,
+                    launcher_capture: &mut launcher_capture,
+                    launcher_keyboard: &mut launcher_keyboard,
                     route_lease_release_sender,
                     input_output,
                     input_presentation_epoch,
@@ -498,11 +500,18 @@ macro_rules! drain_physical_input {
                 }
             }
             if let Some(shell)=metadata_shell.as_mut() {
+                for event in &report.launcher_events {shell.launcher_input(event)?;}
                 for (output,epoch,operation) in &report.reference_operations {
                     if shell.reference_input()==Some((*output,*epoch)) {shell.queue_reference(*operation,*output);}
                 }
             }
             for action in report.wm_actions.iter().copied() {
+                if action==SHELL_HELP_SHORTCUT_ACTION || is_shell_switcher_shortcut(action){
+                    if let Some(shell)=metadata_shell.as_mut() && shell.launcher_busy(){
+                        shell.cancel_launcher()?;launcher_capture.present(None,0,&[],true);
+                        if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
+                    }
+                }
                 if action==SHELL_HELP_SHORTCUT_ACTION {
                     if let Some(shell)=metadata_shell.as_mut(){shell.queue_reference(sophia_protocol::ShellReferenceOperation::Toggle,wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id));}
                     continue;
@@ -1042,6 +1051,15 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if let Some(runtime)=runtime.as_mut() {
+                if let Err(error)=shell.service_launcher(config,xauthority,&mut session_launches,secondary_children,&mut launch_admission_started_at,runtime,&scene,native_scanout.as_mut()){
+                    crate::session_eprintln!("sophia_launcher status=unavailable error={error}");
+                    shell.cancel_launcher()?;
+                    shell.recover_transport("launcher_failure")?;
+                    runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;
+                    revoke_shell_input=true;
+                }
+                shell.update_launcher_capture(&mut launcher_capture);
+                if launcher_capture.active(){key_repeat.cancel_all();}
                 let shortcuts=wm_session.as_ref().and_then(LiveWmSession::reference_shortcuts);
                 let reference_output=wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id);
                 if let Err(error)=shell.service_reference(shortcuts,reference_output,runtime,&scene,native_scanout.as_mut()) {
@@ -1086,6 +1104,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if revoke_shell_input {
+                launcher_capture.present(None,0,&[],true);
                 reference_capture.present(None);
                 shell.revoke_interaction();
                 descriptor_captures.cancel_all();

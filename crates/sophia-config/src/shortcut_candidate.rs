@@ -46,6 +46,7 @@ pub enum DesktopSessionShortcut {
     LaunchBrowser,
     WindowSwitcher,
     ShortcutHelp,
+    ApplicationLauncher,
     /// Re-read the desktop profile and put it into effect, the way a window
     /// manager that ships its config in a file has to offer.
     ReloadProfile,
@@ -65,6 +66,7 @@ impl DesktopSessionShortcut {
             Self::LaunchBrowser => "spawn-browser",
             Self::WindowSwitcher => "window-switcher",
             Self::ShortcutHelp => "shortcut-help",
+            Self::ApplicationLauncher => "application-launcher",
             Self::ReloadProfile => "reload-profile",
             Self::RestartWm => "restart-wm",
         }
@@ -321,6 +323,7 @@ fn parse_target(
                 "spawn-browser" => DesktopSessionShortcut::LaunchBrowser,
                 "window-switcher" => DesktopSessionShortcut::WindowSwitcher,
                 "shortcut-help" => DesktopSessionShortcut::ShortcutHelp,
+                "application-launcher" => DesktopSessionShortcut::ApplicationLauncher,
                 "reload-profile" => DesktopSessionShortcut::ReloadProfile,
                 "restart-wm" => DesktopSessionShortcut::RestartWm,
                 _ => return Err(schema_error("unknown session shortcut capability")),

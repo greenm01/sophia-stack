@@ -10,6 +10,7 @@ pub(super) struct SessionProcessGuard {
 pub(super) struct ManagedSessionChild {
     pub(super) id: Option<String>,
     pub(super) launch_transaction: Option<TransactionId>,
+    pub(super) catalog_launch: bool,
     pub(super) child: Child,
 }
 
@@ -18,6 +19,7 @@ impl ManagedSessionChild {
         Self {
             id,
             launch_transaction: None,
+            catalog_launch: false,
             child,
         }
     }
@@ -26,6 +28,7 @@ impl ManagedSessionChild {
         Self {
             id,
             launch_transaction: Some(transaction),
+            catalog_launch: false,
             child,
         }
     }

@@ -460,7 +460,7 @@
                     let exiting_admission = launch_transaction.is_some_and(|transaction| {
                         session_launches
                             .admission()
-                            .is_some_and(|admission| admission.intent.transaction == transaction)
+                            .is_some_and(|admission| admission.intent.transaction == transaction && session_launches.catalog_admission(transaction)==secondary_children[secondary_index].catalog_launch)
                     });
                     if exiting_admission
                         && status.success()

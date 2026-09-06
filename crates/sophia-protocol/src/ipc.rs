@@ -37,3 +37,6 @@ pub use wm_translation::*;
 
 mod shell_reference;
 pub use shell_reference::*;
+
+mod shell_launcher;
+pub use shell_launcher::*;

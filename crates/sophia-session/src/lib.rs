@@ -15,6 +15,7 @@ macro_rules! session_eprintln {
 }
 pub(crate) use session_eprintln;
 
+pub mod application_catalog;
 pub mod backend_args;
 pub mod backend_evidence;
 #[cfg(feature = "native-session")]

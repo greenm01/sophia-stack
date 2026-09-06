@@ -557,6 +557,7 @@ pub(super) struct CommittedSessionActionRequests {
     pub logout: bool,
     pub reload_profile: bool,
     pub restart_wm: bool,
+    pub open_launcher: bool,
 }
 
 fn execute_committed_session_actions(
@@ -614,6 +615,10 @@ fn execute_committed_session_actions(
     let mut requests = CommittedSessionActionRequests::default();
     while let Some((transaction, action, target)) = actions.pop_front() {
         if let WmSessionAction::LaunchApplication { application } = action {
+            if application == LAUNCHER_APPLICATION_ID && config.application_catalog.is_some() {
+                requests.open_launcher = true;
+                continue;
+            }
             let placement_classification = config
                 .application_for_action(action)
                 .and_then(|application| application.placement_classification);
@@ -711,6 +716,10 @@ fn execute_committed_session_actions(
             "sophia_session_app schema=2 status=rejected source=action transaction={} reason=capacity",
             intent.transaction.raw(),
         );
+        return Ok(requests);
+    }
+    if launches.dispatch_catalog(intent.transaction) {
+        *launch_admission_started_at=Some(Instant::now());
         return Ok(requests);
     }
     let action = WmSessionAction::LaunchApplication {

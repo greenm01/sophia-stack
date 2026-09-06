@@ -44,6 +44,7 @@ pub(super) struct SessionApplicationConfig {
     pub(super) startup: Vec<String>,
     pub(super) terminal: Option<String>,
     pub(super) launcher: Option<String>,
+    pub(super) application_catalog: Option<String>,
     pub(super) browser: Option<String>,
     pub(super) logout_enabled: bool,
 }
@@ -55,6 +56,7 @@ impl Default for SessionApplicationConfig {
             startup: Vec::new(),
             terminal: None,
             launcher: None,
+            application_catalog: None,
             browser: None,
             logout_enabled: true,
         }
@@ -95,6 +97,7 @@ impl SessionApplicationConfig {
         browser_overridden: bool,
         startup_overridden: bool,
     ) -> Result<(), SessionApplicationConfigError> {
+        self.application_catalog = candidate.application_catalog.clone();
         if !terminal_overridden
             && let Some(terminal) = candidate.terminal.as_deref()
         {
@@ -163,6 +166,9 @@ impl SessionApplicationConfig {
                 sophia_config::DesktopShortcutTarget::Session(
                     sophia_config::DesktopSessionShortcut::WindowSwitcher | sophia_config::DesktopSessionShortcut::ShortcutHelp,
                 ) => shell_enabled,
+                sophia_config::DesktopShortcutTarget::Session(
+                    sophia_config::DesktopSessionShortcut::ApplicationLauncher,
+                ) => shell_enabled && self.application_catalog.is_some(),
                 // Always available. Neither needs a configured application,
                 // and a desktop whose configuration is wrong is the one that
                 // needs them most.

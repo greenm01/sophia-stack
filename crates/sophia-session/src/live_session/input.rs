@@ -12,6 +12,7 @@ struct PhysicalInputRouteReport {
     ingress_saturation: RoutedInputIngressSaturation,
     events: usize,
     wm_actions: Vec<WmActionId>,
+    launcher_events: Vec<sophia_engine::LauncherInputEvent>,
     reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
     chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
     descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
@@ -366,6 +367,8 @@ struct PhysicalInputRoutingContext<'a> {
     chrome_captures: &'a mut sophia_engine::ChromeCaptureState,
     descriptor_captures: &'a mut sophia_engine::PresentedChromeCaptureState,
     reference_capture: &'a mut sophia_engine::ReferenceSheetCapture,
+    launcher_capture: &'a mut sophia_engine::LauncherCapture,
+    launcher_keyboard: &'a mut sophia_engine::LauncherKeyboard,
     route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -409,11 +412,13 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         chrome_captures,
         descriptor_captures,
         reference_capture,
+        launcher_capture,
+        launcher_keyboard,
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
     } = context;
-    route_input_events_with_pointer_focus(
+    route_input_events_with_launcher(
         events,
         focus,
         committed_surfaces,
@@ -450,6 +455,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(input_projections),
         Some(pointer_outputs),
         Some(reference_capture),
+        Some((launcher_capture, launcher_keyboard)),
     )
 }
 
@@ -537,6 +543,86 @@ fn route_input_events_with_pointer_focus(
     emergency_chord: &mut EmergencyChordState,
     virtual_terminal_chord: &mut VirtualTerminalChordState,
     keyboard_coverage: &mut PhysicalKeyboardCoverage,
+    shortcuts: Option<&mut WmShortcutRouter>,
+    pointer: &mut SessionPointerPlacement,
+    pointer_routing_enabled: bool,
+    pointer_proof_required: bool,
+    pointer_buttons_only: bool,
+    routing_mode: PhysicalInputRoutingMode,
+    next_input_delivery: &mut u64,
+    now_msec: u64,
+    physical_text_proof: Option<&mut PhysicalTextProof>,
+    keyboard_focus_handoff: Option<&mut KeyboardFocusHandoffState>,
+    pointer_focus_handoff: Option<&mut PointerFocusHandoffState>,
+    applied_client_focus: Option<SurfaceId>,
+    floating_gesture: Option<&mut FloatingPointerGestureState>,
+    application_route_leases: Option<&mut ApplicationRouteLeaseState>,
+    chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
+    descriptor_captures: Option<&mut sophia_engine::PresentedChromeCaptureState>,
+    route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
+    input_output: Option<sophia_protocol::OutputId>,
+    input_presentation_epoch: u64,
+    input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,
+    pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
+    reference_capture: Option<&mut sophia_engine::ReferenceSheetCapture>,
+) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
+    route_input_events_with_launcher(
+        events,
+        focus,
+        committed_surfaces,
+        input_layers,
+        surface_roles,
+        client_routes,
+        input_sender,
+        modifiers,
+        key_repeat,
+        key_repeat_map,
+        client_keys,
+        emergency_chord,
+        virtual_terminal_chord,
+        keyboard_coverage,
+        shortcuts,
+        pointer,
+        pointer_routing_enabled,
+        pointer_proof_required,
+        pointer_buttons_only,
+        routing_mode,
+        next_input_delivery,
+        now_msec,
+        physical_text_proof,
+        keyboard_focus_handoff,
+        pointer_focus_handoff,
+        applied_client_focus,
+        floating_gesture,
+        application_route_leases,
+        chrome_captures,
+        descriptor_captures,
+        route_lease_release_sender,
+        input_output,
+        input_presentation_epoch,
+        input_projections,
+        pointer_outputs,
+        reference_capture,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn route_input_events_with_launcher(
+    events: Vec<sophia_protocol::InputEventPacket>,
+    focus: &InputFocusState,
+    committed_surfaces: &[CommittedSurfaceState],
+    input_layers: &[LayerSnapshot],
+    surface_roles: &BTreeMap<SurfaceId, sophia_protocol::SurfacePresentationRole>,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+    input_sender: &impl RoutedInputIngress,
+    modifiers: &mut XCoreKeyboardMapper,
+    key_repeat: &mut KeyRepeatState,
+    key_repeat_map: &XkbKeymapSnapshot,
+    client_keys: &mut SessionClientKeyState,
+    emergency_chord: &mut EmergencyChordState,
+    virtual_terminal_chord: &mut VirtualTerminalChordState,
+    keyboard_coverage: &mut PhysicalKeyboardCoverage,
     mut shortcuts: Option<&mut WmShortcutRouter>,
     pointer: &mut SessionPointerPlacement,
     pointer_routing_enabled: bool,
@@ -559,12 +645,14 @@ fn route_input_events_with_pointer_focus(
     input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,
     pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
     mut reference_capture: Option<&mut sophia_engine::ReferenceSheetCapture>,
+    mut launcher: Option<(&mut sophia_engine::LauncherCapture, &mut sophia_engine::LauncherKeyboard)>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         ingress_saturation: RoutedInputIngressSaturation::default(),
         events: events.len(),
         wm_actions: Vec::new(),
         reference_operations: Vec::new(),
+        launcher_events: Vec::new(),
         chrome_activations: Vec::new(),
         descriptor_activations: Vec::new(),
         chrome_captures_started: 0,
@@ -708,6 +796,8 @@ fn route_input_events_with_pointer_focus(
                 if !control_plane_applied {
                     report.keys_observed = report.keys_observed.saturating_add(1);
                     keyboard_coverage.observe_key(keycode, pressed);
+                    let launcher_text=launcher.as_mut().map(|(capture,keyboard)|keyboard.observe(keycode,pressed,capture.active()));
+
                     match virtual_terminal_chord.observe(keycode, pressed) {
                     VirtualTerminalChordAction::Pass => {}
                     VirtualTerminalChordAction::Consume => continue,
@@ -802,6 +892,13 @@ fn route_input_events_with_pointer_focus(
                         shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,keycode,pressed))
                     } else {None};
                     let switcher=decision.as_ref().is_some_and(|d|d.action.is_some_and(is_shell_switcher_shortcut));
+                    let help=decision.as_ref().is_some_and(|d|d.action==Some(SHELL_HELP_SHORTCUT_ACTION));
+                    if !switcher && !help && let Some((capture,keyboard))=launcher.as_mut() {
+                        let (text,clear)=launcher_text.as_ref().map_or((None,false),|(text,clear)|(text.as_deref(),*clear));
+                        let(consumed,input)=capture.route(&event,text,pointer.position(),clear,keyboard.command_modifier_active());
+                        report.launcher_events.extend(input);
+                        if consumed {key_repeat.cancel_seat(event.seat);continue;}
+                    }
                     if !switcher && let Some(capture)=reference_capture.as_deref_mut() {
                         let (consumed,operation)=capture.route(&event);
                         report.reference_operations.extend(operation);
@@ -988,6 +1085,15 @@ fn route_input_events_with_pointer_focus(
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }
             | sophia_protocol::InputEventKind::PointerAxis { .. }) => {
+                if !control_plane_applied && let Some((capture,_))=launcher.as_mut() {
+                    if capture.active() && matches!(kind,sophia_protocol::InputEventKind::PointerMotion){
+                        let focused=focus.focused_surface(event.seat);
+                        let _=place_pointer_event_for_routing(&mut event,focused,input_layers,pointer,false);
+                    }
+                    let(consumed,input)=capture.route(&event,None,pointer.position(),false,false);
+                    report.launcher_events.extend(input);
+                    if consumed{continue;}
+                }
                 if !control_plane_applied && let Some(capture)=reference_capture.as_deref_mut() {
                     let (consumed,operation)=capture.route(&event);
                     report.reference_operations.extend(operation);

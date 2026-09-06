@@ -486,3 +486,12 @@ logic without physical hardware with:
 ```sh
 tools/check_sophia_native_chrome_verifier.sh
 ```
+
+## Application catalogs
+
+Core `session` blocks may define named `application-catalog` records with an
+explicit `launch-policy="trusted-host"`, approved absolute source directories,
+registered application names and an optional terminal adapter. Desktop profiles
+select a catalog by name and bind `session:application-launcher`. Catalog policy
+and selection take effect at the next login. See
+[application launcher](application-launcher.md) for the complete configuration.

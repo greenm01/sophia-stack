@@ -14,5 +14,7 @@ sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
 tracing.workspace = true
 
+xkbcommon = "0.8"
+
 [lints]
 workspace = true

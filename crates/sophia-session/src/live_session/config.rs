@@ -59,6 +59,7 @@ struct PersistentXtermSessionConfig {
     session_profile: PreparedSessionProfile,
     control_access: sophia_config::DesktopControlAccess,
     control_socket: Option<std::path::PathBuf>,
+    application_catalog: Option<sophia_config::ApplicationCatalogConfig>,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
     max_ticks: Option<usize>,
@@ -346,6 +347,10 @@ impl PersistentXtermSessionConfig {
             Self::applications_from_core(core_snapshot)?,
             session_profile_candidate,
         )?;
+        let application_catalog = session_profile_candidate.application_catalog.as_ref().map(|name| {
+            core_snapshot.session.application_catalogs.iter().find(|c| &c.name == name).cloned()
+                .ok_or("desktop selects an unknown application catalog")
+        }).transpose()?;
         // An explicit empty login list has no application whose first frame
         // could satisfy the launcher's application watchdog.
         let startup_ready_timeout = if normal_session && applications.startup.is_empty()
@@ -1036,6 +1041,7 @@ impl PersistentXtermSessionConfig {
             _session_application_overrides: session_application_overrides,
             control_access: session_profile.candidate().control,
             control_socket: None,
+            application_catalog,
             session_profile,
             max_ticks,
             inject_text,

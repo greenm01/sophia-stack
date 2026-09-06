@@ -1,9 +1,11 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=3 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=4 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
     capability "descriptor_switcher" bit=0
     capability "work_area_reservation" bit=1
     capability "tab_groups" bit=2 since=2
     capability "shortcut_catalog" bit=3 since=3
     capability "reference_sheet" bit=4 since=3
+    capability "application_catalog" bit=5 since=4
+    capability "application_launcher" bit=6 since=4 requires="application_catalog"
 
     outcome "prepared" value=1
     outcome "presented" value=2
@@ -220,5 +222,88 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "pages" type="u16"
         field "outcome" type="u16"
         field "reserved" type="u16" reserved=#true
+    }
+
+    // Revision 4 catalog slots are display references, never launch grants.
+    // See docs/application-launcher.md for state, bounds and revocation rules.
+    message "ApplicationsBegin" kind=114 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "entry_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ApplicationsEntry" kind=115 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "slot" type="u16"
+        field "available" type="u16"
+        field "label" type="string-u16"
+        field "keywords" type="string-u16"
+    }
+    message "ApplicationsEnd" kind=116 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+    }
+    message "LauncherRequest" kind=117 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "output" type="u64"
+        field "output_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "operation" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "query" type="string-u16"
+    }
+    message "LauncherCandidate" kind=118 direction="shell-to-session" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="u64"
+        field "visible" type="u16"
+        field "selected" type="u16"
+        field "entry_count" type="u16"
+        field "font_size" type="u16"
+        field "colors" type="u32[4]"
+        field "entries" type="u16[entry_count]"
+    }
+    message "LauncherOutcome" kind=119 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "kind" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "LauncherActivation" kind=120 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "LauncherActivationAck" kind=121 direction="shell-to-session" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "consumed" type="u16"
+    }
+    message "LaunchOutcome" kind=122 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "status" type="u16"
     }
 }

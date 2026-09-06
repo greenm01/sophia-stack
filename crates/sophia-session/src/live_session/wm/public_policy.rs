@@ -1980,6 +1980,9 @@ fn public_session_operations(
     // whose configuration is wrong is exactly the one that needs them.
     admit(5, token(5), WmSessionAction::ReloadProfile, false);
     admit(6, token(6), WmSessionAction::RestartWm, false);
+    if config.application_catalog.is_some() {
+        admit(7, token(7), WmSessionAction::LaunchApplication { application: LAUNCHER_APPLICATION_ID }, false);
+    }
     (operations, actions)
 }
 

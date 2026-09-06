@@ -722,6 +722,7 @@ fn validate_setting(
             "window-manager",
             "shell-client",
             "shell-config",
+            "application-catalog",
         ]
         .contains(&name),
         DesktopAuthority::Input => {

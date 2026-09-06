@@ -990,6 +990,7 @@ dependencies = [
  "sophia-protocol",
  "sophia-runtime",
  "tracing",
+ "xkbcommon",
 ]
 
 [[package]]

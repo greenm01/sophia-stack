@@ -137,7 +137,7 @@ impl ShellSessionTransport {
         let hello = decode_shell_v1_client_hello_frame(&read_frame(&mut stream)?)?;
         if hello.minimum_revision == 0
             || hello.minimum_revision > hello.maximum_revision
-            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_REFERENCE_REVISION
+            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_LAUNCHER_REVISION
         {
             return Err(ShellTransportError::UnsupportedRevision);
         }
@@ -146,7 +146,7 @@ impl ShellSessionTransport {
         }
         let revision = hello
             .maximum_revision
-            .min(sophia_protocol::SOPHIA_SHELL_REFERENCE_REVISION);
+            .min(sophia_protocol::SOPHIA_SHELL_LAUNCHER_REVISION);
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | if revision >= 2 {
@@ -162,6 +162,19 @@ impl ShellSessionTransport {
             } else {
                 0
             };
+        let launcher_mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER;
+        let capabilities = capabilities
+            | if revision >= 4 {
+                hello.required_capabilities & launcher_mask
+            } else {
+                0
+            };
+        if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER != 0
+            && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG == 0
+        {
+            return Err(ShellTransportError::MissingCapability);
+        }
         if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET != 0
             && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG == 0
         {
@@ -406,6 +419,12 @@ impl ShellSessionTransport {
     pub const fn supports_reference(&self) -> bool {
         let mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET;
+        self.capabilities & mask == mask
+    }
+
+    pub const fn supports_launcher(&self) -> bool {
+        let mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER;
         self.capabilities & mask == mask
     }
 

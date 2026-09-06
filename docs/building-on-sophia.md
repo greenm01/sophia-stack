@@ -17,6 +17,11 @@ bounded presentation candidates. See [reference sheets](shell-reference-sheets.m
 for the generic wire, private shell configuration, and shared JetBrains Mono
 presentation default. WM clients do not render this UI or receive its contents.
 
+Native application launchers use revision 4's catalog and presented activation
+exchange. The session owns source policy and execution, the shell owns search and
+ordering, and Engine owns text input, GPU drawing and hit testing. The WM receives
+only the operation that opens the menu. See [application launchers](application-launcher.md).
+
 ## The One Rule
 
 Sophia doesn't divide the desktop by feature. It divides it by who may see

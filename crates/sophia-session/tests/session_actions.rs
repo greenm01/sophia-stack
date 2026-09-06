@@ -158,3 +158,24 @@ fn a_withdrawal_without_an_outstanding_launch_is_not_an_outcome() {
     assert!(queue.withdraw_current(&[SurfaceId::new(7, 1)]).is_none());
     assert_eq!(queue.withdrawn(), 0);
 }
+
+#[test]
+fn catalog_authority_is_scoped_to_origin_even_when_transactions_collide() {
+    let mut queue = SessionLaunchQueue::default();
+    let same = intent(7);
+    queue.enqueue(same, 0);
+    queue.enqueue_catalog(same, 0);
+    queue.begin_next(true, true).unwrap();
+    assert!(!queue.dispatch_catalog(same.transaction));
+    queue.cancel_catalog(same.transaction);
+    assert_eq!(queue.admission().unwrap().intent, same);
+    assert_eq!(queue.pending_len(), 0);
+    queue.fail_current();
+    queue.enqueue_catalog(same, 0);
+    queue.begin_next(true, true).unwrap();
+    assert!(queue.dispatch_catalog(same.transaction));
+    assert!(!queue.dispatch_catalog(same.transaction));
+    assert_eq!(queue.take_catalog_dispatch(), Some(same.transaction));
+    queue.cancel_catalog(same.transaction);
+    assert!(queue.admission().is_none());
+}

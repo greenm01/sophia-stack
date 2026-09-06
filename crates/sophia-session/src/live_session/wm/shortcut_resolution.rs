@@ -18,6 +18,7 @@ fn session_shortcut_identity(
         sophia_config::DesktopSessionShortcut::Logout => Some((4, "logout")),
         sophia_config::DesktopSessionShortcut::ReloadProfile => Some((5, "reload-profile")),
         sophia_config::DesktopSessionShortcut::RestartWm => Some((6, "restart-wm")),
+        sophia_config::DesktopSessionShortcut::ApplicationLauncher => Some((7, "application-launcher")),
         sophia_config::DesktopSessionShortcut::WindowSwitcher | sophia_config::DesktopSessionShortcut::ShortcutHelp => None,
     }
 }

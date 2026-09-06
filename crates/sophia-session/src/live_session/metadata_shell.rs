@@ -1,5 +1,7 @@
 use super::*;
+mod launcher;
 mod reference;
+use launcher::LiveLauncherSession;
 mod tabs;
 use reference::LiveReferenceSession;
 use tabs::LiveTabSession;
@@ -68,6 +70,7 @@ struct PendingDescriptorActivation {
 pub(super) struct LiveMetadataShell {
     tabs: LiveTabSession,
     reference: LiveReferenceSession,
+    launcher: LiveLauncherSession,
     supervisor: ProcessSupervisor,
     transport: sophia_runtime::ShellSessionTransport,
     slots: BTreeMap<SurfaceId, u16>,
@@ -136,6 +139,7 @@ impl LiveMetadataShell {
         let mut shell = Self {
             tabs: LiveTabSession::default(),
             reference: LiveReferenceSession::default(),
+            launcher: LiveLauncherSession::default(),
             supervisor,
             transport,
             slots: BTreeMap::new(),
@@ -657,6 +661,7 @@ impl LiveMetadataShell {
         self.activating = None;
         self.tabs = LiveTabSession::default();
         self.reset_reference();
+        self.reset_launcher();
         self.pending = None;
         self.presented = None;
         self.presented_actions.clear();

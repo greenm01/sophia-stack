@@ -145,3 +145,12 @@ The first command validates Sophia's sections and the profile structure. The
 second shows the parsed choices and their source. WM settings are validated by
 the selected WM before the graphical session is admitted. Shell-specific
 settings are validated by the shell that reads them.
+
+## Application menus
+
+Choose a named `application-catalog` in the desktop profile and bind
+`session:application-launcher` to open it. The core configuration defines the
+catalog sources and execution policy; your native shell supplies search and
+selection. This adds no launcher process to WM startup. See
+[application launcher](application-launcher.md) for the configuration and trust
+boundary.

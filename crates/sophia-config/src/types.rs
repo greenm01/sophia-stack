@@ -177,6 +177,17 @@ pub struct ApplicationConfig {
 pub struct SessionConfig {
     pub applications: Vec<ApplicationConfig>,
     pub startup: Vec<u64>,
+    pub application_catalogs: Vec<ApplicationCatalogConfig>,
+}
+
+/// Operator-owned launch policy. Desktop entries supply commands, never policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplicationCatalogConfig {
+    pub name: String,
+    pub sources: Vec<PathBuf>,
+    pub applications: Vec<String>,
+    pub terminal: Option<String>,
+    pub terminal_arguments: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

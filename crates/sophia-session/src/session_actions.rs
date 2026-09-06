@@ -46,7 +46,9 @@ pub enum SessionLaunchQueueOutcome {
 
 #[derive(Debug, Default)]
 pub struct SessionLaunchQueue {
-    pending: VecDeque<SessionLaunchIntent>,
+    pending: VecDeque<(SessionLaunchIntent, bool)>,
+    admission_from_catalog: bool,
+    catalog_dispatch: Option<TransactionId>,
     admission: Option<SessionLaunchAdmission>,
     peak_depth: usize,
     rejected: usize,
@@ -55,6 +57,49 @@ pub struct SessionLaunchQueue {
 }
 
 impl SessionLaunchQueue {
+    pub fn enqueue_catalog(
+        &mut self,
+        intent: SessionLaunchIntent,
+        active: usize,
+    ) -> SessionLaunchQueueOutcome {
+        let result = self.enqueue(intent, active);
+        if matches!(result, SessionLaunchQueueOutcome::Queued { .. }) {
+            self.pending
+                .back_mut()
+                .expect("successful enqueue retains an entry")
+                .1 = true;
+        }
+        result
+    }
+    /// Transactions are scoped to their issuer. A WM transaction with the
+    /// same number cannot consume or cancel a shell-authorized launch.
+    pub fn catalog_admission(&self, transaction: TransactionId) -> bool {
+        self.admission_from_catalog
+            && self
+                .admission
+                .is_some_and(|a| a.intent.transaction == transaction)
+    }
+    pub fn dispatch_catalog(&mut self, transaction: TransactionId) -> bool {
+        if !self.catalog_admission(transaction) || self.catalog_dispatch.is_some() {
+            return false;
+        }
+        self.catalog_dispatch = Some(transaction);
+        true
+    }
+    pub fn take_catalog_dispatch(&mut self) -> Option<TransactionId> {
+        self.catalog_dispatch.take()
+    }
+    pub fn cancel_catalog(&mut self, transaction: TransactionId) {
+        self.pending
+            .retain(|(intent, catalog)| !catalog || intent.transaction != transaction);
+        if self.catalog_dispatch == Some(transaction) {
+            self.catalog_dispatch = None;
+        }
+        if self.catalog_admission(transaction) {
+            self.admission = None;
+        }
+    }
+
     pub fn enqueue(
         &mut self,
         intent: SessionLaunchIntent,
@@ -66,7 +111,7 @@ impl SessionLaunchQueue {
             self.rejected = self.rejected.saturating_add(1);
             return SessionLaunchQueueOutcome::RejectedCapacity;
         }
-        self.pending.push_back(intent);
+        self.pending.push_back((intent, false));
         self.peak_depth = self.peak_depth.max(self.pending.len());
         SessionLaunchQueueOutcome::Queued {
             depth: self.pending.len(),
@@ -81,7 +126,8 @@ impl SessionLaunchQueue {
         if !startup_ready || !admission_pipeline_idle || self.admission.is_some() {
             return None;
         }
-        let intent = self.pending.pop_front()?;
+        let (intent, catalog) = self.pending.pop_front()?;
+        self.admission_from_catalog = catalog;
         self.admission = Some(SessionLaunchAdmission {
             intent,
             observed_surfaces: [None; SESSION_ACTION_SURFACE_CAPACITY],
@@ -171,6 +217,7 @@ impl SessionLaunchQueue {
     pub fn cancel_pending(&mut self) -> usize {
         let cancelled = self.pending.len();
         self.pending.clear();
+        self.catalog_dispatch = None;
         cancelled
     }
 

@@ -62,6 +62,15 @@ pub enum IpcMessageKind {
     ShellReferenceRequest = 111,
     ShellReferenceCandidate = 112,
     ShellReferenceOutcome = 113,
+    ShellApplicationsBegin = 114,
+    ShellApplicationsEntry = 115,
+    ShellApplicationsEnd = 116,
+    ShellLauncherRequest = 117,
+    ShellLauncherCandidate = 118,
+    ShellLauncherOutcome = 119,
+    ShellLauncherActivation = 120,
+    ShellLauncherActivationAck = 121,
+    ShellLaunchOutcome = 122,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

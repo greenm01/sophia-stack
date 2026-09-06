@@ -151,3 +151,6 @@ override the ownership and trust rules in the normative architecture.
 Historical documents are evidence, not current architecture. XLibre bridge
 types, XComposite mirror paths, and prototype routed-input extensions must not
 be cited as active Sophia interfaces.
+
+- [Application launcher](application-launcher.md) defines native catalog selection,
+  trusted-host execution and the revision-4 shell exchange.
