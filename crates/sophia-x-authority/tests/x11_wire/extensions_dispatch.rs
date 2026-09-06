@@ -1693,14 +1693,12 @@ fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
     }
 }
 
-/// The RENDER handshake answers before the extension is advertised, and the
-/// formats it reports are the visuals' formats.
+/// The RENDER handshake answers the lower version, and the formats it
+/// reports are the visuals' formats.
 ///
-/// The advertisement stays off until the compositing core behind it answers
-/// -- QueryExtension presence alone licenses a client to send CreatePicture
-/// and Composite, so flipping it on with only the handshake implemented would
-/// repeat the MIT-SHM over-promise. The handshake itself must still be
-/// correct, which is what this proves.
+/// A client binds a picture format to a visual and expects the bytes it drew
+/// through core requests to mean the same thing through RENDER, so agreement
+/// between the two tables is the whole reply.
 #[test]
 fn render_handshake_answers_the_lower_version_and_the_visuals_formats() {
     let namespace = NamespaceId::from_raw(86);
@@ -1708,23 +1706,6 @@ fn render_handshake_answers_the_lower_version_and_the_visuals_formats() {
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
     let mut properties = XPropertyTable::new();
-
-    // Not yet advertised: a client asking by name is told the extension is
-    // absent, whatever the dispatcher can already answer.
-    let query = decode_x11_core_request(
-        context(namespace, 700, byte_order),
-        &query_extension_request(byte_order, X_RENDER_EXTENSION_NAME),
-    )
-    .unwrap();
-    let result = dispatch_x11_wire_request(
-        dispatch_context(namespace, 1, byte_order, 98),
-        query,
-        &mut runtime,
-        &mut atoms,
-        &mut properties,
-    );
-    let encoded = result.encoded_outputs(byte_order);
-    assert_eq!(encoded[0][8], 0, "RENDER must not be advertised yet");
 
     // The version answered is the lower of the two.
     for (asked, answered) in [((0, 99), (0, 4)), ((0, 2), (0, 2)), ((1, 0), (0, 4))] {
@@ -1879,7 +1860,7 @@ fn render_refusals_split_between_not_offered_and_not_that_version() {
 
     // Within the advertised 0.4: the never-implemented five, the declined
     // trapezoid family, and the base requests still to be implemented.
-    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 17] {
+    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21] {
         let (code, named) = refusal_for(minor);
         assert_eq!(code, XErrorCode::BadImplementation, "minor {minor}");
         assert_eq!(named, u16::from(minor));
@@ -2554,4 +2535,222 @@ fn render_composite_onto_an_opaque_format_discards_result_alpha() {
     ));
     assert_eq!(RenderFixture::error_of(&result), None);
     assert_eq!(fixture.pixel(0, 0), [0xff, 0, 0, 0], "alpha byte stays zero");
+}
+
+impl RenderFixture {
+    const GLYPHSET: u32 = 0x0020_0130;
+
+    fn add_glyphset(&mut self, format: u32) {
+        let request = render_create_glyph_set_request(Self::ORDER, Self::GLYPHSET, format);
+        assert!(self.send(&request).outputs.is_empty(), "glyph set create");
+    }
+}
+
+/// Antialiased glyph coverage attenuates the source colour, which is what
+/// makes text drawn through RENDER look like text rather than a bitmap.
+///
+/// The A8 coverage byte is the whole point of the extension for a toolkit:
+/// a client uploads partial coverage at a glyph's edges and expects the
+/// server to blend it, and asserting the blended byte is what proves the
+/// coverage was honoured rather than thresholded.
+#[test]
+fn render_composite_glyphs_blends_coverage_into_the_destination() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    fixture.add_source(1, 1, true);
+    // An opaque red source, repeating, which is how a client paints text in
+    // one colour.
+    fixture.fill_source(
+        [0xffff, 0, 0, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+    fixture.add_glyphset(X_RENDER_FORMAT_A8);
+
+    // A 2x1 glyph: one pixel fully covered, one half covered. The A8 stride
+    // pads to four bytes.
+    let request = render_add_glyphs_request(
+        RenderFixture::ORDER,
+        RenderFixture::GLYPHSET,
+        &[(7, [2, 1], [0, 0, 2, 0], vec![0xff, 0x80, 0, 0])],
+    );
+    assert!(fixture.send(&request).outputs.is_empty(), "add glyphs");
+
+    let result = fixture.send(&render_composite_glyphs8_request(
+        RenderFixture::ORDER,
+        3,
+        RenderFixture::SOURCE_PICTURE,
+        RenderFixture::PICTURE,
+        X_RENDER_FORMAT_A8,
+        RenderFixture::GLYPHSET,
+        0,
+        0,
+        (1, 1),
+        &[7],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+
+    // Full coverage passes the source through unchanged.
+    assert_eq!(fixture.pixel(1, 1), [0, 0, 0xff, 0xff], "covered pixel");
+    // Half coverage scales the premultiplied source: 0xff * 0x80 / 255 = 0x80
+    // in both the red channel and alpha, over a transparent destination.
+    assert_eq!(fixture.pixel(2, 1), [0, 0, 0x80, 0x80], "half-covered pixel");
+    // Outside the glyph nothing was drawn.
+    assert_eq!(fixture.pixel(3, 1), [0, 0, 0, 0], "beyond the glyph");
+    assert_eq!(fixture.pixel(1, 0), [0, 0, 0, 0], "above the glyph");
+}
+
+/// A referenced glyph set shares storage with the set it names.
+///
+/// The protocol says the second name refers to the same glyphs rather than
+/// copying them, so a glyph added through one name is visible through the
+/// other, and the contents survive until the last name is freed. A client
+/// that frees the original and keeps drawing through the reference is doing
+/// something the protocol allows.
+#[test]
+fn render_referenced_glyph_sets_share_storage_and_outlive_the_first_name() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    fixture.add_source(1, 1, true);
+    fixture.fill_source(
+        [0xffff, 0xffff, 0xffff, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+    fixture.add_glyphset(X_RENDER_FORMAT_A8);
+
+    let reference = 0x0020_0131;
+    let request =
+        render_reference_glyph_set_request(RenderFixture::ORDER, reference, RenderFixture::GLYPHSET);
+    assert!(fixture.send(&request).outputs.is_empty(), "reference");
+
+    // Added through the original name.
+    let add = render_add_glyphs_request(
+        RenderFixture::ORDER,
+        RenderFixture::GLYPHSET,
+        &[(3, [1, 1], [0, 0, 1, 0], vec![0xff, 0, 0, 0])],
+    );
+    assert!(fixture.send(&add).outputs.is_empty());
+
+    // Freeing the original must not take the glyphs with it.
+    let free = render_free_glyph_set_request(RenderFixture::ORDER, RenderFixture::GLYPHSET);
+    assert!(fixture.send(&free).outputs.is_empty(), "free original");
+
+    let result = fixture.send(&render_composite_glyphs8_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::SOURCE_PICTURE,
+        RenderFixture::PICTURE,
+        X_RENDER_FORMAT_A8,
+        reference,
+        0,
+        0,
+        (0, 0),
+        &[3],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(0, 0), [0xff, 0xff, 0xff, 0xff]);
+
+    // The original name is genuinely gone.
+    let stale = fixture.send(&render_composite_glyphs8_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::SOURCE_PICTURE,
+        RenderFixture::PICTURE,
+        X_RENDER_FORMAT_A8,
+        RenderFixture::GLYPHSET,
+        0,
+        0,
+        (0, 0),
+        &[3],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&stale),
+        Some(XErrorCode::RenderGlyphSet)
+    );
+}
+
+/// A run naming a glyph the set does not hold draws nothing at all.
+///
+/// Resolving every glyph before drawing any is what makes the refusal clean:
+/// a client that gets an error and redraws would otherwise find the prefix
+/// of its run already on screen and draw it twice.
+#[test]
+fn render_composite_glyphs_refuses_an_unknown_glyph_without_drawing_the_prefix() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    fixture.add_source(1, 1, true);
+    fixture.fill_source(
+        [0xffff, 0xffff, 0xffff, 0xffff],
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+    );
+    fixture.add_glyphset(X_RENDER_FORMAT_A8);
+    let add = render_add_glyphs_request(
+        RenderFixture::ORDER,
+        RenderFixture::GLYPHSET,
+        &[(1, [1, 1], [0, 0, 1, 0], vec![0xff, 0, 0, 0])],
+    );
+    assert!(fixture.send(&add).outputs.is_empty());
+
+    // Glyph 1 exists, glyph 2 does not.
+    let result = fixture.send(&render_composite_glyphs8_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::SOURCE_PICTURE,
+        RenderFixture::PICTURE,
+        X_RENDER_FORMAT_A8,
+        RenderFixture::GLYPHSET,
+        0,
+        0,
+        (0, 0),
+        &[1, 2],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&result),
+        Some(XErrorCode::RenderGlyph)
+    );
+    assert_eq!(fixture.pixel(0, 0), [0, 0, 0, 0], "prefix must not draw");
+}
+
+/// AddGlyphs whose image bytes do not cover its glyph table is refused, and
+/// leaves the set untouched.
+#[test]
+fn render_add_glyphs_refuses_data_shorter_than_its_glyph_table() {
+    let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+    fixture.add_glyphset(X_RENDER_FORMAT_A8);
+    // A 4x4 A8 glyph needs sixteen bytes; four are supplied.
+    let request = render_add_glyphs_request(
+        RenderFixture::ORDER,
+        RenderFixture::GLYPHSET,
+        &[(9, [4, 4], [0, 0, 4, 0], vec![0xff, 0xff, 0xff, 0xff])],
+    );
+    assert_eq!(
+        RenderFixture::error_of(&fixture.send(&request)),
+        Some(XErrorCode::BadLength)
+    );
+}
+
+/// RENDER is advertised, with its own error base, now that the requests
+/// behind the advertised version answer.
+#[test]
+fn render_is_advertised_once_its_requests_answer() {
+    let mut fixture = RenderFixture::new();
+    let result = fixture.send(&query_extension_request(
+        RenderFixture::ORDER,
+        X_RENDER_EXTENSION_NAME,
+    ));
+    let encoded = result.encoded_outputs(RenderFixture::ORDER);
+    assert_eq!(encoded[0][8], 1, "present");
+    assert_eq!(encoded[0][9], X_RENDER_MAJOR_OPCODE);
+    assert_eq!(encoded[0][11], X_RENDER_FIRST_ERROR, "first error");
 }

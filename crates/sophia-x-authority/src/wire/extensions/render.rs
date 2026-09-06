@@ -109,6 +109,127 @@ fn decode_render(
                 height: context.byte_order.u16(&bytes[34..36]),
             })
         }
+        X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE => {
+            require_exact_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
+            let glyphset = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(glyphset)?;
+            Ok(XWireRequest::RenderCreateGlyphSet {
+                glyphset: XResourceId::new(u64::from(glyphset), 1),
+                format: context.byte_order.u32(&bytes[8..12]),
+            })
+        }
+        X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE => {
+            require_exact_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
+            let glyphset = context.byte_order.u32(&bytes[4..8]);
+            context.validate_new_resource_id(glyphset)?;
+            Ok(XWireRequest::RenderReferenceGlyphSet {
+                glyphset: XResourceId::new(u64::from(glyphset), 1),
+                existing: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+            })
+        }
+        X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE => {
+            require_exact_len(X_RENDER_MAJOR_OPCODE, 8, bytes.len())?;
+            Ok(XWireRequest::RenderFreeGlyphSet {
+                glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+            })
+        }
+        X_RENDER_ADD_GLYPHS_MINOR_OPCODE => {
+            require_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
+            let count = context.byte_order.u32(&bytes[8..12]);
+            // The count is a CARD32 and the glyph table that follows is
+            // bounded by the request itself; check the two agree before
+            // allocating anything sized by the client's number.
+            let count = usize::try_from(count).map_err(|_| XWireParseError::InvalidLength {
+                opcode: X_RENDER_MAJOR_OPCODE,
+                expected_at_least: 12,
+                actual: bytes.len(),
+            })?;
+            let table_len = count.checked_mul(12).ok_or(XWireParseError::InvalidLength {
+                opcode: X_RENDER_MAJOR_OPCODE,
+                expected_at_least: 12,
+                actual: bytes.len(),
+            })?;
+            let ids_len = count.checked_mul(4).ok_or(XWireParseError::InvalidLength {
+                opcode: X_RENDER_MAJOR_OPCODE,
+                expected_at_least: 12,
+                actual: bytes.len(),
+            })?;
+            let header_len = 12usize
+                .checked_add(ids_len)
+                .and_then(|len| len.checked_add(table_len))
+                .ok_or(XWireParseError::InvalidLength {
+                    opcode: X_RENDER_MAJOR_OPCODE,
+                    expected_at_least: 12,
+                    actual: bytes.len(),
+                })?;
+            require_len(X_RENDER_MAJOR_OPCODE, header_len, bytes.len())?;
+            let ids = bytes[12..12 + ids_len]
+                .chunks_exact(4)
+                .map(|id| context.byte_order.u32(id))
+                .collect::<Vec<_>>();
+            let mut glyphs = Vec::with_capacity(count);
+            for entry in bytes[12 + ids_len..header_len].chunks_exact(12) {
+                glyphs.push(XRenderGlyphInfo {
+                    width: context.byte_order.u16(&entry[0..2]),
+                    height: context.byte_order.u16(&entry[2..4]),
+                    x: context.byte_order.i16(&entry[4..6]),
+                    y: context.byte_order.i16(&entry[6..8]),
+                    off_x: context.byte_order.i16(&entry[8..10]),
+                    off_y: context.byte_order.i16(&entry[10..12]),
+                });
+            }
+            Ok(XWireRequest::RenderAddGlyphs {
+                glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                ids,
+                glyphs,
+                data: bytes[header_len..].to_vec(),
+            })
+        }
+        X_RENDER_FREE_GLYPHS_MINOR_OPCODE => {
+            require_len(X_RENDER_MAJOR_OPCODE, 8, bytes.len())?;
+            if !(bytes.len() - 8).is_multiple_of(4) {
+                return Err(XWireParseError::InvalidLength {
+                    opcode: X_RENDER_MAJOR_OPCODE,
+                    expected_at_least: 8,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(XWireRequest::RenderFreeGlyphs {
+                glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                ids: bytes[8..]
+                    .chunks_exact(4)
+                    .map(|id| context.byte_order.u32(id))
+                    .collect(),
+            })
+        }
+        minor @ (X_RENDER_COMPOSITE_GLYPHS_8_MINOR_OPCODE
+        | X_RENDER_COMPOSITE_GLYPHS_16_MINOR_OPCODE
+        | X_RENDER_COMPOSITE_GLYPHS_32_MINOR_OPCODE) => {
+            require_len(X_RENDER_MAJOR_OPCODE, 28, bytes.len())?;
+            let id_width = match minor {
+                X_RENDER_COMPOSITE_GLYPHS_8_MINOR_OPCODE => 1,
+                X_RENDER_COMPOSITE_GLYPHS_16_MINOR_OPCODE => 2,
+                _ => 4,
+            };
+            Ok(XWireRequest::RenderCompositeGlyphs {
+                op: bytes[4],
+                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+                destination: XResourceId::new(
+                    u64::from(context.byte_order.u32(&bytes[12..16])),
+                    1,
+                ),
+                mask_format: context.byte_order.u32(&bytes[16..20]),
+                glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[20..24])), 1),
+                source_x: context.byte_order.i16(&bytes[24..26]),
+                source_y: context.byte_order.i16(&bytes[26..28]),
+                elements: decode_render_glyph_elements(
+                    context.byte_order,
+                    &bytes[28..],
+                    id_width,
+                ),
+                minor_opcode: minor,
+            })
+        }
         // Decoded so the refusal can name the request. RENDER has thirty-six
         // minors and this server implements a subset; a parse rejection would
         // tell a client only that the extension exists, not which request it
@@ -191,4 +312,78 @@ fn decode_render_rectangles(byte_order: XByteOrder, bytes: &[u8]) -> Vec<Rect> {
             height: i32::from(byte_order.u16(&rectangle[6..8])),
         })
         .collect()
+}
+
+/// One glyph's placement metrics, as `AddGlyphs` sends them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XRenderGlyphInfo {
+    pub width: u16,
+    pub height: u16,
+    /// The origin's offset inside the bitmap, positive downward and rightward
+    /// from the top-left, which is how RENDER carries a glyph's bearing.
+    pub x: i16,
+    pub y: i16,
+    pub off_x: i16,
+    pub off_y: i16,
+}
+
+/// One run of glyphs drawn at an offset, from a possibly different set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XRenderGlyphElement {
+    /// A glyph set switch, when the element carried one.
+    pub glyphset: Option<XResourceId>,
+    pub delta_x: i16,
+    pub delta_y: i16,
+    pub glyphs: Vec<u32>,
+}
+
+/// Walk the glyph element list.
+///
+/// The list is self-describing rather than counted: a leading byte of 255
+/// marks a glyph-set switch carrying a four-byte id, anything else is a run
+/// of that many glyph identifiers preceded by two deltas. A malformed tail
+/// stops the walk instead of failing the request, because the elements
+/// already parsed are well-formed and a client that truncated its own list
+/// gets what it asked to draw.
+fn decode_render_glyph_elements(
+    byte_order: XByteOrder,
+    mut bytes: &[u8],
+    id_width: usize,
+) -> Vec<XRenderGlyphElement> {
+    let mut elements = Vec::new();
+    let mut pending_glyphset = None;
+    while bytes.len() >= 8 {
+        let count = bytes[0];
+        if count == 255 {
+            pending_glyphset = Some(XResourceId::new(
+                u64::from(byte_order.u32(&bytes[4..8])),
+                1,
+            ));
+            bytes = &bytes[8..];
+            continue;
+        }
+        let count = usize::from(count);
+        let glyph_bytes = count.saturating_mul(id_width);
+        // Runs are padded to a four-byte boundary.
+        let padded = glyph_bytes.next_multiple_of(4);
+        if bytes.len() < 8 + padded {
+            break;
+        }
+        let glyphs = bytes[8..8 + glyph_bytes]
+            .chunks_exact(id_width)
+            .map(|id| match id_width {
+                1 => u32::from(id[0]),
+                2 => u32::from(byte_order.u16(id)),
+                _ => byte_order.u32(id),
+            })
+            .collect();
+        elements.push(XRenderGlyphElement {
+            glyphset: pending_glyphset.take(),
+            delta_x: byte_order.i16(&bytes[4..6]),
+            delta_y: byte_order.i16(&bytes[6..8]),
+            glyphs,
+        });
+        bytes = &bytes[8 + padded..];
+    }
+    elements
 }

@@ -23,8 +23,9 @@ use crate::{
 /// window buffer tag stays `XR24`, which is why an RGB24 write forces the
 /// alpha byte to zero rather than storing what the blend produced -- the
 /// compositor was promised an opaque buffer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum XRenderPictFormatKind {
+    #[default]
     Argb32,
     Rgb24,
     A8,
@@ -326,6 +327,19 @@ impl XRenderSamplePlane {
             width: 0,
             height: 0,
             repeat,
+        }
+    }
+}
+
+impl XRenderSamplePlane {
+    /// A plane over one glyph's already-unpacked pixels. Glyphs never repeat:
+    /// outside the bitmap a glyph covers nothing.
+    pub(crate) fn from_glyph(pixels: &[[u8; 4]], width: usize, height: usize) -> Self {
+        Self {
+            pixels: pixels.to_vec(),
+            width,
+            height,
+            repeat: false,
         }
     }
 }

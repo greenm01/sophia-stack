@@ -30,6 +30,7 @@ include!("runtime/drawing.rs");
 include!("runtime/drawing/image_ops.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/render_pictures.rs");
+include!("runtime/render_glyphs.rs");
 include!("runtime/sync.rs");
 include!("runtime/windows.rs");
 
@@ -156,9 +157,11 @@ pub struct XAuthorityRuntime {
     sync_counters: BTreeMap<crate::XResourceId, i64>,
     xfixes_regions: BTreeMap<crate::XResourceId, Region>,
     render_pictures: BTreeMap<crate::XResourceId, XRenderPictureRecord>,
-    /// Glyph-set resource ids, resolved through to shared stores in a later
-    /// phase; the map exists now so resource sweeps stay exhaustive.
+    /// Glyph-set resource ids, each naming a shared store. Two ids name one
+    /// store after `ReferenceGlyphSet`.
     render_glyphsets: BTreeMap<crate::XResourceId, u64>,
+    render_glyph_stores: BTreeMap<u64, XRenderGlyphStore>,
+    next_glyph_store: u64,
     next_fence_handle: u64,
     graphics_contexts: XGraphicsContextTable,
     window_background_pixels: BTreeMap<crate::XResourceId, u32>,
@@ -201,6 +204,8 @@ impl Default for XAuthorityRuntime {
             xfixes_regions: Default::default(),
             render_pictures: Default::default(),
             render_glyphsets: Default::default(),
+            render_glyph_stores: Default::default(),
+            next_glyph_store: 1,
             next_fence_handle: 1,
             graphics_contexts: Default::default(),
             window_background_pixels: Default::default(),

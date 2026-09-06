@@ -922,3 +922,105 @@ fn render_composite_request(
     push_u16(&mut out, byte_order, height);
     out
 }
+
+fn render_create_glyph_set_request(byte_order: XByteOrder, glyphset: u32, format: u32) -> Vec<u8> {
+    let mut out = vec![
+        X_RENDER_MAJOR_OPCODE,
+        X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE,
+    ];
+    push_u16(&mut out, byte_order, 3);
+    push_u32(&mut out, byte_order, glyphset);
+    push_u32(&mut out, byte_order, format);
+    out
+}
+
+fn render_reference_glyph_set_request(
+    byte_order: XByteOrder,
+    glyphset: u32,
+    existing: u32,
+) -> Vec<u8> {
+    let mut out = vec![
+        X_RENDER_MAJOR_OPCODE,
+        X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE,
+    ];
+    push_u16(&mut out, byte_order, 3);
+    push_u32(&mut out, byte_order, glyphset);
+    push_u32(&mut out, byte_order, existing);
+    out
+}
+
+fn render_free_glyph_set_request(byte_order: XByteOrder, glyphset: u32) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, glyphset);
+    out
+}
+
+/// One glyph for `render_add_glyphs_request`: identifier, `[width, height]`,
+/// `[x, y, off_x, off_y]`, and already-padded image bytes.
+type TestGlyph = (u32, [u16; 2], [i16; 4], Vec<u8>);
+
+/// `AddGlyphs` for glyphs whose image bytes are supplied already padded.
+fn render_add_glyphs_request(
+    byte_order: XByteOrder,
+    glyphset: u32,
+    glyphs: &[TestGlyph],
+) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_ADD_GLYPHS_MINOR_OPCODE];
+    let data_len: usize = glyphs.iter().map(|(_, _, _, data)| data.len()).sum();
+    let len_units = (12 + glyphs.len() * 16 + data_len).div_ceil(4);
+    push_u16(&mut out, byte_order, len_units as u16);
+    push_u32(&mut out, byte_order, glyphset);
+    push_u32(&mut out, byte_order, glyphs.len() as u32);
+    for (id, _, _, _) in glyphs {
+        push_u32(&mut out, byte_order, *id);
+    }
+    for (_, size, offsets, _) in glyphs {
+        push_u16(&mut out, byte_order, size[0]);
+        push_u16(&mut out, byte_order, size[1]);
+        for offset in offsets {
+            push_i16(&mut out, byte_order, *offset);
+        }
+    }
+    for (_, _, _, data) in glyphs {
+        out.extend_from_slice(data);
+    }
+    out
+}
+
+/// `CompositeGlyphs8` with one element: a delta and a run of glyph ids.
+#[allow(clippy::too_many_arguments)]
+fn render_composite_glyphs8_request(
+    byte_order: XByteOrder,
+    op: u8,
+    source: u32,
+    destination: u32,
+    mask_format: u32,
+    glyphset: u32,
+    source_x: i16,
+    source_y: i16,
+    delta: (i16, i16),
+    ids: &[u8],
+) -> Vec<u8> {
+    let mut out = vec![
+        X_RENDER_MAJOR_OPCODE,
+        X_RENDER_COMPOSITE_GLYPHS_8_MINOR_OPCODE,
+    ];
+    let padded = ids.len().next_multiple_of(4);
+    push_u16(&mut out, byte_order, ((28 + 8 + padded) / 4) as u16);
+    out.push(op);
+    out.extend_from_slice(&[0, 0, 0]);
+    push_u32(&mut out, byte_order, source);
+    push_u32(&mut out, byte_order, destination);
+    push_u32(&mut out, byte_order, mask_format);
+    push_u32(&mut out, byte_order, glyphset);
+    push_i16(&mut out, byte_order, source_x);
+    push_i16(&mut out, byte_order, source_y);
+    out.push(ids.len() as u8);
+    out.extend_from_slice(&[0, 0, 0]);
+    push_i16(&mut out, byte_order, delta.0);
+    push_i16(&mut out, byte_order, delta.1);
+    out.extend_from_slice(ids);
+    out.resize(out.len() + (padded - ids.len()), 0);
+    out
+}

@@ -340,12 +340,17 @@ fn run_x_authority_external_probe_smoke(
             "DRI3:PixmapFromBuffers",
             "PRESENT:Pixmap",
         ],
+        // Measured, not assumed: once RENDER was advertised this trace grew
+        // from 33 opcodes to 34 and from 326 requests to 329, so Qt does ask.
+        // Asserting the stage keeps a future regression in the advertisement
+        // from silently returning the shell to core drawing.
+        "quickshell" => &["RENDER:QueryPictFormats"],
         _ => &[],
     };
     for required in required_graphics_stages {
         if !details.contains(required) {
             return Err(format!(
-                "{label} trace omitted required direct-GLX stage {required} for {display}: details={details}"
+                "{label} trace omitted required stage {required} for {display}: details={details}"
             )
             .into());
         }

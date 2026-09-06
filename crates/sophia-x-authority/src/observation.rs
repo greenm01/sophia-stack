@@ -23,6 +23,12 @@ pub enum X11ObservedRequestStage {
     /// outside, only slower.
     ShmCreateSegment,
     ShmAttachFd,
+    /// RENDER. Named for the same reason as the SHM segments: a client
+    /// refused it falls back to core drawing and looks the same from
+    /// outside, only blockier and slower.
+    RenderQueryPictFormats,
+    RenderComposite,
+    RenderCompositeGlyphs,
     KeyboardMapping,
     SelectionRequest,
     DisconnectCleanup,
@@ -42,6 +48,9 @@ impl X11ObservedRequestStage {
             Self::PresentPixmap => "PRESENT:Pixmap",
             Self::ShmCreateSegment => "SHM:CreateSegment",
             Self::ShmAttachFd => "SHM:AttachFd",
+            Self::RenderQueryPictFormats => "RENDER:QueryPictFormats",
+            Self::RenderComposite => "RENDER:Composite",
+            Self::RenderCompositeGlyphs => "RENDER:CompositeGlyphs",
             Self::KeyboardMapping => "GetKeyboardMapping",
             Self::SelectionRequest => "RequestSelection",
             Self::DisconnectCleanup => "DisconnectCleanup",

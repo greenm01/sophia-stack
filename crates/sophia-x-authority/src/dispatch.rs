@@ -279,6 +279,10 @@ pub fn dispatch_x11_wire_request(
         Handled(result) => return result,
         Unhandled(request) => request,
     };
+    let request = match dispatch_render_glyph_request(context, request, runtime) {
+        Handled(result) => return result,
+        Unhandled(request) => request,
+    };
     let request = match dispatch_dri3_request(context, request, runtime) {
         Handled(result) => return result,
         Unhandled(request) => request,
@@ -622,6 +626,16 @@ fn extension_query_result(name: &str) -> XExtensionQueryResult {
             major_opcode: crate::X_XC_MISC_MAJOR_OPCODE,
             first_event: 0,
             first_error: 0,
+        },
+        // Advertised now that the requests behind the advertised version
+        // answer. Presence alone licenses a client to send CreatePicture and
+        // Composite -- the base protocol carries no version gate -- so this
+        // arm could not be added until they worked.
+        crate::X_RENDER_EXTENSION_NAME => XExtensionQueryResult {
+            present: true,
+            major_opcode: crate::X_RENDER_MAJOR_OPCODE,
+            first_event: 0,
+            first_error: crate::X_RENDER_FIRST_ERROR,
         },
         crate::X_XF86_VIDMODE_EXTENSION_NAME => XExtensionQueryResult {
             present: true,

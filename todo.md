@@ -391,12 +391,17 @@ These rows do not reorder the critical path.
   the ten-second timeout is not a fix. Preserve the 178-test baseline while
   making record-kind parsing explicit.
 
-- [ ] Implement `RENDER`. Both Quickshell and Brave ask for it and are refused:
+- [x] Implement `RENDER`. Both Quickshell and Brave ask for it and are refused:
   `sophia_x11_authority_extension schema=1 status=absent name="RENDER"`. It is
   the antialiased-text and image-compositing path every toolkit reaches for
   first, so a client refused it falls back to core drawing and looks wrong or
   feels slow rather than failing outright. The largest of these by a wide
-  margin, and the one worth doing properly.
+  margin, and the one worth doing properly. Done at version 0.4, which is
+  exactly what is implemented: the advertisement was withheld through three
+  commits until the requests behind it answered, because the base protocol has
+  no version gate. The Quickshell trace now reaches opcode 144. Client-visible
+  ARGB cursors (minor 27, version 0.5) remain. See the `RENDER compositing and
+  glyphs` matrix row.
 - [ ] Implement `SHAPE`. Quickshell asks for it in the same trace. Small: a
   handful of requests for non-rectangular window regions, and Sophia already
   carries region machinery for XFIXES.

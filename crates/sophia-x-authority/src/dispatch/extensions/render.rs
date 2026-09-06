@@ -352,3 +352,174 @@ fn dispatch_render_picture_request(
         other => return Unhandled(other),
     })
 }
+
+fn render_glyph_error_code(error: crate::XRenderGlyphError) -> XErrorCode {
+    match error {
+        crate::XRenderGlyphError::UnknownGlyphSet => XErrorCode::RenderGlyphSet,
+        crate::XRenderGlyphError::UnknownGlyph => XErrorCode::RenderGlyph,
+        crate::XRenderGlyphError::IdInUse => XErrorCode::BadIdChoice,
+        crate::XRenderGlyphError::UnsupportedFormat => XErrorCode::RenderPictFormat,
+        crate::XRenderGlyphError::MalformedGlyphData => XErrorCode::BadLength,
+    }
+}
+
+fn dispatch_render_glyph_request(
+    context: XDispatchContext,
+    request: XWireRequest,
+    runtime: &mut XAuthorityRuntime,
+) -> XDispatchFamilyResult {
+    if !matches!(
+        &request,
+        XWireRequest::RenderCreateGlyphSet { .. }
+            | XWireRequest::RenderReferenceGlyphSet { .. }
+            | XWireRequest::RenderFreeGlyphSet { .. }
+            | XWireRequest::RenderAddGlyphs { .. }
+            | XWireRequest::RenderFreeGlyphs { .. }
+            | XWireRequest::RenderCompositeGlyphs { .. }
+    ) {
+        return Unhandled(request);
+    }
+    let glyph_result = |outcome: Result<(), crate::XRenderGlyphError>,
+                        resource_id: u32,
+                        minor_opcode: u8| {
+        XDispatchResult {
+            response: None,
+            outputs: outcome
+                .err()
+                .map(|error| {
+                    render_error_output(
+                        context,
+                        render_glyph_error_code(error),
+                        resource_id,
+                        minor_opcode,
+                    )
+                })
+                .into_iter()
+                .collect(),
+            metadata_candidates: Vec::new(),
+        }
+    };
+    Handled(match request {
+        XWireRequest::RenderCreateGlyphSet { glyphset, format } => glyph_result(
+            runtime.render_create_glyph_set(
+                context.namespace,
+                glyphset,
+                format,
+                u64::from(context.sequence),
+            ),
+            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+            crate::X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE,
+        ),
+        XWireRequest::RenderReferenceGlyphSet { glyphset, existing } => glyph_result(
+            runtime.render_reference_glyph_set(
+                context.namespace,
+                glyphset,
+                existing,
+                u64::from(context.sequence),
+            ),
+            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+            crate::X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE,
+        ),
+        XWireRequest::RenderFreeGlyphSet { glyphset } => glyph_result(
+            runtime.render_free_glyph_set(context.namespace, glyphset),
+            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+            crate::X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE,
+        ),
+        XWireRequest::RenderAddGlyphs {
+            glyphset,
+            ids,
+            glyphs,
+            data,
+        } => glyph_result(
+            runtime.render_add_glyphs(context.namespace, glyphset, &ids, &glyphs, &data),
+            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+            crate::X_RENDER_ADD_GLYPHS_MINOR_OPCODE,
+        ),
+        XWireRequest::RenderFreeGlyphs { glyphset, ids } => glyph_result(
+            runtime.render_free_glyphs(context.namespace, glyphset, &ids),
+            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+            crate::X_RENDER_FREE_GLYPHS_MINOR_OPCODE,
+        ),
+        XWireRequest::RenderCompositeGlyphs {
+            op,
+            source,
+            destination,
+            mask_format: _,
+            glyphset,
+            source_x,
+            source_y,
+            elements,
+            minor_opcode,
+        } => {
+            let transaction = context.transaction;
+            if !crate::software::render_operator_is_implemented(op) {
+                return Handled(XDispatchResult {
+                    response: None,
+                    outputs: vec![render_error_output(
+                        context,
+                        render_operator_refusal(op),
+                        0,
+                        minor_opcode,
+                    )],
+                    metadata_candidates: Vec::new(),
+                });
+            }
+            match runtime.render_apply_composite_glyphs(
+                transaction,
+                context.namespace,
+                op,
+                source,
+                destination,
+                glyphset,
+                (source_x, source_y),
+                &elements,
+            ) {
+                Ok(response) => {
+                    let outputs =
+                        if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                u16::from(minor_opcode),
+                                u32::try_from(destination.local.raw()).unwrap_or(0),
+                            ))]
+                        } else {
+                            Vec::new()
+                        };
+                    XDispatchResult {
+                        response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                Err(error) => {
+                    let (code, resource_id) = match error {
+                        crate::XRenderCompositeGlyphsError::Picture(error) => (
+                            render_picture_error_code(error),
+                            u32::try_from(destination.local.raw()).unwrap_or(0),
+                        ),
+                        crate::XRenderCompositeGlyphsError::Glyph(error) => (
+                            render_glyph_error_code(error),
+                            u32::try_from(glyphset.local.raw()).unwrap_or(0),
+                        ),
+                    };
+                    XDispatchResult {
+                        response: Some(XAuthorityResponsePacket::rejected(
+                            transaction,
+                            XAuthorityRuntimeError::InvalidResource,
+                        )),
+                        outputs: vec![render_error_output(
+                            context,
+                            code,
+                            resource_id,
+                            minor_opcode,
+                        )],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+            }
+        }
+        other => return Unhandled(other),
+    })
+}

@@ -597,6 +597,42 @@ pub enum XWireRequest {
         width: u16,
         height: u16,
     },
+    RenderCreateGlyphSet {
+        glyphset: XResourceId,
+        format: u32,
+    },
+    /// A second identifier for an existing set, which the protocol defines as
+    /// sharing rather than copying.
+    RenderReferenceGlyphSet {
+        glyphset: XResourceId,
+        existing: XResourceId,
+    },
+    RenderFreeGlyphSet {
+        glyphset: XResourceId,
+    },
+    RenderAddGlyphs {
+        glyphset: XResourceId,
+        ids: Vec<u32>,
+        glyphs: Vec<XRenderGlyphInfo>,
+        data: Vec<u8>,
+    },
+    RenderFreeGlyphs {
+        glyphset: XResourceId,
+        ids: Vec<u32>,
+    },
+    /// The 8-, 16- and 32-bit glyph identifier widths share one variant; the
+    /// width mattered only to the decoder.
+    RenderCompositeGlyphs {
+        op: u8,
+        source: XResourceId,
+        destination: XResourceId,
+        mask_format: u32,
+        glyphset: XResourceId,
+        source_x: i16,
+        source_y: i16,
+        elements: Vec<XRenderGlyphElement>,
+        minor_opcode: u8,
+    },
     /// A RENDER minor Sophia does not implement, decoded so the refusal can
     /// name it.
     RenderUnimplemented {

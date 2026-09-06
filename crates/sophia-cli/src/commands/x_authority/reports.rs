@@ -38,6 +38,22 @@ struct XAuthorityX11rbSmokeReport {
     errors: usize,
 }
 
+/// What a real client proved about RENDER over a real connection.
+#[derive(Clone, Debug)]
+struct XAuthorityRenderSmokeReport {
+    display: String,
+    major_version: u32,
+    minor_version: u32,
+    /// Picture formats the server reported, which must include the ARGB32
+    /// and A8 a toolkit needs.
+    formats: usize,
+    /// The blended pixel read back after compositing, as `[b, g, r, a]`.
+    composited_pixel: [u8; 4],
+    /// The pixel a glyph's partial coverage produced.
+    glyph_pixel: [u8; 4],
+    errors: usize,
+}
+
 #[derive(Clone, Debug)]
 struct XAuthorityXdpyinfoSmokeReport {
     display: String,

@@ -20,6 +20,13 @@ fn x11_observed_request_stage(request: &crate::XWireRequest) -> X11ObservedReque
             kind: crate::XAuthorityRequestKind::PresentPixmap { .. },
             ..
         }) => X11ObservedRequestStage::PresentPixmap,
+        crate::XWireRequest::RenderQueryPictFormats => {
+            X11ObservedRequestStage::RenderQueryPictFormats
+        }
+        crate::XWireRequest::RenderComposite { .. } => X11ObservedRequestStage::RenderComposite,
+        crate::XWireRequest::RenderCompositeGlyphs { .. } => {
+            X11ObservedRequestStage::RenderCompositeGlyphs
+        }
         crate::XWireRequest::GetKeyboardMapping { .. } => X11ObservedRequestStage::KeyboardMapping,
         crate::XWireRequest::Authority(crate::XAuthorityRequestPacket {
             kind: crate::XAuthorityRequestKind::RequestSelection { .. },

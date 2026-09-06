@@ -267,6 +267,21 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(true);
     }
 
+    if args.iter().any(|arg| arg == "x-authority-render-smoke") {
+        let report = run_x_authority_render_smoke()?;
+        println!(
+            "x-authority-render-smoke display={} version={}.{} formats={} composited_pixel={:?} glyph_pixel={:?} errors={}",
+            report.display,
+            report.major_version,
+            report.minor_version,
+            report.formats,
+            report.composited_pixel,
+            report.glyph_pixel,
+            report.errors
+        );
+        return Ok(true);
+    }
+
     if args.iter().any(|arg| arg == "x-authority-x11rb-smoke") {
         let report = run_x_authority_x11rb_smoke()?;
         println!(
