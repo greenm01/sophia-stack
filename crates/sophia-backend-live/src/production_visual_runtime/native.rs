@@ -814,6 +814,30 @@ impl LiveProductionVisualRuntime {
         else {
             return Ok(None);
         };
+        let (surface, layer) = self
+            .present_scheduler
+            .in_flight_displayed_layer()
+            .ok_or("joined native retirement lost its renderer image owner")?;
+        let image = layer.image_id;
+        let transaction = self
+            .present_scheduler
+            .in_flight_transaction()
+            .ok_or("joined native retirement lost its transaction owner")?;
+        // The page flip is the commit point for the compositor copy. Promote
+        // its staged image before releasing the client source or emitting any
+        // protocol feedback.
+        //
+        // A direct frame has no such image. Nothing was composed, so nothing
+        // was staged: the buffer on the plane is the client's own, and the
+        // renderer never saw it. Demanding a snapshot here failed the first
+        // frame that ever reached a plane directly -- after it had already
+        // been displayed, which made a working flip look like a lost one.
+        if !retirement.direct && native_scanout.promote_renderer_image(image)? == 0 {
+            return Err(format!(
+                "retired Present lost its staged renderer snapshot: transaction={} surface={} image={} output={} frame={}",
+                transaction.raw(), surface.index(), image.raw(), output.raw(), retirement.frame.raw(),
+            ).into());
+        }
         let submitted = self
             .present_scheduler
             .take_submitted()
@@ -824,20 +848,6 @@ impl LiveProductionVisualRuntime {
         let ust = clock.ust;
         let msc = clock.msc;
         let outputs = submitted.frames().map(|(output, _)| output).collect();
-        // The page flip is the commit point for the compositor copy. Promote
-        // its staged image before releasing the client source or emitting any
-        // protocol feedback.
-        //
-        // A direct frame has no such image. Nothing was composed, so nothing
-        // was staged: the buffer on the plane is the client's own, and the
-        // renderer never saw it. Demanding a snapshot here failed the first
-        // frame that ever reached a plane directly -- after it had already
-        // been displayed, which made a working flip look like a lost one.
-        if !retirement.direct
-            && native_scanout.promote_renderer_image(submitted.displayed_layer.image_id)? == 0
-        {
-            return Err("retired Present lost its staged renderer snapshot".into());
-        }
         let direct = retirement.direct;
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);

@@ -28,6 +28,7 @@ pub use compositor_graphics::{
 };
 pub use native::*;
 pub use ownership::*;
+pub use present::live_present_head_frames_capture_image;
 pub use service::*;
 
 fn trace_live_head_composition_plan(plan: &sophia_engine::HeadCompositionPlan) {

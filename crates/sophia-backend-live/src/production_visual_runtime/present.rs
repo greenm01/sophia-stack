@@ -256,6 +256,22 @@ impl LiveProductionVisualRuntime {
                 ))
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+        // Old geometry can require repainting a head after the current pixels
+        // have scrolled completely out of it. Such a frame captures no image
+        // for this Present, so it cannot own its copy-completion retirement.
+        // Keep the clearing repaint, but settle the invisible client as Skipped.
+        if !live_present_head_frames_capture_image(&output_head_frames, current_layer.image_id) {
+            tracing::debug!(
+                transaction = transaction.raw(),
+                surface = queued_surface.index(),
+                image = current_layer.image_id.raw(),
+                "skipped Present absent from lowered physical head frames"
+            );
+            native_scanout.queue_retained_output_head_composition_frames(output_head_frames)?;
+            self.present_scheduler.pop_front();
+            self.reject_gpu_presentation(transaction);
+            return self.run_observation_tick();
+        }
         if self.present_scheduler.take_diagnose_first_mixed_export() {
             let (cpu_layers, dmabuf_layers) =
                 head_sources
@@ -450,4 +466,19 @@ impl LiveProductionVisualRuntime {
         }
         Ok(())
     }
+}
+
+/// A copy Present requires a capture of its exact image in at least one
+/// physical head frame. Geometry overlap before clipping or animation is not
+/// proof that a renderer will consume the candidate pixels.
+pub fn live_present_head_frames_capture_image(
+    frames: &[(OutputId, Vec<LiveProductionHeadCompositionFrame>)],
+    image: LiveRendererImageId,
+) -> bool {
+    frames.iter().flat_map(|(_, heads)| heads).any(|head| {
+        head.frame.layers.iter().any(|layer| {
+            matches!(layer,
+            LiveOwnedMixedCompositionLayer::DmaBuf { image_id, .. } if *image_id == image)
+        })
+    })
 }
