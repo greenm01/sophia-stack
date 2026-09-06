@@ -32,6 +32,7 @@ include!("dispatch/extensions/versions.rs");
 include!("dispatch/extensions/xi.rs");
 include!("dispatch/extensions/xfixes.rs");
 include!("dispatch/extensions/xf86_vidmode.rs");
+include!("dispatch/extensions/xc_misc.rs");
 include!("dispatch/extensions/xkb.rs");
 
 const DRM_FORMAT_MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
@@ -262,6 +263,10 @@ pub fn dispatch_x11_wire_request(
         Unhandled(request) => request,
     };
     let request = match dispatch_xf86_vidmode_request(context, request, runtime, atoms) {
+        Handled(result) => return result,
+        Unhandled(request) => request,
+    };
+    let request = match dispatch_xc_misc_request(context, request, runtime) {
         Handled(result) => return result,
         Unhandled(request) => request,
     };
@@ -601,6 +606,12 @@ fn extension_query_result(name: &str) -> XExtensionQueryResult {
             present: true,
             major_opcode: crate::X_XFIXES_MAJOR_OPCODE,
             first_event: crate::X_XFIXES_FIRST_EVENT,
+            first_error: 0,
+        },
+        crate::X_XC_MISC_EXTENSION_NAME => XExtensionQueryResult {
+            present: true,
+            major_opcode: crate::X_XC_MISC_MAJOR_OPCODE,
+            first_event: 0,
             first_error: 0,
         },
         crate::X_XF86_VIDMODE_EXTENSION_NAME => XExtensionQueryResult {

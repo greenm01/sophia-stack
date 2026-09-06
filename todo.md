@@ -365,6 +365,34 @@ These rows do not reorder the critical path.
   the ten-second timeout is not a fix. Preserve the 178-test baseline while
   making record-kind parsing explicit.
 
+- [ ] Implement `RENDER`. Both Quickshell and Brave ask for it and are refused:
+  `sophia_x11_authority_extension schema=1 status=absent name="RENDER"`. It is
+  the antialiased-text and image-compositing path every toolkit reaches for
+  first, so a client refused it falls back to core drawing and looks wrong or
+  feels slow rather than failing outright. The largest of these by a wide
+  margin, and the one worth doing properly.
+- [ ] Implement `SHAPE`. Quickshell asks for it in the same trace. Small: a
+  handful of requests for non-rectangular window regions, and Sophia already
+  carries region machinery for XFIXES.
+- [x] Implement `XC-MISC`, before something needs it. It is how Xlib recycles
+  XIDs once a client exhausts its range, and the client that hits it is a
+  browser left open for days. Nothing has asked yet, which is exactly why this
+  is cheap now and an incident later: the failure mode is the client dying
+  rather than degrading. Done: grants draw from the same counter that connection
+  setup draws from, so a grant cannot collide with a range a client already
+  holds, and both refuse rather than overlap once the pool is spent. See the
+  `XC-MISC identifier ranges` matrix row.
+- [ ] Decide, rather than implement, `Composite`, `DAMAGE`, `XTEST` and `DPMS`.
+  Each is a domain Sophia owns -- compositing, input, power -- and a client
+  reaching through one of them is asking to step around that authority. They
+  belong in the matrix as deliberate exclusions or as admitted surface, not as
+  gaps that stayed open because the list looked incomplete.
+
+Every row above came from measurement rather than a survey of what a server
+usually has. `QueryExtension` now records what it refuses, so the next live
+session extends this list by observation; the four decisions above should be
+revisited against a week of real logs rather than against this paragraph.
+
 Completed infrastructure baseline: `sophia-session` owns production lifecycle,
 `sophia-conformance` owns development-only evidence logic, `cargo xtask` is the
 canonical developer/CI surface, `just` is optional human shorthand, canonical

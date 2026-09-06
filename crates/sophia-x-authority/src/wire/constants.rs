@@ -319,6 +319,29 @@ pub const X_GLX_TRUE_COLOR_VALUE: u32 = 0x8002;
 /// `GLX_RGBA_BIT`: the only render type Sophia offers. Colour-index rendering
 /// went with indirect GL.
 pub const X_GLX_RGBA_BIT_VALUE: u32 = 0x1;
+/// Extra resource identifiers, for a client that has used up the range it was
+/// given at connection setup.
+///
+/// A long-lived client that creates and destroys many resources -- a browser
+/// left open for days -- eventually exhausts its range, and without this it
+/// has no way to ask for more. The failure mode is the client dying rather
+/// than degrading, which is why this is worth having before anything needs it.
+pub const X_XC_MISC_EXTENSION_NAME: &str = "XC-MISC";
+pub const X_XC_MISC_MAJOR_OPCODE: u8 = 143;
+pub const X_XC_MISC_GET_VERSION_MINOR_OPCODE: u8 = 0;
+pub const X_XC_MISC_GET_XID_RANGE_MINOR_OPCODE: u8 = 1;
+pub const X_XC_MISC_GET_XID_LIST_MINOR_OPCODE: u8 = 2;
+pub const X_XC_MISC_MAJOR_VERSION: u16 = 1;
+pub const X_XC_MISC_MINOR_VERSION: u16 = 1;
+const X_XC_MISC_GET_VERSION_REQ_LEN: usize = 8;
+const X_XC_MISC_GET_XID_RANGE_REQ_LEN: usize = 4;
+const X_XC_MISC_GET_XID_LIST_REQ_LEN: usize = 8;
+/// The most identifiers one `GetXIDList` will return.
+///
+/// The request carries a `CARD32`, so a client can ask for four billion. The
+/// reply is a list in memory, so the ask is bounded before it is honoured.
+pub const X_XC_MISC_MAX_XID_LIST: u32 = 4096;
+
 /// The legacy mode-line extension, which Mesa still uses for one thing.
 ///
 /// `glXGetMscRateOML` is implemented in Mesa by asking this extension for the

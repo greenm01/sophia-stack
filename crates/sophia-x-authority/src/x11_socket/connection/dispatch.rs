@@ -549,6 +549,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     }
                     let event_selection = x11_core_event_selection_update(&request);
                     let dri3_open = matches!(&request, crate::XWireRequest::Dri3Open { .. });
+                    let xid_request = match &request {
+                        crate::XWireRequest::XCMiscGetXIDRange => Some(1u32),
+                        crate::XWireRequest::XCMiscGetXIDList { count } => Some(*count),
+                        _ => None,
+                    };
                     let shm_attach_fd = match &request {
                         crate::XWireRequest::ShmAttachFd {
                             segment,
@@ -1590,6 +1595,39 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         && let Some(descriptor) = runtime.take_shm_reply_descriptor(segment)
                     {
                         server_reply_fds.push(descriptor);
+                    }
+                    // Dispatch answered "none available", which is correct
+                    // and needs no repair if this layer cannot do better. The
+                    // range counter lives here, so this is the only place that
+                    // can turn that into a grant.
+                    if dispatch_succeeded
+                        && let Some(requested) = xid_request
+                        && let Some((base, size)) = state.grant_client_resource_range()
+                    {
+                        for output in &mut output.outputs {
+                            match output {
+                                crate::XClientOutput::Reply(
+                                    crate::XClientReply::XCMiscGetXIDRange {
+                                        start_id, count, ..
+                                    },
+                                ) => {
+                                    *start_id = base;
+                                    *count = size;
+                                }
+                                crate::XClientOutput::Reply(
+                                    crate::XClientReply::XCMiscGetXIDList { ids, .. },
+                                ) => {
+                                    // Bounded before it is honoured: the
+                                    // request carries a CARD32, and the reply
+                                    // is a list this process has to hold.
+                                    let wanted = requested
+                                        .min(crate::X_XC_MISC_MAX_XID_LIST)
+                                        .min(size);
+                                    *ids = (0..wanted).map(|offset| base + offset).collect();
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                     if dispatch_succeeded && dri3_open {
                         match state.open_render_device_fd() {

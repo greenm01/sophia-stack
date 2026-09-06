@@ -5,6 +5,9 @@ fn encode_render_extension_reply(
     if !matches!(
         &reply,
             XClientReply::ShmQueryVersion { .. }
+            | XClientReply::XCMiscGetVersion { .. }
+            | XClientReply::XCMiscGetXIDRange { .. }
+            | XClientReply::XCMiscGetXIDList { .. }
             | XClientReply::XF86VidModeQueryVersion { .. }
             | XClientReply::XF86VidModeGetModeLine { .. }
             | XClientReply::ShmCreateSegment { .. }
@@ -74,6 +77,41 @@ fn encode_render_extension_reply(
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     out[1] = 1;
+                    out
+                }
+                XClientReply::XCMiscGetVersion {
+                    sequence,
+                    major_version,
+                    minor_version,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u16(byte_order, &mut out[8..10], major_version);
+                    put_u16(byte_order, &mut out[10..12], minor_version);
+                    out
+                }
+                XClientReply::XCMiscGetXIDRange {
+                    sequence,
+                    start_id,
+                    count,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_u32(byte_order, &mut out[8..12], start_id);
+                    put_u32(byte_order, &mut out[12..16], count);
+                    out
+                }
+                XClientReply::XCMiscGetXIDList { sequence, ids } => {
+                    // The list follows the fixed reply, one word each, so the
+                    // length field counts the identifiers exactly.
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + ids.len() * 4];
+                    let length = u32::try_from(ids.len()).unwrap_or(0);
+                    write_reply_header(byte_order, &mut out, sequence, length);
+                    put_u32(byte_order, &mut out[8..12], length);
+                    for (index, id) in ids.iter().enumerate() {
+                        let start = X_CLIENT_OUTPUT_RECORD_LEN + index * 4;
+                        put_u32(byte_order, &mut out[start..start + 4], *id);
+                    }
                     out
                 }
                 XClientReply::XF86VidModeQueryVersion {

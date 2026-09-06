@@ -21,6 +21,9 @@ struct XAuthorityShmFdSmokeReport {
     written: usize,
     read_back: usize,
     attached_fd_segments: usize,
+    /// Identifiers XC-MISC granted, which must be a block this client did not
+    /// already own.
+    granted_xids: u32,
     oversize_refused: bool,
     errors: usize,
 }

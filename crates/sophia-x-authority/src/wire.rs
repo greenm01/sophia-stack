@@ -27,6 +27,7 @@ include!("wire/extensions/sophia_present.rs");
 include!("wire/extensions/sync.rs");
 include!("wire/extensions/xfixes.rs");
 include!("wire/extensions/xf86_vidmode.rs");
+include!("wire/extensions/xc_misc.rs");
 include!("wire/extensions/xi.rs");
 include!("wire/extensions/xkb.rs");
 include!("wire/validation.rs");
@@ -532,6 +533,19 @@ pub enum XWireRequest {
         size: u32,
         read_only: bool,
     },
+    /// `XCMiscGetVersion`. The client states its own version and is told the
+    /// server's.
+    XCMiscGetVersion {
+        major: u16,
+        minor: u16,
+    },
+    /// `XCMiscGetXIDRange`: one fresh block of identifiers.
+    XCMiscGetXIDRange,
+    /// `XCMiscGetXIDList`: individual identifiers, for a client that wants
+    /// them counted rather than as a range.
+    XCMiscGetXIDList {
+        count: u32,
+    },
     /// `XF86VidModeQueryVersion`. Carries nothing; the answer is a constant.
     XF86VidModeQueryVersion,
     /// `XF86VidModeGetModeLine`, for one X screen.
@@ -1031,6 +1045,7 @@ pub fn decode_x11_core_request(
         X_PRESENT_MAJOR_OPCODE => decode_present(context, bytes),
         X_XFIXES_MAJOR_OPCODE => decode_xfixes(context, bytes),
         X_XF86_VIDMODE_MAJOR_OPCODE => decode_xf86_vidmode(context, bytes),
+        X_XC_MISC_MAJOR_OPCODE => decode_xc_misc(context, bytes),
         X_GLX_MAJOR_OPCODE => decode_glx(context, bytes),
         X_SYNC_MAJOR_OPCODE => decode_sync(context, bytes),
         other => Err(XWireParseError::UnknownOpcode(other)),

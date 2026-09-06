@@ -402,6 +402,23 @@ pub enum XClientReply {
     Dri3Open {
         sequence: u16,
     },
+    XCMiscGetVersion {
+        sequence: u16,
+        major_version: u16,
+        minor_version: u16,
+    },
+    /// A block of identifiers a client may use, or `count: 0` meaning none are
+    /// available -- which the protocol defines and clients handle, unlike an
+    /// invented range that would collide with another client's resources.
+    XCMiscGetXIDRange {
+        sequence: u16,
+        start_id: u32,
+        count: u32,
+    },
+    XCMiscGetXIDList {
+        sequence: u16,
+        ids: Vec<u32>,
+    },
     XF86VidModeQueryVersion {
         sequence: u16,
         major_version: u16,

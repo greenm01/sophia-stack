@@ -252,7 +252,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
     if args.iter().any(|arg| arg == "x-authority-shm-fd-smoke") {
         let report = run_x_authority_shm_fd_smoke()?;
         println!(
-            "x-authority-shm-fd-smoke display={} shm_version={}.{} created_bytes={} written={} read_back={} attached_fd_segments={} oversize_refused={} errors={}",
+            "x-authority-shm-fd-smoke display={} shm_version={}.{} created_bytes={} written={} read_back={} attached_fd_segments={} granted_xids={} oversize_refused={} errors={}",
             report.display,
             report.major_version,
             report.minor_version,
@@ -260,6 +260,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
             report.written,
             report.read_back,
             report.attached_fd_segments,
+            report.granted_xids,
             report.oversize_refused,
             report.errors,
         );

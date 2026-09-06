@@ -102,6 +102,23 @@ impl X11CoreSocketServerState {
         self
     }
 
+    /// Grants a client one more block of resource identifiers.
+    ///
+    /// Drawn from the same counter that hands every client its range at
+    /// connection setup, so a granted block cannot overlap one already given
+    /// out. `None` when the counter is exhausted, which `GetXIDRange` reports
+    /// as a count of zero rather than by inventing a block that would collide
+    /// with another client's resources.
+    fn grant_client_resource_range(&self) -> Option<(u32, u32)> {
+        let mut clients = self.clients.lock().ok()?;
+        if clients.next_client_resource_range > X11_MAX_CLIENT_RESOURCE_RANGES {
+            return None;
+        }
+        let base = u32::from(clients.next_client_resource_range) * X11_CLIENT_RESOURCE_RANGE_SIZE;
+        clients.next_client_resource_range = clients.next_client_resource_range.saturating_add(1);
+        Some((base, X11_CLIENT_RESOURCE_RANGE_SIZE))
+    }
+
     fn open_render_device_fd(&self) -> Result<OwnedFd, XServerFrontendRenderDeviceError> {
         self.render_device_provider
             .as_ref()

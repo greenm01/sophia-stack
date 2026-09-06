@@ -132,6 +132,34 @@ fn run_x_authority_shm_fd_smoke() -> Result<XAuthorityShmFdSmokeReport, Box<dyn 
         errors += 1;
     }
 
+    // XC-MISC, over the same connection: the grant path lives in the socket
+    // layer and the dispatch layer cannot reach it, so this is the only place
+    // that proves a real range comes back rather than the honest zero.
+    let xid_range = {
+        use x11rb::protocol::xc_misc::ConnectionExt as _;
+        let version = connection.xc_misc_get_version(1, 1)?.reply()?;
+        assert_eq!(version.server_major_version, 1);
+        let range = connection.xc_misc_get_xid_range()?.reply()?;
+        // The block must not overlap the range this client was given at
+        // connection setup, or the identifiers it hands out would collide with
+        // resources it already owns.
+        let setup = connection.setup();
+        let own_end = setup.resource_id_base + setup.resource_id_mask;
+        assert!(
+            range.count > 0,
+            "the server granted no identifiers: {range:?}"
+        );
+        assert!(
+            range.start_id > own_end || range.start_id + range.count <= setup.resource_id_base,
+            "granted range {}..{} overlaps this client's own {}..{}",
+            range.start_id,
+            range.start_id + range.count,
+            setup.resource_id_base,
+            own_end
+        );
+        range
+    };
+
     // AttachFd: the client passes one the other way.
     let (ours, descriptor) = sophia_sysv_shm::DescriptorMapping::create_sealed(4096)?;
     drop(ours);
@@ -161,6 +189,7 @@ fn run_x_authority_shm_fd_smoke() -> Result<XAuthorityShmFdSmokeReport, Box<dyn 
         written: pattern.len(),
         read_back: read_back.len(),
         attached_fd_segments: 1,
+        granted_xids: xid_range.count,
         oversize_refused,
         errors,
     })

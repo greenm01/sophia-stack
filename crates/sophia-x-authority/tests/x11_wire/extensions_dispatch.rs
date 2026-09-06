@@ -1626,3 +1626,69 @@ fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
         refused.outputs
     );
 }
+
+/// XC-MISC answers, and its default answer is the honest one.
+///
+/// A client reaches this only after exhausting the identifiers it was given at
+/// connection setup, which a browser left open for days eventually does. The
+/// dispatch layer cannot see the range counter -- that belongs to the socket
+/// layer -- so it answers "none available", and the socket layer replaces that
+/// with a grant when it can.
+///
+/// A count of zero is a real protocol answer that clients handle by giving up
+/// cleanly. Inventing a range instead would hand out identifiers belonging to
+/// another client, which is worse than the exhaustion it was avoiding.
+#[test]
+fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
+    let namespace = NamespaceId::from_raw(85);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let mut dispatch = |request| {
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, 40, XByteOrder::LittleEndian, X_XC_MISC_MAJOR_OPCODE),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+    };
+
+    let version = dispatch(XWireRequest::XCMiscGetVersion { major: 1, minor: 1 });
+    assert!(
+        matches!(
+            version.outputs.as_slice(),
+            [XClientOutput::Reply(XClientReply::XCMiscGetVersion {
+                major_version: 1,
+                minor_version: 1,
+                ..
+            })]
+        ),
+        "{:?}",
+        version.outputs
+    );
+
+    let range = dispatch(XWireRequest::XCMiscGetXIDRange);
+    assert!(
+        matches!(
+            range.outputs.as_slice(),
+            [XClientOutput::Reply(XClientReply::XCMiscGetXIDRange {
+                start_id: 0,
+                count: 0,
+                ..
+            })]
+        ),
+        "{:?}",
+        range.outputs
+    );
+
+    // Asking for four billion identifiers must not produce four billion
+    // words in memory before anything has looked at the number.
+    let list = dispatch(XWireRequest::XCMiscGetXIDList { count: u32::MAX });
+    match list.outputs.as_slice() {
+        [XClientOutput::Reply(XClientReply::XCMiscGetXIDList { ids, .. })] => {
+            assert!(ids.is_empty(), "{ids:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
