@@ -468,6 +468,7 @@ fn run_session_loop_inner(
     let mut shell_work_area_bands: Option<Vec<sophia_protocol::OutputReservation>> = None;
     let mut shell_proof_waiting_for_inert_click = false;
     let mut chrome_captures = sophia_engine::ChromeCaptureState::default();
+    let mut reference_capture = sophia_engine::ReferenceSheetCapture::default();
     let mut descriptor_captures = sophia_engine::PresentedChromeCaptureState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
@@ -646,6 +647,14 @@ fn run_session_loop_inner(
 
     macro_rules! revoke_chrome_captures {
         ($reason:literal) => {{
+            reference_capture.present(None);
+            if let Some(shell)=metadata_shell.as_mut() && shell.reference_busy() {
+                if let Err(error)=shell.cancel_reference() {
+                    crate::session_eprintln!("sophia_reference status=cancel_failed reason={} error={error}",$reason);
+                    shell.recover_transport("reference_cancel_failure")?;
+                }
+                if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
+            }
             let revoked = chrome_captures
                 .cancel_all()
                 .len()

@@ -67,6 +67,7 @@ pub struct CompositorSolidRect {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CompositorRect {
+    pub opacity: u8,
     pub node: CompositorNodeId,
     pub generation: u64,
     pub geometry: Rect,

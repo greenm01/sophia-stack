@@ -83,6 +83,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if client_mode == "--serve" {
         tab_protocol_proof(&mut transport, &snapshot)?;
+        reference_protocol_proof(&mut transport)?;
     }
     let candidate_transaction = TransactionId::from_raw(1);
     let candidate = transport.request_candidate(candidate_transaction, &snapshot)?;
@@ -592,6 +593,115 @@ fn tab_protocol_proof(
     }
     println!(
         "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected=true"
+    );
+    Ok(())
+}
+
+fn reference_protocol_proof(
+    transport: &mut ShellSessionTransport,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sophia_protocol::*;
+    if !transport.supports_reference() {
+        return Err("shell did not negotiate read-only reference sheets".into());
+    }
+    let catalog = ShellShortcutCatalog {
+        connection_epoch: 1,
+        generation: 7,
+        entries: (1..=256)
+            .map(|slot| ShellShortcut {
+                slot,
+                chord: format!("Super+{slot}"),
+                action: format!("policy:action-{slot}"),
+                label: None,
+                group: None,
+            })
+            .collect(),
+    };
+    for frame in encode_shell_shortcut_catalog(TransactionId::from_raw(400), &catalog)
+        .map_err(|e| format!("{e:?}"))?
+    {
+        transport.send_async(frame)?;
+    }
+    let mut presentation_epoch = 0;
+    let mut seen = std::collections::BTreeSet::new();
+    for (i, operation) in [
+        ShellReferenceOperation::Startup,
+        ShellReferenceOperation::Next,
+        ShellReferenceOperation::Previous,
+        ShellReferenceOperation::Dismiss,
+        ShellReferenceOperation::Toggle,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let tx = TransactionId::from_raw(401 + i as u64);
+        let request = ShellReferenceRequest {
+            connection_epoch: 1,
+            catalog_generation: 7,
+            request_generation: tx.raw(),
+            output: OUTPUT,
+            output_generation: 1,
+            presentation_epoch,
+            operation,
+        };
+        transport.send_async(
+            encode_shell_reference_request(tx, request).map_err(|e| format!("{e:?}"))?,
+        )?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let bytes = loop {
+            if let Some(frame) = transport.poll_kind(IpcMessageKind::ShellReferenceCandidate)? {
+                break frame;
+            }
+            if std::time::Instant::now() > deadline {
+                return Err("reference response timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
+        let (actual, c) = decode_shell_reference_candidate(&bytes).map_err(|e| format!("{e:?}"))?;
+        if actual != tx
+            || c.request_generation != tx.raw()
+            || c.entries.len() != 256
+            || c.visible != (operation != ShellReferenceOperation::Dismiss)
+        {
+            return Err("reference candidate differs from requested catalog".into());
+        }
+        if i == 1 && c.page != 1 || i == 2 && c.page != 0 {
+            return Err("reference pagination did not follow presented page".into());
+        }
+        for row in &c.entries {
+            seen.insert(row.slot);
+        }
+        let outcome = ShellReferenceOutcome {
+            connection_epoch: 1,
+            catalog_generation: 7,
+            request_generation: tx.raw(),
+            candidate_generation: c.candidate_generation,
+            presentation_epoch: 0,
+            page: c.page,
+            pages: 5,
+            kind: ShellV1CandidateOutcomeKind::Prepared,
+        };
+        transport.send_async(
+            encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
+        )?;
+        presentation_epoch = 100 + i as u64;
+        transport.send_async(
+            encode_shell_reference_outcome(
+                tx,
+                ShellReferenceOutcome {
+                    presentation_epoch,
+                    kind: ShellV1CandidateOutcomeKind::Presented,
+                    ..outcome
+                },
+            )
+            .map_err(|e| format!("{e:?}"))?,
+        )?;
+    }
+    if seen.len() != 256 {
+        return Err("reference omitted a configured shortcut".into());
+    }
+    println!(
+        "sophia_reference_corpus status=complete entries=256 paging=true dismissal=true actions_disclosed=0"
     );
     Ok(())
 }

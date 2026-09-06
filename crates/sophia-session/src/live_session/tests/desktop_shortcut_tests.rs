@@ -16,6 +16,8 @@ fn key_shortcut(
     target: sophia_config::DesktopShortcutTarget,
 ) -> sophia_config::DesktopShortcutBinding {
     sophia_config::DesktopShortcutBinding {
+        label: None,
+        group: None,
         chord: sophia_config::DesktopShortcutChord {
             kind: sophia_config::DesktopShortcutBindingKind::Key,
             modifiers: sophia_config::DesktopShortcutModifiers::SUPER,

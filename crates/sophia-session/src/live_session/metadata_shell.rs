@@ -1,5 +1,7 @@
 use super::*;
+mod reference;
 mod tabs;
+use reference::LiveReferenceSession;
 use tabs::LiveTabSession;
 
 /// A shell observation: which surface it names, on which output, at which
@@ -65,6 +67,7 @@ struct PendingDescriptorActivation {
 /// activation.
 pub(super) struct LiveMetadataShell {
     tabs: LiveTabSession,
+    reference: LiveReferenceSession,
     supervisor: ProcessSupervisor,
     transport: sophia_runtime::ShellSessionTransport,
     slots: BTreeMap<SurfaceId, u16>,
@@ -99,7 +102,7 @@ impl LiveMetadataShell {
             rustix::process::geteuid().as_raw(),
         )?;
         let socket = transport.socket_path().to_path_buf();
-        let domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
+        let mut domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
             sophia_runtime::ProtectionDomainRole::MetadataShell,
         ])?
         .path(sophia_runtime::ProtectionPath::read_only(
@@ -107,6 +110,20 @@ impl LiveMetadataShell {
                 .parent()
                 .expect("metadata shell socket always has a parent"),
         ))?;
+        let config_home = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
+            });
+        let private_config = std::env::var_os("SOPHIA_SHELL_CONFIG")
+            .map(std::path::PathBuf::from)
+            .or_else(|| config_home.map(|p| p.join("narthex/config.kdl")))
+            .filter(|p| p.is_file())
+            .map(|p| p.canonicalize())
+            .transpose()?;
+        if let Some(path) = private_config.as_ref() {
+            domain = domain.path(sophia_runtime::ProtectionPath::read_only(path))?;
+        }
         let mut spec = ProcessLaunchSpec::new(executable)
             .arg("--serve")
             .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
@@ -118,9 +135,13 @@ impl LiveMetadataShell {
         if let Some(thickness) = panel_thickness {
             spec = spec.env("SOPHIA_SHELL_BAR_THICKNESS", thickness.to_string());
         }
+        if let Some(path) = private_config {
+            spec = spec.env("SOPHIA_SHELL_CONFIG", path);
+        }
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
         let mut shell = Self {
             tabs: LiveTabSession::default(),
+            reference: LiveReferenceSession::default(),
             supervisor,
             transport,
             slots: BTreeMap::new(),
@@ -641,6 +662,7 @@ impl LiveMetadataShell {
         self.requested = None;
         self.activating = None;
         self.tabs = LiveTabSession::default();
+        self.reset_reference();
         self.pending = None;
         self.presented = None;
         self.presented_actions.clear();

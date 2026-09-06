@@ -138,6 +138,7 @@ pub struct HeadCompositorIndicatorStrip {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HeadCompositorRect {
+    pub opacity: u8,
     pub node: CompositorNodeId,
     pub generation: u64,
     pub geometry: Rect,
@@ -809,6 +810,7 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                 display_list
                     .commands
                     .push(CompositorDisplayCommand::Rect(CompositorRect {
+                        opacity: rect.opacity,
                         node: rect.node,
                         generation: rect.generation,
                         geometry: rect.geometry,
@@ -968,6 +970,7 @@ fn logical_scene_checksum(
                 mix(u64::from(rect.color.red));
                 mix(u64::from(rect.color.green));
                 mix(u64::from(rect.color.blue));
+                mix(u64::from(rect.opacity));
             }
             CompositorDisplayCommand::Text(text) => {
                 mix(6);
@@ -1245,6 +1248,7 @@ fn project_rect(
     clip: Rect,
 ) -> HeadCompositorRect {
     HeadCompositorRect {
+        opacity: rect.opacity,
         node: rect.node,
         generation: rect.generation,
         geometry: intersect_rect(transform.project_root_rect(viewport, rect.geometry), clip),

@@ -1,3 +1,6 @@
+const SHELL_HELP_SHORTCUT_ACTION: sophia_protocol::WmActionId =
+    sophia_protocol::WmActionId::from_raw(u64::MAX - 1);
+
 const SHELL_SWITCHER_SHORTCUT_ACTION: sophia_protocol::WmActionId =
     sophia_protocol::WmActionId::from_raw(u64::MAX);
 
@@ -15,7 +18,7 @@ fn session_shortcut_identity(
         sophia_config::DesktopSessionShortcut::Logout => Some((4, "logout")),
         sophia_config::DesktopSessionShortcut::ReloadProfile => Some((5, "reload-profile")),
         sophia_config::DesktopSessionShortcut::RestartWm => Some((6, "restart-wm")),
-        sophia_config::DesktopSessionShortcut::WindowSwitcher => None,
+        sophia_config::DesktopSessionShortcut::WindowSwitcher | sophia_config::DesktopSessionShortcut::ShortcutHelp => None,
     }
 }
 
@@ -29,7 +32,7 @@ fn resolve_public_shortcuts(
     if configuration
         .actions
         .iter()
-        .any(|action| action.action == SHELL_SWITCHER_SHORTCUT_ACTION)
+        .any(|action| matches!(action.action, SHELL_SWITCHER_SHORTCUT_ACTION | SHELL_HELP_SHORTCUT_ACTION))
     {
         return Err("policy action collides with a reserved session shortcut");
     }
@@ -72,6 +75,9 @@ fn resolve_public_shortcuts(
             sophia_config::DesktopShortcutTarget::Session(
                 sophia_config::DesktopSessionShortcut::WindowSwitcher,
             ) => SHELL_SWITCHER_SHORTCUT_ACTION,
+            sophia_config::DesktopShortcutTarget::Session(
+                sophia_config::DesktopSessionShortcut::ShortcutHelp,
+            ) => SHELL_HELP_SHORTCUT_ACTION,
             sophia_config::DesktopShortcutTarget::Session(shortcut) => session_shortcut_identity(
                 *shortcut,
             )

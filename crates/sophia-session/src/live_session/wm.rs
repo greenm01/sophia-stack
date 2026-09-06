@@ -12,3 +12,14 @@ include!("wm/admission.rs");
 include!("wm/layout.rs");
 include!("wm/layout_support.rs");
 include!("wm/work_area.rs");
+
+impl LiveWmSession {
+    fn reference_output(&self)->Option<sophia_protocol::OutputId> {
+        self.public.as_ref().filter(|p|p.configured).map(|p|p.active_output)
+    }
+
+    fn reference_shortcuts(&self) -> Option<&sophia_config::DesktopShortcutCandidate> {
+        let public=self.public.as_ref().filter(|p|p.configured)?;
+        public.shortcut_profile_slot.active().or_else(||public.shortcut_profile_slot.candidate())
+    }
+}

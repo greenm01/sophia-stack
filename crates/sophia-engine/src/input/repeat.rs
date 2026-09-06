@@ -118,6 +118,14 @@ impl KeyRepeatState {
         true
     }
 
+    pub fn cancel_all(&mut self) {
+        for slot in self.seats.iter_mut().flatten() {
+            if slot.target.take().is_some() {
+                self.metrics.cancelled = self.metrics.cancelled.saturating_add(1);
+            }
+        }
+    }
+
     pub fn cancel_seat(&mut self, seat: SeatId) -> bool {
         let Some(slot) = self.seat_slot_mut(seat) else {
             return false;

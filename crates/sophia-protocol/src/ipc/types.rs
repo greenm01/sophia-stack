@@ -56,6 +56,12 @@ pub enum IpcMessageKind {
     ShellTabsEntry = 105,
     ShellTabsEnd = 106,
     ShellTabsCandidate = 107,
+    ShellShortcutsBegin = 108,
+    ShellShortcutsEntry = 109,
+    ShellShortcutsEnd = 110,
+    ShellReferenceRequest = 111,
+    ShellReferenceCandidate = 112,
+    ShellReferenceOutcome = 113,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -12,6 +12,11 @@ workspace bar or reserve a fixed strip merely because a WM publishes indicators.
 Engine validates and commits descriptors, composites pixels, and enforces input
 and reservation ownership; the shell chooses its UI and placement.
 
+Native shell reference sheets use revision 3's read-only shortcut catalog and
+bounded presentation candidates. See [reference sheets](shell-reference-sheets.md)
+for the generic wire, private shell configuration, and shared JetBrains Mono
+presentation default. WM clients do not render this UI or receive its contents.
+
 ## The One Rule
 
 Sophia doesn't divide the desktop by feature. It divides it by who may see

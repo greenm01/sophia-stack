@@ -212,6 +212,7 @@ pub struct LivePresentedInputProjection {
     pub chrome_occlusion: Option<Rect>,
     pub descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
     pub descriptor_occlusion: Option<Rect>,
+    pub descriptor_projection: Option<u64>,
     pub tab_occlusions: Vec<Rect>,
 }
 
@@ -367,6 +368,7 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion: None,
                 descriptor_targets: Vec::new(),
                 descriptor_occlusion: None,
+                descriptor_projection: None,
                 tab_occlusions: Vec::new(),
             })
             .collect();

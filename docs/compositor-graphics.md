@@ -376,7 +376,7 @@ content, client titles, paths, or texture bytes.
   independently for unequal heads.
 - The live renderer rasterizes sanitized compositor text with bundled JetBrains
   Mono NL Regular 2.304. Its renderer-private least-recently-used cache is
-  bounded to 128 entries and 16 MiB, and shared raster bytes remain valid after
+  bounded to 1,024 entries and 16 MiB, and shared raster bytes remain valid after
   eviction while a frame retains them.
 
 ### Target

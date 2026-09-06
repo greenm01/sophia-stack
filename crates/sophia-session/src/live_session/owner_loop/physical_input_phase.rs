@@ -93,6 +93,7 @@ macro_rules! drain_physical_input {
                     application_route_leases: &mut application_route_leases,
                     chrome_captures: &mut chrome_captures,
                     descriptor_captures: &mut descriptor_captures,
+                    reference_capture: &mut reference_capture,
                     route_lease_release_sender,
                     input_output,
                     input_presentation_epoch,
@@ -496,7 +497,16 @@ macro_rules! drain_physical_input {
                     if let Some(runtime)=runtime.as_mut(){runtime.revoke_descriptor_overlay_interaction();}
                 }
             }
+            if let Some(shell)=metadata_shell.as_mut() {
+                for (output,epoch,operation) in &report.reference_operations {
+                    if shell.reference_input()==Some((*output,*epoch)) {shell.queue_reference(*operation,*output);}
+                }
+            }
             for action in report.wm_actions.iter().copied() {
+                if action==SHELL_HELP_SHORTCUT_ACTION {
+                    if let Some(shell)=metadata_shell.as_mut(){shell.queue_reference(sophia_protocol::ShellReferenceOperation::Toggle,wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id));}
+                    continue;
+                }
                 if is_shell_switcher_shortcut(action) {
                     let broker = metadata_broker
                         .as_ref()
@@ -504,6 +514,11 @@ macro_rules! drain_physical_input {
                     let shell = metadata_shell
                         .as_mut()
                         .ok_or("shell shortcut has no live metadata shell")?;
+                    if shell.reference_busy() {
+                        shell.cancel_reference()?;
+                        reference_capture.present(None);
+                        if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
+                    }
                     if shell.interaction_presented() {
                         crate::session_println!(
                             "sophia_live_metadata_shell schema=1 status=shortcut_consumed outcome=already_open"
@@ -970,6 +985,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(shell) = metadata_shell.as_mut() {
             shell.observe_outputs(&outputs)?;
+            let reference_was_active=shell.reference_busy();
             let mut revoke_shell_input = false;
             match shell.poll() {
                 Ok(LiveMetadataShellPoll::Healthy) => {}
@@ -1025,6 +1041,21 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     Err(error)=>{crate::session_eprintln!("sophia_tabs status=unavailable error={error}");shell.recover_transport("tab_failure")?;revoke_shell_input=true;}
                 }
             }
+            if let Some(runtime)=runtime.as_mut() {
+                let shortcuts=wm_session.as_ref().and_then(LiveWmSession::reference_shortcuts);
+                let reference_output=wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id);
+                if let Err(error)=shell.service_reference(shortcuts,reference_output,runtime,&scene,native_scanout.as_mut()) {
+                    crate::session_eprintln!("sophia_reference status=unavailable error={error}");
+                    shell.recover_transport("reference_failure")?;
+                    runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;
+                    revoke_shell_input=true;
+                }
+                let reference_input=shell.reference_input();
+                if reference_input.is_some() {
+                    key_repeat.cancel_all();
+                }
+                reference_capture.present(reference_input);
+            }
             if let Some(runtime) = runtime.as_ref() {
                 match shell.observe_presentation(runtime) {
                     Ok(true) if shell.interaction_presented() => {
@@ -1055,10 +1086,12 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if revoke_shell_input {
+                reference_capture.present(None);
                 shell.revoke_interaction();
                 descriptor_captures.cancel_all();
                 if let Some(runtime) = runtime.as_mut() {
                     runtime.revoke_descriptor_overlay_interaction();
+                    if reference_was_active {runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
                 }
             }
             shell_work_area_bands = Some(shell.work_area_bands());

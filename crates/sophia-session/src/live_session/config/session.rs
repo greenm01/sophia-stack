@@ -161,7 +161,7 @@ impl SessionApplicationConfig {
                     sophia_config::DesktopSessionShortcut::LaunchBrowser,
                 ) => self.browser.is_some(),
                 sophia_config::DesktopShortcutTarget::Session(
-                    sophia_config::DesktopSessionShortcut::WindowSwitcher,
+                    sophia_config::DesktopSessionShortcut::WindowSwitcher | sophia_config::DesktopSessionShortcut::ShortcutHelp,
                 ) => shell_enabled,
                 // Always available. Neither needs a configured application,
                 // and a desktop whose configuration is wrong is the one that

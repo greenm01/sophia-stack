@@ -768,7 +768,9 @@ impl LiveProductionVisualRuntime {
             self.descriptor_overlay.as_ref().is_some_and(|overlay| {
                 overlay.output == output
                     && overlay.generation == generation
-                    && !projection.descriptor_targets.is_empty()
+                    && overlay.commands.iter().any(|c| matches!(c,
+                        sophia_engine::CompositorDisplayCommand::Rect(r) if matches!(r.node,
+                            sophia_engine::CompositorNodeId::DescriptorOverlay { projection: id, slot: u16::MAX, role: sophia_engine::DescriptorOverlayNodeRole::Panel } if Some(id) == projection.descriptor_projection)))
                     && overlay
                         .targets
                         .iter()

@@ -16,7 +16,9 @@ use crate::{LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888, LiveSharedCpuBufferSource};
 pub const COMPOSITOR_TEXT_FONT_RELEASE: &str = "JetBrains Mono 2.304";
 pub const COMPOSITOR_TEXT_FONT_SHA256: &str =
     "fb3b2575d7b0657359707993288f12a7360344d39387bb26050e276d61f6bd2a";
-pub const COMPOSITOR_TEXT_CACHE_MAX_ENTRIES: usize = 128;
+// A complete 256-row reference can contain 513 text nodes. Keep an entire
+// admitted page resident across repaints while retaining the byte ceiling.
+pub const COMPOSITOR_TEXT_CACHE_MAX_ENTRIES: usize = 1024;
 pub const COMPOSITOR_TEXT_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 
 const FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
@@ -103,6 +105,26 @@ impl Default for CompositorTextRasterCache {
 }
 
 impl CompositorTextRasterCache {
+    /// Use the same bundled font and line metrics as compositor rasterization.
+    pub fn measure(&mut self, text: &str, size: u16) -> (i32, i32) {
+        let mut builder =
+            self.layout_context
+                .ranged_builder(&mut self.font_context, text, 1.0, true);
+        builder.push_default(FontFamily::named(FONT_FAMILY));
+        builder.push_default(StyleProperty::FontSize(f32::from(size)));
+        builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(
+            f32::from(size) * 1.2,
+        )));
+        let mut layout: Layout<TextBrush> = builder.build(text);
+        layout.break_all_lines(None);
+        // Fit the rounded advance and retain one edge pixel for raster
+        // coverage beyond the fractional line box.
+        (
+            layout.width().round() as i32,
+            layout.height().ceil() as i32 + 1,
+        )
+    }
+
     pub fn raster_for(
         &mut self,
         text: &HeadCompositorText,

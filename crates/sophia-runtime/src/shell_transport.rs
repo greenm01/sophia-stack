@@ -137,7 +137,7 @@ impl ShellSessionTransport {
         let hello = decode_shell_v1_client_hello_frame(&read_frame(&mut stream)?)?;
         if hello.minimum_revision == 0
             || hello.minimum_revision > hello.maximum_revision
-            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_TAB_REVISION
+            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_REFERENCE_REVISION
         {
             return Err(ShellTransportError::UnsupportedRevision);
         }
@@ -146,7 +146,7 @@ impl ShellSessionTransport {
         }
         let revision = hello
             .maximum_revision
-            .min(sophia_protocol::SOPHIA_SHELL_TAB_REVISION);
+            .min(sophia_protocol::SOPHIA_SHELL_REFERENCE_REVISION);
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | if revision >= 2 {
@@ -154,6 +154,19 @@ impl ShellSessionTransport {
             } else {
                 0
             };
+        let capabilities = capabilities
+            | if revision >= 3 {
+                hello.required_capabilities
+                    & (sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG
+                        | sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET)
+            } else {
+                0
+            };
+        if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET != 0
+            && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG == 0
+        {
+            return Err(ShellTransportError::MissingCapability);
+        }
         if hello.required_capabilities & !capabilities != 0 {
             return Err(ShellTransportError::MissingCapability);
         }
@@ -384,6 +397,16 @@ impl ShellSessionTransport {
         } else {
             Err(ShellTransportError::InvalidConnectionEpoch)
         }
+    }
+
+    pub const fn supports_shortcut_catalog(&self) -> bool {
+        self.capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG != 0
+    }
+
+    pub const fn supports_reference(&self) -> bool {
+        let mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG
+            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET;
+        self.capabilities & mask == mask
     }
 
     pub const fn supports_tabs(&self) -> bool {

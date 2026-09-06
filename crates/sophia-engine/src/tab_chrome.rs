@@ -42,6 +42,7 @@ pub fn tab_bar_projection(
         result
             .commands
             .push(CompositorDisplayCommand::Rect(CompositorRect {
+                opacity: 255,
                 node: CompositorNodeId::TabBar {
                     output: group.output,
                     group: group.group,

@@ -45,6 +45,7 @@ pub enum DesktopSessionShortcut {
     LaunchTerminal,
     LaunchBrowser,
     WindowSwitcher,
+    ShortcutHelp,
     /// Re-read the desktop profile and put it into effect, the way a window
     /// manager that ships its config in a file has to offer.
     ReloadProfile,
@@ -63,6 +64,7 @@ impl DesktopSessionShortcut {
             Self::LaunchTerminal => "spawn-terminal",
             Self::LaunchBrowser => "spawn-browser",
             Self::WindowSwitcher => "window-switcher",
+            Self::ShortcutHelp => "shortcut-help",
             Self::ReloadProfile => "reload-profile",
             Self::RestartWm => "restart-wm",
         }
@@ -79,6 +81,8 @@ pub enum DesktopShortcutTarget {
 pub struct DesktopShortcutBinding {
     pub chord: DesktopShortcutChord,
     pub target: DesktopShortcutTarget,
+    pub label: Option<String>,
+    pub group: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -138,7 +142,10 @@ fn parse_chord(
     if trigger.is_empty()
         || !trigger.bytes().all(|byte| {
             byte.is_ascii_alphanumeric()
-                || matches!(byte, b'_' | b'-' | b'=' | b'?' | b',' | b'.' | b'[' | b']')
+                || matches!(
+                    byte,
+                    b'_' | b'-' | b'=' | b'?' | b'/' | b',' | b'.' | b'[' | b']'
+                )
         })
     {
         return Err(schema_error("trigger key contains unsupported characters"));
@@ -157,10 +164,14 @@ fn parse_chord(
         }
         modifier_bits |= bit;
     }
-    let trigger = trigger.to_ascii_lowercase();
-    if trigger == "?" {
-        modifier_bits |= DesktopShortcutModifiers::SHIFT.bits();
-    }
+    let trigger = match trigger.to_ascii_lowercase().as_str() {
+        "?" | "question" => {
+            modifier_bits |= DesktopShortcutModifiers::SHIFT.bits();
+            "slash".to_owned()
+        }
+        "/" | "slash" => "slash".to_owned(),
+        _ => trigger.to_ascii_lowercase(),
+    };
     if kind == DesktopShortcutBindingKind::Pointer
         && !["left", "middle", "right"].contains(&trigger.as_str())
     {
@@ -252,7 +263,7 @@ pub fn desktop_shortcut_evdev_keycode(trigger: &str) -> Option<u32> {
         "m" => 50,
         "," => 51,
         "." => 52,
-        "?" => 53,
+        "?" | "/" | "slash" | "question" => 53,
         "space" => 57,
         "print" => 99,
         "up" => 103,
@@ -309,6 +320,7 @@ fn parse_target(
                 "spawn-terminal" => DesktopSessionShortcut::LaunchTerminal,
                 "spawn-browser" => DesktopSessionShortcut::LaunchBrowser,
                 "window-switcher" => DesktopSessionShortcut::WindowSwitcher,
+                "shortcut-help" => DesktopSessionShortcut::ShortcutHelp,
                 "reload-profile" => DesktopSessionShortcut::ReloadProfile,
                 "restart-wm" => DesktopSessionShortcut::RestartWm,
                 _ => return Err(schema_error("unknown session shortcut capability")),
@@ -322,8 +334,18 @@ fn parse_target(
 }
 
 fn parse_binding(node: &KdlNode) -> Result<DesktopShortcutBinding, DesktopProfileError> {
-    if node.entries().len() != 2 || node.children().is_some() || node.ty().is_some() {
-        return Err(schema_error("binding requires trigger and target strings"));
+    if node.entries().iter().filter(|e| e.name().is_none()).count() != 2
+        || node.children().is_some()
+        || node.ty().is_some()
+        || node
+            .entries()
+            .iter()
+            .filter_map(|e| e.name())
+            .any(|n| !matches!(n.value(), "label" | "group"))
+    {
+        return Err(schema_error(
+            "binding requires trigger and target strings with optional label/group",
+        ));
     }
     let kind = match node.name().value() {
         "bind" => DesktopShortcutBindingKind::Key,
@@ -334,9 +356,36 @@ fn parse_binding(node: &KdlNode) -> Result<DesktopShortcutBinding, DesktopProfil
         .ok_or_else(|| schema_error("binding trigger must be a string"))?;
     let target = positional_string(node, 1)
         .ok_or_else(|| schema_error("binding target must be a string"))?;
+    let metadata =
+        |name: &str, limit: usize| -> Result<Option<String>, DesktopProfileError> {
+            if node
+                .entries()
+                .iter()
+                .filter(|e| e.name().is_some_and(|n| n.value() == name))
+                .count()
+                > 1
+            {
+                return Err(schema_error("duplicate binding metadata"));
+            }
+            node.get(name)
+                .map(|v| {
+                    v.as_string()
+                        .filter(|s| {
+                            !s.is_empty() && s.len() <= limit && !s.chars().any(|c| {
+                                c.is_control()
+                                    || matches!(c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')
+                            })
+                        })
+                        .map(str::to_owned)
+                        .ok_or_else(|| schema_error("invalid binding metadata"))
+                })
+                .transpose()
+        };
     Ok(DesktopShortcutBinding {
         chord: parse_chord(kind, trigger)?,
         target: parse_target(kind, target)?,
+        label: metadata("label", 128)?,
+        group: metadata("group", 64)?,
     })
 }
 

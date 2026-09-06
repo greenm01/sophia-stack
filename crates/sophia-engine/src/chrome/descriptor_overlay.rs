@@ -100,6 +100,7 @@ pub fn descriptor_overlay_projection(
     let mut targets = Vec::with_capacity(candidate.entries.len());
 
     commands.push(CompositorDisplayCommand::Rect(CompositorRect {
+        opacity: 255,
         node: overlay_node(
             candidate.projection,
             PANEL_SLOT,
@@ -152,6 +153,7 @@ pub fn descriptor_overlay_projection(
             height: DESCRIPTOR_OVERLAY_ROW_HEIGHT,
         };
         commands.push(CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: 255,
             node: overlay_node(
                 candidate.projection,
                 entry.slot,
@@ -163,6 +165,7 @@ pub fn descriptor_overlay_projection(
         }));
         if candidate.selected_slot == Some(entry.slot) {
             commands.push(CompositorDisplayCommand::Rect(CompositorRect {
+                opacity: 255,
                 node: overlay_node(
                     candidate.projection,
                     entry.slot,
@@ -177,6 +180,7 @@ pub fn descriptor_overlay_projection(
             }));
         }
         commands.push(CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: 255,
             node: overlay_node(
                 candidate.projection,
                 entry.slot,
@@ -193,6 +197,7 @@ pub fn descriptor_overlay_projection(
         }));
         if descriptor.attention != AttentionState::None {
             commands.push(CompositorDisplayCommand::Rect(CompositorRect {
+                opacity: 255,
                 node: overlay_node(
                     candidate.projection,
                     entry.slot,

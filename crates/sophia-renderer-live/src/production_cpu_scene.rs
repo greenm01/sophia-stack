@@ -374,6 +374,7 @@ impl LiveProductionCpuScene {
                     for band in sophia_engine::compositor_border_bands(*border) {
                         if !band.geometry.is_empty() {
                             elements.push(LiveCpuCompositionElementRef::Solid {
+                                opacity: 255,
                                 geometry: band.geometry,
                                 color: band.color,
                             });
@@ -383,6 +384,7 @@ impl LiveProductionCpuScene {
                 CompositorDisplayCommand::Rect(rect) => {
                     if !rect.geometry.is_empty() {
                         elements.push(LiveCpuCompositionElementRef::Solid {
+                            opacity: rect.opacity,
                             geometry: rect.geometry,
                             color: rect.color,
                         });

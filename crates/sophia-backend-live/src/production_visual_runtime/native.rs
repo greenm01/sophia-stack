@@ -320,6 +320,7 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion: None,
                 descriptor_targets: Vec::new(),
                 descriptor_occlusion: None,
+                descriptor_projection: None,
                 tab_occlusions: Vec::new(),
             })
             .collect();
@@ -496,6 +497,7 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion: None,
                 descriptor_targets: Vec::new(),
                 descriptor_occlusion: None,
+                descriptor_projection: None,
                 tab_occlusions: Vec::new(),
             })
             .collect();

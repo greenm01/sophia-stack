@@ -227,10 +227,23 @@ pub fn lower_head_composition_plan_with_caches(
             }
             HeadCompositorCommand::Rect(rect) => {
                 if !rect.geometry.is_empty() {
-                    layers.push(LiveOwnedMixedCompositionLayer::Solid {
-                        geometry: rect.geometry,
-                        color: rect.color,
-                    });
+                    if rect.opacity == 255 {
+                        layers.push(LiveOwnedMixedCompositionLayer::Solid {
+                            geometry: rect.geometry,
+                            color: rect.color,
+                        });
+                    } else {
+                        layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                            buffer: crate::solid_color_buffer(rect.color),
+                            placement: LiveCompositionPlacement {
+                                target: rect.geometry,
+                                clip: Some(rect.geometry),
+                                transform: Transform::IDENTITY,
+                                alpha: f32::from(rect.opacity) / 255.0,
+                                sampling: HeadSamplingClass::Exact,
+                            },
+                        });
+                    }
                 }
             }
             HeadCompositorCommand::Text(text) => {

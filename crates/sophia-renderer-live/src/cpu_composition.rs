@@ -1,3 +1,6 @@
+mod solid;
+pub use solid::solid_color_buffer;
+use solid::{compose_solid_rect, compose_solid_rect_clipped};
 use std::sync::{Arc, OnceLock};
 
 use sophia_engine::{CompositorRgb8, CursorAsset, x11_core_left_ptr_cursor};
@@ -83,6 +86,7 @@ pub struct LiveCpuCompositionLayerRef<'a> {
 pub enum LiveCpuCompositionElementRef<'a> {
     Layer(LiveCpuCompositionLayerRef<'a>),
     Solid {
+        opacity: u8,
         geometry: Rect,
         color: CompositorRgb8,
     },
@@ -477,9 +481,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
                     LiveCpuCompositionElementRef::Layer(layer) => {
                         compose_layer_clipped(&mut frame, layer, clip)
                     }
-                    LiveCpuCompositionElementRef::Solid { geometry, color } => {
-                        compose_solid_rect_clipped(&mut frame, *geometry, *color, clip)
-                    }
+                    LiveCpuCompositionElementRef::Solid {
+                        opacity,
+                        geometry,
+                        color,
+                    } => compose_solid_rect_clipped(&mut frame, *geometry, *color, *opacity, clip),
                 };
                 composed_elements[index] |= composed;
             }
@@ -502,9 +508,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
             for element in elements {
                 let composed = match element {
                     LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
-                    LiveCpuCompositionElementRef::Solid { geometry, color } => {
-                        compose_solid_rect(&mut frame, *geometry, *color)
-                    }
+                    LiveCpuCompositionElementRef::Solid {
+                        opacity,
+                        geometry,
+                        color,
+                    } => compose_solid_rect(&mut frame, *geometry, *color, *opacity),
                 };
                 if composed {
                     layers_composed = layers_composed.saturating_add(1);
@@ -582,7 +590,11 @@ fn composition_evidence_metrics(
                     layer.buffer.bytes.iter().any(|byte| *byte != 0),
                 ));
             }
-            LiveCpuCompositionElementRef::Solid { geometry, color } => {
+            LiveCpuCompositionElementRef::Solid {
+                opacity,
+                geometry,
+                color,
+            } => {
                 for value in [
                     u64::try_from(geometry.x).unwrap_or(u64::MAX),
                     u64::try_from(geometry.y).unwrap_or(u64::MAX),
@@ -591,6 +603,7 @@ fn composition_evidence_metrics(
                     u64::from(color.red),
                     u64::from(color.green),
                     u64::from(color.blue),
+                    u64::from(*opacity),
                 ] {
                     checksum = evidence_hash(checksum, value);
                 }
@@ -615,58 +628,6 @@ fn composition_evidence_metrics(
 
 const fn evidence_hash(hash: u64, value: u64) -> u64 {
     (hash ^ value).wrapping_mul(0x100_0000_01b3)
-}
-
-fn compose_solid_rect(
-    frame: &mut LiveCpuComposedFrame,
-    geometry: Rect,
-    color: CompositorRgb8,
-) -> bool {
-    compose_solid_rect_clipped(frame, geometry, color, output_rect(frame.size))
-}
-
-fn compose_solid_rect_clipped(
-    frame: &mut LiveCpuComposedFrame,
-    geometry: Rect,
-    color: CompositorRgb8,
-    clip: Rect,
-) -> bool {
-    let Some(target) =
-        clip_rect(geometry, clip).and_then(|rect| clip_rect(rect, output_rect(frame.size)))
-    else {
-        return false;
-    };
-    let Ok(start_x) = usize::try_from(target.x) else {
-        return false;
-    };
-    let Ok(start_y) = usize::try_from(target.y) else {
-        return false;
-    };
-    let Ok(width) = usize::try_from(target.width) else {
-        return false;
-    };
-    let Ok(height) = usize::try_from(target.height) else {
-        return false;
-    };
-    let Ok(stride) = usize::try_from(frame.stride) else {
-        return false;
-    };
-    let pixel = [color.blue, color.green, color.red, 0xff];
-    for y in start_y..start_y.saturating_add(height) {
-        let row_start = y
-            .saturating_mul(stride)
-            .saturating_add(start_x.saturating_mul(4));
-        let row_end = row_start.saturating_add(width.saturating_mul(4));
-        let Some(row) =
-            Arc::get_mut(&mut frame.bytes).and_then(|bytes| bytes.get_mut(row_start..row_end))
-        else {
-            return false;
-        };
-        for target in row.chunks_exact_mut(4) {
-            target.copy_from_slice(&pixel);
-        }
-    }
-    true
 }
 
 fn compose_software_cursor(frame: &mut LiveCpuComposedFrame, position: Point, asset: &CursorAsset) {
@@ -805,8 +766,10 @@ fn compose_layer_clipped(
     layer: &LiveCpuCompositionLayerRef<'_>,
     clip: Rect,
 ) -> bool {
-    if layer.buffer.format != LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888
-        || layer.geometry.width <= 0
+    if !matches!(
+        layer.buffer.format,
+        LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 | LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
+    ) || layer.geometry.width <= 0
         || layer.geometry.height <= 0
         || layer.buffer.size.width <= 0
         || layer.buffer.size.height <= 0
@@ -873,7 +836,19 @@ fn compose_layer_clipped(
         }) else {
             continue;
         };
-        target.copy_from_slice(source);
+        if layer.buffer.format == LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888 {
+            for (dst, src) in target.chunks_exact_mut(4).zip(source.chunks_exact(4)) {
+                let inverse = u16::from(255 - src[3]);
+                for channel in 0..3 {
+                    dst[channel] = (u16::from(src[channel])
+                        + (u16::from(dst[channel]) * inverse + 127) / 255)
+                        .min(255) as u8;
+                }
+                dst[3] = 255;
+            }
+        } else {
+            target.copy_from_slice(source);
+        }
         copied = true;
     }
     copied

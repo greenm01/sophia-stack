@@ -140,6 +140,7 @@ pub(crate) fn overlay_projection(
         generation,
         geometry,
         commands: vec![CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: 255,
             // The panel node of this projection: the same identity the shell's
             // own overlay uses, so nothing downstream has to special-case it.
             node: CompositorNodeId::DescriptorOverlay {

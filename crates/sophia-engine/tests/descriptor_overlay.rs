@@ -117,6 +117,7 @@ fn sanitized_descriptors_become_one_bounded_title_only_projection() {
     assert!(projection.commands.iter().any(|command| matches!(
         command,
         CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: 255,
             node: CompositorNodeId::DescriptorOverlay {
                 slot: 1,
                 role: DescriptorOverlayNodeRole::Attention,

@@ -1,7 +1,9 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=2 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=3 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
     capability "descriptor_switcher" bit=0
     capability "work_area_reservation" bit=1
     capability "tab_groups" bit=2 since=2
+    capability "shortcut_catalog" bit=3 since=3
+    capability "reference_sheet" bit=4 since=3
 
     outcome "prepared" value=1
     outcome "presented" value=2
@@ -133,5 +135,90 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "group_count" type="u16"
         field "reserved" type="u16" reserved=#true
         field "groups" type="opaque-u64-array"
+    }
+
+    // Revision 3 is read-only. Slots identify catalog rows, never actions.
+    // Text is UTF-8, length-prefixed u16 bytes, without controls or bidi overrides.
+    // A complete catalog transfer is atomic and contains at most 256 rows.
+    message "ShortcutsBegin" kind=108 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "entry_count" type="u16" max=256
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ShortcutsEntry" kind=109 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "chord_length" type="u16" max=64
+        field "chord" type="bytes" length="chord_length"
+        field "action_length" type="u16" max=128
+        field "action" type="bytes" length="action_length"
+        field "label_length" type="u16" max=128
+        field "label" type="bytes" length="label_length"
+        field "group_length" type="u16" max=64
+        field "group" type="bytes" length="group_length"
+    }
+    message "ShortcutsEnd" kind=110 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+    }
+    message "ReferenceRequest" kind=111 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "output" type="u64"
+        field "output_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "operation" type="u16" max=4
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ReferenceCandidate" kind=112 direction="shell-to-session" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="u64"
+        field "visible" type="u16" max=1
+        field "page" type="u16"
+        field "entry_count" type="u16" max=256
+        field "reserved" type="u16" reserved=#true
+        field "body_size" type="u16" max=32
+        field "title_size" type="u16" max=48
+        field "padding" type="u16" max=64
+        field "row_gap" type="u16" max=32
+        field "key_gap" type="u16" max=64
+        field "column_gap" type="u16" max=64
+        field "border" type="u16" max=16
+        field "margin" type="u16" max=128
+        field "columns" type="u16" max=4
+        field "background_argb" type="u32"
+        field "border_argb" type="u32"
+        field "key_text_argb" type="u32"
+        field "label_text_argb" type="u32"
+        field "key_background_argb" type="u32"
+        field "title_text_argb" type="u32"
+        field "title_length" type="u16" max=128
+        field "title" type="bytes" length="title_length"
+        repeated "entry" count="entry_count" {
+        field "slot" type="u16"
+        field "entry_reserved" type="u16" reserved=#true
+        field "key_length" type="u16" max=64
+        field "key" type="bytes" length="key_length"
+        field "label_length" type="u16" max=128
+        field "label" type="bytes" length="label_length"
+        }
+    }
+    message "ReferenceOutcome" kind=113 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "page" type="u16"
+        field "pages" type="u16"
+        field "outcome" type="u16"
+        field "reserved" type="u16" reserved=#true
     }
 }

@@ -24,7 +24,7 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | Interface | Authorized role | Current status | Role specification |
 | --- | --- | --- | --- |
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
-| `sophia_shell_v1` major 1 revision 2 | metadata-bearing shell | experimental descriptor switcher, reservations, and persistent tabs; revision 1 supported | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
+| `sophia_shell_v1` major 1 revision 3 | metadata-bearing shell | experimental switcher, reservations, persistent tabs and read-only reference sheets; revisions 1–2 supported | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
 | `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
 | `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |

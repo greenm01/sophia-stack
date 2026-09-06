@@ -12,6 +12,7 @@ struct PhysicalInputRouteReport {
     ingress_saturation: RoutedInputIngressSaturation,
     events: usize,
     wm_actions: Vec<WmActionId>,
+    reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
     chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
     descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
     chrome_captures_started: usize,
@@ -364,6 +365,7 @@ struct PhysicalInputRoutingContext<'a> {
     application_route_leases: &'a mut ApplicationRouteLeaseState,
     chrome_captures: &'a mut sophia_engine::ChromeCaptureState,
     descriptor_captures: &'a mut sophia_engine::PresentedChromeCaptureState,
+    reference_capture: &'a mut sophia_engine::ReferenceSheetCapture,
     route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -406,6 +408,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         application_route_leases,
         chrome_captures,
         descriptor_captures,
+        reference_capture,
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
@@ -446,6 +449,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         input_presentation_epoch,
         Some(input_projections),
         Some(pointer_outputs),
+        Some(reference_capture),
     )
 }
 
@@ -513,6 +517,7 @@ fn route_input_events(
         0,
         None,
         None,
+        None,
     )
 }
 
@@ -553,11 +558,13 @@ fn route_input_events_with_pointer_focus(
     input_presentation_epoch: u64,
     input_projections: Option<&[sophia_backend_live::LivePresentedInputProjection]>,
     pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
+    mut reference_capture: Option<&mut sophia_engine::ReferenceSheetCapture>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         ingress_saturation: RoutedInputIngressSaturation::default(),
         events: events.len(),
         wm_actions: Vec::new(),
+        reference_operations: Vec::new(),
         chrome_activations: Vec::new(),
         descriptor_activations: Vec::new(),
         chrome_captures_started: 0,
@@ -791,17 +798,19 @@ fn route_input_events_with_pointer_focus(
                         report.emergency_exit = true;
                         continue;
                     }
-                    if routing_mode != PhysicalInputRoutingMode::CursorOnly
-                        && let Some(shortcuts) = shortcuts.as_deref_mut()
-                    {
-                        let decision = shortcuts.route_key(event.seat, keycode, pressed);
-                        if decision.consumed {
-                            if pressed && key_repeat_map.evdev_key_repeats(keycode) {
-                                key_repeat.cancel_seat(event.seat);
-                            }
-                            report.wm_actions.extend(decision.action);
-                            continue;
-                        }
+                    let decision = if routing_mode != PhysicalInputRoutingMode::CursorOnly {
+                        shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,keycode,pressed))
+                    } else {None};
+                    let switcher=decision.as_ref().is_some_and(|d|d.action.is_some_and(is_shell_switcher_shortcut));
+                    if !switcher && let Some(capture)=reference_capture.as_deref_mut() {
+                        let (consumed,operation)=capture.route(&event);
+                        report.reference_operations.extend(operation);
+                        if consumed {key_repeat.cancel_seat(event.seat);continue;}
+                    }
+                    if let Some(decision)=decision && decision.consumed {
+                        if pressed && key_repeat_map.evdev_key_repeats(keycode) {key_repeat.cancel_seat(event.seat);}
+                        report.wm_actions.extend(decision.action);
+                        continue;
                     }
                 }
                 if !control_plane_applied
@@ -979,6 +988,17 @@ fn route_input_events_with_pointer_focus(
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }
             | sophia_protocol::InputEventKind::PointerAxis { .. }) => {
+                if !control_plane_applied && let Some(capture)=reference_capture.as_deref_mut() {
+                    let (consumed,operation)=capture.route(&event);
+                    report.reference_operations.extend(operation);
+                    if consumed {
+                        if matches!(kind,sophia_protocol::InputEventKind::PointerMotion) {
+                            let focused=focus.focused_surface(event.seat);
+                            let _=place_pointer_event_for_routing(&mut event,focused,input_layers,pointer,false);
+                        }
+                        continue;
+                    }
+                }
                 let is_button =
                     matches!(kind, sophia_protocol::InputEventKind::PointerButton { .. });
                 let is_axis =

@@ -1137,3 +1137,53 @@ fn session_startup_list_is_ordered_bounded_and_unique() {
     assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn help_aliases_share_a_physical_chord_and_display_metadata_is_bounded() {
+    let root = temporary_directory("shortcut-help");
+    let path = root.join("config.kdl");
+    let mut chords = Vec::new();
+    for chord in [
+        "Super+?",
+        "Super+Shift+/",
+        "Super+Shift+slash",
+        "Super+Question",
+    ] {
+        write_profile(
+            &path,
+            &format!(
+                "schema 1\nshortcut {{ profile \"help\"; bind \"{chord}\" \"session:shortcut-help\" label=\"Keyboard shortcuts\" group=\"Session\"; }}\n"
+            ),
+        );
+        let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+        let candidate =
+            prepare_desktop_shortcut_candidate(&profile.candidates[&DesktopAuthority::Shortcut])
+                .unwrap();
+        assert_eq!(
+            candidate.bindings[0].label.as_deref(),
+            Some("Keyboard shortcuts")
+        );
+        chords.push(candidate.bindings[0].chord.clone());
+    }
+    assert!(chords.windows(2).all(|w| w[0] == w[1]));
+    for property in [
+        "label=1".to_owned(),
+        "group=\"\"".to_owned(),
+        format!("label=\"{}\"", "a".repeat(129)),
+        "unknown=\"x\"".to_owned(),
+    ] {
+        write_profile(
+            &path,
+            &format!(
+                "schema 1\nshortcut {{ profile \"help\"; bind \"Super+?\" \"session:shortcut-help\" {property}; }}\n"
+            ),
+        );
+        assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    }
+    write_profile(
+        &path,
+        "schema 1\nshortcut { profile \"help\"; bind \"Super+?\" \"session:shortcut-help\"; bind \"Super+Shift+/\" \"session:shortcut-help\"; }\n",
+    );
+    assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    fs::remove_dir_all(root).unwrap();
+}

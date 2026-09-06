@@ -1,9 +1,10 @@
 # Sophia Shell Interface Direction
 
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
-**Status:** revision 2 descriptor experiment with persistent WM tabs; revision 1
-switcher and reservation clients remain supported. Neither revision grants a
-blind-content rendering capability. The interface is not stable.
+**Status:** revision 3 adds [read-only reference sheets](shell-reference-sheets.md)
+and active shortcut catalogs. Revision 2 persistent tabs and revision 1 switcher
+and reservation clients remain supported. These extensions grant no blind-content
+rendering capability. The interface is not stable.
 
 The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
 records how broader shell vocabulary will be derived, the external evidence

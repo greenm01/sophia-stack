@@ -177,7 +177,7 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
     if string_arg(protocol, 0)? != "sophia_shell_v1"
         || integer_property(protocol, "frame-version")? != 1
         || integer_property(protocol, "interface-major")? != 1
-        || integer_property(protocol, "interface-revision")? != 2
+        || integer_property(protocol, "interface-revision")? != 3
         || integer_property(protocol, "max-descriptors")? != 16
         || integer_property(protocol, "max-label-bytes")? != 128
         || integer_property(protocol, "max-pending-activations")? != 16
@@ -200,6 +200,12 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
         ("TabsEntry", (105, "session-to-shell", "required")),
         ("TabsEnd", (106, "session-to-shell", "required")),
         ("TabsCandidate", (107, "shell-to-session", "required")),
+        ("ShortcutsBegin", (108, "session-to-shell", "required")),
+        ("ShortcutsEntry", (109, "session-to-shell", "required")),
+        ("ShortcutsEnd", (110, "session-to-shell", "required")),
+        ("ReferenceRequest", (111, "session-to-shell", "required")),
+        ("ReferenceCandidate", (112, "shell-to-session", "required")),
+        ("ReferenceOutcome", (113, "session-to-shell", "required")),
     ]);
     let mut actual = BTreeMap::new();
     for message in children
@@ -224,9 +230,9 @@ fn validate_shell_schema(text: &str) -> Result<(), String> {
             return Err(format!("shell schema message `{name}` drifted"));
         }
     }
-    if actual.len() != 12 {
+    if actual.len() != 18 {
         return Err(
-            "shell schema must define seven revision-1 and five revision-2 messages".into(),
+            "shell schema must define seven revision-1, five revision-2, and six revision-3 messages".into(),
         );
     }
     Ok(())

@@ -171,6 +171,7 @@ fn display_list_composition_reuses_uniquely_owned_frame_storage() {
     let report = compose_live_cpu_display_list_frame_with_metrics_reusing(
         size,
         &[LiveCpuCompositionElementRef::Solid {
+            opacity: 255,
             geometry: Rect {
                 x: 1,
                 y: 1,
@@ -200,6 +201,7 @@ fn display_list_content_identity_is_stable_across_metric_modes() {
         height: 4,
     };
     let elements = [LiveCpuCompositionElementRef::Solid {
+        opacity: 255,
         geometry: Rect {
             x: 1,
             y: 1,
@@ -261,6 +263,7 @@ fn cpu_display_list_preserves_solid_order_and_clips_to_output() {
                 },
             }),
             LiveCpuCompositionElementRef::Solid {
+                opacity: 255,
                 geometry: Rect {
                     x: 2,
                     y: -1,
@@ -716,6 +719,7 @@ fn damage_scoped_composition_preserves_pixels_outside_clipped_damage() {
     let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
         size,
         &[LiveCpuCompositionElementRef::Solid {
+            opacity: 255,
             geometry: Rect {
                 x: 0,
                 y: 0,
@@ -762,6 +766,7 @@ fn damage_scoped_composition_clears_removed_pixels_and_restores_stacking() {
         size,
         &[
             LiveCpuCompositionElementRef::Solid {
+                opacity: 255,
                 geometry: Rect {
                     x: 0,
                     y: 0,
@@ -771,6 +776,7 @@ fn damage_scoped_composition_clears_removed_pixels_and_restores_stacking() {
                 color: background,
             },
             LiveCpuCompositionElementRef::Solid {
+                opacity: 255,
                 geometry: Rect {
                     x: 1,
                     y: 0,
@@ -791,6 +797,7 @@ fn damage_scoped_composition_clears_removed_pixels_and_restores_stacking() {
         size,
         &[
             LiveCpuCompositionElementRef::Solid {
+                opacity: 255,
                 geometry: Rect {
                     x: 0,
                     y: 0,
@@ -800,6 +807,7 @@ fn damage_scoped_composition_clears_removed_pixels_and_restores_stacking() {
                 color: background,
             },
             LiveCpuCompositionElementRef::Solid {
+                opacity: 255,
                 geometry: Rect {
                     x: 2,
                     y: 0,
@@ -841,6 +849,7 @@ fn damage_scoped_composition_copies_a_shared_retained_frame() {
     let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
         size,
         &[LiveCpuCompositionElementRef::Solid {
+            opacity: 255,
             geometry: Rect {
                 x: 1,
                 y: 0,
@@ -941,6 +950,7 @@ fn damage_scoped_composition_falls_back_for_an_incompatible_baseline() {
     let report = compose_live_cpu_display_list_frame_with_metrics_reusing_damage(
         size,
         &[LiveCpuCompositionElementRef::Solid {
+            opacity: 255,
             geometry: Rect {
                 x: 0,
                 y: 0,

@@ -170,6 +170,16 @@ impl LiveProductionVisualRuntime {
         let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
             return;
         };
+        let descriptor_projection = self.tab_frames.get(&output).and_then(|frame| {
+            frame.rects().find_map(|rect| match rect.node {
+                sophia_engine::CompositorNodeId::DescriptorOverlay {
+                    projection,
+                    slot: u16::MAX,
+                    role: sophia_engine::DescriptorOverlayNodeRole::Panel,
+                } => Some(projection),
+                _ => None,
+            })
+        });
         let mut descriptor_targets = descriptor_targets;
         let mut tab_occlusions = Vec::new();
         if let Some(frame) = self.tab_frames.get(&output) {
@@ -208,6 +218,7 @@ impl LiveProductionVisualRuntime {
             || projection.chrome_occlusion != chrome_occlusion
             || projection.descriptor_targets != descriptor_targets
             || projection.descriptor_occlusion != descriptor_occlusion
+            || projection.descriptor_projection != descriptor_projection
             || projection.tab_occlusions != tab_occlusions
         {
             projection.epoch = projection
@@ -220,6 +231,7 @@ impl LiveProductionVisualRuntime {
         projection.chrome_occlusion = chrome_occlusion;
         projection.descriptor_targets = descriptor_targets;
         projection.descriptor_occlusion = descriptor_occlusion;
+        projection.descriptor_projection = descriptor_projection;
         projection.tab_occlusions = tab_occlusions;
     }
 
@@ -748,6 +760,7 @@ mod tests {
             height: 64,
         };
         let command = CompositorDisplayCommand::Rect(sophia_engine::CompositorRect {
+            opacity: 255,
             node: sophia_engine::CompositorNodeId::DescriptorOverlay {
                 projection: 5,
                 slot: u16::MAX,
@@ -855,3 +868,7 @@ mod tests {
         assert!(runtime.input_layers().is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/reference_presentation.rs"]
+mod reference_presentation_tests;
