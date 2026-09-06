@@ -7,6 +7,11 @@ COSMIC. It tells you which component owns what, which protocol each piece
 speaks, and how the pieces fit together. Each section links to the document
 that owns the details. This one owns the shape.
 
+Panel UI is supplied by the user's chosen shell. Sophia does not add a built-in
+workspace bar or reserve a fixed strip merely because a WM publishes indicators.
+Engine validates and commits descriptors, composites pixels, and enforces input
+and reservation ownership; the shell chooses its UI and placement.
+
 ## The One Rule
 
 Sophia doesn't divide the desktop by feature. It divides it by who may see

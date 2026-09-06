@@ -172,6 +172,10 @@ is the starting evidence; no new comparison run is required.
   now skips invisible candidates while preserving the old-area repaint. Accept
   terminal insertion and scrolling out of view/back on the rebuilt session;
   [diagnosis and retained evidence](docs/research-log.md#2026-09-06-third-terminal-crash-after-successful-panel-presentation).
+- [ ] Confirm shell-owned panel startup: the automatic Tier-0 bar, fixed top
+  reservation and hit targets are removed. Quickshell is the selected panel;
+  Narthex's switcher and explicit tab descriptors remain enabled. Check one bar
+  per output and full work-area restoration when the panel stops.
 - [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
   popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
   shell content and DMS remain deferred; this is an X11 compatibility client.

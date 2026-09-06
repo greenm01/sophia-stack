@@ -9,7 +9,10 @@ later work; no Sophia wire protocol or Engine API depends on this toolkit.
 X Authority translates docks, struts, popup ownership and X11 input. Engine
 owns commits, composition, physical input and work-area reduction. Hagia
 receives generic geometry and returns spatial policy. The fixture owns its
-clock, counter and local widget interactions.
+clock, counter and local widget interactions. The selected shell provides the
+panel: Sophia no longer adds its old 14-pixel workspace bar. With this fixture
+stopped and no other reservations, the full output work area is available.
+Narthex's switcher and explicit tab descriptors remain independent.
 
 ## Launch in the current live Sophia session
 

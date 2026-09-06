@@ -1,12 +1,13 @@
 # Sophia Indicator Descriptor
 
 **Role:** target contract for policy-authored desktop status.
-**Status:** wire contract, canonical Engine reducer, Tier-0 production chrome,
-and presented-input activation are implemented in `sophia_wm_v1` revision 3.
-The records, capability bit, and count fields exist in
-`protocol/sophia-wm-v1.kdl` with generated Rust and C99 codecs and golden
-vectors. Deterministic tests and the one-shot Hagia verifier cover the path;
-signed physical archive `0005` completes its promotion.
+**Status:** the wire contract and canonical Engine reducer are implemented in
+`sophia_wm_v1` revision 3. The automatic Tier-0 bar was retired on 2026-09-06:
+the user's chosen shell provides panel UI. Engine retains descriptor validation,
+atomic publication and generic rendering/input mechanisms. Historical Tier-0
+rendering and activation fixtures remain reference evidence, not a bar enabled
+by the production session. No shell-consumer wire extension is added by this
+retirement.
 `docs/architecture.md` and `docs/sophia-policy-ipc.md` remain authoritative
 where this document appears to disagree.
 
@@ -55,7 +56,8 @@ Noctalia's derived struct fits without becoming the schema. Its `id`, `name`,
 | Slot content, labels, ordering, action tokens | spatial-policy process |
 | Validation, atomic commit, retention, clearing | Engine |
 | Transfer assembly and peer admission | session runtime |
-| Rendering | Engine chrome, or a later authorized shell |
+| Panel UI and placement | user-selected shell |
+| Pixel composition and presented-input enforcement | Engine |
 | Titles, icons, trust badges | metadata broker, not this interface |
 
 Identity stays out. A taskbar needs window titles and icons; those come from the
@@ -194,12 +196,12 @@ Optionality here does not repeat Wayland's mistake, because there is no
 alternative channel to fall back to. A policy either uses this interface or
 publishes nothing at all.
 
-## Rendering Tiers
+## Historical rendering tiers
 
 The descriptor is the data. How it reaches a screen is separate, and three
 answers coexist:
 
-- **Tier 0 — Engine chrome.** Engine draws an indicator strip from the committed
+- **Tier 0 — Engine chrome (retired).** Engine drew an indicator strip from the committed
   descriptor. No client, no new interface. This covers a status bar's entire job
   and reuses the chrome path that already draws focus rings and frames under
   `capability "chrome"`. The strip's bounded geometry is session/Engine chrome
@@ -210,11 +212,15 @@ answers coexist:
   for rich shells. Deferred; see `docs/sophia-shell-v1-direction.md`.
 - **Tier 2 — X11 compatibility.** Ordinary X clients under the frontend.
 
-Tier 0 ships first. It also removes the unresolved 64 KiB texture question from
-the critical path, since that constraint binds Tier 1 alone.
+Tier 0 shipped first as a bootstrap UI. Current production panel UI is provided
+by selected shell clients; this historical tier is no longer an automatic fallback.
 
-The production policy session reserves a fixed 14 logical pixels at the top of
-every output before its first WM snapshot. Surface reservations reduce the
+The following describes the archived implementation. Current sessions add no
+built-in strip, top reservation or indicator hit targets. A selected shell's
+explicit reservations determine its panel's work area.
+
+The retired Tier-0 production policy session reserved a fixed 14 logical pixels
+at the top of every output before its first WM snapshot. Surface reservations reduce the
 remaining work area, and descriptor loss clears the labels and targets without
 returning that space to managed windows. Fullscreen remains a full-output
 allocation with the strip composited above it; ordinary and maximized siblings

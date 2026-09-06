@@ -586,7 +586,7 @@ impl LiveProductionVisualRuntime {
     pub(super) fn display_list_for_output(
         &self,
         output: OutputId,
-        bounds: Rect,
+        _bounds: Rect,
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
@@ -635,16 +635,6 @@ impl LiveProductionVisualRuntime {
             display_list
                 .commands
                 .push(CompositorDisplayCommand::Border(border));
-        }
-        if self.indicator_strip_enabled
-            && let Some(publication) = self.indicator_publication.as_ref()
-            && let Some(command) =
-                sophia_engine::indicator_strip_display_command(publication, output, bounds)
-        {
-            if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
-                return Err(CompositorDisplayListError::CapacityExceeded);
-            }
-            display_list.commands.push(command);
         }
         if let Some(overlay) = self
             .descriptor_overlay

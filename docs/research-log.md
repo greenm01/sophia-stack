@@ -3,6 +3,29 @@
 This file records decisions and unresolved questions for the active milestone.
 Completed evidence is archived in `research-log-archive.md`.
 
+## 2026-09-06: the selected shell owns panel UI
+
+The operator requested a single panel and clarified that the shell, rather than
+Engine, should provide it. Retire the automatic Tier-0 bar instead of adding a
+compositor setting to hide it. The session no longer adds a 14-pixel reservation;
+the live renderer no longer instantiates the fixed indicator strip or its input
+occlusion/targets. Shell and X11 client reservations remain authoritative for
+work-area reduction. Existing user startup selections already launch Quickshell,
+so no personal config change is needed and Narthex stays enabled.
+
+Policy indicator publication remains available for shell projections and tab
+descriptors. Removing the strip must not stop that data from updating. No WM
+identity, executable or toolkit-specific rule crosses into Engine, and no new
+wire protocol is introduced. Historical Tier-0 fixtures remain reference/archive
+evidence; the current isolated panel verifier expects reservation release to
+restore the full 720-pixel output rather than the former 706-pixel work area.
+
+Validation: `cargo xtask check` passed with isolated test directories (2,439
+Rust test executions plus Clippy and repository checks). The real isolated
+software panel probe at `/tmp/sophia-shell-owned-panel-probe` passed, with work
+area transitions y=32/height=688 to y=0/height=720 twice, popup withdrawal and
+clean teardown. Physical single-panel acceptance remains pending.
+
 ## 2026-09-06: third-terminal crash after successful panel presentation
 
 The next physical session ran Sophia `4eb1136a` with Hagia `875c8c2` at

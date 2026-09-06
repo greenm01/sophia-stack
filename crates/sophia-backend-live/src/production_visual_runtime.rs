@@ -278,7 +278,6 @@ pub struct LiveProductionVisualRuntime {
     focused_surface: Option<SurfaceId>,
     surface_chrome_style: SurfaceChromeStyle,
     floating_outline: Option<LiveFloatingOutline>,
-    indicator_strip_enabled: bool,
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
@@ -402,7 +401,6 @@ impl LiveProductionVisualRuntime {
             focused_surface: None,
             surface_chrome_style: SurfaceChromeStyle::default(),
             floating_outline: None,
-            indicator_strip_enabled: false,
             indicator_publication: None,
             descriptor_overlay: None,
             descriptor_overlay_interactive: false,
@@ -515,11 +513,6 @@ impl LiveProductionVisualRuntime {
         true
     }
 
-    pub fn with_indicator_strip_enabled(mut self, enabled: bool) -> Self {
-        self.indicator_strip_enabled = enabled;
-        self
-    }
-
     pub fn set_indicator_publication(
         &mut self,
         publication: Option<sophia_engine::PolicyIndicatorPublication>,
@@ -581,8 +574,7 @@ impl LiveProductionVisualRuntime {
             native.set_translation_motion_active(self.translations.active(self.translation_time()));
         }
         let chrome_surfaces_changed = self.set_chrome_surfaces(chrome_surfaces);
-        let indicator_publication_changed =
-            self.indicator_strip_enabled && self.set_indicator_publication(indicator_publication);
+        let indicator_publication_changed = self.set_indicator_publication(indicator_publication);
         let visual_projection_changed = presentation_order_changed
             || chrome_surfaces_changed
             || focus_changed
@@ -670,7 +662,6 @@ impl LiveProductionVisualRuntime {
         let head_plan_focus = self.focused_surface;
         let head_plan_style = self.surface_chrome_style;
         let head_plan_outline = self.floating_outline;
-        let head_plan_indicator_enabled = self.indicator_strip_enabled;
         let head_plan_indicator_publication = self.indicator_publication.clone();
         let head_plan_tabs = self.tab_bars.clone();
         let indicator_strip_cache = &self.indicator_strip_cache;
@@ -755,25 +746,6 @@ impl LiveProductionVisualRuntime {
                                         display_list.commands.push(
                                             sophia_engine::CompositorDisplayCommand::Border(border),
                                         );
-                                    }
-                                    if head_plan_indicator_enabled
-                                        && let Some(publication) =
-                                            head_plan_indicator_publication.as_ref()
-                                        && let Some(command) = sophia_engine::indicator_strip_display_command(
-                                            publication,
-                                            output_id,
-                                            logical_viewport,
-                                        )
-                                    {
-                                        if display_list.commands.len()
-                                            >= sophia_engine::MAX_COMPOSITOR_DISPLAY_COMMANDS
-                                        {
-                                            return Err(
-                                                "native indicator display-list capacity exceeded"
-                                                    .into(),
-                                            );
-                                        }
-                                        display_list.commands.push(command);
                                     }
                                     let scene = sophia_engine::output_scene_snapshot_from_committed_in_view(
                                         output_id,
@@ -952,9 +924,7 @@ impl LiveProductionVisualRuntime {
         self.focused_surface = focused_surface;
         let _ = self.apply_presentation_layout(presentation_layout, geometry_routed_surfaces);
         self.set_chrome_surfaces(chrome_surfaces);
-        if self.indicator_strip_enabled {
-            self.set_indicator_publication(indicator_publication);
-        }
+        self.set_indicator_publication(indicator_publication);
         let committed_surfaces = self.committed_surfaces().to_vec();
         scene.apply_production_updates(updates)?;
         scene.reconcile_buffer_residency(&self.cpu_buffer_residency);

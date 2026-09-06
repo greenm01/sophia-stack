@@ -20,7 +20,7 @@ fn evidence() -> String {
     log.push_str(&sample(2, "2:1", "x=1032 y=32 width=240 height=112", 1));
     log.push_str(&sample(3, "2:1", "x=1032 y=32 width=240 height=112", 2));
     log.push_str(&sample(5, "3:1", "x=321 y=33 width=638 height=686", 4));
-    for (y, height, count) in [(32, 688, 1), (14, 706, 0), (32, 688, 1), (14, 706, 0)] {
+    for (y, height, count) in [(32, 688, 1), (0, 720, 0), (32, 688, 1), (0, 720, 0)] {
         log.push_str(&format!("sophia_live_work_area schema=1 output=1 x=0 y={y} width=1280 height={height} app_reservations={count} shell_reservations=0\n"));
     }
     log.push_str("sophia_live_session_protocol_error_tally schema=2 status=clean count=0\nsophia_live_session_cleanup schema=1 status=clean namespace=revoked app_groups=0 frontend_workers=0\n");

@@ -87,7 +87,7 @@ pub fn verify(log: &str) -> Result<String, String> {
             let expected = if reservation_stage % 2 == 0 {
                 ("32", "688", "1")
             } else {
-                ("14", "706", "0")
+                ("0", "720", "0")
             };
             if reservation_stage < 4
                 && fields.get("y") == Some(&expected.0)

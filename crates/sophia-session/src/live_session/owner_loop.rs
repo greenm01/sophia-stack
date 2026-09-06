@@ -372,17 +372,13 @@ fn run_session_loop_inner(
     let window_transitions_enabled = !std::env::var("SOPHIA_ENABLE_WINDOW_TRANSITIONS")
         .is_ok_and(|value| value == "0");
     let mut runtime = if initialize_empty_runtime {
-        let indicator_strip_enabled = wm_session
-            .as_ref()
-            .is_some_and(LiveWmSession::tier0_indicator_strip_enabled);
         let mut initialized = LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
         .with_m4_proof_controls(
             config.m4_first_acquire_delay,
             config.m4_reject_first_present,
             config.m4_diagnose_first_mixed_export,
         )
-        .with_surface_chrome_style(initial_border_style)
-        .with_indicator_strip_enabled(indicator_strip_enabled);
+        .with_surface_chrome_style(initial_border_style);
         initialized.set_transitions_enabled(window_transitions_enabled);
         initialized.set_indicator_publication(
             wm_session

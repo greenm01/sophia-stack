@@ -972,7 +972,7 @@ Input delivery stays off the WM path. The WM may choose focus policy in
 response to the reduced opaque click target, but it does not receive motion,
 button payloads, key events, or protocol identity.
 
-Tier-0 indicator interaction implements the first production target-resolved
+The retired Tier-0 indicator interaction proved the first target-resolved
 chrome slice from `docs/target-resolved-input.md`. The descriptor switcher uses
 the same generic exact-target capture: a matching press/release returns only an
 epoch-scoped opaque action and activation identity. Application, indicator, and
@@ -985,7 +985,7 @@ deferred.
 Per seat, a security/session transition first revokes old control epochs; a
 reserved Engine shortcut follows; then one existing application route lease or
 chrome capture retains ownership; only an unowned event performs a fresh
-presented-state hit test. Tier-0 chrome capture and application leases are
+presented-state hit test. Shell chrome capture and application leases are
 mutually exclusive. Pointer boundary crossing alone transfers neither.
 
 The X frontend continues to own X11 event masks, XKB/XI state, and client
@@ -1071,15 +1071,14 @@ exact shell candidate/reservation generation to the derived work-area
 generation, the WM snapshot and connection epoch, and the answering projection.
 Only a ready, exact bundle may replace the prior presented bundle. Normal
 shell/WM failure preserves the entire prior bundle; security surfaces use a
-separate preemptive path. Tier-0 indicator geometry is instead fixed by
-session/Engine chrome configuration before the WM snapshot, so changing or
-clearing descriptor content cannot create a reservation cycle.
+separate preemptive path. Panel UI belongs to the user-selected shell. The
+session adds no automatic indicator strip or fixed top reservation. Committed
+policy indicators remain data; publishing them does not instantiate panel UI.
 
 The full output rectangle remains the composition and hit-test space for the
 client-positioned surface. The reduced work rectangle is policy input for
 managed surfaces. A fullscreen managed placement remains a full-output
-allocation; fixed Tier-0 chrome is composited above it. Nonfullscreen siblings,
-including maximized placements, remain confined to the reduced work rectangle.
+allocation. Nonfullscreen siblings, including maximized placements, remain confined to the reduced work rectangle.
 Every native Sophia WM receives the same `bounds` field, so Engine contains no
 WM-, shell-, dock-, or toolkit-specific branch.
 
@@ -1100,21 +1099,19 @@ must all match at dispatch. Thus broker, WM/policy, and session operations
 cannot be confused through numeric collision, forwarding, stale reconnect, or
 target reuse.
 
-"Shell" names three distinct things in this architecture, and they are not
-alternatives. `docs/sophia-policy-ipc.md` describes an external separately
-authorized client; the row above describes compositor-owned chrome. Both are
-correct at different tiers:
+Shell UI is supplied by separately authorized clients. The original Tier-0
+bootstrap bar is retained below only to identify historical evidence; it is
+not instantiated by current sessions:
 
 | Tier | Renderer | Data source | Status |
 | --- | --- | --- | --- |
-| 0 | Engine chrome | committed indicator descriptor | reuses the existing chrome path |
+| 0 (retired) | automatic Engine indicator bar | committed indicator descriptor | historical fixtures only |
 | 1 | `sophia_shell_v1` display-list client | descriptor plus broker metadata | experimental title-only live slice; compiled profile enabled, signed physical proof open |
 | 2 | ordinary X11 clients | X11 protocol surface | frontend compatibility |
 
-Tier 0 covers a status bar without any client interface. Tier 1 exists for shells
-that need more than chrome can express, and is justified by a demanding client
-rather than by symmetry. See `docs/sophia-indicator-descriptor.md` and
-`docs/sophia-shell-v1-direction.md`.
+The selected shell determines panel UI and placement. Engine supplies rendering
+and input mechanisms and does not add a fallback status bar. See
+`docs/sophia-indicator-descriptor.md` and `docs/sophia-shell-v1-direction.md`.
 
 The renderer-neutral revision-1 slice carries at most sixteen exact-generation
 descriptors into a centered, title-only list of solid and cached-text nodes plus

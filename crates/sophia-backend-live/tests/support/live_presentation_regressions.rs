@@ -183,3 +183,52 @@ fn retained_repaints_wait_for_the_exact_first_present_to_retire() {
     runtime.present_scheduler.take_submitted().unwrap();
     assert!(!runtime.retained_projection_blocked());
 }
+
+#[test]
+fn policy_status_does_not_create_a_builtin_bar_or_capture_panel_input() {
+    let mut runtime = runtime();
+    let publication = PolicyIndicatorPublication {
+        generation: 1,
+        connection_epoch: Some(1),
+        indicators: vec![PolicyProjectionIndicator {
+            output: OutputId::from_raw(1),
+            slot: 0,
+            indicator: 1,
+            action: Some(WmActionId::from_raw(1)),
+            state_bits: 1,
+            label: "dev".into(),
+        }],
+        output_statuses: Vec::new(),
+        tab_groups: Vec::new(),
+    };
+    runtime.set_indicator_publication(Some(publication.clone()));
+    for output in [OutputId::from_raw(1), OutputId::from_raw(2)] {
+        let list = runtime
+            .display_list_for_output(
+                output,
+                runtime.outputs.logical_viewport(output).unwrap(),
+                &[],
+                &[],
+            )
+            .unwrap();
+        assert!(
+            !list
+                .commands
+                .iter()
+                .any(|command| matches!(command, CompositorDisplayCommand::IndicatorStrip(_)))
+        );
+    }
+    runtime.publish_committed_input_layers();
+    assert!(
+        runtime
+            .input_projections
+            .iter()
+            .all(|projection| projection.chrome_targets.is_empty()
+                && projection.chrome_occlusion.is_none())
+    );
+    assert_eq!(
+        runtime.indicator_publication,
+        Some(publication),
+        "committed policy descriptors remain available to shell projections"
+    );
+}

@@ -72,26 +72,6 @@ impl LiveProductionVisualRuntime {
             {
                 self.tab_frames.insert(output, list);
             }
-            let (chrome_targets, chrome_occlusion) = self
-                .outputs
-                .logical_viewport(output)
-                .map(|bounds| (output, bounds))
-                .and_then(|(output, bounds)| {
-                    self.indicator_strip_enabled
-                        .then_some(self.indicator_publication.as_ref())
-                        .flatten()
-                        .and_then(|publication| {
-                            sophia_engine::indicator_strip_display_command(
-                                publication,
-                                output,
-                                bounds,
-                            )
-                        })
-                })
-                .map_or_else(
-                    || (Vec::new(), None),
-                    |command| direct_chrome_projection(&command),
-                );
             let (descriptor_targets, descriptor_occlusion) = direct_descriptor_projection(
                 self.descriptor_overlay.as_ref(),
                 output,
@@ -100,8 +80,8 @@ impl LiveProductionVisualRuntime {
             self.replace_presented_input_projection(
                 index,
                 input_layers.clone(),
-                chrome_targets,
-                chrome_occlusion,
+                Vec::new(),
+                None,
                 descriptor_targets,
                 descriptor_occlusion,
             );
@@ -333,20 +313,6 @@ fn presented_descriptor_projection(
         .map(|overlay| overlay.targets.clone())
         .unwrap_or_default();
     (targets, Some(geometry))
-}
-
-fn direct_chrome_projection(
-    command: &sophia_engine::CompositorDisplayCommand,
-) -> (Vec<sophia_engine::IndicatorChromeHitTarget>, Option<Rect>) {
-    match command {
-        sophia_engine::CompositorDisplayCommand::IndicatorStrip(strip) => {
-            (strip.strip.hit_targets.clone(), Some(strip.strip.geometry))
-        }
-        sophia_engine::CompositorDisplayCommand::Surface { .. }
-        | sophia_engine::CompositorDisplayCommand::Border(_)
-        | sophia_engine::CompositorDisplayCommand::Rect(_)
-        | sophia_engine::CompositorDisplayCommand::Text(_) => (Vec::new(), None),
-    }
 }
 
 fn presented_chrome_projection(

@@ -3,10 +3,6 @@ impl LiveWmSession {
         Some(self.visual_chrome)
     }
 
-    fn tier0_indicator_strip_enabled(&self) -> bool {
-        self.public.is_some()
-    }
-
     fn indicator_publication(&self) -> Option<sophia_engine::PolicyIndicatorPublication> {
         self.public
             .as_ref()
