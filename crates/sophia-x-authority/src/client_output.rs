@@ -1,8 +1,10 @@
 use crate::{
-    X_ATOM_NONE, X_RENDER_FORMAT_A1, X_RENDER_FORMAT_A8, X_RENDER_FORMAT_ARGB32,
-    X_RENDER_FORMAT_RGB24, X_RENDER_PICT_TYPE_DIRECT, X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_VISUAL,
-    XAuthorityRuntimeError, XByteOrder, XColorRgb16, XResourceId, XTimestamp, XWireParseError,
-    padded_len,
+    X_ATOM_NONE, X_RENDER_FIRST_ERROR, X_RENDER_FORMAT_A1, X_RENDER_FORMAT_A8,
+    X_RENDER_FORMAT_ARGB32, X_RENDER_FORMAT_RGB24, X_RENDER_GLYPH_ERROR_OFFSET,
+    X_RENDER_GLYPH_SET_ERROR_OFFSET, X_RENDER_PICT_FORMAT_ERROR_OFFSET,
+    X_RENDER_PICT_OP_ERROR_OFFSET, X_RENDER_PICT_TYPE_DIRECT, X_RENDER_PICTURE_ERROR_OFFSET,
+    X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_VISUAL, XAuthorityRuntimeError, XByteOrder, XColorRgb16,
+    XResourceId, XTimestamp, XWireParseError, padded_len,
 };
 use sophia_protocol::Rect;
 
@@ -57,6 +59,13 @@ pub enum XErrorCode {
     BadName,
     BadLength,
     BadImplementation,
+    /// RENDER's own errors, at `X_RENDER_FIRST_ERROR` plus each one's offset.
+    /// The protocol defines five, in this order.
+    RenderPictFormat,
+    RenderPicture,
+    RenderPictOp,
+    RenderGlyphSet,
+    RenderGlyph,
 }
 
 impl XErrorCode {
@@ -78,6 +87,11 @@ impl XErrorCode {
             Self::BadName => 15,
             Self::BadLength => 16,
             Self::BadImplementation => 17,
+            Self::RenderPictFormat => X_RENDER_FIRST_ERROR + X_RENDER_PICT_FORMAT_ERROR_OFFSET,
+            Self::RenderPicture => X_RENDER_FIRST_ERROR + X_RENDER_PICTURE_ERROR_OFFSET,
+            Self::RenderPictOp => X_RENDER_FIRST_ERROR + X_RENDER_PICT_OP_ERROR_OFFSET,
+            Self::RenderGlyphSet => X_RENDER_FIRST_ERROR + X_RENDER_GLYPH_SET_ERROR_OFFSET,
+            Self::RenderGlyph => X_RENDER_FIRST_ERROR + X_RENDER_GLYPH_ERROR_OFFSET,
         }
     }
 }

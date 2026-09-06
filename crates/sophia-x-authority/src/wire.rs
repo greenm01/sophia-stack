@@ -556,6 +556,32 @@ pub enum XWireRequest {
     /// `RenderQueryPictFormats`: the pixel layouts pictures may take, and
     /// which visual each one belongs to.
     RenderQueryPictFormats,
+    RenderCreatePicture {
+        picture: XResourceId,
+        drawable: XResourceId,
+        format: u32,
+        values: XRenderPictureValueSet,
+    },
+    RenderChangePicture {
+        picture: XResourceId,
+        values: XRenderPictureValueSet,
+    },
+    RenderSetPictureClipRectangles {
+        picture: XResourceId,
+        clip_x_origin: i16,
+        clip_y_origin: i16,
+        rectangles: Vec<Rect>,
+    },
+    RenderFreePicture {
+        picture: XResourceId,
+    },
+    /// `RenderFillRectangles`: one premultiplied color through one operator.
+    RenderFillRectangles {
+        op: u8,
+        picture: XResourceId,
+        color: [u16; 4],
+        rectangles: Vec<Rect>,
+    },
     /// A RENDER minor Sophia does not implement, decoded so the refusal can
     /// name it.
     RenderUnimplemented {

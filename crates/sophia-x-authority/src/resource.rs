@@ -36,6 +36,8 @@ pub enum XResourceKind {
     Fence,
     Region,
     SyncCounter,
+    Picture,
+    GlyphSet,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

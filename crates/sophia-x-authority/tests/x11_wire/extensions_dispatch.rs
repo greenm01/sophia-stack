@@ -1877,9 +1877,9 @@ fn render_refusals_split_between_not_offered_and_not_that_version() {
         }
     };
 
-    // Within the advertised 0.4: the never-implemented five and the declined
-    // trapezoid family, plus the base requests later phases implement.
-    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 4, 8, 17, 26] {
+    // Within the advertised 0.4: the never-implemented five, the declined
+    // trapezoid family, and the base requests still to be implemented.
+    for minor in [3, 9, 10, 11, 12, 13, 14, 15, 21, 8, 17] {
         let (code, named) = refusal_for(minor);
         assert_eq!(code, XErrorCode::BadImplementation, "minor {minor}");
         assert_eq!(named, u16::from(minor));
@@ -1890,4 +1890,359 @@ fn render_refusals_split_between_not_offered_and_not_that_version() {
         assert_eq!(code, XErrorCode::BadRequest, "minor {minor}");
         assert_eq!(named, u16::from(minor));
     }
+}
+
+/// A fixture that drives RENDER requests against one runtime and reads the
+/// resulting pixels back.
+struct RenderFixture {
+    runtime: XAuthorityRuntime,
+    atoms: XAtomTable,
+    properties: XPropertyTable,
+    sequence: u16,
+}
+
+impl RenderFixture {
+    const NS: NamespaceId = NamespaceId::from_raw(88);
+    const ORDER: XByteOrder = XByteOrder::LittleEndian;
+    const PIXMAP: u32 = 0x0020_0100;
+    const PICTURE: u32 = 0x0020_0101;
+
+    fn new() -> Self {
+        Self {
+            runtime: XAuthorityRuntime::new(),
+            atoms: XAtomTable::new(),
+            properties: XPropertyTable::new(),
+            sequence: 0,
+        }
+    }
+
+    fn send(&mut self, bytes: &[u8]) -> XDispatchResult {
+        self.sequence = self.sequence.wrapping_add(1);
+        let request = decode_x11_core_request(
+            context(Self::NS, u64::from(self.sequence) + 900, Self::ORDER),
+            bytes,
+        )
+        .expect("request must decode");
+        dispatch_x11_wire_request(
+            dispatch_context(Self::NS, self.sequence, Self::ORDER, bytes[0]),
+            request,
+            &mut self.runtime,
+            &mut self.atoms,
+            &mut self.properties,
+        )
+    }
+
+    /// A depth-32 pixmap with an ARGB32 picture bound to it.
+    fn with_argb_pixmap(width: u16, height: u16) -> Self {
+        let mut fixture = Self::new();
+        let create = create_pixmap_request(
+            Self::ORDER,
+            32,
+            Self::PIXMAP,
+            X_SETUP_DEFAULT_ROOT,
+            width,
+            height,
+        );
+        assert!(fixture.send(&create).outputs.is_empty(), "pixmap create");
+        let picture = render_create_picture_request(
+            Self::ORDER,
+            Self::PICTURE,
+            Self::PIXMAP,
+            X_RENDER_FORMAT_ARGB32,
+            &[],
+        );
+        assert!(fixture.send(&picture).outputs.is_empty(), "picture create");
+        fixture
+    }
+
+    fn error_of(result: &XDispatchResult) -> Option<XErrorCode> {
+        result.outputs.iter().find_map(|output| match output {
+            XClientOutput::Error(error) => Some(error.code),
+            _ => None,
+        })
+    }
+
+    /// One pixel of the pixmap as `[b, g, r, a]`.
+    fn pixel(&self, x: i32, y: i32) -> [u8; 4] {
+        let bytes = self
+            .runtime
+            .drawable_image_region(
+                Self::NS,
+                XResourceId::new(u64::from(Self::PIXMAP), 1),
+                Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                },
+            )
+            .expect("pixmap must have backing");
+        [bytes[0], bytes[1], bytes[2], bytes[3]]
+    }
+}
+
+/// FillRectangles blends premultiplied color the way the protocol defines,
+/// and the bytes in the drawable are the ones a client can hand-compute.
+///
+/// The store had no alpha semantics before this: every core drawing operation
+/// masks the top byte away. A picture over a depth-32 pixmap is where alpha
+/// becomes real, and asserting exact bytes rather than "something changed" is
+/// what makes the operator table falsifiable.
+#[test]
+fn render_fill_rectangles_blends_premultiplied_color_into_the_drawable() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    };
+
+    // Src writes the color through, ignoring what was there.
+    let opaque_red = [0xffff, 0, 0, 0xffff];
+    let result = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        opaque_red,
+        &[whole],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(1, 1), [0, 0, 0xff, 0xff], "Src red");
+
+    // Over with a half-alpha premultiplied blue: the protocol's result is
+    // src + dst * (1 - src_alpha). With src = (0x80,0,0,0x80) over
+    // (0,0,0xff,0xff): blue 0x80 + 0 = 0x80, red 0 + 0xff*0x7f/0xff = 0x7f,
+    // alpha 0x80 + 0xff*0x7f/0xff = 0xff.
+    let half_blue = [0, 0, 0x8080, 0x8080];
+    let result = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        3,
+        RenderFixture::PICTURE,
+        half_blue,
+        &[whole],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(1, 1), [0x80, 0, 0x7f, 0xff], "Over blue");
+
+    // Clear zeroes every channel, alpha included -- the one operator that
+    // proves the alpha byte is genuinely being written rather than defaulted.
+    let result = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        0,
+        RenderFixture::PICTURE,
+        opaque_red,
+        &[whole],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    assert_eq!(fixture.pixel(1, 1), [0, 0, 0, 0], "Clear");
+}
+
+/// A picture's clip list bounds what its fills touch.
+#[test]
+fn render_picture_clip_rectangles_bound_what_a_fill_touches() {
+    let mut fixture = RenderFixture::with_argb_pixmap(4, 4);
+    let result = fixture.send(&render_set_picture_clip_rectangles_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+        1,
+        1,
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        }],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    let result = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        [0xffff, 0xffff, 0xffff, 0xffff],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+        }],
+    ));
+    assert_eq!(RenderFixture::error_of(&result), None);
+    // The clip origin shifts the rectangle to cover (1,1)..(3,3).
+    assert_eq!(fixture.pixel(1, 1), [0xff, 0xff, 0xff, 0xff], "inside clip");
+    assert_eq!(fixture.pixel(0, 0), [0, 0, 0, 0], "outside clip");
+    assert_eq!(fixture.pixel(3, 3), [0, 0, 0, 0], "outside clip");
+}
+
+/// Pictures are refused, and die, on the terms the protocol sets.
+#[test]
+fn render_pictures_are_refused_and_reclaimed_on_protocol_terms() {
+    let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+
+    // A format whose depth is not the drawable's would read colour bytes as
+    // coverage; BadMatch is the protocol's answer.
+    let mismatched = render_create_picture_request(
+        RenderFixture::ORDER,
+        0x0020_0200,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_A8,
+        &[],
+    );
+    let result = fixture.send(&mismatched);
+    assert_eq!(RenderFixture::error_of(&result), Some(XErrorCode::BadMatch));
+
+    // An unknown format id gets the extension's own error, not BadValue.
+    let unknown = render_create_picture_request(
+        RenderFixture::ORDER,
+        0x0020_0201,
+        RenderFixture::PIXMAP,
+        0x1234,
+        &[],
+    );
+    let result = fixture.send(&unknown);
+    assert_eq!(
+        RenderFixture::error_of(&result),
+        Some(XErrorCode::RenderPictFormat)
+    );
+
+    // Reusing a live id is BadIdChoice, as for any resource.
+    let duplicate = render_create_picture_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_ARGB32,
+        &[],
+    );
+    let result = fixture.send(&duplicate);
+    assert_eq!(
+        RenderFixture::error_of(&result),
+        Some(XErrorCode::BadIdChoice)
+    );
+
+    // Alpha maps are declined by name rather than silently dropped: dropping
+    // one changes what the client drew without telling it.
+    let alpha_map = render_create_picture_request(
+        RenderFixture::ORDER,
+        0x0020_0202,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_ARGB32,
+        &[(1, RenderFixture::PIXMAP)],
+    );
+    let result = fixture.send(&alpha_map);
+    assert_eq!(
+        RenderFixture::error_of(&result),
+        Some(XErrorCode::BadImplementation)
+    );
+
+    // Repeat values above Normal entered at 0.10, above the advertised
+    // version, so they are values this server does not define.
+    let reflect = render_create_picture_request(
+        RenderFixture::ORDER,
+        0x0020_0203,
+        RenderFixture::PIXMAP,
+        X_RENDER_FORMAT_ARGB32,
+        &[(0, 3)],
+    );
+    let result = fixture.send(&reflect);
+    assert_eq!(RenderFixture::error_of(&result), Some(XErrorCode::BadValue));
+
+    // An operator the protocol defines and this server withholds is refused
+    // as unimplemented; one no version defines gets the PictOp error.
+    let disjoint = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        0x13,
+        RenderFixture::PICTURE,
+        [0, 0, 0, 0],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        }],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&disjoint),
+        Some(XErrorCode::BadImplementation)
+    );
+    let undefined = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        0x2e,
+        RenderFixture::PICTURE,
+        [0, 0, 0, 0],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        }],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&undefined),
+        Some(XErrorCode::RenderPictOp)
+    );
+
+    // Freeing the picture releases the id; using it afterwards is refused
+    // with the extension's Picture error.
+    let free = fixture.send(&render_free_picture_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+    ));
+    assert_eq!(RenderFixture::error_of(&free), None);
+    let after_free = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        [0, 0, 0, 0],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        }],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&after_free),
+        Some(XErrorCode::RenderPicture)
+    );
+}
+
+/// A picture does not outlive the drawable it views.
+///
+/// The spec ties the two together, and a picture left behind would hold a
+/// format-aware view over store slots that have already been released.
+#[test]
+fn render_pictures_die_with_the_drawable_they_view() {
+    let mut fixture = RenderFixture::with_argb_pixmap(2, 2);
+    let free = fixture.send(&free_pixmap_request(
+        RenderFixture::ORDER,
+        RenderFixture::PIXMAP,
+    ));
+    assert_eq!(RenderFixture::error_of(&free), None);
+
+    let orphaned = fixture.send(&render_fill_rectangles_request(
+        RenderFixture::ORDER,
+        1,
+        RenderFixture::PICTURE,
+        [0xffff, 0xffff, 0xffff, 0xffff],
+        &[Rect {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        }],
+    ));
+    assert_eq!(
+        RenderFixture::error_of(&orphaned),
+        Some(XErrorCode::RenderPicture)
+    );
+
+    // The identifier is genuinely free again, not merely unusable.
+    let reuse = render_create_picture_request(
+        RenderFixture::ORDER,
+        RenderFixture::PICTURE,
+        X_SETUP_DEFAULT_ROOT,
+        X_RENDER_FORMAT_RGB24,
+        &[],
+    );
+    assert_eq!(RenderFixture::error_of(&fixture.send(&reuse)), None);
 }

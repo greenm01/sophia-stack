@@ -275,6 +275,10 @@ pub fn dispatch_x11_wire_request(
         Handled(result) => return result,
         Unhandled(request) => request,
     };
+    let request = match dispatch_render_picture_request(context, request, runtime) {
+        Handled(result) => return result,
+        Unhandled(request) => request,
+    };
     let request = match dispatch_dri3_request(context, request, runtime) {
         Handled(result) => return result,
         Unhandled(request) => request,

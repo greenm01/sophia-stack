@@ -811,3 +811,80 @@ fn render_minor_request(byte_order: XByteOrder, minor_opcode: u8) -> Vec<u8> {
     push_u16(&mut out, byte_order, 1);
     out
 }
+
+fn render_create_picture_request(
+    byte_order: XByteOrder,
+    picture: u32,
+    drawable: u32,
+    format: u32,
+    values: &[(u32, u32)],
+) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_CREATE_PICTURE_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, (5 + values.len()) as u16);
+    push_u32(&mut out, byte_order, picture);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, format);
+    let mask = values.iter().fold(0u32, |mask, (bit, _)| mask | (1 << bit));
+    push_u32(&mut out, byte_order, mask);
+    let mut sorted = values.to_vec();
+    sorted.sort_by_key(|(bit, _)| *bit);
+    for (_, value) in sorted {
+        push_u32(&mut out, byte_order, value);
+    }
+    out
+}
+
+fn render_free_picture_request(byte_order: XByteOrder, picture: u32) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_FREE_PICTURE_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, picture);
+    out
+}
+
+fn render_fill_rectangles_request(
+    byte_order: XByteOrder,
+    op: u8,
+    picture: u32,
+    color: [u16; 4],
+    rectangles: &[Rect],
+) -> Vec<u8> {
+    let mut out = vec![X_RENDER_MAJOR_OPCODE, X_RENDER_FILL_RECTANGLES_MINOR_OPCODE];
+    push_u16(&mut out, byte_order, (5 + rectangles.len() * 2) as u16);
+    out.push(op);
+    out.extend_from_slice(&[0, 0, 0]);
+    push_u32(&mut out, byte_order, picture);
+    for channel in color {
+        push_u16(&mut out, byte_order, channel);
+    }
+    for rectangle in rectangles {
+        push_i16(&mut out, byte_order, rectangle.x as i16);
+        push_i16(&mut out, byte_order, rectangle.y as i16);
+        push_u16(&mut out, byte_order, rectangle.width as u16);
+        push_u16(&mut out, byte_order, rectangle.height as u16);
+    }
+    out
+}
+
+fn render_set_picture_clip_rectangles_request(
+    byte_order: XByteOrder,
+    picture: u32,
+    clip_x_origin: i16,
+    clip_y_origin: i16,
+    rectangles: &[Rect],
+) -> Vec<u8> {
+    let mut out = vec![
+        X_RENDER_MAJOR_OPCODE,
+        X_RENDER_SET_PICTURE_CLIP_RECTANGLES_MINOR_OPCODE,
+    ];
+    push_u16(&mut out, byte_order, (3 + rectangles.len() * 2) as u16);
+    push_u32(&mut out, byte_order, picture);
+    push_i16(&mut out, byte_order, clip_x_origin);
+    push_i16(&mut out, byte_order, clip_y_origin);
+    for rectangle in rectangles {
+        push_i16(&mut out, byte_order, rectangle.x as i16);
+        push_i16(&mut out, byte_order, rectangle.y as i16);
+        push_u16(&mut out, byte_order, rectangle.width as u16);
+        push_u16(&mut out, byte_order, rectangle.height as u16);
+    }
+    out
+}

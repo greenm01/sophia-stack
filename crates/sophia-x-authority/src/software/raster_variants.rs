@@ -32,6 +32,9 @@ pub enum XRasterFallbackCause {
     UnsupportedPutImage,
     /// A `CopyArea` named a source drawable other than its destination.
     UnsupportedCrossDrawableCopy,
+    /// A RENDER operation wrote the drawable; compositing results have no
+    /// journal representation yet, so density variants scale the 1x raster.
+    UnsupportedRenderOperation,
     /// Some other drawing operation has no journal representation.
     UnsupportedCommand,
     /// The requirement named a content generation the authority has already
@@ -58,6 +61,7 @@ impl XRasterFallbackCause {
         match self {
             Self::UnsupportedPutImage => "unsupported_put_image",
             Self::UnsupportedCrossDrawableCopy => "unsupported_cross_drawable_copy",
+            Self::UnsupportedRenderOperation => "unsupported_render_operation",
             Self::UnsupportedCommand => "unsupported_command",
             Self::StaleContentGeneration => "stale_content_generation",
             Self::LogicalExtentMismatch => "logical_extent_mismatch",
@@ -76,6 +80,7 @@ impl XRasterFallbackCause {
 pub(crate) enum XRasterUnsupportedKind {
     PutImage,
     CrossDrawableCopy,
+    RenderOperation,
 }
 
 impl XRasterUnsupportedKind {
@@ -83,6 +88,7 @@ impl XRasterUnsupportedKind {
         match self {
             Self::PutImage => XRasterFallbackCause::UnsupportedPutImage,
             Self::CrossDrawableCopy => XRasterFallbackCause::UnsupportedCrossDrawableCopy,
+            Self::RenderOperation => XRasterFallbackCause::UnsupportedRenderOperation,
         }
     }
 }

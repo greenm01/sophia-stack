@@ -8,6 +8,7 @@ use crate::{XFontFace, XGraphicsContextValues, XPoint, XResourceId};
 mod raster_ops;
 mod raster_replay;
 mod raster_variants;
+mod render_ops;
 mod update;
 
 use raster_ops::{
@@ -19,6 +20,9 @@ pub(crate) use raster_variants::{
     XRasterSatisfyOutcome, XRasterUnsupportedKind,
 };
 pub use raster_variants::{XPutImageSemantics, XRasterFallbackCause};
+pub use render_ops::XRenderPictFormatKind;
+use render_ops::render_fill_rect;
+pub(crate) use render_ops::render_operator_is_implemented;
 pub use update::{
     X_AUTHORITY_CPU_PATCH_BATCH_MAX_RECTS, XAuthorityCpuBufferPatch, XAuthorityCpuBufferPatchBatch,
     XAuthorityCpuBufferPatchRegion, XAuthorityCpuBufferSnapshot, XAuthorityCpuBufferUpdate,
@@ -231,6 +235,26 @@ impl XSoftwareBufferStore {
             fill_rect(buffer, *rect, gc.foreground, gc);
         }
         finish_immutable_update(buffer, handle, replaced, union_rects(damage))
+    }
+
+    /// Fill rectangles of a picture with one premultiplied color through a
+    /// RENDER operator, clipped to the picture's translated clip list.
+    pub(crate) fn render_fill(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        op: u8,
+        color: [u8; 4],
+        rects: &[Rect],
+        clip: &[Rect],
+        format: XRenderPictFormatKind,
+    ) -> Option<XAuthorityCpuDrawResult> {
+        let handle = self.allocate_handle();
+        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        for rect in rects {
+            render_fill_rect(buffer, *rect, op, color, clip, format);
+        }
+        finish_immutable_update(buffer, handle, replaced, union_rects(rects))
     }
 
     pub fn clear(

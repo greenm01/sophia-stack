@@ -657,6 +657,7 @@ impl XAuthorityRuntime {
          self.resources.remove(window);
          self.software_buffers.remove(window);
          self.raster_store.remove(window);
+         self.render_drop_pictures_of_drawable(window);
          self.window_background_pixels.remove(&window);
          self.window_visuals.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
@@ -767,6 +768,16 @@ impl XAuthorityRuntime {
                  XResourceKind::Region => {
                      self.resources.remove(record.id);
                      self.xfixes_regions.remove(&record.id);
+                 }
+                 // Tolerant removals: a picture may already be gone because its
+                 // drawable's arm swept it earlier in this same loop.
+                 XResourceKind::Picture => {
+                     self.resources.remove(record.id);
+                     self.render_pictures.remove(&record.id);
+                 }
+                 XResourceKind::GlyphSet => {
+                     self.resources.remove(record.id);
+                     self.render_glyphsets.remove(&record.id);
                  }
                  XResourceKind::SyncCounter => {
                      self.resources.remove(record.id);

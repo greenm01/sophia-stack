@@ -99,6 +99,7 @@ impl XAuthorityRuntime {
         self.shm_mappings
             .retain(|_, mapping| mapping.strong_count() != 0);
         self.software_buffers.remove(pixmap);
+        self.render_drop_pictures_of_drawable(pixmap);
         Ok(self
             .dri3_pixmaps
             .remove(&pixmap)
