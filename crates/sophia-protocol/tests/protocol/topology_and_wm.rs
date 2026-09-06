@@ -18,6 +18,7 @@ fn output_topology_validates_bounded_engine_facts() {
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             },
             OutputTopologyEntry {
                 output: OutputId::from_raw(2),
@@ -33,6 +34,7 @@ fn output_topology_validates_bounded_engine_facts() {
                 },
                 scale: 2,
                 refresh_millihz: 120_000,
+                timing: None,
             },
         ],
     };

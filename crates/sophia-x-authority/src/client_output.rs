@@ -807,6 +807,13 @@ pub struct XRandrModeInfo {
     pub width: u16,
     pub height: u16,
     pub refresh_millihz: u32,
+    /// The scanout timing this mode runs, when the output reported one.
+    ///
+    /// `None` means the encoder has to describe a mode it was never told the
+    /// shape of, which it does by declaring no blanking at all -- a modeline
+    /// that cannot physically exist, and therefore cannot be mistaken for a
+    /// measured one.
+    pub timing: Option<sophia_protocol::OutputModeTiming>,
     pub name: Vec<u8>,
 }
 

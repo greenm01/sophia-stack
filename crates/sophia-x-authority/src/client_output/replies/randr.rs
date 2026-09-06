@@ -117,21 +117,44 @@ fn encode_randr_reply(
                         put_u32(byte_order, &mut out[offset..offset + 4], mode.id);
                         put_u16(byte_order, &mut out[offset + 4..offset + 6], mode.width);
                         put_u16(byte_order, &mut out[offset + 6..offset + 8], mode.height);
-                        let dot_clock = u64::from(mode.width)
-                            .saturating_mul(u64::from(mode.height))
-                            .saturating_mul(u64::from(mode.refresh_millihz))
-                            / 1_000;
+                        // The mode's own timing where the output reported
+                        // one. Where it did not, the fallback declares no
+                        // blanking and derives a clock from the nominal
+                        // refresh -- a modeline that cannot physically exist,
+                        // so a reader can tell it was never measured. It used
+                        // to be the only thing sent, which is why a client
+                        // asking this server how the display scans has been
+                        // told zero blanking since RandR was written here.
+                        let timing = mode.timing.filter(|timing| timing.is_valid());
+                        let dot_clock = timing.map_or_else(
+                            || {
+                                u64::from(mode.width)
+                                    .saturating_mul(u64::from(mode.height))
+                                    .saturating_mul(u64::from(mode.refresh_millihz))
+                                    / 1_000
+                            },
+                            // RandR reports the clock in Hz; DRM keeps kHz.
+                            |timing| u64::from(timing.clock_khz).saturating_mul(1_000),
+                        );
                         put_u32(
                             byte_order,
                             &mut out[offset + 8..offset + 12],
                             u32::try_from(dot_clock).unwrap_or(u32::MAX),
                         );
-                        put_u16(byte_order, &mut out[offset + 12..offset + 14], mode.width);
-                        put_u16(byte_order, &mut out[offset + 14..offset + 16], mode.width);
-                        put_u16(byte_order, &mut out[offset + 16..offset + 18], mode.width);
-                        put_u16(byte_order, &mut out[offset + 20..offset + 22], mode.height);
-                        put_u16(byte_order, &mut out[offset + 22..offset + 24], mode.height);
-                        put_u16(byte_order, &mut out[offset + 24..offset + 26], mode.height);
+                        let (hsync_start, hsync_end, htotal) = timing.map_or(
+                            (mode.width, mode.width, mode.width),
+                            |timing| (timing.hsync_start, timing.hsync_end, timing.htotal),
+                        );
+                        let (vsync_start, vsync_end, vtotal) = timing.map_or(
+                            (mode.height, mode.height, mode.height),
+                            |timing| (timing.vsync_start, timing.vsync_end, timing.vtotal),
+                        );
+                        put_u16(byte_order, &mut out[offset + 12..offset + 14], hsync_start);
+                        put_u16(byte_order, &mut out[offset + 14..offset + 16], hsync_end);
+                        put_u16(byte_order, &mut out[offset + 16..offset + 18], htotal);
+                        put_u16(byte_order, &mut out[offset + 20..offset + 22], vsync_start);
+                        put_u16(byte_order, &mut out[offset + 22..offset + 24], vsync_end);
+                        put_u16(byte_order, &mut out[offset + 24..offset + 26], vtotal);
                         put_u16(
                             byte_order,
                             &mut out[offset + 26..offset + 28],

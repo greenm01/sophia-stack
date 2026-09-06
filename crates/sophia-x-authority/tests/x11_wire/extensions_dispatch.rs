@@ -402,6 +402,7 @@ fn randr_conventional_output_properties_are_valid_across_two_outputs() {
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             },
             OutputTopologyEntry {
                 output: OutputId::from_raw(2),
@@ -417,6 +418,7 @@ fn randr_conventional_output_properties_are_valid_across_two_outputs() {
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             },
         ],
     };

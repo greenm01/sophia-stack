@@ -729,6 +729,7 @@ fn randr_resources(snapshot: &OutputTopologySnapshot) -> XRandrResources {
             width: u16::try_from(entry.logical.width).expect("validated output width"),
             height: u16::try_from(entry.logical.height).expect("validated output height"),
             refresh_millihz: entry.refresh_millihz,
+            timing: entry.timing,
             name: format!(
                 "{}x{}@{}",
                 entry.logical.width,

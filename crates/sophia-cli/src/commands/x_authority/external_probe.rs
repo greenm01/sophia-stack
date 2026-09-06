@@ -506,6 +506,7 @@ fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapsh
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             },
             sophia_protocol::OutputTopologyEntry {
                 output: sophia_protocol::OutputId::from_raw(2),
@@ -521,6 +522,7 @@ fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapsh
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             },
         ],
     }

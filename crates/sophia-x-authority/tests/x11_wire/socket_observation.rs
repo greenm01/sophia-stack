@@ -1257,6 +1257,7 @@ fn routed_service_applies_topology_update_and_notifies_randr_subscriber() {
             },
             scale: 1,
             refresh_millihz: 60_000,
+            timing: None,
         }],
     };
     let (ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(1);

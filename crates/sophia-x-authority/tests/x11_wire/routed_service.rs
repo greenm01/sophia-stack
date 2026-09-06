@@ -666,6 +666,7 @@ fn routed_service_backpressure_blocks_without_disconnect_and_drains_in_order() {
             },
             scale: 1,
             refresh_millihz: 60_000,
+            timing: None,
         }],
     };
     let (ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(1);

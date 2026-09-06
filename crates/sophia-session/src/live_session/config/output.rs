@@ -37,6 +37,7 @@ pub(super) fn output_topology_from_engine_outputs_at_generation(
                 pixel_size: output.size,
                 scale,
                 refresh_millihz: 60_000,
+                timing: None,
             }
         })
         .collect();
@@ -70,18 +71,22 @@ pub(super) fn output_topology_from_resolved_at_generation(
                 .primary_heads
                 .get(&viewport.output)
                 .ok_or("resolved topology output has no primary head")?;
-            let refresh_millihz = resolved
+            // Both rates come from the head that scans this output: the
+            // nominal one the matcher compares, and the timing it is actually
+            // running. Read together so they cannot describe different modes.
+            let timing = resolved
                 .targets
                 .iter()
                 .find(|target| target.output == viewport.output && target.head == *primary)
-                .map(|target| target.timing.refresh_millihz)
+                .map(|target| &target.timing)
                 .ok_or("resolved topology output has no enabled head")?;
             Ok(sophia_protocol::OutputTopologyEntry {
                 output: output.id,
                 logical: viewport.logical,
                 pixel_size: output.size,
                 scale: output.scale,
-                refresh_millihz,
+                refresh_millihz: timing.refresh_millihz,
+                timing: timing.mode,
             })
         })
         .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
@@ -137,6 +142,7 @@ pub(super) fn output_topology_from_authority_at_generation(
                 },
                 scale: 1,
                 refresh_millihz,
+                timing: None,
             })
         })
         .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;

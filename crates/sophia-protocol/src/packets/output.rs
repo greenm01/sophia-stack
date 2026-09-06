@@ -65,13 +65,88 @@ impl SurfaceOutputReservations {
     }
 }
 
+/// The scanout timing a display is actually running.
+///
+/// Kept beside `refresh_millihz` rather than replacing it, because the two
+/// answer different questions and confusing them costs a working desktop.
+/// `refresh_millihz` is the **nominal** rate: DRM's integer `vrefresh` scaled
+/// by a thousand, which is what a person writes in a profile as `@120` and
+/// what the mode matcher compares with exact equality. These fields are the
+/// **measured** rate: a 120 Hz panel usually runs at 119.9976 Hz, and
+/// `clock / (htotal * vtotal)` says so exactly.
+///
+/// The exactness is the point rather than a detail. `glXGetMscRateOML` hands
+/// a client a numerator and a denominator so a rate that is not a whole number
+/// survives as a fraction, and Chromium predicts vsync from it. Answering that
+/// from a rounded integer would defeat the interface it is answering.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct OutputModeTiming {
+    /// Pixel clock in kHz, as DRM reports it.
+    pub clock_khz: u32,
+    pub hdisplay: u16,
+    pub hsync_start: u16,
+    pub hsync_end: u16,
+    pub htotal: u16,
+    pub hskew: u16,
+    pub vdisplay: u16,
+    pub vsync_start: u16,
+    pub vsync_end: u16,
+    pub vtotal: u16,
+    /// DRM mode flags, carried through unmodified.
+    pub flags: u32,
+}
+
+impl OutputModeTiming {
+    /// Whether the timing describes a mode that could be scanned out.
+    ///
+    /// Totals bound their own active regions and the clock is non-zero, which
+    /// is what makes the refresh division below meaningful rather than a
+    /// division by chance.
+    #[must_use]
+    pub const fn is_valid(self) -> bool {
+        self.clock_khz > 0
+            && self.htotal >= self.hdisplay
+            && self.vtotal >= self.vdisplay
+            && self.hdisplay > 0
+            && self.vdisplay > 0
+            && self.htotal > 0
+            && self.vtotal > 0
+    }
+
+    /// The measured refresh in millihertz, or `None` when the timing cannot
+    /// describe one.
+    #[must_use]
+    pub const fn measured_refresh_millihz(self) -> Option<u32> {
+        if !self.is_valid() {
+            return None;
+        }
+        // clock is kHz, so the numerator is clock * 1_000_000 millihertz
+        // before dividing by the total pixels in a frame.
+        let numerator = self.clock_khz as u64 * 1_000_000;
+        let denominator = self.htotal as u64 * self.vtotal as u64;
+        let millihz = numerator / denominator;
+        if millihz > u32::MAX as u64 {
+            return None;
+        }
+        Some(millihz as u32)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputTopologyEntry {
     pub output: OutputId,
     pub logical: Rect,
     pub pixel_size: Size,
     pub scale: u32,
+    /// The nominal rate, which the mode matcher compares. See
+    /// `OutputModeTiming` for why this is not the measured one.
     pub refresh_millihz: u32,
+    /// The measured scanout timing, when the output has one.
+    ///
+    /// `None` for a headless or synthetic output, which genuinely has no
+    /// timing -- a state worth distinguishing from a zero that would read as
+    /// measured.
+    pub timing: Option<OutputModeTiming>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,6 +249,7 @@ impl OutputTopologySnapshot {
                 },
                 scale: 1,
                 refresh_millihz: 60_000,
+                timing: None,
             }],
         }
     }

@@ -4,15 +4,28 @@ use crate::prelude::*;
 pub struct LibdrmNativeOutputTiming {
     pub width: u32,
     pub height: u32,
+    /// The nominal rate: DRM's integer `vrefresh` scaled by a thousand. This
+    /// is what a profile writes as `@120` and what the mode matcher compares.
     pub refresh_millihz: u32,
+    /// The scanout timing the mode actually carries.
+    ///
+    /// `None` where the timing was never read from a mode -- a synthetic
+    /// output in a test, say. Keeping the distinction means a consumer can
+    /// tell "not measured" from "measured as zero".
+    pub mode: Option<sophia_protocol::OutputModeTiming>,
 }
 
 impl LibdrmNativeOutputTiming {
+    /// A timing known only by its extent and nominal rate.
+    ///
+    /// Retained for synthetic outputs, which have no mode to read. The real
+    /// path is `from_mode`, which keeps what DRM reported.
     pub const fn new(width: u32, height: u32, refresh_millihz: u32) -> Self {
         Self {
             width,
             height,
             refresh_millihz,
+            mode: None,
         }
     }
 
@@ -268,11 +281,32 @@ where
     Ok(resolution.index.map(|index| modes[index]))
 }
 
+/// Keeps what DRM said about a mode, rather than a summary of it.
+///
+/// This used to discard everything but the extent and a rounded refresh, which
+/// left the server unable to answer any client that asked how the display is
+/// actually scanned -- and left RandR inventing a modeline with no blanking at
+/// all. The mode is right here; there was never a reason not to keep it.
 fn native_output_timing(mode: drm::control::Mode) -> LibdrmNativeOutputTiming {
     let (width, height) = mode.size();
+    let (hsync_start, hsync_end, htotal) = mode.hsync();
+    let (vsync_start, vsync_end, vtotal) = mode.vsync();
     LibdrmNativeOutputTiming {
         width: u32::from(width),
         height: u32::from(height),
         refresh_millihz: mode.vrefresh().saturating_mul(1_000),
+        mode: Some(sophia_protocol::OutputModeTiming {
+            clock_khz: mode.clock(),
+            hdisplay: width,
+            hsync_start,
+            hsync_end,
+            htotal,
+            hskew: mode.hskew(),
+            vdisplay: height,
+            vsync_start,
+            vsync_end,
+            vtotal,
+            flags: mode.flags().bits(),
+        }),
     }
 }
