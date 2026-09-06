@@ -503,6 +503,7 @@ impl XServerFrontendRouteRegistry {
         match self.route_input(route) {
             Ok(()) => Ok(()),
             Err(error) => {
+                tracing::warn!("sophia_x11_input_route status=rejected reason={error:?} content=redacted");
                 self.send_input_delivery(
                     client,
                     delivery,
@@ -555,6 +556,7 @@ impl XServerFrontendRouteRegistry {
                 .get(&route.request.target_surface)
                 .copied();
             let Some(surface_route) = surface_route else {
+                tracing::warn!("sophia_x11_input_route status=rejected reason=deferred_target_gone client={} content=redacted", deferred.client.raw());
                 self.send_input_delivery(
                     deferred.client,
                     route.delivery,

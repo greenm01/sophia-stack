@@ -32,6 +32,7 @@ pub mod desktop_output_publication;
 pub mod desktop_output_topology;
 pub mod desktop_profile_activation;
 pub mod emergency_input;
+pub mod input_delivery;
 pub mod input_latency_samples;
 pub mod input_proof;
 #[cfg(feature = "native-session")]

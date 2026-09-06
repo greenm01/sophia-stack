@@ -683,6 +683,7 @@ fn extension_query_result(name: &str) -> XExtensionQueryResult {
 }
 
 struct XShmImageCopy {
+    byte_order: XByteOrder,
     offset: u32,
     total_width: u16,
     total_height: u16,
@@ -705,6 +706,7 @@ fn copy_shm_image_region(
     read: impl FnOnce(usize, usize) -> Option<Vec<u8>>,
 ) -> Option<Vec<u8>> {
     let XShmImageCopy {
+        byte_order,
         offset,
         total_width,
         total_height,
@@ -718,7 +720,7 @@ fn copy_shm_image_region(
     const Z_PIXMAP: u8 = 2;
     const BYTES_PER_PIXEL: usize = 4;
     const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
-    if format != Z_PIXMAP || !matches!(depth, 24 | 32) {
+    if format != Z_PIXMAP {
         return None;
     }
     let total_width = usize::from(total_width);
@@ -731,12 +733,33 @@ fn copy_shm_image_region(
     {
         return None;
     }
-    let stride = total_width.checked_mul(BYTES_PER_PIXEL)?;
-    let total_len = stride.checked_mul(total_height)?;
-    if total_len > MAX_IMAGE_BYTES {
+    // Shared images use the setup-advertised pixel format and scanline pad,
+    // including packed one-bit masks used by GTK during startup. Decode through
+    // the core upload path before cropping into the canonical pixel store.
+    let layout = crate::image::XImageLayout::new(
+        format,
+        depth,
+        u16::try_from(total_width).ok()?,
+        u16::try_from(total_height).ok()?,
+        u32::MAX,
+    )
+    .ok()?;
+    if layout.payload_len > MAX_IMAGE_BYTES {
         return None;
     }
-    let source = read(usize::try_from(offset).ok()?, total_len)?;
+    let source = read(usize::try_from(offset).ok()?, layout.payload_len)?;
+    let source = crate::image::decode_upload(
+        format,
+        depth,
+        u16::try_from(total_width).ok()?,
+        u16::try_from(total_height).ok()?,
+        0,
+        byte_order,
+        &crate::XGraphicsContextValues::default(),
+        &source,
+    )
+    .ok()?;
+    let stride = total_width.checked_mul(BYTES_PER_PIXEL)?;
     let row_len = src_width.checked_mul(BYTES_PER_PIXEL)?;
     let mut image = Vec::with_capacity(row_len.checked_mul(src_height)?);
     for row in src_y..src_y.checked_add(src_height)? {

@@ -106,6 +106,7 @@ impl XServerFrontendRouteRegistry {
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
             if frozen.len() >= self.per_client_input_capacity.get() {
                 drop(frozen);
+                tracing::warn!("sophia_x11_input_route status=rejected reason=frozen_queue_full client={} content=redacted", surface_route.client.raw());
                 self.send_input_delivery(
                     surface_route.client,
                     route.delivery,
@@ -146,6 +147,7 @@ impl XServerFrontendRouteRegistry {
                     time_msec,
                 )?
                 else {
+                    tracing::warn!("sophia_x11_input_route status=rejected reason=keyboard_mapping client={} content=redacted", client.raw());
                     return self.send_input_delivery(
                         client,
                         route.delivery,
@@ -202,6 +204,7 @@ impl XServerFrontendRouteRegistry {
                     });
                 }
                 let Some((button, state)) = pointer.map_evdev_button(button, pressed) else {
+                    tracing::warn!("sophia_x11_input_route status=rejected reason=button_mapping client={} content=redacted", client.raw());
                     return self.send_input_delivery(
                         client,
                         route.delivery,
@@ -276,6 +279,7 @@ impl XServerFrontendRouteRegistry {
                     });
                 }
                 let Some(axis) = pointer.map_axis(horizontal_v120, vertical_v120) else {
+                    tracing::warn!("sophia_x11_input_route status=rejected reason=axis_mapping client={} content=redacted", client.raw());
                     return self.send_input_delivery(
                         client,
                         route.delivery,

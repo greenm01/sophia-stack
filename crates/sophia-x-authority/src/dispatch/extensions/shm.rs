@@ -245,6 +245,7 @@ fn dispatch_shm_request(
                         .and_then(|mapping| {
                             copy_shm_image_region(
                                 XShmImageCopy {
+                                byte_order: context.byte_order,
                                 offset,
                                 total_width,
                                 total_height,
@@ -259,7 +260,7 @@ fn dispatch_shm_request(
                             )
                         });
                     // `copy_shm_image_region` already normalized the segment
-                    // into tight ZPixmap depth-24/32 rows or returned nothing,
+                    // into tight canonical pixel rows or returned nothing,
                     // so the journal sees the normalized form rather than the
                     // client's original format and padding.
                     let semantics = image.as_ref().and_then(|_| {
@@ -283,6 +284,7 @@ fn dispatch_shm_request(
                         semantics.as_ref(),
                     );
                     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                        tracing::debug!(?error, depth, format, total_width, total_height, src_x, src_y, src_width, src_height, offset, image_copied=image.is_some(), gc_valid=semantics.is_some(), "MIT-SHM upload rejected");
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,

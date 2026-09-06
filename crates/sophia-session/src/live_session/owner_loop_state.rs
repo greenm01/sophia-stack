@@ -1,3 +1,5 @@
+use crate::input_delivery::{InputDeliveryState, settle_input_delivery};
+
 #[derive(Clone, Copy, Debug, Default)]
 struct SessionLoopMetrics {
     batches: usize,
@@ -47,30 +49,6 @@ impl SessionLoopMetrics {
     }
 }
 
-struct InputDeliveryState {
-    next: u64,
-    pending: BTreeSet<XAuthorityInputDeliveryId>,
-    events_expected: usize,
-    events_flushed: usize,
-    wait_started_at: Option<Instant>,
-    source: Option<&'static str>,
-    flush_latency: Option<Duration>,
-}
-
-impl Default for InputDeliveryState {
-    fn default() -> Self {
-        Self {
-            next: 1,
-            pending: BTreeSet::new(),
-            events_expected: 0,
-            events_flushed: 0,
-            wait_started_at: None,
-            source: None,
-            flush_latency: None,
-        }
-    }
-}
-
 #[derive(Default)]
 struct InputObservationState {
     key_observed: bool,
@@ -115,16 +93,17 @@ struct InputDeliveryPhase<'a> {
 impl InputDeliveryPhase<'_> {
     fn drain(self) -> Result<(), Box<dyn std::error::Error>> {
         while let Ok(delivery) = self.receiver.try_recv() {
-            if !self.state.pending.remove(&delivery.delivery) {
+            let outcome = settle_input_delivery(self.state, self.client_key_release_barrier, delivery)
+                .map_err(|failed| format!(
+                    "persistent live session X11 input delivery failed: outcome={:?} client={}",
+                    failed.outcome, failed.client.raw(),
+                ))?;
+            let Some(outcome) = outcome else {
                 continue;
-            }
-            self.client_key_release_barrier.remove(&delivery.delivery);
-            match delivery.outcome {
-                XAuthorityInputDeliveryOutcome::Flushed => {
-                    self.state.events_flushed = self.state.events_flushed.saturating_add(1);
-                }
+            };
+            match outcome {
+                XAuthorityInputDeliveryOutcome::Flushed => {}
                 XAuthorityInputDeliveryOutcome::TargetGone => {
-                    self.state.events_expected = self.state.events_expected.saturating_sub(1);
                     crate::session_println!(
                         "sophia_live_session_input_delivery schema=1 status=retired reason=target_gone client={}",
                         delivery.client.raw(),
@@ -135,7 +114,6 @@ impl InputDeliveryPhase<'_> {
                 // the session over it would make every pointer motion that
                 // overlaps an output change fatal, which is what it did.
                 XAuthorityInputDeliveryOutcome::EpochRevoked => {
-                    self.state.events_expected = self.state.events_expected.saturating_sub(1);
                     crate::session_println!(
                         "sophia_live_session_input_delivery schema=1 status=retired reason=epoch_revoked client={}",
                         delivery.client.raw(),
@@ -143,12 +121,10 @@ impl InputDeliveryPhase<'_> {
                 }
                 XAuthorityInputDeliveryOutcome::RouteRejected
                 | XAuthorityInputDeliveryOutcome::WriteFailed => {
-                    return Err(format!(
-                        "persistent live session X11 input delivery failed: outcome={:?} client={}",
-                        delivery.outcome,
-                        delivery.client.raw(),
-                    )
-                    .into());
+                    tracing::warn!(
+                        "sophia_live_session_input_delivery schema=2 status=retired reason=client_failure outcome={:?} client={} failed={} session=continuing content=redacted",
+                        outcome, delivery.client.raw(), self.state.events_failed,
+                    );
                 }
             }
         }

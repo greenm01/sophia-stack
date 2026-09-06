@@ -494,7 +494,10 @@ fn run_session_loop_inner(
     let mut resize_proof_completed = 0usize;
     let mut resize_proof_complete = false;
     let mut input_observations = InputObservationState::default();
-    let mut input_delivery = InputDeliveryState::default();
+    let mut input_delivery = InputDeliveryState {
+        fail_on_client_error: !config.normal_session || config.input_proof_requested(),
+        ..InputDeliveryState::default()
+    };
     let mut logout_requested = false;
     // Set by a committed session action and serviced at the top of the next
     // pass, where the policy launch and the authority slots are reachable.

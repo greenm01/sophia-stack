@@ -144,8 +144,18 @@ retain the change in exit criteria. Work through these stages in order.
   login exposed duplicate nominal DRM modes in the output projection; the
   projection and full-modeline selection fixes are installed. That release
   presented both heads, then rejected frontend publication because the authority
-  snapshot lacks backend timing metadata. The publication repair needs the next
-  release; physical acceptance remains pending. No live reload was performed.
+  snapshot lacks backend timing metadata. Release `3fc0ab14` completed installed
+  login on 2026-09-06: both outputs committed, startup ready, zero recovery
+  attempts, and revision-4 shell connected. Super+Space dispatched Ghostty;
+  Ghostty then failed during its MIT-SHM mask upload. The upload repair passes
+  an isolated Ghostty startup probe; installed interaction acceptance remains
+  pending. No live reload was performed.
+- [ ] Accept the client-failure repairs in normal use: Ghostty opens from the
+  launcher, and a Brave typing test leaves the desktop usable. Packed MIT-SHM
+  uploads are repaired. Normal sessions contain rejected/failed input deliveries
+  while proof sessions remain strict. The original Brave `RouteRejected` reason
+  is unresolved; new diagnostics must guide any follow-up. See the
+  [diagnosis](docs/research-log.md#2026-09-06--ghostty-mask-uploads-and-browser-input-failure-containment).
 
 #### 1. Recover reliably
 
