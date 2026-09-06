@@ -17,10 +17,16 @@ case "${SOPHIA_HAGIA_PROFILE_MODE:-auto}" in
         else
             config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
             user_profile="$config_home/hagia/config.kdl"
-            if [[ -f "$user_profile" ]]; then
+            if [[ -e "$config_home/sophia/desktop.kdl" || -L "$config_home/sophia/desktop.kdl" ]]; then
+                desktop_profile="$config_home/sophia/desktop.kdl"
+                profile_mode=user
+            elif [[ -e "$user_profile" || -L "$user_profile" ]]; then
                 desktop_profile="$user_profile"
                 profile_mode=user
-            elif [[ -f /etc/hagia/config.kdl ]]; then
+            elif [[ -e /etc/sophia/desktop.kdl || -L /etc/sophia/desktop.kdl ]]; then
+                desktop_profile=/etc/sophia/desktop.kdl
+                profile_mode=system
+            elif [[ -e /etc/hagia/config.kdl || -L /etc/hagia/config.kdl ]]; then
                 desktop_profile=/etc/hagia/config.kdl
                 profile_mode=system
             else

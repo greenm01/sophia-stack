@@ -75,6 +75,7 @@ struct PersistentXtermSessionConfig {
     wm_process_args: Vec<String>,
     wm_process_executable_grants: Vec<std::path::PathBuf>,
     shell_process: Option<String>,
+    shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
@@ -345,21 +346,17 @@ impl PersistentXtermSessionConfig {
             Self::applications_from_core(core_snapshot)?,
             session_profile_candidate,
         )?;
+        // An explicit empty login list has no application whose first frame
+        // could satisfy the launcher's application watchdog.
+        let startup_ready_timeout = if normal_session && applications.startup.is_empty()
+            && session_profile_candidate.startup.as_ref().is_some_and(Vec::is_empty)
+        { None } else { startup_ready_timeout };
         if normal_session {
             let terminal_proof = args.iter().any(|arg| {
                 arg.starts_with("--inject-text=") || arg.starts_with("--expect-physical-text=")
             });
             let startup_terminal = applications.startup.len() == 1
                 && applications.terminal.as_ref() == applications.startup.first();
-            if applications.startup.is_empty()
-                && applications.terminal.is_none()
-                && applications.launcher.is_none()
-                && applications.browser.is_none()
-            {
-                return Err(
-                    "--session-mode=normal requires a startup app or session action mapping".into(),
-                );
-            }
             let proof_only = args.iter().any(|arg| {
                 arg == "--secondary-terminal"
                     || arg == "--proof"
@@ -670,13 +667,21 @@ impl PersistentXtermSessionConfig {
                     .into(),
             );
         }
-        let configured_wm = core_snapshot.external_wm.as_ref();
+        let components = &session_profile_candidate.components;
+        let configured_wm = components.window_manager.as_ref()
+            .or(core_snapshot.external_wm.as_ref());
         let explicit_wm_process = arg_value(args, "--wm-process");
+        let default_wm_process = arg_value(args, "--wm-process-default");
+        for process in [&explicit_wm_process, &default_wm_process].into_iter().flatten() {
+            if !std::path::Path::new(process).is_absolute() {
+                return Err("WM process selections require an absolute path".into());
+            }
+        }
         let wm_process = explicit_wm_process.clone().or_else(|| {
                 configured_wm
                     .and_then(|wm| wm.executable.to_str())
                     .map(ToOwned::to_owned)
-            });
+            }).or(default_wm_process);
         let mut wm_process_args = if explicit_wm_process.is_some() {
             Vec::new()
         } else {
@@ -684,6 +689,12 @@ impl PersistentXtermSessionConfig {
                 .map(|wm| wm.arguments.clone())
                 .unwrap_or_default()
         };
+        if normal_session && wm_process.is_none() && applications.startup.is_empty()
+            && applications.terminal.is_none() && applications.launcher.is_none()
+            && applications.browser.is_none()
+        {
+            return Err("--session-mode=normal requires a WM, startup app, or session action mapping".into());
+        }
         wm_process_args.extend(args
             .iter()
             .filter_map(|arg| arg.strip_prefix("--wm-process-arg="))
@@ -735,14 +746,17 @@ impl PersistentXtermSessionConfig {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
         let explicit_shell_process = arg_value(args, "--shell-process");
-        if explicit_shell_process.as_ref().is_some_and(|process| {
-            !std::path::Path::new(process).is_absolute()
-        }) {
-            return Err("--shell-process requires an absolute path".into());
+        let default_shell_process = arg_value(args, "--shell-process-default");
+        for process in [&explicit_shell_process, &default_shell_process].into_iter().flatten() {
+            if !std::path::Path::new(process).is_absolute() {
+                return Err("shell process selections require an absolute path".into());
+            }
         }
         let profile_is_compiled_default = desktop_profile_source.is_none();
         let resolved_shell_process = || -> Option<String> {
-            explicit_shell_process.clone().or_else(|| {
+            explicit_shell_process.clone()
+                .or_else(|| components.shell_client.as_ref().map(|p| p.to_string_lossy().into_owned()))
+                .or_else(|| default_shell_process.clone()).or_else(|| {
                 wm_process.as_ref().and_then(|process| {
                     let process = std::path::Path::new(process);
                     process.is_absolute().then(|| {
@@ -774,7 +788,7 @@ impl PersistentXtermSessionConfig {
                 .ok_or("an enabled shell requires --shell-process or an absolute WM path")?;
             Some(process)
         } else {
-            if explicit_shell_process.is_some() {
+            if explicit_shell_process.is_some() || components.shell_client.is_some() {
                 return Err(if shell_enabled {
                     "--shell-process requires --session-mode=normal"
                 } else {
@@ -784,6 +798,26 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
+        let shell_config = std::env::var_os("SOPHIA_SHELL_CONFIG")
+            .map(std::path::PathBuf::from)
+            .or_else(|| components.shell_config.clone())
+            .or_else(|| {
+                // Preserve the installed Narthex default without disclosing
+                // its private settings to an explicitly selected replacement.
+                (shell_process.as_ref().is_some_and(|process| std::path::Path::new(process).file_name().is_some_and(|name| name == "narthex"))
+                    && explicit_shell_process.is_none()
+                    && components.shell_client.is_none())
+                    .then(|| user_config_root.as_ref().map(|root| root.join("narthex/config.kdl")))
+                    .flatten().filter(|path| path.is_file())
+            });
+        if let Some(path) = &shell_config {
+            if shell_process.is_none() {
+                return Err("a private shell config requires an enabled shell".into());
+            }
+            if !path.is_absolute() || !path.is_file() {
+                return Err("private shell config must be an absolute existing file".into());
+            }
+        }
         // A panel with no shell to draw it would reserve work area nothing
         // fills, so it is refused rather than dropped: a profile that asks for
         // a desktop it cannot get should say so at startup.
@@ -1018,6 +1052,7 @@ impl PersistentXtermSessionConfig {
             wm_process_args,
             wm_process_executable_grants,
             shell_process,
+            shell_config,
             shell_panel_thickness,
             shell_proof_restart_after_visible,
             wm_interface,

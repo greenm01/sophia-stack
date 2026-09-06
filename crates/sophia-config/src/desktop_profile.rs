@@ -246,13 +246,17 @@ pub fn discover_desktop_profile_source(
         return Some(path.to_path_buf());
     }
     if let Some(root) = xdg_config_home {
-        let path = root.join("hagia/config.kdl");
-        if path.is_file() {
-            return Some(path);
+        for relative in ["sophia/desktop.kdl", "hagia/config.kdl"] {
+            let path = root.join(relative);
+            if path.symlink_metadata().is_ok() {
+                return Some(path);
+            }
         }
     }
-    let system = PathBuf::from("/etc/hagia/config.kdl");
-    system.is_file().then_some(system)
+    ["/etc/sophia/desktop.kdl", "/etc/hagia/config.kdl"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| path.symlink_metadata().is_ok())
 }
 
 pub fn load_desktop_profile(
@@ -459,9 +463,17 @@ pub fn prepare_desktop_profile_candidates(
             .get(&authority)
             .expect("all desktop authority candidates validated")
     };
+    let session = crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session))?;
+    if !desktop_profile_shell_enabled(profile)
+        && (session.components.shell_client.is_some() || session.components.shell_config.is_some())
+    {
+        return Err(DesktopProfileError::Schema(
+            "shell component selections require shell { enabled #true; }".to_owned(),
+        ));
+    }
     Ok(PreparedDesktopProfileCandidates {
         shortcut: crate::prepare_desktop_shortcut_candidate(candidate(DesktopAuthority::Shortcut))?,
-        session: crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session))?,
+        session,
         input: crate::prepare_desktop_input_candidate(candidate(DesktopAuthority::Input))?,
         output: crate::prepare_desktop_output_candidate(candidate(DesktopAuthority::Output))?,
     })
@@ -701,9 +713,17 @@ fn validate_setting(
         DesktopAuthority::Policy => true,
         DesktopAuthority::Shell => ["enabled", "panel"].contains(&name),
         DesktopAuthority::Shortcut => ["profile", "bind", "pointer-bind"].contains(&name),
-        DesktopAuthority::Session => {
-            ["terminal", "browser", "logout", "startup", "control"].contains(&name)
-        }
+        DesktopAuthority::Session => [
+            "terminal",
+            "browser",
+            "logout",
+            "startup",
+            "control",
+            "window-manager",
+            "shell-client",
+            "shell-config",
+        ]
+        .contains(&name),
         DesktopAuthority::Input => {
             ["inherit-sophia", "keyboard", "pointer", "cursor"].contains(&name)
         }

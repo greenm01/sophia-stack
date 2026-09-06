@@ -91,6 +91,7 @@ impl LiveMetadataShell {
     pub(super) fn start(
         executable: &str,
         panel_thickness: Option<u16>,
+        selected_config: Option<&std::path::Path>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
             "sophia-live-metadata-shell-{}-{}",
@@ -110,15 +111,8 @@ impl LiveMetadataShell {
                 .parent()
                 .expect("metadata shell socket always has a parent"),
         ))?;
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
-            });
-        let private_config = std::env::var_os("SOPHIA_SHELL_CONFIG")
-            .map(std::path::PathBuf::from)
-            .or_else(|| config_home.map(|p| p.join("narthex/config.kdl")))
-            .filter(|p| p.is_file())
+        let private_config = selected_config
+            .map(std::path::Path::to_path_buf)
             .map(|p| p.canonicalize())
             .transpose()?;
         if let Some(path) = private_config.as_ref() {

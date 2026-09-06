@@ -5,6 +5,11 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: config check [--config=/absolute/path]");
     println!("commands: config check --wm [--wm-config=/absolute/path]");
     println!("commands: config check --desktop-profile=/absolute/path");
+    println!("commands: config print-effective --desktop-profile=/absolute/path");
+    println!("commands: config print-policy --desktop-profile=/absolute/path");
+    println!(
+        "commands: config print-component --desktop-profile=/absolute/path --component=window-manager|shell-client"
+    );
     println!("commands: config print-effective [--wm]");
     println!("commands: runtime-damage-epoch-smoke");
     println!("commands: headless-session-driver-smoke");

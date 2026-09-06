@@ -681,7 +681,13 @@ pub(crate) fn run_persistent_xterm_session(
     let mut metadata_shell = config
         .shell_process
         .as_deref()
-        .map(|process| LiveMetadataShell::start(process, config.shell_panel_thickness))
+        .map(|process| {
+            LiveMetadataShell::start(
+                process,
+                config.shell_panel_thickness,
+                config.shell_config.as_deref(),
+            )
+        })
         .transpose()?;
 
     let input_proof_result = (config.input_proof_requested() && config.client.is_none())
@@ -1137,5 +1143,9 @@ mod live_control_tests;
 #[cfg(test)]
 #[path = "../tests/support/panel_session_config.rs"]
 mod panel_session_config;
+
+#[cfg(test)]
+#[path = "../tests/support/desktop_composition.rs"]
+mod desktop_composition;
 
 include!("live_session/cpu_surface_sample.rs");

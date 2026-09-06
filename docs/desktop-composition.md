@@ -1,0 +1,147 @@
+# Choose what starts with your desktop
+
+Your desktop is a collection of parts you choose. You might use one project's
+window manager, another project's panel, and a small shell for your window
+switcher. Sophia starts those parts and keeps their responsibilities separate.
+
+Put those choices in `~/.config/sophia/desktop.kdl`. If you set
+`XDG_CONFIG_HOME`, use its `sophia/desktop.kdl` instead. This is the existing
+desktop profile, now with a home that belongs to the whole session.
+
+## Choose the parts
+
+The `session` section selects your window manager, native shell, and login
+applications. For an installed Hagia desktop, the choices can look like this:
+
+```kdl
+session {
+    window-manager "/opt/sophia/current/target/release/hagia"
+    shell-client "/opt/sophia/current/target/release/narthex"
+    shell-config "/home/alex/.config/narthex/config.kdl"
+    terminal "terminal"
+    browser "browser"
+    startup "terminal" "quickshell-panel"
+}
+```
+
+This is one section of a complete profile. Keep its `schema 1`, policy,
+shortcuts, and other authority sections. Replace the example paths with yours.
+For Hagia's replaceable development binary, use the absolute path to
+`~/.local/state/sophia/bin/hagia`.
+
+Executable and configuration paths must be absolute. Sophia does not expand
+`~`, substitute environment variables, or run a command through a shell.
+`window-manager` accepts additional string arguments. Native shell clients use
+the existing `--serve` entry point. `shell-config` selects a file the session
+makes readable inside the shell's protection domain; the shell interprets it.
+An explicitly selected file must exist.
+
+The inherited Narthex setup keeps its usual `~/.config/narthex/config.kdl`.
+When you explicitly select a shell, also select its private file if it needs
+one. A replacement shell does not inherit Narthex's settings.
+
+You may omit these selections to use the launcher's defaults. An explicit
+command-line selection wins over the profile. The profile's WM selection wins
+over `config.kdl`'s older `external-wm` setting; both win over a launcher default.
+
+The names in `startup` refer to applications registered in Sophia's
+`config.kdl` or by the session launcher. Their executable paths and arguments
+stay in that registry. Listing an application here grants it no native shell
+role. Use `startup` with no arguments to start no applications at login.
+
+## Configure each part where it belongs
+
+The desktop profile answers which parts run and what they may do. Each part
+keeps its own settings:
+
+| Change | Where to make it |
+| --- | --- |
+| Choose a WM, native shell, or login application | Sophia desktop profile, `session` section |
+| Enable the native shell or set its reservation allowance | Desktop profile, `shell` section |
+| Choose layouts, gaps, and navigation | Your WM's policy configuration |
+| Change a panel's widgets or appearance | Your panel's configuration |
+| Change shortcut-help startup behavior | Your native shell's configuration |
+| Register an application or change its command | Sophia `config.kdl`, application registry |
+
+The profile can carry WM settings in its `policy` section. Sophia passes that
+section to the chosen WM for validation. You can keep it in a separate file
+and include it using the profile's existing bounded include support. Sophia
+does not interpret your WM's layout vocabulary.
+
+Hagia bindings can still request a terminal, browser, or other admitted session
+action. The session performs the launch. Choosing a WM does not give it the
+ability to start arbitrary host processes or select its own shell permissions.
+
+## Keep the panel and helper together
+
+Quickshell and Narthex can run in the same desktop. In the current setup,
+Quickshell supplies an X11 panel; Narthex supplies native features such as the
+switcher and shortcut helper. Keep `shell { enabled #true; }` for the native
+shell and list the panel in `session.startup`.
+
+Sophia currently admits one native shell client. Dividing native responsibilities
+among several clients will require explicit role assignment and protocol work.
+There is no first-client-wins selection, and an X11 panel does not become the
+native shell by appearing in the startup list.
+
+## Understand startup and restart
+
+Login applications start once when the session opens. Reloading the WM or
+restarting it does not run that list again. Changing component selections or
+the startup list takes effect at your next login. A live profile reload reports
+session changes as deferred while applying the settings it can change live.
+The running component selections and startup list remain unchanged.
+
+Sophia supervises the native WM and shell through their existing recovery
+paths. An application in `startup` uses the ordinary application lifecycle;
+it does not acquire automatic restart merely because it is a panel. Keep
+services that should outlive the graphical session under your usual service
+manager. No particular service manager is required.
+
+## Move an existing profile
+
+An existing `~/.config/hagia/config.kdl` continues to work. When you are ready,
+move the complete desktop profile to `~/.config/sophia/desktop.kdl`, preserving
+the meaning of any relative include paths. There is no automatic merge of the
+two files. Edit the selected file; changes in the other one have no effect.
+
+`config print-effective` can produce a complete profile with includes expanded.
+If the destination does not yet exist, this gives you a copy to review while
+keeping the old file as a fallback:
+
+```sh
+(
+    set -eu
+    umask 077
+    config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+    mkdir -p "$config_home/sophia"
+    staged="$(mktemp "$config_home/sophia/.desktop.XXXXXX")"
+    trap 'rm -f -- "$staged"' EXIT
+    sophia config print-effective \
+        --desktop-profile="$config_home/hagia/config.kdl" \
+        > "$staged"
+    sophia config check --desktop-profile="$staged"
+    ln -T -- "$staged" "$config_home/sophia/desktop.kdl"
+)
+```
+
+Run this with the new Sophia build. It validates the copy and refuses to replace
+an existing desktop file. Expanded output keeps settings and their order;
+comments inside the original authority sections are not retained.
+
+Discovery checks an explicit `--desktop-profile` first, then the user's Sophia
+desktop file, the user's legacy Hagia file, `/etc/sophia/desktop.kdl`, and
+`/etc/hagia/config.kdl`. The installed launcher falls back to its packaged
+profile. Promotion runs retain their exact packaged profile.
+
+Before your next login, check the profile:
+
+```sh
+sophia config check --desktop-profile="$HOME/.config/sophia/desktop.kdl"
+sophia config print-effective --desktop-profile="$HOME/.config/sophia/desktop.kdl"
+```
+
+The first command validates Sophia's sections and the profile structure. The
+second shows the parsed choices and their source. WM settings are validated by
+the selected WM before the graphical session is admitted. Shell-specific
+settings are validated by the shell that reads them.

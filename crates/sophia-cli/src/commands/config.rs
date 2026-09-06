@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use sophia_config::{
     ConfigDomain, ConfigGeneration, ConfigSource, ConfigSourceClass,
-    discover_default_config_source, load_core_snapshot, load_desktop_profile, load_wm_snapshot,
+    discover_default_config_source, load_core_snapshot, load_wm_snapshot,
 };
 
 pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error>> {
@@ -12,10 +12,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
     let operation = args.get(1).map(String::as_str).unwrap_or("check");
     if let Some(path) = desktop_profile_path(args)? {
         validate_desktop_profile_options(args)?;
-        if operation != "check" {
-            return Err("desktop profiles currently support only config check".into());
-        }
-        check_desktop_profile(&path)?;
+        run_desktop_profile(operation, args, &path)?;
         return Ok(true);
     }
     let wm = args.iter().skip(2).any(|argument| argument == "--wm");
@@ -60,8 +57,20 @@ fn desktop_profile_path(args: &[String]) -> Result<Option<PathBuf>, Box<dyn std:
 }
 
 fn validate_desktop_profile_options(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let components = args
+        .iter()
+        .filter(|arg| arg.starts_with("--component="))
+        .count();
+    if components > 1
+        || (components > 0 && args.get(1).map(String::as_str) != Some("print-component"))
+    {
+        return Err("--component is allowed once, with print-component".into());
+    }
     for argument in args.iter().skip(2) {
-        if argument == "-v" || argument == "--verbose" || argument.starts_with("--desktop-profile=")
+        if argument == "-v"
+            || argument == "--verbose"
+            || argument.starts_with("--desktop-profile=")
+            || argument.starts_with("--component=")
         {
             continue;
         }
@@ -70,14 +79,70 @@ fn validate_desktop_profile_options(args: &[String]) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-fn check_desktop_profile(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let profile = load_desktop_profile(Some(path), ConfigGeneration::INITIAL)?;
-    println!(
-        "valid domain=desktop-profile schema=1 generation={} digest={} sources={} policy_validation=delegated",
-        profile.generation.raw(),
-        profile.digest,
-        profile.sources.len()
-    );
+fn run_desktop_profile(
+    operation: &str,
+    args: &[String],
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let prepared =
+        sophia_config::load_prepared_desktop_profile(Some(path), ConfigGeneration::INITIAL)?;
+    let profile = &prepared.profile;
+    match operation {
+        "check" => println!(
+            "valid domain=desktop-profile schema=1 generation={} digest={} sources={} policy_validation=delegated",
+            profile.generation.raw(),
+            profile.digest,
+            profile.sources.len()
+        ),
+        "print-effective" | "print-policy" => {
+            if operation == "print-effective" {
+                println!("// Source: {path:?}");
+                println!(
+                    "// Profile selections before launcher overrides; omitted components inherit defaults."
+                );
+            }
+            println!("schema 1");
+            for authority in sophia_config::DesktopAuthority::ALL {
+                if operation == "print-policy"
+                    && authority != sophia_config::DesktopAuthority::Policy
+                {
+                    continue;
+                }
+                println!("{} {{", authority.name());
+                for value in &profile.candidates[&authority].values {
+                    println!("    {}", value.encoded);
+                }
+                println!("}}");
+            }
+        }
+        "print-component" => {
+            let selected = match args.iter().find_map(|arg| arg.strip_prefix("--component=")) {
+                Some("window-manager") => {
+                    if let Some(wm) = prepared.candidates.session.components.window_manager {
+                        Some(wm.executable)
+                    } else {
+                        let source = discover_default_config_source(ConfigDomain::Core, None);
+                        load_core_snapshot(&source, ConfigGeneration::INITIAL)?
+                            .external_wm
+                            .map(|wm| wm.executable)
+                    }
+                }
+                Some("shell-client") => prepared.candidates.session.components.shell_client,
+                _ => {
+                    return Err(
+                        "print-component requires --component=window-manager|shell-client".into(),
+                    );
+                }
+            };
+            if let Some(path) = selected {
+                println!("{}", path.display());
+            }
+        }
+        _ => return Err(
+            "desktop profiles support check, print-effective, print-policy, and print-component"
+                .into(),
+        ),
+    }
     Ok(())
 }
 

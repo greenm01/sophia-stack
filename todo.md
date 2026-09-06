@@ -125,11 +125,11 @@ incomplete; neither its 36-row matrix nor the optional soak gates this milestone
 The [decision and former queue](docs/research-log.md#2026-09-04-milestone-14-retargeted-to-development-session-readiness)
 retain the change in exit criteria. Work through these stages in order.
 
-- [ ] Accept the [native shortcut helper](docs/shell-reference-sheets.md) in one
-  normal session after installing the coordinated Sophia/Narthex/Hagia build:
-  startup once, `Super+?`, paging, consumed dismissal, switcher replacement and
-  unchanged terminal focus/camera. Implementation uses the generic revision 3
-  wire and shared JetBrains Mono; this does not reopen the comparison matrix.
+- [ ] Accept [desktop composition](docs/desktop-composition.md) in one normal
+  session: select the desktop from `sophia/desktop.kdl`, retain the current
+  Hagia/Narthex/Quickshell arrangement, and confirm WM reload does not replay
+  login applications. Native shortcut help was reported working in the
+  installed session on 2026-09-06; see the research log.
 
 #### 1. Recover reliably
 

@@ -211,10 +211,6 @@ fi
     echo "Sophia session binary is not executable: $SOPHIA_BIN" >&2
     exit 1
 }
-if [[ "$SESSION_PROFILE" == hagia && ! -x "$SOPHIA_HAGIA_BIN" ]]; then
-    echo "Hagia policy executable is not executable: ${SOPHIA_HAGIA_BIN:-unavailable}" >&2
-    exit 1
-fi
 hagia_browser_bin=""
 if [[ "$SESSION_PROFILE" == hagia ]]; then
     if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
@@ -799,11 +795,13 @@ if [[ "$SESSION_PROFILE" == hagia ]]; then
     }
     session_args+=(
         "--desktop-profile=$desktop_profile"
-        --wm-process="$SOPHIA_HAGIA_BIN"
         --wm-interface=sophia_wm_v1
     )
+    if [[ -n "$SOPHIA_HAGIA_BIN" ]]; then
+        session_args+=(--wm-process-default="$SOPHIA_HAGIA_BIN")
+    fi
     if [[ -n "${SOPHIA_HAGIA_SHELL_BIN:-}" ]]; then
-        session_args+=("--shell-process=$SOPHIA_HAGIA_SHELL_BIN")
+        session_args+=("--shell-process-default=$SOPHIA_HAGIA_SHELL_BIN")
     fi
     if [[ "$TRUECOLOR_PROOF" == true ]]; then
         session_args+=(

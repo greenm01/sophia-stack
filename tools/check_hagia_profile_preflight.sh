@@ -9,6 +9,9 @@ printf 'schema 1\n' >"$work/profile.kdl"
 cat >"$work/sophia" <<'STUB'
 #!/usr/bin/env bash
 printf 'engine:%s\n' "$*" >>"$SOPHIA_PREFLIGHT_CALLS"
+if [[ "$2" == print-policy ]]; then printf 'schema 1\npolicy { layout "scroller"; }\n'; fi
+if [[ "$2" == print-component && "$4" == --component=window-manager ]]; then printf '%s' "${SOPHIA_TEST_SELECTED_WM:-}"; fi
+if [[ "$2" == print-component && "$4" == --component=shell-client ]]; then printf '%s' "${SOPHIA_TEST_SELECTED_SHELL:-}"; fi
 exit "${SOPHIA_TEST_ENGINE_STATUS:-0}"
 STUB
 cat >"$work/hagia" <<'STUB'
@@ -18,7 +21,16 @@ exit "${SOPHIA_TEST_WM_STATUS:-0}"
 STUB
 chmod 700 "$work/sophia" "$work/hagia"
 sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"
-[[ "$(wc -l <"$work/calls")" == 2 ]]
+[[ "$(wc -l <"$work/calls")" == 5 ]]
+: >"$work/calls"
+SOPHIA_TEST_SELECTED_WM=/usr/bin/true sophia_check_hagia_profile "$work/sophia" "$work/missing-hagia" "$work/profile.kdl"
+[[ "$(wc -l <"$work/calls")" == 3 ]]
+if SOPHIA_TEST_SELECTED_WM="$work/missing" sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
+    echo 'Missing selected WM was accepted' >&2; exit 1
+fi
+if SOPHIA_TEST_SELECTED_SHELL="$work/missing" sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
+    echo 'Missing selected shell was accepted' >&2; exit 1
+fi
 : >"$work/calls"
 if SOPHIA_TEST_ENGINE_STATUS=1 sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
     echo 'Engine rejection was ignored' >&2; exit 1

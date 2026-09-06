@@ -1113,8 +1113,16 @@ fn session_startup_list_is_ordered_bounded_and_unique() {
         profile.candidates.session.startup,
         Some(vec!["terminal".to_owned(), "panel".to_owned()])
     );
+    write_profile(&path, "schema 1\nsession { startup; }\n");
+    assert_eq!(
+        load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL)
+            .unwrap()
+            .candidates
+            .session
+            .startup,
+        Some(Vec::new())
+    );
     for value in [
-        "",
         "\"panel\" \"panel\"",
         "1",
         "name=\"panel\"",
@@ -1136,6 +1144,98 @@ fn session_startup_list_is_ordered_bounded_and_unique() {
     );
     assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn desktop_components_are_private_to_session_and_validate_paths() {
+    let root = temporary_directory("composition");
+    let path = root.join("desktop.kdl");
+    write_profile(
+        &path,
+        "schema 1\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/example-wm\" \"--quiet\"; shell-client \"/usr/bin/example-shell\"; shell-config \"/home/user/private shell.kdl\"; }\npolicy { layout \"custom\"; }\n",
+    );
+    let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let components = &prepared.candidates.session.components;
+    let wm = components.window_manager.as_ref().unwrap();
+    assert_eq!(wm.executable, Path::new("/usr/bin/example-wm"));
+    assert_eq!(wm.arguments, ["--quiet"]);
+    assert_eq!(
+        components.shell_client.as_deref(),
+        Some(Path::new("/usr/bin/example-shell"))
+    );
+    fs::create_dir(root.join("staged")).unwrap();
+    fs::set_permissions(root.join("staged"), fs::Permissions::from_mode(0o700)).unwrap();
+    let fragments = stage_desktop_profile(&prepared.profile, &root.join("staged")).unwrap();
+    // Inspect all emitted files: executable identity may appear only in the
+    // session authority fragment, never in what the blind policy client reads.
+    for authority in DesktopAuthority::ALL {
+        let contents = fs::read_to_string(fragments.path(authority)).unwrap();
+        assert_eq!(
+            contents.contains("/usr/bin/example-wm"),
+            authority == DesktopAuthority::Session
+        );
+        assert_eq!(
+            contents.contains("private shell.kdl"),
+            authority == DesktopAuthority::Session
+        );
+    }
+    for entry in [
+        "window-manager \"relative\"",
+        "window-manager \"/bin/wm\" command=\"oops\"",
+        "window-manager (path)\"/bin/wm\"",
+        "window-manager \"/bin/wm\" { arg \"oops\"; }",
+        "shell-client \"/bin/shell\" \"extra\"",
+        "shell-config \"~/shell.kdl\"",
+        "shell-client \"/bin/a\"; shell-client \"/bin/b\"",
+        "shell-client \"/bin/a\\nother\"",
+    ] {
+        write_profile(
+            &path,
+            &format!("schema 1\nshell {{ enabled #true; }}\nsession {{ {entry}; }}\n"),
+        );
+        assert!(
+            load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "{entry}"
+        );
+    }
+    write_profile(
+        &path,
+        "schema 1\nshell { enabled #false; }\nsession { shell-client \"/bin/shell\"; }\n",
+    );
+    assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sophia_desktop_discovery_prefers_user_composition_without_merging_legacy() {
+    let root = temporary_directory("composition-discovery");
+    fs::create_dir(root.join("hagia")).unwrap();
+    fs::create_dir(root.join("sophia")).unwrap();
+    let legacy = root.join("hagia/config.kdl");
+    let desktop = root.join("sophia/desktop.kdl");
+    write_profile(&legacy, "schema 1\n");
+    assert_eq!(
+        discover_desktop_profile_source(None, Some(&root)),
+        Some(legacy)
+    );
+    write_profile(&desktop, "invalid");
+    assert_eq!(
+        discover_desktop_profile_source(None, Some(&root)),
+        Some(desktop.clone())
+    );
+    assert!(load_desktop_profile(Some(&desktop), ConfigGeneration::INITIAL).is_err());
+    let explicit = root.join("explicit.kdl");
+    assert_eq!(
+        discover_desktop_profile_source(Some(&explicit), Some(&root)),
+        Some(explicit)
+    );
+    fs::remove_file(&desktop).unwrap();
+    symlink(root.join("missing"), &desktop).unwrap();
+    assert_eq!(
+        discover_desktop_profile_source(None, Some(&root)),
+        Some(desktop)
+    );
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

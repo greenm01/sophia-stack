@@ -269,6 +269,14 @@ pub struct ExternalWmConfig {
     pub interface: ExternalWmInterface,
 }
 
+/// Session-owned launch selections; never part of the WM's policy fragment.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DesktopComponents {
+    pub window_manager: Option<ExternalWmConfig>,
+    pub shell_client: Option<PathBuf>,
+    pub shell_config: Option<PathBuf>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreConfigSnapshot {
     pub schema: u32,

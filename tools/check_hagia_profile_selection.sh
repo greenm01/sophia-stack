@@ -32,6 +32,11 @@ printf 'schema 1\n' >"$config_home/hagia/config.kdl"
 observed="$(run_session "$release/bin/sophia-hagia-session")"
 [[ "$observed" == "user|$config_home/hagia/config.kdl|hagia" ]]
 
+install -d -m 700 "$config_home/sophia"
+printf 'schema 1\n' >"$config_home/sophia/desktop.kdl"
+observed="$(run_session "$release/bin/sophia-hagia-session")"
+[[ "$observed" == "user|$config_home/sophia/desktop.kdl|hagia" ]]
+
 explicit="$fixture/explicit.kdl"
 printf 'schema 1\n' >"$explicit"
 observed="$(SOPHIA_DESKTOP_PROFILE="$explicit" \

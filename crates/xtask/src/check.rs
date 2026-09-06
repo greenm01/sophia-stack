@@ -32,11 +32,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
             "1",
         ],
     )?;
-    command(
-        repo,
-        "cargo",
-        &["test", "--offline", "--workspace", "--all-features"],
-    )?;
+    workspace_tests(repo)?;
     // `clippy.toml` sits at the workspace root, and clippy resolves it from
     // the crate being linted rather than walking up to find it, so a
     // workspace run would silently use the defaults instead. Pointing it here
@@ -327,6 +323,36 @@ fn command(repo: &Path, program: &str, arguments: &[&str]) -> Result<(), String>
         Ok(())
     } else {
         Err(format!("{program} {arguments:?} exited with {status}"))
+    }
+}
+
+fn workspace_tests(repo: &Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let config =
+        std::env::temp_dir().join(format!("sophia-test-config-{}-{nonce}", std::process::id()));
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&config)
+        .map_err(|error| format!("could not create isolated test config: {error}"))?;
+    // Tests that exercise discovery provide their own fixtures. Every other
+    // test must see compiled defaults, not the developer's current desktop.
+    let result = Command::new("cargo")
+        .current_dir(repo)
+        .args(["test", "--offline", "--workspace", "--all-features"])
+        .env("XDG_CONFIG_HOME", &config)
+        .env_remove("SOPHIA_SHELL_CONFIG")
+        .status();
+    let cleanup = std::fs::remove_dir_all(&config);
+    let status = result.map_err(|error| format!("could not run workspace tests: {error}"))?;
+    cleanup.map_err(|error| format!("could not remove isolated test config: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("workspace tests exited with {status}"))
     }
 }
 

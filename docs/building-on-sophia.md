@@ -268,6 +268,15 @@ bottom rung, more expressiveness for more granted trust above it.
 
 ## Two Configs, Two Owners
 
+For the user's view of component selection, see
+[Desktop composition](desktop-composition.md). The session-owned desktop
+profile selects the WM, native shell, and login applications. Its preferred
+user path is `sophia/desktop.kdl` under the configuration root; the legacy
+`hagia/config.kdl` remains a fallback. Those selections belong to Session and
+are excluded from the WM's staged Policy fragment. Installed executable paths
+are launcher defaults, so a desktop profile can replace a component without
+editing the session script.
+
 A developer building on Sophia will want their users to configure the thing they
 built. They can — and the config the user edits is the developer's own, not
 Sophia's. There are two layers, owned by two parties, and keeping them straight

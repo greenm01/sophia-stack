@@ -12,6 +12,11 @@ The default user files are:
 
 - `${XDG_CONFIG_HOME:-$HOME/.config}/sophia/config.kdl`
 - `${XDG_CONFIG_HOME:-$HOME/.config}/sophia/wm.kdl`
+- `${XDG_CONFIG_HOME:-$HOME/.config}/sophia/desktop.kdl`
+
+`desktop.kdl` selects and configures the desktop through seven separate
+authority sections. The [user guide](desktop-composition.md) covers component
+selection, private settings, startup, and migration.
 
 `config.kdl` belongs to the session and Engine/compositor mechanism. It owns
 the application registry, startup applications, physical input source, XKB
@@ -47,8 +52,9 @@ session {
 }
 ```
 
-The list accepts 1–32 distinct names and resolves them against the trusted core
+The list accepts 0–32 distinct names and resolves them against the trusted core
 application registry. Unknown or aliased duplicate identities are rejected.
+An explicit empty `startup` suppresses both core startup and launcher fallback.
 Executable paths and arguments remain in the core `session.application`
 registry; the WM never launches them. Explicit `--session-start=ID` selections
 still override configuration. `--session-start-default=ID` is a launcher fallback
@@ -94,10 +100,14 @@ speaks the blind, versioned `sophia_wm_v1` protocol directly. A WM never
 overrides or mutates `config.kdl`. Sophia provides no legacy-WM compatibility
 profile or synthetic X11 policy environment.
 
-Hagia sessions additionally use the unified desktop profile at
-`${XDG_CONFIG_HOME:-$HOME/.config}/hagia/config.kdl`. An explicit
-`--desktop-profile=/absolute/path` wins, followed by the XDG file,
-`/etc/hagia/config.kdl`, and the compiled profile. Unlike Sophia's two
+Sessions use the unified desktop profile at
+`${XDG_CONFIG_HOME:-$HOME/.config}/sophia/desktop.kdl`. An explicit
+`--desktop-profile=/absolute/path` wins, followed by the user's Sophia file,
+the user's legacy `hagia/config.kdl`, `/etc/sophia/desktop.kdl`,
+`/etc/hagia/config.kdl`, and the compiled profile. The installed launcher uses
+its packaged profile as the last fallback. Discovery selects one source;
+an invalid preferred source fails validation rather than selecting another.
+Unlike Sophia's two
 authority-local files, this source permits bounded top-level includes: depth
 10, 64 files, and one MiB in aggregate, with owner/mode checks, cycle
 detection, deterministic expansion, and per-value provenance.
@@ -112,9 +122,12 @@ staging; staged-file provenance replaces the source-file provenance on reload.
 
 `sophia config check --desktop-profile=...` reports
 `policy_validation=delegated`: success validates the envelope, not WM semantics.
-Pair it with `hagia config check --config=...` for offline Hagia validation. The
-Hagia TTY adapter runs both against the selected candidate before display-manager
-takeover. Packaging also checks both. Runtime still gives Hagia only its private
+Use `sophia config print-policy --desktop-profile=...` to export a policy-only
+profile for `hagia config check --config=...`. The Hagia TTY adapter checks
+Sophia's envelope and passes only that exported policy to Hagia before
+display-manager takeover. An explicitly selected different WM validates its
+own vocabulary during protocol activation. Packaging also checks both.
+Runtime still gives Hagia only its private
 Policy fragment, and Hagia constructs a valid policy model before acknowledging
 activation. Invalid values, duplicate WM settings, or unknown WM vocabulary keep
 Sophia's graphical gate closed through the existing rejection/rollback path.
@@ -187,13 +200,32 @@ and binds the action to `Super+P`. Core and admitted XI explicit pointer grabs
 now participate in Engine's application lease arbitration, so an application
 owner takes precedence over shell capture. The action is valid only in a
 normal `sophia_wm_v1` session with the shell enabled.
-`--shell-process` accepts one absolute executable path. When it is omitted,
-Sophia looks for `hagia-shell` beside the absolute Hagia executable. The
-session launches it as `hagia-shell --serve` in a metadata-shell Bubblewrap
+`session.window-manager` accepts an absolute executable path and up to 31
+string arguments. `session.shell-client` and `session.shell-config` each accept
+one absolute path. These are Session-owned settings, never WM policy. Explicit
+`--wm-process` and `--shell-process` selections win over the profile; the profile
+wins over core `external-wm` and the launcher's `--wm-process-default` and
+`--shell-process-default`. Explicit WM replacement discards arguments from the
+replaced selection. The final compatibility fallback looks for `narthex` beside
+the absolute WM executable.
+
+The session launches the native shell with `--serve` in a metadata-shell Bubblewrap
 domain. It receives sanitized descriptors and opaque actions, never
-application identities or raw input. Packaging records separate hashes for
-`hagia` and `hagia-shell` and rejects a Hagia release that lacks either
-executable.
+application identities or raw input. `SOPHIA_SHELL_CONFIG` overrides the profile's
+private shell file selection. Explicit selections require an existing file;
+the session mounts only that file and does not parse its contents. The inherited
+Narthex setup retains its optional `narthex/config.kdl` default. An explicitly
+selected replacement does not inherit Narthex's private configuration.
+Packaging records separate hashes for `hagia` and `narthex`.
+
+`sophia config print-effective --desktop-profile=...` shows the parsed component
+and startup choices before launcher overrides. `print-component` with
+`--component=window-manager` or `--component=shell-client` prints just the
+profile selection (or core `external-wm` fallback), or nothing when it must
+come from the launcher. These are offline
+inspection commands; neither grants admission nor starts a process. Component
+and startup changes apply at the next login. WM reload retains the current
+process selections and never replays login applications.
 
 `shell { panel N; }` reserves an exclusive strip of work area, `N` pixels deep,
 along the bottom edge of the output the shell presents on. The session and not
@@ -202,7 +234,7 @@ its configuration allows. Absent or zero means no reservation, which is what
 every profile written before the key existed says. A depth beyond the
 `sophia_shell_v1` reservation maximum is refused when the profile is read
 rather than when the shell first claims, and a panel with no enabled shell is
-refused outright rather than ignored. The compiled profile asks for 28.
+refused outright rather than ignored. The compiled profile makes no reservation.
 
 The claim rides on the shell's candidate rather than a request of its own:
 Engine admits it against the realized output topology, and it reduces the work

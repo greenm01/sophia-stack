@@ -23,6 +23,7 @@ pub struct DesktopSessionCandidate {
     pub startup: Option<Vec<String>>,
     pub logout_enabled: Option<bool>,
     pub control: DesktopControlAccess,
+    pub components: crate::DesktopComponents,
 }
 
 fn schema_error(message: impl Into<String>) -> DesktopProfileError {
@@ -43,13 +44,13 @@ fn application_names(
     setting: &str,
     maximum: usize,
 ) -> Result<Vec<String>, DesktopProfileError> {
-    if node.entries().is_empty()
+    if (node.entries().is_empty() && setting != "startup")
         || node.entries().len() > maximum
         || node.children().is_some()
         || node.ty().is_some()
     {
         return Err(schema_error(format!(
-            "{setting} requires 1-{maximum} application identities"
+            "{setting} requires at most {maximum} application identities"
         )));
     }
     let mut names = Vec::new();
@@ -97,6 +98,41 @@ fn logout_enabled(node: &KdlNode) -> Result<bool, DesktopProfileError> {
         .ok_or_else(|| schema_error("logout requires one boolean"))
 }
 
+fn component_arguments(node: &KdlNode, maximum: usize) -> Result<Vec<String>, DesktopProfileError> {
+    if node.entries().is_empty()
+        || node.entries().len() > maximum
+        || node.children().is_some()
+        || node.ty().is_some()
+    {
+        return Err(schema_error(
+            "component requires an absolute path and bounded arguments",
+        ));
+    }
+    let mut arguments = Vec::with_capacity(node.entries().len());
+    for entry in node.entries() {
+        let value = entry
+            .value()
+            .as_string()
+            .filter(|value| {
+                value.len() <= crate::SOPHIA_CONFIG_MAX_ARGUMENT_BYTES
+                    && !value.chars().any(char::is_control)
+            })
+            .ok_or_else(|| {
+                schema_error("component arguments must be bounded strings without controls")
+            })?;
+        if entry.name().is_some() || entry.ty().is_some() {
+            return Err(schema_error(
+                "component arguments must be positional and untyped",
+            ));
+        }
+        arguments.push(value.to_owned());
+    }
+    if !std::path::Path::new(&arguments[0]).is_absolute() {
+        return Err(schema_error("component path must be absolute"));
+    }
+    Ok(arguments)
+}
+
 pub fn prepare_desktop_session_candidate(
     candidate: &DesktopAuthorityCandidate,
 ) -> Result<DesktopSessionCandidate, DesktopProfileError> {
@@ -111,6 +147,7 @@ pub fn prepare_desktop_session_candidate(
         startup: None,
         logout_enabled: None,
         control: DesktopControlAccess::Disabled,
+        components: crate::DesktopComponents::default(),
     };
     for value in &candidate.values {
         let node = single_node(&value.encoded)?;
@@ -125,6 +162,22 @@ pub fn prepare_desktop_session_candidate(
                 )?)
             }
             "logout" => prepared.logout_enabled = Some(logout_enabled(&node)?),
+            "window-manager" => {
+                let mut arguments = component_arguments(&node, crate::SOPHIA_CONFIG_MAX_ARGUMENTS)?;
+                prepared.components.window_manager = Some(crate::ExternalWmConfig {
+                    executable: arguments.remove(0).into(),
+                    arguments,
+                    interface: crate::ExternalWmInterface::SophiaWmV1,
+                });
+            }
+            "shell-client" => {
+                prepared.components.shell_client =
+                    Some(component_arguments(&node, 1)?.remove(0).into())
+            }
+            "shell-config" => {
+                prepared.components.shell_config =
+                    Some(component_arguments(&node, 1)?.remove(0).into())
+            }
             "control" => {
                 if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
                     return Err(schema_error("control requires one access mode"));

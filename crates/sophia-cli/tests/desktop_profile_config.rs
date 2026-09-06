@@ -111,6 +111,62 @@ fn desktop_profile_check_rejects_ambiguous_or_relative_selection() {
     assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("rejects option"));
 }
 
+#[test]
+fn desktop_inspection_and_policy_export_keep_component_identity_out_of_wm_input() {
+    let root = temporary_directory();
+    let path = root.join("desktop.kdl");
+    let included = root.join("policy.kdl");
+    write_profile(&included, "policy { layout \"third-party-layout\"; }\n");
+    write_profile(
+        &path,
+        "schema 1\ninclude \"policy.kdl\"\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/test wm\"; shell-client \"/usr/bin/test-shell\"; startup; }\n",
+    );
+    let option = format!("--desktop-profile={}", path.display());
+    let exported = sophia()
+        .args(["config", "print-policy", &option])
+        .output()
+        .unwrap();
+    assert!(exported.status.success(), "{exported:?}");
+    let policy = String::from_utf8(exported.stdout).unwrap();
+    assert!(policy.contains("third-party-layout"));
+    assert!(!policy.contains("/usr/bin"));
+    let policy_path = root.join("exported.kdl");
+    write_profile(&policy_path, &policy);
+    sophia_config::load_desktop_profile(
+        Some(&policy_path),
+        sophia_config::ConfigGeneration::INITIAL,
+    )
+    .unwrap();
+    let inspected = sophia()
+        .args(["config", "print-effective", &option])
+        .output()
+        .unwrap();
+    assert!(inspected.status.success(), "{inspected:?}");
+    assert!(String::from_utf8_lossy(&inspected.stdout).contains("/usr/bin/test wm"));
+    let selected = sophia()
+        .args([
+            "config",
+            "print-component",
+            &option,
+            "--component=window-manager",
+        ])
+        .output()
+        .unwrap();
+    assert!(selected.status.success());
+    assert_eq!(selected.stdout, b"/usr/bin/test wm\n");
+    for operation in ["check", "print-effective", "print-policy"] {
+        assert!(
+            !sophia()
+                .args(["config", operation, &option, "--component=window-manager"])
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[cfg(feature = "native-session")]
 #[test]
 fn canonical_session_command_validates_without_entering_hardware() {
