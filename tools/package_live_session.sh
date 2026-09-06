@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Release metadata and generated session entries must be readable at login.
+umask 022
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_ROOT="${SOPHIA_ARTIFACT_ROOT:-$ROOT_DIR/.artifacts}"

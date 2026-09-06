@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if (( $# == 0 )); then
@@ -49,6 +50,10 @@ install -d -m 755 "$releases"
 staging="$releases/.install-$release_id-$$"
 trap '[[ ! -d "$staging" ]] || mv "$staging" "$staging.failed"' EXIT
 cp -a "$artifact" "$staging"
+# Older artifacts may have inherited a private umask from a caller. These
+# public release files are read by the session user after root installs them.
+chmod 644 "$staging/manifest" "$staging/SHA256SUMS" \
+    "$staging"/share/wayland-sessions/*.desktop
 if [[ "$(id -u)" == 0 ]]; then
     chown -R 0:0 -- "$staging"
 fi

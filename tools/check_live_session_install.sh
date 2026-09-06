@@ -105,7 +105,7 @@ expect_policy_rejection() {
     fi
 }
 
-first="$(make_artifact 0001 false)"
+first="$(umask 077; make_artifact 0001 false)"
 second="$(make_artifact 0002 false)"
 hagia_artifact="$(make_artifact 0003 true)"
 
@@ -135,6 +135,13 @@ install_env=(
 
 env "${install_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$first"
 [[ "$(readlink "$PREFIX/current")" == releases/0001 ]]
+for public_file in "$PREFIX/current/manifest" "$PREFIX/current/SHA256SUMS" \
+    "$PREFIX/current"/share/wayland-sessions/*.desktop; do
+    [[ "$(stat -c %a "$public_file")" == 644 ]] || {
+        echo "Installed public release metadata retained a private umask: $public_file" >&2
+        exit 1
+    }
+done
 [[ ! -e "$PREFIX/previous" ]]
 for desktop in sophia-kitty sophia-native-chrome-proof; do
     [[ -f "$SESSION_DIR/$desktop.desktop" ]]

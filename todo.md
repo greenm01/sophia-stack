@@ -135,10 +135,15 @@ retain the change in exit criteria. Work through these stages in order.
   shell protocol: session-owned catalog and execution policy, Engine-owned
   input/GPU presentation, and independent Narthex search. Hagia exposes only
   session operation slot 7. See [application launcher](docs/application-launcher.md).
-- [ ] Install the coordinated Sophia/Hagia/Narthex changes and accept
+- [ ] Accept the installed Sophia/Hagia/Narthex launcher changes with
   Super+Space through normal use: search, keyboard/click activation, Escape,
   terminal entries and opening a third window. The desktop-composition and
-  native-launcher configuration is staged; no live reload has been performed.
+  native-launcher configuration is installed. The first login failed argument
+  validation because the selected `brave-origin` browser was unregistered; its
+  explicit core registration now passes installed-session validation. The next
+  login exposed duplicate nominal DRM modes in the output projection; the
+  projection and full-modeline selection fixes need installation before retry.
+  Physical acceptance remains pending. No live reload was performed.
 
 #### 1. Recover reliably
 

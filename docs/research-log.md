@@ -20269,3 +20269,68 @@ preserve the current browser and desktop components. The script checks hashes,
 requires committed checkouts, rebuilds both Nim clients, installs through the
 existing recipe, validates with the installed parser and publishes the desktop
 selector last. The active configuration and live session have not been changed.
+
+## 2026-09-06 — Release metadata inherited the migration wrapper's private umask
+
+The native-launcher wrapper used `umask 077` for personal configuration. The
+packager inherited it for generated release metadata, and installation preserved
+mode 0600 while changing ownership to root. The selected release was installed,
+but the unprivileged post-install manifest read failed before policy-client copy
+and profile publication.
+
+Packaging now sets umask 022 for public release files. Installation also repairs
+manifest, checksum-list and session-entry modes when copying older artifacts.
+The installation fixture now builds an artifact under umask 077 and verifies
+mode 0644 after installation; install, activation and rollback checks pass.
+The private profile wrapper retains umask 077 and narrows umask 022 to its
+packaging subprocess. An exact-release repair/resume script is staged at
+`/tmp/finish-sophia-native-launcher.sh`; it needs the operator's sudo password.
+It verifies release hashes and configuration preimages before completing the
+interrupted installation, without restarting the running session.
+
+The permission repair completed on the host. Both staged files passed the
+installed parser as uid 1000; `UnsafeOwner` was consistent with running the
+whole wrapper under sudo against those user-owned files. The wrapper now
+requires the session user and requests sudo only for the system step. The
+remaining installation completed as niltempus: exact-release verification,
+Hagia copy, core configuration backup and publication of both mode-0600
+user-owned profiles. No live restart occurred; Super+Space awaits the next
+login and physical acceptance.
+
+## 2026-09-06 — Migrated browser selection blocked installed login
+
+The next greetd login returned before graphics takeover. The recovery guard
+armed, but `session-args-check.err` reported `UnavailableShortcutCapability`.
+The migrated desktop selected `brave-origin` and bound Super+B to the browser
+action; the wrapper registered Firefox under `browser`, and the core registered
+only the panel. The selected browser therefore had no execution registration.
+Checking each configuration file separately had missed the unresolved role.
+
+Registered `brave-origin` explicitly in the user's core configuration, preserving
+the selected browser and keeping executable authority in the session. The old
+configuration is backed up as `config.kdl.before-browser-registration`. The
+installed binary rejected the original assembled session arguments and accepted
+them after the registration, including ordinary core discovery, the terminal
+adapter, desktop components and launcher selection. Validation opened no hardware
+and launched no applications. The next login remains the physical check.
+
+## 2026-09-06 — Full DRM timings broke the nominal output projection
+
+The following login passed argument validation and discovered both heads, then
+exited with `InvalidTopology` for DP-1. Read-only DRM connector inspection found
+several distinct modes sharing a resolution and nominal refresh, including three
+1920×1080 modes at 60 Hz. Retaining complete modelines made these backend entries
+distinct, but their projection into the profile's nominal timing table contained
+duplicates and failed its uniqueness check.
+
+The profile projection now deduplicates nominal timings while the backend retains
+complete modelines. Profile requests without a modeline resolve to the first
+advertised nominal match; requests carrying a modeline require an exact match.
+Opaque output-authority mode IDs resolve through the same bounded backend table
+that advertised them, preserving the selected modeline instead of reconstructing
+an incomplete timing. All three cases have regression coverage without hardware.
+The three new regressions, 42 existing session output tests, and all 277 backend
+tests passed. The release build and complete `cargo xtask check` passed. The full
+gate ran outside the tool sandbox with isolated XDG configuration because its
+Unix-socket fixtures cannot bind inside that sandbox. The installed release still
+needs replacement before another physical login.

@@ -65,9 +65,8 @@ impl LibdrmNativeModeResolution {
 /// A configured candidate names a timing, but a KMS commit needs the mode object
 /// that produced it, and the reduction from mode to timing is lossy: several modes
 /// can share one width, height, and integer refresh. This returns the **first**
-/// match, which is the same choice the capability reader makes when it dedupes
-/// reduced timings and keeps the first occurrence. So any timing a capability
-/// advertises resolves back to exactly the mode that advertised it.
+/// nominal match when the request omits a modeline. A request carrying a full
+/// modeline must match it exactly, preserving an opaque authority mode selection.
 ///
 /// Invalid modes are skipped rather than matched, for the same reason the
 /// capability reader skips them: a zero dimension or refresh cannot drive a head.
@@ -80,10 +79,15 @@ pub fn resolve_native_output_mode_index(
             LibdrmNativeModeResolutionStatus::InvalidTiming,
         );
     }
-    match modes
-        .iter()
-        .position(|mode| mode.valid() && *mode == requested)
-    {
+    match modes.iter().position(|mode| {
+        mode.valid()
+            && mode.width == requested.width
+            && mode.height == requested.height
+            && mode.refresh_millihz == requested.refresh_millihz
+            && requested
+                .mode
+                .is_none_or(|timing| mode.mode == Some(timing))
+    }) {
         Some(index) => LibdrmNativeModeResolution {
             status: LibdrmNativeModeResolutionStatus::Resolved,
             index: Some(index),

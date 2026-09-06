@@ -286,16 +286,15 @@ pub fn resolve_live_output_topology_candidate(
                 .iter()
                 .find(|mode| mode.mode == target.mode)
                 .ok_or(LiveOutputAuthorityProjectionError::MissingMode(target.head))?;
-            let timing = LibdrmNativeOutputTiming::new(
-                u32::try_from(mode.pixel_size.width)
-                    .map_err(|_| LiveOutputAuthorityProjectionError::MissingMode(target.head))?,
-                u32::try_from(mode.pixel_size.height)
-                    .map_err(|_| LiveOutputAuthorityProjectionError::MissingMode(target.head))?,
-                mode.refresh_millihz,
-            );
-            if !capability.modes().contains(&timing) {
-                return Err(LiveOutputAuthorityProjectionError::MissingMode(target.head));
-            }
+            // Resolve the opaque mode through the same bounded table that
+            // advertised it. Reconstructing a nominal timing loses modeline
+            // identity when several DRM modes have the same rounded refresh.
+            let advertised = bounded_modes(capability, head)?;
+            let index = advertised
+                .iter()
+                .position(|current| current == mode)
+                .ok_or(LiveOutputAuthorityProjectionError::MissingMode(target.head))?;
+            let timing = bounded_timings(capability)[index];
             let target_generation = descriptor
                 .generation
                 .checked_add(1)
@@ -577,24 +576,8 @@ fn bounded_modes(
     capability: &LibdrmNativeOutputCapability,
     head: RenderHeadId,
 ) -> Result<Vec<OutputModeDescriptor>, LiveOutputAuthorityProjectionError> {
-    let selected = capability.selected_mode();
     let preferred = capability.preferred_mode();
-    let mut timings = Vec::new();
-    timings.push(selected);
-    if let Some(preferred) = preferred
-        && !timings.contains(&preferred)
-    {
-        timings.push(preferred);
-    }
-    for timing in capability.modes() {
-        if timings.len() == MAX_OUTPUT_AUTHORITY_MODES_PER_HEAD {
-            break;
-        }
-        if !timings.contains(timing) {
-            timings.push(*timing);
-        }
-    }
-    timings
+    bounded_timings(capability)
         .into_iter()
         .enumerate()
         .map(|(index, timing)| {
@@ -617,6 +600,27 @@ fn bounded_modes(
             })
         })
         .collect()
+}
+
+fn bounded_timings(capability: &LibdrmNativeOutputCapability) -> Vec<LibdrmNativeOutputTiming> {
+    let selected = capability.selected_mode();
+    let preferred = capability.preferred_mode();
+    let mut timings = Vec::new();
+    timings.push(selected);
+    if let Some(preferred) = preferred
+        && !timings.contains(&preferred)
+    {
+        timings.push(preferred);
+    }
+    for timing in capability.modes() {
+        if timings.len() == MAX_OUTPUT_AUTHORITY_MODES_PER_HEAD {
+            break;
+        }
+        if !timings.contains(timing) {
+            timings.push(*timing);
+        }
+    }
+    timings
 }
 
 fn timing_size(timing: LibdrmNativeOutputTiming) -> Option<Size> {

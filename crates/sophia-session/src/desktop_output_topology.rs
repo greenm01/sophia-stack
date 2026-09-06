@@ -592,7 +592,16 @@ pub fn project_native_output_topology(
             connectors.push(DesktopOutputTopologyConnector {
                 connector: member.connector_name().to_owned(),
                 connected: true,
-                modes: member.modes().iter().copied().map(timing).collect(),
+                // Profiles name nominal timings. Distinct DRM modelines can
+                // reduce to the same resolution and integer refresh rate.
+                modes: member
+                    .modes()
+                    .iter()
+                    .copied()
+                    .map(timing)
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 preferred_mode: member.preferred_mode().map(timing),
                 scales: DesktopOutputScaleCapabilities {
                     minimum_milli: 1_000,
