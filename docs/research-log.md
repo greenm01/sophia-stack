@@ -53,8 +53,14 @@ passes content updates, popup withdrawal, reservation restoration and clean
 exit. Its CPU content samples do not prove physical GPU visibility. Hagia
 regressions cover repeated terminal admission, camera containment, rejected
 candidate retry, initial/repeated snapshots and background admission exclusion.
-The active session is unchanged; physical popup visibility and new-window
-camera following remain the next normal-use checks.
+Physical follow-up: the operator installed Sophia `05ef0eb8` with Hagia
+`12f7493` and confirmed that the panel incrementer works and the camera follows
+new windows in the scrolling layout. The log shows 240x112 popup sampling on
+output 1, three added terminals receiving focus with committed layout moves,
+and no runtime fatal at capture time. The session log and installed manifest
+are retained in `/tmp/sophia-panel-camera-confirmed-05ef0eb8`. These two
+normal-use checks are accepted; they do not claim both-output panel lifecycle,
+vertical scrolling, close behavior or broader scrolling acceptance.
 
 ## 2026-09-06: the selected shell owns panel UI
 

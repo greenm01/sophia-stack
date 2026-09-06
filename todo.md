@@ -182,10 +182,11 @@ is the starting evidence; no new comparison run is required.
 - [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
   popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
   shell content and DMS remain deferred; this is an X11 compatibility client.
-  On `8b750b30`, clicking Panel test blinked only the terminal border and showed
-  no popout. Repair client-positioned owner visibility without asking the WM
-  to place the panel. Focused owner-chain regressions and the isolated software
-  content probe pass; the physical popout still needs confirmation.
+- [x] Confirm the panel popout visibility repair in normal GPU use. On installed
+  Sophia `05ef0eb8` / Hagia `12f7493`, the operator confirms the incrementer
+  works; the live renderer samples the 240x112 popup on output 1. Evidence:
+  `/tmp/sophia-panel-camera-confirmed-05ef0eb8`. Both-output and lifecycle
+  acceptance remain in the broader panel row above.
 - [ ] Diagnose the forced-deadline control drain race captured in
   `/tmp/sophia-panel-probe-v5` (12 dispatched, 11 delivered, one pending).
   Normal-exit probe success does not waive this separate shutdown finding.
@@ -193,12 +194,13 @@ is the starting evidence; no new comparison run is required.
 - [ ] Accept the scrolling repair in normal use: three Kitty windows, reversal,
   insertion/close, vertical scrolling and both outputs. The implementation adds
   committed Hagia camera anchors and Engine GPU translation; see the
-  [contract and focused check](docs/window-transitions.md). Physical acceptance
-  remains pending; the running installed session has not been replaced.
-  The `8b750b30` normal-use report found that new terminals retained the previous
-  focus, so the camera correctly stayed on the old window. Hagia now selects
-  eligible new admissions in the active view and places unassigned windows on
-  the active output. Validate opening on both monitors after installing it.
+  [contract and focused check](docs/window-transitions.md). Broader physical
+  acceptance remains pending; new-window camera following is confirmed below.
+- [x] Confirm that opening new windows in the scrolling layout moves the camera
+  to them. The operator confirms this on Sophia `05ef0eb8` / Hagia `12f7493`;
+  logs show three added terminals receiving focus with committed layout moves.
+  Second-output placement, vertical scrolling and close behavior retain their
+  separate acceptance scope.
 - [ ] Revalidate installed startup after the output-ownership repair. Release
   `0.1.0-86b5fe1d20bc` exited on the first Kitty Present after losing its output
   assignment. The operator entered installed fix `84c109c6`; logs confirm two
