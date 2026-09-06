@@ -156,6 +156,7 @@ fn same_surface_present_flood_keeps_one_newest_deferred_candidate() {
                 native_scanout: None,
                 wm_update: None,
                 presentation_layout: &layout,
+                geometry_routed_surfaces: &[],
                 chrome_surfaces: &[],
                 indicator_publication: None,
                 staged_cpu_buffer_handles: &[],

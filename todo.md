@@ -166,6 +166,12 @@ is the starting evidence; no new comparison run is required.
 - [x] Honor the desktop startup list in the ordinary Hagia launcher, retaining
   explicit CLI overrides and a terminal fallback. Register the opt-in panel in
   the trusted core application registry; keep process launch out of Hagia.
+- [ ] Revalidate the live-use blocking repair: explicit frontend-positioned GPU
+  routing, current work-area resize targets, and first-Present ownership through
+  retirement. `49e29e80` reserved invisible panels and Super+Return launched
+  Kitty processes whose admission timed out. Source fixes and focused regressions
+  are ready; accept visible panels, correct window bounds and three new terminals
+  on the rebuilt installed session. No comparison campaign restart.
 - [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
   popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
   shell content and DMS remain deferred; this is an X11 compatibility client.

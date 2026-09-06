@@ -96,6 +96,9 @@
                     }
                 }
                 presentation_layout.sort_by_key(|layer| layer.stack_rank);
+                let geometry_routed_surfaces = presentation_layout.iter()
+                    .filter(|layer| layout.is_client_positioned(layer.surface))
+                    .map(|layer| layer.surface).collect::<Vec<_>>();
                 let chrome_surfaces = presentation_layout
                     .iter()
                     .filter(|layer| !layout.is_client_positioned(layer.surface))
@@ -127,6 +130,7 @@
                                 }),
                                 wm_update,
                                 presentation_layout: &presentation_layout,
+                                geometry_routed_surfaces: &geometry_routed_surfaces,
                                 chrome_surfaces: &chrome_surfaces,
                                 indicator_publication: indicator_publication.clone(),
                                 staged_cpu_buffer_handles: &staged_cpu_buffer_handles,
@@ -155,6 +159,7 @@
                                 }),
                                 wm_update,
                                 presentation_layout: &presentation_layout,
+                                geometry_routed_surfaces: &geometry_routed_surfaces,
                                 chrome_surfaces: &chrome_surfaces,
                                 indicator_publication,
                                 staged_cpu_buffer_handles: &staged_cpu_buffer_handles,

@@ -6,6 +6,30 @@ pub(super) struct LiveSurfaceProjectionMetadata {
 }
 
 impl LiveProductionVisualRuntime {
+    /// Coalesce compositor changes until the candidate that owns Present has
+    /// retired. A repaint can supersede its exact retirement proof even if it
+    /// reuses the candidate pixels, stranding surface admission indefinitely.
+    pub(super) fn queue_retained_projection(
+        &mut self,
+        scene: &LiveProductionCpuScene,
+        native: &mut LiveProductionNativeScanout,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.retained_projection_pending = true;
+        if self.retained_projection_blocked() || !native.output_topology_allows_frame_service() {
+            return Ok(false);
+        }
+        let frames = self.retained_output_head_composition_frames(scene, native)?;
+        let queued = native.queue_retained_output_head_composition_frames(frames)?;
+        self.retained_projection_pending = false;
+        Ok(!queued.is_empty())
+    }
+
+    pub(super) fn retained_projection_blocked(&self) -> bool {
+        self.native_suspended
+            || self.present_scheduler.has_in_flight()
+            || !self.software_present_frames_bound.is_empty()
+    }
+
     pub(super) fn observe_surface_metadata(
         &mut self,
         transactions: &[SurfaceTransaction],

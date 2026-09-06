@@ -230,3 +230,6 @@ fn a_present_and_its_renderer_image_name_each_other() {
         );
     }
 }
+
+#[path = "../../../tests/support/live_presentation_regressions.rs"]
+mod live_presentation_regressions;

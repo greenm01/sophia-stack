@@ -302,6 +302,9 @@ impl LiveProductionVisualRuntime {
         // One readiness pass per card, before any output can retire, submit a
         // successor, or declare its outstanding request stalled.
         native_scanout.pump_native_completions()?;
+        if self.retained_projection_pending {
+            self.queue_retained_projection(scene, native_scanout)?;
+        }
         self.service_translation_frames(native_scanout, scene)?;
         let initial = self.native_output_service_request(native_scanout)?;
         let mut reducer = OutputFrameServiceReducer::begin(&initial)

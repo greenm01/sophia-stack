@@ -23,7 +23,8 @@ mod service;
 mod software_present;
 mod translation;
 pub use compositor_graphics::{
-    live_present_head_composition_sources, live_surfaces_owned_by_output,
+    live_present_head_composition_sources, live_surface_routes_to_output,
+    live_surfaces_owned_by_output,
 };
 pub use native::*;
 pub use ownership::*;
@@ -267,6 +268,8 @@ pub struct LiveProductionVisualRuntime {
     displayed_surfaces: BTreeMap<SurfaceId, LiveDisplayedSurface>,
     presentation_order: Vec<SurfaceId>,
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
+    geometry_routed_surfaces: BTreeSet<SurfaceId>,
+    retained_projection_pending: bool,
     translations: TranslationTimeline,
     translation_origin: Instant,
     translation_deadlines: BTreeMap<OutputId, Instant>,
@@ -325,6 +328,9 @@ pub struct LiveProductionCycleRequest<'a> {
     pub native_scanout: Option<&'a mut LiveProductionNativeScanout>,
     pub wm_update: Option<WmTransactionUpdate>,
     pub presentation_layout: &'a [LayerSnapshot],
+    /// Visible frontend-positioned surfaces, explicitly authorized by the session.
+    /// All other surfaces require a policy output assignment.
+    pub geometry_routed_surfaces: &'a [SurfaceId],
     pub chrome_surfaces: &'a [SurfaceId],
     pub indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     pub staged_cpu_buffer_handles: &'a [u64],
@@ -386,6 +392,8 @@ impl LiveProductionVisualRuntime {
             displayed_surfaces: BTreeMap::new(),
             presentation_order: Vec::new(),
             surface_outputs: BTreeMap::new(),
+            geometry_routed_surfaces: BTreeSet::new(),
+            retained_projection_pending: false,
             translations: TranslationTimeline::default(),
             translation_origin: Instant::now(),
             translation_deadlines: BTreeMap::new(),
@@ -537,6 +545,7 @@ impl LiveProductionVisualRuntime {
             mut native_scanout,
             wm_update,
             presentation_layout,
+            geometry_routed_surfaces,
             chrome_surfaces,
             indicator_publication,
             staged_cpu_buffer_handles,
@@ -565,7 +574,8 @@ impl LiveProductionVisualRuntime {
         let native_enabled = native_scanout.is_some();
         let focus_changed = self.focused_surface != focused_surface;
         self.focused_surface = focused_surface;
-        let presentation_order_changed = self.apply_presentation_layout(presentation_layout);
+        let presentation_order_changed =
+            self.apply_presentation_layout(presentation_layout, geometry_routed_surfaces);
         if let Some(native) = native_scanout.as_deref_mut() {
             native.set_translation_motion_active(self.translations.active(self.translation_time()));
         }
@@ -591,13 +601,7 @@ impl LiveProductionVisualRuntime {
             committed_projection_requires_gpu,
         ) {
             match native_scanout.as_deref_mut() {
-                Some(native_scanout) => {
-                    let batches =
-                        self.retained_output_head_composition_frames(scene, native_scanout)?;
-                    let queued =
-                        native_scanout.queue_retained_output_head_composition_frames(batches)?;
-                    !queued.is_empty()
-                }
+                Some(native_scanout) => self.queue_retained_projection(scene, native_scanout)?,
                 None => false,
             }
         } else {
@@ -921,6 +925,7 @@ impl LiveProductionVisualRuntime {
             native_scanout,
             wm_update,
             presentation_layout,
+            geometry_routed_surfaces,
             chrome_surfaces,
             indicator_publication,
             staged_cpu_buffer_handles,
@@ -944,7 +949,7 @@ impl LiveProductionVisualRuntime {
         );
         retain_relevant_cpu_buffer_updates(scene, &mut updates, &self.cpu_buffer_residency);
         self.focused_surface = focused_surface;
-        let _ = self.apply_presentation_layout(presentation_layout);
+        let _ = self.apply_presentation_layout(presentation_layout, geometry_routed_surfaces);
         self.set_chrome_surfaces(chrome_surfaces);
         if self.indicator_strip_enabled {
             self.set_indicator_publication(indicator_publication);
@@ -1048,7 +1053,11 @@ impl LiveProductionVisualRuntime {
         ))
     }
 
-    fn apply_presentation_layout(&mut self, layout: &[LayerSnapshot]) -> bool {
+    fn apply_presentation_layout(
+        &mut self,
+        layout: &[LayerSnapshot],
+        geometry_routed: &[SurfaceId],
+    ) -> bool {
         let now = Instant::now();
         let time = self.translation_time();
         if self.translations.replace_targets(layout, time) {
@@ -1081,6 +1090,16 @@ impl LiveProductionVisualRuntime {
         // display beside it, "past the edge" and "inside the neighbour" are
         // the same region -- so without this, geometry alone drew one
         // display's window on another.
+        let routed = layout
+            .iter()
+            .filter(|layer| layer.output.is_none() && geometry_routed.contains(&layer.surface))
+            .map(|layer| layer.surface)
+            .collect::<BTreeSet<_>>();
+        let routing_changed = self.geometry_routed_surfaces != routed
+            || layout
+                .iter()
+                .any(|layer| self.surface_outputs.get(&layer.surface).copied() != layer.output);
+        self.geometry_routed_surfaces = routed;
         self.surface_outputs.clear();
         for layer in layout {
             if let Some(output) = layer.output {
@@ -1094,7 +1113,7 @@ impl LiveProductionVisualRuntime {
                 displayed.layer.reproject(layer.geometry);
             }
         }
-        order_changed
+        order_changed || routing_changed
     }
 
     fn set_chrome_surfaces(&mut self, surfaces: &[SurfaceId]) -> bool {

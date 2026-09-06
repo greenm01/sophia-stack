@@ -173,6 +173,20 @@ pub fn live_present_head_composition_sources<'a, 'b>(
     Ok(sources)
 }
 
+/// Policy ownership takes precedence over frontend geometry routing. An unknown
+/// surface is never made visible merely because it overlaps an output.
+pub fn live_surface_routes_to_output(
+    surface: SurfaceId,
+    surface_outputs: &BTreeMap<SurfaceId, OutputId>,
+    geometry_routed: &BTreeSet<SurfaceId>,
+    output: OutputId,
+) -> bool {
+    match surface_outputs.get(&surface) {
+        Some(owner) => *owner == output,
+        None => geometry_routed.contains(&surface),
+    }
+}
+
 /// The surfaces one head composites: those whose projection placed them on it.
 ///
 /// Geometry still decides how much of a surface a head shows -- a column half
@@ -181,9 +195,9 @@ pub fn live_present_head_composition_sources<'a, 'b>(
 /// display beside it, because a scrolling strip runs past its own edge on
 /// purpose and the neighbour's rectangle starts there.
 ///
-/// A surface no projection has placed belongs to no head. Nothing is
-/// presented before its first placement, so that is unobservable rather than
-/// a window that never appears.
+/// This selector covers policy-managed surfaces. Frontend-positioned surfaces
+/// use the explicit geometry route in `live_surface_routes_to_output`; they
+/// intentionally have no WM placement.
 pub fn live_surfaces_owned_by_output(
     presentation_order: &[SurfaceId],
     surface_outputs: &BTreeMap<SurfaceId, OutputId>,
@@ -576,16 +590,20 @@ impl LiveProductionVisualRuntime {
         committed_surfaces: &[CommittedSurfaceState],
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
-        // A head composites the surfaces whose projection placed them on it,
-        // and no others. Geometry still decides how much of a surface this
-        // head shows -- a column half past the edge shows its visible half --
-        // but it does not decide which head shows it.
-        //
-        // A surface no projection has placed belongs to no head. Nothing is
-        // presented before its first placement, so that is unobservable
-        // rather than a window that never appears.
-        let owned =
-            live_surfaces_owned_by_output(presentation_order, &self.surface_outputs, output);
+        // Frontend-positioned layers are clipped by the head plan. Managed
+        // scrolling columns remain confined to their policy-assigned output.
+        let owned = presentation_order
+            .iter()
+            .copied()
+            .filter(|surface| {
+                live_surface_routes_to_output(
+                    *surface,
+                    &self.surface_outputs,
+                    &self.geometry_routed_surfaces,
+                    output,
+                )
+            })
+            .collect::<Vec<_>>();
         let mut display_list = surface_chrome_display_list_for_surfaces(
             output,
             &owned,
@@ -661,13 +679,7 @@ impl LiveProductionVisualRuntime {
         }
         let previous = std::mem::replace(&mut self.tab_bars, bars);
         if let Some(native) = native_scanout {
-            let queued = self
-                .retained_output_head_composition_frames(scene, native)
-                .and_then(|b| {
-                    native
-                        .queue_retained_output_head_composition_frames(b)
-                        .map(|_| ())
-                });
+            let queued = self.queue_retained_projection(scene, native);
             if let Err(e) = queued {
                 self.tab_bars = previous;
                 return Err(e);
@@ -720,13 +732,7 @@ impl LiveProductionVisualRuntime {
         self.descriptor_overlay = overlay;
         self.descriptor_overlay_interactive = self.descriptor_overlay.is_some();
         if let Some(native_scanout) = native_scanout {
-            let queued = self
-                .retained_output_head_composition_frames(scene, native_scanout)
-                .and_then(|batches| {
-                    native_scanout
-                        .queue_retained_output_head_composition_frames(batches)
-                        .map(|_| ())
-                });
+            let queued = self.queue_retained_projection(scene, native_scanout);
             if let Err(error) = queued {
                 self.descriptor_overlay = previous_overlay;
                 self.descriptor_overlay_interactive = previous_interactive;
@@ -795,8 +801,7 @@ impl LiveProductionVisualRuntime {
         }
         self.floating_outline = outline;
         if let Some(native_scanout) = native_scanout {
-            let batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
-            native_scanout.queue_retained_output_head_composition_frames(batches)?;
+            self.queue_retained_projection(scene, native_scanout)?;
         }
         Ok(true)
     }

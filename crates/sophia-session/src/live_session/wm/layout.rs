@@ -715,6 +715,16 @@ impl PersistentLiveLayout {
             );
             return Ok(None);
         }
+        // A standing launch target is an obligation, not immutable policy.
+        // A new work area can replace it before the recovery frame retires.
+        // Keep it only when the WM is echoing the temporary recovery constraint.
+        for (&surface, &target) in &proposal.requested_sizes {
+            if self.layout_epochs.pending_target(surface).is_some()
+                && self.layout_epochs.recovery_extent(surface) != Some(target)
+            {
+                self.layout_epochs.set_pending_target(surface, target);
+            }
+        }
         for layer in proposal
             .layers
             .iter()

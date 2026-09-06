@@ -1617,3 +1617,6 @@ include!("wm_session_tests/recovery.rs");
 
 #[path = "../../../tests/support/policy_output_ownership.rs"]
 mod policy_output_ownership;
+
+#[path = "../../../tests/support/work_area_recovery.rs"]
+mod work_area_recovery;

@@ -77,3 +77,47 @@ fn an_unplaced_surface_belongs_to_no_head() {
     assert!(live_surfaces_owned_by_output(&order, &owners, first).is_empty());
     assert!(live_surfaces_owned_by_output(&order, &owners, second).is_empty());
 }
+
+/// A dock spanning the seam is eligible on both heads, while managed columns
+/// retain their owner even if accidentally included in the geometry route set.
+#[test]
+fn frontend_geometry_routing_does_not_relax_managed_output_ownership() {
+    use sophia_backend_live::live_surface_routes_to_output;
+    use std::collections::BTreeSet;
+    let first = OutputId::from_raw(1);
+    let second = OutputId::from_raw(2);
+    let dock = SurfaceId::new(10, 1);
+    let column = SurfaceId::new(11, 1);
+    let unknown = SurfaceId::new(12, 1);
+    let owners = BTreeMap::from([(column, first)]);
+    let routed = BTreeSet::from([dock, column]);
+    for output in [first, second] {
+        assert!(live_surface_routes_to_output(
+            dock, &owners, &routed, output
+        ));
+        assert!(!live_surface_routes_to_output(
+            unknown, &owners, &routed, output
+        ));
+    }
+    assert!(live_surface_routes_to_output(
+        column, &owners, &routed, first
+    ));
+    assert!(!live_surface_routes_to_output(
+        column, &owners, &routed, second
+    ));
+    let applicable = [first, second]
+        .into_iter()
+        .filter(|output| live_surface_routes_to_output(column, &owners, &routed, *output))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        applicable,
+        vec![first],
+        "the neighbour owes no Present retirement"
+    );
+    assert!(!live_surface_routes_to_output(
+        dock,
+        &owners,
+        &BTreeSet::new(),
+        first
+    ));
+}

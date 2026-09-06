@@ -68,17 +68,22 @@ impl LiveProductionVisualRuntime {
             .map(|state| state.geometry)
             .ok_or("ready Present candidate lost its surface geometry")?;
         let logical_viewports = self.outputs.logical_viewports().collect::<Vec<_>>();
-        let applicable_outputs = sophia_engine::applicable_output_retirement_set(
+        let mut applicable_outputs = sophia_engine::applicable_output_retirement_set(
             &logical_viewports,
             previous_geometry,
             candidate_geometry,
         )?;
-        // A scroller can place a surface entirely beyond its own viewport, inside
-        // a neighbour's rectangle. That overlap does not make the Present visible.
-        if !applicable_outputs
-            .iter()
-            .any(|output| self.surface_outputs.get(&queued_surface) == Some(output))
-        {
+        // Only heads that can display this surface owe its retirement. A
+        // scrolling column overlapping its neighbour does not belong there.
+        applicable_outputs.retain(|output| {
+            live_surface_routes_to_output(
+                queued_surface,
+                &self.surface_outputs,
+                &self.geometry_routed_surfaces,
+                *output,
+            )
+        });
+        if applicable_outputs.is_empty() {
             self.present_scheduler.pop_front();
             self.reject_gpu_presentation(transaction);
             return self.run_observation_tick();
