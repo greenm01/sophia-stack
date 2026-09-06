@@ -272,7 +272,7 @@ session {
     assert_eq!(session.digest, profile.digest);
     assert_eq!(session.terminal.as_deref(), Some("kitty"));
     assert_eq!(session.browser.as_deref(), Some("helium"));
-    assert_eq!(session.startup.as_deref(), Some("kitty"));
+    assert_eq!(session.startup, Some(vec!["kitty".to_owned()]));
     assert_eq!(session.logout_enabled, Some(false));
 
     for source in [
@@ -1098,4 +1098,42 @@ fn opaque_policy_still_respects_envelope_limits_and_reserved_controls() {
         assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
     }
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn session_startup_list_is_ordered_bounded_and_unique() {
+    let root = temporary_directory("startup-list");
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        "schema 1\nsession { startup \"terminal\" \"panel\"; }\n",
+    );
+    let profile = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    assert_eq!(
+        profile.candidates.session.startup,
+        Some(vec!["terminal".to_owned(), "panel".to_owned()])
+    );
+    for value in [
+        "",
+        "\"panel\" \"panel\"",
+        "1",
+        "name=\"panel\"",
+        "(tag)\"panel\"",
+    ] {
+        write_profile(
+            &path,
+            &format!("schema 1\nsession {{ startup {value}; }}\n"),
+        );
+        assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    }
+    let names = (0..33)
+        .map(|id| format!("\"app{id}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    write_profile(
+        &path,
+        &format!("schema 1\nsession {{ startup {names}; }}\n"),
+    );
+    assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -20,7 +20,7 @@ pub struct DesktopSessionCandidate {
     pub digest: ConfigDigest,
     pub terminal: Option<String>,
     pub browser: Option<String>,
-    pub startup: Option<String>,
+    pub startup: Option<Vec<String>>,
     pub logout_enabled: Option<bool>,
     pub control: DesktopControlAccess,
 }
@@ -38,26 +38,54 @@ fn single_node(encoded: &str) -> Result<KdlNode, DesktopProfileError> {
     Ok(document.nodes()[0].clone())
 }
 
-fn application_name(node: &KdlNode, setting: &str) -> Result<String, DesktopProfileError> {
-    if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
-        return Err(schema_error(format!(
-            "{setting} requires one application identity"
-        )));
-    }
-    let name = node
-        .get(0)
-        .and_then(|value| value.as_string())
-        .filter(|name| !name.is_empty() && name.len() <= DESKTOP_SESSION_MAX_APPLICATION_NAME_BYTES)
-        .ok_or_else(|| schema_error(format!("{setting} application identity is invalid")))?;
-    if !name
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+fn application_names(
+    node: &KdlNode,
+    setting: &str,
+    maximum: usize,
+) -> Result<Vec<String>, DesktopProfileError> {
+    if node.entries().is_empty()
+        || node.entries().len() > maximum
+        || node.children().is_some()
+        || node.ty().is_some()
     {
         return Err(schema_error(format!(
-            "{setting} application identity contains unsupported characters"
+            "{setting} requires 1-{maximum} application identities"
         )));
     }
-    Ok(name.to_owned())
+    let mut names = Vec::new();
+    for entry in node.entries() {
+        if entry.name().is_some() || entry.ty().is_some() {
+            return Err(schema_error(format!(
+                "{setting} requires untyped positional identities"
+            )));
+        }
+        let name = entry
+            .value()
+            .as_string()
+            .filter(|name| {
+                !name.is_empty() && name.len() <= DESKTOP_SESSION_MAX_APPLICATION_NAME_BYTES
+            })
+            .ok_or_else(|| schema_error(format!("{setting} application identity is invalid")))?;
+        if !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        {
+            return Err(schema_error(format!(
+                "{setting} application identity contains unsupported characters"
+            )));
+        }
+        if names.iter().any(|previous| previous == name) {
+            return Err(schema_error(format!(
+                "{setting} repeats an application identity"
+            )));
+        }
+        names.push(name.to_owned());
+    }
+    Ok(names)
+}
+
+fn application_name(node: &KdlNode, setting: &str) -> Result<String, DesktopProfileError> {
+    Ok(application_names(node, setting, 1)?.remove(0))
 }
 
 fn logout_enabled(node: &KdlNode) -> Result<bool, DesktopProfileError> {
@@ -89,7 +117,13 @@ pub fn prepare_desktop_session_candidate(
         match node.name().value() {
             "terminal" => prepared.terminal = Some(application_name(&node, "terminal")?),
             "browser" => prepared.browser = Some(application_name(&node, "browser")?),
-            "startup" => prepared.startup = Some(application_name(&node, "startup")?),
+            "startup" => {
+                prepared.startup = Some(application_names(
+                    &node,
+                    "startup",
+                    crate::SOPHIA_CONFIG_MAX_APPLICATIONS,
+                )?)
+            }
             "logout" => prepared.logout_enabled = Some(logout_enabled(&node)?),
             "control" => {
                 if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {

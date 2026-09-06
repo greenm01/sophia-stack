@@ -45,6 +45,20 @@ Retain the evidence directory and report which output/action failed. Physical
 input, both-output behavior, hotplug/scaling and GPU presentation remain
 pending until observed in this live check. There is no 36-row prerequisite.
 
+## Optional login startup
+
+The normal Hagia launcher honors `session { startup "terminal" "quickshell-panel"; }`
+in the desktop profile. Register `quickshell-panel` separately in Sophia's core
+configuration; executable paths and renderer environment belong to the trusted
+session, not Hagia. The native shell remains enabled. See
+[configuration ownership](configuration.md) for startup precedence.
+
+For this development setup, the personal core registry invokes `/usr/bin/env`
+with the XCB/OpenGL environment, the downstream Quickshell binary and
+`~/.config/quickshell/sophia-panel/shell.qml`. The fixture copy has no automatic
+exercise enabled. Qt diagnostics join the ordinary session log. Updating the
+repository fixture does not replace this personal copy automatically.
+
 ## Isolated automated software probe
 
 Build Sophia, then run the same launcher with explicit probe mode:

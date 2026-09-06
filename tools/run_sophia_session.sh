@@ -760,6 +760,12 @@ else
     if [[ "$SESSION_STARTUP" == none ]]; then
         sophia_append_session_terminal_registration_args \
             session_args "$terminal_kind" "$terminal_bin"
+    elif [[ "$SESSION_PROFILE" == hagia && "$FIREFOX_M10_ANY_PROOF" != true && "$TRUECOLOR_PROOF" != true ]]; then
+        sophia_append_session_terminal_registration_args \
+            session_args "$terminal_kind" "$terminal_bin"
+        # The ordinary desktop profile selects startup apps. Proofs retain an
+        # explicit CLI selection; the normal terminal is only a fallback.
+        session_args+=(--session-start-default=terminal)
     else
         sophia_append_session_terminal_base_args \
             session_args "$terminal_kind" "$terminal_bin"

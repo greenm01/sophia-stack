@@ -108,10 +108,16 @@ impl SessionApplicationConfig {
         if !startup_overridden
             && let Some(startup) = candidate.startup.as_deref()
         {
-            self.startup = self
-                .application_for_profile_name(startup)?
-                .into_iter()
-                .collect();
+            let mut selected = Vec::with_capacity(startup.len());
+            for name in startup {
+                let id = self.application_for_profile_name(name)?
+                    .ok_or_else(|| SessionApplicationConfigError::UnknownApplication(name.clone()))?;
+                if selected.contains(&id) {
+                    return Err(SessionApplicationConfigError::DuplicateStartup(id));
+                }
+                selected.push(id);
+            }
+            self.startup = selected;
         }
         if let Some(enabled) = candidate.logout_enabled {
             self.logout_enabled = enabled;
@@ -185,6 +191,7 @@ pub(super) struct SessionApplicationOverrides {
     additions: Vec<SessionApplicationSpec>,
     argument_extensions: Vec<(String, String)>,
     startup: Option<Vec<String>>,
+    startup_default: Option<String>,
     terminal: Option<String>,
     launcher: Option<String>,
     browser: Option<String>,
@@ -192,6 +199,12 @@ pub(super) struct SessionApplicationOverrides {
 
 impl SessionApplicationOverrides {
     pub(super) fn parse(args: &[String]) -> Result<Self, SessionApplicationConfigError> {
+        let defaults = args.iter().filter_map(|arg| arg.strip_prefix("--session-start-default=")).collect::<Vec<_>>();
+        if defaults.len() > 1 {
+            return Err(SessionApplicationConfigError::DuplicateApplication("startup default".to_owned()));
+        }
+        let startup_default = defaults.first().map(|id| (*id).to_owned());
+        if let Some(id) = &startup_default { validate_session_app_id(id)?; }
         let mut additions = Vec::new();
         let mut addition_ids = BTreeSet::new();
         for value in args
@@ -292,6 +305,7 @@ impl SessionApplicationOverrides {
             additions,
             argument_extensions,
             startup,
+            startup_default,
             terminal,
             launcher,
             browser,
@@ -339,6 +353,12 @@ impl SessionApplicationOverrides {
                 require_application(&applications, id)?;
             }
             applications.startup.clone_from(startup);
+        }
+        if self.startup.is_none() && candidate.startup.is_none() && applications.startup.is_empty()
+            && let Some(id) = &self.startup_default
+        {
+            require_application(&applications, id)?;
+            applications.startup.push(id.clone());
         }
         for id in [&self.terminal, &self.launcher, &self.browser]
             .into_iter()

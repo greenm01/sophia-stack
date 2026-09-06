@@ -163,6 +163,9 @@ is the starting evidence; no new comparison run is required.
   work-area release/reacquisition and clean normal-exit teardown pass.
   Runtime profile activation and stale resize/work-area startup races repaired.
   `cargo xtask check` passes (2,430 Rust test executions).
+- [x] Honor the desktop startup list in the ordinary Hagia launcher, retaining
+  explicit CLI overrides and a terminal fallback. Register the opt-in panel in
+  the trusted core application registry; keep process launch out of Hagia.
 - [ ] Accept this panel in normal GPU use on both outputs: pointer hit targets,
   popout anchoring, focus, stop/relaunch and coexistence with Narthex. Native
   shell content and DMS remain deferred; this is an X11 compatibility client.

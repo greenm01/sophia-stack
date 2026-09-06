@@ -39,6 +39,23 @@ built-in public-domain X11 core-font `left_ptr`. That built-in is the compiled
 default and matches `XCreateFontCursor(XC_left_ptr)` rather than a
 Sophia-specific drawing.
 
+A desktop profile may select several registered startup identities in order:
+
+```kdl
+session {
+    startup "terminal" "quickshell-panel"
+}
+```
+
+The list accepts 1–32 distinct names and resolves them against the trusted core
+application registry. Unknown or aliased duplicate identities are rejected.
+Executable paths and arguments remain in the core `session.application`
+registry; the WM never launches them. Explicit `--session-start=ID` selections
+still override configuration. `--session-start-default=ID` is a launcher fallback
+used only when neither the desktop profile nor the core registry selects a
+startup list. The ordinary Hagia launcher uses this fallback for its terminal;
+proof invocations retain explicit startup selections.
+
 A registered session application may set `placement-class=N`, where `N` is a
 nonzero opaque `u64`. For an action-launched application, the session attaches
 that class only to the first newly observed surface. It never derives or sends a
